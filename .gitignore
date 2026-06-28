@@ -1,0 +1,47 @@
+# ---- macOS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# ---- Swift Package Manager ----
+.build/
+.swiftpm/
+Packages/
+*.xcodeproj/
+# Package.resolved IS committed for an app (locks dependency versions) — do not ignore it.
+
+# ---- Xcode ----
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+build/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ---- SwiftPM / build artifacts ----
+*.o
+*.swiftmodule
+.netrc
+
+# ---- Editor / tooling ----
+.vscode/
+.idea/
+*.swp
+*~
+
+# ---- Project scratch ----
+# Quick Look / icon rasterization scratch is generated under /tmp, not tracked.
+# Generated app icons in Assets/ (*.icns, *-1024.png) are derived from the SVG
+# masters; keep the SVGs tracked. Uncomment the next lines to stop tracking the
+# generated raster output:
+# Assets/*.icns
+# Assets/*-1024.png

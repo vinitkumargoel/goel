@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GoelDownloader — App Icon (Light & Dark)</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",system-ui,sans-serif; -webkit-font-smoothing:antialiased;
+    background:linear-gradient(160deg,#0e1018,#0a0b10 75%); color:#f2f3f7; min-height:100vh; padding:54px 32px 70px; }
+  .wrap { max-width:880px; margin:0 auto; }
+  header { text-align:center; margin-bottom:40px; }
+  h1 { font-size:28px; font-weight:700; letter-spacing:-.5px; }
+  .sub { color:#9aa0ad; font-size:15px; margin-top:10px; line-height:1.55; }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+  .panel { border-radius:20px; border:.5px solid rgba(255,255,255,.1); overflow:hidden; }
+  .panel .head { padding:13px 18px; font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .panel.dark .head { background:#11151c; color:#cfe6ff; }
+  .panel.light .head { background:#eef1f6; color:#1a2a4a; }
+  .panel .stage { padding:38px 18px; display:grid; place-items:center; }
+  .panel.dark .stage { background:radial-gradient(420px 320px at 50% 30%, #1b2233, #0c0e14); }
+  .panel.light .stage { background:radial-gradient(420px 320px at 50% 30%, #ffffff, #dfe5ee); }
+  .stage svg { width:188px; height:188px; border-radius:42px; box-shadow:0 22px 44px rgba(0,0,0,.4); }
+  .panel.light .stage svg { box-shadow:0 22px 44px rgba(40,70,130,.22); }
+  .dot { width:9px; height:9px; border-radius:50%; }
+  .scales { display:flex; align-items:center; justify-content:center; gap:14px; padding:16px; border-top:.5px solid rgba(255,255,255,.08); }
+  .panel.light .scales { border-top-color:rgba(0,0,0,.08); background:#f6f8fb; }
+  .panel.dark .scales { background:#0e1219; }
+  .scales svg { border-radius:7px; }
+  .note { margin-top:34px; background:rgba(255,255,255,.05); border:.5px solid rgba(255,255,255,.09); border-radius:14px; padding:18px 22px; font-size:13px; color:#aeb4c0; line-height:1.6; }
+  .note b { color:#f2f3f7; }
+  code { background:rgba(255,255,255,.08); padding:1px 6px; border-radius:5px; font-size:12px; }
+  .files { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+  .file { font-size:12px; background:rgba(10,132,255,.16); color:#7fc0ff; padding:5px 10px; border-radius:7px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>GoelDownloader — App Icon</h1>
+    <p class="sub">One identity, two appearances. The app picks the variant that matches the active system / app theme.</p>
+  </header>
+
+  <div class="pair">
+    <div class="panel dark">
+      <div class="head"><span class="dot" style="background:#0a84ff"></span> Dark appearance · <code>AppIcon-Dark.svg</code></div>
+      <div class="stage" id="darkStage"></div>
+      <div class="scales" id="darkScales"></div>
+    </div>
+    <div class="panel light">
+      <div class="head"><span class="dot" style="background:#0a84ff"></span> Light appearance · <code>AppIcon-Light.svg</code></div>
+      <div class="stage" id="lightStage"></div>
+      <div class="scales" id="lightScales"></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>How the app uses these.</b> Provide both as appearance variants of the app icon
+    (macOS supports light/dark icon appearances), and SwiftUI can also pick per <code>colorScheme</code>
+    for any in-app logo usage. The composition is identical — only the palette flips: deep-blue glow + white glyph
+    for dark, soft near-white glow + accent-blue glyph for light.
+    <div class="files">
+      <span class="file">AppIcon-Dark.svg</span>
+      <span class="file">AppIcon-Light.svg</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const dark = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><defs>
+  <radialGradient id="D" cx="0.5" cy="0.42" r="0.78"><stop offset="0" stop-color="#2f9bff"/><stop offset="1" stop-color="#04204f"/></radialGradient></defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#D)"/>
+  <circle cx="512" cy="512" r="300" fill="none" stroke="#fff" stroke-width="14" opacity="0.25"/>
+  <circle cx="512" cy="512" r="220" fill="none" stroke="#fff" stroke-width="16" opacity="0.40"/>
+  <circle cx="512" cy="172" r="34" fill="#fff" opacity="0.70"/><circle cx="804" cy="392" r="30" fill="#fff" opacity="0.55"/>
+  <circle cx="700" cy="760" r="30" fill="#fff" opacity="0.55"/><circle cx="300" cy="724" r="28" fill="#fff" opacity="0.50"/><circle cx="232" cy="392" r="30" fill="#fff" opacity="0.55"/>
+  <path d="M512 376 L512 620 M512 624 L420 532 M512 624 L604 532" fill="none" stroke="#fff" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const light = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><defs>
+  <radialGradient id="L" cx="0.5" cy="0.42" r="0.85"><stop offset="0" stop-color="#f4f8ff"/><stop offset="1" stop-color="#cfe1ff"/></radialGradient></defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#L)"/>
+  <circle cx="512" cy="512" r="300" fill="none" stroke="#0a84ff" stroke-width="14" opacity="0.35"/>
+  <circle cx="512" cy="512" r="220" fill="none" stroke="#0a84ff" stroke-width="16" opacity="0.50"/>
+  <circle cx="512" cy="172" r="34" fill="#0a84ff" opacity="0.95"/><circle cx="804" cy="392" r="30" fill="#0a84ff" opacity="0.70"/>
+  <circle cx="700" cy="760" r="30" fill="#0a84ff" opacity="0.70"/><circle cx="300" cy="724" r="28" fill="#0a84ff" opacity="0.60"/><circle cx="232" cy="392" r="30" fill="#0a84ff" opacity="0.70"/>
+  <path d="M512 376 L512 620 M512 624 L420 532 M512 624 L604 532" fill="none" stroke="#0a84ff" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+function scaled(svg, px, rad) { return `<span style="display:inline-block;width:${px}px;height:${px}px;border-radius:${rad}px;overflow:hidden">${svg.replace('width="1024" height="1024"','').replace('<svg ', `<svg width="${px}" height="${px}" `)}</span>`; }
+document.getElementById("darkStage").innerHTML = dark;
+document.getElementById("lightStage").innerHTML = light;
+document.getElementById("darkScales").innerHTML = [16,32,48,64].map(s=>scaled(dark,s,Math.round(s*0.22))).join("");
+document.getElementById("lightScales").innerHTML = [16,32,48,64].map(s=>scaled(light,s,Math.round(s*0.22))).join("");
+</script>
+</body>
+</html>

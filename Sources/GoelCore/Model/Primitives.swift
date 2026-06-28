@@ -1,0 +1,168 @@
+import Foundation
+
+/// Which engine backs a task. The UI never branches on this; the scheduler may.
+public enum DownloadKind: String, Codable, Sendable, CaseIterable {
+    case http
+    case torrent
+}
+
+/// Per-file selection / priority within a multi-file transfer.
+public enum FilePriority: Int, Codable, Sendable, CaseIterable, Comparable {
+    case skip = 0
+    case low = 1
+    case normal = 2
+    case high = 3
+
+    public static func < (lhs: FilePriority, rhs: FilePriority) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    public var displayName: String {
+        switch self {
+        case .skip: return "Skip"
+        case .low: return "Low"
+        case .normal: return "Normal"
+        case .high: return "High"
+        }
+    }
+}
+
+/// A concrete, persistable failure reason. Survives relaunch and drives the UI.
+public enum DownloadError: Error, Codable, Sendable, Equatable, Hashable {
+    case network(String)
+    case httpStatus(Int)
+    case diskFull(needed: Int64, available: Int64)
+    case checksumMismatch
+    case rangeNotSupported
+    case remoteFileChanged
+    case fileMissing
+    case canceled
+    case timedOut
+    case unknown(String)
+
+    public var message: String {
+        switch self {
+        case .network(let m): return "Network error: \(m)"
+        case .httpStatus(let code): return "Server returned HTTP \(code)"
+        case .diskFull(let needed, let available):
+            return "Not enough disk space (need \(needed.byteString), have \(available.byteString))"
+        case .checksumMismatch: return "Checksum mismatch — the file did not match its published hash"
+        case .rangeNotSupported: return "Server does not support resuming (no range support)"
+        case .remoteFileChanged: return "The remote file changed since the download started"
+        case .fileMissing: return "The local file is missing"
+        case .canceled: return "Canceled"
+        case .timedOut: return "Connection timed out"
+        case .unknown(let m): return m.isEmpty ? "Unknown error" : m
+        }
+    }
+}
+
+/// Persistable status with distinct pre-metadata and seeding states.
+public enum DownloadStatus: Codable, Sendable, Equatable, Hashable {
+    case queued
+    case requestingMetadata   // magnet: name/size unknown until peers respond
+    case downloading
+    case paused
+    case seeding              // torrent finished, still uploading
+    case completed
+    case failed(DownloadError)
+
+    public var isActive: Bool {
+        switch self {
+        case .downloading, .requestingMetadata, .seeding: return true
+        default: return false
+        }
+    }
+
+    public var isTerminal: Bool {
+        switch self {
+        case .completed, .failed: return true
+        default: return false
+        }
+    }
+
+    /// A finished payload — download bytes are all present (completed or seeding).
+    public var hasData: Bool {
+        switch self {
+        case .completed, .seeding: return true
+        default: return false
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .queued: return "Queued"
+        case .requestingMetadata: return "Requesting info"
+        case .downloading: return "Downloading"
+        case .paused: return "Paused"
+        case .seeding: return "Seeding"
+        case .completed: return "Completed"
+        case .failed: return "Failed"
+        }
+    }
+}
+
+/// Where a task comes from. `kind` is derived from the source.
+public enum DownloadSource: Codable, Sendable, Hashable {
+    case url(URL)
+    case magnet(String)
+    case torrentFile(URL)
+
+    public var kind: DownloadKind {
+        switch self {
+        case .url: return .http
+        case .magnet, .torrentFile: return .torrent
+        }
+    }
+
+    /// A canonical string used for duplicate detection and display.
+    public var locator: String {
+        switch self {
+        case .url(let u): return u.absoluteString
+        case .magnet(let m): return m
+        case .torrentFile(let u): return u.absoluteString
+        }
+    }
+
+    /// Parse a raw, user-entered line into a source, enforcing a scheme allowlist.
+    ///
+    /// Accepts `magnet:` links, `*.torrent` URLs, and HTTP(S) URLs only. Anything
+    /// else — `file:`, `ftp:`, `javascript:`, schemeless junk — is rejected
+    /// (returns `nil`). This is the single front door for adding downloads, so the
+    /// allowlist is enforced in one place (defends against SSRF / local-file reads).
+    public static func parse(_ line: String) -> DownloadSource? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("magnet:") { return .magnet(trimmed) }
+        if lower.hasSuffix(".torrent"), let url = URL(string: trimmed) {
+            return .torrentFile(url)
+        }
+        if let url = URL(string: trimmed),
+           let scheme = url.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            return .url(url)
+        }
+        return nil
+    }
+}
+
+public extension Int64 {
+    /// Human-readable byte size, e.g. "5.27 GB".
+    var byteString: String {
+        let bytes = Double(self)
+        guard bytes > 0 else { return "—" }
+        let units = ["B", "KB", "MB", "GB", "TB"]
+        let exp = Swift.min(Int(log(bytes) / log(1024)), units.count - 1)
+        let value = bytes / pow(1024, Double(exp))
+        return String(format: exp == 0 ? "%.0f %@" : "%.2f %@", value, units[exp])
+    }
+}
+
+public extension Double {
+    /// Human-readable transfer speed, e.g. "14.2 MB/s".
+    var speedString: String {
+        guard self > 0 else { return "—" }
+        return Int64(self).byteString + "/s"
+    }
+}
