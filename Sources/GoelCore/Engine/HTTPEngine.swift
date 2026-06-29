@@ -19,6 +19,10 @@ public actor HTTPEngine: DownloadEngine {
 
     public nonisolated let kind: DownloadKind = .http
 
+    /// The HTTP engine probes servers for the add-confirmation preview and emits
+    /// resume data, but has no per-file priority (a URL download is one file).
+    public nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .producesResumeData] }
+
     /// Lock-based fan-out of events to subscribers. Lives outside the actor's
     /// isolation so the synchronous `events(for:)` requirement can be satisfied
     /// by a `nonisolated` method.
@@ -58,15 +62,13 @@ public actor HTTPEngine: DownloadEngine {
     var tasks: [UUID: DownloadTask] = [:]
     private var jobs: [UUID: Task<Void, Never>] = [:]
 
-    /// Bytes completed per segment index (the live download cursor).
-    var segmentBytes: [UUID: [Int: Int64]] = [:]
-    var connections: [UUID: Int] = [:]
-    private var meters: [UUID: Meter] = [:]
-    var cursorMeta: [UUID: CursorMeta] = [:]
-    var lastResumeEmit: [UUID: Date] = [:]
+    /// The most recent resume cursor STREAMED out of each download's transfer.
+    /// `pause()` persists this (rather than a fresh synchronous snapshot), which
+    /// is up to ~1s stale — see the note there for why that stays correct.
+    private var streamedResume: [UUID: Data] = [:]
 
-    /// Flush accumulated bytes to disk every 64 KiB. `static` so the
-    /// `nonisolated` streaming path can read it without crossing actor isolation.
+    /// Flush accumulated bytes to disk every 64 KiB. Seeds each transfer's
+    /// ``TransferPlan/flushSize``.
     static let flushSize = 64 * 1024
 
     /// Hard sanity cap on a single download's declared size, to reject an
@@ -133,7 +135,6 @@ public actor HTTPEngine: DownloadEngine {
     public func add(_ task: DownloadTask) async {
         guard tasks[task.id] == nil else { return }
         tasks[task.id] = task
-        meters[task.id] = Meter()
         let id = task.id
         jobs[id] = Task { await self.run(id) }
     }
@@ -142,7 +143,11 @@ public actor HTTPEngine: DownloadEngine {
         guard let job = jobs[id] else { return }
         job.cancel()
         jobs[id] = nil
-        if let data = buildResumeData(id) {
+        // Persist the most recently STREAMED resume cursor. Unlike the old
+        // synchronous snapshot this is up to ~1s stale, but resume re-validates
+        // the remote's ETag / Last-Modified before reusing any stored range, so a
+        // slightly old cursor stays correct (a changed remote simply restarts).
+        if let data = streamedResume[id] {
             tasks[id]?.resumeData = data
             emit(id, .resumeDataUpdated(data))
         }
@@ -151,7 +156,6 @@ public actor HTTPEngine: DownloadEngine {
         // A paused transfer has no open connections: clear the count so the detail
         // panel doesn't keep claiming e.g. "16 connections" while idle.
         tasks[id]?.connectionCount = 0
-        connections[id] = 0
         // Note: the manager owns the .paused transition (it called pause()). We do
         // NOT echo .statusChanged(.paused) — a stale echo arriving after a later
         // resume would wrongly flip the task back to paused and strand it.
@@ -159,7 +163,6 @@ public actor HTTPEngine: DownloadEngine {
 
     public func resume(_ id: DownloadTask.ID) async {
         guard tasks[id] != nil, jobs[id] == nil else { return }
-        meters[id] = Meter()
         emit(id, .statusChanged(.downloading))
         jobs[id] = Task { await self.run(id) }
     }
@@ -180,11 +183,7 @@ public actor HTTPEngine: DownloadEngine {
             try? FileManager.default.removeItem(atPath: task.savePath)
         }
         hub.finishAll(id)
-        segmentBytes[id] = nil
-        meters[id] = nil
-        connections[id] = nil
-        cursorMeta[id] = nil
-        lastResumeEmit[id] = nil
+        streamedResume[id] = nil
     }
 
     public func applyLimits(_ profile: TrafficProfile) async {
@@ -232,6 +231,26 @@ public actor HTTPEngine: DownloadEngine {
         }
 
         self.session = URLSession(configuration: cfg)
+    }
+
+    /// Apply the engine-agnostic configuration: the HTTP engine consumes only the
+    /// `.http` slice (via the existing ``applyNetworkConfig(_:)``) and ignores the
+    /// torrent / HLS slices.
+    public func configure(_ configuration: EngineConfiguration) async {
+        await applyNetworkConfig(configuration.http)
+    }
+
+    /// Resolve a URL's name + size for the preview, adapting the concrete
+    /// ``resolveMetadata(for:currentName:)`` probe to the engine-agnostic seam. The
+    /// URL-derived base name mirrors the scheduler's default-name rule so a failed
+    /// refinement returns the same fallback the manager would have chosen.
+    public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
+        guard case .url(let url) = source else { return nil }
+        let last = url.lastPathComponent
+        let base = (last.isEmpty || last == "/") ? (url.host ?? "download") : last
+        let currentName = DownloadTask.sanitizedName(base, fallback: url.host ?? "download")
+        let r = await resolveMetadata(for: url, currentName: currentName)
+        return EngineMetadata(name: r.name, totalBytes: r.totalBytes, reachable: r.reachable)
     }
 
     public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {
@@ -306,19 +325,6 @@ public actor HTTPEngine: DownloadEngine {
             }
             let fileURL = URL(fileURLWithPath: resolved.savePath)
 
-            // Per-download knobs captured once: the aggregate-rate pacer (honours
-            // the profile's download cap; nil when unlimited) and the per-request
-            // settings (User-Agent, retry budget) the `nonisolated` byte pumps
-            // can't read from actor state on their own.
-            let limiter = profile.maxDownloadBytesPerSec > 0
-                ? RateLimiter(bytesPerSecond: profile.maxDownloadBytesPerSec)
-                : nil
-            let settings = RequestSettings(
-                userAgent: networkConfig.userAgent,
-                maxAttempts: networkConfig.retryCount,
-                retryInterval: networkConfig.retryInterval
-            )
-
             if let total = probe.totalBytes {
                 tasks[id]?.totalBytes = total
                 emit(id, .metadataResolved(
@@ -326,14 +332,69 @@ public actor HTTPEngine: DownloadEngine {
                     totalBytes: total,
                     files: [TransferFile(id: 0, path: resolved.name, length: total)]
                 ))
-                if probe.acceptsRanges {
-                    try await segmentedDownload(id: id, url: url, total: total, probe: probe, fileURL: fileURL, limiter: limiter, settings: settings)
-                } else {
-                    try await singleDownload(id: id, url: url, fileURL: fileURL, limiter: limiter, settings: settings)
-                }
-            } else {
-                // No Content-Length: stream a single connection, leave totalBytes nil.
-                try await singleDownload(id: id, url: url, fileURL: fileURL, limiter: limiter, settings: settings)
+            }
+
+            // Per-request knobs captured once: the per-request settings (User-Agent,
+            // retry budget) the off-actor byte pumps can't read from actor state.
+            let settings = RequestSettings(
+                userAgent: networkConfig.userAgent,
+                maxAttempts: networkConfig.retryCount,
+                retryInterval: networkConfig.retryInterval
+            )
+
+            // Resolve this download's connection count from the cross-download
+            // budget and charge it to the aggregate accounting, releasing on EVERY
+            // exit — clean completion, failure, or pause/remove cancellation. The
+            // transfer itself owns no aggregate state, so the engine resolves the
+            // count here and hands it down via the plan.
+            let host = url.host
+            let canSegment = probe.totalBytes != nil && probe.acceptsRanges
+            let segmentCount = canSegment ? resolveSegmentCount(total: probe.totalBytes!, host: host) : 1
+
+            let plan = TransferPlan(
+                url: url,
+                destination: fileURL,
+                totalBytes: probe.totalBytes,
+                acceptsRanges: probe.acceptsRanges,
+                etag: probe.etag,
+                lastModified: probe.lastModified,
+                existingResume: resolved.resumeData,
+                segmentCount: segmentCount,
+                session: session,
+                settings: settings,
+                maxBytesPerSecond: profile.maxDownloadBytesPerSec,
+                flushSize: Self.flushSize
+            )
+            let transfer = SegmentedTransfer(plan: plan)
+
+            // Charge the cross-download budget with the connection count the
+            // transfer will ACTUALLY open, and release the same count on every
+            // exit. The resume path may restore a different range count than the
+            // freshly-resolved `segmentCount`, so reserve against the transfer's
+            // resolved fan-out rather than `segmentCount`. `SegmentedTransfer.init`
+            // is synchronous, so the budget read above and this reservation remain
+            // atomic on the actor (no suspension between them).
+            let reserved = transfer.connectionCount
+            reserveConnections(host: host, count: reserved)
+            defer { releaseConnections(host: host, count: reserved) }
+
+            // Consume the transfer's progress on the actor: update our task and
+            // re-emit the SAME EngineEvents as before (.progress, .fileProgress,
+            // .resumeDataUpdated). The byte pumps run off-actor; this is the only
+            // place transfer state crosses back onto the engine.
+            let progressStream = transfer.progress
+            let consumer = Task { [weak self] in
+                for await update in progressStream { await self?.applyProgress(id, update) }
+            }
+
+            let outcome: TransferOutcome
+            do {
+                outcome = try await transfer.run()
+                await consumer.value          // drain remaining progress before finishing
+            } catch {
+                consumer.cancel()
+                await consumer.value
+                throw error
             }
 
             try Task.checkCancellation()
@@ -351,15 +412,18 @@ public actor HTTPEngine: DownloadEngine {
                 guard matched else { throw DownloadError.checksumMismatch }
             }
 
-            // Finished: clear the live connection count BEFORE the final progress
-            // emit so the detail panel doesn't keep showing open connections on a
-            // completed transfer.
-            connections[id] = 0
+            // Final forced progress: the streamed ticks are throttled, so the last
+            // flush may not have produced one — guarantee a 100% emit here. Clear
+            // the live connection count first so the detail panel doesn't keep
+            // showing open connections on a completed transfer.
+            tasks[id]?.bytesDownloaded = outcome.bytesWritten
             tasks[id]?.connectionCount = 0
-            forceProgress(id)
+            tasks[id]?.downloadSpeed = 0
+            emit(id, .progress(bytesDownloaded: outcome.bytesWritten, bytesUploaded: 0,
+                               downloadSpeed: 0, uploadSpeed: 0, connectionCount: 0))
+            emit(id, .fileProgress(fileID: 0, bytesCompleted: outcome.bytesWritten))
             tasks[id]?.status = .completed
             tasks[id]?.completedAt = Date()
-            tasks[id]?.downloadSpeed = 0
             jobs[id] = nil
             emit(id, .finished)
             emit(id, .statusChanged(.completed))
@@ -384,57 +448,36 @@ public actor HTTPEngine: DownloadEngine {
         }
     }
 
-    // Request building & retry policy live in `HTTPEngine+Requests.swift`.
+    // Request building lives in `HTTPEngine+Requests.swift`.
     // Server probing + the metadata preview live in `HTTPEngine+Probe.swift`.
-    // The transfer mechanics (segmented / single / budget / segmenting) live in
-    // `HTTPEngine+Transfer.swift`.
+    // The cross-download connection budget lives in `HTTPEngine+Transfer.swift`;
+    // the per-download byte mechanics live in `SegmentedTransfer.swift`.
 
     // MARK: Progress
 
-    /// `internal` so the `+Transfer` byte pumps can report flushed bytes.
-    func advance(_ id: UUID, segment: Int, by n: Int) {
+    /// Apply one throttled progress tick from the running transfer: update the
+    /// stored task and re-emit the engine's progress events. This is the single
+    /// place a transfer's state crosses back onto the actor.
+    private func applyProgress(_ id: UUID, _ update: TransferProgress) {
         guard tasks[id] != nil else { return }
-        segmentBytes[id, default: [:]][segment, default: 0] += Int64(n)
-        recordAndEmit(id)
-    }
-
-    private func recordAndEmit(_ id: UUID) {
-        guard tasks[id] != nil else { return }
-        let total = segmentBytes[id]?.values.reduce(0, +) ?? 0
-        tasks[id]?.bytesDownloaded = total
-
-        let now = Date()
-        var meter = meters[id] ?? Meter()
-        guard now.timeIntervalSince(meter.lastEmit) > 0.1 else { return }
-
-        // O(1) two-point sliding window: speed since the previous emit. No growing
-        // sample array to scan/trim on every flush.
-        let dt = now.timeIntervalSince(meter.lastEmit)
-        let speed = (dt > 0 && dt < 3600) ? Double(total - meter.lastEmitBytes) / dt : 0
-        meter.lastEmit = now
-        meter.lastEmitBytes = total
-        meters[id] = meter
-
-        tasks[id]?.downloadSpeed = speed
+        tasks[id]?.bytesDownloaded = update.bytesDownloaded
+        tasks[id]?.downloadSpeed = update.downloadSpeed
+        tasks[id]?.connectionCount = update.connectionCount
         emit(id, .progress(
-            bytesDownloaded: total,
+            bytesDownloaded: update.bytesDownloaded,
             bytesUploaded: 0,
-            downloadSpeed: speed,
+            downloadSpeed: update.downloadSpeed,
             uploadSpeed: 0,
-            connectionCount: connections[id] ?? 1
+            connectionCount: update.connectionCount
         ))
-        emit(id, .fileProgress(fileID: 0, bytesCompleted: total))
-        maybeEmitResume(id, now: now)
+        emit(id, .fileProgress(fileID: 0, bytesCompleted: update.bytesDownloaded))
+        if let data = update.resumeData {
+            tasks[id]?.resumeData = data
+            streamedResume[id] = data
+            emit(id, .resumeDataUpdated(data))
+        }
     }
 
-    private func forceProgress(_ id: UUID) {
-        if meters[id] == nil { meters[id] = Meter() }
-        meters[id]?.lastEmit = .distantPast
-        recordAndEmit(id)
-    }
-
-    // The resume cursor (maybeEmitResume / buildResumeData / validators) and its
-    // Range64 / CursorMeta / ResumeCursor types live in `HTTPEngine+Resume.swift`.
     // Disk preflight (ensureDirectory / checkDiskSpace / validateDiskSpace /
     // preallocate) lives in `HTTPEngine+Disk.swift`.
 
@@ -453,26 +496,8 @@ public actor HTTPEngine: DownloadEngine {
         return .network((error as NSError).localizedDescription)
     }
 
-    /// `internal` so the `+Resume` extension can publish resume-data events.
+    /// `internal` so the sibling-file extensions can publish events.
     nonisolated func emit(_ id: UUID, _ event: EngineEvent) {
         hub.emit(id, event)
-    }
-
-    // MARK: Supporting types
-
-    /// Per-request knobs captured once per download and threaded into the
-    /// `nonisolated` byte pumps, which cannot read actor state per request.
-    /// `Sendable` so it can cross into the segment task group. `internal` so the
-    /// `+Transfer` byte pumps (in a sibling file) can take it as a parameter.
-    struct RequestSettings: Sendable {
-        var userAgent: String
-        var maxAttempts: Int
-        var retryInterval: Double
-    }
-
-    /// Two-point speed window: the time and byte-count at the previous emit.
-    private struct Meter {
-        var lastEmit: Date = .distantPast
-        var lastEmitBytes: Int64 = 0
     }
 }

@@ -138,15 +138,15 @@ final class ReviewFixesTests: XCTestCase {
 
     func testValidatorsDoNotResumeWithoutValidators() {
         // No ETag / Last-Modified on either side -> cannot verify -> restart.
-        XCTAssertFalse(HTTPEngine.validatorsAllowResume(
+        XCTAssertFalse(SegmentedTransfer.validatorsAllowResume(
             cursorETag: nil, cursorLastModified: nil, probeETag: nil, probeLastModified: nil))
         // Matching ETag resumes; mismatch restarts.
-        XCTAssertTrue(HTTPEngine.validatorsAllowResume(
+        XCTAssertTrue(SegmentedTransfer.validatorsAllowResume(
             cursorETag: "v1", cursorLastModified: nil, probeETag: "v1", probeLastModified: nil))
-        XCTAssertFalse(HTTPEngine.validatorsAllowResume(
+        XCTAssertFalse(SegmentedTransfer.validatorsAllowResume(
             cursorETag: "v1", cursorLastModified: nil, probeETag: "v2", probeLastModified: nil))
         // Falls back to Last-Modified when ETag is absent.
-        XCTAssertTrue(HTTPEngine.validatorsAllowResume(
+        XCTAssertTrue(SegmentedTransfer.validatorsAllowResume(
             cursorETag: nil, cursorLastModified: "Mon, 01 Jan 2024", probeETag: nil, probeLastModified: "Mon, 01 Jan 2024"))
     }
 }

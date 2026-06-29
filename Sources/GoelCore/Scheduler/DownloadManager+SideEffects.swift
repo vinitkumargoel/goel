@@ -13,10 +13,13 @@ extension DownloadManager {
     /// Recompute and apply the "prevent idle sleep" assertion from the current
     /// settings and active-download state. Idempotent (see ``PowerManager``).
     func updatePowerAssertion() {
-        powerManager.setPreventSleep(shouldPreventSleep())
+        power.setPreventSleep(shouldPreventSleep())
     }
 
-    private func shouldPreventSleep() -> Bool {
+    /// The keep-awake decision in isolation: pure over the current tasks, settings
+    /// and power source. `internal` so boundary tests can drive the battery/seeding
+    /// matrix directly without poking IOKit.
+    func shouldPreventSleep() -> Bool {
         guard settings.preventSleepWhileDownloading else { return false }
 
         var hasActiveDownload = false
@@ -30,7 +33,7 @@ extension DownloadManager {
         }
         guard hasActiveDownload || hasSeeding else { return false }
 
-        let onBattery = powerManager.isOnBattery
+        let onBattery = power.isOnBattery
 
         // Seeding only (no active download): a lighter case the user can opt out of.
         if !hasActiveDownload {
@@ -41,7 +44,7 @@ extension DownloadManager {
 
         // Active downloads in flight. Honour the on-battery power-saving opt-outs.
         // `batteryThresholdPercent` cannot be read precisely at this layer
-        // (PowerManager exposes only on-battery state), so these are best-effort:
+        // (the power port exposes only on-battery state), so these are best-effort:
         // while on battery we release the keep-awake hold when the user has asked
         // us to back off on battery.
         if onBattery, settings.allowSleepIfResumable { return false }
@@ -54,11 +57,11 @@ extension DownloadManager {
     /// Start or stop watching the configured folder per the BitTorrent settings.
     func updateWatchFolder() async {
         guard settings.btWatchFolderEnabled, !settings.btWatchFolderPath.isEmpty else {
-            await watchFolder.stop()
+            await folderWatch.stop()
             return
         }
         let autoStart = settings.btWatchStartWithoutConfirmation
-        await watchFolder.start(path: settings.btWatchFolderPath) { [weak self] url in
+        await folderWatch.start(path: settings.btWatchFolderPath) { [weak self] url in
             Task { await self?.ingestWatchedTorrent(url, autoStart: autoStart) }
         }
     }
@@ -132,8 +135,9 @@ extension DownloadManager {
             let path = task.savePath
             let executable = settings.antivirusExecutablePath
             let template = settings.antivirusArgumentTemplate
+            let scanner = self.scanner
             Task.detached {
-                let passed = await AntivirusScanner.scan(
+                let passed = await scanner.scan(
                     path: path, executablePath: executable, argumentTemplate: template
                 )
                 if !passed {

@@ -375,16 +375,14 @@ final class AppViewModel: ObservableObject {
 
     func setProfile(_ name: String) {
         Task {
-            await manager.setProfile(name)
-            settings = await manager.currentSettings
+            settings = await manager.setProfile(name)
         }
     }
 
     func toggleSnail() {
         let newValue = !settings.speedLimitEnabled
         Task {
-            await manager.setSpeedLimitEnabled(newValue)
-            settings = await manager.currentSettings
+            settings = await manager.setSpeedLimitEnabled(newValue)
             // Toast after the refresh so it reflects the committed settings.
             toastNow(newValue ? "Speed limit on · \(settings.selectedProfileName)" : "Speed limit off · Unlimited")
         }
@@ -396,8 +394,7 @@ final class AppViewModel: ObservableObject {
 
     func setDefaultSaveDirectory(_ path: String) {
         Task {
-            await manager.setDefaultSaveDirectory(path)
-            settings = await manager.currentSettings
+            settings = await manager.setDefaultSaveDirectory(path)
         }
     }
 
@@ -418,9 +415,9 @@ final class AppViewModel: ObservableObject {
         // picker) update this frame, then commit through the actor.
         settings = copy
         clipboardMonitor?.isEnabled = copy.clipboardMonitorEnabled
+        let committed = copy
         Task {
-            await manager.updateSettings(copy)
-            settings = await manager.currentSettings
+            settings = await manager.apply { $0 = committed }
         }
         if launchChanged { LoginItemService.setEnabled(copy.launchAtLogin) }
         if notificationsNewlyWanted { NotificationService.requestAuthorization() }

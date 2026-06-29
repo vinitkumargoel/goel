@@ -66,11 +66,19 @@ public actor DownloadManager {
 
     // MARK: Side-effect services
 
-    /// Holds (at most one) "prevent idle sleep" assertion while transfers run.
-    let powerManager = PowerManager()
+    // Injected behind narrow `Sendable` ports (see `Ports/PlatformPorts.swift`) so
+    // the scheduler's decision logic is testable; the inits default them to the real
+    // adapters, so the app gets the live IOKit / DispatchSource / Process behaviour.
+
+    /// Holds (at most one) "prevent idle sleep" assertion while transfers run, and
+    /// reports the power source.
+    let power: any PowerControlling
 
     /// Watches the configured folder for dropped `.torrent` files.
-    let watchFolder = WatchFolderMonitor()
+    let folderWatch: any FolderWatching
+
+    /// Screens completed files with the configured external antivirus.
+    let scanner: any FileScanning
 
     /// The periodic backup loop, when ``AppSettings/backupEnabled`` is on.
     var backupTask: Task<Void, Never>?
@@ -109,13 +117,19 @@ public actor DownloadManager {
         torrentEngine: any DownloadEngine,
         hlsEngine: (any DownloadEngine)? = nil,
         settings: AppSettings = AppSettings(),
-        store: PersistenceStore? = nil
+        store: PersistenceStore? = nil,
+        power: any PowerControlling = SystemPowerControl(),
+        folderWatch: any FolderWatching = SystemFolderWatch(),
+        scanner: any FileScanning = ProcessFileScan()
     ) {
         self.httpEngine = httpEngine
         self.torrentEngine = torrentEngine
         self.hlsEngine = hlsEngine ?? HLSEngine(profile: settings.effectiveProfile)
         self.settings = settings
         self.store = store
+        self.power = power
+        self.folderWatch = folderWatch
+        self.scanner = scanner
         if store != nil {
             let (stream, continuation) = AsyncStream<PersistOp>.makeStream(bufferingPolicy: .unbounded)
             self.persistStream = stream
@@ -125,7 +139,13 @@ public actor DownloadManager {
 
     /// Convenience initialiser wiring the production ``HTTPEngine`` and the
     /// ``MockTorrentEngine``.
-    public init(settings: AppSettings = AppSettings(), store: PersistenceStore? = nil) {
+    public init(
+        settings: AppSettings = AppSettings(),
+        store: PersistenceStore? = nil,
+        power: any PowerControlling = SystemPowerControl(),
+        folderWatch: any FolderWatching = SystemFolderWatch(),
+        scanner: any FileScanning = ProcessFileScan()
+    ) {
         self.httpEngine = HTTPEngine(profile: settings.effectiveProfile)
         self.torrentEngine = TorrentEngine(
             profile: settings.effectiveProfile,
@@ -139,6 +159,9 @@ public actor DownloadManager {
         self.hlsEngine = HLSEngine(profile: settings.effectiveProfile)
         self.settings = settings
         self.store = store
+        self.power = power
+        self.folderWatch = folderWatch
+        self.scanner = scanner
         if store != nil {
             let (stream, continuation) = AsyncStream<PersistOp>.makeStream(bufferingPolicy: .unbounded)
             self.persistStream = stream
@@ -316,37 +339,42 @@ public actor DownloadManager {
     public func resolveMetadata(for source: DownloadSource, saveDirectory: String? = nil) async -> DownloadPreview {
         let directory = saveDirectory ?? defaultDirectory(for: source)
         let fallbackName = Self.defaultName(for: source)
+        let kind = source.kind
+        let engine = engine(for: source)
 
-        switch source.kind {
+        // The seam: ask the engine to resolve, never downcasting to a concrete
+        // type. Each engine reports what it could (or couldn't) find; the manager
+        // folds that into the preview, applying its own fallback name and the
+        // kind-specific note.
+        guard let meta = await engine.resolveMetadata(for: source, in: directory) else {
+            // Nil means the engine couldn't resolve this time (server unreachable /
+            // no peers answered) or doesn't probe at all. Only an engine that
+            // ADVERTISES metadata resolution earns an explanatory note; otherwise
+            // the preview is a plain best-effort name.
+            let note = engine.capabilities.contains(.resolvesMetadata) ? Self.unresolvedNote(for: kind) : nil
+            return DownloadPreview(
+                source: source, suggestedName: fallbackName, totalBytes: nil,
+                isEstimatedSize: kind == .hls, kind: kind, note: note)
+        }
+
+        let name = meta.name.isEmpty ? fallbackName : meta.name
+        return DownloadPreview(
+            source: source, suggestedName: name, totalBytes: meta.totalBytes,
+            isEstimatedSize: meta.isEstimatedSize, files: meta.files, kind: kind,
+            note: meta.reachable ? nil : Self.unresolvedNote(for: kind))
+    }
+
+    /// The non-fatal note shown when a source's metadata couldn't be resolved up
+    /// front. Kind-specific so the wording matches the failure mode; the user can
+    /// always still start the download.
+    private static func unresolvedNote(for kind: DownloadKind) -> String? {
+        switch kind {
         case .http:
-            guard case .url(let url) = source, let http = httpEngine as? HTTPEngine else {
-                return DownloadPreview(source: source, suggestedName: fallbackName,
-                                       totalBytes: nil, kind: .http)
-            }
-            let r = await http.resolveMetadata(for: url, currentName: fallbackName)
-            return DownloadPreview(
-                source: source, suggestedName: r.name, totalBytes: r.totalBytes, kind: .http,
-                note: r.reachable ? nil : "Couldn’t reach the server — it may still work when you start.")
-
+            return "Couldn’t reach the server — it may still work when you start."
         case .torrent:
-            guard let torrent = torrentEngine as? TorrentEngine else {
-                return DownloadPreview(source: source, suggestedName: fallbackName,
-                                       totalBytes: nil, kind: .torrent)
-            }
-            if let m = await torrent.resolveMetadata(for: source, saveDirectory: directory) {
-                let name = m.name.isEmpty ? fallbackName : DownloadTask.sanitizedName(m.name)
-                return DownloadPreview(source: source, suggestedName: name, totalBytes: m.totalBytes,
-                                       files: m.files, kind: .torrent)
-            }
-            return DownloadPreview(
-                source: source, suggestedName: fallbackName, totalBytes: nil, kind: .torrent,
-                note: "No peers answered in time, so the file list isn’t available yet. You can still start — it will resolve while downloading.")
-
+            return "No peers answered in time, so the file list isn’t available yet. You can still start — it will resolve while downloading."
         case .hls:
-            // HLS size is only knowable by walking the playlist; show the name now
-            // and let the exact size settle once the download starts.
-            return DownloadPreview(source: source, suggestedName: fallbackName,
-                                   totalBytes: nil, isEstimatedSize: true, kind: .hls)
+            return nil
         }
     }
 
@@ -434,9 +462,9 @@ public actor DownloadManager {
         observers.removeAll()
         backupTask?.cancel()
         backupTask = nil
-        let watchFolder = self.watchFolder
-        Task { await watchFolder.stop() }
-        powerManager.setPreventSleep(false)
+        let folderWatch = self.folderWatch
+        Task { await folderWatch.stop() }
+        power.setPreventSleep(false)
         // Let the persistence worker drain any queued writes, then exit.
         persistContinuation?.finish()
     }
@@ -455,28 +483,46 @@ public actor DownloadManager {
         for id in ids { await resume(id) }
     }
 
-    /// Switch the active traffic profile. Delegates to ``updateSettings(_:)`` so
-    /// the new limits reach both engines and the scheduler re-runs (the
-    /// simultaneous cap may have changed).
-    public func setProfile(_ name: String) async {
-        var updated = settings
-        updated.selectedProfileName = name
-        await updateSettings(updated)
+    /// Apply a settings change in one deep call: mutate a copy of the current
+    /// ``settings``, push it through the full ``updateSettings(_:)`` cascade, and
+    /// return the committed value — so a caller never needs a separate
+    /// read-after-write round-trip to learn what was actually stored.
+    @discardableResult
+    public func apply(_ change: @Sendable (inout AppSettings) -> Void) async -> AppSettings {
+        var copy = settings
+        change(&copy)
+        await updateSettings(copy)
+        return settings
+    }
+
+    /// Switch the active traffic profile. Delegates to ``apply(_:)`` so the new
+    /// limits reach both engines and the scheduler re-runs (the simultaneous cap
+    /// may have changed), and returns the committed settings.
+    @discardableResult
+    public func setProfile(_ name: String) async -> AppSettings {
+        await apply { $0.selectedProfileName = name }
     }
 
     /// Toggle the "snail" speed limit. When disabled, speeds become unlimited.
-    /// Delegates to ``updateSettings(_:)`` so both engines are re-applied live.
-    public func setSpeedLimitEnabled(_ enabled: Bool) async {
-        var updated = settings
-        updated.speedLimitEnabled = enabled
-        await updateSettings(updated)
+    /// Delegates to ``apply(_:)`` so both engines are re-applied live, and returns
+    /// the committed settings.
+    @discardableResult
+    public func setSpeedLimitEnabled(_ enabled: Bool) async -> AppSettings {
+        await apply { $0.speedLimitEnabled = enabled }
     }
 
-    /// Change the default save folder for future downloads.
-    public func setDefaultSaveDirectory(_ path: String) {
+    /// Change the default save folder for future downloads, returning the
+    /// committed settings. The default-folder rule is read live by ``add`` for
+    /// each new download, so this only persists and publishes — it deliberately
+    /// does NOT run the full ``updateSettings`` cascade (which would needlessly
+    /// re-arm the watch-folder/backup timers and re-run the scheduler on a
+    /// directory-only change).
+    @discardableResult
+    public func setDefaultSaveDirectory(_ path: String) async -> AppSettings {
         settings.defaultSaveDirectory = path
         persistSettings()
         publish()
+        return settings
     }
 
     /// Replace the entire settings object and re-apply every dependent subsystem:

@@ -15,6 +15,11 @@ import CommonCrypto
 /// so the scheduler and UI treat it like any other download.
 public actor HLSEngine: DownloadEngine {
     public nonisolated let kind: DownloadKind = .hls
+
+    /// HLS has no cheap up-front probe (size needs a full playlist walk) and no
+    /// per-file selection, so it advertises no optional capabilities.
+    public nonisolated var capabilities: EngineCapabilities { [] }
+
     private nonisolated let hub = EventHub()
     private nonisolated let session: URLSession
     private nonisolated let userAgent: String
@@ -67,6 +72,20 @@ public actor HLSEngine: DownloadEngine {
     public func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
 
     public func setMaxHeight(_ height: Int) { maxHeight = max(0, height) }
+
+    /// Apply the engine-agnostic configuration: the HLS engine consumes only the
+    /// preferred max height and ignores the HTTP / torrent slices.
+    public func configure(_ configuration: EngineConfiguration) async {
+        setMaxHeight(configuration.hlsMaxHeight)
+    }
+
+    /// HLS can't cheaply probe size without walking the whole playlist, which the
+    /// preview deliberately skips. It surfaces no name and no size, flagging the
+    /// size as an estimate so the UI shows it as approximate until the download
+    /// settles the exact figure. The manager folds in its own fallback name.
+    public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
+        EngineMetadata(name: "", totalBytes: nil, isEstimatedSize: true)
+    }
 
     public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {}
 

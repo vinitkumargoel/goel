@@ -18,21 +18,26 @@ extension DownloadManager {
     }
 
     /// Push limits *and* the network/session configuration derived from the
-    /// current settings to both engines. `applyLimits` is part of the
-    /// `DownloadEngine` protocol; `applyNetworkConfig` / `applySessionConfig` are
-    /// concrete to the production engines, so they apply only when those engines
-    /// are in use (a test fake simply skips them).
+    /// current settings to every engine. `applyLimits` is the bandwidth/connection
+    /// hot path (kept separate); `configure(_:)` is the unified `DownloadEngine`
+    /// seam — the manager builds one ``EngineConfiguration`` and hands the same
+    /// value to each engine, which picks out only the slice it understands. No
+    /// engine is downcast to a concrete type.
     func applyEngineConfigs() async {
         await applyLimits()
-        if let http = httpEngine as? HTTPEngine {
-            await http.applyNetworkConfig(httpNetworkConfig())
+        let configuration = engineConfiguration()
+        for engine in [httpEngine, torrentEngine, hlsEngine] {
+            await engine.configure(configuration)
         }
-        if let torrent = torrentEngine as? TorrentEngine {
-            await torrent.applySessionConfig(torrentSessionConfig())
-        }
-        if let hls = hlsEngine as? HLSEngine {
-            await hls.setMaxHeight(settings.hlsMaxHeight)
-        }
+    }
+
+    /// Assemble the engine-agnostic configuration from the current settings.
+    private func engineConfiguration() -> EngineConfiguration {
+        EngineConfiguration(
+            http: httpNetworkConfig(),
+            torrent: torrentSessionConfig(),
+            hlsMaxHeight: settings.hlsMaxHeight
+        )
     }
 
     private func httpNetworkConfig() -> HTTPNetworkConfig {

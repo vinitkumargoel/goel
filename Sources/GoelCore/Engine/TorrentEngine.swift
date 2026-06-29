@@ -10,6 +10,11 @@ import TorrentBridge
 /// resolve metadata through libtorrent's DHT before the file list is known.
 public actor TorrentEngine: DownloadEngine {
     public nonisolated let kind: DownloadKind = .torrent
+
+    /// libtorrent resolves a torrent's file list up front and honours per-file
+    /// priority, but doesn't expose the HTTP engine's resume-data blobs.
+    public nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .perFilePriority] }
+
     private nonisolated let hub = EventHub()
 
     /// libtorrent session configuration (DHT/LSD/uTP/encryption).
@@ -98,6 +103,13 @@ public actor TorrentEngine: DownloadEngine {
     /// created; an already-running session keeps its current settings.
     public func applySessionConfig(_ config: SessionConfig) { self.config = config }
 
+    /// Apply the engine-agnostic configuration: the torrent engine consumes only
+    /// the `.torrent` slice (via the existing ``applySessionConfig(_:)``) and
+    /// ignores the HTTP / HLS slices.
+    public func configure(_ configuration: EngineConfiguration) async {
+        applySessionConfig(configuration.torrent)
+    }
+
     public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {
         guard let handle = handles[id] else { return }
         gt_set_file_priority(handle, Int32(fileID), Int32(Self.toLibtorrentPriority(priority)))
@@ -136,6 +148,16 @@ public actor TorrentEngine: DownloadEngine {
             try? await Task.sleep(nanoseconds: 400_000_000)
         }
         return nil   // timed out before any peer supplied the metadata
+    }
+
+    /// Resolve metadata for the add-confirmation preview through the engine-agnostic
+    /// seam, adapting the concrete ``resolveMetadata(for:saveDirectory:timeout:)``.
+    /// The torrent name is sanitised here; an empty name lets the manager fold in
+    /// its own fallback. Returns nil when no peer supplied metadata in time.
+    public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
+        guard let m = await resolveMetadata(for: source, saveDirectory: directory) else { return nil }
+        let name = m.name.isEmpty ? "" : DownloadTask.sanitizedName(m.name)
+        return EngineMetadata(name: name, totalBytes: m.totalBytes, files: m.files)
     }
 
     // MARK: Session / handle setup

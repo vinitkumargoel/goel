@@ -326,6 +326,43 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(http.applyLimitsCalls.last?.maxDownloadBytesPerSec, TrafficProfile.low.maxDownloadBytesPerSec)
     }
 
+    func testApplyReturnsCommittedSettingsAndReachesEngine() async {
+        let http = FakeEngine(kind: .http)
+        let torrent = FakeEngine(kind: .torrent)
+        let manager = DownloadManager(
+            httpEngine: http,
+            torrentEngine: torrent,
+            settings: settings(profile(maxSimultaneousDownloads: 5))
+        )
+
+        // The deep apply() commits the change AND returns the stored result, so a
+        // caller never needs a separate read-after-write to learn what was saved…
+        let committed = await manager.apply { $0.selectedProfileName = "Low" }
+        XCTAssertEqual(committed.selectedProfileName, "Low")
+        // …and the same change cascaded down to BOTH engines via applyLimits.
+        XCTAssertEqual(http.applyLimitsCalls.last?.name, "Low")
+        XCTAssertEqual(torrent.applyLimitsCalls.last?.name, "Low")
+    }
+
+    func testApplySnailOffSendsZeroCapsToEngine() async {
+        let http = FakeEngine(kind: .http)
+        let torrent = FakeEngine(kind: .torrent)
+        let manager = DownloadManager(
+            httpEngine: http,
+            torrentEngine: torrent,
+            settings: settings(profile(maxSimultaneousDownloads: 5))
+        )
+
+        // Disabling the speed limit through apply() reports unlimited (0) caps on
+        // the committed settings and pushes those same zero caps to the engines.
+        let committed = await manager.apply { $0.speedLimitEnabled = false }
+        XCTAssertFalse(committed.speedLimitEnabled)
+        XCTAssertEqual(committed.effectiveProfile.maxDownloadBytesPerSec, 0)
+        XCTAssertEqual(http.applyLimitsCalls.last?.maxDownloadBytesPerSec, 0)
+        XCTAssertEqual(http.applyLimitsCalls.last?.maxUploadBytesPerSec, 0)
+        XCTAssertEqual(torrent.applyLimitsCalls.last?.maxDownloadBytesPerSec, 0)
+    }
+
     // MARK: (f) Engine events update the stored task
 
     func testEngineEventsUpdateStoredTask() async throws {

@@ -34,6 +34,10 @@ public actor MockTorrentEngine: DownloadEngine {
 
     public nonisolated let kind: DownloadKind = .torrent
 
+    /// Mirrors ``TorrentEngine``: the mock synthesises a file list up front and
+    /// honours per-file priority, but emits no resume-data blobs.
+    public nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .perFilePriority] }
+
     /// Lock-based fan-out of events to subscribers. Lives outside the actor's
     /// isolation so the synchronous `events(for:)` requirement can be satisfied
     /// by a `nonisolated` method.
@@ -221,6 +225,28 @@ public actor MockTorrentEngine: DownloadEngine {
     /// ``sessionConfiguration()`` snapshots (honest passthrough).
     public func applySessionConfig(_ config: TorrentSessionConfig) async {
         self.sessionConfig = config
+    }
+
+    /// Apply the engine-agnostic configuration: map the shared torrent slice onto
+    /// the mock's richer ``TorrentSessionConfig`` (preserving the mock-only PeX
+    /// flag, which the real session config doesn't carry) and record it.
+    public func configure(_ configuration: EngineConfiguration) async {
+        let t = configuration.torrent
+        await applySessionConfig(TorrentSessionConfig(
+            encryptionMode: t.encryptionMode,
+            enableDHT: t.enableDHT,
+            enablePeX: sessionConfig.enablePeX,
+            enableLPD: t.enableLSD,
+            enableUTP: t.enableUTP
+        ))
+    }
+
+    /// Resolve metadata for the add-confirmation preview through the engine-agnostic
+    /// seam. The mock has no real network, so it returns the same synthesised
+    /// multi-file payload its run loop would produce, exercising the preview path.
+    public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
+        let meta = Self.synthesizeMetadata(name: "")
+        return EngineMetadata(name: meta.name, totalBytes: meta.total, files: meta.files)
     }
 
     public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {
