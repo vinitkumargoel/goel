@@ -11,6 +11,12 @@ import Foundation
 /// as slots free up), capped concurrent magnet-metadata resolutions, and the
 /// bandwidth/connection limits pushed down to both engines via `applyLimits`.
 ///
+/// Beyond raw queueing it is the integration hub for every cross-cutting setting:
+/// it re-applies the engines' network/session configuration, holds a power
+/// assertion while downloads run, drives the watch-folder, schedules periodic
+/// backups, runs the optional antivirus screen on completed files, and resolves
+/// each download's save directory from the configured folder rule.
+///
 /// It is an `actor`, so all queue bookkeeping is serialized and it is `Sendable`
 /// for free. Engines are themselves actors, hence the `await`s. No UI framework
 /// is imported — the manager is pure model logic.
@@ -26,7 +32,8 @@ public actor DownloadManager {
     /// The unified, ordered task list. The single source of truth.
     private var tasks: [DownloadTask] = []
 
-    /// User configuration (active profile, snail flag, default folder).
+    /// User configuration (active profile, snail flag, default folder, plus the
+    /// General/Network/BitTorrent/Notification/Power/Backup/Antivirus panes).
     private var settings: AppSettings
 
     /// Optional on-disk store. When present, the queue and settings survive quit
@@ -50,6 +57,39 @@ public actor DownloadManager {
     /// Snapshot observers.
     private var observers: [UUID: AsyncStream<[DownloadTask]>.Continuation] = [:]
 
+    // MARK: Side-effect services
+
+    /// Holds (at most one) "prevent idle sleep" assertion while transfers run.
+    private let powerManager = PowerManager()
+
+    /// Watches the configured folder for dropped `.torrent` files.
+    private let watchFolder = WatchFolderMonitor()
+
+    /// The periodic backup loop, when ``AppSettings/backupEnabled`` is on.
+    private var backupTask: Task<Void, Never>?
+
+    // MARK: Persistence pipeline
+
+    /// A single on-disk mutation, funnelled through the serial ``persistContinuation``.
+    private enum PersistOp: Sendable {
+        case saveTask(DownloadTask)
+        case deleteTask(UUID)
+        case saveSettings(AppSettings)
+    }
+
+    /// The (one-shot) source of the serial persistence stream, consumed the first
+    /// time a write is enqueued. `nil` once started, or when there is no store.
+    private var persistStream: AsyncStream<PersistOp>?
+
+    /// The write side of the serial persistence pipeline.
+    private var persistContinuation: AsyncStream<PersistOp>.Continuation?
+
+    /// The single worker draining ``persistStream`` in enqueue order.
+    private var persistWorker: Task<Void, Never>?
+
+    /// Whether ``persistWorker`` has been started.
+    private var persistStarted = false
+
     // MARK: Init
 
     /// Inject the two engines (typed as `any DownloadEngine` so a real
@@ -64,6 +104,11 @@ public actor DownloadManager {
         self.torrentEngine = torrentEngine
         self.settings = settings
         self.store = store
+        if store != nil {
+            let (stream, continuation) = AsyncStream<PersistOp>.makeStream(bufferingPolicy: .unbounded)
+            self.persistStream = stream
+            self.persistContinuation = continuation
+        }
     }
 
     /// Convenience initialiser wiring the production ``HTTPEngine`` and the
@@ -73,6 +118,11 @@ public actor DownloadManager {
         self.torrentEngine = MockTorrentEngine(profile: settings.effectiveProfile)
         self.settings = settings
         self.store = store
+        if store != nil {
+            let (stream, continuation) = AsyncStream<PersistOp>.makeStream(bufferingPolicy: .unbounded)
+            self.persistStream = stream
+            self.persistContinuation = continuation
+        }
     }
 
     // MARK: Persistence
@@ -82,9 +132,12 @@ public actor DownloadManager {
     /// Call this once, right after construction, before adding new downloads.
     /// Persisted settings replace the in-memory ones; persisted tasks are loaded
     /// with their `bytesDownloaded`/`resumeData`/error/seeding state intact.
-    /// Tasks that were mid-flight (downloading / requesting metadata / queued)
-    /// come back `.paused` so the user explicitly resumes them; terminal and
-    /// already-paused tasks keep their state. No engine work is started here.
+    /// Tasks that were mid-flight (downloading / requesting metadata / queued) —
+    /// and tasks that were seeding — come back `.paused` so the user explicitly
+    /// resumes them (a restored seeding torrent runs no engine, so showing
+    /// "Seeding" would be a lie; paused is honest and resumable). Terminal and
+    /// already-paused tasks keep their state. No engine work is started here; the
+    /// restored settings are re-applied to the engines and side-effect services.
     public func restore() async {
         guard let store else { return }
 
@@ -109,10 +162,10 @@ public actor DownloadManager {
         tasks = loaded.map { task in
             var t = task
             switch t.status {
-            case .downloading, .requestingMetadata, .queued:
+            case .downloading, .requestingMetadata, .queued, .seeding:
                 t.status = .paused
             default:
-                break   // paused / seeding / completed / failed are preserved
+                break   // paused / completed / failed are preserved
             }
             t.downloadSpeed = 0
             t.uploadSpeed = 0
@@ -122,7 +175,10 @@ public actor DownloadManager {
 
         // Reflect any status normalisation back to disk.
         for task in tasks { persist(task) }
-        await applyLimits()
+        await applyEngineConfigs()
+        await updateWatchFolder()
+        updateBackupSchedule()
+        updatePowerAssertion()
         publish()
     }
 
@@ -139,34 +195,53 @@ public actor DownloadManager {
         FileHandle.standardError.write(Data("[GoelDownloader] persistence error: \(error)\n".utf8))
     }
 
-    /// Persist a single task off-actor. A failed write is captured and surfaced
-    /// via ``currentPersistenceWarning`` rather than silently dropped, but it
-    /// never stalls the queue.
+    /// Start the single serial persistence worker the first time it is needed.
+    ///
+    /// All on-disk mutations flow through one ordered stream so they are applied
+    /// strictly in enqueue order. This removes the race where two independent
+    /// detached writes reached GRDB's queue in an undefined order and a stale
+    /// snapshot landed last — e.g. a `.finished` snapshot (still `.downloading`)
+    /// overwriting the authoritative `.completed` write, which would resurface a
+    /// finished download as Paused on the next launch.
+    private func ensurePersistWorker() {
+        guard !persistStarted, let store, let stream = persistStream else { return }
+        persistStarted = true
+        persistStream = nil
+        persistWorker = Task.detached { [weak self] in
+            for await op in stream {
+                do {
+                    switch op {
+                    case .saveTask(let task): try store.saveTask(task)
+                    case .deleteTask(let id): try store.deleteTask(id)
+                    case .saveSettings(let settings): try store.saveSettings(settings)
+                    }
+                } catch {
+                    await self?.notePersistenceError(error)
+                }
+            }
+        }
+    }
+
+    /// Persist a single task. Enqueued on the serial pipeline (see
+    /// ``ensurePersistWorker()``) so it can never be overtaken by an older write.
     private func persist(_ task: DownloadTask) {
-        guard let store else { return }
-        Task.detached { [weak self] in
-            do { try store.saveTask(task) }
-            catch { await self?.notePersistenceError(error) }
-        }
+        guard store != nil else { return }
+        ensurePersistWorker()
+        persistContinuation?.yield(.saveTask(task))
     }
 
-    /// Persist the current settings off-actor.
+    /// Persist the current settings on the serial pipeline.
     private func persistSettings() {
-        guard let store else { return }
-        let snapshot = settings
-        Task.detached { [weak self] in
-            do { try store.saveSettings(snapshot) }
-            catch { await self?.notePersistenceError(error) }
-        }
+        guard store != nil else { return }
+        ensurePersistWorker()
+        persistContinuation?.yield(.saveSettings(settings))
     }
 
-    /// Remove a persisted task off-actor.
+    /// Remove a persisted task on the serial pipeline.
     private func persistRemoval(_ id: DownloadTask.ID) {
-        guard let store else { return }
-        Task.detached { [weak self] in
-            do { try store.deleteTask(id) }
-            catch { await self?.notePersistenceError(error) }
-        }
+        guard store != nil else { return }
+        ensurePersistWorker()
+        persistContinuation?.yield(.deleteTask(id))
     }
 
     // MARK: Observation
@@ -219,22 +294,25 @@ public actor DownloadManager {
 
     // MARK: Public actions
 
-    /// Add a download. If a task with the same `source.locator` already exists it
-    /// is **not** duplicated — the existing task is returned instead. The new
-    /// task starts `.queued`; the scheduler promotes it when a slot is free.
+    /// Add a download. If a task whose source resolves to the same identity
+    /// (``DownloadSource/dedupKey`` — the infohash for a magnet) already exists it
+    /// is **not** duplicated — the existing task is returned instead. When no
+    /// explicit `saveDirectory` is given the folder is chosen per the configured
+    /// ``AppSettings/defaultFolderRule``. The new task starts `.queued`; the
+    /// scheduler promotes it when a slot is free.
     @discardableResult
     public func add(
         source: DownloadSource,
         saveDirectory: String? = nil,
         priority: FilePriority = .normal
     ) -> DownloadTask {
-        if let existing = tasks.first(where: { $0.source.locator == source.locator }) {
+        if let existing = tasks.first(where: { $0.source.dedupKey == source.dedupKey }) {
             return existing
         }
         let task = DownloadTask(
             source: source,
             name: Self.defaultName(for: source),
-            saveDirectory: saveDirectory ?? settings.defaultSaveDirectory,
+            saveDirectory: saveDirectory ?? defaultDirectory(for: source),
             status: .queued,
             priority: priority
         )
@@ -266,6 +344,7 @@ public actor DownloadManager {
         // Re-validate after the await: the task may have completed or failed while
         // the actor was suspended — never clobber a terminal state with `.paused`.
         guard let i = index(of: id), !tasks[i].status.isTerminal else {
+            updatePowerAssertion()
             publish()
             schedule()
             return
@@ -274,6 +353,7 @@ public actor DownloadManager {
         tasks[i].downloadSpeed = 0
         tasks[i].uploadSpeed = 0
         persist(tasks[i])
+        updatePowerAssertion()
         publish()
         schedule()
     }
@@ -313,17 +393,25 @@ public actor DownloadManager {
         engineStarted.remove(id)
         if let i = index(of: id) { tasks.remove(at: i) }
         persistRemoval(id)
+        updatePowerAssertion()
         publish()
         schedule()
     }
 
-    /// Tear down all live subscriptions and observers. Call before releasing the
-    /// manager so no consumer Tasks or stream continuations are left dangling.
+    /// Tear down all live subscriptions, observers and side-effect services. Call
+    /// before releasing the manager so nothing is left dangling.
     public func shutdown() {
         for consumer in consumers.values { consumer.cancel() }
         consumers.removeAll()
         for observer in observers.values { observer.finish() }
         observers.removeAll()
+        backupTask?.cancel()
+        backupTask = nil
+        let watchFolder = self.watchFolder
+        Task { await watchFolder.stop() }
+        powerManager.setPreventSleep(false)
+        // Let the persistence worker drain any queued writes, then exit.
+        persistContinuation?.finish()
     }
 
     /// Pause every queued or active task.
@@ -340,23 +428,21 @@ public actor DownloadManager {
         for id in ids { await resume(id) }
     }
 
-    /// Switch the active traffic profile. Re-applies limits to both engines live
-    /// and re-runs the scheduler (the simultaneous cap may have changed).
+    /// Switch the active traffic profile. Delegates to ``updateSettings(_:)`` so
+    /// the new limits reach both engines and the scheduler re-runs (the
+    /// simultaneous cap may have changed).
     public func setProfile(_ name: String) async {
-        settings.selectedProfileName = name
-        persistSettings()
-        await applyLimits()
-        publish()
-        schedule()
+        var updated = settings
+        updated.selectedProfileName = name
+        await updateSettings(updated)
     }
 
     /// Toggle the "snail" speed limit. When disabled, speeds become unlimited.
-    /// Re-applies limits to both engines live.
+    /// Delegates to ``updateSettings(_:)`` so both engines are re-applied live.
     public func setSpeedLimitEnabled(_ enabled: Bool) async {
-        settings.speedLimitEnabled = enabled
-        persistSettings()
-        await applyLimits()
-        publish()
+        var updated = settings
+        updated.speedLimitEnabled = enabled
+        await updateSettings(updated)
     }
 
     /// Change the default save folder for future downloads.
@@ -364,6 +450,22 @@ public actor DownloadManager {
         settings.defaultSaveDirectory = path
         persistSettings()
         publish()
+    }
+
+    /// Replace the entire settings object and re-apply every dependent subsystem:
+    /// engine bandwidth/connection limits, HTTP network config, torrent session
+    /// config, the power assertion, the watch-folder, the backup schedule, and the
+    /// scheduler. The default-folder rule needs no re-application here — it is read
+    /// live by ``add(source:saveDirectory:priority:)`` for each new download.
+    public func updateSettings(_ newSettings: AppSettings) async {
+        settings = newSettings
+        persistSettings()
+        await applyEngineConfigs()
+        updatePowerAssertion()
+        await updateWatchFolder()
+        updateBackupSchedule()
+        publish()
+        schedule()
     }
 
     /// Change a file's selection / priority within a (multi-file) task.
@@ -382,11 +484,252 @@ public actor DownloadManager {
         publish()
     }
 
-    /// Push the current effective profile to both engines. Useful at startup.
+    /// Push the current effective profile's bandwidth/connection caps to both
+    /// engines. Useful at startup and whenever the profile or snail changes.
     public func applyLimits() async {
         let profile = settings.effectiveProfile
         await httpEngine.applyLimits(profile)
         await torrentEngine.applyLimits(profile)
+    }
+
+    // MARK: Engine configuration
+
+    /// Push limits *and* the network/session configuration derived from the
+    /// current settings to both engines. `applyLimits` is part of the
+    /// `DownloadEngine` protocol; `applyNetworkConfig` / `applySessionConfig` are
+    /// concrete to the production engines, so they apply only when those engines
+    /// are in use (a test fake simply skips them).
+    private func applyEngineConfigs() async {
+        await applyLimits()
+        if let http = httpEngine as? HTTPEngine {
+            await http.applyNetworkConfig(httpNetworkConfig())
+        }
+        if let torrent = torrentEngine as? MockTorrentEngine {
+            await torrent.applySessionConfig(torrentSessionConfig())
+        }
+    }
+
+    private func httpNetworkConfig() -> HTTPNetworkConfig {
+        HTTPNetworkConfig(
+            timeout: settings.connectionTimeout,
+            retryCount: settings.retryCount,
+            retryInterval: settings.retryInterval,
+            userAgent: settings.userAgent,
+            proxyMode: settings.proxyMode,
+            proxyHost: settings.proxyHost,
+            proxyPort: settings.proxyPort,
+            cookieAuthEnabled: settings.cookieAuthEnabled
+        )
+    }
+
+    private func torrentSessionConfig() -> MockTorrentEngine.TorrentSessionConfig {
+        MockTorrentEngine.TorrentSessionConfig(
+            encryptionMode: settings.btEncryptionMode,
+            enableDHT: settings.btEnableDHT,
+            enablePeX: settings.btEnablePeX,
+            enableLPD: settings.btEnableLPD,
+            enableUTP: settings.btEnableUTP
+        )
+    }
+
+    /// Re-apply the HTTP engine's per-server connection cap so the *aggregate* of
+    /// all concurrently running HTTP downloads stays within the profile's global
+    /// `maxConnections`, instead of every download independently claiming the full
+    /// per-server fan-out. Best-effort: already-running segment groups keep their
+    /// governor; the tighter cap takes effect for subsequently computed segments.
+    private func reapplyHTTPBudget() async {
+        guard let http = httpEngine as? HTTPEngine else { return }
+        var profile = settings.effectiveProfile
+        let activeHTTP = tasks.filter { $0.source.kind == .http && $0.status.isActive }.count
+        if profile.maxConnections > 0, activeHTTP > 0 {
+            let perDownload = max(1, profile.maxConnections / activeHTTP)
+            profile.maxConnectionsPerServer = min(profile.maxConnectionsPerServer, perDownload)
+        }
+        await http.applyLimits(profile)
+    }
+
+    // MARK: Default-folder rule
+
+    /// Resolve the save directory for a new download from
+    /// ``AppSettings/defaultFolderRule``, using ``AppSettings/defaultSaveDirectory``
+    /// as the base/fixed folder.
+    private func defaultDirectory(for source: DownloadSource) -> String {
+        let base = settings.defaultSaveDirectory
+        switch settings.defaultFolderRule {
+        case "byType", "automatic":
+            return (base as NSString).appendingPathComponent(Self.categoryFolder(for: source))
+        case "bySource":
+            let bucket = source.kind == .torrent ? "Torrents" : "HTTP Downloads"
+            return (base as NSString).appendingPathComponent(bucket)
+        default:   // "fixed"
+            return base
+        }
+    }
+
+    /// A coarse content category derived from the source's apparent file
+    /// extension (torrents bucket together). Mirrors the app's file-type buckets
+    /// without importing the app layer.
+    private static func categoryFolder(for source: DownloadSource) -> String {
+        if source.kind == .torrent { return "Torrents" }
+        let name = defaultName(for: source).lowercased()
+        func ext(_ list: [String]) -> Bool { list.contains { name.hasSuffix(".\($0)") } }
+        if ext(["mkv", "mp4", "avi", "mov", "webm", "m4v", "flv"]) { return "Video" }
+        if ext(["mp3", "flac", "wav", "aac", "m4a", "ogg", "opus"]) { return "Audio" }
+        if ext(["jpg", "jpeg", "png", "gif", "webp", "heic", "svg"]) { return "Images" }
+        if ext(["iso", "dmg", "pkg", "app", "exe", "deb", "msi", "xip"]) { return "Software" }
+        if ext(["zip", "gz", "tar", "7z", "rar", "bz2", "xz"]) { return "Archives" }
+        if ext(["pdf", "doc", "docx", "txt", "epub", "csv", "xlsx"]) { return "Documents" }
+        return "Other"
+    }
+
+    // MARK: Power management
+
+    /// Recompute and apply the "prevent idle sleep" assertion from the current
+    /// settings and active-download state. Idempotent (see ``PowerManager``).
+    private func updatePowerAssertion() {
+        powerManager.setPreventSleep(shouldPreventSleep())
+    }
+
+    private func shouldPreventSleep() -> Bool {
+        guard settings.preventSleepWhileDownloading else { return false }
+
+        var hasActiveDownload = false
+        var hasSeeding = false
+        for task in tasks {
+            switch task.status {
+            case .downloading, .requestingMetadata: hasActiveDownload = true
+            case .seeding: hasSeeding = true
+            default: break
+            }
+        }
+        guard hasActiveDownload || hasSeeding else { return false }
+
+        let onBattery = powerManager.isOnBattery
+
+        // Seeding only (no active download): a lighter case the user can opt out of.
+        if !hasActiveDownload {
+            if settings.allowSleepWhileSeeding { return false }
+            if settings.dontSeedOnBattery, onBattery { return false }
+            return true
+        }
+
+        // Active downloads in flight. Honour the on-battery power-saving opt-outs.
+        // `batteryThresholdPercent` cannot be read precisely at this layer
+        // (PowerManager exposes only on-battery state), so these are best-effort:
+        // while on battery we release the keep-awake hold when the user has asked
+        // us to back off on battery.
+        if onBattery, settings.allowSleepIfResumable { return false }
+        if onBattery, settings.pauseBelowBatteryThreshold { return false }
+        return true
+    }
+
+    // MARK: Watch folder
+
+    /// Start or stop watching the configured folder per the BitTorrent settings.
+    private func updateWatchFolder() async {
+        guard settings.btWatchFolderEnabled, !settings.btWatchFolderPath.isEmpty else {
+            await watchFolder.stop()
+            return
+        }
+        let autoStart = settings.btWatchStartWithoutConfirmation
+        await watchFolder.start(path: settings.btWatchFolderPath) { [weak self] url in
+            Task { await self?.ingestWatchedTorrent(url, autoStart: autoStart) }
+        }
+    }
+
+    /// Add a `.torrent` discovered in the watch folder. `add()` queues it and the
+    /// scheduler promotes it automatically (the "start without confirmation"
+    /// behaviour); when confirmation is required we add it then pause it so it
+    /// waits for the user to explicitly resume.
+    private func ingestWatchedTorrent(_ url: URL, autoStart: Bool) async {
+        let task = add(source: .torrentFile(url))
+        if !autoStart {
+            await pause(task.id)
+        }
+    }
+
+    // MARK: Backup
+
+    /// (Re)arm the periodic backup loop per the backup settings.
+    private func updateBackupSchedule() {
+        backupTask?.cancel()
+        backupTask = nil
+        guard settings.backupEnabled, store != nil else { return }
+        let hours = max(1, settings.backupIntervalHours)
+        let interval = UInt64(hours) * 3600 * 1_000_000_000
+        backupTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: interval)
+                if Task.isCancelled { return }
+                await self?.writeBackup()
+            }
+        }
+    }
+
+    /// Write a timestamped JSON backup of the current task list into a "Backups"
+    /// subfolder of the default save directory. Off-actor so disk I/O never stalls
+    /// the queue; failures are surfaced like any other persistence problem.
+    private func writeBackup() async {
+        guard let store else { return }
+        let snapshot = tasks
+        let baseDir = settings.defaultSaveDirectory
+        Task.detached { [weak self] in
+            do {
+                let data = try store.exportTasks(snapshot)
+                let dir = (baseDir as NSString).appendingPathComponent("GoelDownloader Backups")
+                try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+                let stamp = Self.backupStampFormatter.string(from: Date())
+                let file = (dir as NSString).appendingPathComponent("backup-\(stamp).json")
+                try data.write(to: URL(fileURLWithPath: file))
+            } catch {
+                await self?.notePersistenceError(error)
+            }
+        }
+    }
+
+    private static let backupStampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd-HHmmss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    // MARK: Completion side-effects
+
+    /// React to a download reaching `.completed`: optionally screen the finished
+    /// file with the configured antivirus and delete a consumed local `.torrent`.
+    /// Both run off-actor and best-effort — neither can stall or crash the queue.
+    private func onDownloadCompleted(_ task: DownloadTask) {
+        if settings.antivirusEnabled {
+            let path = task.savePath
+            let executable = settings.antivirusExecutablePath
+            let template = settings.antivirusArgumentTemplate
+            Task.detached {
+                let passed = await AntivirusScanner.scan(
+                    path: path, executablePath: executable, argumentTemplate: template
+                )
+                if !passed {
+                    FileHandle.standardError.write(
+                        Data("[GoelDownloader] antivirus scan flagged or failed: \(path)\n".utf8)
+                    )
+                }
+            }
+        }
+        deleteSourceTorrentIfRequested(task)
+    }
+
+    /// Delete the originating local `.torrent` file once its download has the full
+    /// payload, when ``AppSettings/btAutoDeleteTorrent`` is on. Only local
+    /// (`file:`) `.torrent` sources are touched; remote `.torrent` URLs are left
+    /// alone. Harmless if already removed.
+    private func deleteSourceTorrentIfRequested(_ task: DownloadTask) {
+        guard settings.btAutoDeleteTorrent,
+              case let .torrentFile(url) = task.source,
+              url.isFileURL else { return }
+        let path = url.path
+        Task.detached {
+            try? FileManager.default.removeItem(atPath: path)
+        }
     }
 
     // MARK: Scheduling
@@ -416,10 +759,12 @@ public actor DownloadManager {
         var launches: [(id: UUID, resume: Bool)] = []
         for task in candidates {
             guard freeSlots > 0 else { break }
-            let isMagnet = Self.isMagnet(task.source)
-            // Respect the concurrent metadata-resolution cap: a magnet that would
-            // resolve metadata is held back if the cap is already saturated.
-            if isMagnet, activeMetadata >= maxMetadata { continue }
+            // Only a magnet that STILL lacks metadata will actually occupy a
+            // metadata-resolution slot. An already-resolved (e.g. resumed) magnet
+            // must not be charged against the cap — doing so would wrongly hold
+            // back a fresh magnet that genuinely needs to resolve.
+            let needsMetadata = Self.isMagnet(task.source) && !task.hasMetadata
+            if needsMetadata, activeMetadata >= maxMetadata { continue }
 
             runningSlots.insert(task.id)
             let resume = engineStarted.contains(task.id)
@@ -427,22 +772,32 @@ public actor DownloadManager {
             setOptimisticStatus(task.id)
             launches.append((task.id, resume))
             freeSlots -= 1
-            if isMagnet { activeMetadata += 1 }
+            if needsMetadata { activeMetadata += 1 }
         }
 
         guard !launches.isEmpty else { return }
         publish()
+        updatePowerAssertion()
         for launch in launches {
             Task { await self.launch(launch.id, resume: launch.resume) }
         }
+        Task { await self.reapplyHTTPBudget() }
     }
 
     /// Reflect the imminent start in the task's status before the engine emits
-    /// its own status event, so observers see the queue move immediately.
+    /// its own status event, so observers see the queue move immediately. A magnet
+    /// without metadata starts resolving; a torrent whose payload is already
+    /// complete (a paused-then-resumed seeder) goes straight back to `.seeding`
+    /// rather than falsely showing `.downloading` and occupying a download slot;
+    /// everything else downloads.
     private func setOptimisticStatus(_ id: UUID) {
         guard let i = index(of: id) else { return }
         if Self.isMagnet(tasks[i].source), !tasks[i].hasMetadata {
             tasks[i].status = .requestingMetadata
+        } else if tasks[i].source.kind == .torrent,
+                  tasks[i].hasMetadata,
+                  tasks[i].fractionCompleted >= 1.0 {
+            tasks[i].status = .seeding
         } else {
             tasks[i].status = .downloading
         }
@@ -521,10 +876,12 @@ public actor DownloadManager {
         }
 
         // P1: persist only on meaningful transitions — never on raw progress (a
-        // progress write 10×/sec/task is pure churn, and out-of-order detached
-        // writes could clobber a freshly-written terminal state).
+        // progress write 10×/sec/task is pure churn). `.finished` carries NO state
+        // change (the following `.statusChanged` does), so persisting it would
+        // write a stale `.downloading` snapshot that could land after — and clobber
+        // — the authoritative terminal write; exclude it too.
         switch event {
-        case .progress, .fileProgress:
+        case .progress, .fileProgress, .finished:
             break
         default:
             persist(tasks[i])
@@ -541,8 +898,9 @@ public actor DownloadManager {
     }
 
     /// React to a task leaving the active-download phase: free its slot, stamp a
-    /// completion date, tear down the now-useless event subscription on a terminal
-    /// state, and promote the next queued task.
+    /// completion date, run completion side-effects, tear down the now-useless
+    /// event subscription on a terminal state, refresh the power assertion, and
+    /// promote the next queued task.
     private func handleStatusTransition(_ id: UUID, _ status: DownloadStatus) {
         switch status {
         case .completed, .failed:
@@ -552,16 +910,25 @@ public actor DownloadManager {
             // (Seeding keeps its subscription: it's still active.)
             consumers[id]?.cancel()
             consumers[id] = nil
-            if status == .completed, let i = index(of: id), tasks[i].completedAt == nil {
-                tasks[i].completedAt = Date()
+            if status == .completed, let i = index(of: id) {
+                if tasks[i].completedAt == nil { tasks[i].completedAt = Date() }
+                onDownloadCompleted(tasks[i])
             }
             schedule()
-        case .seeding, .paused:
+        case .seeding:
+            runningSlots.remove(id)
+            // The payload is complete the moment seeding begins — auto-delete the
+            // consumed local `.torrent` now if asked (it never reaches `.completed`
+            // while it seeds).
+            if let i = index(of: id) { deleteSourceTorrentIfRequested(tasks[i]) }
+            schedule()
+        case .paused:
             runningSlots.remove(id)
             schedule()
         default:
             break
         }
+        updatePowerAssertion()
     }
 
     // MARK: Helpers

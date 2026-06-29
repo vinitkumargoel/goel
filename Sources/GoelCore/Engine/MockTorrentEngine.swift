@@ -79,6 +79,36 @@ public actor MockTorrentEngine: DownloadEngine {
         public static let demo = Simulation()
     }
 
+    /// Session-level BitTorrent knobs mirrored from `AppSettings`. The mock does no
+    /// real networking, so these are stored as an honest passthrough and surfaced
+    /// via ``sessionConfiguration()`` rather than altering any wire protocol.
+    public struct TorrentSessionConfig: Sendable, Equatable {
+        /// Wire encryption policy: `prefer` | `require` | `disable`.
+        public var encryptionMode: String
+        /// Distributed Hash Table peer discovery.
+        public var enableDHT: Bool
+        /// Peer Exchange.
+        public var enablePeX: Bool
+        /// Local Peer Discovery.
+        public var enableLPD: Bool
+        /// uTP (Micro Transport Protocol) transport.
+        public var enableUTP: Bool
+
+        public init(
+            encryptionMode: String = "prefer",
+            enableDHT: Bool = true,
+            enablePeX: Bool = true,
+            enableLPD: Bool = true,
+            enableUTP: Bool = true
+        ) {
+            self.encryptionMode = encryptionMode
+            self.enableDHT = enableDHT
+            self.enablePeX = enablePeX
+            self.enableLPD = enableLPD
+            self.enableUTP = enableUTP
+        }
+    }
+
     // MARK: Dependencies
 
     private let sim: Simulation
@@ -86,6 +116,11 @@ public actor MockTorrentEngine: DownloadEngine {
     /// The active traffic profile. Drives the seed-ratio cutoff and the bandwidth
     /// / connection caps.
     private var profile: TrafficProfile
+
+    /// The active session-level BitTorrent settings. Stored as an honest
+    /// passthrough (the mock has no real network) and exposed via
+    /// ``sessionConfiguration()``.
+    private var sessionConfig: TorrentSessionConfig = TorrentSessionConfig()
 
     // MARK: Per-task state
 
@@ -117,7 +152,17 @@ public actor MockTorrentEngine: DownloadEngine {
     public func add(_ task: DownloadTask) async {
         guard tasks[task.id] == nil else { return }
         tasks[task.id] = task
-        states[task.id] = SimState()
+        // Seed the simulation from the task's persisted progress so a torrent
+        // restored from disk doesn't replay phases it already finished: a task
+        // with known metadata skips the "requesting info" phase, and a fully
+        // downloaded one (e.g. a restored seeding torrent) jumps straight into
+        // the seeding loop instead of re-emitting the metadata/finished beats.
+        var state = SimState()
+        if task.totalBytes != nil { state.metadataResolved = true }
+        if let total = task.totalBytes, total > 0, task.bytesDownloaded >= total {
+            state.finishedEmitted = true
+        }
+        states[task.id] = state
         let id = task.id
         jobs[id] = Task { await self.run(id) }
     }
@@ -129,6 +174,7 @@ public actor MockTorrentEngine: DownloadEngine {
         tasks[id]?.status = .paused
         tasks[id]?.downloadSpeed = 0
         tasks[id]?.uploadSpeed = 0
+        tasks[id]?.connectionCount = 0   // a paused torrent has no live peers
         // Note: the manager owns the .paused transition (it called pause()). We do
         // NOT echo .statusChanged(.paused) — a stale echo arriving after a later
         // resume would wrongly flip the task back to paused and strand it.
@@ -170,11 +216,36 @@ public actor MockTorrentEngine: DownloadEngine {
         self.profile = profile
     }
 
+    /// Adopts new session-level BitTorrent settings. The mock does no real
+    /// networking, so this simply records the configuration so it is reflected in
+    /// ``sessionConfiguration()`` snapshots (honest passthrough).
+    public func applySessionConfig(_ config: TorrentSessionConfig) async {
+        self.sessionConfig = config
+    }
+
     public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {
         guard var task = tasks[id] else { return }
         guard let idx = task.files.firstIndex(where: { $0.id == fileID }) else { return }
         task.files[idx].priority = priority
         tasks[id] = task
+
+        // Un-skipping a file can add new wanted bytes after the run loop has already
+        // passed its download gate — either while it is parked in the seeding loop
+        // (which never re-evaluates downloadComplete) or after completion (no job at
+        // all). A real client resumes the transfer in that case; the simulation must
+        // too, otherwise the now-wanted file would stay incomplete forever while the
+        // task keeps reporting 100%. Re-arm the run loop so the bytes are fetched.
+        // The .paused case is left to resume(), which re-enters run() and re-derives
+        // the wanted set itself.
+        guard priority != .skip,
+              wantedRemaining(id) > 0,
+              tasks[id]?.status != .paused
+        else { return }
+        jobs[id]?.cancel()
+        jobs[id] = nil
+        // Allow the closing .finished to re-emit once the newly-wanted bytes land.
+        states[id]?.finishedEmitted = false
+        jobs[id] = Task { await self.run(id) }
     }
 
     public nonisolated func events(for id: DownloadTask.ID) -> AsyncStream<EngineEvent> {
@@ -186,6 +257,12 @@ public actor MockTorrentEngine: DownloadEngine {
     /// A snapshot of the engine's current view of a task, or `nil` if unknown.
     public func snapshot(_ id: DownloadTask.ID) -> DownloadTask? {
         tasks[id]
+    }
+
+    /// The session-level BitTorrent settings currently in effect (honest
+    /// passthrough of the last ``applySessionConfig(_:)``).
+    public func sessionConfiguration() -> TorrentSessionConfig {
+        sessionConfig
     }
 
     // MARK: Driver
@@ -400,7 +477,10 @@ public actor MockTorrentEngine: DownloadEngine {
         let cap = profile.maxUploadBytesPerSec
         guard cap > 0, sim.tickInterval > 0 else { return base }
         let perTick = Int64(Double(cap) * sim.tickInterval)
-        return min(base, perTick)
+        // Mirror the download helper's floor: a tiny upload cap combined with a
+        // short tick interval can truncate `perTick` to 0, which would stall upload
+        // accounting and loop the seed phase forever (shareRatio never rises).
+        return max(1, min(base, perTick))
     }
 
     private func speed(_ bytesThisTick: Int64) -> Double {

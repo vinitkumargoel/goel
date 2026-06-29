@@ -26,10 +26,27 @@ public actor HTTPEngine: DownloadEngine {
 
     // MARK: Dependencies
 
-    private let session: URLSession
+    /// `var` (not `let`) because `applyNetworkConfig` swaps in a freshly built
+    /// session: a `URLSessionConfiguration` is immutable once a session exists,
+    /// so timeout / proxy / cookie / User-Agent changes require a new session.
+    private var session: URLSession
 
-    /// The active traffic profile. Drives the per-server segment count.
+    /// The active traffic profile. Drives the per-server segment count and the
+    /// download bandwidth cap.
     private var profile: TrafficProfile
+
+    /// Network-layer configuration (timeout / proxy / User-Agent / cookies and
+    /// the retry budget). Applied to the `URLSession` and consumed by the retry
+    /// path. Defaults preserve the engine's built-in behaviour until the manager
+    /// pushes a config derived from the user's Network settings.
+    private var networkConfig = HTTPEngine.defaultNetworkConfig
+
+    /// Aggregate open-connection accounting across ALL concurrent downloads, so
+    /// the profile's global `maxConnections` and per-host `maxConnectionsPerServer`
+    /// caps hold in sum — not merely within a single task. Reserved when a
+    /// download's segments start and released when it finishes / pauses / fails.
+    private var totalConnections = 0
+    private var connectionsByHost: [String: Int] = [:]
 
     // MARK: Per-task state
 
@@ -50,6 +67,38 @@ public actor HTTPEngine: DownloadEngine {
     /// Hard sanity cap on a single download's declared size, to reject an
     /// absurd server `Content-Length` that would trigger a huge preallocation.
     static let maxDownloadSize: Int64 = 100 * 1024 * 1024 * 1024 // 100 GB
+
+    /// Sent on every request. Foundation's default `URLSession` emits no
+    /// `User-Agent` for a plain data/bytes task (or an opaque CFNetwork one),
+    /// and some CDNs / WAFs (e.g. Hetzner's edge) silently reset such
+    /// connections — surfacing as `NSURLErrorNetworkConnectionLost (-1005)`
+    /// even though the same URL works from `curl`. A real UA avoids that and
+    /// identifies the client politely.
+    static let userAgent = "GoelDownloader/1.0 (macOS)"
+
+    /// Max attempts per request before giving up. Servers commonly cap the
+    /// number of *concurrent* range connections per IP and answer the excess
+    /// with `429 Too Many Requests` (Hetzner does); connections also drop
+    /// transiently. A bounded exponential backoff lets a segment recover as
+    /// sibling segments finish and free the server's connection budget,
+    /// instead of failing the whole download. Validated against a server that
+    /// admits only ~3 concurrent connections per IP.
+    static let maxRequestAttempts = 10
+
+    /// The config an unconfigured engine runs with. Deliberately mirrors the
+    /// engine's historical hard-coded behaviour (full retry budget, built-in UA,
+    /// no proxy, cookies on) so that, until `applyNetworkConfig` is called, the
+    /// engine behaves exactly as before.
+    static let defaultNetworkConfig = HTTPNetworkConfig(
+        timeout: 60,
+        retryCount: maxRequestAttempts,
+        retryInterval: 0,
+        userAgent: userAgent,
+        proxyMode: "system",
+        proxyHost: "",
+        proxyPort: 0,
+        cookieAuthEnabled: true
+    )
 
     // MARK: Init
 
@@ -94,6 +143,10 @@ public actor HTTPEngine: DownloadEngine {
         }
         tasks[id]?.status = .paused
         tasks[id]?.downloadSpeed = 0
+        // A paused transfer has no open connections: clear the count so the detail
+        // panel doesn't keep claiming e.g. "16 connections" while idle.
+        tasks[id]?.connectionCount = 0
+        connections[id] = 0
         // Note: the manager owns the .paused transition (it called pause()). We do
         // NOT echo .statusChanged(.paused) — a stale echo arriving after a later
         // resume would wrongly flip the task back to paused and strand it.
@@ -108,16 +161,20 @@ public actor HTTPEngine: DownloadEngine {
 
     public func remove(_ id: DownloadTask.ID, deleteData: Bool) async {
         let job = jobs[id]
+        let task = tasks[id]
         job?.cancel()
         jobs[id] = nil
+        // Drop the task from the map BEFORE the unwind suspension below: a
+        // concurrent resume() (guarded on `tasks[id] != nil`) would otherwise slot
+        // in a fresh job for a task we're tearing down, stranding a zombie job.
+        tasks[id] = nil
         // Wait for the download task to actually unwind before deleting, so a
         // segment writer can't flush bytes to a path we've just unlinked.
         await job?.value
-        if deleteData, let task = tasks[id], task.isSavePathContained {
+        if deleteData, let task, task.isSavePathContained {
             try? FileManager.default.removeItem(atPath: task.savePath)
         }
         hub.finishAll(id)
-        tasks[id] = nil
         segmentBytes[id] = nil
         meters[id] = nil
         connections[id] = nil
@@ -127,6 +184,49 @@ public actor HTTPEngine: DownloadEngine {
 
     public func applyLimits(_ profile: TrafficProfile) async {
         self.profile = profile
+    }
+
+    /// Apply network-layer settings. The bandwidth cap rides on `profile` (see
+    /// `applyLimits`); this handles timeout, proxy, User-Agent, cookies and the
+    /// retry budget. Session-level knobs require a brand-new `URLSession` because
+    /// a `URLSessionConfiguration` is frozen once a session is built, so we copy
+    /// the current configuration (preserving any injected protocol classes used
+    /// by tests), mutate it, and swap the session. In-flight downloads keep the
+    /// session they captured; the change takes effect on the next download.
+    public func applyNetworkConfig(_ config: HTTPNetworkConfig) async {
+        self.networkConfig = config
+
+        let cfg = session.configuration
+        // Connection (idle) timeout. We intentionally do NOT lower
+        // `timeoutIntervalForResource` to the same value — that caps the whole
+        // transfer and would kill any download longer than `timeout` seconds.
+        cfg.timeoutIntervalForRequest = config.timeout
+
+        var headers = cfg.httpAdditionalHeaders ?? [:]
+        headers["User-Agent"] = config.userAgent
+        cfg.httpAdditionalHeaders = headers
+
+        cfg.httpShouldSetCookies = config.cookieAuthEnabled
+        cfg.httpCookieAcceptPolicy = config.cookieAuthEnabled ? .always : .never
+        cfg.httpCookieStorage = config.cookieAuthEnabled ? HTTPCookieStorage.shared : nil
+
+        switch config.proxyMode {
+        case "manual" where !config.proxyHost.isEmpty && config.proxyPort > 0:
+            cfg.connectionProxyDictionary = [
+                kCFNetworkProxiesHTTPEnable as String: 1,
+                kCFNetworkProxiesHTTPProxy as String: config.proxyHost,
+                kCFNetworkProxiesHTTPPort as String: config.proxyPort,
+                kCFNetworkProxiesHTTPSEnable as String: 1,
+                kCFNetworkProxiesHTTPSProxy as String: config.proxyHost,
+                kCFNetworkProxiesHTTPSPort as String: config.proxyPort,
+            ]
+        case "none":
+            cfg.connectionProxyDictionary = [:]   // explicitly bypass any proxy
+        default:
+            cfg.connectionProxyDictionary = nil   // "system": follow OS proxy settings
+        }
+
+        self.session = URLSession(configuration: cfg)
     }
 
     public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {
@@ -176,6 +276,19 @@ public actor HTTPEngine: DownloadEngine {
 
             let fileURL = URL(fileURLWithPath: task.savePath)
 
+            // Per-download knobs captured once: the aggregate-rate pacer (honours
+            // the profile's download cap; nil when unlimited) and the per-request
+            // settings (User-Agent, retry budget) the `nonisolated` byte pumps
+            // can't read from actor state on their own.
+            let limiter = profile.maxDownloadBytesPerSec > 0
+                ? RateLimiter(bytesPerSecond: profile.maxDownloadBytesPerSec)
+                : nil
+            let settings = RequestSettings(
+                userAgent: networkConfig.userAgent,
+                maxAttempts: networkConfig.retryCount,
+                retryInterval: networkConfig.retryInterval
+            )
+
             if let total = probe.totalBytes {
                 tasks[id]?.totalBytes = total
                 emit(id, .metadataResolved(
@@ -184,17 +297,22 @@ public actor HTTPEngine: DownloadEngine {
                     files: [TransferFile(id: 0, path: task.name, length: total)]
                 ))
                 if probe.acceptsRanges {
-                    try await segmentedDownload(id: id, url: url, total: total, probe: probe, fileURL: fileURL)
+                    try await segmentedDownload(id: id, url: url, total: total, probe: probe, fileURL: fileURL, limiter: limiter, settings: settings)
                 } else {
-                    try await singleDownload(id: id, url: url, fileURL: fileURL)
+                    try await singleDownload(id: id, url: url, fileURL: fileURL, limiter: limiter, settings: settings)
                 }
             } else {
                 // No Content-Length: stream a single connection, leave totalBytes nil.
-                try await singleDownload(id: id, url: url, fileURL: fileURL)
+                try await singleDownload(id: id, url: url, fileURL: fileURL, limiter: limiter, settings: settings)
             }
 
             try Task.checkCancellation()
 
+            // Finished: clear the live connection count BEFORE the final progress
+            // emit so the detail panel doesn't keep showing open connections on a
+            // completed transfer.
+            connections[id] = 0
+            tasks[id]?.connectionCount = 0
             forceProgress(id)
             tasks[id]?.status = .completed
             tasks[id]?.completedAt = Date()
@@ -223,6 +341,55 @@ public actor HTTPEngine: DownloadEngine {
         }
     }
 
+    // MARK: Requests
+
+    /// Builds a request carrying the client `User-Agent`. `nonisolated` so the
+    /// nonisolated segment/streaming paths can use it too. All outbound
+    /// requests must go through here so none are sent UA-less.
+    private nonisolated func makeRequest(_ url: URL, userAgent: String) -> URLRequest {
+        var req = URLRequest(url: url)
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        return req
+    }
+
+    /// HTTP statuses worth retrying: explicit rate-limiting plus transient
+    /// upstream/server errors.
+    static func isRetryableStatus(_ status: Int) -> Bool {
+        status == 429 || status == 500 || status == 502 || status == 503 || status == 504
+    }
+
+    /// Network-level errors that a retry can plausibly recover from (a dropped
+    /// connection, a timeout, a refused/transient host). Deliberately excludes
+    /// `.cancelled` (our own pause/remove) and non-network errors (disk, etc.).
+    static func isTransient(_ error: Error) -> Bool {
+        guard let u = error as? URLError else { return false }
+        switch u.code {
+        case .networkConnectionLost, .timedOut, .cannotConnectToHost,
+             .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet,
+             .resourceUnavailable, .secureConnectionFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Sleeps before the next attempt: honours a numeric `Retry-After` header
+    /// when present, otherwise exponential backoff. Jitter de-synchronises a
+    /// burst of segments that were all rate-limited at once (thundering herd).
+    /// `Task.sleep` throws on cancellation, so pause/remove still interrupt.
+    private nonisolated func backoff(attempt: Int, response: HTTPURLResponse?, retryInterval: Double) async throws {
+        var seconds = min(6.0, pow(2.0, Double(attempt - 1)) * 0.4)
+        // A configured retry interval acts as a floor on the wait (0 = leave the
+        // built-in exponential backoff untouched).
+        if retryInterval > 0 { seconds = max(seconds, retryInterval) }
+        if let header = response?.value(forHTTPHeaderField: "Retry-After"),
+           let advised = Double(header.trimmingCharacters(in: .whitespaces)) {
+            seconds = min(15.0, max(seconds, advised))
+        }
+        seconds += Double.random(in: 0...0.4)
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    }
+
     // MARK: Range-support probe
 
     private struct ProbeResult {
@@ -234,18 +401,22 @@ public actor HTTPEngine: DownloadEngine {
 
     private func probe(_ url: URL) async throws -> ProbeResult {
         // Prefer a cheap HEAD.
-        var head = URLRequest(url: url)
+        var head = makeRequest(url, userAgent: networkConfig.userAgent)
         head.httpMethod = "HEAD"
         if let (_, resp) = try? await session.data(for: head),
            let http = resp as? HTTPURLResponse,
            (200..<300).contains(http.statusCode) {
             let r = interpretHead(http)
-            if r.totalBytes != nil { return r }
+            // Only short-circuit when HEAD has already PROVEN range support. Many
+            // servers carry Content-Length but emit `Accept-Ranges` on GET only;
+            // for those, fall through to the ranged GET so a real 206 can still
+            // unlock segmentation instead of silently dropping to one connection.
+            if r.acceptsRanges { return r }
         }
 
         // Fall back to a one-byte ranged GET, which reveals both range support
         // (a 206 + Content-Range) and the total size.
-        var get = URLRequest(url: url)
+        var get = makeRequest(url, userAgent: networkConfig.userAgent)
         get.setValue("bytes=0-0", forHTTPHeaderField: "Range")
         let (_, resp) = try await session.data(for: get)
         guard let http = resp as? HTTPURLResponse else {
@@ -291,9 +462,10 @@ public actor HTTPEngine: DownloadEngine {
 
     // MARK: Segmented download
 
-    private func segmentedDownload(id: UUID, url: URL, total: Int64, probe: ProbeResult, fileURL: URL) async throws {
+    private func segmentedDownload(id: UUID, url: URL, total: Int64, probe: ProbeResult, fileURL: URL, limiter: RateLimiter?, settings: RequestSettings) async throws {
         var ranges: [Range64]
         var restored: [Int: Int64] = [:]
+        let host = url.host
 
         if let data = tasks[id]?.resumeData,
            let cursor = try? JSONDecoder().decode(ResumeCursor.self, from: data),
@@ -305,10 +477,17 @@ public actor HTTPEngine: DownloadEngine {
             try preallocate(fileURL, size: total)
         } else {
             // Fresh start (or remote changed): rebuild from scratch.
-            let count = computeSegmentCount(total)
+            let count = computeSegmentCount(total, host: host)
             ranges = makeRanges(total: total, count: count)
             try preallocate(fileURL, size: total)
         }
+
+        // Charge this download's connections to the global / per-host budget and
+        // release them on EVERY exit — clean completion, failure, or the task
+        // group below unwinding on pause/remove cancellation.
+        let reserved = ranges.count
+        reserveConnections(host: host, count: reserved)
+        defer { releaseConnections(host: host, count: reserved) }
 
         segmentBytes[id] = restored.isEmpty
             ? Dictionary(uniqueKeysWithValues: ranges.indices.map { ($0, Int64(0)) })
@@ -318,13 +497,16 @@ public actor HTTPEngine: DownloadEngine {
         cursorMeta[id] = CursorMeta(etag: probe.etag, lastModified: probe.lastModified, total: total, ranges: ranges)
 
         let session = self.session
+        // One governor per download: it begins at the requested fan-out and
+        // adapts down to the server's real concurrent-connection ceiling.
+        let governor = ConnectionGovernor(limit: ranges.count)
         try await withThrowingTaskGroup(of: Void.self) { group in
             for (i, range) in ranges.enumerated() {
                 let already = segmentBytes[id]?[i] ?? 0
                 let segStart = range.start + already
                 if segStart > range.end { continue } // segment already complete
                 group.addTask {
-                    try await self.downloadSegment(session: session, id: id, url: url, index: i, from: segStart, to: range.end, fileURL: fileURL)
+                    try await self.downloadSegment(session: session, governor: governor, limiter: limiter, settings: settings, id: id, url: url, index: i, from: segStart, to: range.end, fileURL: fileURL)
                 }
             }
             try await group.waitForAll()
@@ -335,37 +517,99 @@ public actor HTTPEngine: DownloadEngine {
     /// would serialize through the actor executor (one hop per byte), defeating the
     /// whole point of segmented downloading. It only hops back to the actor (via
     /// `await advance`) once per ~64 KiB flush.
-    private nonisolated func downloadSegment(session: URLSession, id: UUID, url: URL, index: Int, from start: Int64, to end: Int64, fileURL: URL) async throws {
-        var req = URLRequest(url: url)
-        req.setValue("bytes=\(start)-\(end)", forHTTPHeaderField: "Range")
-
-        let (bytes, resp) = try await session.bytes(for: req)
-        guard let http = resp as? HTTPURLResponse else { throw DownloadError.network("No HTTP response") }
-        guard http.statusCode == 206 || http.statusCode == 200 else {
-            throw DownloadError.httpStatus(http.statusCode)
-        }
-
+    private nonisolated func downloadSegment(session: URLSession, governor: ConnectionGovernor, limiter: RateLimiter?, settings: RequestSettings, id: UUID, url: URL, index: Int, from start: Int64, to end: Int64, fileURL: URL) async throws {
         let handle = try FileHandle(forWritingTo: fileURL)
+        // Bytes of THIS segment already flushed to disk in this run. On a retry
+        // we resume from `start + written`, so progress is never double-counted
+        // and already-stored bytes are not re-fetched.
+        var written: Int64 = 0
+        var attempt = 0
         do {
-            try handle.seek(toOffset: UInt64(start))
-            var buffer = Data()
-            buffer.reserveCapacity(Self.flushSize)
-            // Cooperative cancellation flows from the AsyncBytes iterator, so we
-            // check once per flush rather than once per byte (the latter burns
-            // ~16% of a core at speed for no added safety).
-            for try await byte in bytes {
-                buffer.append(byte)
-                if buffer.count >= Self.flushSize {
-                    try Task.checkCancellation()
-                    try handle.write(contentsOf: buffer)
-                    await advance(id, segment: index, by: buffer.count)
-                    buffer.removeAll(keepingCapacity: true)
+            while start + written <= end {
+                attempt += 1
+                let segStart = start + written
+
+                // Wait for a connection slot. The governor adapts the ceiling to
+                // what the server actually tolerates (see ``ConnectionGovernor``).
+                // Each `acquire()` below is balanced by exactly one `release()` on
+                // every exit path of this attempt.
+                await governor.acquire()
+                var req = makeRequest(url, userAgent: settings.userAgent)
+                req.setValue("bytes=\(segStart)-\(end)", forHTTPHeaderField: "Range")
+
+                let bytes: URLSession.AsyncBytes
+                let http: HTTPURLResponse
+                do {
+                    let (b, resp) = try await session.bytes(for: req)
+                    guard let h = resp as? HTTPURLResponse else {
+                        await governor.release(); throw DownloadError.network("No HTTP response")
+                    }
+                    bytes = b; http = h
+                } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
+                    await governor.release()
+                    try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                    continue
+                } catch {
+                    await governor.release(); throw error
                 }
-            }
-            try Task.checkCancellation()
-            if !buffer.isEmpty {
-                try handle.write(contentsOf: buffer)
-                await advance(id, segment: index, by: buffer.count)
+
+                if Self.isRetryableStatus(http.statusCode) {
+                    for try await _ in bytes {}                       // drain the error body
+                    await governor.throttleDown()                    // server pushed back: shrink the ceiling
+                    await governor.release()
+                    if attempt >= settings.maxAttempts { throw DownloadError.httpStatus(http.statusCode) }
+                    try await backoff(attempt: attempt, response: http, retryInterval: settings.retryInterval)
+                    continue
+                }
+                // Segments accept ONLY 206. A server that advertised range support
+                // but answers a real ranged GET with 200 (full body) would have
+                // every segment seek to its own offset and write the WHOLE file
+                // there, overwriting siblings and corrupting the result. Reject it
+                // as a clean, visible failure instead.
+                guard http.statusCode == 206 else {
+                    await governor.release(); throw DownloadError.httpStatus(http.statusCode)
+                }
+
+                do {
+                    try handle.seek(toOffset: UInt64(segStart))
+                    var buffer = Data()
+                    buffer.reserveCapacity(Self.flushSize)
+                    // Cooperative cancellation flows from the AsyncBytes iterator,
+                    // so we check once per flush rather than once per byte (the
+                    // latter burns ~16% of a core at speed for no added safety).
+                    for try await byte in bytes {
+                        buffer.append(byte)
+                        if buffer.count >= Self.flushSize {
+                            try Task.checkCancellation()
+                            try handle.write(contentsOf: buffer)
+                            written += Int64(buffer.count)
+                            await advance(id, segment: index, by: buffer.count)
+                            // Pace against the profile's aggregate download cap.
+                            // Shared across all segments, so combined throughput
+                            // converges on the cap (no-op when unlimited).
+                            await limiter?.pace(buffer.count)
+                            buffer.removeAll(keepingCapacity: true)
+                        }
+                    }
+                    try Task.checkCancellation()
+                    if !buffer.isEmpty {
+                        try handle.write(contentsOf: buffer)
+                        written += Int64(buffer.count)
+                        await advance(id, segment: index, by: buffer.count)
+                        await limiter?.pace(buffer.count)
+                    }
+                } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
+                    // Connection dropped mid-stream: back off and resume from the
+                    // last flushed offset.
+                    await governor.release()
+                    try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                    continue
+                } catch {
+                    await governor.release(); throw error
+                }
+
+                await governor.release()
+                break                                                // segment complete
             }
             // Close explicitly so a flush/close failure propagates and fails the
             // task, instead of reporting `.completed` over a half-flushed file.
@@ -378,26 +622,51 @@ public actor HTTPEngine: DownloadEngine {
 
     // MARK: Single-connection download
 
-    private func singleDownload(id: UUID, url: URL, fileURL: URL) async throws {
+    private func singleDownload(id: UUID, url: URL, fileURL: URL, limiter: RateLimiter?, settings: RequestSettings) async throws {
         // SF8: truncate to zero on (re)create — `createFile` is a no-op when the
         // file already exists, which would leave stale trailing bytes if the new
         // download is shorter. `Data().write` both creates and truncates.
         try Data().write(to: fileURL)
+
+        // A single connection still counts against the aggregate budget.
+        let host = url.host
+        reserveConnections(host: host, count: 1)
+        defer { releaseConnections(host: host, count: 1) }
 
         segmentBytes[id] = [0: 0]
         connections[id] = 1
         tasks[id]?.connectionCount = 1
         cursorMeta[id] = nil
 
-        try await streamSingle(session: session, id: id, url: url, fileURL: fileURL)
+        try await streamSingle(session: session, limiter: limiter, settings: settings, id: id, url: url, fileURL: fileURL)
     }
 
     /// `nonisolated` single-connection body pump (see ``downloadSegment`` for why).
-    private nonisolated func streamSingle(session: URLSession, id: UUID, url: URL, fileURL: URL) async throws {
-        let req = URLRequest(url: url)
-        let (bytes, resp) = try await session.bytes(for: req)
-        guard let http = resp as? HTTPURLResponse else { throw DownloadError.network("No HTTP response") }
-        guard (200..<300).contains(http.statusCode) else { throw DownloadError.httpStatus(http.statusCode) }
+    private nonisolated func streamSingle(session: URLSession, limiter: RateLimiter?, settings: RequestSettings, id: UUID, url: URL, fileURL: URL) async throws {
+        // Retry only the connect/status phase: the no-range fallback can't
+        // resume a partial body, so a mid-stream drop fails (rather than
+        // silently restarting and double-counting progress).
+        var attempt = 0
+        let bytes: URLSession.AsyncBytes
+        while true {
+            attempt += 1
+            let req = makeRequest(url, userAgent: settings.userAgent)
+            do {
+                let (stream, resp) = try await session.bytes(for: req)
+                guard let http = resp as? HTTPURLResponse else { throw DownloadError.network("No HTTP response") }
+                if Self.isRetryableStatus(http.statusCode), attempt < settings.maxAttempts {
+                    for try await _ in stream {}                     // drain the error body
+                    try await backoff(attempt: attempt, response: http, retryInterval: settings.retryInterval)
+                    continue
+                }
+                guard (200..<300).contains(http.statusCode) else { throw DownloadError.httpStatus(http.statusCode) }
+                bytes = stream
+                break
+            } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
+                try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                continue
+            }
+        }
 
         let handle = try FileHandle(forWritingTo: fileURL)
         do {
@@ -409,6 +678,8 @@ public actor HTTPEngine: DownloadEngine {
                     try Task.checkCancellation()
                     try handle.write(contentsOf: buffer)
                     await advance(id, segment: 0, by: buffer.count)
+                    // Pace against the profile's download cap (no-op when unlimited).
+                    await limiter?.pace(buffer.count)
                     buffer.removeAll(keepingCapacity: true)
                 }
             }
@@ -416,6 +687,7 @@ public actor HTTPEngine: DownloadEngine {
             if !buffer.isEmpty {
                 try handle.write(contentsOf: buffer)
                 await advance(id, segment: 0, by: buffer.count)
+                await limiter?.pace(buffer.count)
             }
             try handle.close()
         } catch {
@@ -424,10 +696,40 @@ public actor HTTPEngine: DownloadEngine {
         }
     }
 
+    // MARK: Connection budget
+
+    /// Charge `count` connections to the global and per-host budgets when a
+    /// download's segments start. Balanced by `releaseConnections`.
+    private func reserveConnections(host: String?, count: Int) {
+        totalConnections += count
+        if let host { connectionsByHost[host, default: 0] += count }
+    }
+
+    /// Return `count` connections to the budgets when a download ends (cleanly,
+    /// by failure, or by pause/remove cancellation).
+    private func releaseConnections(host: String?, count: Int) {
+        totalConnections = max(0, totalConnections - count)
+        if let host {
+            let remaining = (connectionsByHost[host] ?? 0) - count
+            if remaining > 0 { connectionsByHost[host] = remaining }
+            else { connectionsByHost[host] = nil }
+        }
+    }
+
     // MARK: Segmenting
 
-    private func computeSegmentCount(_ total: Int64) -> Int {
-        let want = max(1, profile.maxConnectionsPerServer)
+    private func computeSegmentCount(_ total: Int64, host: String?) -> Int {
+        // The Low profile opts out of extra connections entirely (its
+        // `enableExtraConnections` flag): one connection, no segmentation.
+        guard profile.enableExtraConnections else { return 1 }
+        var want = max(1, profile.maxConnectionsPerServer)
+        // Share the per-server budget with any other in-flight download to the
+        // same host, and the global budget across every concurrent download, so
+        // the profile's advertised caps hold in aggregate (floor of 1 so a new
+        // download never stalls with zero connections).
+        let hostInUse = host.flatMap { connectionsByHost[$0] } ?? 0
+        want = min(want, max(1, profile.maxConnectionsPerServer - hostInUse))
+        want = min(want, max(1, profile.maxConnections - totalConnections))
         let minSegment: Int64 = 64 * 1024
         let bySize = max(1, Int((total + minSegment - 1) / minSegment))
         return max(1, min(want, bySize))
@@ -598,6 +900,15 @@ public actor HTTPEngine: DownloadEngine {
 
     // MARK: Supporting types
 
+    /// Per-request knobs captured once per download and threaded into the
+    /// `nonisolated` byte pumps, which cannot read actor state per request.
+    /// `Sendable` so it can cross into the segment task group.
+    private struct RequestSettings: Sendable {
+        var userAgent: String
+        var maxAttempts: Int
+        var retryInterval: Double
+    }
+
     /// Two-point speed window: the time and byte-count at the previous emit.
     private struct Meter {
         var lastEmit: Date = .distantPast
@@ -667,5 +978,145 @@ private final class EventHub: @unchecked Sendable {
         subscribers[id] = nil
         lock.unlock()
         continuations?.values.forEach { $0.finish() }
+    }
+}
+
+// MARK: - Connection governor
+
+/// Adaptive per-download concurrency limiter (decreasing).
+///
+/// Segmented downloads want many parallel connections for speed, but many
+/// servers cap concurrent connections per client and answer the excess with
+/// `429 Too Many Requests` (Hetzner admits only ~3). A fixed fan-out is wrong
+/// either way: too low wastes bandwidth on permissive servers, too high gets
+/// throttled on strict ones — and we cannot know the ceiling in advance.
+///
+/// So we *discover* it: start at the requested fan-out and shrink the ceiling
+/// on every 429 (`throttleDown`). On a permissive server no 429s ever arrive
+/// and the limit stays wide open; on a strict server it converges down to what
+/// the server actually allows, so waiting segments simply queue instead of
+/// hammering the server with doomed requests.
+///
+/// The limit is deliberately *monotonically decreasing* for the lifetime of a
+/// download. Re-opening slots after a clean segment was tried and removed: it
+/// pushes the limit back above the server's true ceiling, producing a fresh
+/// 429, producing a re-open — a thrash that can exhaust a segment's retry
+/// budget on a strict server. Re-probing belongs to a future, slower control
+/// loop, not the hot path. The throughput cost is negligible because a
+/// rate-limited server is the bottleneck regardless of how we slice it.
+actor ConnectionGovernor {
+    private var limit: Int
+    private var active = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) {
+        self.limit = max(1, limit)
+    }
+
+    /// Suspends until a connection slot is free, then claims it.
+    func acquire() async {
+        if active < limit {
+            active += 1
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+        // Resumed by `pump()`, which already reserved the slot on our behalf.
+    }
+
+    /// Returns a slot and admits the next waiter if there is room.
+    func release() {
+        active = max(0, active - 1)
+        pump()
+    }
+
+    /// The server signalled rate-limiting: lower the ceiling (floor of 1).
+    func throttleDown() {
+        if limit > 1 { limit -= 1 }
+    }
+
+    private func pump() {
+        while active < limit, !waiters.isEmpty {
+            let waiter = waiters.removeFirst()
+            active += 1                 // reserve on the waiter's behalf
+            waiter.resume()
+        }
+    }
+}
+
+// MARK: - Network configuration
+
+/// Network-layer settings pushed into the engine from the user's preferences.
+/// The download bandwidth cap lives on `TrafficProfile` (see `applyLimits`); this
+/// carries the rest: connection timeout, proxy, User-Agent, cookies and the retry
+/// budget. Defaults match common product settings; the engine keeps its own,
+/// behaviour-preserving default until `applyNetworkConfig` is called.
+public struct HTTPNetworkConfig: Sendable, Equatable {
+    public var timeout: Double
+    public var retryCount: Int
+    public var retryInterval: Double
+    public var userAgent: String
+    public var proxyMode: String   // none | system | manual
+    public var proxyHost: String
+    public var proxyPort: Int
+    public var cookieAuthEnabled: Bool
+
+    public init(
+        timeout: Double = 30,
+        retryCount: Int = 3,
+        retryInterval: Double = 5,
+        userAgent: String = "GoelDownloader/1.0 (macOS)",
+        proxyMode: String = "none",
+        proxyHost: String = "",
+        proxyPort: Int = 0,
+        cookieAuthEnabled: Bool = true
+    ) {
+        self.timeout = timeout
+        self.retryCount = retryCount
+        self.retryInterval = retryInterval
+        self.userAgent = userAgent
+        self.proxyMode = proxyMode
+        self.proxyHost = proxyHost
+        self.proxyPort = proxyPort
+        self.cookieAuthEnabled = cookieAuthEnabled
+    }
+}
+
+// MARK: - Rate limiter
+
+/// Shared, actor-isolated download pacer that enforces the active profile's
+/// AGGREGATE byte cap across all of a download's segments.
+///
+/// It reserves a slice of a virtual timeline of length `byteCount / rate` for
+/// every flush. Because the timeline (`drainTime`) is shared and advanced
+/// atomically before each sleep, concurrent segments queue behind one another
+/// and their combined throughput converges on the cap — not `N ×` the cap. The
+/// sleep happens after the bytes are already buffered, so the slowed reads exert
+/// TCP backpressure on the sender. One limiter is created per download attempt
+/// from the profile's current cap; a mid-download profile change takes effect on
+/// the next (re)start. A cap of 0 means unlimited and no limiter is created.
+actor RateLimiter {
+    private let bytesPerSecond: Double
+    /// Wall-clock instant by which all bytes reserved so far will have drained at
+    /// the target rate.
+    private var drainTime: Date
+
+    init(bytesPerSecond: Int64) {
+        self.bytesPerSecond = Double(max(0, bytesPerSecond))
+        self.drainTime = Date()
+    }
+
+    /// Account for `byteCount` just delivered and sleep long enough to keep the
+    /// shared rate at or below the cap. Cancellation-aware: a pause/remove during
+    /// the sleep wakes it immediately (the caller's own checkCancellation reacts).
+    func pace(_ byteCount: Int) async {
+        guard bytesPerSecond > 0, byteCount > 0 else { return }
+        let now = Date()
+        // Idle gap: never bank credit for bytes that were not in flight.
+        if drainTime < now { drainTime = now }
+        drainTime = drainTime.addingTimeInterval(Double(byteCount) / bytesPerSecond)
+        let delay = drainTime.timeIntervalSince(now)
+        if delay > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        }
     }
 }

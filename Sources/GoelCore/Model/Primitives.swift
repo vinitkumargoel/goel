@@ -115,13 +115,30 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         }
     }
 
-    /// A canonical string used for duplicate detection and display.
+    /// A canonical string used for display and copy — the full, original source
+    /// (for a magnet, the complete link including its `dn=`/`tr=` parameters).
     public var locator: String {
         switch self {
         case .url(let u): return u.absoluteString
         case .magnet(let m): return m
         case .torrentFile(let u): return u.absoluteString
         }
+    }
+
+    /// The canonical identity used for duplicate detection. For a magnet this is
+    /// the `btih:` infohash (lowercased): two magnet links for the *same* torrent
+    /// routinely differ only in their `dn=` display name or `tr=` tracker list, so
+    /// keying on the raw string would let the identical torrent be added twice and
+    /// collide on the same save path. Non-magnets — and a malformed magnet with no
+    /// infohash — fall back to ``locator``.
+    public var dedupKey: String {
+        guard case .magnet(let m) = self else { return locator }
+        if let range = m.range(of: #"btih:([a-zA-Z0-9]+)"#, options: .regularExpression) {
+            return String(m[range])
+                .replacingOccurrences(of: "btih:", with: "")
+                .lowercased()
+        }
+        return m
     }
 
     /// Parse a raw, user-entered line into a source, enforcing a scheme allowlist.

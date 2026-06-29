@@ -20,8 +20,9 @@ struct AppToolbar: View {
             Divider().frame(height: 20)
 
             Menu {
-                Button("Select all") { vm.toast = "Selected all \(vm.tasks.count) downloads" }
-                Button("Select none") { vm.selection = nil }
+                Button("Select all") { vm.selectAll() }
+                Button("Select none") { vm.selectNone() }
+                Button("Select completed") { vm.selectCompleted() }
             } label: {
                 Label("Select", systemImage: "checkmark.circle")
             }

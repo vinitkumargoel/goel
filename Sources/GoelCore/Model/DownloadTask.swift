@@ -125,8 +125,11 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// filesystem write/preallocate/delete, so a malformed name can never escape
     /// the download folder even if name sanitisation is bypassed upstream.
     public var isSavePathContained: Bool {
-        let dir = (saveDirectory as NSString).standardizingPath
-        let full = (savePath as NSString).standardizingPath
+        // Resolve symlinks (not just `..`/`~`): a symlinked save directory — or a
+        // symlink component in the path — must not let the resolved file escape the
+        // resolved download folder. `standardizingPath` alone leaves symlinks intact.
+        let dir = (saveDirectory as NSString).resolvingSymlinksInPath
+        let full = (savePath as NSString).resolvingSymlinksInPath
         return full == dir || full.hasPrefix(dir + "/")
     }
 }

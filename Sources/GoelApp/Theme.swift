@@ -80,4 +80,15 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .dark: return .dark
         }
     }
+
+    /// The lowercase token persisted in `AppSettings.theme` ("system" | "light" |
+    /// "dark"). `rawValue` stays capitalized for the segmented-picker labels, so
+    /// this small bridge keeps the core's `String` field and the app enum aligned.
+    var settingsValue: String { rawValue.lowercased() }
+
+    /// Reconstruct from the persisted `AppSettings.theme` token, defaulting to
+    /// ``system`` for any unrecognized value.
+    init(settingsValue: String) {
+        self = AppTheme.allCases.first { $0.settingsValue == settingsValue } ?? .system
+    }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import GoelCore
 
 /// The center list: a sortable header and selectable rows with inline progress,
@@ -20,7 +21,7 @@ struct DownloadListView: View {
                             DownloadRow(
                                 task: task,
                                 displayIndex: index + 1,
-                                isSelected: vm.selection == task.id,
+                                isSelected: vm.isSelected(task.id),
                                 vm: vm
                             )
                             Divider()
@@ -102,6 +103,10 @@ struct DownloadRow: View {
     let isSelected: Bool
     let vm: AppViewModel
 
+    /// Gates the irreversible "Remove with data" disk delete behind an explicit
+    /// confirmation; plain "Remove from list" is non-destructive and needs none.
+    @State private var showDeleteConfirm = false
+
     var body: some View {
         HStack(spacing: 0) {
             Text("\(displayIndex)")
@@ -156,10 +161,25 @@ struct DownloadRow: View {
         .background(isSelected ? Theme.accent.opacity(0.22) : (displayIndex.isMultiple(of: 2) ? Theme.rowAlt : Color.clear))
         .contentShape(Rectangle())
         .onTapGesture {
-            vm.selection = task.id
+            // ⌘-click extends the selection; a plain click replaces it.
+            if NSEvent.modifierFlags.contains(.command) {
+                vm.toggleSelection(task.id)
+            } else {
+                vm.selectOnly(task.id)
+            }
             if !vm.detailPanelVisible { vm.detailPanelVisible = true }
         }
         .contextMenu { contextMenu }
+        .confirmationDialog(
+            "Delete downloaded files for “\(task.name)”?",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Files", role: .destructive) { vm.remove(task.id, deleteData: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes the file from disk and can’t be undone.")
+        }
     }
 
     private var nameCell: some View {
@@ -192,7 +212,7 @@ struct DownloadRow: View {
         Button("Copy source link") { vm.copyToPasteboard(task.sourceLocator) }
         Divider()
         Button("Remove from list", role: .destructive) { vm.remove(task.id, deleteData: false) }
-        Button("Remove with data", role: .destructive) { vm.remove(task.id, deleteData: true) }
+        Button("Remove with data", role: .destructive) { showDeleteConfirm = true }
     }
 
     private var isFailed: Bool {
