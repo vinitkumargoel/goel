@@ -1,16 +1,26 @@
 import SwiftUI
+import AppKit
 
-/// The palette lifted from `visual.html` so the native app matches the mockup.
-/// Accent blue, status greens/oranges/reds, and the BT purple / HTTP teal.
+/// The palette, derived from `visual.html` but made **appearance-adaptive** so
+/// text stays legible in both light and dark mode.
+///
+/// The original mockup used Apple's *dark-mode* vibrant system tints (e.g. the
+/// bright `0x32D74B` green, `0x64D2FF` teal). Those read well on black but, used
+/// unchanged on a light background, drop to ~1.3–1.9:1 contrast as text —
+/// effectively invisible. Each semantic color therefore resolves to two values:
+/// the vibrant tint under Dark Aqua, and a darkened, saturated variant under
+/// Aqua. Both palettes were checked to clear WCAG AA (≥ 4.5:1) for normal text
+/// against their respective backgrounds, the same way the system semantic
+/// colors adapt.
 enum Theme {
-    static let accent = Color(hex: 0x0A84FF)
-    static let accentPress = Color(hex: 0x0060DF)
-    static let green = Color(hex: 0x32D74B)
-    static let orange = Color(hex: 0xFF9F0A)
-    static let red = Color(hex: 0xFF453A)
-    static let yellow = Color(hex: 0xFFD60A)
-    static let purple = Color(hex: 0xBF5AF2)
-    static let teal = Color(hex: 0x64D2FF)
+    static let accent      = Color.adaptive(light: 0x0066CC, dark: 0x0A84FF)
+    static let accentPress = Color.adaptive(light: 0x004FAC, dark: 0x0060DF)
+    static let green       = Color.adaptive(light: 0x14803C, dark: 0x32D74B)
+    static let orange      = Color.adaptive(light: 0xA85800, dark: 0xFF9F0A)
+    static let red         = Color.adaptive(light: 0xCE0E0E, dark: 0xFF6961)
+    static let yellow      = Color.adaptive(light: 0x8A6D00, dark: 0xFFD60A)
+    static let purple      = Color.adaptive(light: 0x8A2BE0, dark: 0xCB6FF5)
+    static let teal        = Color.adaptive(light: 0x0E7C99, dark: 0x64D2FF)
 
     /// Subtle alternating-row tint.
     static let rowAlt = Color.primary.opacity(0.03)
@@ -23,6 +33,28 @@ extension Color {
         let g = Double((hex >> 8) & 0xFF) / 255
         let b = Double(hex & 0xFF) / 255
         self.init(.sRGB, red: r, green: g, blue: b, opacity: alpha)
+    }
+
+    /// A color that resolves to `light` under Aqua and `dark` under Dark Aqua,
+    /// tracking the window's effective appearance — including the theme the user
+    /// forces from Settings via `.preferredColorScheme`. Backed by a dynamic
+    /// `NSColor` so every call site adapts with no per-view `@Environment` reads.
+    static func adaptive(light: UInt32, dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(hex: isDark ? dark : light)
+        })
+    }
+}
+
+extension NSColor {
+    /// `0xRRGGBB` convenience matching `Color(hex:)`, in the sRGB space so the
+    /// adaptive palette renders the exact audited values.
+    convenience init(hex: UInt32, alpha: CGFloat = 1) {
+        self.init(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                  green: CGFloat((hex >> 8) & 0xFF) / 255,
+                  blue: CGFloat(hex & 0xFF) / 255,
+                  alpha: alpha)
     }
 }
 
