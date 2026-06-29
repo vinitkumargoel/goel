@@ -20,6 +20,13 @@ public enum EngineEvent: Sendable, Equatable {
     /// A single file's completed-byte count changed (multi-file transfers).
     case fileProgress(fileID: Int, bytesCompleted: Int64)
 
+    /// The engine determined a better on-disk name than the one derived at add
+    /// time — e.g. from an HTTP `Content-Disposition` header, or by inferring a
+    /// missing extension from `Content-Type`. The name is already sanitized,
+    /// length-clamped and conflict-resolved by the engine; the manager adopts it
+    /// verbatim (so the displayed name and the file on disk never diverge).
+    case nameResolved(String)
+
     /// The engine moved the task to a new status (e.g. downloading -> seeding).
     case statusChanged(DownloadStatus)
 

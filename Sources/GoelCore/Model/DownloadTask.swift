@@ -124,7 +124,62 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         if last.isEmpty || last == "." || last == ".." || last.hasPrefix(".") || last.contains("/") {
             return fallback
         }
-        return last
+        return clampLength(last)
+    }
+
+    /// Clamp a filename to a filesystem-safe byte length. macOS's `NAME_MAX` is
+    /// 255 UTF-8 bytes; a longer name fails the write outright
+    /// (`NSFileWriteInvalidFileNameError` — "the file name … is invalid"), which
+    /// is exactly what opaque, query-token CDN URLs (Google video-downloads,
+    /// signed S3 links, …) produce when their last path component is hundreds of
+    /// characters long. We clamp well under the hard limit to leave room for a
+    /// conflict suffix like ` (12)`, and we preserve the extension so the file
+    /// stays openable.
+    public static func clampLength(_ name: String, maxBytes: Int = 240) -> String {
+        guard name.utf8.count > maxBytes else { return name }
+        let ns = name as NSString
+        let ext = ns.pathExtension
+        let stem = ns.deletingPathExtension
+        // Reserve room for ".<ext>"; if the extension itself is absurdly long
+        // (not a real extension), drop it and just clamp the whole string.
+        let extBudget = (!ext.isEmpty && ext.utf8.count <= 16) ? ext.utf8.count + 1 : 0
+        let stemBudget = max(1, maxBytes - extBudget)
+        let clampedStem = truncateUTF8(stem, toBytes: stemBudget)
+        return extBudget == 0 ? truncateUTF8(name, toBytes: maxBytes)
+                              : clampedStem + "." + ext
+    }
+
+    /// Truncate a string to at most `max` UTF-8 bytes without splitting a
+    /// multi-byte character.
+    private static func truncateUTF8(_ s: String, toBytes max: Int) -> String {
+        guard s.utf8.count > max else { return s }
+        var out = ""
+        var used = 0
+        for ch in s {
+            let n = String(ch).utf8.count
+            if used + n > max { break }
+            out.append(ch)
+            used += n
+        }
+        return out.isEmpty ? String(s.prefix(1)) : out
+    }
+
+    /// Return `base` if no file with that name exists in `directory`, otherwise
+    /// append ` (1)`, ` (2)`, … before the extension until the path is free
+    /// (never-clobber). Bounded so a pathological directory can't spin forever.
+    public static func uniqueName(base: String, in directory: String) -> String {
+        let fm = FileManager.default
+        let path = (directory as NSString).appendingPathComponent(base)
+        guard fm.fileExists(atPath: path) else { return base }
+        let ns = base as NSString
+        let ext = ns.pathExtension
+        let stem = ns.deletingPathExtension
+        for n in 1...9_999 {
+            let candidate = ext.isEmpty ? "\(stem) (\(n))" : "\(stem) (\(n)).\(ext)"
+            let candidatePath = (directory as NSString).appendingPathComponent(candidate)
+            if !fm.fileExists(atPath: candidatePath) { return candidate }
+        }
+        return base
     }
 
     /// Whether ``savePath`` resolves to a location strictly inside

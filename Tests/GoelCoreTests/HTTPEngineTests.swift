@@ -20,6 +20,11 @@ final class StubURLProtocol: URLProtocol {
         var etag: String?
         var chunkSize: Int
         var chunkDelayMicros: UInt32
+        /// Served as the `Content-Type` header (drives extension inference).
+        var contentType: String = "application/octet-stream"
+        /// Served as the `Content-Disposition` header when non-nil (drives the
+        /// server-suggested filename).
+        var contentDisposition: String? = nil
     }
 
     private static let lock = NSLock()
@@ -72,7 +77,8 @@ final class StubURLProtocol: URLProtocol {
         let total = cfg.data.count
         let method = request.httpMethod ?? "GET"
 
-        var headers = ["Content-Type": "application/octet-stream"]
+        var headers = ["Content-Type": cfg.contentType]
+        if let cd = cfg.contentDisposition { headers["Content-Disposition"] = cd }
         if let etag = cfg.etag { headers["ETag"] = etag }
         if cfg.supportsRanges { headers["Accept-Ranges"] = "bytes" }
 
@@ -357,6 +363,78 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertEqual(maxProgress, Int64(payload.count))
 
         let written = try Data(contentsOf: tempDir.appendingPathComponent("nolength.bin"))
+        XCTAssertEqual(written, payload)
+    }
+
+    // MARK: (d2) Filename resolution from Content-Disposition / Content-Type
+
+    /// Reproduces the opaque-CDN-URL bug: the URL's last path component is a huge
+    /// query token (no extension, well over NAME_MAX), which previously failed the
+    /// write with "the file name … is invalid". The server's `Content-Disposition`
+    /// supplies the real name; the engine renames the task and saves correctly.
+    func testRenamesFromContentDisposition() async throws {
+        let payload = deterministicData(120 * 1024)
+        StubURLProtocol.set(.init(
+            data: payload, supportsRanges: true, sendContentLength: true,
+            etag: "\"cd\"", chunkSize: 16 * 1024, chunkDelayMicros: 0,
+            contentType: "video/mp4",
+            contentDisposition: "attachment; filename=\"Holiday Clip.mp4\""
+        ))
+        let engine = makeEngine()
+        // A 320-char opaque token with no extension — the kind that broke before.
+        let token = String(repeating: "A1b2C3d4", count: 40)
+        let url = URL(string: "https://video-downloads.example/\(token)")!
+        let task = DownloadTask(source: .url(url),
+                                name: DownloadManager.defaultName(for: .url(url)),
+                                saveDirectory: tempDir.path)
+
+        let events = await drainAfterAdd(engine, task)
+
+        let resolved = events.compactMap { e -> String? in
+            if case .nameResolved(let n) = e { return n }; return nil
+        }
+        XCTAssertEqual(resolved.last, "Holiday Clip.mp4", "should adopt the Content-Disposition filename")
+        let written = try Data(contentsOf: tempDir.appendingPathComponent("Holiday Clip.mp4"))
+        XCTAssertEqual(written, payload, "bytes must land under the resolved name")
+    }
+
+    /// No Content-Disposition + a URL name without an extension -> infer the
+    /// extension from Content-Type.
+    func testInfersExtensionFromContentType() async throws {
+        let payload = deterministicData(64 * 1024)
+        StubURLProtocol.set(.init(
+            data: payload, supportsRanges: true, sendContentLength: true,
+            etag: "\"ct\"", chunkSize: 16 * 1024, chunkDelayMicros: 0,
+            contentType: "application/pdf"
+        ))
+        let engine = makeEngine()
+        let task = makeTask(name: "report")   // no extension
+        let events = await drainAfterAdd(engine, task)
+
+        let resolved = events.compactMap { e -> String? in
+            if case .nameResolved(let n) = e { return n }; return nil
+        }
+        XCTAssertEqual(resolved.last, "report.pdf")
+        let written = try Data(contentsOf: tempDir.appendingPathComponent("report.pdf"))
+        XCTAssertEqual(written, payload)
+    }
+
+    /// A URL name that is already a good filename must not be renamed (no churn,
+    /// and resume relies on the name staying put).
+    func testKeepsGoodFilename() async throws {
+        let payload = deterministicData(64 * 1024)
+        StubURLProtocol.set(.init(
+            data: payload, supportsRanges: true, sendContentLength: true,
+            etag: "\"ok\"", chunkSize: 16 * 1024, chunkDelayMicros: 0,
+            contentType: "application/octet-stream"
+        ))
+        let engine = makeEngine()
+        let task = makeTask(name: "archive.zip")
+        let events = await drainAfterAdd(engine, task)
+
+        let renamed = events.contains { if case .nameResolved = $0 { return true }; return false }
+        XCTAssertFalse(renamed, "a good name with an extension should not be renamed")
+        let written = try Data(contentsOf: tempDir.appendingPathComponent("archive.zip"))
         XCTAssertEqual(written, payload)
     }
 

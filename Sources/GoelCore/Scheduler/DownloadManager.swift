@@ -890,6 +890,11 @@ public actor DownloadManager {
                 tasks[i].files[f].bytesCompleted = bytesCompleted
             }
 
+        case let .nameResolved(name):
+            // Adopt the engine's resolved name (re-sanitize as defense-in-depth;
+            // it strips any path components so the save path stays contained).
+            tasks[i].name = DownloadTask.sanitizedName(name, fallback: tasks[i].name)
+
         case let .statusChanged(status):
             tasks[i].status = status
             handleStatusTransition(id, status)
@@ -1024,19 +1029,7 @@ public actor DownloadManager {
     /// a pathological directory can never spin forever.
     static func resolveName(_ base: String, in directory: String, policy: String) -> String {
         guard policy == "rename" else { return base }
-        let fm = FileManager.default
-        let path = (directory as NSString).appendingPathComponent(base)
-        guard fm.fileExists(atPath: path) else { return base }
-
-        let ns = base as NSString
-        let ext = ns.pathExtension
-        let stem = ns.deletingPathExtension
-        for n in 1...9_999 {
-            let candidate = ext.isEmpty ? "\(stem) (\(n))" : "\(stem) (\(n)).\(ext)"
-            let candidatePath = (directory as NSString).appendingPathComponent(candidate)
-            if !fm.fileExists(atPath: candidatePath) { return candidate }
-        }
-        return base
+        return DownloadTask.uniqueName(base: base, in: directory)
     }
 
     private static func magnetDisplayName(_ magnet: String) -> String? {

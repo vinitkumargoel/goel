@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 /// The production HTTP download engine.
 ///
@@ -274,7 +275,32 @@ public actor HTTPEngine: DownloadEngine {
                 try checkDiskSpace(task.saveDirectory, needed: total)
             }
 
-            let fileURL = URL(fileURLWithPath: task.savePath)
+            // Refine the on-disk name now that response headers are known:
+            // `Content-Disposition` supplies the real filename, `Content-Type` a
+            // missing extension. Doing this before the first byte is written means
+            // there is no partial file to move. On a resume the server returns the
+            // same name, so `refinedName` is a no-op and the existing partial (kept
+            // under the already-resolved name) is reused untouched.
+            if let better = Self.refinedName(current: task.name,
+                                             suggestedName: probe.suggestedName,
+                                             contentType: probe.contentType) {
+                let unique = DownloadTask.uniqueName(base: better, in: task.saveDirectory)
+                if unique != task.name {
+                    tasks[id]?.name = unique
+                    emit(id, .nameResolved(unique))
+                }
+            }
+
+            // Re-read the possibly-renamed task and re-assert path containment.
+            guard let resolved = tasks[id], resolved.isSavePathContained else {
+                let e = DownloadError.unknown("Path traversal blocked")
+                tasks[id]?.status = .failed(e)
+                jobs[id] = nil
+                emit(id, .failed(e))
+                emit(id, .statusChanged(.failed(e)))
+                return
+            }
+            let fileURL = URL(fileURLWithPath: resolved.savePath)
 
             // Per-download knobs captured once: the aggregate-rate pacer (honours
             // the profile's download cap; nil when unlimited) and the per-request
@@ -292,9 +318,9 @@ public actor HTTPEngine: DownloadEngine {
             if let total = probe.totalBytes {
                 tasks[id]?.totalBytes = total
                 emit(id, .metadataResolved(
-                    name: task.name,
+                    name: resolved.name,
                     totalBytes: total,
-                    files: [TransferFile(id: 0, path: task.name, length: total)]
+                    files: [TransferFile(id: 0, path: resolved.name, length: total)]
                 ))
                 if probe.acceptsRanges {
                     try await segmentedDownload(id: id, url: url, total: total, probe: probe, fileURL: fileURL, limiter: limiter, settings: settings)
@@ -410,6 +436,10 @@ public actor HTTPEngine: DownloadEngine {
         var acceptsRanges: Bool
         var etag: String?
         var lastModified: String?
+        /// Filename from the `Content-Disposition` header, if the server sent one.
+        var suggestedName: String?
+        /// `Content-Type` MIME, used to infer an extension when the name lacks one.
+        var contentType: String?
     }
 
     private func probe(_ url: URL) async throws -> ProbeResult {
@@ -448,25 +478,89 @@ public actor HTTPEngine: DownloadEngine {
             totalBytes: length,
             acceptsRanges: acceptsRanges && length != nil,
             etag: header(http, "ETag"),
-            lastModified: header(http, "Last-Modified")
+            lastModified: header(http, "Last-Modified"),
+            suggestedName: Self.filename(fromContentDisposition: header(http, "Content-Disposition")),
+            contentType: header(http, "Content-Type")
         )
     }
 
     private func interpretRangedGet(_ http: HTTPURLResponse) -> ProbeResult {
         let etag = header(http, "ETag")
         let lastModified = header(http, "Last-Modified")
+        let suggestedName = Self.filename(fromContentDisposition: header(http, "Content-Disposition"))
+        let contentType = header(http, "Content-Type")
 
         if http.statusCode == 206 {
             // "bytes 0-0/12345" -> 12345
             let total = header(http, "Content-Range")
                 .flatMap { $0.split(separator: "/").last }
                 .flatMap { Int64($0) }
-            return ProbeResult(totalBytes: total, acceptsRanges: total != nil, etag: etag, lastModified: lastModified)
+            return ProbeResult(totalBytes: total, acceptsRanges: total != nil, etag: etag,
+                               lastModified: lastModified, suggestedName: suggestedName, contentType: contentType)
         }
 
         // Server ignored the Range header and returned the whole body.
         let length = header(http, "Content-Length").flatMap { Int64($0) }
-        return ProbeResult(totalBytes: length, acceptsRanges: false, etag: etag, lastModified: lastModified)
+        return ProbeResult(totalBytes: length, acceptsRanges: false, etag: etag,
+                           lastModified: lastModified, suggestedName: suggestedName, contentType: contentType)
+    }
+
+    // MARK: Filename resolution (Content-Disposition / Content-Type)
+
+    /// Parse a filename out of a `Content-Disposition` header. Prefers the
+    /// RFC 5987 extended form (`filename*=UTF-8''…`, percent-decoded) and falls
+    /// back to the plain `filename="…"`. Returns nil if the header is absent or
+    /// carries no usable name. (Path components are stripped later by
+    /// `sanitizedName`, so a hostile `filename="../x"` can't escape.)
+    static func filename(fromContentDisposition header: String?) -> String? {
+        guard let header, !header.isEmpty else { return nil }
+        var plain: String?
+        for token in header.components(separatedBy: ";") {
+            let part = token.trimmingCharacters(in: .whitespaces)
+            let lower = part.lowercased()
+            if lower.hasPrefix("filename*=") {
+                let value = String(part.dropFirst("filename*=".count))
+                // charset'lang'pct-encoded  ->  take the part after the second quote.
+                let encoded = value.range(of: "''").map { String(value[$0.upperBound...]) } ?? value
+                if let decoded = encoded.removingPercentEncoding, !decoded.isEmpty {
+                    return decoded   // extended form wins outright
+                }
+            } else if lower.hasPrefix("filename=") {
+                let value = String(part.dropFirst("filename=".count))
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                if !value.isEmpty { plain = value }
+            }
+        }
+        return plain
+    }
+
+    /// Preferred file extension for a MIME type (e.g. `video/mp4` -> `mp4`),
+    /// stripping any `; charset=…` / `; codecs=…` parameters first.
+    static func fileExtension(forMIME mime: String?) -> String? {
+        guard let mime else { return nil }
+        let base = mime.components(separatedBy: ";").first?
+            .trimmingCharacters(in: .whitespaces).lowercased() ?? mime
+        guard !base.isEmpty, base != "application/octet-stream" else { return nil }
+        return UTType(mimeType: base)?.preferredFilenameExtension
+    }
+
+    /// Compute a better on-disk name once response headers are known, or nil if
+    /// the current name is already the best we can do. The server-supplied
+    /// `Content-Disposition` name wins; otherwise the existing (URL-derived) name
+    /// is kept but gains an extension inferred from `Content-Type` when it has
+    /// none. The result is sanitized + length-clamped by `sanitizedName`.
+    static func refinedName(current: String, suggestedName: String?, contentType: String?) -> String? {
+        var name = current
+        if let suggested = suggestedName {
+            let cleaned = DownloadTask.sanitizedName(suggested, fallback: "")
+            if !cleaned.isEmpty { name = cleaned }
+        }
+        if (name as NSString).pathExtension.isEmpty,
+           let ext = fileExtension(forMIME: contentType) {
+            name += "." + ext
+        }
+        let final = DownloadTask.sanitizedName(name, fallback: current)
+        return final == current ? nil : final
     }
 
     private func header(_ http: HTTPURLResponse, _ name: String) -> String? {
