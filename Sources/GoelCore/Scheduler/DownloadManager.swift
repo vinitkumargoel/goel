@@ -350,6 +350,48 @@ public actor DownloadManager {
         return task
     }
 
+    /// Resolve a source's metadata for the add-confirmation screen, *without*
+    /// adding anything to the queue. HTTP/HLS probe the server for name + size;
+    /// torrents/magnets fetch the name, total size and file list (then discard the
+    /// throwaway handle). Always returns a preview — on failure it carries a `note`
+    /// and the best-effort name so the user can still choose to start.
+    public func resolveMetadata(for source: DownloadSource, saveDirectory: String? = nil) async -> DownloadPreview {
+        let directory = saveDirectory ?? defaultDirectory(for: source)
+        let fallbackName = Self.defaultName(for: source)
+
+        switch source.kind {
+        case .http:
+            guard case .url(let url) = source, let http = httpEngine as? HTTPEngine else {
+                return DownloadPreview(source: source, suggestedName: fallbackName,
+                                       totalBytes: nil, kind: .http)
+            }
+            let r = await http.resolveMetadata(for: url, currentName: fallbackName)
+            return DownloadPreview(
+                source: source, suggestedName: r.name, totalBytes: r.totalBytes, kind: .http,
+                note: r.reachable ? nil : "Couldn’t reach the server — it may still work when you start.")
+
+        case .torrent:
+            guard let torrent = torrentEngine as? TorrentEngine else {
+                return DownloadPreview(source: source, suggestedName: fallbackName,
+                                       totalBytes: nil, kind: .torrent)
+            }
+            if let m = await torrent.resolveMetadata(for: source, saveDirectory: directory) {
+                let name = m.name.isEmpty ? fallbackName : DownloadTask.sanitizedName(m.name)
+                return DownloadPreview(source: source, suggestedName: name, totalBytes: m.totalBytes,
+                                       files: m.files, kind: .torrent)
+            }
+            return DownloadPreview(
+                source: source, suggestedName: fallbackName, totalBytes: nil, kind: .torrent,
+                note: "No peers answered in time, so the file list isn’t available yet. You can still start — it will resolve while downloading.")
+
+        case .hls:
+            // HLS size is only knowable by walking the playlist; show the name now
+            // and let the exact size settle once the download starts.
+            return DownloadPreview(source: source, suggestedName: fallbackName,
+                                   totalBytes: nil, isEstimatedSize: true, kind: .hls)
+        }
+    }
+
     /// Add several sources at once. Duplicates resolve to the existing task.
     @discardableResult
     public func addBatch(

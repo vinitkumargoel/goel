@@ -3,26 +3,42 @@ import AppKit
 import UniformTypeIdentifiers
 import GoelCore
 
-/// The Add-download sheet: a drop zone, a URL / magnet field (batch lines
-/// supported), a preset destination picker, and a task priority — all wired
-/// straight into the manager.
+/// The Add-download flow, in two steps:
+///
+///  1. **Input** — a drop zone + a URL / magnet / .m3u8 field (auto-pasted from
+///     the clipboard when it holds a downloadable link). The button is
+///     **Continue**, not "Add to queue".
+///  2. **Confirm** — after resolving metadata, show the name, the size and (for
+///     torrents) the file list, pick the destination folder (Downloads by
+///     default) and priority, then **Start download** to actually queue it.
+///
+/// A multi-line batch skips the per-item preview and adds every line at once.
 struct AddDownloadSheet: View {
     @EnvironmentObject private var vm: AppViewModel
     @Environment(\.dismiss) private var dismiss
 
+    /// Where we are in the two-step flow.
+    private enum Phase: Equatable {
+        case input
+        case resolving
+        case confirm(DownloadPreview)
+    }
+    @State private var phase: Phase = .input
+
     @State private var text: String = ""
     @State private var priority: FilePriority = .normal
     @State private var isDropTargeted = false
-    /// Optional integrity hash; verified after the (single) download finishes.
+    /// Optional integrity hash; verified after a single HTTP/HLS download finishes.
     @State private var checksumText: String = ""
+    /// Inline validation shown under the input field.
+    @State private var inputError: String?
+    /// The in-flight metadata resolution, so it can be cancelled.
+    @State private var resolveTask: Task<Void, Never>?
 
-    /// The chosen "Save to" preset. Holds one of the sentinel tags below or a
-    /// concrete folder path; `add()` maps `automatic` to a `nil` directory so the
-    /// manager applies the configured default-folder rule.
-    @State private var saveSelection: String = SaveOption.automatic
-    /// The last committed selection, used to revert when the user cancels the
-    /// folder-chooser panel reached via "Choose folder…".
-    @State private var previousSaveSelection: String = SaveOption.automatic
+    /// The chosen "Save to" preset, shown on the confirm screen. Defaults to
+    /// ~/Downloads per the requested behaviour.
+    @State private var saveSelection: String = ("~/Downloads" as NSString).expandingTildeInPath
+    @State private var previousSaveSelection: String = ("~/Downloads" as NSString).expandingTildeInPath
     /// A folder picked through the panel, surfaced as its own picker row.
     @State private var customFolder: String?
 
@@ -37,17 +53,38 @@ struct AddDownloadSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 11) {
-                Image(systemName: "link")
-                    .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
-                Text("Add download").font(.system(size: 15, weight: .semibold))
-                Spacer()
-            }
-            .padding(18)
+            header
             Divider()
 
+            switch phase {
+            case .input:        inputContent
+            case .resolving:    resolvingContent
+            case .confirm(let preview): confirmContent(preview)
+            }
+        }
+        .frame(width: 560)
+        .onAppear(perform: autoPasteFromClipboard)
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        HStack(spacing: 11) {
+            Image(systemName: phase == .input ? "link" : "checklist")
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
+            Text(phase == .input ? "Add download" : "Review & start")
+                .font(.system(size: 15, weight: .semibold))
+            Spacer()
+        }
+        .padding(18)
+    }
+
+    // MARK: Step 1 — input
+
+    private var inputContent: some View {
+        VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 16) {
                 dropZone
 
@@ -61,18 +98,83 @@ struct AddDownloadSheet: View {
                         .padding(6)
                         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
-                    Text("Paste several lines to add them all at once. Magnet links resolve metadata from peers; .m3u8 links are grabbed as a single video.")
+                        .onChange(of: text) { _, _ in inputError = nil }
+                    if let inputError {
+                        Label(inputError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.orange)
+                    } else {
+                        Text("Paste several lines to add them all at once (batch). A single link is previewed before it starts.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .padding(20)
+
+            Divider()
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Continue") { continueTapped() }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(14)
+        }
+    }
+
+    // MARK: Step 1.5 — resolving spinner
+
+    private var resolvingContent: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+                .controlSize(.large)
+            Text("Fetching details…")
+                .font(.system(size: 13, weight: .medium))
+            Text("Reading the file name and size. Magnet links ask peers for the file list, which can take a few seconds.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            Button("Cancel") {
+                resolveTask?.cancel()
+                phase = .input
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .padding(.horizontal, 20)
+    }
+
+    // MARK: Step 2 — confirm
+
+    private func confirmContent(_ preview: DownloadPreview) -> some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
+                metadataSummary(preview)
+
+                if !preview.files.isEmpty {
+                    fileList(preview.files)
+                }
+
+                if let note = preview.note {
+                    Label(note, systemImage: "info.circle.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Save to").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                         Picker("", selection: $saveSelection) {
-                            Text("Automatic").tag(SaveOption.automatic)
                             Text("~/Downloads").tag(downloadsPath)
                             Text("~/Movies").tag(moviesPath)
+                            Text("Automatic (by type)").tag(SaveOption.automatic)
                             if let customFolder, customFolder != downloadsPath, customFolder != moviesPath {
                                 Text((customFolder as NSString).abbreviatingWithTildeInPath).tag(customFolder)
                             }
@@ -81,9 +183,7 @@ struct AddDownloadSheet: View {
                         }
                         .labelsHidden()
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .onChange(of: saveSelection) { _, newValue in
-                            handleSaveSelection(newValue)
-                        }
+                        .onChange(of: saveSelection) { _, newValue in handleSaveSelection(newValue) }
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Priority").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
@@ -97,27 +197,91 @@ struct AddDownloadSheet: View {
                     }
                 }
 
-                checksumField
+                if preview.kind != .torrent {
+                    checksumField
+                }
             }
             .padding(20)
 
             Divider()
             HStack {
+                Button("Back") { phase = .input }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Add to queue") { add() }
+                Button("Start download") { start(preview) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
             }
             .padding(14)
         }
-        .frame(width: 560)
     }
 
-    /// The dashed drop affordance above the URL field, mirroring the design. A
-    /// dropped web URL or `.torrent` file URL is appended to the URL editor so the
-    /// user can review it before committing.
+    /// Name + kind badge + size header for the confirm screen.
+    private func metadataSummary(_ preview: DownloadPreview) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: iconName(preview.kind))
+                .font(.system(size: 20))
+                .foregroundStyle(.secondary)
+                .frame(width: 34, height: 34)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(preview.suggestedName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                HStack(spacing: 8) {
+                    kindBadge(preview.kind)
+                    Text(sizeText(preview))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    if !preview.files.isEmpty {
+                        Text("· \(preview.files.count) file\(preview.files.count == 1 ? "" : "s")")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Spacer()
+        }
+    }
+
+    /// Scrollable list of the files inside a torrent.
+    private func fileList(_ files: [TransferFile]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Files").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(files) { file in
+                        HStack(spacing: 8) {
+                            Image(systemName: "doc")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
+                            Text((file.path as NSString).lastPathComponent)
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 8)
+                            Text(file.length.byteString)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        if file.id != files.last?.id {
+                            Divider().opacity(0.4)
+                        }
+                    }
+                }
+            }
+            .frame(height: min(CGFloat(files.count) * 28 + 4, 170))
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
+        }
+    }
+
+    // MARK: Shared subviews
+
     private var dropZone: some View {
         VStack(spacing: 7) {
             Image(systemName: "arrow.down.to.line")
@@ -142,8 +306,6 @@ struct AddDownloadSheet: View {
         .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
     }
 
-    /// Optional checksum entry with live algorithm detection. Only verified for a
-    /// single download — a checksum alongside a multi-line batch is ignored.
     private var checksumField: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Checksum (optional)")
@@ -169,10 +331,60 @@ struct AddDownloadSheet: View {
         }
     }
 
-    private func add() {
-        vm.add(rawLines: text, saveDirectory: resolvedSaveDirectory, priority: priority,
-               expectedChecksum: Checksum.parse(checksumText))
+    // MARK: Actions
+
+    /// Pre-fill the field from the clipboard when it holds a downloadable link and
+    /// the field is still empty.
+    private func autoPasteFromClipboard() {
+        guard text.isEmpty,
+              let clip = NSPasteboard.general.string(forType: .string)?
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              !clip.isEmpty,
+              AppViewModel.parseSource(clip) != nil
+        else { return }
+        text = clip
+    }
+
+    /// Continue from the input step: one link → resolve + preview; many → batch add.
+    private func continueTapped() {
+        let sources = vm.parsedSources(in: text)
+        guard !sources.isEmpty else {
+            inputError = "Enter a valid URL, magnet, or .m3u8 link."
+            return
+        }
+        if sources.count > 1 {
+            vm.add(rawLines: text, saveDirectory: resolvedSaveDirectory, priority: priority)
+            dismiss()
+            return
+        }
+        guard let line = firstParseableLine() else {
+            inputError = "Enter a valid URL, magnet, or .m3u8 link."
+            return
+        }
+        phase = .resolving
+        resolveTask = Task { @MainActor in
+            let preview = await vm.resolveMetadata(for: line, saveDirectory: nil)
+            if Task.isCancelled { return }
+            if let preview {
+                phase = .confirm(preview)
+            } else {
+                phase = .input
+                inputError = "That link isn’t valid."
+            }
+        }
+    }
+
+    /// Commit the previewed download with the chosen destination/priority/checksum.
+    private func start(_ preview: DownloadPreview) {
+        vm.confirm(preview, saveDirectory: resolvedSaveDirectory, priority: priority,
+                   checksum: Checksum.parse(checksumText))
         dismiss()
+    }
+
+    private func firstParseableLine() -> String? {
+        text.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { AppViewModel.parseSource($0) != nil }
     }
 
     /// The directory to hand the manager. `automatic` (and the unreachable
@@ -184,8 +396,6 @@ struct AddDownloadSheet: View {
         }
     }
 
-    /// React to a "Save to" change: the `choose` sentinel opens a folder panel and
-    /// either records the picked folder or reverts to the prior selection.
     private func handleSaveSelection(_ newValue: String) {
         guard newValue == SaveOption.choose else {
             previousSaveSelection = newValue
@@ -204,7 +414,6 @@ struct AddDownloadSheet: View {
         }
     }
 
-    /// Load every URL the drag carries and append the locators to the URL editor.
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         let urlProviders = providers.filter { $0.canLoadObject(ofClass: URL.self) }
         guard !urlProviders.isEmpty else { return false }
@@ -227,8 +436,6 @@ struct AddDownloadSheet: View {
         return true
     }
 
-    /// Append newline-separated locators to ``text`` without clobbering existing
-    /// input, keeping each entry on its own line.
     private func appendLines(_ lines: [String]) {
         let joined = lines.joined(separator: "\n")
         if text.isEmpty {
@@ -238,5 +445,38 @@ struct AddDownloadSheet: View {
         } else {
             text += "\n" + joined
         }
+    }
+
+    // MARK: Formatting helpers
+
+    private func sizeText(_ preview: DownloadPreview) -> String {
+        guard let bytes = preview.totalBytes else {
+            return preview.isEstimatedSize ? "Size resolved while downloading" : "Unknown size"
+        }
+        return (preview.isEstimatedSize ? "~" : "") + bytes.byteString
+    }
+
+    private func iconName(_ kind: DownloadKind) -> String {
+        switch kind {
+        case .http: return "arrow.down.circle"
+        case .torrent: return "point.3.connected.trianglepath.dotted"
+        case .hls: return "play.rectangle"
+        }
+    }
+
+    private func kindBadge(_ kind: DownloadKind) -> some View {
+        let label: String
+        let color: Color
+        switch kind {
+        case .http: label = "HTTP"; color = Theme.accent
+        case .torrent: label = "BT"; color = Theme.green
+        case .hls: label = "HLS"; color = Theme.orange
+        }
+        return Text(label)
+            .font(.system(size: 10, weight: .bold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.15), in: Capsule())
+            .foregroundStyle(color)
     }
 }

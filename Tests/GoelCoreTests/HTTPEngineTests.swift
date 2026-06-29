@@ -438,6 +438,45 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertEqual(written, payload)
     }
 
+    // MARK: (d3) Metadata preview (add-confirmation screen)
+
+    func testResolveMetadataReturnsNameAndSize() async throws {
+        let payload = deterministicData(250 * 1024)
+        StubURLProtocol.set(.init(
+            data: payload, supportsRanges: true, sendContentLength: true,
+            etag: "\"m\"", chunkSize: 64 * 1024, chunkDelayMicros: 0,
+            contentType: "video/mp4",
+            contentDisposition: "attachment; filename=\"Clip.mp4\""
+        ))
+        let engine = makeEngine()
+        let url = URL(string: "https://example.test/opaque-token")!
+        let meta = await engine.resolveMetadata(for: url, currentName: "opaque-token")
+        XCTAssertEqual(meta.name, "Clip.mp4")
+        XCTAssertEqual(meta.totalBytes, Int64(payload.count))
+        XCTAssertTrue(meta.reachable)
+    }
+
+    func testManagerResolveMetadataForHTTP() async throws {
+        let payload = deterministicData(120 * 1024)
+        StubURLProtocol.set(.init(
+            data: payload, supportsRanges: true, sendContentLength: true,
+            etag: "\"mm\"", chunkSize: 32 * 1024, chunkDelayMicros: 0,
+            contentType: "application/pdf"
+        ))
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubURLProtocol.self]
+        let manager = DownloadManager(
+            httpEngine: HTTPEngine(configuration: config),
+            torrentEngine: FakeEngine(kind: .torrent),
+            store: nil
+        )
+        let preview = await manager.resolveMetadata(for: .url(URL(string: "https://example.test/report")!))
+        XCTAssertEqual(preview.kind, .http)
+        XCTAssertEqual(preview.suggestedName, "report.pdf", "name + inferred extension")
+        XCTAssertEqual(preview.totalBytes, Int64(payload.count))
+        XCTAssertNil(preview.note)
+    }
+
     // MARK: (e) Pause stops progress
 
     func testPauseStopsProgress() async throws {

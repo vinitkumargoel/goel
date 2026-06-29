@@ -429,6 +429,23 @@ public actor HTTPEngine: DownloadEngine {
         try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
 
+    // MARK: Metadata preview
+
+    /// Probe a URL for the add-confirmation preview: returns the best filename
+    /// (Content-Disposition / inferred extension) and the total size, plus whether
+    /// the server was reachable. Performs the same HEAD/ranged-GET probe a real
+    /// download would, but writes nothing and creates no task.
+    public func resolveMetadata(for url: URL, currentName: String)
+        async -> (name: String, totalBytes: Int64?, reachable: Bool) {
+        guard let result = try? await probe(url) else {
+            return (currentName, nil, false)
+        }
+        let refined = Self.refinedName(current: currentName,
+                                       suggestedName: result.suggestedName,
+                                       contentType: result.contentType)
+        return (refined ?? currentName, result.totalBytes, true)
+    }
+
     // MARK: Range-support probe
 
     private struct ProbeResult {

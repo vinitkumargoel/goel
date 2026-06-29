@@ -335,6 +335,40 @@ final class AppViewModel: ObservableObject {
         filter = .all
     }
 
+    // MARK: Two-step add (resolve metadata, then confirm)
+
+    /// The parseable source locators in `rawLines`, in order. Used to decide
+    /// between the single-item confirm flow and a multi-item batch add.
+    func parsedSources(in rawLines: String) -> [DownloadSource] {
+        rawLines
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .compactMap(Self.parseSource)
+    }
+
+    /// Resolve a single source's metadata for the confirmation screen. Returns
+    /// nil only if the line doesn't parse into a valid source.
+    func resolveMetadata(for line: String, saveDirectory: String?) async -> DownloadPreview? {
+        guard let source = Self.parseSource(line) else { return nil }
+        return await manager.resolveMetadata(for: source, saveDirectory: saveDirectory)
+    }
+
+    /// Commit a previewed download with the destination / priority / checksum the
+    /// user chose on the confirmation screen.
+    func confirm(_ preview: DownloadPreview, saveDirectory: String?,
+                 priority: FilePriority, checksum: Checksum?) {
+        // A checksum only applies to a single-file HTTP/HLS download.
+        let checksum = preview.kind == .torrent ? nil : checksum
+        let source = preview.source
+        Task {
+            await manager.add(source: source, saveDirectory: saveDirectory,
+                              priority: priority, expectedChecksum: checksum)
+        }
+        toastNow("Added to queue")
+        filter = .all
+    }
+
     // MARK: Clipboard capture
 
     /// Called by the clipboard monitor when new text is copied. Surfaces the first

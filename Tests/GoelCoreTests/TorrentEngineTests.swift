@@ -84,6 +84,22 @@ final class TorrentEngineTests: XCTestCase {
                                     "must transfer real bytes from the swarm/webseed (got \(maxBytes))")
     }
 
+    /// Resolve a torrent's metadata for the add-confirmation preview without
+    /// committing a download: name, total size and a non-empty file list, with no
+    /// persistent handle left behind. Gated on `GOEL_LIVE_NET=1`.
+    func testResolveMetadataLive() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["GOEL_LIVE_NET"] == "1",
+                          "set GOEL_LIVE_NET=1 to run the live network test")
+        let torrentURL = try await discoverDebianTorrent()
+        let engine = TorrentEngine(profile: .high)
+        let meta = await engine.resolveMetadata(for: .torrentFile(torrentURL),
+                                                saveDirectory: tempDir.path, timeout: 60)
+        let resolved = try XCTUnwrap(meta, "metadata must resolve from the .torrent")
+        XCTAssertGreaterThan(resolved.totalBytes, 0)
+        XCTAssertFalse(resolved.files.isEmpty, "the file list must be populated")
+        XCTAssertFalse(resolved.name.isEmpty)
+    }
+
     /// Scrape the current Debian netinst `.torrent` URL from the cdimage listing,
     /// so the test survives Debian point releases.
     private func discoverDebianTorrent() async throws -> URL {

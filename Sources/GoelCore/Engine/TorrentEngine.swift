@@ -105,6 +105,39 @@ public actor TorrentEngine: DownloadEngine {
 
     public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 
+    // MARK: Metadata preview
+
+    /// Resolve a torrent's metadata (name, total size, file list) **without**
+    /// starting a tracked download. The torrent is added to the session only long
+    /// enough to fetch its metadata (instant for a `.torrent` file, a DHT/peer
+    /// round-trip for a magnet), then removed and any bytes deleted. Used by the
+    /// add-confirmation preview so the user sees the files before committing.
+    /// Returns nil on timeout, error, or cancellation.
+    public func resolveMetadata(
+        for source: DownloadSource,
+        saveDirectory: String,
+        timeout: TimeInterval = 60
+    ) async -> (name: String, totalBytes: Int64, files: [TransferFile])? {
+        let probe = DownloadTask(source: source, name: "", saveDirectory: saveDirectory)
+        guard let handle = try? await makeHandle(for: probe) else { return nil }
+        defer {
+            if let session { gt_remove(session, handle, 1) } else { gt_handle_free(handle) }
+        }
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if Task.isCancelled { return nil }
+            var status = GTStatus()
+            if gt_get_status(handle, &status) == 1 {
+                if status.state == TorrentState.error.rawValue { return nil }
+                if status.has_metadata != 0 {
+                    return (Self.cString(status.name), status.total_bytes, readFiles(handle))
+                }
+            }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+        }
+        return nil   // timed out before any peer supplied the metadata
+    }
+
     // MARK: Session / handle setup
 
     private func ensureSession() -> UnsafeMutableRawPointer? {
