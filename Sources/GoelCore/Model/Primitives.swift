@@ -4,6 +4,7 @@ import Foundation
 public enum DownloadKind: String, Codable, Sendable, CaseIterable {
     case http
     case torrent
+    case hls
 }
 
 /// Per-file selection / priority within a multi-file transfer.
@@ -62,6 +63,7 @@ public enum DownloadStatus: Codable, Sendable, Equatable, Hashable {
     case queued
     case requestingMetadata   // magnet: name/size unknown until peers respond
     case downloading
+    case verifying            // payload downloaded; checking the integrity hash
     case paused
     case seeding              // torrent finished, still uploading
     case completed
@@ -69,7 +71,7 @@ public enum DownloadStatus: Codable, Sendable, Equatable, Hashable {
 
     public var isActive: Bool {
         switch self {
-        case .downloading, .requestingMetadata, .seeding: return true
+        case .downloading, .verifying, .requestingMetadata, .seeding: return true
         default: return false
         }
     }
@@ -94,6 +96,7 @@ public enum DownloadStatus: Codable, Sendable, Equatable, Hashable {
         case .queued: return "Queued"
         case .requestingMetadata: return "Requesting info"
         case .downloading: return "Downloading"
+        case .verifying: return "Verifying"
         case .paused: return "Paused"
         case .seeding: return "Seeding"
         case .completed: return "Completed"
@@ -107,11 +110,13 @@ public enum DownloadSource: Codable, Sendable, Hashable {
     case url(URL)
     case magnet(String)
     case torrentFile(URL)
+    case hlsStream(URL)
 
     public var kind: DownloadKind {
         switch self {
         case .url: return .http
         case .magnet, .torrentFile: return .torrent
+        case .hlsStream: return .hls
         }
     }
 
@@ -122,6 +127,7 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         case .url(let u): return u.absoluteString
         case .magnet(let m): return m
         case .torrentFile(let u): return u.absoluteString
+        case .hlsStream(let u): return u.absoluteString
         }
     }
 
@@ -158,6 +164,9 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         if let url = URL(string: trimmed),
            let scheme = url.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {
+            // An `.m3u8` URL is an HLS stream playlist, routed to the HLS engine.
+            // `pathExtension` ignores any `?query` so tokenised CDN URLs still match.
+            if url.pathExtension.lowercased() == "m3u8" { return .hlsStream(url) }
             return .url(url)
         }
         return nil

@@ -1,0 +1,405 @@
+import Foundation
+import AVFoundation
+import CommonCrypto
+
+/// Downloads an HLS (`.m3u8`) video stream into a single playable file.
+///
+/// Flow: fetch the playlist → if it's a master, pick the best variant → parse the
+/// media playlist → download every segment concurrently (decrypting AES-128
+/// segments on the fly) → assemble. fMP4 streams (with an `EXT-X-MAP` init
+/// segment) concatenate directly into a valid `.mp4`; MPEG-TS streams concatenate
+/// to a temp `.ts` and are remuxed to `.mp4` via AVFoundation passthrough.
+///
+/// Segment files are written under a per-task work directory, so a paused stream
+/// resumes by skipping segments already on disk. Conforms to ``DownloadEngine``
+/// so the scheduler and UI treat it like any other download.
+public actor HLSEngine: DownloadEngine {
+    public nonisolated let kind: DownloadKind = .hls
+    private nonisolated let hub = EventHub()
+    private nonisolated let session: URLSession
+    private nonisolated let userAgent: String
+
+    private var tasks: [UUID: DownloadTask] = [:]
+    private var jobs: [UUID: Task<Void, Never>] = [:]
+    private var profile: TrafficProfile
+    /// Preferred maximum video height (0 = best available).
+    private var maxHeight: Int = 0
+
+    public init(profile: TrafficProfile, userAgent: String = "GoelDownloader/1.0 (macOS)") {
+        self.profile = profile
+        self.userAgent = userAgent
+        let config = URLSessionConfiguration.default
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.timeoutIntervalForRequest = 60
+        config.waitsForConnectivity = true
+        self.session = URLSession(configuration: config)
+    }
+
+    // MARK: DownloadEngine
+
+    public nonisolated func canHandle(_ source: DownloadSource) -> Bool { source.kind == .hls }
+
+    public func add(_ task: DownloadTask) async {
+        tasks[task.id] = task
+        startJob(task.id)
+    }
+
+    public func pause(_ id: UUID) async {
+        jobs[id]?.cancel()
+        jobs[id] = nil
+    }
+
+    public func resume(_ id: UUID) async {
+        guard tasks[id] != nil else { return }
+        startJob(id)
+    }
+
+    public func remove(_ id: UUID, deleteData: Bool) async {
+        jobs[id]?.cancel()
+        jobs[id] = nil
+        let task = tasks[id]
+        tasks[id] = nil
+        try? FileManager.default.removeItem(at: Self.workDir(for: id))
+        if deleteData, let task { try? FileManager.default.removeItem(atPath: task.savePath) }
+        hub.finishAll(id)
+    }
+
+    public func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
+
+    public func setMaxHeight(_ height: Int) { maxHeight = max(0, height) }
+
+    public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {}
+
+    public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
+
+    // MARK: Orchestration
+
+    private func startJob(_ id: UUID) {
+        jobs[id]?.cancel()
+        let height = maxHeight
+        let bound = max(1, min(8, profile.maxConnectionsPerServer == 0 ? 6 : profile.maxConnectionsPerServer))
+        jobs[id] = Task { await self.run(id, maxHeight: height, concurrency: bound) }
+    }
+
+    private func clearJob(_ id: UUID) { jobs[id] = nil }
+
+    private func run(_ id: UUID, maxHeight: Int, concurrency: Int) async {
+        guard let task = tasks[id], case .hlsStream(let playlistURL) = task.source else {
+            let e = DownloadError.unknown("HLSEngine requires an HLS source")
+            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            return
+        }
+        emit(id, .statusChanged(.downloading))
+        do {
+            try Task.checkCancellation()
+            let plan = try await resolveMediaPlaylist(playlistURL, maxHeight: maxHeight)
+            try await produce(id: id, task: task, plan: plan, concurrency: concurrency)
+        } catch is CancellationError {
+            // pause()/remove() cancelled the job; the manager owns the state.
+        } catch {
+            if Task.isCancelled { return }
+            let de = mapError(error)
+            emit(id, .failed(de)); emit(id, .statusChanged(.failed(de)))
+            jobs[id] = nil
+        }
+    }
+
+    /// Resolve the source playlist down to a concrete media plan, following one
+    /// level of master → variant indirection.
+    private func resolveMediaPlaylist(_ url: URL, maxHeight: Int) async throws -> MediaPlan {
+        let text = try await fetchText(url)
+        switch HLSParser.parse(text, baseURL: url) {
+        case .master(let variants):
+            guard let variant = HLSParser.selectVariant(variants, maxHeight: maxHeight > 0 ? maxHeight : nil) else {
+                throw DownloadError.unknown("No playable variant in the HLS master playlist")
+            }
+            let mediaText = try await fetchText(variant.url)
+            guard case .media(let segs, let mapURL, _, let total) =
+                    HLSParser.parse(mediaText, baseURL: variant.url) else {
+                throw DownloadError.unknown("HLS media playlist had no segments")
+            }
+            return MediaPlan(segments: segs, mapURL: mapURL, totalDuration: total, bandwidth: variant.bandwidth)
+        case .media(let segs, let mapURL, _, let total):
+            return MediaPlan(segments: segs, mapURL: mapURL, totalDuration: total, bandwidth: 0)
+        case nil:
+            throw DownloadError.unknown("Not a valid HLS playlist")
+        }
+    }
+
+    /// Download every segment, assemble, and emit completion. `nonisolated` so the
+    /// concurrent fetch/decrypt/assemble work runs off the actor; it reaches the
+    /// engine only through the thread-safe `hub` and `nonisolated` fetch helpers.
+    private nonisolated func produce(id: UUID, task: DownloadTask, plan: MediaPlan, concurrency: Int) async throws {
+        let segments = plan.segments
+        guard !segments.isEmpty else { throw DownloadError.unknown("HLS playlist had no segments") }
+
+        let estTotal = plan.bandwidth > 0 ? Int64(Double(plan.bandwidth) / 8.0 * plan.totalDuration) : 0
+        hub.emit(id, .metadataResolved(name: task.name, totalBytes: estTotal,
+                                       files: [TransferFile(id: 0, path: task.name, length: estTotal)]))
+
+        let workDir = Self.workDir(for: id)
+        try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+
+        let keyCache = KeyCache()
+        let progress = ProgressTracker(hub: hub, id: id, connections: concurrency)
+
+        // fMP4 init map first, if present.
+        if let mapURL = plan.mapURL {
+            try Task.checkCancellation()
+            let initFile = workDir.appendingPathComponent("init.mp4")
+            if Self.fileSize(initFile) == nil {
+                let data = try await fetchSegment(HLSSegment(url: mapURL, duration: 0, sequence: 0,
+                                                             key: segments.first?.key),
+                                                  keyCache: keyCache)
+                try data.write(to: initFile)
+            }
+        }
+
+        // Concurrent segment download with a sliding window of `concurrency`.
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            var started = 0
+            let prime = min(concurrency, segments.count)
+            while started < prime {
+                let i = started; started += 1
+                group.addTask { try await self.downloadSegment(index: i, segment: segments[i],
+                                                               workDir: workDir, keyCache: keyCache,
+                                                               progress: progress) }
+            }
+            while started < segments.count {
+                try await group.next()
+                let i = started; started += 1
+                group.addTask { try await self.downloadSegment(index: i, segment: segments[i],
+                                                               workDir: workDir, keyCache: keyCache,
+                                                               progress: progress) }
+            }
+            try await group.waitForAll()
+        }
+
+        try Task.checkCancellation()
+
+        // Assemble in playlist order.
+        var parts: [URL] = []
+        if plan.mapURL != nil { parts.append(workDir.appendingPathComponent("init.mp4")) }
+        for i in 0..<segments.count {
+            parts.append(workDir.appendingPathComponent(Self.segmentName(i)))
+        }
+
+        let destURL = URL(fileURLWithPath: task.savePath)
+        try? FileManager.default.removeItem(at: destURL)
+        if plan.mapURL != nil {
+            // fMP4: init + media fragments are already a valid (fragmented) MP4.
+            try Self.concatenate(parts, to: destURL)
+        } else {
+            // MPEG-TS: concatenate, then remux to MP4 via AVFoundation passthrough.
+            let tsURL = workDir.appendingPathComponent("combined.ts")
+            try Self.concatenate(parts, to: tsURL)
+            try await Self.remuxToMP4(from: tsURL, to: destURL)
+        }
+
+        let actual = Self.fileSize(destURL) ?? estTotal
+        hub.emit(id, .metadataResolved(name: task.name, totalBytes: actual,
+                                       files: [TransferFile(id: 0, path: task.name, length: actual)]))
+        hub.emit(id, .progress(bytesDownloaded: actual, bytesUploaded: 0,
+                               downloadSpeed: 0, uploadSpeed: 0, connectionCount: 0))
+        try? FileManager.default.removeItem(at: workDir)
+        hub.emit(id, .finished)
+        hub.emit(id, .statusChanged(.completed))
+        await clearJob(id)
+    }
+
+    // MARK: Segment fetch / decrypt
+
+    private nonisolated func downloadSegment(index: Int, segment: HLSSegment, workDir: URL,
+                                             keyCache: KeyCache, progress: ProgressTracker) async throws {
+        try Task.checkCancellation()
+        let dest = workDir.appendingPathComponent(Self.segmentName(index))
+        if let existing = Self.fileSize(dest) {
+            await progress.add(existing)   // already downloaded (resume)
+            return
+        }
+        let data = try await fetchSegment(segment, keyCache: keyCache)
+        // Write to a .part then rename so an interrupted write never looks complete.
+        let tmp = dest.appendingPathExtension("part")
+        try? FileManager.default.removeItem(at: tmp)
+        try data.write(to: tmp)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.moveItem(at: tmp, to: dest)
+        await progress.add(Int64(data.count))
+    }
+
+    private nonisolated func fetchSegment(_ segment: HLSSegment, keyCache: KeyCache) async throws -> Data {
+        let raw = try await fetchData(segment.url)
+        guard let key = segment.key else { return raw }
+        switch key.method {
+        case .none:
+            return raw
+        case .sampleAES:
+            throw DownloadError.unknown("SAMPLE-AES encrypted streams aren’t supported")
+        case .aes128:
+            guard let keyURL = key.url else { throw DownloadError.unknown("HLS AES key has no URI") }
+            let keyData = try await keyCache.key(for: keyURL) { try await self.fetchData($0) }
+            let iv = key.iv ?? Self.iv(forSequence: segment.sequence)
+            guard keyData.count == 16, iv.count == 16,
+                  let decrypted = Self.aes128CBCDecrypt(raw, key: keyData, iv: iv) else {
+                throw DownloadError.unknown("HLS segment decryption failed")
+            }
+            return decrypted
+        }
+    }
+
+    private nonisolated func fetchData(_ url: URL) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw DownloadError.httpStatus(http.statusCode)
+        }
+        return data
+    }
+
+    private nonisolated func fetchText(_ url: URL) async throws -> String {
+        String(decoding: try await fetchData(url), as: UTF8.self)
+    }
+
+    private func emit(_ id: UUID, _ event: EngineEvent) { hub.emit(id, event) }
+
+    private nonisolated func mapError(_ error: Error) -> DownloadError {
+        if let de = error as? DownloadError { return de }
+        if let ue = error as? URLError {
+            switch ue.code {
+            case .timedOut: return .timedOut
+            case .cancelled: return .canceled
+            default: return .network(ue.localizedDescription)
+            }
+        }
+        return .network((error as NSError).localizedDescription)
+    }
+
+    // MARK: Static helpers
+
+    private static func segmentName(_ index: Int) -> String { String(format: "seg-%06d.bin", index) }
+
+    private static func workDir(for id: UUID) -> URL {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("GoelDownloader/hls/\(id.uuidString)", isDirectory: true)
+    }
+
+    private static func fileSize(_ url: URL) -> Int64? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? Int64, size > 0 else { return nil }
+        return size
+    }
+
+    /// Concatenate `parts` (in order) into `dest`, streaming part-by-part.
+    private static func concatenate(_ parts: [URL], to dest: URL) throws {
+        FileManager.default.createFile(atPath: dest.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: dest)
+        defer { try? handle.close() }
+        for part in parts {
+            let data = try Data(contentsOf: part)
+            try handle.write(contentsOf: data)
+        }
+    }
+
+    /// The default AES-128 IV when none is given: the segment sequence number as a
+    /// 128-bit big-endian integer (low 64 bits in the final 8 bytes).
+    static func iv(forSequence sequence: Int) -> Data {
+        var iv = [UInt8](repeating: 0, count: 16)
+        var be = UInt64(bitPattern: Int64(sequence)).bigEndian
+        withUnsafeBytes(of: &be) { raw in
+            for i in 0..<8 { iv[8 + i] = raw[i] }
+        }
+        return Data(iv)
+    }
+
+    /// AES-128-CBC decrypt with PKCS7 padding (the HLS `AES-128` method).
+    static func aes128CBCDecrypt(_ data: Data, key: Data, iv: Data) -> Data? {
+        guard key.count == kCCKeySizeAES128, iv.count == kCCBlockSizeAES128 else { return nil }
+        let capacity = data.count + kCCBlockSizeAES128
+        var output = Data(count: capacity)
+        var moved = 0
+        let status = output.withUnsafeMutableBytes { outPtr in
+            data.withUnsafeBytes { dataPtr in
+                key.withUnsafeBytes { keyPtr in
+                    iv.withUnsafeBytes { ivPtr in
+                        CCCrypt(CCOperation(kCCDecrypt), CCAlgorithm(kCCAlgorithmAES),
+                                CCOptions(kCCOptionPKCS7Padding),
+                                keyPtr.baseAddress, key.count,
+                                ivPtr.baseAddress,
+                                dataPtr.baseAddress, data.count,
+                                outPtr.baseAddress, capacity, &moved)
+                    }
+                }
+            }
+        }
+        guard status == kCCSuccess else { return nil }
+        output.removeSubrange(moved..<output.count)
+        return output
+    }
+
+    /// Remux an MPEG-TS file to MP4 by passing the elementary streams through
+    /// (no re-encode). Works for the common H.264/AAC case.
+    private static func remuxToMP4(from src: URL, to dest: URL) async throws {
+        let asset = AVURLAsset(url: src)
+        guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
+            throw DownloadError.unknown("Couldn’t initialise the MP4 converter for this stream")
+        }
+        export.outputURL = dest
+        export.outputFileType = .mp4
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            export.exportAsynchronously { continuation.resume() }
+        }
+        if export.status != .completed {
+            throw export.error ?? DownloadError.unknown("HLS → MP4 conversion failed (unsupported codec)")
+        }
+    }
+
+    // MARK: Supporting types
+
+    /// The concrete download plan resolved from the source playlist.
+    struct MediaPlan: Sendable {
+        var segments: [HLSSegment]
+        var mapURL: URL?
+        var totalDuration: Double
+        var bandwidth: Int
+    }
+
+    /// Caches fetched AES keys by URI so a shared key is downloaded once.
+    private actor KeyCache {
+        private var keys: [URL: Data] = [:]
+        func key(for url: URL, fetch: @Sendable (URL) async throws -> Data) async throws -> Data {
+            if let cached = keys[url] { return cached }
+            let data = try await fetch(url)
+            keys[url] = data
+            return data
+        }
+    }
+
+    /// Accumulates downloaded bytes from concurrent segment tasks and emits a
+    /// throttled aggregate progress event with a smoothed speed.
+    private actor ProgressTracker {
+        private let hub: EventHub
+        private let id: UUID
+        private let connections: Int
+        private var bytes: Int64 = 0
+        private var lastEmit = Date.distantPast
+        private var lastBytes: Int64 = 0
+
+        init(hub: EventHub, id: UUID, connections: Int) {
+            self.hub = hub; self.id = id; self.connections = connections
+        }
+
+        func add(_ n: Int64) {
+            bytes += n
+            let now = Date()
+            let elapsed = now.timeIntervalSince(lastEmit)
+            guard elapsed >= 0.2 else { return }
+            let speed = lastEmit == .distantPast ? 0 : Double(bytes - lastBytes) / elapsed
+            hub.emit(id, .progress(bytesDownloaded: bytes, bytesUploaded: 0,
+                                   downloadSpeed: speed, uploadSpeed: 0, connectionCount: connections))
+            lastEmit = now
+            lastBytes = bytes
+        }
+    }
+}

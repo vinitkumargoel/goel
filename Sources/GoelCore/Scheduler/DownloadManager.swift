@@ -26,6 +26,7 @@ public actor DownloadManager {
 
     private let httpEngine: any DownloadEngine
     private let torrentEngine: any DownloadEngine
+    private let hlsEngine: any DownloadEngine
 
     // MARK: State
 
@@ -97,11 +98,13 @@ public actor DownloadManager {
     public init(
         httpEngine: any DownloadEngine,
         torrentEngine: any DownloadEngine,
+        hlsEngine: (any DownloadEngine)? = nil,
         settings: AppSettings = AppSettings(),
         store: PersistenceStore? = nil
     ) {
         self.httpEngine = httpEngine
         self.torrentEngine = torrentEngine
+        self.hlsEngine = hlsEngine ?? HLSEngine(profile: settings.effectiveProfile)
         self.settings = settings
         self.store = store
         if store != nil {
@@ -115,7 +118,16 @@ public actor DownloadManager {
     /// ``MockTorrentEngine``.
     public init(settings: AppSettings = AppSettings(), store: PersistenceStore? = nil) {
         self.httpEngine = HTTPEngine(profile: settings.effectiveProfile)
-        self.torrentEngine = MockTorrentEngine(profile: settings.effectiveProfile)
+        self.torrentEngine = TorrentEngine(
+            profile: settings.effectiveProfile,
+            config: TorrentEngine.SessionConfig(
+                enableDHT: settings.btEnableDHT,
+                enableLSD: settings.btEnableLPD,
+                enableUTP: settings.btEnableUTP,
+                encryptionMode: settings.btEncryptionMode
+            )
+        )
+        self.hlsEngine = HLSEngine(profile: settings.effectiveProfile)
         self.settings = settings
         self.store = store
         if store != nil {
@@ -162,7 +174,7 @@ public actor DownloadManager {
         tasks = loaded.map { task in
             var t = task
             switch t.status {
-            case .downloading, .requestingMetadata, .queued, .seeding:
+            case .downloading, .verifying, .requestingMetadata, .queued, .seeding:
                 t.status = .paused
             default:
                 break   // paused / completed / failed are preserved
@@ -304,17 +316,32 @@ public actor DownloadManager {
     public func add(
         source: DownloadSource,
         saveDirectory: String? = nil,
-        priority: FilePriority = .normal
+        priority: FilePriority = .normal,
+        expectedChecksum: Checksum? = nil
     ) -> DownloadTask {
         if let existing = tasks.first(where: { $0.source.dedupKey == source.dedupKey }) {
             return existing
         }
+        let directory = saveDirectory ?? defaultDirectory(for: source)
+        // Resolve the on-disk name conflict at creation time only — never on
+        // resume/retry, which reuse the stored name and rely on the partial file
+        // still living at the same path. Torrent names are placeholders until
+        // metadata resolves, so the policy applies to HTTP downloads only.
+        let name: String
+        if source.kind == .http || source.kind == .hls {
+            name = Self.resolveName(Self.defaultName(for: source),
+                                    in: directory,
+                                    policy: settings.existingFileReaction)
+        } else {
+            name = Self.defaultName(for: source)
+        }
         let task = DownloadTask(
             source: source,
-            name: Self.defaultName(for: source),
-            saveDirectory: saveDirectory ?? defaultDirectory(for: source),
+            name: name,
+            saveDirectory: directory,
             status: .queued,
-            priority: priority
+            priority: priority,
+            expectedChecksum: expectedChecksum
         )
         tasks.append(task)
         persist(task)
@@ -490,6 +517,7 @@ public actor DownloadManager {
         let profile = settings.effectiveProfile
         await httpEngine.applyLimits(profile)
         await torrentEngine.applyLimits(profile)
+        await hlsEngine.applyLimits(profile)
     }
 
     // MARK: Engine configuration
@@ -504,8 +532,11 @@ public actor DownloadManager {
         if let http = httpEngine as? HTTPEngine {
             await http.applyNetworkConfig(httpNetworkConfig())
         }
-        if let torrent = torrentEngine as? MockTorrentEngine {
+        if let torrent = torrentEngine as? TorrentEngine {
             await torrent.applySessionConfig(torrentSessionConfig())
+        }
+        if let hls = hlsEngine as? HLSEngine {
+            await hls.setMaxHeight(settings.hlsMaxHeight)
         }
     }
 
@@ -522,13 +553,12 @@ public actor DownloadManager {
         )
     }
 
-    private func torrentSessionConfig() -> MockTorrentEngine.TorrentSessionConfig {
-        MockTorrentEngine.TorrentSessionConfig(
-            encryptionMode: settings.btEncryptionMode,
+    private func torrentSessionConfig() -> TorrentEngine.SessionConfig {
+        TorrentEngine.SessionConfig(
             enableDHT: settings.btEnableDHT,
-            enablePeX: settings.btEnablePeX,
-            enableLPD: settings.btEnableLPD,
-            enableUTP: settings.btEnableUTP
+            enableLSD: settings.btEnableLPD,
+            enableUTP: settings.btEnableUTP,
+            encryptionMode: settings.btEncryptionMode
         )
     }
 
@@ -597,7 +627,7 @@ public actor DownloadManager {
         var hasSeeding = false
         for task in tasks {
             switch task.status {
-            case .downloading, .requestingMetadata: hasActiveDownload = true
+            case .downloading, .verifying, .requestingMetadata: hasActiveDownload = true
             case .seeding: hasSeeding = true
             default: break
             }
@@ -941,6 +971,7 @@ public actor DownloadManager {
         switch source.kind {
         case .http: return httpEngine
         case .torrent: return torrentEngine
+        case .hls: return hlsEngine
         }
     }
 
@@ -964,7 +995,48 @@ public actor DownloadManager {
             return DownloadTask.sanitizedName(name, fallback: "torrent")
         case let .magnet(magnet):
             return magnetDisplayName(magnet) ?? "Magnet download"
+        case let .hlsStream(url):
+            return hlsDisplayName(url)
         }
+    }
+
+    /// A `.mp4` name for an HLS stream. The playlist file is usually a generic
+    /// `index.m3u8` / `playlist.m3u8`, so prefer the parent path component (the
+    /// title folder), falling back to the host.
+    private static func hlsDisplayName(_ url: URL) -> String {
+        let generic: Set<String> = ["index", "playlist", "master", "prog_index", "chunklist", "main", "video", "stream"]
+        let leaf = url.deletingPathExtension().lastPathComponent
+        let parent = url.deletingLastPathComponent().lastPathComponent
+        let stem: String
+        if !leaf.isEmpty, !generic.contains(leaf.lowercased()) {
+            stem = leaf
+        } else if !parent.isEmpty, parent != "/" {
+            stem = parent
+        } else {
+            stem = url.host ?? "video"
+        }
+        return DownloadTask.sanitizedName(stem, fallback: "video") + ".mp4"
+    }
+
+    /// Apply the file-conflict policy to a freshly derived name. `overwrite`
+    /// (or anything unrecognised) keeps the name as-is; `rename` appends
+    /// ` (1)`, ` (2)`, … before the extension until the path is free. Bounded so
+    /// a pathological directory can never spin forever.
+    static func resolveName(_ base: String, in directory: String, policy: String) -> String {
+        guard policy == "rename" else { return base }
+        let fm = FileManager.default
+        let path = (directory as NSString).appendingPathComponent(base)
+        guard fm.fileExists(atPath: path) else { return base }
+
+        let ns = base as NSString
+        let ext = ns.pathExtension
+        let stem = ns.deletingPathExtension
+        for n in 1...9_999 {
+            let candidate = ext.isEmpty ? "\(stem) (\(n))" : "\(stem) (\(n)).\(ext)"
+            let candidatePath = (directory as NSString).appendingPathComponent(candidate)
+            if !fm.fileExists(atPath: candidatePath) { return candidate }
+        }
+        return base
     }
 
     private static func magnetDisplayName(_ magnet: String) -> String? {

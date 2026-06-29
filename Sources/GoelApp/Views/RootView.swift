@@ -19,6 +19,10 @@ struct RootView: View {
                 persistenceBanner(warning)
                 Divider()
             }
+            if let link = vm.clipboardSuggestion {
+                clipboardBanner(link)
+                Divider()
+            }
             HStack(spacing: 0) {
                 SidebarView()
                     .frame(width: 200)
@@ -120,6 +124,34 @@ struct RootView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
         .background(Theme.orange.opacity(0.12))
+    }
+
+    /// An actionable banner offering to download a link just copied to the
+    /// clipboard (shown only while clipboard capture is enabled).
+    private func clipboardBanner(_ link: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
+            Text("Copied link detected").font(.system(size: 12, weight: .semibold))
+            Text(link)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            Button("Add") { vm.acceptClipboardSuggestion() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            Button {
+                vm.dismissClipboardSuggestion()
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(Theme.accent.opacity(0.10))
     }
 
     @ViewBuilder

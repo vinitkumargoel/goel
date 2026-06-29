@@ -203,8 +203,7 @@ private struct DetailsTab: View {
                 KVRow(key: "Segments", value: "\(max(1, task.connectionCount)) connections")
                 KVRow(key: "Resumable", value: task.resumeData != nil ? "Yes" : "Pending", valueColor: Theme.green)
                 KVRow(key: "ETag", value: "\"a3f9-62b1c0\"")
-                KVRow(key: "Checksum", value: isFailed ? "Mismatch" : "SHA-256 pending",
-                      valueColor: isFailed ? Theme.red : .primary)
+                KVRow(key: "Checksum", value: checksumValue, valueColor: checksumColor)
             }
         }
     }
@@ -229,6 +228,24 @@ private struct DetailsTab: View {
     private var isFailed: Bool {
         if case .failed = task.status { return true }
         return false
+    }
+
+    /// Reflects the integrity-check state for the HTTP "Checksum" row.
+    private var checksumValue: String {
+        guard let checksum = task.expectedChecksum else { return "Not provided" }
+        if case .failed(.checksumMismatch) = task.status { return "\(checksum.algorithm.displayName) mismatch" }
+        switch task.status {
+        case .verifying: return "Verifying (\(checksum.algorithm.displayName))…"
+        case .completed: return "\(checksum.algorithm.displayName) verified"
+        default: return "\(checksum.algorithm.displayName) pending"
+        }
+    }
+
+    private var checksumColor: Color {
+        guard task.expectedChecksum != nil else { return .secondary }
+        if case .failed(.checksumMismatch) = task.status { return Theme.red }
+        if case .completed = task.status { return Theme.green }
+        return .primary
     }
 }
 

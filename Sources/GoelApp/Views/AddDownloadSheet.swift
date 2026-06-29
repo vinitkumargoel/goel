@@ -13,6 +13,8 @@ struct AddDownloadSheet: View {
     @State private var text: String = ""
     @State private var priority: FilePriority = .normal
     @State private var isDropTargeted = false
+    /// Optional integrity hash; verified after the (single) download finishes.
+    @State private var checksumText: String = ""
 
     /// The chosen "Save to" preset. Holds one of the sentinel tags below or a
     /// concrete folder path; `add()` maps `automatic` to a `nil` directory so the
@@ -50,7 +52,7 @@ struct AddDownloadSheet: View {
                 dropZone
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("URL or magnet link")
+                    Text("URL, magnet, or .m3u8 stream")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.secondary)
                     TextEditor(text: $text)
@@ -59,7 +61,7 @@ struct AddDownloadSheet: View {
                         .padding(6)
                         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
-                    Text("Paste several lines to add them all at once. Magnet links resolve metadata from peers before the size is known.")
+                    Text("Paste several lines to add them all at once. Magnet links resolve metadata from peers; .m3u8 links are grabbed as a single video.")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
@@ -94,6 +96,8 @@ struct AddDownloadSheet: View {
                         .frame(width: 120)
                     }
                 }
+
+                checksumField
             }
             .padding(20)
 
@@ -138,8 +142,36 @@ struct AddDownloadSheet: View {
         .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
     }
 
+    /// Optional checksum entry with live algorithm detection. Only verified for a
+    /// single download — a checksum alongside a multi-line batch is ignored.
+    private var checksumField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Checksum (optional)")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            TextField("MD5, SHA-1, or SHA-256 hex", text: $checksumText)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+                .disableAutocorrection(true)
+            if !checksumText.trimmingCharacters(in: .whitespaces).isEmpty {
+                if let parsed = Checksum.parse(checksumText) {
+                    Label("\(parsed.algorithm.displayName) — verified after the download finishes",
+                          systemImage: "checkmark.seal.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.green)
+                } else {
+                    Label("Not a valid MD5 / SHA-1 / SHA-256 hex digest",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.orange)
+                }
+            }
+        }
+    }
+
     private func add() {
-        vm.add(rawLines: text, saveDirectory: resolvedSaveDirectory, priority: priority)
+        vm.add(rawLines: text, saveDirectory: resolvedSaveDirectory, priority: priority,
+               expectedChecksum: Checksum.parse(checksumText))
         dismiss()
     }
 

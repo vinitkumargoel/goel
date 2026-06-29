@@ -20,15 +20,28 @@ extension DownloadTask {
         return .doc
     }
 
-    /// "HTTP" / "BT" badge text.
-    var kindBadge: String { kind == .torrent ? "BT" : "HTTP" }
+    /// "HTTP" / "BT" / "HLS" badge text.
+    var kindBadge: String {
+        switch kind {
+        case .torrent: return "BT"
+        case .hls: return "HLS"
+        case .http: return "HTTP"
+        }
+    }
 
-    var kindBadgeColor: Color { kind == .torrent ? Theme.purple : Theme.teal }
+    var kindBadgeColor: Color {
+        switch kind {
+        case .torrent: return Theme.purple
+        case .hls: return Theme.orange
+        case .http: return Theme.teal
+        }
+    }
 
     /// The colored status dot tint.
     var statusColor: Color {
         switch status {
         case .downloading: return Theme.accent
+        case .verifying: return Theme.orange
         case .requestingMetadata: return Theme.orange
         case .seeding: return Theme.green
         case .completed: return Theme.green
@@ -59,6 +72,8 @@ extension DownloadTask {
                 return "\(pct)% · \(Self.etaString(eta)) left"
             }
             return "\(pct)%"
+        case .verifying:
+            return "Verifying…"
         case .paused:
             return "Paused · \(Int((fractionCompleted * 100).rounded()))%"
         case .seeding:

@@ -207,6 +207,7 @@ public final class PersistenceStore: @unchecked Sendable {
         case .queued: return "queued"
         case .requestingMetadata: return "requestingMetadata"
         case .downloading: return "downloading"
+        case .verifying: return "verifying"
         case .paused: return "paused"
         case .seeding: return "seeding"
         case .completed: return "completed"

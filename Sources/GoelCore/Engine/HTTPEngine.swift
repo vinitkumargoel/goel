@@ -308,6 +308,19 @@ public actor HTTPEngine: DownloadEngine {
 
             try Task.checkCancellation()
 
+            // Integrity check: when an expected hash was supplied, verify the
+            // finished file before declaring success. `verify` is awaited so the
+            // CPU-bound hashing runs off the actor; a mismatch throws
+            // `.checksumMismatch`, which `mapError` passes straight through to the
+            // catch block below.
+            if let expected = task.expectedChecksum {
+                tasks[id]?.downloadSpeed = 0
+                tasks[id]?.status = .verifying
+                emit(id, .statusChanged(.verifying))
+                let matched = try await ChecksumVerifier.verify(fileAt: fileURL, expected: expected)
+                guard matched else { throw DownloadError.checksumMismatch }
+            }
+
             // Finished: clear the live connection count BEFORE the final progress
             // emit so the detail panel doesn't keep showing open connections on a
             // completed transfer.
@@ -936,50 +949,6 @@ public actor HTTPEngine: DownloadEngine {
     }
 }
 
-/// Thread-safe broadcaster of `EngineEvent`s to per-task subscribers.
-///
-/// Held by `HTTPEngine` as a `nonisolated let` so both the synchronous
-/// `events(for:)` and the actor-internal `emit` can reach it without crossing
-/// isolation boundaries.
-private final class EventHub: @unchecked Sendable {
-    private let lock = NSLock()
-    private var subscribers: [UUID: [UUID: AsyncStream<EngineEvent>.Continuation]] = [:]
-
-    func subscribe(_ id: UUID) -> AsyncStream<EngineEvent> {
-        // Unbounded is required: this stream also carries NON-idempotent lifecycle
-        // events (statusChanged / metadataResolved / finished / failed) that must
-        // never be dropped — a dropped `.downloading` after a resume would strand
-        // the task. Memory is bounded instead by throttling progress emission at
-        // the source (HTTP emits at ~10 Hz; the manager consumes promptly).
-        let (stream, continuation) = AsyncStream<EngineEvent>.makeStream(bufferingPolicy: .unbounded)
-        let subID = UUID()
-        lock.lock()
-        subscribers[id, default: [:]][subID] = continuation
-        lock.unlock()
-        continuation.onTermination = { [weak self] _ in
-            guard let self else { return }
-            self.lock.lock()
-            self.subscribers[id]?[subID] = nil
-            self.lock.unlock()
-        }
-        return stream
-    }
-
-    func emit(_ id: UUID, _ event: EngineEvent) {
-        lock.lock()
-        let continuations = subscribers[id]?.values.map { $0} ?? []
-        lock.unlock()
-        for continuation in continuations { continuation.yield(event) }
-    }
-
-    func finishAll(_ id: UUID) {
-        lock.lock()
-        let continuations = subscribers[id]
-        subscribers[id] = nil
-        lock.unlock()
-        continuations?.values.forEach { $0.finish() }
-    }
-}
 
 // MARK: - Connection governor
 

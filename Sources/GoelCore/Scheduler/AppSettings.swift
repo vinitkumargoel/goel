@@ -51,6 +51,18 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// `bySource` | `fixed`.
     public var defaultFolderRule: String
 
+    /// What to do when a file with the target name already exists at add time:
+    /// `overwrite` (truncate and replace), `rename` (append ` (n)` to keep both),
+    /// or `skip` (don't add the download).
+    public var existingFileReaction: String
+
+    /// Watch the clipboard and offer to add copied http(s)/magnet links.
+    public var clipboardMonitorEnabled: Bool
+
+    /// Preferred maximum video height for HLS streams (0 = best available).
+    /// The grabber picks the highest-bandwidth rendition at or below this height.
+    public var hlsMaxHeight: Int
+
     // MARK: Network
 
     /// Proxy selection: `none` | `system` | `manual`.
@@ -179,6 +191,9 @@ public struct AppSettings: Codable, Sendable, Hashable {
         launchAtLogin: Bool = false,
         launchMinimized: Bool = false,
         defaultFolderRule: String = "fixed",
+        existingFileReaction: String = "rename",
+        clipboardMonitorEnabled: Bool = false,
+        hlsMaxHeight: Int = 0,
         // Network
         proxyMode: String = "none",
         proxyHost: String = "",
@@ -230,6 +245,9 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.launchAtLogin = launchAtLogin
         self.launchMinimized = launchMinimized
         self.defaultFolderRule = defaultFolderRule
+        self.existingFileReaction = existingFileReaction
+        self.clipboardMonitorEnabled = clipboardMonitorEnabled
+        self.hlsMaxHeight = hlsMaxHeight
         self.proxyMode = proxyMode
         self.proxyHost = proxyHost
         self.proxyPort = proxyPort
@@ -270,6 +288,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case profiles, selectedProfileName, speedLimitEnabled, defaultSaveDirectory
         case theme, language, launchAtLogin, launchMinimized, defaultFolderRule
+        case existingFileReaction, clipboardMonitorEnabled, hlsMaxHeight
         case proxyMode, proxyHost, proxyPort, connectionTimeout, retryCount
         case retryInterval, userAgent, cookieAuthEnabled
         case btMakeDefaultClient, btAutoDeleteTorrent, btWatchFolderEnabled
@@ -297,6 +316,9 @@ public struct AppSettings: Codable, Sendable, Hashable {
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         launchMinimized = try c.decodeIfPresent(Bool.self, forKey: .launchMinimized) ?? false
         defaultFolderRule = try c.decodeIfPresent(String.self, forKey: .defaultFolderRule) ?? "fixed"
+        existingFileReaction = try c.decodeIfPresent(String.self, forKey: .existingFileReaction) ?? "rename"
+        clipboardMonitorEnabled = try c.decodeIfPresent(Bool.self, forKey: .clipboardMonitorEnabled) ?? false
+        hlsMaxHeight = try c.decodeIfPresent(Int.self, forKey: .hlsMaxHeight) ?? 0
         proxyMode = try c.decodeIfPresent(String.self, forKey: .proxyMode) ?? "none"
         proxyHost = try c.decodeIfPresent(String.self, forKey: .proxyHost) ?? ""
         proxyPort = try c.decodeIfPresent(Int.self, forKey: .proxyPort) ?? 0

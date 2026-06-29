@@ -89,10 +89,21 @@ final class AppViewModel: ObservableObject {
     /// A transient banner shown after notable actions (mirrors the demo toasts).
     @Published var toast: String?
 
+    /// A copied link the clipboard monitor is offering to download, shown as an
+    /// actionable banner. `nil` when there is nothing to suggest.
+    @Published var clipboardSuggestion: String?
+
     // MARK: Core
 
     private let manager: DownloadManager
     private var updatesTask: Task<Void, Never>?
+
+    /// Watches the pasteboard for copied download links (Tier-1 convenience).
+    private var clipboardMonitor: ClipboardMonitor?
+
+    /// The last link the clipboard monitor surfaced, so the same copy isn't
+    /// offered twice (and a dismissed suggestion stays dismissed).
+    private var lastClipboardHandled: String?
 
     /// Whether the one-time launch auto-select has already run. Once it has,
     /// clearing the selection ("Select none") sticks instead of snapping back to
@@ -134,6 +145,12 @@ final class AppViewModel: ObservableObject {
         guard updatesTask == nil else { return }
         await manager.restore()
         settings = await manager.currentSettings
+        // Start watching the clipboard for copied download links.
+        let monitor = ClipboardMonitor(isEnabled: settings.clipboardMonitorEnabled) { [weak self] text in
+            self?.handleClipboardChange(text)
+        }
+        monitor.start()
+        clipboardMonitor = monitor
         // Prime notification authorization so persisted "notify on completed/failed"
         // preferences can actually deliver banners after a relaunch (not just after
         // the user re-toggles a switch).
@@ -213,6 +230,7 @@ final class AppViewModel: ObservableObject {
     private static func statusOrder(_ s: DownloadStatus) -> Int {
         switch s {
         case .downloading: return 0
+        case .verifying: return 0
         case .requestingMetadata: return 1
         case .seeding: return 2
         case .queued: return 3
@@ -293,7 +311,8 @@ final class AppViewModel: ObservableObject {
 
     // MARK: Actions — all bridge to the actor
 
-    func add(rawLines: String, saveDirectory: String?, priority: FilePriority) {
+    func add(rawLines: String, saveDirectory: String?, priority: FilePriority,
+             expectedChecksum: Checksum? = nil) {
         let lines = rawLines
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -303,13 +322,45 @@ final class AppViewModel: ObservableObject {
             toastNow("Enter a URL or magnet link first")
             return
         }
+        // A checksum only makes sense for a single file — never apply one supplied
+        // alongside a multi-line batch to every download.
+        let checksum = sources.count == 1 ? expectedChecksum : nil
         Task {
             for source in sources {
-                await manager.add(source: source, saveDirectory: saveDirectory, priority: priority)
+                await manager.add(source: source, saveDirectory: saveDirectory,
+                                  priority: priority, expectedChecksum: checksum)
             }
         }
         toastNow(sources.count > 1 ? "Added \(sources.count) downloads to queue" : "Added to queue")
         filter = .all
+    }
+
+    // MARK: Clipboard capture
+
+    /// Called by the clipboard monitor when new text is copied. Surfaces the first
+    /// downloadable link as a suggestion banner — unless it's the same link we
+    /// already offered, or it's already in the queue.
+    func handleClipboardChange(_ text: String) {
+        let link = text
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { Self.parseSource($0) != nil }
+        guard let link, link != lastClipboardHandled, let source = Self.parseSource(link) else { return }
+        if tasks.contains(where: { $0.source.dedupKey == source.dedupKey }) { return }
+        lastClipboardHandled = link
+        clipboardSuggestion = link
+    }
+
+    /// Add the suggested clipboard link and clear the banner.
+    func acceptClipboardSuggestion() {
+        guard let link = clipboardSuggestion else { return }
+        clipboardSuggestion = nil
+        add(rawLines: link, saveDirectory: nil, priority: .normal)
+    }
+
+    /// Dismiss the suggestion without adding it (it won't be offered again).
+    func dismissClipboardSuggestion() {
+        clipboardSuggestion = nil
     }
 
     /// Delegates to the core parser, which enforces the scheme allowlist
@@ -381,6 +432,7 @@ final class AppViewModel: ObservableObject {
         // Reflect the change locally first so bound controls (e.g. the live theme
         // picker) update this frame, then commit through the actor.
         settings = copy
+        clipboardMonitor?.isEnabled = copy.clipboardMonitorEnabled
         Task {
             await manager.updateSettings(copy)
             settings = await manager.currentSettings

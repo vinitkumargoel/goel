@@ -32,6 +32,11 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// torrent fast-resume blob). Opaque to the rest of the app.
     public var resumeData: Data?
 
+    /// An optional integrity hash the finished file must match. When set, the
+    /// engine verifies the payload before marking the task complete; a mismatch
+    /// fails it with ``DownloadError/checksumMismatch``. `nil` = no verification.
+    public var expectedChecksum: Checksum?
+
     public init(
         id: UUID = UUID(),
         source: DownloadSource,
@@ -48,7 +53,8 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         connectionCount: Int = 0,
         addedAt: Date = Date(),
         completedAt: Date? = nil,
-        resumeData: Data? = nil
+        resumeData: Data? = nil,
+        expectedChecksum: Checksum? = nil
     ) {
         self.id = id
         self.source = source
@@ -66,6 +72,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         self.addedAt = addedAt
         self.completedAt = completedAt
         self.resumeData = resumeData
+        self.expectedChecksum = expectedChecksum
     }
 
     // MARK: Derived

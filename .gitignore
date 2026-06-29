@@ -45,3 +45,12 @@ build/
 # generated raster output:
 # Assets/*.icns
 # Assets/*-1024.png
+
+# ---- Distribution / local build output ----
+# The assembled .app links Homebrew's libtorrent/openssl at absolute paths, so
+# it's a local build artifact — rebuild it with `swift build -c release`.
+/dist/
+
+# ---- Local scratch binaries (one-off Sendable/audit probes) ----
+/check_sendable
+/check_sendable_strict

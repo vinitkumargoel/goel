@@ -185,6 +185,32 @@ struct SettingsView: View {
                     Button("Choose…") { chooseDefaultFolder() }
                 }
             }
+            SetRow(name: "When a file exists",
+                   desc: "Replace it, or keep both by appending “(1)”.") {
+                Picker("", selection: binding(\.existingFileReaction)) {
+                    Text("Rename").tag("rename")
+                    Text("Overwrite").tag("overwrite")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 200)
+            }
+            SetRow(name: "Clipboard capture",
+                   desc: "Offer to download http(s)/magnet links you copy.") {
+                SettingSwitch(isOn: binding(\.clipboardMonitorEnabled))
+            }
+            SetRow(name: "Max video quality",
+                   desc: "Preferred rendition when grabbing an HLS (.m3u8) stream.") {
+                Picker("", selection: binding(\.hlsMaxHeight)) {
+                    Text("Best available").tag(0)
+                    Text("1080p").tag(1080)
+                    Text("720p").tag(720)
+                    Text("480p").tag(480)
+                    Text("360p").tag(360)
+                }
+                .labelsHidden()
+                .frame(width: 150)
+            }
         }
     }
 
