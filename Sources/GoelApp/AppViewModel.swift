@@ -61,7 +61,15 @@ final class AppViewModel: ObservableObject {
 
     // MARK: Published view state
 
-    @Published var selection: DownloadTask.ID?
+    /// The full multi-selection set. A row highlights when its id is contained;
+    /// the toolbar's bulk-select menu (all / none / completed) drives it.
+    @Published var selection: Set<DownloadTask.ID> = []
+
+    /// The "primary" row within ``selection`` — the one whose details the detail
+    /// panel shows. Tracks the most recently clicked/added row, or `nil` for the
+    /// empty-selection state.
+    @Published var primarySelection: DownloadTask.ID?
+
     @Published var filter: SidebarFilter = .all { didSet { recomputeVisible() } }
     @Published var search: String = "" { didSet { recomputeVisible() } }
     @Published var sortKey: SortKey = .status { didSet { recomputeVisible() } }
@@ -69,7 +77,14 @@ final class AppViewModel: ObservableObject {
     @Published var detailPanelVisible: Bool = true
     @Published var detailTab: DetailTab = .general
     @Published var isAddSheetPresented: Bool = false
-    @Published var theme: AppTheme = .system
+
+    /// Light / Dark / System, derived from (and persisted through) the core
+    /// ``AppSettings/theme`` string so the choice survives relaunch. The setter
+    /// commits via ``update(_:)`` like every other persisted preference.
+    var theme: AppTheme {
+        get { AppTheme(settingsValue: settings.theme) }
+        set { update { $0.theme = newValue.settingsValue } }
+    }
 
     /// A transient banner shown after notable actions (mirrors the demo toasts).
     @Published var toast: String?
@@ -78,6 +93,17 @@ final class AppViewModel: ObservableObject {
 
     private let manager: DownloadManager
     private var updatesTask: Task<Void, Never>?
+
+    /// Whether the one-time launch auto-select has already run. Once it has,
+    /// clearing the selection ("Select none") sticks instead of snapping back to
+    /// the first row on the next snapshot.
+    private var hasAutoSelected = false
+
+    /// Per-task status from the previous snapshot, used to detect added/completed/
+    /// failed transitions for notifications. Seeded (not notified) on the first
+    /// snapshot so restored tasks don't fire "added" banners at launch.
+    private var lastStatuses: [DownloadTask.ID: DownloadStatus] = [:]
+    private var hasSeenFirstSnapshot = false
 
     init() {
         // File-backed persistence under Application Support, falling back to an
@@ -108,6 +134,12 @@ final class AppViewModel: ObservableObject {
         guard updatesTask == nil else { return }
         await manager.restore()
         settings = await manager.currentSettings
+        // Prime notification authorization so persisted "notify on completed/failed"
+        // preferences can actually deliver banners after a relaunch (not just after
+        // the user re-toggles a switch).
+        if settings.notifyOnAdded || settings.notifyOnCompleted || settings.notifyOnFailed {
+            NotificationService.requestAuthorization()
+        }
         if let warning = await manager.currentPersistenceWarning { persistenceWarning = warning }
         let stream = await manager.updates()
         let manager = self.manager
@@ -118,7 +150,17 @@ final class AppViewModel: ObservableObject {
                 await MainActor.run {
                     self.tasks = snapshot
                     self.recomputeVisible()
-                    if self.selection == nil { self.selection = snapshot.first?.id }
+                    // Auto-select the first visible row exactly once, at launch, so
+                    // "Select none" sticks and the empty-detail state stays reachable
+                    // while downloads are active.
+                    if self.primarySelection == nil && !self.hasAutoSelected {
+                        self.hasAutoSelected = true
+                        if let first = self.visibleTasks.first?.id {
+                            self.primarySelection = first
+                            self.selection = [first]
+                        }
+                    }
+                    self.emitNotifications(for: snapshot)
                     if let warning { self.persistenceWarning = warning }
                 }
             }
@@ -185,8 +227,61 @@ final class AppViewModel: ObservableObject {
     }
 
     var selectedTask: DownloadTask? {
-        guard let selection else { return nil }
-        return tasks.first { $0.id == selection }
+        guard let primarySelection else { return nil }
+        return tasks.first { $0.id == primarySelection }
+    }
+
+    // MARK: Selection
+
+    func isSelected(_ id: DownloadTask.ID) -> Bool { selection.contains(id) }
+
+    /// Replace the selection with a single row (a plain click).
+    func selectOnly(_ id: DownloadTask.ID) {
+        selection = [id]
+        primarySelection = id
+    }
+
+    /// Add or remove a row from the selection (a ⌘-click), keeping the primary
+    /// pointed at a still-selected row.
+    func toggleSelection(_ id: DownloadTask.ID) {
+        if selection.contains(id) {
+            selection.remove(id)
+            if primarySelection == id { primarySelection = selection.first }
+        } else {
+            selection.insert(id)
+            primarySelection = id
+        }
+    }
+
+    /// Select every currently visible row; the primary becomes the first of them.
+    func selectAll() {
+        selection = Set(visibleTasks.map(\.id))
+        primarySelection = visibleTasks.first?.id
+    }
+
+    /// Select every completed row in the visible list; the primary becomes the first.
+    func selectCompleted() {
+        let completed = visibleTasks.filter { $0.status == .completed }
+        selection = Set(completed.map(\.id))
+        primarySelection = completed.first?.id
+    }
+
+    /// Clear the selection so the detail panel shows its empty state.
+    func selectNone() {
+        selection = []
+        primarySelection = nil
+    }
+
+    /// The visible row that should take over the primary selection when `id` is
+    /// removed: the next row down, or the previous one if `id` was last, or `nil`
+    /// if the visible list becomes empty.
+    private func visibleNeighbor(after id: DownloadTask.ID) -> DownloadTask.ID? {
+        guard let idx = visibleTasks.firstIndex(where: { $0.id == id }) else {
+            return visibleTasks.first(where: { $0.id != id })?.id
+        }
+        if idx + 1 < visibleTasks.count { return visibleTasks[idx + 1].id }
+        if idx - 1 >= 0 { return visibleTasks[idx - 1].id }
+        return nil
     }
 
     // MARK: Aggregate stats (status bar)
@@ -226,8 +321,13 @@ final class AppViewModel: ObservableObject {
     func pause(_ id: DownloadTask.ID) { Task { await manager.pause(id) } }
     func resume(_ id: DownloadTask.ID) { Task { await manager.resume(id) } }
     func remove(_ id: DownloadTask.ID, deleteData: Bool) {
+        // Move the primary to the adjacent visible row *before* the snapshot drops
+        // the deleted task, so selection lands on a neighbour that's actually in
+        // the filtered list rather than jumping to the raw-first task.
+        let nextPrimary = visibleNeighbor(after: id)
         Task { await manager.remove(id, deleteData: deleteData) }
-        if selection == id { selection = nil }
+        selection.remove(id)
+        if primarySelection == id { primarySelection = nextPrimary }
     }
     func retry(_ id: DownloadTask.ID) {
         // Failed tasks need the dedicated retry path; resume() ignores non-paused.
@@ -265,6 +365,30 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    /// Commit a settings change. Mutates a copy of ``settings``, pushes it through
+    /// the manager (which persists it and re-applies the engine configs), then
+    /// republishes the committed value and fires the app-layer side effects the
+    /// core deliberately doesn't own — login-item registration and notification
+    /// authorization. The manager round-trip runs off the main actor so editing a
+    /// settings field never blocks the UI.
+    func update(_ mutate: (inout AppSettings) -> Void) {
+        var copy = settings
+        mutate(&copy)
+        let launchChanged = copy.launchAtLogin != settings.launchAtLogin
+        let notificationsNewlyWanted =
+            (copy.notifyOnAdded || copy.notifyOnCompleted || copy.notifyOnFailed) &&
+            !(settings.notifyOnAdded || settings.notifyOnCompleted || settings.notifyOnFailed)
+        // Reflect the change locally first so bound controls (e.g. the live theme
+        // picker) update this frame, then commit through the actor.
+        settings = copy
+        Task {
+            await manager.updateSettings(copy)
+            settings = await manager.currentSettings
+        }
+        if launchChanged { LoginItemService.setEnabled(copy.launchAtLogin) }
+        if notificationsNewlyWanted { NotificationService.requestAuthorization() }
+    }
+
     func toggleSort(_ key: SortKey) {
         if sortKey == key { sortAscending.toggle() } else { sortKey = key; sortAscending = true }
     }
@@ -283,6 +407,46 @@ final class AppViewModel: ObservableObject {
         NSPasteboard.general.setString(string, forType: .string)
         #endif
         toastNow("Copied to clipboard")
+    }
+
+    // MARK: Notifications
+
+    /// Diff this snapshot against the previous one and post a user notification for
+    /// each added/completed/failed transition, gated by the matching `notify*`
+    /// preference and ``AppSettings/notifyOnlyWhenInactive`` (which suppresses
+    /// banners while the app is frontmost). The first snapshot only seeds the
+    /// baseline so restored tasks never fire "added" banners at launch.
+    private func emitNotifications(for snapshot: [DownloadTask]) {
+        defer {
+            lastStatuses = Dictionary(uniqueKeysWithValues: snapshot.map { ($0.id, $0.status) })
+        }
+        guard hasSeenFirstSnapshot else {
+            hasSeenFirstSnapshot = true
+            return
+        }
+        if settings.notifyOnlyWhenInactive && NSApp.isActive { return }
+        let sound = settings.notificationSound
+        for task in snapshot {
+            guard let previous = lastStatuses[task.id] else {
+                if settings.notifyOnAdded {
+                    NotificationService.notify(title: "Download added", body: task.name, sound: sound)
+                }
+                continue
+            }
+            guard previous != task.status else { continue }
+            switch task.status {
+            case .completed:
+                if settings.notifyOnCompleted {
+                    NotificationService.notify(title: "Download complete", body: task.name, sound: sound)
+                }
+            case .failed:
+                if settings.notifyOnFailed {
+                    NotificationService.notify(title: "Download failed", body: task.name, sound: sound)
+                }
+            default:
+                break
+            }
+        }
     }
 
     private func toastNow(_ message: String) {

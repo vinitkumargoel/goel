@@ -1,10 +1,15 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import GoelCore
 
 /// The whole window: a top toolbar, a sidebar | list | detail body, and a bottom
 /// status bar — matching the layout in `visual.html`.
 struct RootView: View {
     @EnvironmentObject private var vm: AppViewModel
+
+    /// Highlights the window-wide drop target while a web URL or `.torrent` file
+    /// is dragged over the window. Drops are routed straight into the add flow.
+    @State private var isDropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,10 +39,69 @@ struct RootView: View {
         .frame(minWidth: 1040, minHeight: 620)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .bottom) { toastView }
+        .overlay { dropOverlay }
+        .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
+        .onDrop(of: [.url, .fileURL], isTargeted: $isDropTargeted) { handleDrop($0) }
         .sheet(isPresented: $vm.isAddSheetPresented) {
             AddDownloadSheet()
                 .environmentObject(vm)
         }
+    }
+
+    /// The dashed "drop here" affordance shown only while a drag hovers the window
+    /// (the brief's "visible drop target"). Hit-testing is disabled so the drag
+    /// keeps reaching the underlying `.onDrop` region.
+    @ViewBuilder
+    private var dropOverlay: some View {
+        if isDropTargeted {
+            ZStack {
+                Color.black.opacity(0.10).ignoresSafeArea()
+                VStack(spacing: 14) {
+                    Image(systemName: "arrow.down.to.line")
+                        .font(.system(size: 34, weight: .regular))
+                    Text("Drop a URL or .torrent file here")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundStyle(Theme.accent)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Theme.accent, style: StrokeStyle(lineWidth: 2, dash: [9, 6]))
+                )
+                .padding(26)
+            }
+            .allowsHitTesting(false)
+            .transition(.opacity)
+        }
+    }
+
+    /// Collect every web/file URL the drag carries and hand the newline-joined
+    /// locators to the manager. `.torrent` file URLs and http(s)/magnet links are
+    /// validated downstream by `DownloadSource.parse`; anything else is dropped.
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        let urlProviders = providers.filter { $0.canLoadObject(ofClass: URL.self) }
+        guard !urlProviders.isEmpty else { return false }
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var locators: [String] = []
+        for provider in urlProviders {
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url {
+                    lock.lock(); locators.append(url.absoluteString); lock.unlock()
+                }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            guard !locators.isEmpty else { return }
+            let raw = locators.joined(separator: "\n")
+            Task { @MainActor in
+                vm.add(rawLines: raw, saveDirectory: nil, priority: .normal)
+            }
+        }
+        return true
     }
 
     private func persistenceBanner(_ warning: String) -> some View {

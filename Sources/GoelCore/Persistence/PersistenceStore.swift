@@ -168,19 +168,31 @@ public final class PersistenceStore: @unchecked Sendable {
         return try encoder.encode(tasks)
     }
 
+    /// Encode an explicit task list to a self-contained JSON array. Used for
+    /// periodic backups of the live in-memory queue, without first round-tripping
+    /// through the database the way ``exportList()`` does.
+    public func exportTasks(_ tasks: [DownloadTask]) throws -> Data {
+        try encoder.encode(tasks)
+    }
+
     /// Import a JSON array previously produced by ``exportList()``, upserting each
     /// task. Returns the decoded tasks.
     @discardableResult
     public func importList(_ data: Data) throws -> [DownloadTask] {
         let decoded = try decoder.decode([DownloadTask].self, from: data)
-        // Security: an imported file is untrusted input — re-sanitize each `name`
-        // so it can't carry a path-traversal payload that would later be written
-        // to / deleted from outside the save directory.
-        // TODO(review): also clamp `saveDirectory` to an allowed root once a
-        // settings/policy context is threaded into the store.
+        // Security: an imported file is untrusted input. Re-sanitize each `name`
+        // so it can't carry a path-traversal payload, and reject a `saveDirectory`
+        // that isn't an absolute, non-traversing path — a relative or `..`-laden
+        // directory would otherwise resolve writes/deletes to an arbitrary location.
+        // Such entries fall back to the system Downloads folder.
+        let safeRoot = AppSettings.systemDownloadsDirectory
         let tasks = decoded.map { task -> DownloadTask in
             var t = task
             t.name = DownloadTask.sanitizedName(t.name, fallback: "download")
+            let dir = t.saveDirectory
+            if !dir.hasPrefix("/") || dir.split(separator: "/").contains("..") {
+                t.saveDirectory = safeRoot
+            }
             return t
         }
         try saveTasks(tasks)

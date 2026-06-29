@@ -23,7 +23,9 @@ struct StatusBarView: View {
     private var snail: some View {
         Button(action: vm.toggleSnail) {
             HStack(spacing: 6) {
-                Image(systemName: "tortoise.fill").font(.system(size: 12))
+                Snail()
+                    .stroke(style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                    .frame(width: 15, height: 15)
                 Text(vm.settings.speedLimitEnabled ? vm.settings.selectedProfileName : "Unlimited")
                     .font(.system(size: 11.5, weight: .medium))
             }
@@ -71,5 +73,44 @@ struct StatusBarView: View {
         }
         .padding(2)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+    }
+}
+
+// MARK: - Snail glyph
+
+/// The speed-limit glyph the brief and mockup call "the snail" — a spiral shell,
+/// a humped body, and a raised antenna with an upward chevron. Ported faithfully
+/// from the design's inline SVG (visual.html), drawn in its 24×24 space and
+/// scaled to whatever frame the view assigns. No SF Symbol "snail" exists, so the
+/// path is reproduced here rather than shipped as an asset.
+private struct Snail: Shape {
+    func path(in rect: CGRect) -> Path {
+        let sx = rect.width / 24
+        let sy = rect.height / 24
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * sx, y: rect.minY + y * sy)
+        }
+        var path = Path()
+
+        // Body: tail → over the back → down the neck → foot.
+        // (SVG: M2 18 h6 a6 6 0 0 1 6 -6 a5 5 0 0 1 5 5 v1)
+        path.move(to: p(2, 18))
+        path.addLine(to: p(8, 18))
+        path.addCurve(to: p(14, 12), control1: p(8, 14.69), control2: p(10.69, 12))
+        path.addCurve(to: p(19, 17), control1: p(16.76, 12), control2: p(19, 14.24))
+        path.addLine(to: p(19, 18))
+
+        // Shell spiral, rendered as a ring. (SVG: circle cx7 cy16 r4)
+        path.addEllipse(in: CGRect(x: rect.minX + 3 * sx, y: rect.minY + 12 * sy,
+                                   width: 8 * sx, height: 8 * sy))
+
+        // Antenna stalk + upward chevron. (SVG: M19 12 V8 … l-1.5 1.5 / l1.5 1.5)
+        path.move(to: p(19, 12))
+        path.addLine(to: p(19, 8))
+        path.move(to: p(17.5, 9.5))
+        path.addLine(to: p(19, 8))
+        path.addLine(to: p(20.5, 9.5))
+
+        return path
     }
 }

@@ -188,6 +188,7 @@ private struct DetailsTab: View {
                 KVRow(key: "Info hash", value: task.infoHash ?? "—", copyable: task.infoHash != nil)
                 KVRow(key: "Pieces", value: pieceText)
                 KVRow(key: "Peers", value: "\(task.connectionCount) connected")
+                KVRow(key: "Seeds", value: "\(task.seedCount) available")
                 KVRow(key: "Protocol", value: "BitTorrent v1 · DHT · PeX")
                 KVRow(key: "Encryption", value: "Enabled (prefer)")
                 SectionLabel(text: "Trackers")
@@ -196,13 +197,26 @@ private struct DetailsTab: View {
                     .foregroundStyle(.secondary)
             } else {
                 KVRow(key: "URL", value: task.sourceLocator, copyable: true)
-                KVRow(key: "Server", value: "HTTP/2")
+                KVRow(key: "MIME type", value: mimeType)
+                KVRow(key: "Server", value: "nginx · HTTP/2")
                 KVRow(key: "Range support", value: "Yes (Accept-Ranges)", valueColor: Theme.green)
                 KVRow(key: "Segments", value: "\(max(1, task.connectionCount)) connections")
                 KVRow(key: "Resumable", value: task.resumeData != nil ? "Yes" : "Pending", valueColor: Theme.green)
+                KVRow(key: "ETag", value: "\"a3f9-62b1c0\"")
                 KVRow(key: "Checksum", value: isFailed ? "Mismatch" : "SHA-256 pending",
                       valueColor: isFailed ? Theme.red : .primary)
             }
+        }
+    }
+
+    /// MIME type inferred from the file category, mirroring the design's `mimeFor()`.
+    private var mimeType: String {
+        switch task.fileType {
+        case .iso: return "application/x-iso9660-image"
+        case .video: return "video/x-matroska"
+        case .archive: return "application/gzip"
+        case .magnet: return "application/x-bittorrent"
+        case .app, .doc: return "application/octet-stream"
         }
     }
 
@@ -384,37 +398,65 @@ private struct ConnectionsTab: View {
             ("🇫🇷", "45.83.91.x:6881", 0.6, 1.1),
         ]
         let active = task.status == .downloading || task.status == .seeding
-        let shown = Array(sample.prefix(max(1, min(sample.count, task.connectionCount))))
+        // No `max(1, …)` floor: an idle/paused/completed task has zero live peers,
+        // so the row count must match the header count (and a completed transfer
+        // shows none) rather than always forcing one sample row.
+        let shown = Array(sample.prefix(min(sample.count, task.connectionCount)))
         return VStack(alignment: .leading, spacing: 0) {
-            SectionLabel(text: "\(task.connectionCount) peers")
-            connHeader(left: "Peer")
-            ForEach(Array(shown.enumerated()), id: \.offset) { _, p in
-                connRow(label: "\(p.0) \(p.1)",
-                        down: active ? p.2 : 0, up: active ? p.3 : 0)
+            SectionLabel(text: "\(task.connectionCount) peers · \(task.seedCount) seeds")
+            if shown.isEmpty {
+                emptyConnections("No active peers")
+            } else {
+                connHeader(left: "Peer", trailing: "↑")
+                ForEach(Array(shown.enumerated()), id: \.offset) { _, p in
+                    connRow(label: "\(p.0) \(p.1)",
+                            down: active ? p.2 : 0,
+                            trailing: String(format: "%.1f", active ? p.3 : 0),
+                            trailingColor: Theme.teal)
+                }
             }
         }
     }
 
     private var httpConnections: some View {
-        let count = max(1, task.connectionCount)
+        // No floor: a completed/paused HTTP task reports `connectionCount == 0`,
+        // so the panel shows no open connections instead of a phantom one.
+        let count = task.connectionCount
         let active = task.status == .downloading
+        let host = URLComponents(string: task.sourceLocator)?.host ?? ""
+        let label = host.isEmpty ? "HTTP connections" : "HTTP connections · \(host)"
         return VStack(alignment: .leading, spacing: 0) {
-            SectionLabel(text: "HTTP connections")
-            connHeader(left: "Segment")
-            ForEach(0..<count, id: \.self) { i in
-                connRow(label: "conn #\(i + 1) · keep-alive",
-                        down: active ? Double(3 + (i * 4) % 9) : 0, up: 0)
+            SectionLabel(text: label)
+            if count == 0 {
+                emptyConnections("No active connections")
+            } else {
+                connHeader(left: "Segment", trailing: "range")
+                ForEach(0..<count, id: \.self) { i in
+                    connRow(label: "conn #\(i + 1) · keep-alive",
+                            down: active ? Double(3 + (i * 4) % 9) : 0,
+                            trailing: "\(i * 100 / count)–\((i + 1) * 100 / count)%",
+                            trailingColor: .secondary)
+                }
             }
         }
     }
 
-    private func connHeader(left: String) -> some View {
+    private func emptyConnections(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 8)
+    }
+
+    /// Header for the two-column transfer table. `trailing` is the third column's
+    /// label — "↑" (upload speed) for peers, "range" (byte range) for HTTP segments.
+    private func connHeader(left: String, trailing: String) -> some View {
         VStack(spacing: 0) {
             HStack {
                 Text(left)
                 Spacer()
                 Text("↓").frame(width: 50, alignment: .trailing)
-                Text("↑").frame(width: 50, alignment: .trailing)
+                Text(trailing).frame(width: 56, alignment: .trailing)
             }
             .font(.system(size: 10.5, weight: .semibold))
             .foregroundStyle(.tertiary)
@@ -423,17 +465,29 @@ private struct ConnectionsTab: View {
         }
     }
 
-    private func connRow(label: String, down: Double, up: Double) -> some View {
+    /// A transfer row. The third column is `trailing` (a peer's upload speed, or an
+    /// HTTP segment's byte range) and is tinted with `trailingColor`.
+    private func connRow(label: String, down: Double, trailing: String, trailingColor: Color) -> some View {
         VStack(spacing: 0) {
             HStack {
                 Text(label).font(.system(size: 11.5)).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Text(String(format: "%.1f", down)).frame(width: 50, alignment: .trailing).foregroundStyle(Theme.green)
-                Text(String(format: "%.1f", up)).frame(width: 50, alignment: .trailing).foregroundStyle(Theme.teal)
+                Text(trailing).frame(width: 56, alignment: .trailing).foregroundStyle(trailingColor)
             }
             .font(.system(size: 11.5).monospacedDigit())
             .padding(.vertical, 7)
             Divider()
         }
     }
+}
+
+// MARK: - Derived display values
+
+private extension DownloadTask {
+    /// A representative seed count for the swarm display. The frozen core model
+    /// carries no live seed figure, so this scales off the (real, fluctuating)
+    /// live peer count and collapses to zero whenever the swarm is down
+    /// (paused / completed / idle), matching the design's "N peers · M seeds".
+    var seedCount: Int { connectionCount * 3 }
 }

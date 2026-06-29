@@ -35,6 +35,30 @@ final class StubURLProtocol: URLProtocol {
         lock.lock(); defer { lock.unlock() }; return _config
     }
 
+    /// User-Agent header observed on every request the engine issued. Used to
+    /// prove the engine never sends a request without a UA (see the WAF/-1005
+    /// regression).
+    private static var _seenUserAgents: [String?] = []
+    static func resetSeenUserAgents() { lock.lock(); _seenUserAgents = []; lock.unlock() }
+    static func seenUserAgents() -> [String?] {
+        lock.lock(); defer { lock.unlock() }; return _seenUserAgents
+    }
+    private static func record(userAgent: String?) {
+        lock.lock(); _seenUserAgents.append(userAgent); lock.unlock()
+    }
+
+    /// Number of upcoming ranged GETs to answer with `429 Too Many Requests`
+    /// (simulating a server that rate-limits concurrent range connections).
+    /// Each such request decrements the counter; once drained, requests are
+    /// served normally — so a client that retries with backoff still completes.
+    private static var _force429Count = 0
+    static func forceNext429s(_ n: Int) { lock.lock(); _force429Count = n; lock.unlock() }
+    private static func consume429() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if _force429Count > 0 { _force429Count -= 1; return true }
+        return false
+    }
+
     private var stopped = false
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -44,6 +68,7 @@ final class StubURLProtocol: URLProtocol {
     override func startLoading() {
         let cfg = Self.current()
         guard let url = request.url else { return }
+        Self.record(userAgent: request.value(forHTTPHeaderField: "User-Agent"))
         let total = cfg.data.count
         let method = request.httpMethod ?? "GET"
 
@@ -55,6 +80,14 @@ final class StubURLProtocol: URLProtocol {
         if method == "HEAD" {
             if cfg.sendContentLength { headers["Content-Length"] = "\(total)" }
             sendResponse(url: url, status: 200, headers: headers)
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+
+        // Simulated rate-limiting: answer the first N ranged GETs with 429.
+        if method == "GET", request.value(forHTTPHeaderField: "Range") != nil, Self.consume429() {
+            sendResponse(url: url, status: 429, headers: ["Content-Length": "11", "Retry-After": "0"])
+            client?.urlProtocol(self, didLoad: Data("rate limited".utf8.prefix(11)))
             client?.urlProtocolDidFinishLoading(self)
             return
         }
@@ -119,6 +152,9 @@ final class HTTPEngineTests: XCTestCase {
         super.setUp()
         tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        // Reset injected stub state so test order can't leak rate-limit / UA state.
+        StubURLProtocol.forceNext429s(0)
+        StubURLProtocol.resetSeenUserAgents()
     }
 
     override func tearDown() {
@@ -187,6 +223,56 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertTrue(connectionCounts.contains { $0 > 1 }, "a 300 KB file should use multiple segments")
     }
 
+    // MARK: (a2) Every request carries a User-Agent (WAF / -1005 regression)
+
+    func testEveryRequestSendsUserAgent() async throws {
+        StubURLProtocol.resetSeenUserAgents()
+        let payload = deterministicData(300 * 1024)
+        StubURLProtocol.set(.init(
+            data: payload, supportsRanges: true, sendContentLength: true,
+            etag: "\"ua\"", chunkSize: 32 * 1024, chunkDelayMicros: 0
+        ))
+        let engine = makeEngine()
+        _ = await drainAfterAdd(engine, makeTask(name: "ua.bin"))
+
+        let seen = StubURLProtocol.seenUserAgents()
+        XCTAssertFalse(seen.isEmpty, "the engine should have issued at least one request")
+        for ua in seen {
+            XCTAssertEqual(ua, HTTPEngine.userAgent,
+                           "every outbound request must carry the client User-Agent; a missing UA causes some CDNs to reset the connection (-1005)")
+        }
+    }
+
+    // MARK: (a3) Segments recover from 429 rate-limiting via retry/backoff
+
+    func testSegmentsRetryThrough429RateLimiting() async throws {
+        StubURLProtocol.resetSeenUserAgents()
+        let payload = deterministicData(300 * 1024)
+        StubURLProtocol.set(.init(
+            data: payload, supportsRanges: true, sendContentLength: true,
+            etag: "\"rl\"", chunkSize: 32 * 1024, chunkDelayMicros: 0
+        ))
+        // Answer the first 6 ranged GETs with 429 (Retry-After: 0 keeps the
+        // test fast); a client that retries should still finish intact.
+        StubURLProtocol.forceNext429s(6)
+
+        let engine = makeEngine()
+        let task = makeTask(name: "ratelimited.bin")
+        let events = await drainAfterAdd(engine, task)
+
+        let failed = events.contains { if case .failed = $0 { return true }; return false }
+        let completed = events.contains { if case .statusChanged(.completed) = $0 { return true }; return false }
+        XCTAssertFalse(failed, "429s should be retried, not surfaced as a failure")
+        XCTAssertTrue(completed, "download should complete after retrying through rate-limiting")
+
+        let written = try Data(contentsOf: tempDir.appendingPathComponent("ratelimited.bin"))
+        XCTAssertEqual(written, payload, "bytes must be intact despite retried segments")
+
+        // More requests than segments proves retries actually happened.
+        XCTAssertGreaterThan(StubURLProtocol.seenUserAgents().count, 6,
+                             "expected extra requests from the 6 forced 429 retries")
+    }
+
     // MARK: (b) Progress events and final byte count
 
     func testProgressEventsReachTotal() async throws {
@@ -235,7 +321,14 @@ final class HTTPEngineTests: XCTestCase {
             return nil
         }
         XCTAssertFalse(progressConnCounts.isEmpty)
-        XCTAssertTrue(progressConnCounts.allSatisfy { $0 == 1 }, "fallback must use a single connection")
+        // Single-connection fallback: no progress sample may report more than one
+        // active connection (more than one would mean segmentation kicked in), and
+        // at least one mid-transfer sample reports exactly 1. The terminal 100%
+        // emit reports 0 by design — the engine clears the live connection count on
+        // completion so the Connections panel doesn't show an open connection on a
+        // finished transfer.
+        XCTAssertTrue(progressConnCounts.contains(1), "single-connection transfer must report one active connection")
+        XCTAssertTrue(progressConnCounts.allSatisfy { $0 <= 1 }, "fallback must never open more than one connection")
 
         let written = try Data(contentsOf: tempDir.appendingPathComponent("norange.bin"))
         XCTAssertEqual(written, payload)
@@ -304,6 +397,40 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertGreaterThan(afterPause, 0, "some bytes should download before pausing")
         XCTAssertLessThan(afterPause, Int64(payload.count), "pause should happen mid-download")
         XCTAssertEqual(later, afterPause, "no further progress after pause")
+    }
+
+    // MARK: Live network smoke test (opt-in)
+
+    /// End-to-end against the real Hetzner speed-test server, which both
+    /// rejects UA-less requests (-1005) and rate-limits concurrent ranges
+    /// (429) — the exact conditions that broke the app. Skipped unless
+    /// `GOEL_LIVE_NET=1` so the normal suite stays hermetic.
+    func testLiveHetznerDownloadCompletes() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["GOEL_LIVE_NET"] == "1",
+                          "set GOEL_LIVE_NET=1 to run the live network test")
+        let engine = HTTPEngine(profile: .high)   // real session, 16-way fan-out
+        let task = DownloadTask(
+            source: .url(URL(string: "https://ash-speed.hetzner.com/100MB.bin")!),
+            name: "100MB.bin",
+            saveDirectory: tempDir.path
+        )
+        let stream = engine.events(for: task.id)
+        await engine.add(task)
+
+        var failure: DownloadError?
+        var completed = false
+        let waiter = Task { () -> Void in
+            for await event in stream {
+                if case .failed(let e) = event { failure = e; break }
+                if case .statusChanged(.completed) = event { completed = true; break }
+            }
+        }
+        _ = await waiter.value
+
+        XCTAssertNil(failure, "live download must not fail: \(String(describing: failure))")
+        XCTAssertTrue(completed, "live download should reach .completed")
+        let written = try Data(contentsOf: tempDir.appendingPathComponent("100MB.bin"))
+        XCTAssertEqual(written.count, 100 * 1024 * 1024, "must fetch the full 100 MB")
     }
 
     // MARK: Shared drain helper
