@@ -49,6 +49,12 @@ void      gt_session_destroy(GTSession session);
 /// Apply global rate limits in bytes/sec (0 = unlimited).
 void gt_session_set_rate_limits(GTSession session, int download_bps, int upload_bps);
 
+/// Set the session-wide peer connection ceiling (libtorrent `connections_limit`).
+/// libtorrent otherwise runs at its built-in default regardless of the active
+/// traffic profile; wiring the profile's `maxConnections` here lets a well-seeded
+/// torrent pull from more peers on the High profile. Values < 1 are ignored.
+void gt_session_set_connections(GTSession session, int connections_limit);
+
 /* --- Adding torrents ----------------------------------------------------- */
 
 /// Add a magnet URI. Returns a handle, or NULL (writing a message to err_out).

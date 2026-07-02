@@ -55,7 +55,12 @@ public struct TrafficProfile: Codable, Sendable, Hashable, Identifiable {
 
     public static let medium = TrafficProfile(
         name: "Medium",
-        maxDownloadBytesPerSec: 10 * MB,
+        // Medium is the default profile, so its download cap is the ceiling most
+        // users silently run under. 10 MiB/s (~84 Mbps) throttled anyone on modern
+        // broadband without them realising; 50 MiB/s (~419 Mbps) keeps Medium a
+        // genuine limiter while no longer capping typical fast connections. Users
+        // who want a truly hard limit pick Low; those who want none pick High.
+        maxDownloadBytesPerSec: 50 * MB,
         maxUploadBytesPerSec: 1 * MB,
         maxConnections: 200,
         maxConnectionsPerServer: 8,

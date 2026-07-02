@@ -150,113 +150,126 @@ final class SegmentedTransfer: Sendable {
         // and already-stored bytes are not re-fetched.
         var written: Int64 = 0
         var attempt = 0
+        // Holds the request currently in flight so the cancellation handler can
+        // abort the underlying URLSession task (pause/remove), not merely the
+        // Swift task — the delegate-driven body would otherwise keep draining.
+        let streamerBox = StreamerBox()
         do {
-            while start + written <= end {
-                attempt += 1
-                let segStart = start + written
-                let url = await pool.url(segment: index, attempt: attempt)
-                let isMirror = url != plan.url
+            try await withTaskCancellationHandler {
+                while start + written <= end {
+                    try Task.checkCancellation()
+                    attempt += 1
+                    let segStart = start + written
+                    let url = await pool.url(segment: index, attempt: attempt)
+                    let isMirror = url != plan.url
 
-                // Wait for a connection slot. The governor adapts the ceiling to
-                // what the server actually tolerates (see ``ConnectionGovernor``).
-                // Each `acquire()` below is balanced by exactly one `release()` on
-                // every exit path of this attempt.
-                await governor.acquire()
-                var req = request(for: url)
-                req.setValue("bytes=\(segStart)-\(end)", forHTTPHeaderField: "Range")
+                    // Wait for a connection slot. The governor adapts the ceiling to
+                    // what the server actually tolerates (see ``ConnectionGovernor``).
+                    // Each `acquire()` below is balanced by exactly one `release()` on
+                    // every exit path of this attempt.
+                    await governor.acquire()
+                    var req = request(for: url)
+                    req.setValue("bytes=\(segStart)-\(end)", forHTTPHeaderField: "Range")
 
-                let bytes: URLSession.AsyncBytes
-                let http: HTTPURLResponse
-                do {
-                    let (b, resp) = try await session.bytes(for: req)
-                    guard let h = resp as? HTTPURLResponse else {
-                        await governor.release(); throw DownloadError.network("No HTTP response")
+                    let bytes: AsyncThrowingStream<Data, Error>
+                    let http: HTTPURLResponse
+                    let streamer: ChunkStreamer
+                    do {
+                        (http, bytes, streamer) = try await Self.openStream(
+                            session: session, request: req) { streamerBox.set($0) }
+                    } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
+                        if isMirror { await pool.demote(url) }
+                        await governor.release()
+                        try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                        continue
+                    } catch {
+                        await governor.release(); throw error
                     }
-                    bytes = b; http = h
-                } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
-                    if isMirror { await pool.demote(url) }
-                    await governor.release()
-                    try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
-                    continue
-                } catch {
-                    await governor.release(); throw error
-                }
 
-                if Self.isRetryableStatus(http.statusCode) {
-                    for try await _ in bytes {}                       // drain the error body
-                    if isMirror { await pool.demote(url) }
-                    await governor.throttleDown()                    // server pushed back: shrink the ceiling
-                    await governor.release()
-                    if attempt >= settings.maxAttempts { throw DownloadError.httpStatus(http.statusCode) }
-                    try await backoff(attempt: attempt, response: http, retryInterval: settings.retryInterval)
-                    continue
-                }
-                // Segments accept ONLY 206. A server that advertised range support
-                // but answers a real ranged GET with 200 (full body) would have
-                // every segment seek to its own offset and write the WHOLE file
-                // there, overwriting siblings and corrupting the result. A mirror
-                // that can't do ranges is demoted; the primary fails visibly.
-                guard http.statusCode == 206 else {
-                    await governor.release()
-                    if isMirror, attempt < settings.maxAttempts {
-                        await pool.demote(url)
+                    if Self.isRetryableStatus(http.statusCode) {
+                        streamer.cancelTask()                            // stop the error body
+                        if isMirror { await pool.demote(url) }
+                        await governor.throttleDown()                    // server pushed back: shrink the ceiling
+                        await governor.release()
+                        if attempt >= settings.maxAttempts { throw DownloadError.httpStatus(http.statusCode) }
+                        try await backoff(attempt: attempt, response: http, retryInterval: settings.retryInterval)
                         continue
                     }
-                    throw DownloadError.httpStatus(http.statusCode)
-                }
-                // A mirror must be serving the same representation: its 206 has
-                // to describe the same total size. Divergent mirrors are demoted
-                // and the segment retries elsewhere (the wrong body is dropped
-                // unconsumed, which cancels the underlying request).
-                if isMirror, let expected = plan.totalBytes,
-                   Self.contentRangeTotal(http) != expected {
-                    await pool.demote(url)
-                    await governor.release()
-                    if attempt >= settings.maxAttempts { throw DownloadError.remoteFileChanged }
-                    continue
-                }
+                    // Segments accept ONLY 206. A server that advertised range support
+                    // but answers a real ranged GET with 200 (full body) would have
+                    // every segment seek to its own offset and write the WHOLE file
+                    // there, overwriting siblings and corrupting the result. A mirror
+                    // that can't do ranges is demoted; the primary fails visibly.
+                    guard http.statusCode == 206 else {
+                        streamer.cancelTask()
+                        await governor.release()
+                        if isMirror, attempt < settings.maxAttempts {
+                            await pool.demote(url)
+                            continue
+                        }
+                        throw DownloadError.httpStatus(http.statusCode)
+                    }
+                    // A mirror must be serving the same representation: its 206 has
+                    // to describe the same total size. Divergent mirrors are demoted
+                    // and the segment retries elsewhere (the wrong body is cancelled).
+                    if isMirror, let expected = plan.totalBytes,
+                       Self.contentRangeTotal(http) != expected {
+                        streamer.cancelTask()
+                        await pool.demote(url)
+                        await governor.release()
+                        if attempt >= settings.maxAttempts { throw DownloadError.remoteFileChanged }
+                        continue
+                    }
 
-                do {
-                    try handle.seek(toOffset: UInt64(segStart))
-                    var buffer = Data()
-                    buffer.reserveCapacity(flushSize)
-                    // Cooperative cancellation flows from the AsyncBytes iterator,
-                    // so we check once per flush rather than once per byte (the
-                    // latter burns ~16% of a core at speed for no added safety).
-                    for try await byte in bytes {
-                        buffer.append(byte)
-                        if buffer.count >= flushSize {
-                            try Task.checkCancellation()
+                    do {
+                        try handle.seek(toOffset: UInt64(segStart))
+                        var buffer = Data()
+                        buffer.reserveCapacity(flushSize)
+                        // Body arrives as `Data` chunks from the task delegate (not
+                        // one byte per `await`), so appends are memcpys and the loop
+                        // isn't CPU-bound. `consumed` releases backpressure credit as
+                        // each chunk leaves the stream; cancellation is checked once
+                        // per flush (cheap, and cancelling aborts the URLSession task).
+                        for try await chunk in bytes {
+                            buffer.append(chunk)
+                            streamer.consumed(chunk.count)
+                            if buffer.count >= flushSize {
+                                try Task.checkCancellation()
+                                try handle.write(contentsOf: buffer)
+                                written += Int64(buffer.count)
+                                await ledger.advance(segment: index, by: buffer.count)
+                                // Pace against the profile's aggregate download cap.
+                                // Shared across all segments, so combined throughput
+                                // converges on the cap (no-op when unlimited).
+                                await limiter?.pace(buffer.count)
+                                buffer.removeAll(keepingCapacity: true)
+                            }
+                        }
+                        try Task.checkCancellation()
+                        if !buffer.isEmpty {
                             try handle.write(contentsOf: buffer)
                             written += Int64(buffer.count)
                             await ledger.advance(segment: index, by: buffer.count)
-                            // Pace against the profile's aggregate download cap.
-                            // Shared across all segments, so combined throughput
-                            // converges on the cap (no-op when unlimited).
                             await limiter?.pace(buffer.count)
-                            buffer.removeAll(keepingCapacity: true)
                         }
+                    } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
+                        // Connection dropped mid-stream: back off and resume from the
+                        // last flushed offset (on another mirror if this one flaked).
+                        streamer.cancelTask()
+                        if isMirror { await pool.demote(url) }
+                        await governor.release()
+                        try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                        continue
+                    } catch {
+                        streamer.cancelTask()
+                        await governor.release(); throw error
                     }
-                    try Task.checkCancellation()
-                    if !buffer.isEmpty {
-                        try handle.write(contentsOf: buffer)
-                        written += Int64(buffer.count)
-                        await ledger.advance(segment: index, by: buffer.count)
-                        await limiter?.pace(buffer.count)
-                    }
-                } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
-                    // Connection dropped mid-stream: back off and resume from the
-                    // last flushed offset (on another mirror if this one flaked).
-                    if isMirror { await pool.demote(url) }
-                    await governor.release()
-                    try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
-                    continue
-                } catch {
-                    await governor.release(); throw error
-                }
 
-                await governor.release()
-                break                                                // segment complete
+                    await governor.release()
+                    break                                                // segment complete
+                }
+            } onCancel: {
+                streamerBox.cancel()
             }
             // Close explicitly so a flush/close failure propagates and fails the
             // task, instead of reporting `.completed` over a half-flushed file.
@@ -292,56 +305,70 @@ final class SegmentedTransfer: Sendable {
                               url: URL, fileURL: URL) async throws {
         let settings = plan.settings
         let flushSize = plan.flushSize
-        // Retry only the connect/status phase: the no-range fallback can't
-        // resume a partial body, so a mid-stream drop fails (rather than
-        // silently restarting and double-counting progress).
-        var attempt = 0
-        let bytes: URLSession.AsyncBytes
-        while true {
-            attempt += 1
-            let req = Self.makeRequest(url, settings: settings)
-            do {
-                let (stream, resp) = try await session.bytes(for: req)
-                guard let http = resp as? HTTPURLResponse else { throw DownloadError.network("No HTTP response") }
-                if Self.isRetryableStatus(http.statusCode), attempt < settings.maxAttempts {
-                    for try await _ in stream {}                     // drain the error body
-                    try await backoff(attempt: attempt, response: http, retryInterval: settings.retryInterval)
+        let streamerBox = StreamerBox()
+        try await withTaskCancellationHandler {
+            // Retry only the connect/status phase: the no-range fallback can't
+            // resume a partial body, so a mid-stream drop is terminal (the body
+            // read below is deliberately outside this retry loop, so it never
+            // silently restarts and double-counts progress).
+            var result: (HTTPURLResponse, AsyncThrowingStream<Data, Error>, ChunkStreamer)?
+            var attempt = 0
+            while true {
+                try Task.checkCancellation()
+                attempt += 1
+                let req = Self.makeRequest(url, settings: settings)
+                do {
+                    let opened = try await Self.openStream(
+                        session: session, request: req) { streamerBox.set($0) }
+                    if Self.isRetryableStatus(opened.0.statusCode), attempt < settings.maxAttempts {
+                        opened.2.cancelTask()                        // drop the error body
+                        try await backoff(attempt: attempt, response: opened.0, retryInterval: settings.retryInterval)
+                        continue
+                    }
+                    guard (200..<300).contains(opened.0.statusCode) else {
+                        opened.2.cancelTask()
+                        throw DownloadError.httpStatus(opened.0.statusCode)
+                    }
+                    result = opened
+                    break
+                } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
+                    try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
                     continue
                 }
-                guard (200..<300).contains(http.statusCode) else { throw DownloadError.httpStatus(http.statusCode) }
-                bytes = stream
-                break
-            } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
-                try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
-                continue
             }
-        }
+            // The loop exits only via `break` (result assigned) or by throwing.
+            guard let (_, bytes, streamer) = result else { return }
 
-        let handle = try FileHandle(forWritingTo: fileURL)
-        do {
-            var buffer = Data()
-            buffer.reserveCapacity(flushSize)
-            for try await byte in bytes {
-                buffer.append(byte)
-                if buffer.count >= flushSize {
-                    try Task.checkCancellation()
+            let handle = try FileHandle(forWritingTo: fileURL)
+            do {
+                var buffer = Data()
+                buffer.reserveCapacity(flushSize)
+                for try await chunk in bytes {
+                    buffer.append(chunk)
+                    streamer.consumed(chunk.count)
+                    if buffer.count >= flushSize {
+                        try Task.checkCancellation()
+                        try handle.write(contentsOf: buffer)
+                        await ledger.advance(segment: 0, by: buffer.count)
+                        // Pace against the profile's download cap (no-op when unlimited).
+                        await limiter?.pace(buffer.count)
+                        buffer.removeAll(keepingCapacity: true)
+                    }
+                }
+                try Task.checkCancellation()
+                if !buffer.isEmpty {
                     try handle.write(contentsOf: buffer)
                     await ledger.advance(segment: 0, by: buffer.count)
-                    // Pace against the profile's download cap (no-op when unlimited).
                     await limiter?.pace(buffer.count)
-                    buffer.removeAll(keepingCapacity: true)
                 }
+                try handle.close()
+            } catch {
+                streamer.cancelTask()
+                try? handle.close()
+                throw error
             }
-            try Task.checkCancellation()
-            if !buffer.isEmpty {
-                try handle.write(contentsOf: buffer)
-                await ledger.advance(segment: 0, by: buffer.count)
-                await limiter?.pace(buffer.count)
-            }
-            try handle.close()
-        } catch {
-            try? handle.close()
-            throw error
+        } onCancel: {
+            streamerBox.cancel()
         }
     }
 
@@ -402,6 +429,35 @@ final class SegmentedTransfer: Sendable {
             settings.authorization = nil
         }
         return Self.makeRequest(url, settings: settings)
+    }
+
+    /// Open `request` and return its response headers together with a stream of
+    /// body `Data` chunks and the ``ChunkStreamer`` driving it. This replaces
+    /// `URLSession.bytes(for:)`, whose one-byte-per-`await` iteration is
+    /// CPU-bound and caps throughput on fast links: a delegate delivers large
+    /// `Data` chunks with no per-byte overhead, and the streamer applies TCP
+    /// backpressure (suspending the task when the consumer falls behind).
+    ///
+    /// `register` runs synchronously with the streamer *before* the task starts,
+    /// so a task-cancellation handler that captured the box can abort even during
+    /// the initial connect. The awaited response resolves on the first response
+    /// header (or throws if the task fails before one arrives).
+    static func openStream(
+        session: URLSession, request: URLRequest,
+        register: (ChunkStreamer) -> Void
+    ) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, Error>, ChunkStreamer) {
+        let streamer = ChunkStreamer()
+        var bodyContinuation: AsyncThrowingStream<Data, Error>.Continuation!
+        let body = AsyncThrowingStream<Data, Error> { bodyContinuation = $0 }
+        let task = session.dataTask(with: request)
+        task.delegate = streamer
+        streamer.prepare(body: bodyContinuation, task: task)
+        register(streamer)
+        let response: HTTPURLResponse = try await withCheckedThrowingContinuation { cont in
+            streamer.setResponseContinuation(cont)
+            task.resume()
+        }
+        return (response, body, streamer)
     }
 
     /// The total-size suffix of a 206's `Content-Range` ("bytes 0-99/12345").
@@ -704,4 +760,140 @@ struct TransferProgress: Sendable {
     var resumeData: Data?
     /// Per-segment snapshots, present only on the (~1 Hz) ticks that build them.
     var connections: [TaskConnection]?
+}
+
+// MARK: - Delegate-based chunked body reader
+
+/// Bridges a `URLSessionDataTask`'s delegate callbacks into an
+/// `AsyncThrowingStream<Data>` of body chunks — replacing `URLSession.bytes`,
+/// whose one-`UInt8`-per-`await` iteration is CPU-bound and caps throughput on
+/// fast links. Chunks arrive as `Data` (append = memcpy), so the byte pump is
+/// network/disk-bound, not executor-bound.
+///
+/// **Flow control.** Bytes handed to the delegate but not yet pulled by the
+/// consumer are counted; past a high-water mark the task is `suspend()`ed and
+/// resumed once the consumer drains below the low-water mark. So a rate-limited
+/// or disk-bound consumer exerts real TCP backpressure instead of buffering the
+/// whole file in memory (`AsyncBytes` got this for free by pulling per byte).
+///
+/// **Redirects.** A per-task delegate supersedes the session delegate for its
+/// task, so this replicates ``RedirectSanitizer``'s cross-host `Authorization`
+/// stripping — otherwise a redirect could carry Basic credentials off-host.
+///
+/// Thread-safety: delegate callbacks arrive on the session's serial delegate
+/// queue while the consumer runs on the transfer's task; the shared counters and
+/// continuations are guarded by `lock`, so this is a sound `@unchecked Sendable`.
+final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var responseCont: CheckedContinuation<HTTPURLResponse, Error>?
+    private var bodyCont: AsyncThrowingStream<Data, Error>.Continuation?
+    private weak var task: URLSessionTask?
+    private var outstanding = 0
+    private var suspended = false
+    private var done = false
+
+    private let highWater: Int
+    private let lowWater: Int
+
+    init(highWater: Int = 8 * 1024 * 1024, lowWater: Int = 2 * 1024 * 1024) {
+        self.highWater = highWater
+        self.lowWater = lowWater
+    }
+
+    /// Wire up the body continuation and task before the task is resumed.
+    func prepare(body: AsyncThrowingStream<Data, Error>.Continuation, task: URLSessionTask) {
+        lock.lock(); bodyCont = body; self.task = task; lock.unlock()
+    }
+
+    /// Register the response continuation; after this the task may be resumed.
+    func setResponseContinuation(_ cont: CheckedContinuation<HTTPURLResponse, Error>) {
+        lock.lock(); responseCont = cont; lock.unlock()
+    }
+
+    /// The consumer calls this as it pulls each chunk off the stream, releasing
+    /// backpressure credit — which may resume a suspended task.
+    func consumed(_ n: Int) {
+        lock.lock()
+        outstanding -= n
+        let resume = suspended && !done && outstanding <= lowWater
+        if resume { suspended = false }
+        let t = task
+        lock.unlock()
+        if resume { t?.resume() }
+    }
+
+    /// Abort the underlying transfer (reject/pause/remove). Safe to call after
+    /// completion (a no-op on a finished task).
+    func cancelTask() {
+        lock.lock(); let t = task; lock.unlock()
+        t?.cancel()
+    }
+
+    // MARK: URLSessionDataDelegate
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                    didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        lock.lock(); let cont = responseCont; responseCont = nil; lock.unlock()
+        if let http = response as? HTTPURLResponse {
+            cont?.resume(returning: http)
+        } else {
+            cont?.resume(throwing: DownloadError.network("No HTTP response"))
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        lock.lock()
+        outstanding += data.count
+        let suspend = !suspended && outstanding >= highWater
+        if suspend { suspended = true }
+        let cont = bodyCont
+        lock.unlock()
+        cont?.yield(data)
+        if suspend { dataTask.suspend() }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        lock.lock()
+        let rcont = responseCont; responseCont = nil
+        let bcont = bodyCont; bodyCont = nil
+        done = true
+        lock.unlock()
+        if let error {
+            // A failure before any response resolves the response await; otherwise
+            // it terminates the body stream (so the consumer's `for await` throws).
+            rcont?.resume(throwing: error)
+            bcont?.finish(throwing: error)
+        } else {
+            // Clean completion with no response would strand the awaiter; guard it.
+            rcont?.resume(throwing: DownloadError.network("No HTTP response"))
+            bcont?.finish()
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        var sanitized = request
+        let originalHost = task.originalRequest?.url?.host?.lowercased()
+        let newHost = request.url?.host?.lowercased()
+        let downgradedToHTTP = request.url?.scheme?.lowercased() != "https"
+        if sanitized.value(forHTTPHeaderField: "Authorization") != nil,
+           originalHost != newHost || downgradedToHTTP {
+            sanitized.setValue(nil, forHTTPHeaderField: "Authorization")
+        }
+        completionHandler(sanitized)
+    }
+}
+
+/// A thread-safe holder for a segment's currently-active ``ChunkStreamer`` so a
+/// task-cancellation handler can abort whichever request is in flight (each retry
+/// attempt swaps in a fresh streamer).
+final class StreamerBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current: ChunkStreamer?
+    func set(_ streamer: ChunkStreamer) { lock.lock(); current = streamer; lock.unlock() }
+    func cancel() { lock.lock(); let s = current; lock.unlock(); s?.cancelTask() }
 }

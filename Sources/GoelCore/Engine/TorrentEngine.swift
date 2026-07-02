@@ -100,6 +100,11 @@ public actor TorrentEngine: DownloadEngine {
             gt_session_set_rate_limits(session,
                                        Int32(clamping: profile.maxDownloadBytesPerSec),
                                        Int32(clamping: profile.maxUploadBytesPerSec))
+            // Wire the profile's peer ceiling into the session so switching to a
+            // higher profile actually connects to more peers, not just a wider
+            // rate cap. (`connections_limit` was previously left at libtorrent's
+            // default regardless of profile.)
+            gt_session_set_connections(session, Int32(clamping: profile.maxConnections))
         }
     }
 
@@ -185,6 +190,7 @@ public actor TorrentEngine: DownloadEngine {
             gt_session_set_rate_limits(created,
                                        Int32(clamping: profile.maxDownloadBytesPerSec),
                                        Int32(clamping: profile.maxUploadBytesPerSec))
+            gt_session_set_connections(created, Int32(clamping: profile.maxConnections))
         }
         return created
     }

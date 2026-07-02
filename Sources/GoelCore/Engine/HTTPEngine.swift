@@ -71,6 +71,17 @@ public actor HTTPEngine: DownloadEngine {
     /// ``TransferPlan/flushSize``.
     static let flushSize = 64 * 1024
 
+    /// The per-host TCP connection ceiling for the session. `URLSession` defaults
+    /// this to **6** on macOS — below the High profile's 16-way (and Medium's
+    /// 8-way) segment fan-out, so without raising it the extra range connections
+    /// to one host silently queue behind six and segmentation is capped at six.
+    /// Set to the widest profile's per-server cap so the app's own
+    /// ``ConnectionGovernor`` — not Foundation — is always the real limiter.
+    /// (On HTTP/2 origins Foundation multiplexes over one connection regardless;
+    /// this matters for the HTTP/1.1 file servers where segmentation actually
+    /// helps.)
+    static let maxConnectionsPerHost = 16
+
     /// Hard sanity cap on a single download's declared size, to reject an
     /// absurd server `Content-Length` that would trigger a huge preallocation.
     static let maxDownloadSize: Int64 = 100 * 1024 * 1024 * 1024 // 100 GB
@@ -125,6 +136,7 @@ public actor HTTPEngine: DownloadEngine {
     /// Build a session from a configuration.
     public init(configuration: URLSessionConfiguration, profile: TrafficProfile = .high,
                 credentials: any CredentialProviding = KeychainCredentialStore()) {
+        configuration.httpMaximumConnectionsPerHost = Self.maxConnectionsPerHost
         self.session = URLSession(configuration: configuration,
                                   delegate: RedirectSanitizer.shared, delegateQueue: nil)
         self.profile = profile
@@ -136,6 +148,7 @@ public actor HTTPEngine: DownloadEngine {
                 credentials: any CredentialProviding = KeychainCredentialStore()) {
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
+        config.httpMaximumConnectionsPerHost = Self.maxConnectionsPerHost
         self.session = URLSession(configuration: config,
                                   delegate: RedirectSanitizer.shared, delegateQueue: nil)
         self.profile = profile
@@ -217,6 +230,9 @@ public actor HTTPEngine: DownloadEngine {
         // `timeoutIntervalForResource` to the same value — that caps the whole
         // transfer and would kill any download longer than `timeout` seconds.
         cfg.timeoutIntervalForRequest = config.timeout
+        // Preserve the raised per-host connection ceiling across config swaps (a
+        // fresh configuration would otherwise revert to Foundation's default of 6).
+        cfg.httpMaximumConnectionsPerHost = Self.maxConnectionsPerHost
 
         var headers = cfg.httpAdditionalHeaders ?? [:]
         headers["User-Agent"] = config.userAgent

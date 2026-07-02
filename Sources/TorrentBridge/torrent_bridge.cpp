@@ -75,6 +75,17 @@ GTSession gt_session_create(int enable_dht, int enable_lsd, int enable_utp, int 
     sp.set_str(lt::settings_pack::listen_interfaces, "0.0.0.0:6881,[::]:6881");
     sp.set_str(lt::settings_pack::user_agent, "GoelDownloader/1.0 libtorrent/2.0");
 
+    // Throughput tuning. libtorrent's stock defaults are tuned conservatively;
+    // these safe bumps help a client saturate modern broadband:
+    //  - connection_speed: peer connection attempts per second — dial the swarm
+    //    up faster so download speed ramps sooner (default ~30).
+    //  - aio_threads: disk I/O / hashing worker threads — keeps piece writes and
+    //    hash checks off the critical path on fast NVMe storage (default ~10).
+    // connections_limit is applied separately from the active traffic profile
+    // (see gt_session_set_connections).
+    sp.set_int(lt::settings_pack::connection_speed, 100);
+    sp.set_int(lt::settings_pack::aio_threads, 16);
+
     auto *session = new lt::session(sp);
     return static_cast<GTSession>(session);
 }
@@ -89,6 +100,14 @@ void gt_session_set_rate_limits(GTSession session, int download_bps, int upload_
     lt::settings_pack sp;
     sp.set_int(lt::settings_pack::download_rate_limit, download_bps);
     sp.set_int(lt::settings_pack::upload_rate_limit, upload_bps);
+    ses->apply_settings(sp);
+}
+
+void gt_session_set_connections(GTSession session, int connections_limit) {
+    if (!session || connections_limit < 1) return;
+    auto *ses = static_cast<lt::session *>(session);
+    lt::settings_pack sp;
+    sp.set_int(lt::settings_pack::connections_limit, connections_limit);
     ses->apply_settings(sp);
 }
 
