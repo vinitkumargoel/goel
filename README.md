@@ -6,10 +6,10 @@
 
 **A fast, native macOS download manager that unifies HTTP, FTP, SFTP, BitTorrent, and HLS in one queue.**
 
-Inspired by Free Download Manager — rebuilt from scratch in Swift, self-contained, and Homebrew-free.
+Inspired by Free Download Manager — rebuilt from scratch in Swift, self-contained, and Homebrew-free. Native SwiftUI on macOS; a headless daemon with a web-portal UI on Linux.
 
-![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue)
-![Arch](https://img.shields.io/badge/arch-Apple%20Silicon-black)
+![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Linux-blue)
+![Arch](https://img.shields.io/badge/arch-arm64%20%7C%20x86__64-black)
 ![Swift](https://img.shields.io/badge/Swift-5.10-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -23,6 +23,8 @@ A native SwiftUI download manager for macOS. Direct downloads and torrents share
 and one interface — the same list, detail panel, and controls whether you're pulling a file over HTTPS
 or seeding a torrent. It ships as a **single self-contained app**: every native library is bundled
 inside, so there is nothing for your users to install.
+
+On **Linux**, the same engine runs headless as **`GoelDaemon`**, driven from the built-in web portal — see [Linux (headless daemon)](#linux-headless-daemon).
 
 ---
 
@@ -41,12 +43,13 @@ inside, so there is nothing for your users to install.
 - **Remote control** — an optional token-authenticated local HTTP server to manage downloads from another device.
 - **Checksums & history** — MD5/SHA verification plus searchable, re-downloadable history with CSV export.
 - **Self-contained** — every native library is bundled; no Homebrew or dependencies for end users.
+- **Runs headless on Linux** — the same engine runs as a daemon (`GoelDaemon`) with the web portal as its UI.
 
 ---
 
-## Installation
+## Installation (macOS)
 
-> **Requires an Apple Silicon Mac (M1 or later) on macOS 14 (Sonoma) or later.** Intel is not supported.
+> **Requires a Mac on macOS 14 (Sonoma) or later.** Apple Silicon is the primary target; an Intel build is provided on a best-effort basis.
 
 1. Download the latest **`Goel-Downloader-<version>-macos-arm64.dmg`** from
    [Releases](https://github.com/vinitkumargoel/goel-downloader/releases).
@@ -66,7 +69,47 @@ a direct download. Official releases bundle `yt-dlp`; otherwise install it yours
 
 ---
 
-## Building from source
+## Linux (headless daemon)
+
+On Linux, Goel° runs as a headless service — **`GoelDaemon`** — with the built-in **web portal as its UI**.
+The same engine (HTTP, FTP, SFTP, BitTorrent, HLS, scheduler, persistence) runs behind a token- or
+password-authenticated web server that you drive from any browser. Builds for **x86_64** and **ARM64**.
+
+**Prerequisites** (Ubuntu 24.04):
+```bash
+sudo apt-get install -y \
+  libtorrent-rasterbar-dev libssh2-1-dev libcurl4-openssl-dev \
+  libssl-dev libboost-dev libboost-system-dev libsqlite3-dev \
+  clang pkg-config ffmpeg
+# plus a Swift toolchain from https://swift.org/download
+```
+
+**Build:**
+```bash
+Scripts/linux/build-sqlite.sh            # once — snapshot-enabled SQLite that GRDB needs
+export GOEL_SQLITE_DIR="$PWD/Vendor/linux/sqlite"
+swift build -c release --product GoelDaemon
+```
+
+**Run** (configured via environment):
+```bash
+GOEL_PORT=8080 \
+GOEL_ALLOW_LAN=true \
+GOEL_USERNAME=admin \
+GOEL_PASSWORD='choose-a-strong-one' \    # required before it will expose over the LAN
+GOEL_SAVE_DIR="$HOME/Downloads" \
+  ./.build/release/GoelDaemon
+# then open http://<host>:8080, sign in, and add downloads
+```
+
+If the Swift runtime isn't on the library path, prefix the run with
+`LD_LIBRARY_PATH=<toolchain>/usr/lib/swift/linux`. Config env vars: `GOEL_PORT`, `GOEL_ALLOW_LAN`,
+`GOEL_REQUIRE_AUTH`, `GOEL_USERNAME`, `GOEL_PASSWORD`, `GOEL_SAVE_DIR`, `GOEL_DB`. With sign-in enabled,
+LAN exposure requires `GOEL_PASSWORD` (otherwise it binds loopback only — the same safety rule as macOS).
+
+---
+
+## Building the macOS app from source
 
 You need Homebrew **only to build** — the resulting `.app` is self-contained.
 
