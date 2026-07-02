@@ -107,6 +107,10 @@ public actor DownloadManager {
     /// future ``DownloadTask/scheduledAt``.
     var scheduledStartTask: Task<Void, Never>?
 
+    /// The periodic "remote resource changed?" checker for finished HTTP tasks,
+    /// armed only while ``AppSettings/autoRedownloadOnRemoteChange`` is on.
+    var redownloadTask: Task<Void, Never>?
+
     // MARK: Network-awareness state
 
     /// The last path flags reported by the app layer, re-evaluated when the
@@ -287,6 +291,7 @@ public actor DownloadManager {
         updateBackupSchedule()
         updateDownloadSchedule()
         updateRSSSchedule()
+        updateRedownloadSchedule()
         armScheduledStarts()
         updatePowerAssertion()
         publish()
@@ -610,6 +615,8 @@ public actor DownloadManager {
         rssTask = nil
         scheduledStartTask?.cancel()
         scheduledStartTask = nil
+        redownloadTask?.cancel()
+        redownloadTask = nil
         let folderWatch = self.folderWatch
         Task { await folderWatch.stop() }
         power.setPreventSleep(false)
@@ -688,6 +695,7 @@ public actor DownloadManager {
         updateBackupSchedule()
         updateDownloadSchedule()
         updateRSSSchedule()
+        updateRedownloadSchedule()
         await applyNetworkPolicy(expensive: lastPathExpensive, constrained: lastPathConstrained)
         publish()
         schedule()

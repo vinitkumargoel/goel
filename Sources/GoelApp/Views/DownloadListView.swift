@@ -230,6 +230,18 @@ struct DownloadRow: View {
         if task.status.hasData {
             Button("Quick Look") { quickLook(URL(fileURLWithPath: task.savePath)) }
         }
+        if task.status == .completed, task.isMediaFile, vm.ffmpegAvailable {
+            Menu("Convert To") {
+                ForEach(["mp4", "mkv", "webm", "mov"], id: \.self) { ext in
+                    Button(ext.uppercased()) { vm.convertFile(task: task, toExtension: ext) }
+                }
+            }
+            Menu("Extract Audio") {
+                ForEach(FFmpegService.AudioFormat.allCases, id: \.self) { fmt in
+                    Button(fmt.rawValue.uppercased()) { vm.extractAudio(task: task, format: fmt) }
+                }
+            }
+        }
         Button("Copy source link") { vm.copyToPasteboard(task.sourceLocator) }
         if vm.settings.remoteAccessEnabled, !vm.settings.remoteToken.isEmpty,
            RemoteControlServer.streamPlan(for: task) != nil {

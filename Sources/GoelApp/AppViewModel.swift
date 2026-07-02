@@ -1282,6 +1282,40 @@ final class AppViewModel: ObservableObject {
         toastNow("Request options saved")
     }
 
+    // MARK: ffmpeg convert / extract audio
+
+    /// Whether an ffmpeg binary is reachable (honouring the settings override).
+    var ffmpegAvailable: Bool { FFmpegService.isAvailable(override: settings.ffmpegPath) }
+
+    /// Convert a finished media file into another container next to the original.
+    func convertFile(task: DownloadTask, toExtension ext: String) {
+        let input = URL(fileURLWithPath: task.savePath)
+        toastNow("Converting to \(ext.uppercased())…")
+        Task {
+            let outcome = await FFmpegService.convert(input: input, toExtension: ext,
+                                                      override: settings.ffmpegPath)
+            await MainActor.run { reportFFmpeg(outcome) }
+        }
+    }
+
+    /// Extract the audio track of a finished media file next to the original.
+    func extractAudio(task: DownloadTask, format: FFmpegService.AudioFormat) {
+        let input = URL(fileURLWithPath: task.savePath)
+        toastNow("Extracting \(format.rawValue.uppercased())…")
+        Task {
+            let outcome = await FFmpegService.extractAudio(input: input, format: format,
+                                                           override: settings.ffmpegPath)
+            await MainActor.run { reportFFmpeg(outcome) }
+        }
+    }
+
+    private func reportFFmpeg(_ outcome: FFmpegService.Outcome) {
+        switch outcome {
+        case .success(let url): toastNow("Saved “\(url.lastPathComponent)”")
+        case .failure(let msg): toastNow(msg)
+        }
+    }
+
     func toastNow(_ message: String) {
         toast = message
         Task {
