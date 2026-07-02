@@ -21,9 +21,12 @@ APP_BUNDLE="Goel°"                  # user-facing app name → dist/Goel°.app
 CONFIG="release"
 APP="dist/$APP_BUNDLE.app"
 
-echo "==> swift build -c $CONFIG"
-swift build -c "$CONFIG"
-BIN="$(swift build -c "$CONFIG" --show-bin-path)"
+# Size-optimized release: -Osize favors smaller code over speed (irrelevant for
+# a UI/IO-bound downloader), -dead_strip drops unreferenced code at link time.
+BUILD_FLAGS=(-Xswiftc -Osize -Xlinker -dead_strip)
+echo "==> swift build -c $CONFIG (size-optimized)"
+swift build -c "$CONFIG" "${BUILD_FLAGS[@]}"
+BIN="$(swift build -c "$CONFIG" "${BUILD_FLAGS[@]}" --show-bin-path)"
 
 echo "==> Assembling $APP"
 rm -rf "$APP"
@@ -193,5 +196,15 @@ if [ -n "${CODESIGN_IDENTITY:-}" ]; then
   fi
 fi
 
+# Compressed distributable (drag-to-share / drag-to-/Applications). The .app
+# installs at ~19 MB but the native dylibs compress well, so the download is
+# roughly half that.
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+ZIP="dist/Goel-Downloader-${VERSION}-macos-$(uname -m).zip"
+echo "==> Packaging $ZIP"
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
+
 echo "==> Done: $APP"
-du -sh "$APP" | sed 's/^/    /'
+printf '    installed: %s   download(zip): %s\n' \
+  "$(du -sh "$APP" | cut -f1)" "$(du -sh "$ZIP" | cut -f1)"

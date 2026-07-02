@@ -97,6 +97,45 @@ else
   echo "    + added rpath @executable_path/../Frameworks"
 fi
 
+# Remove build-machine rpaths that leaked into the binaries. They point at
+# Homebrew / the Xcode toolchain and are searched BEFORE the bundled Frameworks,
+# so on a machine that HAS Homebrew's libtorrent installed dyld would load that
+# copy instead of the vendored one (silently defeating the vendoring, and
+# possibly loading an incompatible version). Harmless on a clean machine (path
+# absent) but wrong everywhere else — strip them so the bundle is the only source.
+echo "==> Removing stale build-machine rpaths (Homebrew, Xcode toolchain)"
+delete_stale_rpaths() {
+  local file="$1" rp
+  otool -l "$file" | awk '/LC_RPATH/{f=1;next} f&&/ path /{print $2;f=0}' | while read -r rp; do
+    case "$rp" in
+      /opt/homebrew/*|/usr/local/*|*/Xcode.app/*)
+        install_name_tool -delete_rpath "$rp" "$file" 2>/dev/null \
+          && echo "    - $rp ($(basename "$file"))" || true ;;
+    esac
+  done
+}
+delete_stale_rpaths "$EXE"
+for f in "$FRAMEWORKS"/*.dylib; do [ -e "$f" ] && delete_stale_rpaths "$f"; done
+
+# Strip symbols. The executable is fully stripped — nothing links against it,
+# and Swift runtime reflection lives in __swift5_* sections (not the symbol
+# table), so this is safe. Dylibs keep their exported (global) symbols and drop
+# only locals. Homebrew ships libtorrent UNstripped, so this alone reclaims ~4 MB.
+echo "==> Stripping symbols"
+before_exe=$(stat -f%z "$EXE")
+strip -rSTx "$EXE"
+echo "    $(basename "$EXE"): $((before_exe/1024/1024))MB -> $(( $(stat -f%z "$EXE") / 1024/1024 ))MB"
+for f in "$FRAMEWORKS"/*.dylib; do [ -e "$f" ] && strip -x "$f"; done
+# Sparkle: strip its Mach-Os (keep exports) and drop ship-time-useless headers.
+SPK="$FRAMEWORKS/Sparkle.framework"
+if [ -d "$SPK" ]; then
+  find "$SPK" -type f | while read -r m; do
+    if file "$m" | grep -q "Mach-O"; then strip -x "$m" 2>/dev/null || true; fi
+  done
+  rm -rf "$SPK/Versions/B/Headers" "$SPK/Versions/B/PrivateHeaders" \
+         "$SPK/Versions/B/Modules" "$SPK/Headers" "$SPK/PrivateHeaders" "$SPK/Modules"
+fi
+
 # A SwiftPM resource bundle (Bundle.module) is a shallow bundle that sits next
 # to the executable. Some are generated without an Info.plist, which makes
 # codesign reject them ("bundle format unrecognized") and, in turn, blocks the
@@ -127,6 +166,15 @@ EOF
 # dylibs, then nested resource bundles, then the executable, then the wrapper.
 echo "==> Re-signing (ad-hoc)"
 for f in "$FRAMEWORKS"/*.dylib; do [ -e "$f" ] && codesign --force -s - "$f"; done
+# Sparkle was mutated above (stripped Mach-Os + removed headers), so its sealed
+# signature is now stale. Re-sign inside-out: xpc services, Updater.app, the
+# Autoupdate helper, then the framework wrapper.
+if [ -d "$SPK" ]; then
+  for x in "$SPK/Versions/B/XPCServices/"*.xpc; do [ -e "$x" ] && codesign --force -s - "$x"; done
+  [ -e "$SPK/Versions/B/Updater.app" ] && codesign --force -s - "$SPK/Versions/B/Updater.app"
+  [ -e "$SPK/Versions/B/Autoupdate" ] && codesign --force -s - "$SPK/Versions/B/Autoupdate"
+  codesign --force -s - "$SPK"
+fi
 for b in "$EXE_DIR"/*.bundle; do
   [ -e "$b" ] || continue
   ensure_bundle_plist "$b"
