@@ -1,0 +1,23 @@
+/* Goel° — base (English) strings. This is the reference table; every other
+   language mirrors these keys. The app is only partially localized so far: the
+   sidebar filters, primary menu actions and a few common labels are wired
+   through L10n. Extending coverage is a matter of adding keys here + each
+   translation and swapping literals for L10n lookups in the views. */
+
+"All" = "All";
+"Active" = "Active";
+"Paused" = "Paused";
+"Completed" = "Completed";
+"Seeding" = "Seeding";
+
+"Add Download" = "Add Download";
+"Start All" = "Start All";
+"Pause All" = "Pause All";
+"Resume" = "Resume";
+"Pause" = "Pause";
+"Retry" = "Retry";
+"Remove" = "Remove";
+"Settings" = "Settings";
+"History" = "History";
+"Statistics" = "Statistics";
+"Search downloads" = "Search downloads";

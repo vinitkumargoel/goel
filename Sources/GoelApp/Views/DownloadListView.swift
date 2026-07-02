@@ -227,6 +227,9 @@ struct DownloadRow: View {
         if task.status == .completed || playableWhileDownloading {
             Button("Open in Player") { vm.openFile(task) }
         }
+        if task.isMediaFile, task.status.hasData {
+            Button("Play in Goel°") { vm.playInApp(task) }
+        }
         if task.status.hasData {
             Button("Quick Look") { quickLook(URL(fileURLWithPath: task.savePath)) }
         }

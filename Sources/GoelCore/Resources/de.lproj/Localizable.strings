@@ -1,0 +1,21 @@
+/* Goel° — German (Deutsch) strings. A real second language proving the L10n
+   pipeline end-to-end; it mirrors the keys in en.lproj/Localizable.strings.
+   Missing keys fall back to English, then to the key itself. */
+
+"All" = "Alle";
+"Active" = "Aktiv";
+"Paused" = "Pausiert";
+"Completed" = "Abgeschlossen";
+"Seeding" = "Verteilen";
+
+"Add Download" = "Download hinzufügen";
+"Start All" = "Alle starten";
+"Pause All" = "Alle pausieren";
+"Resume" = "Fortsetzen";
+"Pause" = "Pausieren";
+"Retry" = "Erneut versuchen";
+"Remove" = "Entfernen";
+"Settings" = "Einstellungen";
+"History" = "Verlauf";
+"Statistics" = "Statistik";
+"Search downloads" = "Downloads durchsuchen";

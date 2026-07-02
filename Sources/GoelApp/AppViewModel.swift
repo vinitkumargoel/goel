@@ -93,6 +93,16 @@ final class AppViewModel: ObservableObject {
     @Published var isHistoryPresented: Bool = false
     @Published var isLinkGrabberPresented: Bool = false
 
+    /// A file playing in the built-in AVKit player, or nil when the player is closed.
+    @Published var playerItem: PlayerItem?
+
+    /// One media file opened in the in-app player.
+    struct PlayerItem: Identifiable {
+        let id = UUID()
+        let url: URL
+        let title: String
+    }
+
     // MARK: SFTP servers
 
     /// Saved SFTP servers shown in the sidebar's "Servers" group. Mutated only
@@ -880,6 +890,17 @@ final class AppViewModel: ObservableObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: target))
     }
 
+    /// Open a finished media file in the built-in AVKit player. Multi-file
+    /// torrents play their largest wanted file, mirroring ``openFile(_:)``.
+    func playInApp(_ task: DownloadTask) {
+        var target = task.savePath
+        if task.isMultiFile,
+           let largest = task.files.filter(\.isWanted).max(by: { $0.length < $1.length }) {
+            target = (task.saveDirectory as NSString).appendingPathComponent(largest.path)
+        }
+        playerItem = PlayerItem(url: URL(fileURLWithPath: target), title: task.name)
+    }
+
     func revealInFinder(_ task: DownloadTask) {
         let url = URL(fileURLWithPath: task.savePath)
         #if canImport(AppKit)
@@ -1322,5 +1343,12 @@ final class AppViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 2_400_000_000)
             if toast == message { toast = nil }
         }
+    }
+
+    /// Localize a UI string key for the current language. Coverage is partial —
+    /// unmapped keys fall back to English and then the key itself, so wrapping a
+    /// literal is always safe even before its translation exists.
+    func localized(_ key: String) -> String {
+        L10n.string(key, language: settings.language)
     }
 }

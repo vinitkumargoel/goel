@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "GoelDownloader",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v14)
     ],
@@ -90,6 +91,11 @@ let package = Package(
                 "TorrentBridge",
                 "CurlBridge",
                 "SSHBridge",
+            ],
+            resources: [
+                // Localization tables (en + de today). `.process` treats the
+                // `.lproj` folders as localizations in the target's resource bundle.
+                .process("Resources"),
             ]
         ),
         .executableTarget(

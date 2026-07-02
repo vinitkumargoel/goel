@@ -111,6 +111,9 @@ struct RootView: View {
                 onResolve: { vm.resolveUploadConflicts(request, decisions: $0) },
                 onCancel: { vm.sftpUploadConflicts = nil })
         }
+        .sheet(item: $vm.playerItem) { item in
+            InAppPlayerView(item: item) { vm.playerItem = nil }
+        }
     }
 
     /// The dashed "drop here" affordance shown only while a drag hovers the window
