@@ -73,8 +73,8 @@ struct StatusBarView: View {
     @ViewBuilder
     private func transferRow(_ t: SFTPTransfer) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: t.direction == .upload ? "arrow.up.circle" : "arrow.down.circle")
-                .foregroundStyle(rowTint(t))
+            Image(systemName: t.iconName(filledWhenFinished: false))
+                .foregroundStyle(t.tint)
             VStack(alignment: .leading, spacing: 1) {
                 Text(t.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
                 Text(vm.server(t.connectionID)?.label ?? "Server")
@@ -83,7 +83,7 @@ struct StatusBarView: View {
             Spacer(minLength: 6)
             switch t.state {
             case .running:
-                Text(t.total > 0 ? "\(Int(t.fraction * 100))%" : t.bytes.byteString)
+                Text(t.progressLabel)
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
                 Button { vm.cancelSFTPTransfer(t.id) } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12))
@@ -100,15 +100,6 @@ struct StatusBarView: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
-    }
-
-    private func rowTint(_ t: SFTPTransfer) -> Color {
-        switch t.state {
-        case .failed: return Theme.red
-        case .finished: return Theme.green
-        case .cancelled: return .secondary
-        case .running: return Theme.accent
-        }
     }
 
     private var snail: some View {

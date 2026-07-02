@@ -33,6 +33,37 @@ struct SFTPTransfer: Identifiable {
     var errorMessage: String? { if case .failed(let m) = state { return m }; return nil }
 }
 
+// MARK: - Shared row presentation
+
+/// Presentation derived once and shared by the browser's transfer tray and the
+/// menu-bar status popover, which previously each kept a verbatim copy of this
+/// state→colour mapping and the progress label (drift-prone across the two views).
+/// The two rows keep their own *layouts* (full vs compact) but no longer duplicate
+/// this logic.
+extension SFTPTransfer {
+    /// Row tint by state.
+    var tint: Color {
+        switch state {
+        case .failed: return Theme.red
+        case .finished: return Theme.green
+        case .cancelled: return .secondary
+        case .running: return Theme.accent
+        }
+    }
+
+    /// The direction icon. `filledWhenFinished` fills it on completion (the browser
+    /// tray does; the compact status row keeps the outline).
+    func iconName(filledWhenFinished: Bool) -> String {
+        let base = direction == .upload ? "arrow.up.circle" : "arrow.down.circle"
+        return (filledWhenFinished && state == .finished) ? base + ".fill" : base
+    }
+
+    /// The compact running-progress label: percent when the total is known, bytes otherwise.
+    var progressLabel: String {
+        total > 0 ? "\(Int(fraction * 100))%" : bytes.byteString
+    }
+}
+
 /// A thread-safe cancel flag shared between a drag's `Progress.cancellationHandler`
 /// (main thread) and the blocking download's progress callback (a libssh2
 /// thread), so cancelling a drag actually aborts the transfer.

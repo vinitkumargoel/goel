@@ -210,8 +210,8 @@ struct SFTPBrowserView: View {
     @ViewBuilder
     private func transferRow(_ t: SFTPTransfer) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: icon(for: t))
-                .foregroundStyle(tint(for: t))
+            Image(systemName: t.iconName(filledWhenFinished: true))
+                .foregroundStyle(t.tint)
             Text(t.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 8)
             switch t.state {
@@ -227,7 +227,7 @@ struct SFTPBrowserView: View {
                 Text("Done").font(.system(size: 11)).foregroundStyle(Theme.green)
             case .running:
                 ProgressView(value: t.fraction).frame(width: 110)
-                Text(t.total > 0 ? "\(Int(t.fraction * 100))%" : t.bytes.byteString)
+                Text(t.progressLabel)
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
                     .frame(width: 42, alignment: .trailing)
                 Button { vm.cancelSFTPTransfer(t.id) } label: {
@@ -237,20 +237,6 @@ struct SFTPBrowserView: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 4)
-    }
-
-    private func icon(for t: SFTPTransfer) -> String {
-        let base = t.direction == .upload ? "arrow.up.circle" : "arrow.down.circle"
-        return t.state == .finished ? base + ".fill" : base
-    }
-
-    private func tint(for t: SFTPTransfer) -> Color {
-        switch t.state {
-        case .failed: return Theme.red
-        case .finished: return Theme.green
-        case .cancelled: return .secondary
-        case .running: return Theme.accent
-        }
     }
 
     private func errorBanner(_ message: String) -> some View {
