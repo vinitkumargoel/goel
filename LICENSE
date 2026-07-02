@@ -19,26 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-------------------------------------------------------------------------------
-THIRD-PARTY SOFTWARE
-------------------------------------------------------------------------------
-
-Goel° bundles the following third-party components inside the application. Each
-is redistributed under its own license; the full texts are in
-THIRD-PARTY-NOTICES.md, which ships with the app and must accompany any
-redistribution.
-
-  Component                     Purpose                         License
-  ---------------------------   -----------------------------   ---------------
-  libtorrent-rasterbar 2.0.x    BitTorrent engine               BSD-3-Clause
-  Boost 1.9x                    (used by libtorrent)            BSL-1.0
-  OpenSSL 3.x (libssl/crypto)   TLS + crypto for torrent/SFTP   Apache-2.0
-  libssh2 1.11.x                SFTP engine + browser           BSD-3-Clause
-  GRDB.swift 6.x                SQLite persistence              MIT
-  Sparkle 2.x                   Auto-update framework           MIT
-  yt-dlp                        Optional video-site resolver    The Unlicense
-
-The system libraries Goel° links from macOS (libcurl, libsqlite3, the Swift
-runtime, and Apple frameworks) are provided by the operating system and are not
-redistributed by this project.
