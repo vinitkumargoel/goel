@@ -8,7 +8,7 @@ import TorrentBridge
 /// status snapshot ~once a second and folds it into ``EngineEvent``s, so the
 /// scheduler and UI treat torrents exactly like HTTP/HLS downloads. Magnets
 /// resolve metadata through libtorrent's DHT before the file list is known.
-public actor TorrentEngine: DownloadEngine {
+public actor TorrentEngine: TorrentControlling {
     public nonisolated let kind: DownloadKind = .torrent
 
     /// libtorrent resolves a torrent's file list up front and honours per-file
@@ -115,11 +115,15 @@ public actor TorrentEngine: DownloadEngine {
     /// created; an already-running session keeps its current settings.
     public func applySessionConfig(_ config: SessionConfig) { self.config = config }
 
-    /// Apply the engine-agnostic configuration: the torrent engine consumes only
-    /// the `.torrent` slice (via the existing ``applySessionConfig(_:)``) and
-    /// ignores the HTTP / HLS slices.
-    public func configure(_ configuration: EngineConfiguration) async {
-        applySessionConfig(configuration.torrent)
+    /// Apply the session-level BitTorrent settings, mapping the shared
+    /// ``TorrentSessionConfig`` onto libtorrent's internal ``SessionConfig`` (the
+    /// engine consumes DHT / LPD / uTP / encryption; PeX isn't wired to the shim).
+    public func configure(_ session: TorrentSessionConfig) async {
+        applySessionConfig(SessionConfig(
+            enableDHT: session.enableDHT,
+            enableLSD: session.enableLPD,
+            enableUTP: session.enableUTP,
+            encryptionMode: session.encryptionMode))
     }
 
     public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {

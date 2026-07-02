@@ -59,8 +59,6 @@ public actor SFTPEngine: DownloadEngine {
 
     public func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
 
-    public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {}
-
     public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 
     public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {

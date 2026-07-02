@@ -20,26 +20,17 @@ extension DownloadManager {
     }
 
     /// Push limits *and* the network/session configuration derived from the
-    /// current settings to every engine. `applyLimits` is the bandwidth/connection
-    /// hot path (kept separate); `configure(_:)` is the unified `DownloadEngine`
-    /// seam — the manager builds one ``EngineConfiguration`` and hands the same
-    /// value to each engine, which picks out only the slice it understands. No
-    /// engine is downcast to a concrete type.
+    /// current settings to the engines. `applyLimits` is the bandwidth/connection
+    /// hot path (kept separate); each engine then configures through its OWN typed
+    /// seam, reached by an intentional capability query (`as? HTTPConfigurable`
+    /// etc.). An engine that doesn't implement a config slice simply doesn't
+    /// conform to its refinement — no shared union, no per-engine no-ops, no
+    /// concrete-type downcast.
     func applyEngineConfigs() async {
         await applyLimits()
-        let configuration = engineConfiguration()
-        for engine in [httpEngine, torrentEngine, hlsEngine, ftpEngine, sftpEngine] {
-            await engine.configure(configuration)
-        }
-    }
-
-    /// Assemble the engine-agnostic configuration from the current settings.
-    private func engineConfiguration() -> EngineConfiguration {
-        EngineConfiguration(
-            http: httpNetworkConfig(),
-            torrent: torrentSessionConfig(),
-            hlsMaxHeight: settings.hlsMaxHeight
-        )
+        await (httpEngine as? HTTPConfigurable)?.configure(httpNetworkConfig())
+        await (torrentEngine as? TorrentControlling)?.configure(torrentSessionConfig())
+        await (hlsEngine as? HLSConfigurable)?.configure(maxHeight: settings.hlsMaxHeight)
     }
 
     private func httpNetworkConfig() -> HTTPNetworkConfig {
@@ -55,12 +46,13 @@ extension DownloadManager {
         )
     }
 
-    private func torrentSessionConfig() -> TorrentEngine.SessionConfig {
-        TorrentEngine.SessionConfig(
+    private func torrentSessionConfig() -> TorrentSessionConfig {
+        TorrentSessionConfig(
+            encryptionMode: settings.btEncryptionMode,
             enableDHT: settings.btEnableDHT,
-            enableLSD: settings.btEnableLPD,
-            enableUTP: settings.btEnableUTP,
-            encryptionMode: settings.btEncryptionMode
+            enablePeX: settings.btEnablePeX,
+            enableLPD: settings.btEnableLPD,
+            enableUTP: settings.btEnableUTP
         )
     }
 
@@ -70,13 +62,14 @@ extension DownloadManager {
     /// per-server fan-out. Best-effort: already-running segment groups keep their
     /// governor; the tighter cap takes effect for subsequently computed segments.
     func reapplyHTTPBudget() async {
-        guard let http = httpEngine as? HTTPEngine else { return }
         var profile = settings.effectiveProfile
         let activeHTTP = tasks.filter { $0.source.kind == .http && $0.status.isActive }.count
         if profile.maxConnections > 0, activeHTTP > 0 {
             let perDownload = max(1, profile.maxConnections / activeHTTP)
             profile.maxConnectionsPerServer = min(profile.maxConnectionsPerServer, perDownload)
         }
-        await http.applyLimits(profile)
+        // `applyLimits` is universal (base protocol), so the per-host budget is
+        // re-applied to the HTTP engine with no concrete-type downcast.
+        await httpEngine.applyLimits(profile)
     }
 }

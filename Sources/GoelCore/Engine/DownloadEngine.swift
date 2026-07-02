@@ -27,26 +27,6 @@ public protocol DownloadEngine: AnyObject, Sendable {
     /// Apply the active traffic profile's bandwidth and connection caps.
     func applyLimits(_ profile: TrafficProfile) async
 
-    /// Per-file selection / priority changed for a task.
-    func setFilePriority(_ priority: FilePriority, fileID: Int, task: DownloadTask.ID) async
-
-    /// Switch a task between sequential (in-order) and rarest-first download.
-    /// Meaningful for torrents; other engines ignore it.
-    func setSequential(_ sequential: Bool, task: DownloadTask.ID) async
-
-    /// Re-verify a torrent's on-disk data against its piece hashes. Torrent-only.
-    func forceRecheck(_ id: DownloadTask.ID) async
-
-    /// Force an immediate re-announce to a torrent's trackers. Torrent-only.
-    func forceReannounce(_ id: DownloadTask.ID) async
-
-    /// Cap a task's upload rate in bytes/sec (nil/0 = uncapped). Torrent-only.
-    func setUploadLimit(_ bytesPerSec: Int64?, task: DownloadTask.ID) async
-
-    /// Stop seeding a torrent once its share ratio reaches `ratio` (nil = no
-    /// per-task limit). Torrent-only.
-    func setSeedRatioLimit(_ ratio: Double?, task: DownloadTask.ID) async
-
     /// The live event stream for a task. Multiple subscribers are supported.
     func events(for id: DownloadTask.ID) -> AsyncStream<EngineEvent>
 
@@ -58,11 +38,6 @@ public protocol DownloadEngine: AnyObject, Sendable {
     /// starting a tracked download. Returns nil when the engine can't resolve it
     /// (timeout / no peers answered / the engine doesn't probe at all).
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata?
-
-    /// Apply the engine-agnostic configuration. Each engine consumes only the
-    /// slice it cares about (HTTP network knobs / torrent session knobs / HLS
-    /// height) and ignores the rest.
-    func configure(_ configuration: EngineConfiguration) async
 }
 
 public extension DownloadEngine {
@@ -75,19 +50,80 @@ public extension DownloadEngine {
 
     /// Default: the engine doesn't resolve metadata ahead of a download.
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? { nil }
+}
 
-    /// Default: the engine has nothing to configure.
-    func configure(_ configuration: EngineConfiguration) async {}
+// MARK: - Capability-scoped refinements
 
-    /// Default: download order isn't controllable (non-torrent engines).
-    func setSequential(_ sequential: Bool, task: DownloadTask.ID) async {}
+/// Optional engine behaviours, expressed as refinement protocols that pair with
+/// the ``EngineCapabilities`` flags. The scheduler reaches an optional behaviour
+/// through an intentional `as?` capability query (e.g. `engine as? FilePrioritizing`)
+/// instead of every engine carrying a no-op it doesn't mean. Only the engines that
+/// actually implement a behaviour conform to its refinement.
 
-    /// Defaults: the maintenance / seeding controls below are torrent-only, so
-    /// every other engine inherits a no-op.
-    func forceRecheck(_ id: DownloadTask.ID) async {}
-    func forceReannounce(_ id: DownloadTask.ID) async {}
-    func setUploadLimit(_ bytesPerSec: Int64?, task: DownloadTask.ID) async {}
-    func setSeedRatioLimit(_ ratio: Double?, task: DownloadTask.ID) async {}
+/// Engines that honour per-file selection / priority within a multi-file task.
+public protocol FilePrioritizing: DownloadEngine {
+    func setFilePriority(_ priority: FilePriority, fileID: Int, task: DownloadTask.ID) async
+}
+
+/// Torrent engines: piece-order control plus the libtorrent session knobs. Refines
+/// ``FilePrioritizing`` because a torrent engine also honours per-file priority.
+public protocol TorrentControlling: FilePrioritizing {
+    /// Switch a task between sequential (in-order, streamable) and rarest-first.
+    func setSequential(_ sequential: Bool, task: DownloadTask.ID) async
+    /// Apply the session-level BitTorrent settings (DHT / PeX / LPD / uTP / encryption).
+    func configure(_ session: TorrentSessionConfig) async
+    /// Re-verify a torrent's on-disk data against its piece hashes.
+    func forceRecheck(_ id: DownloadTask.ID) async
+    /// Force an immediate re-announce to a torrent's trackers.
+    func forceReannounce(_ id: DownloadTask.ID) async
+    /// Cap a task's upload rate in bytes/sec (nil/0 = uncapped).
+    func setUploadLimit(_ bytesPerSec: Int64?, task: DownloadTask.ID) async
+    /// Stop seeding once the share ratio reaches `ratio` (nil = no per-task limit).
+    func setSeedRatioLimit(_ ratio: Double?, task: DownloadTask.ID) async
+}
+
+/// The HTTP engine's network-configuration seam (timeout / proxy / UA / cookies /
+/// retry). Refines ``FilePrioritizing`` — the HTTP engine also carries per-file
+/// selection for multi-file (metalink) transfers.
+public protocol HTTPConfigurable: FilePrioritizing {
+    func configure(_ net: HTTPNetworkConfig) async
+}
+
+/// The HLS engine's preferred-rendition-height seam.
+public protocol HLSConfigurable: DownloadEngine {
+    func configure(maxHeight: Int) async
+}
+
+// MARK: - Torrent session configuration
+
+/// The session-level BitTorrent settings the scheduler pushes to a torrent engine.
+/// A free-standing value type (promoted out of the concrete engines) so the shared
+/// configuration seam never names a specific engine. `Equatable` for testability.
+public struct TorrentSessionConfig: Sendable, Equatable {
+    /// Wire encryption policy: `prefer` | `require` | `disable`.
+    public var encryptionMode: String
+    /// Distributed Hash Table peer discovery.
+    public var enableDHT: Bool
+    /// Peer Exchange.
+    public var enablePeX: Bool
+    /// Local Peer Discovery.
+    public var enableLPD: Bool
+    /// uTP (Micro Transport Protocol) transport.
+    public var enableUTP: Bool
+
+    public init(
+        encryptionMode: String = "prefer",
+        enableDHT: Bool = true,
+        enablePeX: Bool = true,
+        enableLPD: Bool = true,
+        enableUTP: Bool = true
+    ) {
+        self.encryptionMode = encryptionMode
+        self.enableDHT = enableDHT
+        self.enablePeX = enablePeX
+        self.enableLPD = enableLPD
+        self.enableUTP = enableUTP
+    }
 }
 
 // MARK: - Capability description
@@ -146,23 +182,3 @@ public struct EngineMetadata: Sendable {
     }
 }
 
-// MARK: - Engine configuration
-
-/// The engine-agnostic configuration the scheduler pushes down through
-/// ``DownloadEngine/configure(_:)``. It bundles every engine's settings slice so
-/// the manager builds it once and hands the same value to each engine, which
-/// picks out only what it understands. `Equatable` because all of its members are.
-public struct EngineConfiguration: Sendable, Equatable {
-    /// HTTP network-layer settings (timeout / proxy / User-Agent / cookies / retry).
-    public var http: HTTPNetworkConfig
-    /// libtorrent session settings (DHT / LSD / uTP / encryption).
-    public var torrent: TorrentEngine.SessionConfig
-    /// Preferred maximum HLS video height (0 = best available).
-    public var hlsMaxHeight: Int
-
-    public init(http: HTTPNetworkConfig, torrent: TorrentEngine.SessionConfig, hlsMaxHeight: Int) {
-        self.http = http
-        self.torrent = torrent
-        self.hlsMaxHeight = hlsMaxHeight
-    }
-}

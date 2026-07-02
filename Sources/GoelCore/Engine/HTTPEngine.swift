@@ -13,7 +13,7 @@ import Foundation
 /// The engine is an `actor`, so all of its mutable bookkeeping is serialized and
 /// it is `Sendable` for free. The synchronous `kind` requirement is satisfied by
 /// a `nonisolated let`.
-public actor HTTPEngine: DownloadEngine {
+public actor HTTPEngine: HTTPConfigurable {
 
     // MARK: Identity
 
@@ -261,11 +261,10 @@ public actor HTTPEngine: DownloadEngine {
         self.session = URLSession(configuration: cfg)
     }
 
-    /// Apply the engine-agnostic configuration: the HTTP engine consumes only the
-    /// `.http` slice (via the existing ``applyNetworkConfig(_:)``) and ignores the
-    /// torrent / HLS slices.
-    public func configure(_ configuration: EngineConfiguration) async {
-        await applyNetworkConfig(configuration.http)
+    /// Apply the HTTP network configuration (via the existing
+    /// ``applyNetworkConfig(_:)``).
+    public func configure(_ net: HTTPNetworkConfig) async {
+        await applyNetworkConfig(net)
     }
 
     /// Resolve a URL's name + size for the preview, adapting the concrete

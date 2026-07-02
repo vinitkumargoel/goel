@@ -8,7 +8,7 @@ import XCTest
 ///
 /// Events emitted before a subscriber attaches are buffered per task and replayed
 /// on subscription, so tests never race the scheduler's (async) subscribe step.
-final class FakeEngine: DownloadEngine, @unchecked Sendable {
+final class FakeEngine: FilePrioritizing, @unchecked Sendable {
 
     let kind: DownloadKind
 

@@ -13,7 +13,7 @@ import CommonCrypto
 /// Segment files are written under a per-task work directory, so a paused stream
 /// resumes by skipping segments already on disk. Conforms to ``DownloadEngine``
 /// so the scheduler and UI treat it like any other download.
-public actor HLSEngine: DownloadEngine {
+public actor HLSEngine: HLSConfigurable {
     public nonisolated let kind: DownloadKind = .hls
 
     /// HLS has no cheap up-front probe (size needs a full playlist walk) and no
@@ -73,10 +73,9 @@ public actor HLSEngine: DownloadEngine {
 
     public func setMaxHeight(_ height: Int) { maxHeight = max(0, height) }
 
-    /// Apply the engine-agnostic configuration: the HLS engine consumes only the
-    /// preferred max height and ignores the HTTP / torrent slices.
-    public func configure(_ configuration: EngineConfiguration) async {
-        setMaxHeight(configuration.hlsMaxHeight)
+    /// Apply the preferred maximum rendition height (0 = best available).
+    public func configure(maxHeight: Int) async {
+        setMaxHeight(maxHeight)
     }
 
     /// HLS can't cheaply probe size without walking the whole playlist, which the
@@ -86,8 +85,6 @@ public actor HLSEngine: DownloadEngine {
     public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         EngineMetadata(name: "", totalBytes: nil, isEstimatedSize: true)
     }
-
-    public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {}
 
     public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 

@@ -77,8 +77,6 @@ public actor FTPEngine: DownloadEngine {
 
     public func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
 
-    public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {}
-
     public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 
     /// Preview probe: a body-less transfer reporting the remote size.

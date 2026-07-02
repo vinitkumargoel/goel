@@ -28,7 +28,7 @@ import Foundation
 /// Like `HTTPEngine` it is an `actor` (so all mutable bookkeeping is serialized
 /// and it is `Sendable` for free); the synchronous `kind` requirement is met by a
 /// `nonisolated let`, and `events(for:)` is satisfied by a `nonisolated` hub.
-public actor MockTorrentEngine: DownloadEngine {
+public actor MockTorrentEngine: TorrentControlling {
 
     // MARK: Identity
 
@@ -81,36 +81,6 @@ public actor MockTorrentEngine: DownloadEngine {
 
         /// Pleasant defaults for a live demo (~32 MB/s, 1.5 s to resolve a magnet).
         public static let demo = Simulation()
-    }
-
-    /// Session-level BitTorrent knobs mirrored from `AppSettings`. The mock does no
-    /// real networking, so these are stored as an honest passthrough and surfaced
-    /// via ``sessionConfiguration()`` rather than altering any wire protocol.
-    public struct TorrentSessionConfig: Sendable, Equatable {
-        /// Wire encryption policy: `prefer` | `require` | `disable`.
-        public var encryptionMode: String
-        /// Distributed Hash Table peer discovery.
-        public var enableDHT: Bool
-        /// Peer Exchange.
-        public var enablePeX: Bool
-        /// Local Peer Discovery.
-        public var enableLPD: Bool
-        /// uTP (Micro Transport Protocol) transport.
-        public var enableUTP: Bool
-
-        public init(
-            encryptionMode: String = "prefer",
-            enableDHT: Bool = true,
-            enablePeX: Bool = true,
-            enableLPD: Bool = true,
-            enableUTP: Bool = true
-        ) {
-            self.encryptionMode = encryptionMode
-            self.enableDHT = enableDHT
-            self.enablePeX = enablePeX
-            self.enableLPD = enableLPD
-            self.enableUTP = enableUTP
-        }
     }
 
     // MARK: Dependencies
@@ -227,19 +197,29 @@ public actor MockTorrentEngine: DownloadEngine {
         self.sessionConfig = config
     }
 
-    /// Apply the engine-agnostic configuration: map the shared torrent slice onto
-    /// the mock's richer ``TorrentSessionConfig`` (preserving the mock-only PeX
-    /// flag, which the real session config doesn't carry) and record it.
-    public func configure(_ configuration: EngineConfiguration) async {
-        let t = configuration.torrent
-        await applySessionConfig(TorrentSessionConfig(
-            encryptionMode: t.encryptionMode,
-            enableDHT: t.enableDHT,
-            enablePeX: sessionConfig.enablePeX,
-            enableLPD: t.enableLSD,
-            enableUTP: t.enableUTP
-        ))
+    /// Apply the session-level BitTorrent settings (honest passthrough — the mock
+    /// does no real networking, so the value is simply recorded and surfaced via
+    /// ``sessionConfiguration()``). PeX now rides through the shared config too.
+    public func configure(_ session: TorrentSessionConfig) async {
+        await applySessionConfig(session)
     }
+
+    /// Record the sequential-download preference for a task. The mock has no wire
+    /// protocol, so this only updates the tracked task's flag.
+    public func setSequential(_ sequential: Bool, task id: DownloadTask.ID) async {
+        tasks[id]?.sequentialDownload = sequential
+    }
+
+    // Torrent maintenance/seeding controls — the mock records the caps and treats
+    // the recheck/reannounce as no-ops (no real session to drive).
+    public func setUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {
+        tasks[id]?.uploadLimitBytesPerSec = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
+    }
+    public func setSeedRatioLimit(_ ratio: Double?, task id: DownloadTask.ID) async {
+        tasks[id]?.seedRatioLimit = (ratio ?? 0) > 0 ? ratio : nil
+    }
+    public func forceRecheck(_ id: DownloadTask.ID) async {}
+    public func forceReannounce(_ id: DownloadTask.ID) async {}
 
     /// Resolve metadata for the add-confirmation preview through the engine-agnostic
     /// seam. The mock has no real network, so it returns the same synthesised

@@ -689,7 +689,10 @@ public actor DownloadManager {
     /// rarest-first piece download. No-op for HTTP/HLS tasks.
     public func setSequential(_ sequential: Bool, task id: DownloadTask.ID) async {
         guard let task = task(id) else { return }
-        await engine(for: task.source).setSequential(sequential, task: id)
+        // Only torrent engines control piece order; the intentional capability
+        // query replaces the old base-protocol no-op. The model flag is set
+        // regardless (it drives the streamability check).
+        await (engine(for: task.source) as? TorrentControlling)?.setSequential(sequential, task: id)
         if let i = index(of: id) {
             tasks[i].sequentialDownload = sequential
             persist(tasks[i])
@@ -709,7 +712,7 @@ public actor DownloadManager {
     /// Cap one torrent's upload rate in bytes/sec (nil/0 = uncapped), applied live.
     public func setTaskUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {
         guard let task = task(id) else { return }
-        await engine(for: task.source).setUploadLimit(bytesPerSec, task: id)
+        await (engine(for: task.source) as? TorrentControlling)?.setUploadLimit(bytesPerSec, task: id)
         // Re-resolve the index AFTER the actor hop: `tasks` may have been mutated
         // (e.g. a concurrent remove) while suspended, so a pre-await index could
         // now point past the end or at a different task.
@@ -724,7 +727,7 @@ public actor DownloadManager {
     /// reaches it, the engine stops the torrent and marks it completed.
     public func setSeedRatioLimit(_ ratio: Double?, task id: DownloadTask.ID) async {
         guard let task = task(id) else { return }
-        await engine(for: task.source).setSeedRatioLimit(ratio, task: id)
+        await (engine(for: task.source) as? TorrentControlling)?.setSeedRatioLimit(ratio, task: id)
         // Re-resolve the index after the actor hop (see setTaskUploadLimit).
         if let i = index(of: id) {
             tasks[i].seedRatioLimit = (ratio ?? 0) > 0 ? ratio : nil
@@ -736,13 +739,13 @@ public actor DownloadManager {
     /// Re-verify a torrent's on-disk data against its piece hashes.
     public func forceRecheck(_ id: DownloadTask.ID) async {
         guard let task = task(id) else { return }
-        await engine(for: task.source).forceRecheck(id)
+        await (engine(for: task.source) as? TorrentControlling)?.forceRecheck(id)
     }
 
     /// Force a torrent to re-announce to its trackers immediately.
     public func forceReannounce(_ id: DownloadTask.ID) async {
         guard let task = task(id) else { return }
-        await engine(for: task.source).forceReannounce(id)
+        await (engine(for: task.source) as? TorrentControlling)?.forceReannounce(id)
     }
 
     /// Assign (or clear, with nil/empty) a free-form category label for grouping.
@@ -836,7 +839,10 @@ public actor DownloadManager {
         task id: DownloadTask.ID
     ) async {
         guard let task = task(id) else { return }
-        await engine(for: task.source).setFilePriority(priority, fileID: fileID, task: id)
+        // Per-file priority is an engine capability; engines that don't honour it
+        // simply don't conform to FilePrioritizing (the intentional `as?` replaces
+        // the old per-engine no-ops). The model is updated regardless.
+        await (engine(for: task.source) as? FilePrioritizing)?.setFilePriority(priority, fileID: fileID, task: id)
         if let i = index(of: id) {
             if let f = tasks[i].files.firstIndex(where: { $0.id == fileID }) {
                 tasks[i].files[f].priority = priority
