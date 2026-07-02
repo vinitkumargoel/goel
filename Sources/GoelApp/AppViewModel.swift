@@ -1174,10 +1174,16 @@ final class AppViewModel: ObservableObject {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let newName = field.stringValue
         Task {
-            let applied = await manager.rename(task.id, to: newName)
+            let result = await manager.rename(task.id, to: newName)
             await MainActor.run {
-                if let applied { toastNow("Renamed to “\(applied)”") }
-                else { toastNow("Couldn’t rename — pause the download first") }
+                switch result {
+                case .renamed(let name): toastNow("Renamed to “\(name)”")
+                case .unchanged: break
+                case .notFound: toastNow("That download no longer exists")
+                case .unsupported: toastNow("Torrents can’t be renamed here")
+                case .active: toastNow("Pause the download before renaming")
+                case .ioError(let msg): toastNow("Couldn’t rename: \(msg)")
+                }
             }
         }
     }
@@ -1202,15 +1208,25 @@ final class AppViewModel: ObservableObject {
         guard !template.isEmpty else { return }
         Task {
             var renamed = 0
+            var failed = 0
             for (i, task) in eligible.enumerated() {
                 var candidate = template.replacingOccurrences(of: "#", with: String(i + 1))
                 if (candidate as NSString).pathExtension.isEmpty {
                     let ext = (task.name as NSString).pathExtension
                     if !ext.isEmpty { candidate += ".\(ext)" }
                 }
-                if await manager.rename(task.id, to: candidate) != nil { renamed += 1 }
+                switch await manager.rename(task.id, to: candidate) {
+                case .renamed, .unchanged: renamed += 1
+                default: failed += 1
+                }
             }
-            await MainActor.run { toastNow("Renamed \(renamed) download\(renamed == 1 ? "" : "s")") }
+            await MainActor.run {
+                if failed == 0 {
+                    toastNow("Renamed \(renamed) download\(renamed == 1 ? "" : "s")")
+                } else {
+                    toastNow("Renamed \(renamed), \(failed) couldn’t be renamed")
+                }
+            }
         }
     }
 
@@ -1299,8 +1315,17 @@ final class AppViewModel: ObservableObject {
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             if !name.isEmpty { headers[name] = value }
         }
-        Task { await manager.setRequestOptions(referer: referer.stringValue, headers: headers, task: task.id) }
-        toastNow("Request options saved")
+        Task {
+            let dropped = await manager.setRequestOptions(referer: referer.stringValue,
+                                                          headers: headers, task: task.id)
+            await MainActor.run {
+                if dropped.isEmpty {
+                    toastNow("Request options saved")
+                } else {
+                    toastNow("Saved — ignored reserved header\(dropped.count == 1 ? "" : "s"): \(dropped.joined(separator: ", "))")
+                }
+            }
+        }
     }
 
     // MARK: ffmpeg convert / extract audio

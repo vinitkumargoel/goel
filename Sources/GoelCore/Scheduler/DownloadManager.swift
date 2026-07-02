@@ -792,30 +792,54 @@ public actor DownloadManager {
     }
 
     /// Set the per-task `Referer` and extra request headers (HTTP downloads).
-    /// Reserved header names are dropped; nil/empty clears each field.
+    /// Reserved and malformed header names are dropped; nil/empty clears each
+    /// field. Returns the reserved header names that were ignored, so the UI can
+    /// tell the user rather than silently discarding them.
+    @discardableResult
     public func setRequestOptions(referer: String?, headers: [String: String]?,
-                                  task id: DownloadTask.ID) async {
-        guard let i = index(of: id) else { return }
-        let r = referer?.trimmingCharacters(in: .whitespacesAndNewlines)
-        tasks[i].referer = (r?.isEmpty ?? true) ? nil : r
-        let cleaned = Self.sanitizedHeaders(headers ?? [:])
+                                  task id: DownloadTask.ID) async -> [String] {
+        guard let i = index(of: id) else { return [] }
+        var r = referer?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // A Referer carrying CR/LF/NUL could split the request — never store it.
+        if Self.hasHeaderControlChars(r) { r = "" }
+        tasks[i].referer = r.isEmpty ? nil : r
+        let raw = headers ?? [:]
+        let cleaned = Self.sanitizedHeaders(raw)
         tasks[i].requestHeaders = cleaned.isEmpty ? nil : cleaned
         persist(tasks[i])
         publish()
+        // Names the user supplied that we refused to store (reserved only —
+        // control-char/empty are malformed, not "reserved", and reported as such
+        // is more confusing than useful).
+        return raw.keys
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { Self.reservedHeaderNames.contains($0) }
+            .sorted()
+    }
+
+    /// The outcome of a ``rename(_:to:)``, distinguishing each rejection cause so
+    /// the UI can show an accurate message instead of one catch-all string.
+    public enum RenameResult: Sendable, Equatable {
+        case renamed(String)      // applied, carrying the final (possibly deduped) name
+        case unchanged            // the new name equalled the old — a no-op success
+        case notFound             // no task with that id
+        case unsupported          // torrents own their on-disk layout
+        case active               // can't rename out from under the live writer
+        case ioError(String)      // the disk move failed (permissions, full, …)
     }
 
     /// Rename a download's output file and display name. Renames the file on disk
     /// (never clobbering an existing one — appends ` (n)` if needed). Not supported
     /// for torrents (libtorrent owns their on-disk layout) or while a task is
-    /// actively transferring (the writer holds the old path). Returns the applied
-    /// name on success, `nil` if the rename was rejected or the disk move failed.
+    /// actively transferring (the writer holds the old path).
     @discardableResult
-    public func rename(_ id: DownloadTask.ID, to newName: String) async -> String? {
-        guard let i = index(of: id) else { return nil }
+    public func rename(_ id: DownloadTask.ID, to newName: String) async -> RenameResult {
+        guard let i = index(of: id) else { return .notFound }
         let task = tasks[i]
-        guard task.kind != .torrent, !task.status.isActive else { return nil }
+        guard task.kind != .torrent else { return .unsupported }
+        guard !task.status.isActive else { return .active }
         let sanitized = DownloadTask.sanitizedName(newName, fallback: task.name)
-        guard sanitized != task.name else { return task.name }   // no-op is a success
+        guard sanitized != task.name else { return .unchanged }
         let fm = FileManager.default
         let dir = task.saveDirectory
         let finalName = DownloadTask.uniqueName(base: sanitized, in: dir)
@@ -823,12 +847,12 @@ public actor DownloadManager {
         let newPath = (dir as NSString).appendingPathComponent(finalName)
         if fm.fileExists(atPath: oldPath) {
             do { try fm.moveItem(atPath: oldPath, toPath: newPath) }
-            catch { return nil }
+            catch { return .ioError(error.localizedDescription) }
         }
         tasks[i].name = finalName
         persist(tasks[i])
         publish()
-        return finalName
+        return .renamed(finalName)
     }
 
     /// Trim, drop empties, and de-duplicate tags case-insensitively (order-stable).
@@ -850,16 +874,26 @@ public actor DownloadManager {
         "proxy-connection"
     ]
 
-    /// Trim names/values and strip reserved headers.
+    /// Trim names/values, and drop reserved, empty, or control-char-bearing
+    /// headers (a `\r`/`\n`/NUL anywhere would let a value split the request).
     static func sanitizedHeaders(_ raw: [String: String]) -> [String: String] {
         var out: [String: String] = [:]
         for (k, v) in raw {
             let name = k.trimmingCharacters(in: .whitespacesAndNewlines)
             let value = v.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty, !reservedHeaderNames.contains(name.lowercased()) else { continue }
+            guard !name.isEmpty,
+                  !reservedHeaderNames.contains(name.lowercased()),
+                  !hasHeaderControlChars(name), !hasHeaderControlChars(value)
+            else { continue }
             out[name] = value
         }
         return out
+    }
+
+    /// Whether a header name/value contains a character that must never appear in
+    /// one: CR, LF, or NUL (the classic header/response-splitting vectors).
+    static func hasHeaderControlChars(_ s: String) -> Bool {
+        s.unicodeScalars.contains { $0 == "\r" || $0 == "\n" || $0.value == 0 }
     }
 
     // MARK: Export / Import
@@ -924,6 +958,9 @@ public actor DownloadManager {
         safe.antivirusExecutablePath = current.antivirusExecutablePath
         safe.antivirusArgumentTemplate = current.antivirusArgumentTemplate
         safe.antivirusScanner = current.antivirusScanner
+        // ffmpeg path is an executable we run on demand — never adopt one from an
+        // imported backup (it would be a code-execution vector).
+        safe.ffmpegPath = current.ffmpegPath
         // Network listeners and auto-fetch surfaces.
         safe.remoteAccessEnabled = current.remoteAccessEnabled
         safe.remotePort = current.remotePort

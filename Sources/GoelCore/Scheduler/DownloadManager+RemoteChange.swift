@@ -45,10 +45,14 @@ extension DownloadManager {
         }
         guard !candidates.isEmpty else { return }
 
+        // Build the probe session once, honouring the user's manual/SOCKS proxy so
+        // the sweep never leaks the real IP of someone who configured a proxy.
+        let proxy = Self.proxyDictionary(from: settings)
         for candidate in candidates {
             guard case .url(let url) = candidate.source else { continue }
             guard let validators = await Self.fetchValidators(url: url,
-                                                              userAgent: settings.userAgent) else { continue }
+                                                              userAgent: settings.userAgent,
+                                                              proxy: proxy) else { continue }
             let changed = Self.remoteResourceChanged(
                 oldETag: candidate.remoteInfo?.etag, oldSize: candidate.totalBytes,
                 newETag: validators.etag, newSize: validators.size)
@@ -92,18 +96,56 @@ extension DownloadManager {
         return false
     }
 
-    /// The remote validators from a cheap `HEAD`, or nil if the probe failed.
+    /// The remote validators from a cheap `HEAD`, or nil if the probe failed. The
+    /// `proxy` dictionary (from ``proxyDictionary(from:)``) is applied so the probe
+    /// follows the same proxy policy as real downloads.
     struct RemoteValidators: Sendable { var etag: String?; var size: Int64? }
 
-    static func fetchValidators(url: URL, userAgent: String) async -> RemoteValidators? {
+    static func fetchValidators(url: URL, userAgent: String,
+                                proxy: [String: Any]?) async -> RemoteValidators? {
+        let config = URLSessionConfiguration.ephemeral
+        // nil ⇒ follow the OS proxy (system); [:] ⇒ explicit direct; populated ⇒
+        // route through the configured manual/SOCKS proxy.
+        config.connectionProxyDictionary = proxy
+        let session = URLSession(configuration: config)
+        defer { session.finishTasksAndInvalidate() }
         var req = URLRequest(url: url, timeoutInterval: 15)
         req.httpMethod = "HEAD"
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        guard let (_, resp) = try? await URLSession.shared.data(for: req),
+        guard let (_, resp) = try? await session.data(for: req),
               let http = resp as? HTTPURLResponse,
               (200..<300).contains(http.statusCode) else { return nil }
         let etag = http.value(forHTTPHeaderField: "ETag")
         let size = http.value(forHTTPHeaderField: "Content-Length").flatMap { Int64($0) }
         return RemoteValidators(etag: etag, size: size)
+    }
+
+    /// Translate the user's proxy settings into a `connectionProxyDictionary`:
+    /// nil to follow the OS ("system"), an empty dict to force direct ("none"),
+    /// or the HTTP/SOCKS keys for a configured manual proxy. Mirrors the HTTP
+    /// engine's own proxy handling so background probes don't bypass it.
+    static func proxyDictionary(from settings: AppSettings) -> [String: Any]? {
+        switch settings.proxyMode {
+        case "manual" where !settings.proxyHost.isEmpty && settings.proxyPort > 0:
+            if settings.proxyType == "socks5" {
+                return [
+                    kCFNetworkProxiesSOCKSEnable as String: 1,
+                    kCFNetworkProxiesSOCKSProxy as String: settings.proxyHost,
+                    kCFNetworkProxiesSOCKSPort as String: settings.proxyPort,
+                ]
+            }
+            return [
+                kCFNetworkProxiesHTTPEnable as String: 1,
+                kCFNetworkProxiesHTTPProxy as String: settings.proxyHost,
+                kCFNetworkProxiesHTTPPort as String: settings.proxyPort,
+                kCFNetworkProxiesHTTPSEnable as String: 1,
+                kCFNetworkProxiesHTTPSProxy as String: settings.proxyHost,
+                kCFNetworkProxiesHTTPSPort as String: settings.proxyPort,
+            ]
+        case "none":
+            return [:]
+        default:
+            return nil
+        }
     }
 }

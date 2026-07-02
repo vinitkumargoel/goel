@@ -896,9 +896,13 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
         let originalHost = task.originalRequest?.url?.host?.lowercased()
         let newHost = request.url?.host?.lowercased()
         let downgradedToHTTP = request.url?.scheme?.lowercased() != "https"
-        if sanitized.value(forHTTPHeaderField: "Authorization") != nil,
-           originalHost != newHost || downgradedToHTTP {
-            sanitized.setValue(nil, forHTTPHeaderField: "Authorization")
+        // A server-initiated redirect to a different host (or an https→http
+        // downgrade) must not carry the user's per-task secrets to whoever the new
+        // host is: strip Authorization AND the Referer/Cookie the task may have set.
+        if originalHost != newHost || downgradedToHTTP {
+            for header in ["Authorization", "Referer", "Cookie"] {
+                sanitized.setValue(nil, forHTTPHeaderField: header)
+            }
         }
         completionHandler(sanitized)
     }
