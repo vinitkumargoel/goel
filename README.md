@@ -15,9 +15,9 @@ Rebuilt from scratch in Swift, self-contained, and Homebrew-free. Native SwiftUI
 
 <br>
 
-<img src="Assets/screenshots/desktop.png" width="900" alt="Goel° running on macOS — one unified queue mixing HTTP, BitTorrent, SFTP, HLS and FTP downloads, a Library/Status/Type sidebar with live counts, and a right-hand detail panel showing a circular progress ring at 62%, live down/up speeds, and file facts." />
+<a href="Assets/videos/goel-keynote-demo.mp4"><img src="Assets/videos/goel-keynote-poster.jpg" width="900" alt="Watch the Goel° demo — a 49-second cinematic tour: one unified queue (HTTP, FTP, SFTP, BitTorrent, HLS), live progress and speed, the BitTorrent piece map, browser-extension capture, and menu-bar + web-portal access. Click to play." /></a>
 
-<sub><i>The macOS app. Downloads shown are illustrative mock data.</i></sub>
+<sub><i>▶ <b><a href="Assets/videos/goel-keynote-demo.mp4">Watch the 49-second demo</a></b> 🔊 · downloads shown are illustrative mock data</i></sub>
 
 </div>
 
@@ -35,6 +35,10 @@ On **Linux**, the same engine runs headless as **`GoelDaemon`**, driven from the
 ---
 
 ## Screenshots
+
+**macOS app** — the native SwiftUI app: one unified queue, a Library/Status/Type sidebar with live counts, and a detail panel with a circular progress ring, live speeds, and per-file facts.
+
+<img src="Assets/screenshots/desktop.png" width="900" alt="Goel° on macOS — one unified queue mixing HTTP, BitTorrent, SFTP, HLS and FTP; a Library/Status/Type sidebar with live counts; and a detail panel with a 62% progress ring, down/up speeds, and file facts." />
 
 **Linux web portal** — the same engine, headless, driven from any browser. Token- or password-authenticated, with the same unified queue, detail panel, and four themes as the desktop app.
 
