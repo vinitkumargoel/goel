@@ -82,6 +82,44 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        // Settings is its own window and doesn't carry the main window's toast /
+        // confirm overlays — so surface settings feedback here: errors and
+        // confirmations as a modal alert, and success toasts as a bottom banner.
+        .overlay(alignment: .bottom) { settingsToast }
+        .alert(vm.settingsAlert?.title ?? "",
+               isPresented: Binding(get: { vm.settingsAlert != nil },
+                                    set: { if !$0 { vm.settingsAlert = nil } }),
+               presenting: vm.settingsAlert) { alert in
+            if let confirmTitle = alert.confirmTitle {
+                Button(confirmTitle, role: alert.isDestructive ? .destructive : nil) {
+                    alert.onConfirm?()
+                }
+                Button("Cancel", role: .cancel) { }
+            } else {
+                Button("OK", role: .cancel) { }
+            }
+        } message: { alert in
+            Text(alert.message)
+        }
+    }
+
+    /// The same success banner the main window shows, mirrored here so toasts
+    /// raised by settings panes (copied, feed added, …) are visible in Settings.
+    @ViewBuilder
+    private var settingsToast: some View {
+        if let toast = vm.toast {
+            HStack(spacing: 9) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.green)
+                Text(toast).font(.system(size: 12.5))
+            }
+            .padding(.horizontal, 15)
+            .padding(.vertical, 9)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().stroke(Theme.hairline))
+            .shadow(radius: 12, y: 6)
+            .padding(.bottom, 24)
+            .transition(.opacity)
+        }
     }
 
     @ViewBuilder

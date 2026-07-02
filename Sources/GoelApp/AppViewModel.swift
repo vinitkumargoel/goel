@@ -225,6 +225,39 @@ final class AppViewModel: ObservableObject {
                                         isDestructive: destructive, onConfirm: onConfirm)
     }
 
+    /// Feedback destined for the **Settings window**. Settings is a separate
+    /// scene that does NOT render the main window's toast/confirm overlays, so a
+    /// `toast` or `confirmRequest` raised from a settings pane is invisible to a
+    /// user who is looking at Settings (the button appears to do nothing). Panes
+    /// route errors and confirmations through here instead, and `SettingsView`
+    /// presents it as a native alert on the Settings window itself.
+    @Published var settingsAlert: SettingsAlert?
+
+    struct SettingsAlert: Identifiable {
+        let id = UUID()
+        var title: String
+        var message: String
+        /// `nil` = informational (a single OK button); non-nil = a confirmation
+        /// whose button runs `onConfirm`.
+        var confirmTitle: String?
+        var isDestructive = false
+        var onConfirm: (() -> Void)?
+    }
+
+    /// Show an informational / error pop-up on the Settings window.
+    func settingsMessage(_ title: String, _ message: String) {
+        settingsAlert = SettingsAlert(title: title, message: message)
+    }
+
+    /// Raise a confirmation pop-up on the Settings window. `onConfirm` runs only
+    /// if the user taps the confirm button.
+    func settingsConfirm(title: String, message: String, confirmTitle: String,
+                         destructive: Bool = false, onConfirm: @escaping () -> Void) {
+        settingsAlert = SettingsAlert(title: title, message: message,
+                                      confirmTitle: confirmTitle,
+                                      isDestructive: destructive, onConfirm: onConfirm)
+    }
+
     /// A copied link the clipboard monitor is offering to download, shown as an
     /// actionable banner. `nil` when there is nothing to suggest.
     @Published var clipboardSuggestion: String?

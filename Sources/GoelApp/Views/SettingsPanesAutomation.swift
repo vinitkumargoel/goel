@@ -264,7 +264,7 @@ struct RemoteAccessPane: View {
                             .truncationMode(.middle)
                             .frame(maxWidth: 150)
                         Button("Regenerate") {
-                            vm.requestConfirm(
+                            vm.settingsConfirm(
                                 title: "Regenerate the API token?",
                                 message: "Existing portal links and the paired browser extension stop working until you copy the new token to them.",
                                 confirmTitle: "Regenerate",
@@ -351,7 +351,8 @@ struct BrowserIntegrationPane: View {
                     if let folder = BrowserIntegrationService.extensionFolder {
                         NSWorkspace.shared.activateFileViewerSelecting([folder])
                     } else {
-                        vm.toastNow("The bundled extension folder is only available in the packaged app, not a dev build.")
+                        vm.settingsMessage("Browser Extension",
+                            "The bundled extension folder is only available in the packaged app, not a dev build.")
                     }
                 }
             }
@@ -413,7 +414,8 @@ struct BrowserIntegrationPane: View {
             withIdentifier: "com.goel.downloader.SafariExtension") { error in
             guard error != nil else { return }
             Task { @MainActor in
-                vm.toastNow("Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app.")
+                vm.settingsMessage("Safari Extension",
+                    "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app.")
             }
         }
     }
@@ -440,7 +442,7 @@ struct CredentialsSection: View {
         ForEach(entries) { entry in
             SetRow(name: entry.host, desc: "User: \(entry.username)") {
                 Button {
-                    vm.requestConfirm(
+                    vm.settingsConfirm(
                         title: "Remove the saved login for \(entry.host)?",
                         message: "The stored username and password are deleted from your Keychain.",
                         confirmTitle: "Remove",
