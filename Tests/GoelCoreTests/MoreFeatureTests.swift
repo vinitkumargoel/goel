@@ -320,7 +320,50 @@ final class MoreFeatureTests: XCTestCase {
         // http stays http; the allowlist still rejects everything else.
         XCTAssertEqual(DownloadSource.parse("https://x.example/f.zip")?.kind, .http)
         XCTAssertNil(DownloadSource.parse("file:///etc/passwd"))
-        XCTAssertNil(DownloadSource.parse("sftp://host/file"))
+    }
+
+    // MARK: SFTP routing + host-key pinning
+
+    func testSFTPURLsParseAndDeriveSFTPKind() {
+        let sftp = DownloadSource.parse("sftp://user@host.example/pub/file.iso")
+        XCTAssertNotNil(sftp)
+        XCTAssertEqual(sftp?.kind, .sftp)
+        // A hostless sftp: is junk and must be rejected.
+        XCTAssertNil(DownloadSource.parse("sftp:///onlypath"))
+        // An sftp .torrent URL must not route to the (HTTP-only) torrent fetcher.
+        if case .torrentFile = DownloadSource.parse("sftp://host/file.torrent") {
+            XCTFail("sftp .torrent URL must not route to the torrent-file fetcher")
+        }
+    }
+
+    func testSFTPTargetFromURL() {
+        let t = SFTPTarget(url: URL(string: "sftp://alice:secret@example.com:2222/home/alice/f.bin")!)
+        XCTAssertEqual(t?.host, "example.com")
+        XCTAssertEqual(t?.port, 2222)
+        XCTAssertEqual(t?.username, "alice")
+        XCTAssertEqual(t?.password, "secret")   // inline userinfo wins
+        // A userless URL can't authenticate — no target.
+        XCTAssertNil(SFTPTarget(url: URL(string: "sftp://example.com/f.bin")!))
+    }
+
+    func testHostKeyStorePinsAndResets() {
+        let defaults = UserDefaults(suiteName: "goel.hostkey.test.\(UUID().uuidString)")!
+        let store = HostKeyStore(defaults: defaults)
+        XCTAssertNil(store.fingerprint(host: "h", port: 22))
+        store.setFingerprint("aabb", host: "H", port: 22)          // case-insensitive host
+        XCTAssertEqual(store.fingerprint(host: "h", port: 22), "aabb")
+        XCTAssertNil(store.fingerprint(host: "h", port: 2222))     // port-scoped
+        store.reset(host: "h", port: 22)
+        XCTAssertNil(store.fingerprint(host: "h", port: 22))
+    }
+
+    func testSFTPBrowserPathJoinAndParent() {
+        XCTAssertEqual(SFTPBrowserPaths.join(".", "docs"), "docs")
+        XCTAssertEqual(SFTPBrowserPaths.join("docs", "a"), "docs/a")
+        XCTAssertEqual(SFTPBrowserPaths.join("/home/u", "a"), "/home/u/a")
+        XCTAssertEqual(SFTPBrowserPaths.parent(of: "docs/a"), "docs")
+        XCTAssertEqual(SFTPBrowserPaths.parent(of: "docs"), ".")
+        XCTAssertEqual(SFTPBrowserPaths.parent(of: "/home"), "/")
     }
 
     func testFTPTorrentSuffixStillRequiresHTTP() {
@@ -342,5 +385,43 @@ final class MoreFeatureTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: json)
         let decoded = try JSONDecoder().decode(DownloadTask.self, from: data)
         XCTAssertNil(decoded.scheduledAt)
+    }
+
+    // MARK: SFTP + Safari review-fix regressions
+
+    /// An out-of-range port from the editor's free-text field must be clamped,
+    /// never fed raw to `Int32(port)` (which traps and crashes the app).
+    func testSFTPTargetClampsOutOfRangePort() {
+        XCTAssertEqual(SFTPTarget(host: "h", port: 9_999_999, username: "u", password: nil).port, 22)
+        XCTAssertEqual(SFTPTarget(host: "h", port: 0, username: "u", password: nil).port, 22)
+        XCTAssertEqual(SFTPTarget(host: "h", port: -1, username: "u", password: nil).port, 22)
+        XCTAssertEqual(SFTPTarget(host: "h", port: 2222, username: "u", password: nil).port, 2222)
+        // The saved-connection path (Test button / browsing) clamps too.
+        let conn = SFTPConnection(name: "", host: "h", port: 9_999_999, username: "u")
+        XCTAssertEqual(SFTPTarget(connection: conn, password: nil)?.port, 22)
+    }
+
+    /// Only credential-free web-download schemes may auto-add from the browser
+    /// spool; `sftp:`/`ftp:` must be rejected there so a web page can't provoke
+    /// an authenticated outbound connection with the user's agent/Keychain.
+    func testBrowserCaptureSafetyRejectsSFTPAndFTP() {
+        XCTAssertTrue(DownloadSource.parse("https://x.example/a.bin")!.isBrowserCaptureSafe)
+        XCTAssertTrue(DownloadSource.parse("http://x.example/a.bin")!.isBrowserCaptureSafe)
+        XCTAssertTrue(DownloadSource.parse("magnet:?xt=urn:btih:abc")!.isBrowserCaptureSafe)
+        XCTAssertTrue(DownloadSource.parse("https://x.example/f.torrent")!.isBrowserCaptureSafe)
+        XCTAssertFalse(DownloadSource.parse("sftp://user@host/f")!.isBrowserCaptureSafe)
+        XCTAssertFalse(DownloadSource.parse("ftp://host/f")!.isBrowserCaptureSafe)
+    }
+
+    /// An inline `sftp://user:pass@host` password must never survive parsing:
+    /// SFTP secrets live in the Keychain, so the persisted/displayed locator
+    /// must not carry the secret, while user/host/port survive for the lookup.
+    func testParseStripsInlineSFTPPassword() {
+        let source = DownloadSource.parse("sftp://alice:hunter2@example.com:2222/f.bin")
+        XCTAssertNotNil(source)
+        XCTAssertEqual(source?.kind, .sftp)
+        XCTAssertFalse(source!.locator.contains("hunter2"), "inline password must be stripped")
+        XCTAssertTrue(source!.locator.contains("alice@example.com"))
+        XCTAssertTrue(source!.locator.contains("2222"))
     }
 }

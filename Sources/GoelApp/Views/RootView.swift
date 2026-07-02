@@ -39,18 +39,27 @@ struct RootView: View {
                 // the greedy pane so the fixed-width right panel always keeps its
                 // 340pt (and never gets pushed off the window edge).
                 VStack(spacing: 0) {
-                    DownloadListView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if showDetail && vm.detailPanelPosition == .bottom {
-                        Divider()
-                        DetailBottomPanel()
-                            .frame(height: 300)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    if let server = vm.server(vm.selectedServer) {
+                        // A server is selected — browse it instead of the list.
+                        // Keyed by id so switching servers rebuilds the browser.
+                        SFTPBrowserView(connection: server,
+                                        client: vm.sftpClient(for: server))
+                            .id(server.id)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        DownloadListView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if showDetail && vm.detailPanelPosition == .bottom {
+                            Divider()
+                            DetailBottomPanel()
+                                .frame(height: 300)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
                     }
                 }
                 .frame(minWidth: 420, maxWidth: .infinity)
                 // …or docked on the right edge (the default).
-                if showDetail && vm.detailPanelPosition == .right {
+                if showDetail && vm.selectedServer == nil && vm.detailPanelPosition == .right {
                     Divider()
                     DetailPanelView()
                         .frame(width: 340)
@@ -84,6 +93,10 @@ struct RootView: View {
         }
         .sheet(isPresented: $vm.isLinkGrabberPresented) {
             LinkGrabberSheet()
+                .environmentObject(vm)
+        }
+        .sheet(isPresented: $vm.isServerEditorPresented) {
+            SFTPConnectionEditor(existing: vm.editingServer)
                 .environmentObject(vm)
         }
     }

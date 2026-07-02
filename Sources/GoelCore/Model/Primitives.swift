@@ -6,6 +6,7 @@ public enum DownloadKind: String, Codable, Sendable, CaseIterable {
     case torrent
     case hls
     case ftp
+    case sftp
 }
 
 /// Per-file selection / priority within a multi-file transfer.
@@ -116,12 +117,31 @@ public enum DownloadSource: Codable, Sendable, Hashable {
     public var kind: DownloadKind {
         switch self {
         case .url(let url):
-            // `.url` covers both engines' direct downloads; the scheme decides
+            // `.url` covers every direct-download engine; the scheme decides
             // (reusing the case keeps every persisted blob decodable).
-            let scheme = url.scheme?.lowercased() ?? ""
-            return (scheme == "ftp" || scheme == "ftps") ? .ftp : .http
+            switch url.scheme?.lowercased() ?? "" {
+            case "ftp", "ftps": return .ftp
+            case "sftp": return .sftp
+            default: return .http
+            }
         case .magnet, .torrentFile: return .torrent
         case .hlsStream: return .hls
+        }
+    }
+
+    /// Whether this source may be auto-added from the browser-capture spool
+    /// *without* a confirmation banner. The spool is a no-confirmation channel,
+    /// so only credential-free web-download schemes qualify: a web page's link
+    /// must never be able to make the app open an authenticated `sftp:`/`ftp:`
+    /// connection (which would spend the user's ssh-agent identities or a stored
+    /// Keychain secret against an attacker-chosen host). Those schemes are still
+    /// accepted through the in-app add box, which is an explicit user action.
+    public var isBrowserCaptureSafe: Bool {
+        switch self {
+        case .magnet, .torrentFile: return true
+        case .url(let url), .hlsStream(let url):
+            let scheme = url.scheme?.lowercased()
+            return scheme == "http" || scheme == "https"
         }
     }
 
@@ -154,8 +174,9 @@ public enum DownloadSource: Codable, Sendable, Hashable {
 
     /// Parse a raw, user-entered line into a source, enforcing a scheme allowlist.
     ///
-    /// Accepts `magnet:` links, `*.torrent` URLs, HTTP(S) URLs, and FTP(S) URLs
-    /// only. Anything else — `file:`, `javascript:`, schemeless junk — is
+    /// Accepts `magnet:` links, `*.torrent` URLs, HTTP(S) URLs, FTP(S) URLs,
+    /// and `sftp://` URLs (with a host) only. Anything else — `file:`,
+    /// `javascript:`, schemeless junk — is
     /// rejected (returns `nil`). This is the single front door for adding
     /// downloads, so the allowlist is enforced in one place (defends against
     /// SSRF / local-file reads).
@@ -186,6 +207,21 @@ public enum DownloadSource: Codable, Sendable, Hashable {
             }
             if scheme == "ftp" || scheme == "ftps" {
                 return .url(url)   // kind derives .ftp from the scheme
+            }
+            if scheme == "sftp" {
+                // Needs a host to be a real target (sftp://host/path); a bare
+                // `sftp:` or hostless form is junk.
+                guard url.host?.isEmpty == false else { return nil }
+                // Never persist an inline password (`sftp://user:pass@host`).
+                // SFTP secrets live in the Keychain and are resolved at connect
+                // time; strip any inline secret so it can't leak into the task
+                // DB, exports, or the copyable on-screen "Source" field.
+                if url.password != nil,
+                   var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                    comps.password = nil
+                    if let stripped = comps.url { return .url(stripped) }
+                }
+                return .url(url)
             }
         }
         return nil

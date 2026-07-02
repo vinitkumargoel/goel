@@ -82,6 +82,20 @@ final class AppViewModel: ObservableObject {
     @Published var isHistoryPresented: Bool = false
     @Published var isLinkGrabberPresented: Bool = false
 
+    // MARK: SFTP servers
+
+    /// Saved SFTP servers shown in the sidebar's "Servers" group. Mutated only
+    /// through the `AppViewModel+SFTP` helpers.
+    @Published var servers: [SFTPConnection] = []
+
+    /// The server currently being browsed. When non-nil the main pane shows the
+    /// SFTP file browser instead of the download list.
+    @Published var selectedServer: SFTPConnection.ID?
+
+    /// The connection open in the add/edit sheet (nil when adding a new one).
+    @Published var editingServer: SFTPConnection?
+    @Published var isServerEditorPresented: Bool = false
+
     // MARK: Speed history (sparklines)
 
     /// One second of aggregate throughput.
@@ -215,6 +229,7 @@ final class AppViewModel: ObservableObject {
         let (store, warning) = Self.makeStore()
         self.manager = DownloadManager(store: store)
         self.persistenceWarning = warning
+        self.servers = SFTPConnectionStore.shared.load()
         Self.shared = self
     }
 
@@ -608,7 +623,12 @@ final class AppViewModel: ObservableObject {
     /// and can only be written by local processes, so no confirmation banner —
     /// the user already clicked "download" in their browser.
     private func drainBrowserSpool() {
-        let locators = BrowserSpool.drain()
+        // Re-validate the scheme allowlist here too: the spool file is
+        // user-only, but auto-adding without confirmation must never initiate an
+        // authenticated `sftp:`/`ftp:` connection on a web page's behalf.
+        let locators = BrowserSpool.drain().filter {
+            DownloadSource.parse($0)?.isBrowserCaptureSafe == true
+        }
         guard !locators.isEmpty else { return }
         add(rawLines: locators.joined(separator: "\n"), saveDirectory: nil, priority: .normal)
     }

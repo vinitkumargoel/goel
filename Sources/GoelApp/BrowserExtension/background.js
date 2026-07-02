@@ -43,7 +43,10 @@ api.runtime.onInstalled.addListener(() => {
 
 api.contextMenus.onClicked.addListener((info) => {
   const url = info.linkUrl || info.srcUrl;
-  if (url) sendToApp(url, info.pageUrl);
+  // Only hand the app web-capture schemes. The native host enforces this too,
+  // but filtering here avoids handing it (e.g.) an `sftp:` link a page could
+  // use to provoke an authenticated outbound connection.
+  if (url && /^(https?:|magnet:)/i.test(url)) sendToApp(url, info.pageUrl);
 });
 
 function sendToApp(url, referrer) {
@@ -57,13 +60,18 @@ function sendToApp(url, referrer) {
 
 // Capture mode: take over new downloads. Cancel the browser's copy first so
 // nothing lands twice, then hand the URL to the app.
-api.downloads.onCreated.addListener((item) => {
-  if (!captureEnabled) return;
-  const url = item.finalUrl || item.url;
-  if (!/^https?:/i.test(url)) return;
-  api.downloads.cancel(item.id, () => {
-    if (api.runtime.lastError) return; // finished/cancelled already — leave it
-    api.downloads.erase({ id: item.id });
-    sendToApp(url, item.referrer);
+//
+// Safari doesn't implement the `downloads` API, so this whole path is absent
+// there — the context menu still works. Guard it so the worker doesn't throw.
+if (api.downloads && api.downloads.onCreated) {
+  api.downloads.onCreated.addListener((item) => {
+    if (!captureEnabled) return;
+    const url = item.finalUrl || item.url;
+    if (!/^https?:/i.test(url)) return;
+    api.downloads.cancel(item.id, () => {
+      if (api.runtime.lastError) return; // finished/cancelled already — leave it
+      api.downloads.erase({ id: item.id });
+      sendToApp(url, item.referrer);
+    });
   });
-});
+}

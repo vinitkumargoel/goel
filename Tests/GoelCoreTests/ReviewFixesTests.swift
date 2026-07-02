@@ -36,12 +36,13 @@ final class ReviewFixesTests: XCTestCase {
         if case .magnet = DownloadSource.parse("magnet:?xt=urn:btih:abc") {} else { XCTFail("magnet rejected") }
         if case .torrentFile = DownloadSource.parse("https://example.com/x.torrent") {} else { XCTFail(".torrent rejected") }
 
-        // Accepted since the FTP engine landed (kind derives from the scheme).
+        // Accepted since the FTP / SFTP engines landed (kind derives from the scheme).
         XCTAssertEqual(DownloadSource.parse("ftp://host/file")?.kind, .ftp)
+        XCTAssertEqual(DownloadSource.parse("sftp://host/file")?.kind, .sftp)
 
         // Rejected
         XCTAssertNil(DownloadSource.parse("file:///etc/passwd"))
-        XCTAssertNil(DownloadSource.parse("sftp://host/file"))
+        XCTAssertNil(DownloadSource.parse("sftp:///onlypath"))  // no host → junk
         XCTAssertNil(DownloadSource.parse("javascript:alert(1)"))
         XCTAssertNil(DownloadSource.parse("   "))
         XCTAssertNil(DownloadSource.parse("not a url"))

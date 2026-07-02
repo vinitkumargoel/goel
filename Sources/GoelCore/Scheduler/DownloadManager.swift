@@ -30,6 +30,7 @@ public actor DownloadManager {
     let torrentEngine: any DownloadEngine
     let hlsEngine: any DownloadEngine
     let ftpEngine: any DownloadEngine
+    let sftpEngine: any DownloadEngine
 
     // MARK: State
 
@@ -183,6 +184,7 @@ public actor DownloadManager {
         torrentEngine: any DownloadEngine,
         hlsEngine: (any DownloadEngine)? = nil,
         ftpEngine: (any DownloadEngine)? = nil,
+        sftpEngine: (any DownloadEngine)? = nil,
         settings: AppSettings = AppSettings(),
         store: PersistenceStore? = nil,
         power: any PowerControlling = SystemPowerControl(),
@@ -193,6 +195,7 @@ public actor DownloadManager {
         self.torrentEngine = torrentEngine
         self.hlsEngine = hlsEngine ?? HLSEngine(profile: settings.effectiveProfile)
         self.ftpEngine = ftpEngine ?? FTPEngine(profile: settings.effectiveProfile)
+        self.sftpEngine = sftpEngine ?? SFTPEngine(profile: settings.effectiveProfile)
         self.settings = settings
         self.store = store
         self.power = power
@@ -226,6 +229,7 @@ public actor DownloadManager {
         )
         self.hlsEngine = HLSEngine(profile: settings.effectiveProfile)
         self.ftpEngine = FTPEngine(profile: settings.effectiveProfile)
+        self.sftpEngine = SFTPEngine(profile: settings.effectiveProfile)
         self.settings = settings
         self.store = store
         self.power = power
@@ -504,7 +508,7 @@ public actor DownloadManager {
     /// always still start the download.
     private static func unresolvedNote(for kind: DownloadKind) -> String? {
         switch kind {
-        case .http, .ftp:
+        case .http, .ftp, .sftp:
             return "Couldn’t reach the server — it may still work when you start."
         case .torrent:
             return "No peers answered in time, so the file list isn’t available yet. You can still start — it will resolve while downloading."
@@ -845,6 +849,7 @@ public actor DownloadManager {
         case .torrent: return torrentEngine
         case .hls: return hlsEngine
         case .ftp: return ftpEngine
+        case .sftp: return sftpEngine
         }
     }
 }

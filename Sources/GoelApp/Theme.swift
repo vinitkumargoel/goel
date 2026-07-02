@@ -21,6 +21,7 @@ enum Theme {
     static let yellow      = Color.adaptive(light: 0x8A6D00, dark: 0xFFD60A)
     static let purple      = Color.adaptive(light: 0x8A2BE0, dark: 0xCB6FF5)
     static let teal        = Color.adaptive(light: 0x0E7C99, dark: 0x64D2FF)
+    static let indigo      = Color.adaptive(light: 0x3634A3, dark: 0x7D7AFF)
 
     /// Subtle alternating-row tint.
     static let rowAlt = Color.primary.opacity(0.03)

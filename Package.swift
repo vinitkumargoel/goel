@@ -66,12 +66,30 @@ let package = Package(
                 .linkedLibrary("curl"),
             ]
         ),
+        // C shim over Homebrew's libssh2 (keg-only) powering the SFTP engine and
+        // the interactive SFTP file browser. Paths are Homebrew's arm64 prefix;
+        // adjust if your install lives elsewhere.
+        .target(
+            name: "SSHBridge",
+            cSettings: [
+                .unsafeFlags([
+                    "-I/opt/homebrew/opt/libssh2/include",
+                ]),
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-L/opt/homebrew/opt/libssh2/lib",
+                    "-lssh2",
+                ]),
+            ]
+        ),
         .target(
             name: "GoelCore",
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift"),
                 "TorrentBridge",
                 "CurlBridge",
+                "SSHBridge",
             ]
         ),
         .executableTarget(

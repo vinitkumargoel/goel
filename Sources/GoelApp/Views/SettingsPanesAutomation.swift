@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SafariServices
 import GoelCore
 
 // The automation/integration settings panes added on top of the original six:
@@ -278,7 +279,7 @@ struct BrowserIntegrationPane: View {
     var body: some View {
         PaneScaffold(title: "Browser Integration",
                      subtitle: "Capture downloads from your browser, or send links here by hand.") {
-            SectionHeader("Browser extension")
+            SectionHeader("Chrome, Edge, Brave & Firefox")
             SetRow(name: "1. Load the extension",
                    desc: "Chrome/Edge/Brave: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox: about:debugging → Load Temporary Add-on.") {
                 Button("Show Folder") {
@@ -295,6 +296,20 @@ struct BrowserIntegrationPane: View {
             }
             SetRow(name: "3. Capture",
                    desc: "Click the extension's toolbar button to toggle capture of all downloads, or right-click any link → “Download with GoelDownloader”.") {
+                EmptyView()
+            }
+
+            SectionHeader("Safari")
+            SetRow(name: "1. Open Safari’s extensions",
+                   desc: "Safari finds the extension bundled inside this app. If you just installed the app, quit and reopen Safari once so it appears.") {
+                Button("Open Safari Extensions") { openSafariExtensionPrefs() }
+            }
+            SetRow(name: "2. Turn it on",
+                   desc: "Enable “GoelDownloader Capture” in the list. An unsigned (ad-hoc) build also needs Safari → Develop menu → “Allow Unsigned Extensions” each session.") {
+                EmptyView()
+            }
+            SetRow(name: "3. Capture",
+                   desc: "Right-click a link → “Download with GoelDownloader”. Safari-captured links open here with a quick confirmation.") {
                 EmptyView()
             }
 
@@ -319,11 +334,13 @@ struct BrowserIntegrationPane: View {
                    desc: "A small always-on-top target for dragging links out of the browser (⌘⇧B).") {
                 Button("Show") { DropBasketController.shared.toggle() }
             }
-            Text("Safari extensions require an Xcode-built app, so Safari uses the bookmarklet/Services paths for now.")
-                .font(.system(size: 11.5))
-                .foregroundStyle(.tertiary)
-                .padding(.top, 10)
         }
+    }
+
+    /// Jump straight to this app's entry in Safari's extension settings.
+    private func openSafariExtensionPrefs() {
+        SFSafariApplication.showPreferencesForExtension(
+            withIdentifier: "com.goel.downloader.SafariExtension") { _ in }
     }
 }
 

@@ -134,6 +134,7 @@ struct HistoryView: View {
         case .torrent: return "point.3.connected.trianglepath.dotted"
         case .hls: return "play.rectangle"
         case .ftp: return "server.rack"
+        case .sftp: return "lock.rectangle.on.rectangle"
         }
     }
 

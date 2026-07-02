@@ -569,6 +569,7 @@ struct AddDownloadSheet: View {
         case .torrent: return "point.3.connected.trianglepath.dotted"
         case .hls: return "play.rectangle"
         case .ftp: return "server.rack"
+        case .sftp: return "lock.rectangle.on.rectangle"
         }
     }
 
@@ -580,6 +581,7 @@ struct AddDownloadSheet: View {
         case .torrent: label = "BT"; color = Theme.green
         case .hls: label = "HLS"; color = Theme.orange
         case .ftp: label = "FTP"; color = Theme.teal
+        case .sftp: label = "SFTP"; color = Theme.indigo
         }
         return Text(label)
             .font(.system(size: 10, weight: .bold))

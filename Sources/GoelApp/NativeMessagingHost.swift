@@ -29,7 +29,12 @@ enum NativeMessagingHost {
 
     private static func handle(_ message: [String: Any]) {
         guard let raw = message["url"] as? String,
-              let source = DownloadSource.parse(raw) else {
+              let source = DownloadSource.parse(raw),
+              // The spool auto-adds with no confirmation, so it must only carry
+              // credential-free web-download schemes — never an `sftp:`/`ftp:`
+              // link a web page could use to trigger an authenticated outbound
+              // connection. (Those schemes are still allowed via the add box.)
+              source.isBrowserCaptureSafe else {
             writeMessage(["ok": false, "error": "unsupported url"])
             return
         }

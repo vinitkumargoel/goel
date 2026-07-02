@@ -148,6 +148,25 @@ cp Assets/AppIcon-Dark.icns "$APP/Contents/Resources/AppIcon.icns"
 # AppleScript dictionary (OSAScriptingDefinition points here).
 cp Sources/GoelApp/Resources/GoelDownloader.sdef "$APP/Contents/Resources/GoelDownloader.sdef"
 
+# Safari Web Extension (.appex). Built by hand (no Xcode): the handler is a
+# minimal NSExtensionMain executable, and the SAME WebExtension resources the
+# Chrome/Firefox build ships are dropped into the appex's Resources so Safari
+# discovers manifest.json. Signed here (inside-out) before the app wrapper is
+# sealed by bundle_dylibs.sh.
+APPEX="$APP/Contents/PlugIns/GoelSafariExtension.appex"
+echo "==> Assembling Safari extension $APPEX"
+mkdir -p "$APPEX/Contents/MacOS" "$APPEX/Contents/Resources"
+cp SafariExtension/Info.plist "$APPEX/Contents/Info.plist"
+cp -R Sources/GoelApp/BrowserExtension/. "$APPEX/Contents/Resources/"
+ARCH="$(uname -m)"
+swiftc -parse-as-library \
+  SafariExtension/SafariWebExtensionHandler.swift \
+  -o "$APPEX/Contents/MacOS/GoelSafariExtension" \
+  -target "${ARCH}-apple-macosx14.0" \
+  -framework Foundation -framework AppKit -framework SafariServices \
+  -Xlinker -e -Xlinker _NSExtensionMain
+codesign --force -s - "$APPEX"
+
 # Vendor native dylibs, rewrite install names, and sign.
 Scripts/bundle_dylibs.sh "$APP"
 
@@ -158,7 +177,7 @@ Scripts/bundle_dylibs.sh "$APP"
 #   NOTARY_PROFILE="<notarytool keychain profile>" — submit + staple
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then
   echo "==> Codesigning with '$CODESIGN_IDENTITY' (hardened runtime)"
-  find "$APP/Contents" \( -name "*.dylib" -o -name "*.framework" -o -name "*.bundle" \) -prune | while read -r item; do
+  find "$APP/Contents" \( -name "*.dylib" -o -name "*.framework" -o -name "*.bundle" -o -name "*.appex" \) -prune | while read -r item; do
     codesign --force --options runtime --timestamp -s "$CODESIGN_IDENTITY" "$item"
   done
   codesign --force --options runtime --timestamp -s "$CODESIGN_IDENTITY" "$APP"

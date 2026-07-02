@@ -24,10 +24,71 @@ struct SidebarView: View {
                     item("Archives", "doc.zipper", .type(.archive))
                     item("Apps", "app.badge", .type(.app))
                 }
+                serversGroup
             }
             .padding(10)
         }
         .background(.regularMaterial)
+    }
+
+    /// The "Servers" group: each saved SFTP connection, plus an add button.
+    @ViewBuilder
+    private var serversGroup: some View {
+        HStack {
+            Text("SERVERS")
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(.tertiary)
+            Spacer()
+            Button { vm.presentNewServer() } label: {
+                Image(systemName: "plus").font(.system(size: 10, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Add SFTP server")
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+
+        if vm.servers.isEmpty {
+            Text("Add an SFTP server to browse and transfer files.")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+        } else {
+            ForEach(vm.servers) { server in
+                serverItem(server)
+            }
+        }
+    }
+
+    private func serverItem(_ server: SFTPConnection) -> some View {
+        let selected = vm.selectedServer == server.id
+        return Button {
+            vm.selectServer(server.id)
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "lock.rectangle.on.rectangle")
+                    .font(.system(size: 13)).frame(width: 16)
+                Text(server.label).font(.system(size: 13)).lineLimit(1)
+                Spacer(minLength: 4)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(selected ? Theme.indigo : Color.clear)
+            )
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Edit…") { vm.presentEditServer(server) }
+            Button("Remove", role: .destructive) { vm.removeServer(server.id) }
+        }
     }
 
     @ViewBuilder
@@ -42,8 +103,9 @@ struct SidebarView: View {
     }
 
     private func item(_ label: String, _ symbol: String, _ filter: SidebarFilter) -> some View {
-        let selected = vm.filter == filter
+        let selected = vm.filter == filter && vm.selectedServer == nil
         return Button {
+            vm.selectedServer = nil
             vm.filter = filter
         } label: {
             HStack(spacing: 9) {
