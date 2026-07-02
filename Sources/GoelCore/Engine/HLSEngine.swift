@@ -1,6 +1,12 @@
 import Foundation
+#if canImport(AVFoundation)
 import AVFoundation
+#endif
+#if canImport(CommonCrypto)
 import CommonCrypto
+#else
+import CryptoBridge  // OpenSSL-backed AES-128-CBC on Linux
+#endif
 
 /// Downloads an HLS (`.m3u8`) video stream into a single playable file.
 ///
@@ -36,7 +42,9 @@ public actor HLSEngine: HLSConfigurable {
         let config = URLSessionConfiguration.default
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.timeoutIntervalForRequest = 60
-        config.waitsForConnectivity = true
+        #if !os(Linux)
+        config.waitsForConnectivity = true   // get-only in swift-corelibs-foundation
+        #endif
         self.session = URLSession(configuration: config)
     }
 
@@ -331,9 +339,10 @@ public actor HLSEngine: HLSConfigurable {
 
     /// AES-128-CBC decrypt with PKCS7 padding (the HLS `AES-128` method).
     static func aes128CBCDecrypt(_ data: Data, key: Data, iv: Data) -> Data? {
-        guard key.count == kCCKeySizeAES128, iv.count == kCCBlockSizeAES128 else { return nil }
-        let capacity = data.count + kCCBlockSizeAES128
+        guard key.count == 16, iv.count == 16 else { return nil }   // AES-128 block/key size
+        let capacity = data.count + 16
         var output = Data(count: capacity)
+        #if canImport(CommonCrypto)
         var moved = 0
         let status = output.withUnsafeMutableBytes { outPtr in
             data.withUnsafeBytes { dataPtr in
@@ -352,11 +361,32 @@ public actor HLSEngine: HLSConfigurable {
         guard status == kCCSuccess else { return nil }
         output.removeSubrange(moved..<output.count)
         return output
+        #else
+        // Linux: OpenSSL EVP via CryptoBridge (PKCS7 padding on by default).
+        var outLen: Int32 = 0
+        let ok = output.withUnsafeMutableBytes { outPtr in
+            data.withUnsafeBytes { dataPtr in
+                key.withUnsafeBytes { keyPtr in
+                    iv.withUnsafeBytes { ivPtr in
+                        gb_aes128_cbc_decrypt(
+                            keyPtr.bindMemory(to: UInt8.self).baseAddress,
+                            ivPtr.bindMemory(to: UInt8.self).baseAddress,
+                            dataPtr.bindMemory(to: UInt8.self).baseAddress, Int32(data.count),
+                            outPtr.bindMemory(to: UInt8.self).baseAddress, &outLen)
+                    }
+                }
+            }
+        }
+        guard ok == 1 else { return nil }
+        output.removeSubrange(Int(outLen)..<output.count)
+        return output
+        #endif
     }
 
     /// Remux an MPEG-TS file to MP4 by passing the elementary streams through
     /// (no re-encode). Works for the common H.264/AAC case.
     private static func remuxToMP4(from src: URL, to dest: URL) async throws {
+        #if canImport(AVFoundation)
         let asset = AVURLAsset(url: src)
         guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
             throw DownloadError.unknown("Couldn’t initialise the MP4 converter for this stream")
@@ -369,7 +399,45 @@ public actor HLSEngine: HLSConfigurable {
         if export.status != .completed {
             throw export.error ?? DownloadError.unknown("HLS → MP4 conversion failed (unsupported codec)")
         }
+        #else
+        // Linux: remux via ffmpeg (stream copy, no re-encode). `aac_adtstoasc`
+        // rewrites AAC-in-TS for the MP4 container; `+faststart` moves the moov
+        // atom to the front so the result is streamable.
+        let ff = Process()
+        ff.executableURL = URL(fileURLWithPath: Self.ffmpegPath)
+        ff.arguments = [
+            "-y", "-loglevel", "error", "-i", src.path,
+            "-c", "copy", "-bsf:a", "aac_adtstoasc",
+            "-movflags", "+faststart", dest.path,
+        ]
+        ff.standardOutput = FileHandle.nullDevice
+        let errPipe = Pipe()
+        ff.standardError = errPipe
+        do {
+            try ff.run()
+        } catch {
+            throw DownloadError.unknown("ffmpeg not found for HLS remux (install ffmpeg): \(error)")
+        }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            ff.terminationHandler = { _ in c.resume() }
+        }
+        if ff.terminationStatus != 0 {
+            let msg = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            throw DownloadError.unknown("HLS → MP4 conversion failed: \(msg)")
+        }
+        #endif
     }
+
+    #if os(Linux)
+    /// Path to the ffmpeg binary used for HLS remux on Linux.
+    static let ffmpegPath: String = {
+        if let p = ProcessInfo.processInfo.environment["GOEL_FFMPEG"], !p.isEmpty { return p }
+        for c in ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg"] where FileManager.default.isExecutableFile(atPath: c) {
+            return c
+        }
+        return "/usr/bin/ffmpeg"
+    }()
+    #endif
 
     // MARK: Supporting types
 

@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 
 /// A file-integrity hash algorithm the verifier understands.
 public enum ChecksumAlgorithm: String, Codable, Sendable, CaseIterable, Hashable {

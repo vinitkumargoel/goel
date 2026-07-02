@@ -27,11 +27,19 @@ extension HTTPEngine {
         guard needed <= maxAllowed else {
             throw DownloadError.unknown("Declared size \(needed.byteString) exceeds the maximum allowed (\(maxAllowed.byteString))")
         }
+        #if os(Linux)
+        // `volumeAvailableCapacityForImportantUsageKey` is macOS-only; query the
+        // filesystem directly for free space on Linux.
+        let attrs = try FileManager.default.attributesOfFileSystem(forPath: directory)
+        let available = (attrs[.systemFreeSize] as? Int64) ?? 0
+        guard available > 0 else { throw DownloadError.diskFull(needed: needed, available: 0) }
+        #else
         let url = URL(fileURLWithPath: directory)
         let values = try url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         guard let available = values.volumeAvailableCapacityForImportantUsage else {
             throw DownloadError.diskFull(needed: needed, available: 0)
         }
+        #endif
         if needed > available {
             throw DownloadError.diskFull(needed: needed, available: available)
         }

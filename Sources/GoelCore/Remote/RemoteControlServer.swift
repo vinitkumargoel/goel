@@ -1,3 +1,4 @@
+#if !os(Linux)
 import Foundation
 import Network
 
@@ -600,3 +601,4 @@ private final class OneShotResume: @unchecked Sendable {
         if first { cont.resume() }
     }
 }
+#endif

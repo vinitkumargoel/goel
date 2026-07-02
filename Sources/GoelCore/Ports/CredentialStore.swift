@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(Security)
 import Security
+#endif
 
 // MARK: - Per-host download credentials
 
@@ -22,9 +24,12 @@ public struct HostCredential: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-/// Keychain-backed credential storage (`kSecClassInternetPassword`, keyed by
-/// server host). Secrets never leave the Keychain except to build the header.
-/// Security-framework calls are thread-safe, hence `@unchecked Sendable`.
+/// Per-host credential storage keyed by server host.
+///
+/// On macOS this is Keychain-backed (`kSecClassInternetPassword`); on Linux it is
+/// a `0600` JSON file under the user's config dir. The name is kept
+/// (`KeychainCredentialStore`) so call sites don't change; secrets are only ever
+/// read to build the `Authorization` header.
 public final class KeychainCredentialStore: CredentialProviding, @unchecked Sendable {
 
     /// The service label distinguishing our items from other apps' entries.
@@ -40,7 +45,9 @@ public final class KeychainCredentialStore: CredentialProviding, @unchecked Send
         return "Basic \(raw)"
     }
 
-    // MARK: Management
+    #if canImport(Security)
+
+    // MARK: Management (macOS / Keychain)
 
     /// The username + password stored for `host`, or nil.
     public func credential(forHost host: String) -> (username: String, password: String)? {
@@ -98,6 +105,70 @@ public final class KeychainCredentialStore: CredentialProviding, @unchecked Send
             kSecAttrLabel as String: label,
         ]
     }
+
+    #else
+
+    // MARK: Management (Linux / 0600 JSON file)
+
+    /// Serializes file access; the macOS Keychain was already thread-safe.
+    private static let fileLock = NSLock()
+
+    private struct Entry: Codable { var username: String; var password: String }
+
+    private var storeURL: URL {
+        let base = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        return base.appendingPathComponent("goel-downloader/credentials.json")
+    }
+
+    private func load() -> [String: Entry] {
+        guard let data = try? Data(contentsOf: storeURL),
+              let dict = try? JSONDecoder().decode([String: Entry].self, from: data) else { return [:] }
+        return dict
+    }
+
+    private func save(_ dict: [String: Entry]) {
+        let url = storeURL
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        guard let data = try? JSONEncoder().encode(dict) else { return }
+        // Write then clamp to 0600 so the secrets file isn't world-readable.
+        try? data.write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    public func credential(forHost host: String) -> (username: String, password: String)? {
+        Self.fileLock.lock(); defer { Self.fileLock.unlock() }
+        guard let e = load()[host] else { return nil }
+        return (e.username, e.password)
+    }
+
+    @discardableResult
+    public func setCredential(username: String, password: String, host: String) -> Bool {
+        Self.fileLock.lock(); defer { Self.fileLock.unlock() }
+        var dict = load()
+        dict[host] = Entry(username: username, password: password)
+        save(dict)
+        return true
+    }
+
+    @discardableResult
+    public func removeCredential(host: String) -> Bool {
+        Self.fileLock.lock(); defer { Self.fileLock.unlock() }
+        var dict = load()
+        guard dict.removeValue(forKey: host) != nil else { return false }
+        save(dict)
+        return true
+    }
+
+    public func allCredentials() -> [HostCredential] {
+        Self.fileLock.lock(); defer { Self.fileLock.unlock() }
+        return load().map { HostCredential(host: $0.key, username: $0.value.username) }
+            .sorted { $0.host < $1.host }
+    }
+
+    #endif
 }
 
 /// Session delegate stripping the manually-attached `Authorization` header

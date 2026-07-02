@@ -449,8 +449,22 @@ final class SegmentedTransfer: Sendable {
         let streamer = ChunkStreamer()
         var bodyContinuation: AsyncThrowingStream<Data, Error>.Continuation!
         let body = AsyncThrowingStream<Data, Error> { bodyContinuation = $0 }
+        #if os(Linux)
+        // swift-corelibs-foundation does not honour the per-task
+        // `URLSessionTask.delegate`; only a SESSION-level delegate receives
+        // `didReceive(response:)` / `didReceive(data:)`. Without this the segmented
+        // transfer would attach its `ChunkStreamer` to the task, get no callbacks,
+        // and write zero bytes. Drive each stream through a dedicated session whose
+        // delegate IS the streamer, then invalidate it when the body finishes so it
+        // (and the streamer) are released.
+        let streamSession = URLSession(configuration: session.configuration,
+                                       delegate: streamer, delegateQueue: nil)
+        let task = streamSession.dataTask(with: request)
+        streamer.ownedSession = streamSession
+        #else
         let task = session.dataTask(with: request)
         task.delegate = streamer
+        #endif
         streamer.prepare(body: bodyContinuation, task: task)
         register(streamer)
         let response: HTTPURLResponse = try await withCheckedThrowingContinuation { cont in
@@ -792,6 +806,12 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
     private var suspended = false
     private var done = false
 
+    /// On Linux each stream gets its own `URLSession` (see `openStream`), because
+    /// per-task delegates are ignored there. We own that session and must
+    /// invalidate it on completion so it and this streamer are released; nil on
+    /// macOS, where the shared session is reused.
+    var ownedSession: URLSession?
+
     private let highWater: Int
     private let lowWater: Int
 
@@ -870,6 +890,11 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
             rcont?.resume(throwing: DownloadError.network("No HTTP response"))
             bcont?.finish()
         }
+        // Release the per-stream session on Linux (no-op on macOS where it's nil).
+        // `finishTasksAndInvalidate` lets the just-finished task drain, then breaks
+        // the session→delegate retain cycle.
+        let owned = { lock.lock(); defer { lock.unlock() }; let s = ownedSession; ownedSession = nil; return s }()
+        owned?.finishTasksAndInvalidate()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask,

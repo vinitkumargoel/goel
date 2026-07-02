@@ -60,3 +60,8 @@ build/
 
 # ---- Playwright CLI local session state (browser testing scratch) ----
 /.playwright-cli/
+
+# Linux-vendored SQLite (build with Scripts/linux/build-sqlite.sh)
+Vendor/linux/sqlite/*.so
+Vendor/linux/sqlite/sqlite3.c
+Vendor/linux/sqlite/sqlite3.h
