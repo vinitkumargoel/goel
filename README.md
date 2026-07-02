@@ -112,10 +112,3 @@ library updater by design.
 ## License
 
 Goel° is released under the **MIT License** — © 2026 Vinit Kumar Goel; see **[LICENSE](LICENSE)**.
-
-The app bundles several third-party open-source components (libtorrent, OpenSSL, libssh2, Boost, GRDB,
-Sparkle, and optionally yt-dlp), each under its own license. Full attributions are in
-**[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)**, which also ships inside the app.
-
-> You are responsible for ensuring your use of this software — including what you download — complies
-> with applicable law and the terms of service of the sites and networks you use.
