@@ -206,6 +206,17 @@ public enum DownloadSource: Codable, Sendable, Hashable {
                 return .url(url)
             }
             if scheme == "ftp" || scheme == "ftps" {
+                // Never persist an inline password (`ftp://user:pass@host`). Like
+                // the SFTP case below, a URL is stored/displayed/exported/copied
+                // verbatim, so an inline secret would leak into the task DB, JSON
+                // backups, the plain-text "Export list", and the clipboard. Strip
+                // it; FTP auth is resolved from the Keychain credential store at
+                // connect time (see `FTPEngine.credentials(for:)`).
+                if url.password != nil,
+                   var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                    comps.password = nil
+                    if let stripped = comps.url { return .url(stripped) }
+                }
                 return .url(url)   // kind derives .ftp from the scheme
             }
             if scheme == "sftp" {

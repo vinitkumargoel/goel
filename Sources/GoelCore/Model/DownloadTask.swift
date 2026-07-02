@@ -333,11 +333,38 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// filesystem write/preallocate/delete, so a malformed name can never escape
     /// the download folder even if name sanitisation is bypassed upstream.
     public var isSavePathContained: Bool {
-        // Resolve symlinks (not just `..`/`~`): a symlinked save directory — or a
-        // symlink component in the path — must not let the resolved file escape the
-        // resolved download folder. `standardizingPath` alone leaves symlinks intact.
-        let dir = (saveDirectory as NSString).resolvingSymlinksInPath
-        let full = (savePath as NSString).resolvingSymlinksInPath
+        Self.isContained(savePath, within: saveDirectory)
+    }
+
+    /// Whether `path` resolves to a location at or strictly inside `directory`.
+    /// Resolves symlinks *and* collapses `.`/`..` on both sides so neither a
+    /// symlinked directory/component nor a `../` element can let the resolved path
+    /// escape the resolved root (`resolvingSymlinksInPath` handles symlinks but
+    /// leaves `..`; `standardizingPath` collapses `..` — applying both is robust).
+    /// The reusable core of ``isSavePathContained``, also used to constrain a
+    /// remote-supplied save directory to an allowed downloads root and to verify
+    /// engine-declared file paths (torrent/HLS) stay within the save directory.
+    public static func isContained(_ path: String, within directory: String) -> Bool {
+        func normalize(_ p: String) -> String {
+            ((p as NSString).resolvingSymlinksInPath as NSString).standardizingPath
+        }
+        let dir = normalize(directory)
+        let full = normalize(path)
         return full == dir || full.hasPrefix(dir + "/")
+    }
+
+    /// The absolute path of the payload to open / play / stream. For a multi-file
+    /// torrent that's the largest wanted file, resolved under the save directory.
+    /// The engine-declared per-file `path` is untrusted — a hostile `.torrent`
+    /// could (against a buggy or downgraded libtorrent) carry a traversing path —
+    /// so the joined result is verified to stay inside the save directory and
+    /// falls back to ``savePath`` if it would escape. Callers that open/stream a
+    /// torrent's file must route through here rather than joining `path` raw.
+    public var primaryFilePath: String {
+        guard isMultiFile,
+              let largest = files.filter(\.isWanted).max(by: { $0.length < $1.length })
+        else { return savePath }
+        let candidate = (saveDirectory as NSString).appendingPathComponent(largest.path)
+        return Self.isContained(candidate, within: saveDirectory) ? candidate : savePath
     }
 }

@@ -902,10 +902,22 @@ public actor DownloadManager {
     /// its full state (progress, status, resume cursor). The JSON counterpart of
     /// the locator-only text export in the File menu.
     public func exportEnvelope() throws -> Data {
-        let envelope = AppExport(settings: settings, tasks: tasks)
+        let envelope = AppExport(settings: Self.exportSanitizedSettings(settings), tasks: tasks)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
         return try encoder.encode(envelope)
+    }
+
+    /// Settings with secrets stripped for a shareable/portable export. A backup
+    /// file may be synced, attached to a bug report, or moved between machines, so
+    /// the full-authority bearer token and the password hash must not travel in it
+    /// (``importEnvelope(_:)`` already refuses to *adopt* them; this stops them
+    /// leaving in the first place). The recipient sets their own on import.
+    static func exportSanitizedSettings(_ s: AppSettings) -> AppSettings {
+        var out = s
+        out.remoteToken = ""
+        out.remotePasswordHash = ""
+        return out
     }
 
     /// Import a snapshot produced by ``exportEnvelope()``: adopt its settings and

@@ -29,6 +29,10 @@ public actor RemoteControlServer {
     private var sessions: [String: Date] = [:]
     private var loginFailCount = 0
     private var loginLockUntil: Date?
+    /// Cap on concurrent (expensive) password verifications — bounds CPU under a
+    /// login flood without locking out a correct credential. Mirrors the macOS shell.
+    private var activeVerifications = 0
+    private static let maxConcurrentVerifications = 2
     /// Bumped on every start/stop so long-lived SSE / streaming loops wind down.
     private var generation = 0
 
@@ -57,8 +61,11 @@ public actor RemoteControlServer {
                       passwordHash: String, sessionMinutes: Int) async {
         let credentialsChanged = config.username != routerConfig.username
             || config.requireAuth != routerConfig.requireAuth
+            || config.token != routerConfig.token
             || passwordHash != self.passwordHash
         if credentialsChanged {
+            // Rotating the bearer token counts as a credential change too, so a
+            // leaked token's already-open stream is wound down when it's rotated.
             sessions.removeAll()
             generation += 1
         }
@@ -219,13 +226,22 @@ public actor RemoteControlServer {
     }
 
     private func handleLogin(_ request: RemoteRequest) async -> Data {
+        guard activeVerifications < Self.maxConcurrentVerifications else {
+            return Self.jsonError(status: "429 Too Many Requests",
+                                  message: "Server busy — try again in a moment.")
+        }
         let creds = Self.parseCredentials(request)
         let userOK = RemoteRouter.constantTimeEquals(creds.username, routerConfig.username)
         let hash = passwordHash
         let password = creds.password
-        let passOK: Bool = hash.isEmpty
-            ? false
-            : await Task.detached { RemotePassword.verify(password, against: hash) }.value
+        let passOK: Bool
+        if hash.isEmpty {
+            passOK = false
+        } else {
+            activeVerifications += 1
+            passOK = await Task.detached { RemotePassword.verify(password, against: hash) }.value
+            activeVerifications -= 1
+        }
 
         if userOK && passOK {
             loginFailCount = 0
@@ -256,6 +272,9 @@ public actor RemoteControlServer {
 
     private func handleLogout(_ request: RemoteRequest) -> Data {
         if let sid = request.cookie("goel_session") { sessions[sid] = nil }
+        // Wind down already-open SSE / file-stream loops (they authorise once at
+        // setup) so a signed-out or hijacked session's stream can't keep flowing.
+        generation += 1
         let cookie = "goel_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
         return RemoteRouter.response(status: "200 OK", type: "application/json",
                                      body: Data("{\"ok\":true}".utf8),
@@ -367,11 +386,10 @@ public actor RemoteControlServer {
 
     public static func streamPlan(for task: DownloadTask) -> StreamPlan? {
         if task.status.hasData {
-            var path = task.savePath
-            if task.isMultiFile,
-               let largest = task.files.filter(\.isWanted).max(by: { $0.length < $1.length }) {
-                path = (task.saveDirectory as NSString).appendingPathComponent(largest.path)
-            }
+            // Resolve the multi-file torrent's streamed file through `primaryFilePath`,
+            // which rejects an engine-declared path escaping the save directory
+            // (this file's bytes are streamed out to a network client).
+            let path = task.primaryFilePath
             let attributes = try? FileManager.default.attributesOfItem(atPath: path)
             let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
             guard size > 0 else { return nil }

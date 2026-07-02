@@ -8,45 +8,70 @@ import Crypto
 /// Password hashing + verification and random-secret minting for the web portal.
 ///
 /// The portal login password is never stored in the clear. It is kept as a
-/// versioned, salted, iterated SHA-256 digest — `"v1$saltHex$hashHex"` — so a
-/// leaked settings file doesn't hand out the password, and the version prefix
-/// reserves a clean upgrade path to a stronger KDF later. This is deliberately
-/// simple (CryptoKit's `SHA256`, already linked by `ChecksumVerifier`) rather
-/// than PBKDF2/Argon2: it protects a **rate-limited LAN control panel**, not a
-/// public credential database, and the iteration count still makes offline
-/// guessing costly.
+/// versioned, salted, iterated digest — `"v2$saltHex$hashHex"` — so a leaked
+/// settings file doesn't hand out the password. New hashes use **PBKDF2-HMAC-
+/// SHA256** (`v2`), the standard, HMAC-based construction; legacy `v1` hashes (a
+/// bare iterated SHA-256) still verify so existing passwords keep working and are
+/// transparently re-hashed to `v2` the next time the password is set.
 public enum RemotePassword {
 
-    /// Iteration count for the derive loop. High enough that a single verify is
-    /// tens of milliseconds (fine for an interactive login, painful to brute
-    /// force), low enough not to stall the request loop.
+    /// PBKDF2 iteration count. High enough that a single verify is tens of
+    /// milliseconds (fine for an interactive login, painful to brute force), low
+    /// enough not to stall the request loop.
     private static let iterations = 210_000
-    private static let version = "v1"
+    private static let version = "v2"
+    private static let legacyVersion = "v1"
+    /// SHA-256 derived-key length (one PBKDF2 output block).
+    private static let dkLen = 32
 
-    /// Hash a plaintext password into a storable `"v1$saltHex$hashHex"` string
+    /// Hash a plaintext password into a storable `"v2$saltHex$hashHex"` string
     /// with a fresh 16-byte random salt. Returns `""` for an empty password so
     /// callers can treat "no password set" uniformly.
     public static func hash(_ password: String) -> String {
         guard !password.isEmpty else { return "" }
         let salt = randomBytes(16)
-        let digest = derive(password: password, salt: salt)
+        let digest = pbkdf2(password: password, salt: salt)
         return "\(version)$\(salt.hexEncoded)$\(digest.hexEncoded)"
     }
 
     /// Constant-time check of a plaintext password against a stored hash string.
-    /// Any malformed/empty stored value fails closed.
+    /// Handles both the current `v2` (PBKDF2) and legacy `v1` (iterated SHA-256)
+    /// formats. Any malformed/empty stored value fails closed.
     public static func verify(_ password: String, against stored: String) -> Bool {
         let parts = stored.split(separator: "$", maxSplits: 2, omittingEmptySubsequences: false)
-        guard parts.count == 3, parts[0] == version,
+        guard parts.count == 3,
               let salt = Data(hexString: String(parts[1])), !salt.isEmpty else { return false }
         let expected = String(parts[2])
-        let actual = derive(password: password, salt: salt).hexEncoded
+        let actual: String
+        switch String(parts[0]) {
+        case version:       actual = pbkdf2(password: password, salt: salt).hexEncoded
+        case legacyVersion: actual = deriveLegacy(password: password, salt: salt).hexEncoded
+        default:            return false
+        }
         return RemoteRouter.constantTimeEquals(actual, expected)
     }
 
-    /// Iterate SHA-256 over `salt || password`, then repeatedly over the running
-    /// digest. The salt defeats precomputation; the iterations add work per guess.
-    private static func derive(password: String, salt: Data) -> Data {
+    /// PBKDF2-HMAC-SHA256 with a single 32-byte output block (RFC 2898). HMAC keyed
+    /// by the password makes this the standard construction rather than a bare
+    /// hash chain, and uses only CryptoKit/swift-crypto primitives (no CommonCrypto,
+    /// no extra dependency).
+    private static func pbkdf2(password: String, salt: Data) -> Data {
+        let key = SymmetricKey(data: Data(password.utf8))
+        // U_1 = HMAC(password, salt || INT_32_BE(1))
+        var message = salt
+        message.append(contentsOf: [0, 0, 0, 1])
+        var u = Data(HMAC<SHA256>.authenticationCode(for: message, using: key))
+        var result = u                       // T = U_1
+        for _ in 1..<iterations {
+            u = Data(HMAC<SHA256>.authenticationCode(for: u, using: key))  // U_j = HMAC(password, U_{j-1})
+            for i in 0..<dkLen { result[i] ^= u[i] }                       // T ^= U_j
+        }
+        return result
+    }
+
+    /// Legacy `v1` KDF: iterate SHA-256 over `salt || password`, then over the
+    /// running digest. Kept only so existing stored hashes still verify.
+    private static func deriveLegacy(password: String, salt: Data) -> Data {
         var data = salt + Data(password.utf8)
         for _ in 0..<iterations {
             data = Data(SHA256.hash(data: data))

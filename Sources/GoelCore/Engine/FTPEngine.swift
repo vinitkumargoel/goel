@@ -202,8 +202,12 @@ public actor FTPEngine: DownloadEngine {
     /// only a TLS-protected session — the transfer fails rather than let a
     /// downgraded server read the password off the wire.
     private func credentials(for url: URL) -> (userpwd: String, requireTLS: Bool)? {
-        if let user = url.user, !user.isEmpty {
-            return ("\(user):\(url.password ?? "")", false)
+        // Only treat inline userinfo as complete credentials when a password is
+        // actually present. A bare `ftp://user@host` (e.g. after inline-password
+        // stripping in `DownloadSource.parse`) must fall through to the Keychain
+        // rather than authenticate with an empty password and skip the lookup.
+        if let user = url.user, !user.isEmpty, let pass = url.password, !pass.isEmpty {
+            return ("\(user):\(pass)", false)
         }
         if let host = url.host, let stored = credentialLookup(host) {
             return ("\(stored.username):\(stored.password)", true)

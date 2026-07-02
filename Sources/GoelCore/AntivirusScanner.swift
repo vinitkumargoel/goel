@@ -21,15 +21,10 @@ public enum AntivirusScanner {
     /// `--quiet %path%` against `/tmp/x.dmg` becomes `["--quiet", "/tmp/x.dmg"]`.
     /// An empty executable path short-circuits to `false` (there is nothing to
     /// run); a process that throws on launch or exits non-zero is also `false`.
-    /// Interpreters whose first non-flag argument is an inline script or program
-    /// name. The app is unsandboxed and the scanner path/template come from the
-    /// settings DB, which any same-user process can write; refusing these closes
-    /// the `/bin/sh -c <payload>` arbitrary-code-execution bridge.
-    private static let interpreterBlocklist: Set<String> = [
-        "/bin/sh", "/bin/bash", "/bin/zsh", "/bin/dash", "/bin/csh", "/bin/tcsh",
-        "/bin/ksh", "/bin/fish", "/usr/bin/env", "/usr/bin/python", "/usr/bin/python3",
-        "/usr/bin/ruby", "/usr/bin/perl", "/usr/bin/osascript", "/usr/bin/swift",
-    ]
+    /// The app is unsandboxed and the scanner path/template come from the settings
+    /// DB, which any same-user process can write, so the executable is vetted by
+    /// ``ProcessSafety/isSafeExecutable(_:)`` (absolute, executable, not a shell
+    /// interpreter) before launch — closing the `/bin/sh -c <payload>` bridge.
 
     /// Hard ceiling on how long a scanner may run before it is killed and the
     /// scan reported as failed — prevents a wedged scanner from leaking the
@@ -44,10 +39,7 @@ public enum AntivirusScanner {
         let executable = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
         // The scanner must be a concrete, absolute, executable file — never a
         // relative name resolved through $PATH and never a shell interpreter.
-        guard !executable.isEmpty,
-              executable.hasPrefix("/"),
-              FileManager.default.isExecutableFile(atPath: executable),
-              !interpreterBlocklist.contains(executable) else { return false }
+        guard ProcessSafety.isSafeExecutable(executable) else { return false }
 
         // Split the template on whitespace and expand each `%path%` token.
         let arguments = argumentTemplate
@@ -58,7 +50,7 @@ public enum AntivirusScanner {
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         // Don't hand the third-party scanner our full environment.
-        process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+        process.environment = ProcessSafety.minimalEnvironment
 
         return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             let gate = ScanGate(process: process, continuation: continuation)

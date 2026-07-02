@@ -1,5 +1,8 @@
 import Foundation
 import GoelCore
+#if canImport(Glibc)
+import Glibc   // umask, so the token file is created private from birth
+#endif
 
 // ============================================================================
 // GoelDaemon — the headless Linux entry point.
@@ -14,6 +17,7 @@ import GoelCore
 //   GOEL_REQUIRE_AUTH  require sign-in                    (default true)
 //   GOEL_USERNAME      portal username                    (default "admin")
 //   GOEL_PASSWORD      portal password (plaintext, hashed at boot)
+//   GOEL_TOKEN         API bearer token (else auto-generated → private file)
 //   GOEL_SAVE_DIR      default download folder            (default ~/Downloads)
 //   GOEL_DB            queue database path                (default ~/.local/share/goel-downloader/queue.sqlite)
 // ============================================================================
@@ -41,6 +45,7 @@ let allowLAN = envBool("GOEL_ALLOW_LAN", false)
 let requireAuth = envBool("GOEL_REQUIRE_AUTH", true)
 let username = env("GOEL_USERNAME", "admin")
 let password = ProcessInfo.processInfo.environment["GOEL_PASSWORD"] ?? ""
+let tokenEnv = ProcessInfo.processInfo.environment["GOEL_TOKEN"] ?? ""
 let saveDir = env("GOEL_SAVE_DIR", home.appendingPathComponent("Downloads").path)
 
 try? FileManager.default.createDirectory(
@@ -79,7 +84,10 @@ Task {
         settings.remoteUsername = username
         settings.remoteReadOnly = false
         if !password.isEmpty { settings.remotePasswordHash = RemotePassword.hash(password) }
-        if settings.remoteToken.isEmpty { settings.remoteToken = RemotePassword.randomHex(bytes: 24) }
+        // Prefer an operator-supplied token (mirrors GOEL_PASSWORD — never logged);
+        // otherwise keep any existing one, or generate a fresh one on first boot.
+        if !tokenEnv.isEmpty { settings.remoteToken = tokenEnv }
+        else if settings.remoteToken.isEmpty { settings.remoteToken = RemotePassword.randomHex(bytes: 24) }
         await manager.updateSettings(settings)
         _ = await manager.setDefaultSaveDirectory(saveDir)
 
@@ -102,8 +110,26 @@ Task {
         }
         let host = bound.exposedLAN ? "0.0.0.0" : "127.0.0.1"
         stderrLine("GoelDaemon: ready — portal on http://\(host):\(bound.port)  (user: \(username))")
+        if bound.exposedLAN {
+            stderrLine("GoelDaemon: WARNING — portal is on the LAN over plain HTTP; sign-in and token cross the network unencrypted. Use a trusted network or a TLS reverse proxy (e.g. nginx/caddy).")
+        }
         stderrLine("GoelDaemon: save dir \(saveDir) · db \(dbPath)")
-        stderrLine("GoelDaemon: API token \(settings.remoteToken)")
+        // Never print the bearer token to stderr — on a systemd host that lands in
+        // the journal (often readable more broadly than intended) and in container
+        // log drivers shipped to central logging. Write it to a private 0600 file
+        // and log only the path. An operator who set GOEL_TOKEN already has it.
+        if tokenEnv.isEmpty {
+            let tokenFile = (dbDir as NSString).appendingPathComponent("portal-token")
+            #if canImport(Glibc)
+            let prevMask = umask(0o077)
+            #endif
+            try? settings.remoteToken.write(toFile: tokenFile, atomically: true, encoding: .utf8)
+            #if canImport(Glibc)
+            umask(prevMask)
+            #endif
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenFile)
+            stderrLine("GoelDaemon: API token written to \(tokenFile) (mode 0600)")
+        }
         if allowLAN && !bound.exposedLAN {
             stderrLine("GoelDaemon: NOTE — LAN access was requested but refused (no password set); bound 127.0.0.1 only. Set GOEL_PASSWORD to expose it.")
         }

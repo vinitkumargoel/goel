@@ -156,6 +156,13 @@ public actor HLSEngine: HLSConfigurable {
     private nonisolated func produce(id: UUID, task: DownloadTask, plan: MediaPlan, concurrency: Int) async throws {
         let segments = plan.segments
         guard !segments.isEmpty else { throw DownloadError.unknown("HLS playlist had no segments") }
+        // Defense in depth: the destination is derived from a sanitised task name,
+        // but assert it stays inside the save directory before any write — the same
+        // guard HTTP/FTP/SFTP apply, so a sanitisation bypass upstream still can't
+        // let the final `.mp4` (or its temp files) escape the download folder.
+        guard task.isSavePathContained else {
+            throw DownloadError.unknown("HLS destination escapes the download folder")
+        }
 
         let estTotal = plan.bandwidth > 0 ? Int64(Double(plan.bandwidth) / 8.0 * plan.totalDuration) : 0
         hub.emit(id, .metadataResolved(name: task.name, totalBytes: estTotal,
@@ -437,7 +444,11 @@ public actor HLSEngine: HLSConfigurable {
     #if os(Linux)
     /// Path to the ffmpeg binary used for HLS remux on Linux.
     static let ffmpegPath: String = {
-        if let p = ProcessInfo.processInfo.environment["GOEL_FFMPEG"], !p.isEmpty { return p }
+        // GOEL_FFMPEG comes from the process environment (attacker-influenceable by
+        // anything that can set the daemon's env); only honour it when it's a
+        // concrete absolute executable, never a bare $PATH name or an interpreter.
+        if let p = ProcessInfo.processInfo.environment["GOEL_FFMPEG"],
+           ProcessSafety.isSafeExecutable(p) { return p }
         for c in ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg"] where FileManager.default.isExecutableFile(atPath: c) {
             return c
         }

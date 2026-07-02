@@ -120,40 +120,18 @@ extension DownloadManager {
         return RemoteValidators(etag: etag, size: size)
     }
 
+    /// A `Sendable` snapshot of the user's proxy settings, for handing across
+    /// actor boundaries (e.g. into the torrent engine's `.torrent`-file fetch).
+    static func proxySpec(from settings: AppSettings) -> NetworkGuard.ProxySpec {
+        NetworkGuard.ProxySpec(mode: settings.proxyMode, type: settings.proxyType,
+                               host: settings.proxyHost, port: settings.proxyPort)
+    }
+
     /// Translate the user's proxy settings into a `connectionProxyDictionary`:
     /// nil to follow the OS ("system"), an empty dict to force direct ("none"),
     /// or the HTTP/SOCKS keys for a configured manual proxy. Mirrors the HTTP
     /// engine's own proxy handling so background probes don't bypass it.
     static func proxyDictionary(from settings: AppSettings) -> [String: Any]? {
-        #if os(Linux)
-        // The CFNetwork proxy-dictionary keys don't exist in swift-corelibs-foundation.
-        // On Linux the HTTP engine exports http(s)_proxy environment variables for a
-        // manual proxy, which URLSession here reads ambiently, so no per-session
-        // dictionary is needed (nil = follow the ambient/OS proxy).
-        return nil
-        #else
-        switch settings.proxyMode {
-        case "manual" where !settings.proxyHost.isEmpty && settings.proxyPort > 0:
-            if settings.proxyType == "socks5" {
-                return [
-                    kCFNetworkProxiesSOCKSEnable as String: 1,
-                    kCFNetworkProxiesSOCKSProxy as String: settings.proxyHost,
-                    kCFNetworkProxiesSOCKSPort as String: settings.proxyPort,
-                ]
-            }
-            return [
-                kCFNetworkProxiesHTTPEnable as String: 1,
-                kCFNetworkProxiesHTTPProxy as String: settings.proxyHost,
-                kCFNetworkProxiesHTTPPort as String: settings.proxyPort,
-                kCFNetworkProxiesHTTPSEnable as String: 1,
-                kCFNetworkProxiesHTTPSProxy as String: settings.proxyHost,
-                kCFNetworkProxiesHTTPSPort as String: settings.proxyPort,
-            ]
-        case "none":
-            return [:]
-        default:
-            return nil
-        }
-        #endif
+        NetworkGuard.proxyDictionary(proxySpec(from: settings))
     }
 }

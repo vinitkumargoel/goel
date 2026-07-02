@@ -110,19 +110,25 @@ public struct TorrentSessionConfig: Sendable, Equatable {
     public var enableLPD: Bool
     /// uTP (Micro Transport Protocol) transport.
     public var enableUTP: Bool
+    /// The user's proxy choice, applied to the HTTP fetch of a remote `.torrent`
+    /// file body so it follows the same proxy policy as real downloads (the
+    /// torrent swarm itself is separate). Defaults to "follow the OS proxy".
+    public var proxy: NetworkGuard.ProxySpec
 
     public init(
         encryptionMode: String = "prefer",
         enableDHT: Bool = true,
         enablePeX: Bool = true,
         enableLPD: Bool = true,
-        enableUTP: Bool = true
+        enableUTP: Bool = true,
+        proxy: NetworkGuard.ProxySpec = NetworkGuard.ProxySpec()
     ) {
         self.encryptionMode = encryptionMode
         self.enableDHT = enableDHT
         self.enablePeX = enablePeX
         self.enableLPD = enableLPD
         self.enableUTP = enableUTP
+        self.proxy = proxy
     }
 }
 

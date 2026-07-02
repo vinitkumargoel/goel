@@ -882,23 +882,13 @@ final class AppViewModel: ObservableObject {
     /// video). Multi-file torrents open their largest wanted file — the movie,
     /// not the .nfo (libtorrent file paths are relative to the save directory).
     func openFile(_ task: DownloadTask) {
-        var target = task.savePath
-        if task.isMultiFile,
-           let largest = task.files.filter(\.isWanted).max(by: { $0.length < $1.length }) {
-            target = (task.saveDirectory as NSString).appendingPathComponent(largest.path)
-        }
-        NSWorkspace.shared.open(URL(fileURLWithPath: target))
+        NSWorkspace.shared.open(URL(fileURLWithPath: task.primaryFilePath))
     }
 
     /// Open a finished media file in the built-in AVKit player. Multi-file
     /// torrents play their largest wanted file, mirroring ``openFile(_:)``.
     func playInApp(_ task: DownloadTask) {
-        var target = task.savePath
-        if task.isMultiFile,
-           let largest = task.files.filter(\.isWanted).max(by: { $0.length < $1.length }) {
-            target = (task.saveDirectory as NSString).appendingPathComponent(largest.path)
-        }
-        playerItem = PlayerItem(url: URL(fileURLWithPath: target), title: task.name)
+        playerItem = PlayerItem(url: URL(fileURLWithPath: task.primaryFilePath), title: task.name)
     }
 
     func revealInFinder(_ task: DownloadTask) {

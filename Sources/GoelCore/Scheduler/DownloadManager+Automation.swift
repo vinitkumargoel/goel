@@ -215,11 +215,16 @@ extension DownloadManager {
     /// add decision is pure in ``AutomationCore``.
     func pollFeeds() async {
         var fetches: [AutomationCore.FeedFetch] = []
+        let proxy = Self.proxySpec(from: settings)
         for feed in settings.rssFeeds where feed.enabled {
             guard let url = URL(string: feed.url),
                   let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
             else { continue }
-            guard let (data, _) = try? await URLSession.shared.data(from: url) else { continue }
+            // Guarded auto-fetch: honours the proxy (no IP leak), bounds redirects,
+            // strips cross-host headers, and refuses link-local (metadata) targets —
+            // unlike the bare `URLSession.shared` this replaced.
+            guard let data = await NetworkGuard.fetch(url: url, proxy: proxy,
+                                                      userAgent: settings.userAgent) else { continue }
             let items = RSSFeedParser.parse(data)
             var candidates: [AutomationCore.FeedCandidate] = []
             for item in items {

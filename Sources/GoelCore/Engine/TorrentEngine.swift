@@ -36,6 +36,8 @@ public actor TorrentEngine: TorrentControlling {
     private var tasks: [UUID: DownloadTask] = [:]
     private var profile: TrafficProfile
     private var config: SessionConfig
+    /// Proxy policy for the remote `.torrent`-file body fetch (see `configure`).
+    private var httpProxy = NetworkGuard.ProxySpec()
 
     public init(profile: TrafficProfile, config: SessionConfig = SessionConfig()) {
         self.profile = profile
@@ -119,6 +121,7 @@ public actor TorrentEngine: TorrentControlling {
     /// ``TorrentSessionConfig`` onto libtorrent's internal ``SessionConfig`` (the
     /// engine consumes DHT / LPD / uTP / encryption; PeX isn't wired to the shim).
     public func configure(_ session: TorrentSessionConfig) async {
+        httpProxy = session.proxy
         applySessionConfig(SessionConfig(
             enableDHT: session.enableDHT,
             enableLSD: session.enableLPD,
@@ -274,10 +277,14 @@ public actor TorrentEngine: TorrentControlling {
         return handle
     }
 
-    private nonisolated func downloadTorrentFile(_ url: URL) async throws -> String {
-        let (data, response) = try await URLSession.shared.data(from: url)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw DownloadError.httpStatus(http.statusCode)
+    private func downloadTorrentFile(_ url: URL) async throws -> String {
+        // Fetch the remote `.torrent` body through the guarded auto-fetch path:
+        // it honours the user's proxy (so it never leaks their real IP), bounds the
+        // redirect chain, strips cross-host headers, and refuses link-local (cloud
+        // metadata) targets — unlike the bare `URLSession.shared` this replaced.
+        guard let data = await NetworkGuard.fetch(url: url, proxy: httpProxy,
+                                                  userAgent: "GoelDownloader") else {
+            throw DownloadError.network("Could not fetch the .torrent file")
         }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("GoelDownloader/torrents", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

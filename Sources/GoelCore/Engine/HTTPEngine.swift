@@ -288,7 +288,12 @@ public actor HTTPEngine: HTTPConfigurable {
         }
         #endif
 
-        self.session = URLSession(configuration: cfg)
+        // Rebuild the session with the SAME redirect sanitizer the initializers
+        // install — a configuration copy never carries the delegate, so omitting
+        // it here would silently drop cross-host `Authorization`/`Cookie`/`Referer`
+        // stripping for the probe path (this runs on launch and every settings change).
+        self.session = URLSession(configuration: cfg,
+                                  delegate: RedirectSanitizer.shared, delegateQueue: nil)
     }
 
     /// Apply the HTTP network configuration (via the existing

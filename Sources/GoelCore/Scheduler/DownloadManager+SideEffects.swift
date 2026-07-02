@@ -164,9 +164,16 @@ extension DownloadManager {
                     )
                 }
                 await self?.recordScanVerdict(id, passed: passed)
+                // Only hand a *clean* file to the auto-extract / post-download
+                // script actions. With antivirus enabled these are held until the
+                // scan finishes and skipped entirely on a flagged/failed verdict —
+                // otherwise a malicious archive would be unpacked (or piped to the
+                // user's script) before the scanner ever got to veto it.
+                if passed { await self?.runPostDownloadActions(task) }
             }
+        } else {
+            runPostDownloadActions(task)
         }
-        runPostDownloadActions(task)
         deleteSourceTorrentIfRequested(task)
     }
 
@@ -197,6 +204,7 @@ extension DownloadManager {
                 unzip.arguments = ["-x", "-k", path, target]
                 try? unzip.run()
                 unzip.waitUntilExit()
+                Self.quarantineExtractedEscapees(under: target)
             }
         }
         if settings.postDownloadScriptEnabled, !settings.postDownloadScriptPath.isEmpty {
@@ -206,6 +214,29 @@ extension DownloadManager {
             Task.detached {
                 _ = await scanner.scan(path: path, executablePath: executable,
                                        argumentTemplate: template)
+            }
+        }
+    }
+
+    /// Defense in depth after `ditto` extraction: `ditto` already contains archive
+    /// traversal and rejects symlink escapes, but if any extracted entry resolves
+    /// outside the target folder (e.g. a symlink to `/private/tmp`), remove it so a
+    /// later "open extracted folder" action can't be redirected out of the download
+    /// area. A no-op on a well-behaved archive.
+    static func quarantineExtractedEscapees(under target: String) {
+        let fm = FileManager.default
+        // Walk the whole tree, not just the top level, so a symlink nested inside an
+        // extracted subdirectory (`sub/evil -> /etc`) is also caught. The enumerator
+        // does not descend through symlinks, so an escaping link is reported as a
+        // leaf entry and removed before anything can be written/opened through it.
+        guard let en = fm.enumerator(atPath: target) else { return }
+        for case let rel as String in en {
+            let full = (target as NSString).appendingPathComponent(rel)
+            if !DownloadTask.isContained(full, within: target) {
+                try? fm.removeItem(atPath: full)
+                en.skipDescendants()
+                FileHandle.standardError.write(Data(
+                    "[GoelDownloader] removed extracted entry escaping the folder: \(rel)\n".utf8))
             }
         }
     }

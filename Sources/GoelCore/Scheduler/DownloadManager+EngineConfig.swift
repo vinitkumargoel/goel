@@ -53,7 +53,8 @@ extension DownloadManager {
             enableDHT: settings.btEnableDHT,
             enablePeX: settings.btEnablePeX,
             enableLPD: settings.btEnableLPD,
-            enableUTP: settings.btEnableUTP
+            enableUTP: settings.btEnableUTP,
+            proxy: Self.proxySpec(from: settings)
         )
     }
 

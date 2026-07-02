@@ -100,7 +100,12 @@ enum BrowserSpool {
 
     static func enqueue(locator: String) throws {
         let fm = FileManager.default
-        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Restrict the spool to the owner (0700): this directory is a no-confirmation
+        // command channel — any file dropped here queues a download — so it must not
+        // be group/world-writable on a shared machine.
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true,
+                               attributes: [.posixPermissions: 0o700])
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let file = directory.appendingPathComponent(UUID().uuidString + ".json")
         let data = try JSONSerialization.data(withJSONObject: ["url": locator])
         try data.write(to: file, options: .atomic)

@@ -40,6 +40,14 @@ public actor RemoteControlServer {
     private var loginFailCount = 0
     private var loginLockUntil: Date?
 
+    /// Password verification runs a deliberately expensive KDF (tens of ms of pure
+    /// CPU). Bound how many run at once so a flood of bad logins can't pin every
+    /// core (a CPU-exhaustion DoS against the same host running the download
+    /// engine). Excess attempts are refused *before* hashing — which caps CPU
+    /// without ever locking out a correct credential once the burst drains.
+    private var activeVerifications = 0
+    private static let maxConcurrentVerifications = 2
+
     public init(manager: DownloadManager) {
         self.manager = manager
     }
@@ -84,13 +92,15 @@ public actor RemoteControlServer {
                       passwordHash: String, sessionMinutes: Int) async {
         let credentialsChanged = config.username != routerConfig.username
             || config.requireAuth != routerConfig.requireAuth
+            || config.token != routerConfig.token
             || passwordHash != self.passwordHash
         if credentialsChanged {
-            // A password/username/sign-in change logs everyone out: drop sessions,
-            // and bump the generation so any *already-open* SSE or file-stream loop
-            // winds down and has to reconnect (and re-authenticate). Without this,
-            // the same-port live-config path below would leave live streams running
-            // under the old credentials.
+            // A password/username/sign-in/token change logs everyone out: drop
+            // sessions, and bump the generation so any *already-open* SSE or
+            // file-stream loop winds down and has to reconnect (and re-authenticate).
+            // Rotating ONLY the bearer token must count here too — otherwise a
+            // leaked token could be "rotated" in Settings while an attacker's live
+            // stream, opened with the old token, keeps flowing indefinitely.
             sessions.removeAll()
             generation += 1
         }
@@ -116,6 +126,11 @@ public actor RemoteControlServer {
         if allowLAN && !exposeLAN {
             let why = config.requireAuth ? "no portal password is set" : "sign-in is disabled"
             FileHandle.standardError.write(Data("[GoelDownloader] LAN access refused — \(why); binding 127.0.0.1 only\n".utf8))
+        } else if exposeLAN, boundExposeLAN != true {
+            // Exposing on the LAN over plain HTTP: the login/cookie/token cross the
+            // network unencrypted. Warn explicitly (once per bind) so the operator
+            // uses a trusted network or terminates TLS at a reverse proxy.
+            FileHandle.standardError.write(Data("[GoelDownloader] portal exposed on the LAN over plain HTTP — use only on a trusted network, or put it behind a TLS reverse proxy\n".utf8))
         }
 
         // Already listening on the same endpoint? The live config above is all that
@@ -354,6 +369,14 @@ public actor RemoteControlServer {
     }
 
     private func handleLogin(_ request: RemoteRequest) async -> Data {
+        // Cap concurrent (expensive) verifications so a flood can't exhaust CPU.
+        // Refuse *before* hashing when saturated; a correct credential still
+        // succeeds once the transient burst drains (unlike a lockout, this never
+        // blocks the legitimate user for a fixed window).
+        guard activeVerifications < Self.maxConcurrentVerifications else {
+            return Self.jsonError(status: "429 Too Many Requests",
+                                  message: "Server busy — try again in a moment.")
+        }
         let creds = Self.parseCredentials(request)
         let userOK = RemoteRouter.constantTimeEquals(creds.username, routerConfig.username)
         // Verify off the actor's executor: the salted-iterated hash is tens of
@@ -363,9 +386,14 @@ public actor RemoteControlServer {
         // `await` and services other work meanwhile.
         let hash = passwordHash
         let password = creds.password
-        let passOK: Bool = hash.isEmpty
-            ? false
-            : await Task.detached { RemotePassword.verify(password, against: hash) }.value
+        let passOK: Bool
+        if hash.isEmpty {
+            passOK = false
+        } else {
+            activeVerifications += 1
+            passOK = await Task.detached { RemotePassword.verify(password, against: hash) }.value
+            activeVerifications -= 1
+        }
 
         // Verify BEFORE consulting the lockout, so a correct credential ALWAYS
         // signs in. That way a flood of bad guesses can throttle further *failures*
@@ -401,6 +429,12 @@ public actor RemoteControlServer {
 
     private func handleLogout(_ request: RemoteRequest) -> Data {
         if let sid = request.cookie("goel_session") { sessions[sid] = nil }
+        // Wind down any already-open SSE / file-stream loops: they authorise once at
+        // connection setup, so without a generation bump a signed-out (or hijacked)
+        // session's live stream would keep receiving telemetry/bytes until the
+        // process restarts. Bumping forces every live stream to reconnect and
+        // re-authenticate; the legitimate user's cookie is already cleared below.
+        generation += 1
         let cookie = "goel_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
         return RemoteRouter.response(status: "200 OK", type: "application/json",
                                      body: Data("{\"ok\":true}".utf8),
@@ -522,12 +556,11 @@ public actor RemoteControlServer {
 
     public static func streamPlan(for task: DownloadTask) -> StreamPlan? {
         if task.status.hasData {
-            // Finished payload: multi-file torrents stream their main file.
-            var path = task.savePath
-            if task.isMultiFile,
-               let largest = task.files.filter(\.isWanted).max(by: { $0.length < $1.length }) {
-                path = (task.saveDirectory as NSString).appendingPathComponent(largest.path)
-            }
+            // Finished payload: multi-file torrents stream their main file. Resolve
+            // it through `primaryFilePath`, which rejects an engine-declared file
+            // path that would escape the save directory (this path is streamed out
+            // over the network, so a traversal here would be an arbitrary-file read).
+            let path = task.primaryFilePath
             let attributes = try? FileManager.default.attributesOfItem(atPath: path)
             let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
             guard size > 0 else { return nil }

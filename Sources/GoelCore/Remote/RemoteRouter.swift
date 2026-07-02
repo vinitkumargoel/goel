@@ -554,6 +554,23 @@ extension DownloadManager: RemoteBackend {
     public func remoteAdd(source: DownloadSource) async { _ = add(source: source, saveDirectory: nil) }
     public func remoteAdd(source: DownloadSource, saveDirectory: String?,
                           priority: FilePriority, startPaused: Bool) async {
-        _ = add(source: source, saveDirectory: saveDirectory, priority: priority, startPaused: startPaused)
+        _ = add(source: source, saveDirectory: remoteSaveDirectory(saveDirectory),
+                priority: priority, startPaused: startPaused)
+    }
+
+    /// Constrain a remote-supplied save directory to the configured downloads
+    /// root. The remote portal is a network-facing surface: without this, an
+    /// (authenticated) client could set `folder` to an arbitrary path such as
+    /// `~/Library/LaunchAgents` or `/etc/cron.d` and drop an attacker-chosen file
+    /// into an auto-run location. A folder outside the root is refused (→ nil, so
+    /// the safe per-source default is used instead of the client's value).
+    func remoteSaveDirectory(_ folder: String?) -> String? {
+        guard let folder = folder?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !folder.isEmpty else { return nil }
+        let root = settings.defaultSaveDirectory
+        if DownloadTask.isContained(folder, within: root) { return folder }
+        FileHandle.standardError.write(Data(
+            "[GoelDownloader] remote add: rejecting out-of-root save folder; using default\n".utf8))
+        return nil
     }
 }

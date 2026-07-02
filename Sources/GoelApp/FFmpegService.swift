@@ -14,7 +14,12 @@ enum FFmpegService {
     static func executable(override: String = "") -> URL? {
         var candidates: [String] = []
         let trimmed = override.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { candidates.append(trimmed) }
+        // The override path comes from the settings DB (same-user-writable). Only
+        // accept it if it's a concrete absolute non-interpreter executable — never
+        // a relative $PATH name or a shell/script interpreter, which would turn a
+        // "Convert"/"Extract Audio" click into arbitrary code execution. Mirrors
+        // the guard AntivirusScanner already applies to its equivalent setting.
+        if !trimmed.isEmpty, ProcessSafety.isSafeExecutable(trimmed) { candidates.append(trimmed) }
         if let bundled = Bundle.main.resourceURL?
             .appendingPathComponent("ffmpeg", isDirectory: false).path {
             candidates.append(bundled)
@@ -77,6 +82,8 @@ enum FFmpegService {
         }
         let process = Process()
         process.executableURL = exe
+        // Don't hand ffmpeg the app's full environment (mirrors AntivirusScanner).
+        process.environment = ProcessSafety.minimalEnvironment
         // -y: the output name is already unique, but be explicit. -nostdin so a
         // prompt can never hang the process. -loglevel error keeps stderr small.
         process.arguments = ["-nostdin", "-loglevel", "error", "-y",
