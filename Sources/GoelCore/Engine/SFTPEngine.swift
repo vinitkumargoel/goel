@@ -164,35 +164,31 @@ public actor SFTPEngine: DownloadEngine {
     private nonisolated func emit(_ id: UUID, _ event: EngineEvent) { hub.emit(id, event) }
 }
 
-/// Per-transfer state the SFTP callbacks reach: the output handle, byte
-/// counters, abort flag, and the throttled progress emitter. Callbacks run on
-/// the transfer thread; `abort()` comes from the engine actor — hence the lock.
+/// Per-transfer state the SFTP callbacks reach: the output handle, the abort
+/// flag, and the shared ``TransferProgressMeter`` (announce/throttle/speed).
+/// Callbacks run on the transfer thread; `abort()` comes from the engine actor —
+/// hence the lock.
 final class SFTPDownloadState: @unchecked Sendable {
     private let hub: EventHub
     private let id: UUID
     private let name: String
     private let handle: FileHandle
-    private let resumeFrom: Int64
 
     private let lock = NSLock()
     private var aborted = false
-    private var lastSofar: Int64 = 0
-    private var announcedTotal: Int64 = 0
-    private var lastEmit = Date.distantPast
-    private var lastEmitBytes: Int64 = 0
+    private var meter: TransferProgressMeter
 
     init(hub: EventHub, id: UUID, name: String, handle: FileHandle, resumeFrom: Int64) {
         self.hub = hub
         self.id = id
         self.name = name
         self.handle = handle
-        self.resumeFrom = resumeFrom
-        self.lastEmitBytes = resumeFrom
+        self.meter = TransferProgressMeter(resumeFrom: resumeFrom)
     }
 
     var finalBytes: Int64 {
         lock.lock(); defer { lock.unlock() }
-        return max(lastSofar, resumeFrom)
+        return meter.finalBytes
     }
 
     func abort() {
@@ -210,36 +206,21 @@ final class SFTPDownloadState: @unchecked Sendable {
     }
 
     /// libssh2 progress: `sofar` is the absolute downloaded byte count (it starts
-    /// at `resumeFrom`). Announce the total once, emit throttled progress, and
-    /// honour the abort flag.
+    /// at `resumeFrom`). The shared meter announces the total once and throttles
+    /// progress; this only emits what it returns and honours the abort flag.
     func progress(total: Int64, sofar: Int64) -> Bool {
         lock.lock()
-        lastSofar = sofar
-        let now = Date()
-        var emitNow = false
-        var speed: Double = 0
-        if now.timeIntervalSince(lastEmit) > 0.2 {
-            let dt = now.timeIntervalSince(lastEmit)
-            speed = (dt > 0 && dt < 3600) ? Double(sofar - lastEmitBytes) / dt : 0
-            lastEmit = now
-            lastEmitBytes = sofar
-            emitNow = true
-        }
-        var announce: Int64 = 0
-        if total > 0, announcedTotal != total {
-            announcedTotal = total
-            announce = total
-        }
+        let tick = meter.step(total: total, sofar: sofar, now: Date())
         let stop = aborted
         lock.unlock()
 
-        if announce > 0 {
+        if let announce = tick.announceTotal {
             hub.emit(id, .metadataResolved(name: name, totalBytes: announce,
                                            files: [TransferFile(id: 0, path: name, length: announce)]))
         }
-        if emitNow {
-            hub.emit(id, .progress(bytesDownloaded: sofar, bytesUploaded: 0,
-                                   downloadSpeed: max(0, speed), uploadSpeed: 0,
+        if let p = tick.progress {
+            hub.emit(id, .progress(bytesDownloaded: p.bytes, bytesUploaded: 0,
+                                   downloadSpeed: p.speed, uploadSpeed: 0,
                                    connectionCount: 1))
         }
         return !stop

@@ -265,9 +265,7 @@ final class FTPTransferContext: @unchecked Sendable {
     private var aborted = false
     private var written: Int64 = 0
     private var totalHint: Int64 = 0
-    private var announcedTotal: Int64 = 0
-    private var lastEmit = Date.distantPast
-    private var lastEmitBytes: Int64 = 0
+    private var meter: TransferProgressMeter
 
     init(hub: EventHub, id: UUID, name: String, handle: FileHandle, resumeFrom: Int64) {
         self.hub = hub
@@ -275,6 +273,7 @@ final class FTPTransferContext: @unchecked Sendable {
         self.name = name
         self.handle = handle
         self.resumeFrom = resumeFrom
+        self.meter = TransferProgressMeter(resumeFrom: resumeFrom)
     }
 
     var bytesWritten: Int64 {
@@ -287,7 +286,9 @@ final class FTPTransferContext: @unchecked Sendable {
         aborted = true
     }
 
-    /// Write callback body. Returns false on a write failure (aborts curl).
+    /// Write callback body. Returns false on a write failure (aborts curl). The
+    /// shared meter announces the total once and throttles progress over the
+    /// absolute offset (`resumeFrom + written`).
     func write(_ data: Data) -> Bool {
         do {
             try handle.write(contentsOf: data)
@@ -296,32 +297,16 @@ final class FTPTransferContext: @unchecked Sendable {
         }
         lock.lock()
         written += Int64(data.count)
-        let total = resumeFrom + written
-        let now = Date()
-        var emitNow = false
-        var speed: Double = 0
-        if now.timeIntervalSince(lastEmit) > 0.2 {
-            let dt = now.timeIntervalSince(lastEmit)
-            speed = (dt > 0 && dt < 3600) ? Double(total - lastEmitBytes) / dt : 0
-            lastEmit = now
-            lastEmitBytes = total
-            emitNow = true
-        }
-        // Announce the total exactly once, when curl first reports it.
-        var announceTotal: Int64 = 0
-        if totalHint > 0, announcedTotal != totalHint {
-            announcedTotal = totalHint
-            announceTotal = totalHint
-        }
+        let tick = meter.step(total: totalHint, sofar: resumeFrom + written, now: Date())
         lock.unlock()
-        if announceTotal > 0 {
+        if let announce = tick.announceTotal {
             hub.emit(id, .metadataResolved(
-                name: name, totalBytes: announceTotal,
-                files: [TransferFile(id: 0, path: name, length: announceTotal)]))
+                name: name, totalBytes: announce,
+                files: [TransferFile(id: 0, path: name, length: announce)]))
         }
-        if emitNow {
-            hub.emit(id, .progress(bytesDownloaded: total, bytesUploaded: 0,
-                                   downloadSpeed: max(0, speed), uploadSpeed: 0,
+        if let p = tick.progress {
+            hub.emit(id, .progress(bytesDownloaded: p.bytes, bytesUploaded: 0,
+                                   downloadSpeed: p.speed, uploadSpeed: 0,
                                    connectionCount: 1))
         }
         return true
