@@ -21,7 +21,7 @@ struct SettingsView: View {
         case advanced = "Advanced"
         case antivirus = "Antivirus"
         case browser = "Browser"
-        case remote = "Remote Access"
+        case remote = "Web Access"
         var id: String { rawValue }
 
         var symbol: String {
@@ -145,11 +145,11 @@ struct SettingsView: View {
 
     private var generalPane: some View {
         PaneScaffold(title: "General", subtitle: "Appearance, startup, and where files land.") {
-            SetRow(name: "Theme", desc: "Match the system or force light/dark.") {
+            SetRow(name: "Theme", desc: "Pick a look: Frost (light/dark), Dracula, or Nord.") {
                 Picker("", selection: $vm.theme) {
                     ForEach(AppTheme.allCases) { Text($0.rawValue).tag($0) }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 .labelsHidden()
                 .frame(width: 200)
             }

@@ -57,3 +57,6 @@ build/
 
 # ---- UI scratch (contains a stale built .app + screenshots) ----
 /scratchpad-app/
+
+# ---- Playwright CLI local session state (browser testing scratch) ----
+/.playwright-cli/

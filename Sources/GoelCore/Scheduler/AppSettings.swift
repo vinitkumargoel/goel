@@ -250,6 +250,33 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Listen on all interfaces (LAN) instead of localhost only.
     public var remoteAllowLAN: Bool
 
+    /// Require a username + password sign-in for the web portal (recommended).
+    /// When off, anyone who can reach the port has full control — only sane on a
+    /// loopback bind. The bearer ``remoteToken`` still works for scripts either way.
+    public var remoteRequireAuth: Bool
+
+    /// The web portal login username.
+    public var remoteUsername: String
+
+    /// The web portal password, stored as a versioned salted-iterated hash
+    /// (`"v1$saltHex$hashHex"`) — never plaintext. Empty means "no password set".
+    /// Written by the app via ``RemotePassword/hash(_:)``; verified server-side.
+    public var remotePasswordHash: String
+
+    /// Serve the portal read-only: clients can view/stream but not add, remove,
+    /// pause, or change anything. Useful for a shared or exposed link.
+    public var remoteReadOnly: Bool
+
+    /// How long a web session cookie stays valid before re-login, in minutes.
+    public var remoteSessionMinutes: Int
+
+    /// The web portal's theme, as an ``AppTheme`` token (e.g. `"frost-dark"`).
+    /// Deliberately **independent** of ``theme`` (the local app look): changing
+    /// one never touches the other, so the desktop and the browser can each run
+    /// their own appearance. Persisted here so it survives relaunch and is the
+    /// default a fresh browser adopts.
+    public var remoteTheme: String
+
     // MARK: RSS auto-download
 
     /// Feeds watched for new items to queue automatically.
@@ -277,7 +304,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         speedLimitEnabled: Bool = true,
         defaultSaveDirectory: String = AppSettings.systemDownloadsDirectory,
         // General
-        theme: String = "system",
+        theme: String = "frost-dark",
         language: String = "English",
         launchAtLogin: Bool = false,
         launchMinimized: Bool = false,
@@ -348,6 +375,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         remotePort: Int = 8899,
         remoteToken: String = "",
         remoteAllowLAN: Bool = false,
+        remoteRequireAuth: Bool = true,
+        remoteUsername: String = "admin",
+        remotePasswordHash: String = "",
+        remoteReadOnly: Bool = false,
+        remoteSessionMinutes: Int = 120,
+        remoteTheme: String = "frost-dark",
         // RSS
         rssFeeds: [RSSFeed] = [],
         rssPollIntervalMinutes: Int = 30,
@@ -422,6 +455,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.remotePort = remotePort
         self.remoteToken = remoteToken
         self.remoteAllowLAN = remoteAllowLAN
+        self.remoteRequireAuth = remoteRequireAuth
+        self.remoteUsername = remoteUsername
+        self.remotePasswordHash = remotePasswordHash
+        self.remoteReadOnly = remoteReadOnly
+        self.remoteSessionMinutes = remoteSessionMinutes
+        self.remoteTheme = remoteTheme
         self.rssFeeds = rssFeeds
         self.rssPollIntervalMinutes = rssPollIntervalMinutes
         self.backupKeepCount = backupKeepCount
@@ -450,6 +489,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
         case postDownloadExtractArchives, postDownloadScriptEnabled
         case postDownloadScriptPath, postDownloadScriptArgs
         case remoteAccessEnabled, remotePort, remoteToken, remoteAllowLAN
+        case remoteRequireAuth, remoteUsername, remotePasswordHash, remoteReadOnly
+        case remoteSessionMinutes, remoteTheme
         case rssFeeds, rssPollIntervalMinutes
         case backupKeepCount
         case autoCheckUpdates, updateFeedURL
@@ -525,6 +566,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         remotePort = try c.decodeIfPresent(Int.self, forKey: .remotePort) ?? 8899
         remoteToken = try c.decodeIfPresent(String.self, forKey: .remoteToken) ?? ""
         remoteAllowLAN = try c.decodeIfPresent(Bool.self, forKey: .remoteAllowLAN) ?? false
+        remoteRequireAuth = try c.decodeIfPresent(Bool.self, forKey: .remoteRequireAuth) ?? true
+        remoteUsername = try c.decodeIfPresent(String.self, forKey: .remoteUsername) ?? "admin"
+        remotePasswordHash = try c.decodeIfPresent(String.self, forKey: .remotePasswordHash) ?? ""
+        remoteReadOnly = try c.decodeIfPresent(Bool.self, forKey: .remoteReadOnly) ?? false
+        remoteSessionMinutes = try c.decodeIfPresent(Int.self, forKey: .remoteSessionMinutes) ?? 120
+        remoteTheme = try c.decodeIfPresent(String.self, forKey: .remoteTheme) ?? "frost-dark"
         rssFeeds = try c.decodeIfPresent([RSSFeed].self, forKey: .rssFeeds) ?? []
         rssPollIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .rssPollIntervalMinutes) ?? 30
         backupKeepCount = try c.decodeIfPresent(Int.self, forKey: .backupKeepCount) ?? 20

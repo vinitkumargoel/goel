@@ -50,7 +50,18 @@ final class AppViewModel: ObservableObject {
     // MARK: Published model
 
     @Published private(set) var tasks: [DownloadTask] = []
-    @Published private(set) var settings = AppSettings()
+    @Published private(set) var settings = AppSettings() {
+        didSet {
+            // Keep the global palette in sync with the persisted theme so every
+            // `Theme.accent`/`.green`/… call site resolves against the selected
+            // named theme. Runs on load, on theme change, and on any settings
+            // commit — cheap and idempotent.
+            let selected = AppTheme(settingsValue: settings.theme)
+            if ThemePalette.current != selected {
+                ThemePalette.current = selected
+            }
+        }
+    }
 
     /// The filtered + sorted list the center view renders. Memoized: recomputed
     /// only when an input changes, not O(n log n) on every SwiftUI `body` pass.
@@ -142,6 +153,25 @@ final class AppViewModel: ObservableObject {
         set { update { $0.theme = newValue.settingsValue } }
     }
 
+    /// The **web portal's** theme, deliberately independent of ``theme`` (the local
+    /// look). Persisted through ``AppSettings/remoteTheme`` and used only to seed
+    /// the browser's default appearance — setting it never touches
+    /// ``ThemePalette/current``, so the desktop and the web run their own themes.
+    var remoteTheme: AppTheme {
+        get { AppTheme(settingsValue: settings.remoteTheme) }
+        set { update { $0.remoteTheme = newValue.settingsValue } }
+    }
+
+    /// Set (or clear) the web portal password. The plaintext is hashed with a
+    /// random salt and never persisted directly; an empty string clears it.
+    func setRemotePassword(_ plain: String) {
+        let hash = RemotePassword.hash(plain)
+        update { $0.remotePasswordHash = hash }
+    }
+
+    /// Whether a web portal password has been set.
+    var hasRemotePassword: Bool { !settings.remotePasswordHash.isEmpty }
+
     /// Where the detail panel is docked (right edge vs bottom edge), derived from
     /// and persisted through ``AppSettings/detailPanelPosition`` so the choice
     /// survives relaunch. The setter commits via ``update(_:)`` — which reflects
@@ -206,8 +236,21 @@ final class AppViewModel: ObservableObject {
     private var remoteServer: RemoteControlServer?
 
     /// The remote settings the running server was started with, so only a real
-    /// change restarts it.
-    private var remoteConfig: (enabled: Bool, port: Int, token: String, lan: Bool)?
+    /// change restarts it. A struct (not a tuple) because it now carries more
+    /// than six fields and needs synthesized `Equatable`.
+    private struct RemoteDesired: Equatable {
+        var enabled: Bool
+        var port: Int
+        var lan: Bool
+        var token: String
+        var requireAuth: Bool
+        var username: String
+        var passwordHash: String
+        var readOnly: Bool
+        var theme: String
+        var sessionMinutes: Int
+    }
+    private var remoteConfig: RemoteDesired?
 
     /// The last link the clipboard monitor surfaced, so the same copy isn't
     /// offered twice (and a dismissed suggestion stays dismissed).
@@ -741,19 +784,29 @@ final class AppViewModel: ObservableObject {
     /// Start/stop/restart the embedded remote-control server to match the
     /// current settings. Idempotent — only a real config change restarts it.
     private func applyRemoteAccess() {
-        let desired = (enabled: settings.remoteAccessEnabled && !settings.remoteToken.isEmpty,
-                       port: settings.remotePort,
-                       token: settings.remoteToken,
-                       lan: settings.remoteAllowLAN)
-        guard remoteConfig == nil
-            || remoteConfig! != desired else { return }
+        let desired = RemoteDesired(
+            enabled: settings.remoteAccessEnabled,
+            port: settings.remotePort,
+            lan: settings.remoteAllowLAN,
+            token: settings.remoteToken,
+            requireAuth: settings.remoteRequireAuth,
+            username: settings.remoteUsername,
+            passwordHash: settings.remotePasswordHash,
+            readOnly: settings.remoteReadOnly,
+            theme: settings.remoteTheme,
+            sessionMinutes: settings.remoteSessionMinutes)
+        guard remoteConfig != desired else { return }
         remoteConfig = desired
         let server = remoteServer ?? RemoteControlServer(manager: manager)
         remoteServer = server
         Task {
             if desired.enabled {
-                await server.start(port: UInt16(clamping: desired.port),
-                                   token: desired.token, allowLAN: desired.lan)
+                let config = RemoteRouter.Config(
+                    token: desired.token, requireAuth: desired.requireAuth,
+                    readOnly: desired.readOnly, theme: desired.theme, username: desired.username)
+                await server.start(port: UInt16(clamping: desired.port), allowLAN: desired.lan,
+                                   config: config, passwordHash: desired.passwordHash,
+                                   sessionMinutes: desired.sessionMinutes)
             } else {
                 await server.stop()
             }

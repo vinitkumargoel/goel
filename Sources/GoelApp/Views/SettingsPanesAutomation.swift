@@ -184,26 +184,76 @@ struct RSSPane: View {
     }
 }
 
-// MARK: - Remote Access pane
+// MARK: - Web Access pane
 
 struct RemoteAccessPane: View {
     @EnvironmentObject private var vm: AppViewModel
+    /// Local scratch for the password field — never bound to settings (the
+    /// plaintext is hashed on "Set" and only the hash is persisted).
+    @State private var newPassword = ""
 
     var body: some View {
-        PaneScaffold(title: "Remote Access",
-                     subtitle: "Control the queue from a browser — pause, resume, and add downloads.") {
-            SetRow(name: "Enable remote access", desc: "Serves a small control page and JSON API.") {
+        PaneScaffold(title: "Web Access",
+                     subtitle: "Run the full download manager in a browser — add, stream, and manage everything from your phone or another Mac.") {
+            SetRow(name: "Enable web portal",
+                   desc: "Serves the browser UI and JSON API on the port below.") {
                 SettingSwitch(isOn: enabledBinding)
             }
             if vm.settings.remoteAccessEnabled {
-                SetRow(name: "Port", desc: "") {
+                SetRow(name: "Port", desc: "TCP port the embedded server listens on.") {
                     SettingInt(value: setting(vm, \.remotePort), width: 70)
                 }
+
+                SetRow(name: "Require sign-in",
+                       desc: "Prompt for a username and password (recommended). Off = open access — only safe on localhost.") {
+                    SettingSwitch(isOn: setting(vm, \.remoteRequireAuth))
+                }
+                if vm.settings.remoteRequireAuth {
+                    SetRow(name: "Username", desc: "") {
+                        SettingText(text: setting(vm, \.remoteUsername), width: 150)
+                    }
+                    SetRow(name: "Password",
+                           desc: vm.hasRemotePassword
+                               ? "A password is set. Type a new one to change it."
+                               : "No password set yet — sign-in will fail until you set one.") {
+                        HStack(spacing: 8) {
+                            SecureField("", text: $newPassword)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 150)
+                            Button("Set") {
+                                vm.setRemotePassword(newPassword)
+                                newPassword = ""
+                            }
+                            .disabled(newPassword.isEmpty)
+                        }
+                    }
+                }
+
                 SetRow(name: "Allow access from the network",
-                       desc: "Off = this Mac only (localhost). On = any device on your LAN with the token.") {
+                       desc: "Off = this Mac only (localhost). On = any device on your LAN.") {
                     SettingSwitch(isOn: setting(vm, \.remoteAllowLAN))
                 }
-                SetRow(name: "Access token", desc: "Required by every request.") {
+                SetRow(name: "Read-only mode",
+                       desc: "Let clients view and stream, but not add, remove, or change downloads.") {
+                    SettingSwitch(isOn: setting(vm, \.remoteReadOnly))
+                }
+                SetRow(name: "Session timeout",
+                       desc: "Minutes a browser stays signed in before re-login.") {
+                    SettingInt(value: setting(vm, \.remoteSessionMinutes), width: 70)
+                }
+
+                SetRow(name: "Web theme",
+                       desc: "The portal's look. Independent of the app theme — the desktop and the browser each keep their own.") {
+                    Picker("", selection: $vm.remoteTheme) {
+                        ForEach(AppTheme.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+
+                SetRow(name: "API token",
+                       desc: "For scripts and the browser extension. People should use the sign-in above.") {
                     HStack(spacing: 8) {
                         Text(vm.settings.remoteToken)
                             .font(.system(size: 11, design: .monospaced))
@@ -215,7 +265,7 @@ struct RemoteAccessPane: View {
                         }
                     }
                 }
-                SetRow(name: "Control page", desc: "Open it here, or from another device on your LAN.") {
+                SetRow(name: "Open portal", desc: "Open it here, or from another device on your LAN.") {
                     HStack(spacing: 8) {
                         Button("Open") { NSWorkspace.shared.open(controlURL) }
                         Button("Copy Link") {
@@ -227,7 +277,7 @@ struct RemoteAccessPane: View {
                     SetRow(name: "Scan from your phone",
                            desc: lanURL == nil
                                ? "Advertised via Bonjour. No LAN address detected right now."
-                               : "Point the camera at the code to open the control page. Also advertised via Bonjour.") {
+                               : "Point the camera at the code to open the portal. Also advertised via Bonjour.") {
                         if let lanURL {
                             QRCodeView(text: lanURL.absoluteString)
                         }

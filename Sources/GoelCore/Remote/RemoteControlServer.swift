@@ -16,7 +16,21 @@ public actor RemoteControlServer {
 
     private weak var manager: DownloadManager?
     private var listener: NWListener?
-    private var token = ""
+
+    /// The current routing config (token, requireAuth, readOnly, theme, username),
+    /// snapshotted from settings on each (re)start.
+    private var routerConfig = RemoteRouter.Config(token: "")
+    /// The stored password hash used to verify logins (never leaves the server).
+    private var passwordHash = ""
+    /// Session lifetime in seconds.
+    private var sessionSeconds = 120 * 60
+
+    /// Live login sessions: opaque cookie id → expiry. Kept here (not in the pure
+    /// router) because sessions are inherently stateful and span requests.
+    private var sessions: [String: Date] = [:]
+    /// Crude brute-force brake: after several failures, logins lock briefly.
+    private var loginFailCount = 0
+    private var loginLockUntil: Date?
 
     public init(manager: DownloadManager) {
         self.manager = manager
@@ -40,20 +54,43 @@ public actor RemoteControlServer {
     /// streaming) notice a restart and wind down.
     private var generation = 0
 
-    /// A router bound to the current backend + token, rebuilt per use (cheap).
-    private var router: RemoteRouter { RemoteRouter(backend: manager, token: token) }
+    /// A router bound to the current backend + config, rebuilt per use (cheap).
+    private var router: RemoteRouter { RemoteRouter(backend: manager, config: routerConfig) }
 
     /// Start (or restart) listening. `allowLAN: false` binds 127.0.0.1 only.
     ///
     /// The port must be specified exactly once: through `requiredLocalEndpoint`
     /// for the loopback-only bind, or through the listener's `on:` port for the
     /// LAN bind. Passing both is a conflicting specification NWListener rejects.
-    public func start(port: UInt16, token: String, allowLAN: Bool) {
+    ///
+    /// `config` carries the token, requireAuth/readOnly flags, portal theme, and
+    /// username; `passwordHash` and `sessionMinutes` drive the login flow. Any
+    /// change to the credentials (username/password/requireAuth) invalidates
+    /// existing sessions, so a password change actually logs everyone out.
+    public func start(port: UInt16, allowLAN: Bool, config: RemoteRouter.Config,
+                      passwordHash: String, sessionMinutes: Int) {
+        let credentialsChanged = config.username != routerConfig.username
+            || config.requireAuth != routerConfig.requireAuth
+            || passwordHash != self.passwordHash
         stop()
-        self.token = token
+        if credentialsChanged { sessions.removeAll() }
+        self.routerConfig = config
+        self.passwordHash = passwordHash
+        self.sessionSeconds = max(5, sessionMinutes) * 60
+
+        // Refuse to expose an unauthenticated portal to the network. When sign-in
+        // is off, ``RemoteRouter/authorize`` grants everyone full control, so a LAN
+        // bind would hand the mutating API (add with an arbitrary save folder,
+        // remove-with-data, stream) to anyone on the subnet. In that state we force
+        // a loopback-only bind regardless of the LAN toggle — the UI warning is
+        // then backed by the actual bind, not just advice.
+        let exposeLAN = allowLAN && config.requireAuth
+        if allowLAN && !exposeLAN {
+            FileHandle.standardError.write(Data("[GoelDownloader] LAN access ignored — sign-in is disabled, binding 127.0.0.1 only\n".utf8))
+        }
         let listenPort = NWEndpoint.Port(rawValue: port) ?? 8899
         let listener: NWListener?
-        if allowLAN {
+        if exposeLAN {
             listener = try? NWListener(using: .tcp, on: listenPort)
         } else {
             let parameters = NWParameters.tcp
@@ -65,9 +102,9 @@ public actor RemoteControlServer {
             FileHandle.standardError.write(Data("[GoelDownloader] remote server failed to bind port \(port)\n".utf8))
             return
         }
-        // Advertise over Bonjour only when the user opted into LAN access — a
-        // loopback-only server has nothing to announce to the network.
-        if allowLAN {
+        // Advertise over Bonjour only when actually exposed to the network — a
+        // loopback-only server has nothing to announce.
+        if exposeLAN {
             listener.service = NWListener.Service(name: "GoelDownloader", type: "_http._tcp")
         }
         listener.newConnectionHandler = { [weak self] connection in
@@ -120,7 +157,7 @@ public actor RemoteControlServer {
                 case ("GET", "/stream"):
                     await self.serveStream(connection, request)
                 default:
-                    let response = await self.router.handle(request)
+                    let response = await self.respond(to: request)
                     connection.send(content: response, completion: .contentProcessed { _ in
                         connection.cancel()
                     })
@@ -146,7 +183,7 @@ public actor RemoteControlServer {
     /// Ends when the client goes away (send fails) or the server restarts.
     private func serveEvents(_ connection: NWConnection, _ request: RemoteRequest) async {
         let router = self.router
-        guard router.authorize(request) else {
+        guard router.authorize(request, sessionAuthed: validSession(request)) else {
             _ = await send(connection, RemoteRouter.response(status: "401 Unauthorized",
                                                              type: "text/plain",
                                                              body: Data("Invalid token\n".utf8)))
@@ -185,6 +222,143 @@ public actor RemoteControlServer {
         openConnections = max(0, openConnections - 1)
     }
 
+    // MARK: Auth, sessions & login (stateful — the pure router can't do these)
+
+    /// Handle one non-streaming request: cookie sessions and the login/logout
+    /// endpoints live here; everything else delegates to the pure router with the
+    /// session verdict folded in. Unauthenticated browser page-loads are bounced
+    /// to `/login`; the `/api` surface returns 401 (handled by the router) so
+    /// script clients get a clean status instead of an HTML redirect.
+    private func respond(to request: RemoteRequest) async -> Data {
+        let authed = validSession(request)
+        let cfg = routerConfig
+        switch (request.method, request.path) {
+        case ("GET", "/login"):
+            if authed || !cfg.requireAuth { return Self.redirect(to: "/") }
+            return Self.htmlResponse(RemoteRouter.loginPage(theme: cfg.theme, error: nil))
+        case ("POST", "/login"):
+            return await handleLogin(request)
+        case ("GET", "/logout"), ("POST", "/logout"):
+            return handleLogout(request)
+        default:
+            if cfg.requireAuth, !authed, !tokenAuthed(request),
+               request.method == "GET", !request.path.hasPrefix("/api") {
+                return Self.redirect(to: "/login")
+            }
+            return await router.handle(request, sessionAuthed: authed)
+        }
+    }
+
+    /// True iff the request carries a live session cookie. Expired sessions are
+    /// pruned on sight.
+    private func validSession(_ request: RemoteRequest) -> Bool {
+        guard let sid = request.cookie("goel_session"), let expiry = sessions[sid] else { return false }
+        guard expiry > Date() else { sessions[sid] = nil; return false }
+        return true
+    }
+
+    /// True iff a valid bearer/query token is present — used only to keep script
+    /// clients from being redirected to the HTML login page.
+    private func tokenAuthed(_ request: RemoteRequest) -> Bool {
+        let token = routerConfig.token
+        guard !token.isEmpty else { return false }
+        if let header = request.headers["authorization"],
+           RemoteRouter.constantTimeEquals(header, "Bearer \(token)") { return true }
+        if let query = request.query["token"] { return RemoteRouter.constantTimeEquals(query, token) }
+        return false
+    }
+
+    private func handleLogin(_ request: RemoteRequest) async -> Data {
+        let creds = Self.parseCredentials(request)
+        let userOK = RemoteRouter.constantTimeEquals(creds.username, routerConfig.username)
+        // Verify off the actor's executor: the salted-iterated hash is tens of
+        // milliseconds of pure CPU, and running it inline would freeze the whole
+        // server (SSE pushes, streaming, new connections) for its duration. The
+        // detached task hops to a background executor; the actor suspends at the
+        // `await` and services other work meanwhile.
+        let hash = passwordHash
+        let password = creds.password
+        let passOK: Bool = hash.isEmpty
+            ? false
+            : await Task.detached { RemotePassword.verify(password, against: hash) }.value
+
+        // Verify BEFORE consulting the lockout, so a correct credential ALWAYS
+        // signs in. That way a flood of bad guesses can throttle further *failures*
+        // but can never lock the legitimate user out (the earlier design let any
+        // client hold everyone at 429 by failing 5× per window).
+        if userOK && passOK {
+            loginFailCount = 0
+            loginLockUntil = nil
+            pruneSessions()
+            let sid = RemotePassword.randomHex(bytes: 32)
+            sessions[sid] = Date().addingTimeInterval(TimeInterval(sessionSeconds))
+            let cookie = "goel_session=\(sid); Path=/; HttpOnly; SameSite=Strict; Max-Age=\(sessionSeconds)"
+            return RemoteRouter.response(status: "200 OK", type: "application/json",
+                                         body: Data("{\"ok\":true}".utf8),
+                                         extraHeaders: ["Set-Cookie": cookie])
+        }
+
+        // Failed attempt: apply the brute-force brake (throttles repeated failures).
+        if let until = loginLockUntil, until > Date() {
+            return Self.jsonError(status: "429 Too Many Requests",
+                                  message: "Too many attempts — wait a moment and try again.")
+        }
+        loginFailCount += 1
+        if loginFailCount >= 5 {
+            loginLockUntil = Date().addingTimeInterval(30)
+            loginFailCount = 0
+        }
+        let message = hash.isEmpty
+            ? "No portal password is set yet — set one in the app under Settings → Web Access."
+            : "Wrong username or password."
+        return Self.jsonError(status: "401 Unauthorized", message: message)
+    }
+
+    private func handleLogout(_ request: RemoteRequest) -> Data {
+        if let sid = request.cookie("goel_session") { sessions[sid] = nil }
+        let cookie = "goel_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
+        return RemoteRouter.response(status: "200 OK", type: "application/json",
+                                     body: Data("{\"ok\":true}".utf8),
+                                     extraHeaders: ["Set-Cookie": cookie])
+    }
+
+    private func pruneSessions() {
+        let now = Date()
+        sessions = sessions.filter { $0.value > now }
+    }
+
+    /// Accept credentials as a JSON body (the portal login) or as a classic
+    /// `application/x-www-form-urlencoded` body (a no-JS fallback).
+    private static func parseCredentials(_ request: RemoteRequest) -> (username: String, password: String) {
+        struct Creds: Decodable { var username: String?; var password: String? }
+        if let obj = try? JSONDecoder().decode(Creds.self, from: request.body) {
+            return (obj.username ?? "", obj.password ?? "")
+        }
+        var username = "", password = ""
+        for pair in String(decoding: request.body, as: UTF8.self).split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            guard kv.count == 2 else { continue }
+            let value = String(kv[1]).replacingOccurrences(of: "+", with: " ").removingPercentEncoding ?? ""
+            if kv[0] == "username" { username = value } else if kv[0] == "password" { password = value }
+        }
+        return (username, password)
+    }
+
+    private static func redirect(to location: String) -> Data {
+        RemoteRouter.response(status: "303 See Other", type: "text/plain",
+                              body: Data(), extraHeaders: ["Location": location])
+    }
+
+    private static func htmlResponse(_ html: String) -> Data {
+        RemoteRouter.response(status: "200 OK", type: "text/html; charset=utf-8", body: Data(html.utf8))
+    }
+
+    private static func jsonError(status: String, message: String) -> Data {
+        let safe = message.replacingOccurrences(of: "\"", with: "'")
+        return RemoteRouter.response(status: status, type: "application/json",
+                                     body: Data("{\"ok\":false,\"error\":\"\(safe)\"}".utf8))
+    }
+
     // MARK: File streaming (watch while downloading / play remotely)
 
     /// `GET /stream?id=<task>` — serve a task's payload with Range support so
@@ -198,7 +372,9 @@ public actor RemoteControlServer {
                                                              body: Data("\(message)\n".utf8)))
             connection.cancel()
         }
-        guard router.authorize(request) else { return await reject("401 Unauthorized", "Invalid token") }
+        guard router.authorize(request, sessionAuthed: validSession(request)) else {
+            return await reject("401 Unauthorized", "Not signed in")
+        }
         guard let manager,
               let id = request.query["id"].flatMap(UUID.init(uuidString:)),
               let task = await manager.task(id) else {

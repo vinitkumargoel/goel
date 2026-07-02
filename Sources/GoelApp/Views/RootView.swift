@@ -73,7 +73,13 @@ struct RootView: View {
             StatusBarView()
         }
         .frame(minWidth: 1040, minHeight: 620)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background {
+            // System canvas, plus an optional theme wash so themes with a
+            // non-neutral background (Dracula, Nord) read as that color under the
+            // translucent chrome. Frost themes leave the canvas untinted.
+            Color(nsColor: .windowBackgroundColor)
+                .overlay { if let tint = Theme.windowTint { tint } }
+        }
         .overlay(alignment: .bottom) { toastView }
         .overlay { dropOverlay }
         .overlay { confirmOverlay }

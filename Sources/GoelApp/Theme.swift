@@ -1,31 +1,65 @@
 import SwiftUI
 import AppKit
 
-/// The palette, derived from `visual.html` but made **appearance-adaptive** so
-/// text stays legible in both light and dark mode.
+/// The semantic palette used across the app (accent, status colors, badges).
 ///
-/// The original mockup used Apple's *dark-mode* vibrant system tints (e.g. the
-/// bright `0x32D74B` green, `0x64D2FF` teal). Those read well on black but, used
-/// unchanged on a light background, drop to ~1.3–1.9:1 contrast as text —
-/// effectively invisible. Each semantic color therefore resolves to two values:
-/// the vibrant tint under Dark Aqua, and a darkened, saturated variant under
-/// Aqua. Both palettes were checked to clear WCAG AA (≥ 4.5:1) for normal text
-/// against their respective backgrounds, the same way the system semantic
-/// colors adapt.
+/// Colors resolve against the **currently selected named theme**
+/// (``ThemePalette``), not just the system light/dark appearance. Selecting a
+/// theme in Settings updates ``ThemePalette/current`` and refreshes the UI, so
+/// every `Theme.accent`/`Theme.green`/… call site adopts that theme's identity
+/// with no per-view plumbing.
+///
+/// Each value is still backed by a dynamic `NSColor` so it tracks the theme's
+/// **base appearance** (Frost Light is an Aqua theme; Frost Dark / Dracula /
+/// Nord are Dark Aqua themes). Every palette was picked to keep normal text
+/// legible against that theme's canvas.
 enum Theme {
-    static let accent      = Color.adaptive(light: 0x0066CC, dark: 0x0A84FF)
-    static let accentPress = Color.adaptive(light: 0x004FAC, dark: 0x0060DF)
-    static let green       = Color.adaptive(light: 0x14803C, dark: 0x32D74B)
-    static let orange      = Color.adaptive(light: 0xA85800, dark: 0xFF9F0A)
-    static let red         = Color.adaptive(light: 0xCE0E0E, dark: 0xFF6961)
-    static let yellow      = Color.adaptive(light: 0x8A6D00, dark: 0xFFD60A)
-    static let purple      = Color.adaptive(light: 0x8A2BE0, dark: 0xCB6FF5)
-    static let teal        = Color.adaptive(light: 0x0E7C99, dark: 0x64D2FF)
-    static let indigo      = Color.adaptive(light: 0x3634A3, dark: 0x7D7AFF)
+    static var accent:      Color { ThemePalette.color(\.accent) }
+    static var accentPress: Color { ThemePalette.color(\.accentPress) }
+    static var green:       Color { ThemePalette.color(\.green) }
+    static var orange:      Color { ThemePalette.color(\.orange) }
+    static var red:         Color { ThemePalette.color(\.red) }
+    static var yellow:      Color { ThemePalette.color(\.yellow) }
+    static var purple:      Color { ThemePalette.color(\.purple) }
+    static var teal:        Color { ThemePalette.color(\.teal) }
+    static var indigo:      Color { ThemePalette.color(\.indigo) }
+
+    /// An optional wash tint applied over the window canvas so themes with a
+    /// non-neutral background (Dracula's blue-gray, Nord's polar night) read as
+    /// that color even though the app's chrome is built from system materials.
+    /// `nil` for the Frost themes, which sit on the plain system canvas.
+    static var windowTint: Color? { ThemePalette.current.windowTint }
 
     /// Subtle alternating-row tint.
     static let rowAlt = Color.primary.opacity(0.03)
     static let hairline = Color.primary.opacity(0.10)
+}
+
+/// The full set of semantic colors for one named theme, each as a `light`/`dark`
+/// hex pair. Only one of the two is normally used (a theme has a single base
+/// appearance), but keeping both lets a value stay legible if the OS ever
+/// composites it under the opposite appearance.
+struct ThemeColors {
+    struct Pair { let light: UInt32; let dark: UInt32 }
+    let accent, accentPress, green, orange, red, yellow, purple, teal, indigo: Pair
+}
+
+/// Holds the active theme and resolves ``ThemeColors`` into SwiftUI `Color`s
+/// bound to that theme's base appearance. `current` is read on the main thread
+/// during view updates; the app sets it whenever the persisted theme changes.
+enum ThemePalette {
+    /// The active theme. Defaults to Frost Dark; the app overrides this from the
+    /// persisted setting at launch and on every change.
+    ///
+    /// Marked `nonisolated(unsafe)` because it is read from view code that isn't
+    /// always main-actor isolated (e.g. `TaskDisplay`'s computed color helpers),
+    /// while writes only ever happen on the main thread from `AppViewModel`.
+    /// A single enum value read/write is effectively atomic, so this is safe.
+    nonisolated(unsafe) static var current: AppTheme = .frostDark
+
+    static func color(_ key: KeyPath<ThemeColors, ThemeColors.Pair>) -> Color {
+        current.resolvedColor(key)
+    }
 }
 
 extension Color {
@@ -117,29 +151,113 @@ enum DetailPanelPosition: String, CaseIterable, Identifiable {
     }
 }
 
-/// Light / dark / system, mirroring the Settings > General theme control.
+/// The selectable named themes surfaced in Settings > General. Each is a
+/// complete, independent look (not a light/dark pair): Frost ships a light and a
+/// dark variant, and Dracula and Nord are popular community palettes. The choice
+/// is persisted through ``AppSettings/theme`` so it survives relaunch.
 enum AppTheme: String, CaseIterable, Identifiable {
-    case system = "System"
-    case light = "Light"
-    case dark = "Dark"
+    case frostLight = "Frost Light"
+    case frostDark = "Frost Dark"
+    case dracula = "Dracula"
+    case nord = "Nord"
     var id: String { rawValue }
 
+    /// The base appearance the theme sits on, driving `.preferredColorScheme` so
+    /// system chrome, materials, and text stay legible. Frost Light is the only
+    /// light theme; the rest are dark.
     var colorScheme: ColorScheme? {
         switch self {
-        case .system: return nil
-        case .light: return .light
-        case .dark: return .dark
+        case .frostLight: return .light
+        default: return .dark
         }
     }
 
-    /// The lowercase token persisted in `AppSettings.theme` ("system" | "light" |
-    /// "dark"). `rawValue` stays capitalized for the segmented-picker labels, so
-    /// this small bridge keeps the core's `String` field and the app enum aligned.
-    var settingsValue: String { rawValue.lowercased() }
+    /// The semantic color set for this theme (accent + status colors + badges).
+    var colors: ThemeColors {
+        switch self {
+        case .frostLight:
+            return ThemeColors(
+                accent:      .init(light: 0x3F58D6, dark: 0x5B7CFA),
+                accentPress: .init(light: 0x2E45B8, dark: 0x4F6EF0),
+                green:       .init(light: 0x158A3C, dark: 0x2FBF5B),
+                orange:      .init(light: 0xA85800, dark: 0xE08A1E),
+                red:         .init(light: 0xCE0E0E, dark: 0xE24B4B),
+                yellow:      .init(light: 0x8A6D00, dark: 0xD1A93A),
+                purple:      .init(light: 0x7A3FD0, dark: 0x9B6FE8),
+                teal:        .init(light: 0x0E7490, dark: 0x27AEC7),
+                indigo:      .init(light: 0x3F58D6, dark: 0x8AA2FF))
+        case .frostDark:
+            return ThemeColors(
+                accent:      .init(light: 0x4F6EF0, dark: 0x8AA2FF),
+                accentPress: .init(light: 0x3F58D6, dark: 0x738FF5),
+                green:       .init(light: 0x158A3C, dark: 0x4ADE80),
+                orange:      .init(light: 0xA85800, dark: 0xFBBF6B),
+                red:         .init(light: 0xCE0E0E, dark: 0xF87171),
+                yellow:      .init(light: 0x8A6D00, dark: 0xFCD34D),
+                purple:      .init(light: 0x7A3FD0, dark: 0xC0A2FB),
+                teal:        .init(light: 0x0E7490, dark: 0x7FDBE8),
+                indigo:      .init(light: 0x3F58D6, dark: 0xA5B8FF))
+        case .dracula:
+            // Official Dracula palette; text colors picked to clear the
+            // #282a36 canvas.
+            return ThemeColors(
+                accent:      .init(light: 0x8B5CF6, dark: 0xBD93F9),
+                accentPress: .init(light: 0x7C3AED, dark: 0xA97BF0),
+                green:       .init(light: 0x2FBF5B, dark: 0x50FA7B),
+                orange:      .init(light: 0xE08A1E, dark: 0xFFB86C),
+                red:         .init(light: 0xE24B4B, dark: 0xFF6E6E),
+                yellow:      .init(light: 0xD1A93A, dark: 0xF1FA8C),
+                purple:      .init(light: 0xB86FD8, dark: 0xFF79C6),
+                teal:        .init(light: 0x2AB7CE, dark: 0x8BE9FD),
+                indigo:      .init(light: 0x8B5CF6, dark: 0xBD93F9))
+        case .nord:
+            // Official Nord palette on the #2e3440 polar-night canvas.
+            return ThemeColors(
+                accent:      .init(light: 0x5E81AC, dark: 0x88C0D0),
+                accentPress: .init(light: 0x4C6E96, dark: 0x81A1C1),
+                green:       .init(light: 0x6E9A5A, dark: 0xA3BE8C),
+                orange:      .init(light: 0xC1794A, dark: 0xD08770),
+                red:         .init(light: 0xBF616A, dark: 0xE08691),
+                yellow:      .init(light: 0xA88A3E, dark: 0xEBCB8B),
+                purple:      .init(light: 0x8A6BB0, dark: 0xB48EAD),
+                teal:        .init(light: 0x3B8A93, dark: 0x8FBCBB),
+                indigo:      .init(light: 0x5E81AC, dark: 0x81A1C1))
+        }
+    }
 
-    /// Reconstruct from the persisted `AppSettings.theme` token, defaulting to
-    /// ``system`` for any unrecognized value.
+    /// The window canvas wash for themes with a non-neutral background. `nil`
+    /// for the Frost themes, which use the plain system canvas.
+    var windowTint: Color? {
+        switch self {
+        case .frostLight, .frostDark: return nil
+        case .dracula: return Color(hex: 0x282A36)
+        case .nord:    return Color(hex: 0x2E3440)
+        }
+    }
+
+    /// Resolve one semantic color to a SwiftUI `Color` bound to this theme's base
+    /// appearance, so it renders the intended value even if composited under the
+    /// opposite appearance.
+    func resolvedColor(_ key: KeyPath<ThemeColors, ThemeColors.Pair>) -> Color {
+        let pair = colors[keyPath: key]
+        return Color.adaptive(light: pair.light, dark: pair.dark)
+    }
+
+    /// The lowercase, hyphenated token persisted in `AppSettings.theme`
+    /// (e.g. "frost-dark"). `rawValue` stays human-readable for the picker.
+    var settingsValue: String {
+        rawValue.lowercased().replacingOccurrences(of: " ", with: "-")
+    }
+
+    /// Reconstruct from the persisted `AppSettings.theme` token. Legacy tokens
+    /// ("system"/"light"/"dark") map onto the nearest new theme so existing
+    /// installs upgrade cleanly rather than resetting.
     init(settingsValue: String) {
-        self = AppTheme.allCases.first { $0.settingsValue == settingsValue } ?? .system
+        switch settingsValue {
+        case "light": self = .frostLight
+        case "dark", "system": self = .frostDark
+        default:
+            self = AppTheme.allCases.first { $0.settingsValue == settingsValue } ?? .frostDark
+        }
     }
 }

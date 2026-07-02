@@ -3,83 +3,182 @@ import Foundation
 /// The pure decision core of the remote-access server: it maps a parsed
 /// ``RemoteRequest`` to a fully-formed HTTP response, with **no socket and no
 /// FileHandle**. Everything deterministic — request parsing, the route table,
-/// token auth (constant-time), the JSON API, and the embedded control page —
-/// lives here and is unit-testable with an in-memory ``RemoteBackend``.
+/// auth (constant-time), the JSON API, and the embedded control page — lives here
+/// and is unit-testable with an in-memory ``RemoteBackend``.
 ///
-/// ``RemoteControlServer`` keeps only the I/O: the `NWListener`, the SSE loop, and
-/// the byte-range file streaming, delegating every decision (auth, routing, the
-/// event frame) to this router.
+/// ``RemoteControlServer`` keeps the I/O (the `NWListener`, the SSE loop, byte-range
+/// streaming) **and** the stateful pieces auth can't be pure about: the session
+/// store and the login/logout endpoints. It tells the router, per request, whether
+/// a valid session cookie was presented via `sessionAuthed`; the router folds that
+/// together with the bearer/query token to decide access.
 public struct RemoteRouter: Sendable {
+
+    /// Everything the router needs to render and gate a request, snapshotted from
+    /// ``AppSettings`` when the server (re)starts.
+    public struct Config: Sendable {
+        /// Bearer/query token for scripts and the browser extension.
+        public var token: String
+        /// When false, the portal is open (no login) — only sane on a loopback bind.
+        public var requireAuth: Bool
+        /// Serve view/stream only; every mutating route returns 403.
+        public var readOnly: Bool
+        /// The portal's default theme token (e.g. `"frost-dark"`). A browser may
+        /// override it locally; this is the first-load default.
+        public var theme: String
+        /// Login username, echoed to the portal so it can greet the user.
+        public var username: String
+
+        public init(token: String, requireAuth: Bool = true, readOnly: Bool = false,
+                    theme: String = "frost-dark", username: String = "admin") {
+            self.token = token
+            self.requireAuth = requireAuth
+            self.readOnly = readOnly
+            self.theme = theme
+            self.username = username
+        }
+    }
 
     /// The narrow seam onto the scheduler — exactly the calls the remote API makes.
     /// ``DownloadManager`` conforms with a tiny adapter (see below).
     public let backend: RemoteBackend?
-    public let token: String
+    public let config: Config
 
-    public init(backend: RemoteBackend?, token: String) {
+    /// Convenience token accessor (several sites and tests still think in "token").
+    public var token: String { config.token }
+
+    public init(backend: RemoteBackend?, config: Config) {
         self.backend = backend
-        self.token = token
+        self.config = config
     }
 
-    /// The entry point: map a request to the exact HTTP response bytes for every
-    /// non-streaming route. (`/api/events` and `/stream` are I/O loops the server
-    /// runs, using ``authorize(_:)`` and ``eventFrame(for:)`` from here.)
-    public func handle(_ request: RemoteRequest) async -> Data {
-        guard authorize(request) else {
+    /// Back-compat init used by tests and any token-only caller. Defaults to
+    /// `requireAuth: true` so a non-empty token still gates every request.
+    public init(backend: RemoteBackend?, token: String) {
+        self.init(backend: backend, config: Config(token: token))
+    }
+
+    /// Map a request to the exact HTTP response bytes for every non-streaming,
+    /// non-login route. `sessionAuthed` is the server's verdict on the session
+    /// cookie; login/logout and the cookie itself are handled by the server.
+    public func handle(_ request: RemoteRequest, sessionAuthed: Bool = false) async -> Data {
+        guard authorize(request, sessionAuthed: sessionAuthed) else {
             return Self.response(status: "401 Unauthorized", type: "text/plain",
-                                 body: Data("Missing or invalid token. Open /?token=<your token>.\n".utf8))
+                                 body: Data("Not signed in. Open / to log in, or pass ?token=<token>.\n".utf8))
         }
         guard let backend else {
             return Self.response(status: "503 Service Unavailable", type: "text/plain",
                                  body: Data("Shutting down\n".utf8))
         }
 
+        // Read-only mode disables every state change (all mutations are POSTs).
+        if config.readOnly, request.method == "POST" {
+            return Self.forbidden("Read-only mode — changes are disabled from the web.")
+        }
+
         switch (request.method, request.path) {
+
+        // MARK: Pages & meta
         case ("GET", "/"):
             return Self.response(status: "200 OK", type: "text/html; charset=utf-8",
-                                 body: Data(Self.page(token: token).utf8))
+                                 body: Data(Self.page(config: config).utf8))
 
+        case ("GET", "/api/config"):
+            return Self.json(ConfigRow(username: config.username, readOnly: config.readOnly,
+                                       requireAuth: config.requireAuth, theme: config.theme))
+
+        // MARK: Reads
         case ("GET", "/api/tasks"):
             let rows = await backend.taskSnapshot().map(TaskRow.init)
-            let data = (try? JSONEncoder().encode(rows)) ?? Data("[]".utf8)
-            return Self.response(status: "200 OK", type: "application/json", body: data)
+            return Self.json(rows)
 
+        case ("GET", "/api/task"):
+            guard let id = queryID(request) else { return Self.badRequest() }
+            guard let task = await backend.task(id) else { return Self.notFound() }
+            return Self.json(TaskDetail(task))
+
+        case ("GET", "/api/history"):
+            let rows = await backend.history(limit: 500).map(HistoryRow.init)
+            return Self.json(rows)
+
+        // MARK: Queue mutations
         case ("POST", "/api/pause-all"):
-            await backend.pauseAll()
-            return Self.ok()
+            await backend.pauseAll(); return Self.ok()
 
         case ("POST", "/api/resume-all"):
-            await backend.resumeAll()
-            return Self.ok()
+            await backend.resumeAll(); return Self.ok()
 
         case ("POST", "/api/pause"):
-            guard let id = request.query["id"].flatMap(UUID.init(uuidString:)) else { return Self.badRequest() }
-            await backend.pause(id)
-            return Self.ok()
+            guard let id = queryID(request) else { return Self.badRequest() }
+            await backend.pause(id); return Self.ok()
 
         case ("POST", "/api/resume"):
-            guard let id = request.query["id"].flatMap(UUID.init(uuidString:)) else { return Self.badRequest() }
-            await backend.resume(id)
+            guard let id = queryID(request) else { return Self.badRequest() }
+            await backend.resume(id); return Self.ok()
+
+        case ("POST", "/api/retry"):
+            guard let id = queryID(request) else { return Self.badRequest() }
+            await backend.retry(id); return Self.ok()
+
+        case ("POST", "/api/recheck"):
+            guard let id = queryID(request) else { return Self.badRequest() }
+            await backend.forceRecheck(id); return Self.ok()
+
+        case ("POST", "/api/sequential"):
+            guard let id = queryID(request) else { return Self.badRequest() }
+            await backend.setSequential(boolQuery(request, "on"), task: id); return Self.ok()
+
+        case ("POST", "/api/remove"):
+            guard let id = queryID(request) else { return Self.badRequest() }
+            await backend.remove(id, deleteData: boolQuery(request, "data")); return Self.ok()
+
+        case ("POST", "/api/file-priority"):
+            guard let id = queryID(request),
+                  let file = request.query["file"].flatMap(Int.init) else { return Self.badRequest() }
+            await backend.setFilePriority(Self.priority(request.query["prio"]), fileID: file, task: id)
             return Self.ok()
 
         case ("POST", "/api/add"):
-            guard let payload = try? JSONDecoder().decode(AddPayload.self, from: request.body),
-                  let source = DownloadSource.parse(payload.url) else { return Self.badRequest() }
-            await backend.remoteAdd(source: source)
-            return Self.ok()
+            guard let payload = try? JSONDecoder().decode(AddPayload.self, from: request.body)
+            else { return Self.badRequest() }
+            let folder = payload.folder?.trimmingCharacters(in: .whitespaces)
+            let priority = Self.priority(payload.priority)
+            let paused = payload.paused ?? false
+            let sources = payload.url
+                .split(whereSeparator: \.isNewline)
+                .compactMap { DownloadSource.parse(String($0).trimmingCharacters(in: .whitespaces)) }
+            guard !sources.isEmpty else { return Self.badRequest() }
+            for source in sources {
+                await backend.remoteAdd(source: source,
+                                        saveDirectory: (folder?.isEmpty == false) ? folder : nil,
+                                        priority: priority, startPaused: paused)
+            }
+            return Self.json(CountRow(added: sources.count))
+
+        // MARK: History mutations
+        case ("POST", "/api/history-clear"):
+            await backend.clearHistory(); return Self.ok()
+
+        case ("POST", "/api/history-remove"):
+            guard let id = queryID(request) else { return Self.badRequest() }
+            await backend.removeHistoryEntry(id); return Self.ok()
 
         default:
             return Self.response(status: "404 Not Found", type: "text/plain", body: Data("Not found\n".utf8))
         }
     }
 
-    /// Token check shared by the JSON API and the streaming loops.
-    public func authorize(_ request: RemoteRequest) -> Bool {
-        guard !token.isEmpty else { return false }
+    /// Access check shared by the JSON API and the streaming loops. A valid
+    /// session cookie (decided by the server) always passes; otherwise, an open
+    /// portal (`requireAuth == false`) passes, and finally a matching bearer/query
+    /// token passes — the path scripts use.
+    public func authorize(_ request: RemoteRequest, sessionAuthed: Bool = false) -> Bool {
+        if sessionAuthed { return true }
+        if !config.requireAuth { return true }
+        guard !config.token.isEmpty else { return false }
         if let header = request.headers["authorization"],
-           Self.constantTimeEquals(header, "Bearer \(token)") { return true }
+           Self.constantTimeEquals(header, "Bearer \(config.token)") { return true }
         guard let query = request.query["token"] else { return false }
-        return Self.constantTimeEquals(query, token)
+        return Self.constantTimeEquals(query, config.token)
     }
 
     /// One SSE frame (`data: <json>\n\n`) for the live event stream.
@@ -94,7 +193,7 @@ public struct RemoteRouter: Sendable {
 
     /// Length-leaking-only comparison: every byte is examined regardless of where
     /// the first mismatch occurs, so response timing can't be used to guess the
-    /// token prefix-by-prefix.
+    /// token/hash prefix-by-prefix.
     public static func constantTimeEquals(_ a: String, _ b: String) -> Bool {
         let lhs = Array(a.utf8)
         let rhs = Array(b.utf8)
@@ -102,6 +201,30 @@ public struct RemoteRouter: Sendable {
         var difference: UInt8 = 0
         for i in 0..<lhs.count { difference |= lhs[i] ^ rhs[i] }
         return difference == 0
+    }
+
+    // MARK: Query helpers
+
+    private func queryID(_ request: RemoteRequest) -> UUID? {
+        request.query["id"].flatMap(UUID.init(uuidString:))
+    }
+
+    private func boolQuery(_ request: RemoteRequest, _ key: String) -> Bool {
+        Self.truthy(request.query[key])
+    }
+
+    static func truthy(_ value: String?) -> Bool {
+        guard let value = value?.lowercased() else { return false }
+        return value == "1" || value == "true" || value == "yes" || value == "on"
+    }
+
+    static func priority(_ value: String?) -> FilePriority {
+        switch value?.lowercased() {
+        case "skip": return .skip
+        case "low": return .low
+        case "high": return .high
+        default: return .normal
+        }
     }
 
     // MARK: Response building
@@ -114,122 +237,231 @@ public struct RemoteRouter: Sendable {
         response(status: "400 Bad Request", type: "text/plain", body: Data("Bad request\n".utf8))
     }
 
-    static func response(status: String, type: String, body: Data) -> Data {
+    static func notFound() -> Data {
+        response(status: "404 Not Found", type: "text/plain", body: Data("Not found\n".utf8))
+    }
+
+    static func forbidden(_ message: String) -> Data {
+        response(status: "403 Forbidden", type: "text/plain", body: Data("\(message)\n".utf8))
+    }
+
+    static func json<T: Encodable>(_ value: T) -> Data {
+        let body = (try? JSONEncoder().encode(value)) ?? Data("null".utf8)
+        return response(status: "200 OK", type: "application/json", body: body)
+    }
+
+    static func response(status: String, type: String, body: Data,
+                         extraHeaders: [String: String] = [:]) -> Data {
         var head = "HTTP/1.1 \(status)\r\n"
         head += "Content-Type: \(type)\r\n"
         head += "Content-Length: \(body.count)\r\n"
         head += "Cache-Control: no-store\r\n"
         // Defense-in-depth for the control page: inline script/style are ours by
-        // construction, network access is same-origin only, no framing.
+        // construction; allow same-origin fetch/SSE, streamed media, and the
+        // inline SVG/data: favicon; forms post same-origin; nothing may frame us.
         head += "Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; "
-        head += "style-src 'unsafe-inline'; connect-src 'self'\r\n"
+        head += "style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self'; "
+        head += "connect-src 'self'; form-action 'self'; base-uri 'none'\r\n"
         head += "X-Content-Type-Options: nosniff\r\n"
         head += "X-Frame-Options: DENY\r\n"
+        head += "Referrer-Policy: no-referrer\r\n"
+        for (key, value) in extraHeaders { head += "\(key): \(value)\r\n" }
         head += "Connection: close\r\n\r\n"
         return Data(head.utf8) + body
     }
 
-    private struct AddPayload: Decodable { var url: String }
+    // MARK: Wire models
 
-    /// The wire representation of one task.
+    private struct AddPayload: Decodable {
+        var url: String
+        var folder: String?
+        var priority: String?
+        var paused: Bool?
+    }
+    private struct CountRow: Encodable { var added: Int }
+    private struct ConfigRow: Encodable {
+        var username: String
+        var readOnly: Bool
+        var requireAuth: Bool
+        var theme: String
+        var appName = "Goel°"
+    }
+
+    /// Compact per-task row for the live list.
     struct TaskRow: Encodable {
         var id: String
         var name: String
-        var status: String
+        var status: String        // display name ("Downloading")
+        var statusToken: String   // stable token ("downloading")
+        var kind: String          // "http" | "torrent" | "hls" | "ftp" | "sftp"
         var progress: Double
         var downSpeed: Double
         var upSpeed: Double
         var totalBytes: Int64?
+        var doneBytes: Int64
+        var upBytes: Int64
+        var ratio: Double
+        var seeds: Int?
+        var conns: Int
+        var addedAt: Double
+        var etaSeconds: Double?
+        var error: String?
+        var source: String
+        var multiFile: Bool
+        var fileCount: Int
         var streamable: Bool
 
         init(_ task: DownloadTask) {
             id = task.id.uuidString
             name = task.name
             status = task.status.displayName
+            statusToken = RemoteRouter.statusToken(task.status)
+            kind = task.kind.rawValue
             progress = task.fractionCompleted
             downSpeed = task.downloadSpeed
             upSpeed = task.uploadSpeed
             totalBytes = task.totalBytes
+            doneBytes = task.bytesDownloaded
+            upBytes = task.bytesUploaded
+            ratio = task.shareRatio
+            seeds = task.seedCount
+            conns = task.connectionCount
+            addedAt = task.addedAt.timeIntervalSince1970
+            etaSeconds = task.estimatedTimeRemaining
+            error = RemoteRouter.errorMessage(task.status)
+            source = task.source.locator
+            multiFile = task.isMultiFile
+            fileCount = task.files.count
             streamable = RemoteControlServer.streamPlan(for: task) != nil
         }
     }
 
-    /// The single-file control page: polls /api/tasks, renders rows, offers
-    /// pause/resume and an add box. The token rides along in each request.
-    static func page(token: String) -> String {
-        """
-        <!doctype html><html><head><meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Goel°</title>
-        <style>
-        body{font:14px -apple-system,system-ui,sans-serif;margin:0;background:#111;color:#eee}
-        header{padding:14px 16px;background:#1b1b1f;display:flex;gap:8px;align-items:center}
-        h1{font-size:15px;margin:0 auto 0 0}
-        button{background:#2f6fed;color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer}
-        .task{padding:10px 16px;border-bottom:1px solid #222}
-        .name{display:flex;justify-content:space-between;gap:8px}
-        .meta{color:#999;font-size:12px;margin-top:2px;display:flex;justify-content:space-between}
-        .bar{height:4px;background:#333;border-radius:2px;margin-top:6px}
-        .fill{height:4px;background:#2f6fed;border-radius:2px}
-        form{display:flex;gap:8px;padding:12px 16px;background:#1b1b1f}
-        input{flex:1;background:#111;color:#eee;border:1px solid #333;border-radius:6px;padding:6px 8px}
-        .play{color:#2f6fed;text-decoration:none;font-size:16px;vertical-align:middle;margin-right:4px}
-        </style></head><body>
-        <header><h1>Goel°</h1>
-        <button onclick="act('pause-all')">Pause all</button>
-        <button onclick="act('resume-all')">Start all</button></header>
-        <form onsubmit="add(event)"><input id="u" placeholder="URL or magnet…">
-        <button>Add</button></form>
-        <div id="list"></div>
-        <script>
-        const T=\(jsString(token));
-        const speed=b=>b>1e6?(b/1e6).toFixed(1)+' MB/s':b>1e3?(b/1e3).toFixed(0)+' kB/s':'';
-        function render(tasks){
-          document.getElementById('list').innerHTML=tasks.map(t=>`
-            <div class="task"><div class="name"><span>${esc(t.name)}</span><span>
-            ${t.streamable?`<a class="play" href="/stream?id=${t.id}&token=${encodeURIComponent(T)}" target="_blank">▶</a> `:''}
-            <button onclick="act('${t.status==='Paused'?'resume':'pause'}','${t.id}')">
-            ${t.status==='Paused'?'Resume':'Pause'}</button></span></div>
-            <div class="meta"><span>${t.status}</span><span>${speed(t.downSpeed)}</span></div>
-            <div class="bar"><div class="fill" style="width:${(t.progress*100).toFixed(1)}%"></div></div>
-            </div>`).join('');
+    /// The full detail for the selected task (files, trackers, peers, pieces).
+    struct TaskDetail: Encodable {
+        var row: TaskRow
+        var savePath: String
+        var sequential: Bool
+        var infoHash: String?
+        var files: [FileRow]
+        var trackers: [TrackerRow]
+        var connections: [ConnRow]
+        var pieces: [Double]
+        var server: String?
+        var mimeType: String?
+
+        init(_ task: DownloadTask) {
+            row = TaskRow(task)
+            savePath = task.savePath
+            sequential = task.sequentialDownload ?? false
+            infoHash = task.infoHash
+            files = task.files.map(FileRow.init)
+            trackers = (task.trackers ?? []).map(TrackerRow.init)
+            connections = (task.connections ?? []).map(ConnRow.init)
+            pieces = task.pieceAvailability ?? []
+            server = task.remoteInfo?.server
+            mimeType = task.remoteInfo?.mimeType
         }
-        async function tick(){
-          try{
-            const r=await fetch('/api/tasks?token='+encodeURIComponent(T));
-            render(await r.json());
-          }catch(e){}
-        }
-        function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-        async function act(a,id){
-          await fetch('/api/'+a+'?token='+encodeURIComponent(T)+(id?'&id='+id:''),{method:'POST'});
-          tick();
-        }
-        async function add(e){
-          e.preventDefault();
-          const u=document.getElementById('u');
-          if(!u.value)return;
-          await fetch('/api/add?token='+encodeURIComponent(T),{method:'POST',
-            headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u.value})});
-          u.value='';tick();
-        }
-        // Live push via SSE when available; fall back to polling otherwise.
-        let live=false;
-        try{
-          const es=new EventSource('/api/events?token='+encodeURIComponent(T));
-          es.onmessage=e=>{live=true;render(JSON.parse(e.data))};
-          es.onerror=()=>{live=false};
-        }catch(e){}
-        tick();setInterval(()=>{if(!live)tick()},2000);
-        </script></body></html>
-        """
     }
 
-    /// Encode a value as a JS string literal (handles quotes/backslashes).
-    private static func jsString(_ value: String) -> String {
-        let data = (try? JSONEncoder().encode([value])) ?? Data("[\"\"]".utf8)
-        let array = String(data: data, encoding: .utf8) ?? "[\"\"]"
-        return String(array.dropFirst().dropLast())
+    struct FileRow: Encodable {
+        var id: Int
+        var name: String
+        var size: Int64
+        var done: Int64
+        var progress: Double
+        var priority: String
+        init(_ f: TransferFile) {
+            id = f.id
+            name = f.path
+            size = f.length
+            done = f.bytesCompleted
+            progress = f.fractionCompleted
+            priority = RemoteRouter.priorityToken(f.priority)
+        }
+    }
+
+    struct TrackerRow: Encodable {
+        var url: String
+        var host: String
+        var tier: Int
+        var status: String
+        var seeds: Int?
+        var leeches: Int?
+        var message: String
+        init(_ t: TorrentTracker) {
+            url = t.url
+            host = t.host
+            tier = t.tier
+            status = t.statusLabel
+            seeds = t.seeds
+            leeches = t.leeches
+            message = t.message
+        }
+    }
+
+    struct ConnRow: Encodable {
+        var id: String
+        var label: String
+        var detail: String
+        var down: Double
+        var up: Double
+        var progress: Double
+        init(_ c: TaskConnection) {
+            id = c.id
+            label = c.label
+            detail = c.detail
+            down = c.downloadSpeed
+            up = c.uploadSpeed
+            progress = c.progress
+        }
+    }
+
+    struct HistoryRow: Encodable {
+        var id: String
+        var name: String
+        var kind: String
+        var totalBytes: Int64?
+        var savePath: String
+        var completedAt: Double
+        var source: String
+        init(_ h: HistoryEntry) {
+            id = h.id.uuidString
+            name = h.name
+            kind = h.kind.rawValue
+            totalBytes = h.totalBytes
+            savePath = h.savePath
+            completedAt = h.completedAt.timeIntervalSince1970
+            source = h.locator
+        }
+    }
+
+    // MARK: Enum → token helpers
+
+    static func statusToken(_ status: DownloadStatus) -> String {
+        switch status {
+        case .queued: return "queued"
+        case .requestingMetadata: return "metadata"
+        case .downloading: return "downloading"
+        case .verifying: return "verifying"
+        case .paused: return "paused"
+        case .seeding: return "seeding"
+        case .completed: return "completed"
+        case .failed: return "failed"
+        }
+    }
+
+    static func priorityToken(_ priority: FilePriority) -> String {
+        switch priority {
+        case .skip: return "skip"
+        case .low: return "low"
+        case .normal: return "normal"
+        case .high: return "high"
+        }
+    }
+
+    static func errorMessage(_ status: DownloadStatus) -> String? {
+        if case .failed(let error) = status { return error.message }
+        return nil
     }
 }
 
@@ -272,12 +504,26 @@ public struct RemoteRequest: Sendable {
             headers[key] = value
         }
     }
+
+    /// Value of one cookie from the `Cookie:` header, or `nil`. Cookies are
+    /// `name=value` pairs separated by `; `.
+    public func cookie(_ name: String) -> String? {
+        guard let raw = headers["cookie"] else { return nil }
+        for pair in raw.split(separator: ";") {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            guard kv.count == 2 else { continue }
+            if kv[0].trimmingCharacters(in: .whitespaces) == name {
+                return kv[1].trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
+    }
 }
 
 // MARK: - Backend port
 
-/// The narrow set of scheduler calls the remote API needs. ``DownloadManager``
-/// conforms via the adapter below; tests inject an in-memory fake.
+/// The set of scheduler calls the remote API needs. ``DownloadManager`` conforms
+/// via the adapter below; tests inject an in-memory fake.
 public protocol RemoteBackend: AnyObject, Sendable {
     func taskSnapshot() async -> [DownloadTask]
     func task(_ id: UUID) async -> DownloadTask?
@@ -285,13 +531,29 @@ public protocol RemoteBackend: AnyObject, Sendable {
     func resumeAll() async
     func pause(_ id: UUID) async
     func resume(_ id: UUID) async
+    func retry(_ id: UUID) async
+    func remove(_ id: UUID, deleteData: Bool) async
+    func forceRecheck(_ id: UUID) async
+    func setSequential(_ sequential: Bool, task id: UUID) async
+    func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async
     func remoteAdd(source: DownloadSource) async
+    func remoteAdd(source: DownloadSource, saveDirectory: String?,
+                   priority: FilePriority, startPaused: Bool) async
+    func history(limit: Int) async -> [HistoryEntry]
+    func removeHistoryEntry(_ id: UUID) async
+    func clearHistory() async
 }
 
 extension DownloadManager: RemoteBackend {
-    /// `snapshot` is a property, and the rich `add(source:…)` returns a task — the
-    /// port needs plain methods. `task`/`pause`/`resume`/`pauseAll`/`resumeAll`
-    /// already match (an actor's isolated method witnesses an `async` requirement).
+    /// `snapshot` is a property and the rich `add(source:…)` returns a task — the
+    /// port needs plain methods. `pause`/`resume`/`retry`/`remove`/`forceRecheck`/
+    /// `setSequential`/`setFilePriority`/`history`/`removeHistoryEntry`/`clearHistory`
+    /// already match the actor's own methods (an actor's isolated method witnesses
+    /// an `async` requirement), so only the two below need adapting.
     public func taskSnapshot() async -> [DownloadTask] { snapshot }
     public func remoteAdd(source: DownloadSource) async { _ = add(source: source, saveDirectory: nil) }
+    public func remoteAdd(source: DownloadSource, saveDirectory: String?,
+                          priority: FilePriority, startPaused: Bool) async {
+        _ = add(source: source, saveDirectory: saveDirectory, priority: priority, startPaused: startPaused)
+    }
 }
