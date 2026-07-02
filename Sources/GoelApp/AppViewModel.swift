@@ -705,6 +705,7 @@ final class AppViewModel: ObservableObject {
     func pause(_ id: DownloadTask.ID) { Task { await manager.pause(id) } }
     func resume(_ id: DownloadTask.ID) { Task { await manager.resume(id) } }
     func remove(_ id: DownloadTask.ID, deleteData: Bool) {
+        let name = tasks.first { $0.id == id }?.name
         // Move the primary to the adjacent visible row *before* the snapshot drops
         // the deleted task, so selection lands on a neighbour that's actually in
         // the filtered list rather than jumping to the raw-first task.
@@ -712,14 +713,19 @@ final class AppViewModel: ObservableObject {
         Task { await manager.remove(id, deleteData: deleteData) }
         selection.remove(id)
         if primarySelection == id { primarySelection = nextPrimary }
+        if deleteData {
+            toastNow(name.map { "Deleted files for “\($0)”" } ?? "Removed with data")
+        } else {
+            toastNow("Removed from list")
+        }
     }
     func retry(_ id: DownloadTask.ID) {
         // Failed tasks need the dedicated retry path; resume() ignores non-paused.
         Task { await manager.retry(id) }
     }
 
-    func pauseAll() { Task { await manager.pauseAll() } }
-    func resumeAll() { Task { await manager.resumeAll() } }
+    func pauseAll() { Task { await manager.pauseAll() }; toastNow("Paused all downloads") }
+    func resumeAll() { Task { await manager.resumeAll() }; toastNow("Resumed all downloads") }
 
     func setProfile(_ name: String) {
         Task {
@@ -965,6 +971,7 @@ final class AppViewModel: ObservableObject {
 
     func deleteHistoryEntry(_ id: UUID) {
         Task { await manager.removeHistoryEntry(id) }
+        toastNow("Entry removed")
     }
 
     func clearHistory() {

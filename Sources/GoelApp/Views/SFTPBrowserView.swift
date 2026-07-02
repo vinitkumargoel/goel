@@ -45,7 +45,7 @@ struct SFTPBrowserView: View {
             Button("Create") {
                 let name = newFolderName
                 newFolderName = ""
-                Task { await model.makeDirectory(named: name) }
+                Task { if await model.makeDirectory(named: name) { vm.toastNow("Folder created") } }
             }
         }
         .alert("Delete “\(pendingDelete?.name ?? "")”?",
@@ -53,7 +53,9 @@ struct SFTPBrowserView: View {
                                     set: { if !$0 { pendingDelete = nil } })) {
             Button("Cancel", role: .cancel) { pendingDelete = nil }
             Button("Delete", role: .destructive) {
-                if let entry = pendingDelete { Task { await model.delete(entry) } }
+                if let entry = pendingDelete {
+                    Task { if await model.delete(entry) { vm.toastNow("Deleted “\(entry.name)”") } }
+                }
                 pendingDelete = nil
             }
         } message: {

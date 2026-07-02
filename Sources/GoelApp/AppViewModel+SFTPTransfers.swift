@@ -93,6 +93,7 @@ extension AppViewModel {
         guard let entry = sftpTransferTasks[id] else { return }
         entry.cancel.cancel()
         entry.task.cancel()
+        toastNow("Transfer cancelled")
     }
 
     /// Re-run a failed/cancelled transfer in place (same row, reset counters).
@@ -123,7 +124,9 @@ extension AppViewModel {
 
     /// Drop every settled (finished/failed/cancelled) transfer from the list.
     func clearFinishedSFTPTransfers() {
+        let before = sftpTransfers.count
         sftpTransfers.removeAll { !$0.isActive }
+        if sftpTransfers.count != before { toastNow("Cleared finished transfers") }
     }
 
     /// The active transfers for one server, for the browser's own strip.

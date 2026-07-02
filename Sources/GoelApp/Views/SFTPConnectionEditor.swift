@@ -110,9 +110,16 @@ struct SFTPConnectionEditor: View {
     private var hostKeyResetControl: some View {
         VStack(alignment: .leading, spacing: 4) {
             Button {
-                HostKeyStore.shared.reset(host: host, port: portNumber)
-                testResult = nil
-                hostKeyReset = true
+                vm.requestConfirm(
+                    title: "Reset the pinned host key?",
+                    message: "Goel will trust whatever key this server presents next. Only do this after a legitimate server rekey, then re-verify with Test.",
+                    confirmTitle: "Reset Key",
+                    destructive: true
+                ) {
+                    HostKeyStore.shared.reset(host: host, port: portNumber)
+                    testResult = nil
+                    hostKeyReset = true
+                }
             } label: {
                 Label("Reset pinned host key", systemImage: "key.slash")
                     .font(.system(size: 11))
@@ -191,7 +198,9 @@ struct SFTPConnectionEditor: View {
 
     private func save() {
         // nil password = keep the existing secret; a typed one replaces it.
+        let isNew = existing == nil
         vm.saveServer(draftConnection(), password: password.isEmpty ? nil : password)
+        vm.toastNow(isNew ? "Server added" : "Server saved")
         dismiss()
     }
 }

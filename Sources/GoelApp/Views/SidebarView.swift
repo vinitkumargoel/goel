@@ -87,7 +87,14 @@ struct SidebarView: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button("Edit…") { vm.presentEditServer(server) }
-            Button("Remove", role: .destructive) { vm.removeServer(server.id) }
+            Button("Remove", role: .destructive) {
+                vm.requestConfirm(
+                    title: "Remove “\(server.label)”?",
+                    message: "This deletes the saved connection and its Keychain password. Files on the server are not touched.",
+                    confirmTitle: "Remove",
+                    destructive: true
+                ) { vm.removeServer(server.id) }
+            }
         }
     }
 

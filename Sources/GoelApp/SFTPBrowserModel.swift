@@ -143,20 +143,24 @@ final class SFTPBrowserModel: ObservableObject {
 
     // MARK: Mutations
 
-    func makeDirectory(named name: String) async {
-        guard let client, !name.isEmpty else { return }
+    @discardableResult
+    func makeDirectory(named name: String) async -> Bool {
+        guard let client, !name.isEmpty else { return false }
         do {
             try await client.mkdir(Self.join(path, name))
             await refresh()
-        } catch let e as SFTPError { error = e.message } catch { self.error = error.localizedDescription }
+            return true
+        } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
     }
 
-    func delete(_ entry: SFTPEntry) async {
-        guard let client else { return }
+    @discardableResult
+    func delete(_ entry: SFTPEntry) async -> Bool {
+        guard let client else { return false }
         do {
             try await client.remove(Self.join(path, entry.name), isDirectory: entry.isDirectory)
             await refresh()
-        } catch let e as SFTPError { error = e.message } catch { self.error = error.localizedDescription }
+            return true
+        } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
     }
 
     // MARK: Transfers

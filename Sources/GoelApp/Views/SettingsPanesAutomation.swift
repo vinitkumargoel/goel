@@ -132,6 +132,7 @@ struct RSSPane: View {
                         SettingSwitch(isOn: feedEnabledBinding(feed.id))
                         Button {
                             vm.update { $0.rssFeeds.removeAll { $0.id == feed.id } }
+                            vm.toastNow("Feed removed")
                         } label: {
                             Image(systemName: "trash")
                         }
@@ -181,6 +182,7 @@ struct RSSPane: View {
         newURL = ""
         newPattern = ""
         newStartPaused = false
+        vm.toastNow("Feed added")
     }
 }
 
@@ -261,7 +263,15 @@ struct RemoteAccessPane: View {
                             .truncationMode(.middle)
                             .frame(maxWidth: 150)
                         Button("Regenerate") {
-                            vm.update { $0.remoteToken = Self.newToken() }
+                            vm.requestConfirm(
+                                title: "Regenerate the API token?",
+                                message: "Existing portal links and the paired browser extension stop working until you copy the new token to them.",
+                                confirmTitle: "Regenerate",
+                                destructive: true
+                            ) {
+                                vm.update { $0.remoteToken = Self.newToken() }
+                                vm.toastNow("New API token generated")
+                            }
                         }
                     }
                 }
@@ -415,8 +425,16 @@ struct CredentialsSection: View {
         ForEach(entries) { entry in
             SetRow(name: entry.host, desc: "User: \(entry.username)") {
                 Button {
-                    store.removeCredential(host: entry.host)
-                    refresh()
+                    vm.requestConfirm(
+                        title: "Remove the saved login for \(entry.host)?",
+                        message: "The stored username and password are deleted from your Keychain.",
+                        confirmTitle: "Remove",
+                        destructive: true
+                    ) {
+                        store.removeCredential(host: entry.host)
+                        refresh()
+                        vm.toastNow("Login removed")
+                    }
                 } label: {
                     Image(systemName: "trash")
                 }

@@ -40,6 +40,7 @@ extension AppViewModel {
         if selectedServer == id { selectedServer = nil }
         SFTPConnectionStore.shared.remove(id)
         reloadServers()
+        toastNow("Server removed")
     }
 
     /// Select a server for browsing (clears the download-list selection focus).
