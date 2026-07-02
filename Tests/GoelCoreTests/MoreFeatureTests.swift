@@ -366,6 +366,41 @@ final class MoreFeatureTests: XCTestCase {
         XCTAssertEqual(SFTPBrowserPaths.parent(of: "/home"), "/")
     }
 
+    /// The rename-on-collision helper backing the upload overwrite prompt: a free
+    /// name is returned unchanged; a taken one gets " (n)" before the extension,
+    /// climbing until free. Drives the "Rename" choice in the conflict sheet.
+    func testSFTPUniqueNameAvoidsCollisions() {
+        // No collision → unchanged.
+        XCTAssertEqual(SFTPBrowserPaths.uniqueName("report.pdf", existing: []), "report.pdf")
+        // Collision → suffix before the extension.
+        XCTAssertEqual(SFTPBrowserPaths.uniqueName("report.pdf", existing: ["report.pdf"]),
+                       "report (1).pdf")
+        // Climbs past taken suffixes.
+        XCTAssertEqual(
+            SFTPBrowserPaths.uniqueName("report.pdf", existing: ["report.pdf", "report (1).pdf"]),
+            "report (2).pdf")
+        // Multi-dot names only split the final extension.
+        XCTAssertEqual(SFTPBrowserPaths.uniqueName("archive.tar.gz", existing: ["archive.tar.gz"]),
+                       "archive.tar (1).gz")
+        // Extensionless names (incl. folders) get a bare suffix.
+        XCTAssertEqual(SFTPBrowserPaths.uniqueName("assets", existing: ["assets"]), "assets (1)")
+    }
+
+    /// The folder→remote mapping an upload uses to place each descendant: fold the
+    /// server-relative components onto the remote root via `join`. Verifies files
+    /// land at the right depth and the remote root anchors both "." (home) and
+    /// absolute bases.
+    func testSFTPFolderRemotePathMapping() {
+        // A file two levels down under a home-relative upload root.
+        XCTAssertEqual(["sub", "a.txt"].reduce("uploads/site", SFTPBrowserPaths.join),
+                       "uploads/site/sub/a.txt")
+        // A file at the folder root.
+        XCTAssertEqual(["a.txt"].reduce("site", SFTPBrowserPaths.join), "site/a.txt")
+        // Absolute remote root.
+        XCTAssertEqual(["x", "y", "z.bin"].reduce("/srv/data", SFTPBrowserPaths.join),
+                       "/srv/data/x/y/z.bin")
+    }
+
     func testFTPTorrentSuffixStillRequiresHTTP() {
         // An ftp URL ending in .torrent must not slip into the torrent-file
         // fetch path (which downloads and parses the file over HTTP).

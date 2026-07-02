@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "GoelDownloader Capture",
+  "name": "Goel° Capture",
   "version": "1.0",
-  "description": "Send downloads to GoelDownloader on your Mac. Toolbar button toggles capture; right-click any link or media for one-off sends.",
+  "description": "Send downloads to Goel° on your Mac. Toolbar button toggles capture; right-click any link or media for one-off sends.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvgZky/xdvJSpI77c3p5GkftTUQ+V/Nhq+88xOpn13hmRHDm7l/I/LsNTxOaRoqL145AiQd+gSH5EMEXPGmJ8+CoxqPUdBJ0P9tOtDYPlipri1x1JWHe1LUA3x4Zgfs87I17J5p76u0F/UbDSIolLSjqBozWpBkQCBhDWS5jKnsdrKNs8NuxbSnyssakpgrMJpP/oozUVRpvJBphsIpMdXLVV6d4CIxQz5vEQap+4seFuqeiUXMmZu5Wmxl8XUd0FP1y+xMUi6kyGh1OVi1ubi8WC+NsBmZGth+FH74GZjLt5v7wBh3Vt3C5IvcTrmqcfLJWGiozNB7ebgmm1wf7AOwIDAQAB",
   "permissions": ["downloads", "contextMenus", "nativeMessaging", "storage"],
   "background": {
@@ -10,7 +10,7 @@
     "scripts": ["background.js"]
   },
   "action": {
-    "default_title": "GoelDownloader — click to toggle download capture"
+    "default_title": "Goel° — click to toggle download capture"
   },
   "browser_specific_settings": {
     "gecko": {

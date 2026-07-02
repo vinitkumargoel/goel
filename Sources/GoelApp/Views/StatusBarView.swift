@@ -5,12 +5,14 @@ import GoelCore
 /// and the Low / Medium / High profile picker.
 struct StatusBarView: View {
     @EnvironmentObject private var vm: AppViewModel
+    @State private var showTransfers = false
 
     var body: some View {
         HStack(spacing: 14) {
             snail
             stat(symbol: "arrow.down", value: vm.totalDownloadSpeed.speedString, color: Theme.green)
             stat(symbol: "arrow.up", value: vm.totalUploadSpeed.speedString, color: Theme.teal)
+            if !activeTransfers.isEmpty { transfersIndicator }
             Spacer()
             Text("Profile").font(.system(size: 11)).foregroundStyle(.tertiary)
             profilePicker
@@ -18,6 +20,95 @@ struct StatusBarView: View {
         .padding(.horizontal, 14)
         .frame(height: 38)
         .background(.bar)
+    }
+
+    // MARK: SFTP transfers indicator
+
+    /// In-flight SFTP transfers across all servers — the persistent surface that
+    /// keeps a background upload/download visible after its browser is closed.
+    private var activeTransfers: [SFTPTransfer] { vm.sftpTransfers.filter { $0.isActive } }
+
+    private var transfersIndicator: some View {
+        Button { showTransfers.toggle() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.up.arrow.down.circle").font(.system(size: 12))
+                Text("\(activeTransfers.count)").font(.system(size: 12, weight: .semibold)).monospacedDigit()
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: 7).fill(Theme.indigo.opacity(0.16)))
+            .foregroundStyle(Theme.indigo)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("SFTP transfers")
+        .popover(isPresented: $showTransfers, arrowEdge: .bottom) { transfersPopover }
+    }
+
+    private var transfersPopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("SFTP Transfers").font(.system(size: 12, weight: .bold))
+                Spacer()
+                if vm.sftpTransfers.contains(where: { !$0.isActive }) {
+                    Button("Clear") { vm.clearFinishedSFTPTransfers() }
+                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            Divider()
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(vm.sftpTransfers) { t in
+                        transferRow(t)
+                        Divider().opacity(0.3)
+                    }
+                }
+            }
+            .frame(maxHeight: 260)
+        }
+        .frame(width: 320)
+    }
+
+    @ViewBuilder
+    private func transferRow(_ t: SFTPTransfer) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: t.direction == .upload ? "arrow.up.circle" : "arrow.down.circle")
+                .foregroundStyle(rowTint(t))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(t.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                Text(vm.server(t.connectionID)?.label ?? "Server")
+                    .font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            switch t.state {
+            case .running:
+                Text(t.total > 0 ? "\(Int(t.fraction * 100))%" : t.bytes.byteString)
+                    .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+                Button { vm.cancelSFTPTransfer(t.id) } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")
+            case .finished:
+                Text("Done").font(.system(size: 11)).foregroundStyle(Theme.green)
+            case .cancelled:
+                Button("Retry") { vm.retrySFTPTransfer(t.id) }
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
+            case .failed:
+                Button("Retry") { vm.retrySFTPTransfer(t.id) }
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+    }
+
+    private func rowTint(_ t: SFTPTransfer) -> Color {
+        switch t.state {
+        case .failed: return Theme.red
+        case .finished: return Theme.green
+        case .cancelled: return .secondary
+        case .running: return Theme.accent
+        }
     }
 
     private var snail: some View {

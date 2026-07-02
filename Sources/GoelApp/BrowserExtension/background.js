@@ -1,4 +1,4 @@
-// GoelDownloader Capture — background worker.
+// Goel° Capture — background worker.
 //
 // Two paths into the app, both via the native-messaging host that the
 // GoelDownloader settings pane installs:
@@ -35,7 +35,7 @@ api.action.onClicked.addListener(() => {
 api.runtime.onInstalled.addListener(() => {
   api.contextMenus.create({
     id: 'goel-send',
-    title: 'Download with GoelDownloader',
+    title: 'Download with Goel°',
     contexts: ['link', 'image', 'video', 'audio'],
   });
   updateBadge();
@@ -53,7 +53,7 @@ function sendToApp(url, referrer) {
   api.runtime.sendNativeMessage(HOST, { url, referrer: referrer || '' }, () => {
     if (api.runtime.lastError) {
       // Host not installed (Settings → Browser Integration → Install Helper).
-      console.warn('GoelDownloader host unreachable:', api.runtime.lastError.message);
+      console.warn('Goel° host unreachable:', api.runtime.lastError.message);
     }
   });
 }

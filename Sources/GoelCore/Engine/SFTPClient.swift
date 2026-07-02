@@ -92,6 +92,7 @@ public struct SFTPClient: Sendable {
     /// false to abort the transfer (used to make an interactive drag-out
     /// cancellable so a cancelled drag doesn't download the whole file).
     public func downloadToFile(remote: String, localURL: URL,
+                               maxBytesPerSecond: Int64 = 0,
                                shouldContinue: (@Sendable () -> Bool)? = nil,
                                progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
         FileManager.default.createFile(atPath: localURL.path, contents: nil)
@@ -104,12 +105,17 @@ public struct SFTPClient: Sendable {
             onRead: nil)
         defer { try? handle.close() }
         _ = try await runTransfer(ctx) { auth, box in
-            gsb_download(auth, remote, 0, 0, sftpWriteThunk, sftpProgressThunk, box)
+            gsb_download(auth, remote, 0, maxBytesPerSecond, sftpWriteThunk, sftpProgressThunk, box)
         }
     }
 
     /// Upload a local file to a remote path, reporting (bytesSoFar, total).
+    /// `maxBytesPerSecond` throttles the send rate (0 = unlimited).
+    /// `shouldContinue`, when supplied, is polled on every progress tick; return
+    /// false to abort the upload (drives interactive/background cancellation).
     public func upload(localURL: URL, remote: String,
+                       maxBytesPerSecond: Int64 = 0,
+                       shouldContinue: (@Sendable () -> Bool)? = nil,
                        progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
         guard let handle = try? FileHandle(forReadingFrom: localURL) else {
             throw SFTPError(kind: .io, message: "Could not open the local file for reading")
@@ -122,7 +128,7 @@ public struct SFTPClient: Sendable {
         let readError = ReadErrorBox()
         let ctx = TransferContext(
             onWrite: { _ in true },
-            onProgress: { total, sofar in progress(sofar, total); return true },
+            onProgress: { total, sofar in progress(sofar, total); return shouldContinue?() ?? true },
             onRead: { buf in
                 do {
                     guard let chunk = try handle.read(upToCount: buf.count), !chunk.isEmpty else { return 0 }
@@ -136,7 +142,7 @@ public struct SFTPClient: Sendable {
         defer { try? handle.close() }
         do {
             _ = try await runTransfer(ctx) { auth, box in
-                gsb_upload(auth, remote, total, 0, sftpReadThunk, sftpProgressThunk, box)
+                gsb_upload(auth, remote, total, maxBytesPerSecond, sftpReadThunk, sftpProgressThunk, box)
             }
         } catch let e as SFTPError where e.kind == .aborted {
             // Distinguish "the local file couldn't be read" from a user cancel,

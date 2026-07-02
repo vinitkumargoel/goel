@@ -99,6 +99,12 @@ struct RootView: View {
             SFTPConnectionEditor(existing: vm.editingServer)
                 .environmentObject(vm)
         }
+        .sheet(item: $vm.sftpUploadConflicts) { request in
+            SFTPUploadConflictSheet(
+                request: request,
+                onResolve: { vm.resolveUploadConflicts(request, decisions: $0) },
+                onCancel: { vm.sftpUploadConflicts = nil })
+        }
     }
 
     /// The dashed "drop here" affordance shown only while a drag hovers the window

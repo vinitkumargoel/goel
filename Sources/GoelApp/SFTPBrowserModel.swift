@@ -3,18 +3,34 @@ import SwiftUI
 import UniformTypeIdentifiers
 import GoelCore
 
-/// An in-flight interactive transfer shown in the browser's activity strip.
+/// An in-flight (or finished) SFTP transfer tracked by the app-wide transfer
+/// center (``AppViewModel`` + `AppViewModel+SFTPTransfers`). Lives independently
+/// of any browser view, so it survives closing/switching the server browser and
+/// stays cancellable; the browser and status bar just render it. One row per
+/// top-level item picked/dropped — a folder aggregates its whole subtree.
 struct SFTPTransfer: Identifiable {
     enum Direction { case upload, download }
+    enum State: Equatable { case running, finished, failed(String), cancelled }
+
     let id = UUID()
+    /// The server this transfer belongs to, so the browser can filter to its own.
+    let connectionID: UUID
     let name: String
     let direction: Direction
+    /// True when an upload's source is a directory (uploaded recursively).
+    let isDirectory: Bool
+    /// The local file/folder: an upload's source, or a download's destination.
+    let localURL: URL
+    /// The resolved remote target (upload) or remote source (download). Enough,
+    /// with `connectionID`, to retry the transfer after a failure/cancel.
+    let remotePath: String
     var bytes: Int64 = 0
     var total: Int64 = 0
-    var finished = false
-    var error: String?
+    var state: State = .running
 
     var fraction: Double { total > 0 ? min(1, Double(bytes) / Double(total)) : 0 }
+    var isActive: Bool { state == .running }
+    var errorMessage: String? { if case .failed(let m) = state { return m }; return nil }
 }
 
 /// A thread-safe cancel flag shared between a drag's `Progress.cancellationHandler`
@@ -41,7 +57,6 @@ final class SFTPBrowserModel: ObservableObject {
     @Published private(set) var entries: [SFTPEntry] = []
     @Published private(set) var isLoading = false
     @Published var error: String?
-    @Published private(set) var transfers: [SFTPTransfer] = []
 
     init(connection: SFTPConnection, client: SFTPClient?) {
         self.connection = connection
@@ -114,61 +129,13 @@ final class SFTPBrowserModel: ObservableObject {
     }
 
     // MARK: Transfers
-
-    /// Upload local files (from a Finder drop) into the current directory.
-    func upload(localURLs: [URL]) {
-        guard let client else { return }
-        for url in localURLs {
-            let name = url.lastPathComponent
-            let remote = Self.join(path, name)
-            let transferID = beginTransfer(name: name, direction: .upload)
-            Task { [weak self] in
-                do {
-                    try await client.upload(localURL: url, remote: remote) { [weak self] sofar, total in
-                        Task { @MainActor in self?.updateTransfer(transferID, bytes: sofar, total: total) }
-                    }
-                    self?.finishTransfer(transferID, error: nil)
-                    await self?.refresh()
-                } catch let e as SFTPError {
-                    self?.finishTransfer(transferID, error: e.message)
-                } catch {
-                    self?.finishTransfer(transferID, error: error.localizedDescription)
-                }
-            }
-        }
-    }
-
-    /// Download a remote entry to a local directory (context-menu "Download to…").
-    func download(_ entry: SFTPEntry, to localDirectory: URL) {
-        guard let client, !entry.isDirectory else { return }
-        let remote = Self.join(path, entry.name)
-        // The entry name is server-supplied; never let it steer the *local*
-        // path. Sanitize to a single safe component (defeats `../` traversal /
-        // absolute paths) before joining it onto the user's chosen folder.
-        let safeName = DownloadTask.sanitizedName(entry.name)
-        let destination = localDirectory.appendingPathComponent(safeName)
-        guard Self.isContained(destination, in: localDirectory) else {
-            error = "Refusing to write \"\(entry.name)\" outside the chosen folder."
-            return
-        }
-        let transferID = beginTransfer(name: safeName, direction: .download)
-        Task { [weak self] in
-            do {
-                try await client.downloadToFile(remote: remote, localURL: destination) { [weak self] sofar, total in
-                    Task { @MainActor in self?.updateTransfer(transferID, bytes: sofar, total: total) }
-                }
-                self?.finishTransfer(transferID, error: nil)
-            } catch let e as SFTPError {
-                self?.finishTransfer(transferID, error: e.message)
-            } catch {
-                self?.finishTransfer(transferID, error: error.localizedDescription)
-            }
-        }
-    }
-
-    func clearFinishedTransfers() {
-        transfers.removeAll { $0.finished }
-    }
+    //
+    // Uploads and "Download to…" downloads are owned by the app-wide transfer
+    // center on ``AppViewModel`` (see `AppViewModel+SFTPTransfers`), so they keep
+    // running — and stay visible/cancellable — after this browser is closed. The
+    // view starts them through `vm` and reads them back filtered by connection.
+    // Only the drag-out provider below stays here, because Finder drives its
+    // lifecycle (and its own cancellation) directly.
 
     /// A drag-out provider for a remote file: Finder pulls the bytes on demand
     /// via `registerFileRepresentation`, so nothing downloads until the drop is
@@ -212,26 +179,6 @@ final class SFTPBrowserModel: ObservableObject {
             return progress
         }
         return provider
-    }
-
-    // MARK: Transfer bookkeeping
-
-    private func beginTransfer(name: String, direction: SFTPTransfer.Direction) -> UUID {
-        let t = SFTPTransfer(name: name, direction: direction)
-        transfers.append(t)
-        return t.id
-    }
-
-    private func updateTransfer(_ id: UUID, bytes: Int64, total: Int64) {
-        guard let idx = transfers.firstIndex(where: { $0.id == id }) else { return }
-        transfers[idx].bytes = bytes
-        transfers[idx].total = total
-    }
-
-    private func finishTransfer(_ id: UUID, error: String?) {
-        guard let idx = transfers.firstIndex(where: { $0.id == id }) else { return }
-        transfers[idx].finished = true
-        transfers[idx].error = error
     }
 
     // MARK: Path helpers (delegate to the tested GoelCore logic)

@@ -151,7 +151,7 @@ struct GoelCommands: Commands {
     var body: some Commands {
         // App menu — a real "About" panel in place of the default about item.
         CommandGroup(replacing: .appInfo) {
-            Button("About GoelDownloader") {
+            Button("About Goel°") {
                 NSApplication.shared.orderFrontStandardAboutPanel(nil)
             }
             Button("Check for Updates…") { viewModel.checkForUpdates() }
@@ -184,7 +184,7 @@ struct GoelCommands: Commands {
             Divider()
             Picker("When Downloads Finish", selection: autoShutdownBinding) {
                 Text("Do Nothing").tag("none")
-                Text("Quit GoelDownloader").tag("quit")
+                Text("Quit Goel°").tag("quit")
                 Text("Sleep").tag("sleep")
                 Text("Shut Down").tag("shutdown")
             }

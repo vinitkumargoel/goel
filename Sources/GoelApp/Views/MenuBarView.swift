@@ -115,7 +115,7 @@ struct MenuBarView: View {
                 Spacer(minLength: 0)
                 Button(action: openApp) {
                     HStack(spacing: 4) {
-                        Text("Open GoelDownloader").font(.system(size: 11.5))
+                        Text("Open Goel°").font(.system(size: 11.5))
                         Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
                     }
                     .foregroundStyle(.secondary)

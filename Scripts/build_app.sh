@@ -16,9 +16,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."   # repo root
 
-APP_NAME="GoelDownloader"
+APP_NAME="GoelDownloader"          # executable / SwiftPM product name (internal, unchanged)
+APP_BUNDLE="Goel°"                  # user-facing app name → dist/Goel°.app
 CONFIG="release"
-APP="dist/$APP_NAME.app"
+APP="dist/$APP_BUNDLE.app"
 
 echo "==> swift build -c $CONFIG"
 swift build -c "$CONFIG"
@@ -34,9 +35,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>GoelDownloader</string>
+    <string>Goel°</string>
     <key>CFBundleDisplayName</key>
-    <string>GoelDownloader</string>
+    <string>Goel°</string>
     <key>CFBundleExecutable</key>
     <string>GoelDownloader</string>
     <key>CFBundleIdentifier</key>
@@ -103,7 +104,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
             <key>NSMenuItem</key>
             <dict>
                 <key>default</key>
-                <string>Download with GoelDownloader</string>
+                <string>Download with Goel°</string>
             </dict>
             <key>NSMessage</key>
             <string>downloadWithGoel</string>

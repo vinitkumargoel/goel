@@ -482,7 +482,7 @@ public actor RemoteControlServer {
         """
         <!doctype html><html><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>GoelDownloader</title>
+        <title>Goel°</title>
         <style>
         body{font:14px -apple-system,system-ui,sans-serif;margin:0;background:#111;color:#eee}
         header{padding:14px 16px;background:#1b1b1f;display:flex;gap:8px;align-items:center}
@@ -497,7 +497,7 @@ public actor RemoteControlServer {
         input{flex:1;background:#111;color:#eee;border:1px solid #333;border-radius:6px;padding:6px 8px}
         .play{color:#2f6fed;text-decoration:none;font-size:16px;vertical-align:middle;margin-right:4px}
         </style></head><body>
-        <header><h1>GoelDownloader</h1>
+        <header><h1>Goel°</h1>
         <button onclick="act('pause-all')">Pause all</button>
         <button onclick="act('resume-all')">Start all</button></header>
         <form onsubmit="add(event)"><input id="u" placeholder="URL or magnet…">

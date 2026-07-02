@@ -68,6 +68,23 @@ public enum SFTPBrowserPaths {
         if slash == path.startIndex { return "/" }        // "/foo" -> "/"
         return String(path[path.startIndex..<slash])
     }
+
+    /// A name not present in `existing`, appending " (n)" before the extension on
+    /// collision: "report.pdf" → "report (1).pdf", "archive.tar" → "archive (1).tar",
+    /// "notes" → "notes (1)". Used to rename an upload rather than overwrite a
+    /// same-named remote entry. `n` climbs until a free name is found.
+    public static func uniqueName(_ name: String, existing: Set<String>) -> String {
+        guard existing.contains(name) else { return name }
+        let ns = name as NSString
+        let ext = ns.pathExtension
+        let stem = ns.deletingPathExtension
+        var n = 1
+        while true {
+            let candidate = ext.isEmpty ? "\(stem) (\(n))" : "\(stem) (\(n)).\(ext)"
+            if !existing.contains(candidate) { return candidate }
+            n += 1
+        }
+    }
 }
 
 /// A typed failure from an SFTP operation, carrying libssh2's detail message.

@@ -28,13 +28,17 @@ struct SFTPBrowserView: View {
                 Divider()
             }
             entryList
-            if !model.transfers.isEmpty {
+            let myTransfers = vm.sftpTransfers(for: model.connection.id)
+            if !myTransfers.isEmpty {
                 Divider()
-                transferStrip
+                transferStrip(myTransfers)
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
         .task(id: model.connection.id) { await model.refresh() }
+        // Re-list when a transfer changes the current server's contents (e.g. an
+        // upload finishes) — the transfer center bumps this on completion.
+        .onChange(of: vm.sftpMutationTick) { Task { await model.refresh() } }
         .alert("New Folder", isPresented: $showNewFolder) {
             TextField("Name", text: $newFolderName)
             Button("Cancel", role: .cancel) { newFolderName = "" }
@@ -84,6 +88,8 @@ struct SFTPBrowserView: View {
             .disabled(model.isAtRoot)
             .help("Parent folder")
 
+            Button { chooseUploadItems() } label: { Image(systemName: "arrow.up.doc") }
+                .help("Upload files or folders")
             Button { showNewFolder = true } label: { Image(systemName: "folder.badge.plus") }
                 .help("New folder")
             Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
@@ -163,7 +169,7 @@ struct SFTPBrowserView: View {
         VStack(spacing: 8) {
             Image(systemName: "tray").font(.system(size: 30)).foregroundStyle(.tertiary)
             Text("This folder is empty").font(.system(size: 13)).foregroundStyle(.secondary)
-            Text("Drop files here to upload").font(.system(size: 11)).foregroundStyle(.tertiary)
+            Text("Drop files or folders here to upload").font(.system(size: 11)).foregroundStyle(.tertiary)
         }
     }
 
@@ -181,39 +187,70 @@ struct SFTPBrowserView: View {
 
     // MARK: Transfer strip
 
-    private var transferStrip: some View {
+    private func transferStrip(_ transfers: [SFTPTransfer]) -> some View {
         VStack(spacing: 0) {
             HStack {
                 Text("Transfers").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
                 Spacer()
-                if model.transfers.contains(where: { $0.finished }) {
-                    Button("Clear") { model.clearFinishedTransfers() }
+                if transfers.contains(where: { !$0.isActive }) {
+                    Button("Clear") { vm.clearFinishedSFTPTransfers() }
                         .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 5)
-            ForEach(model.transfers) { t in
-                HStack(spacing: 8) {
-                    Image(systemName: t.direction == .upload ? "arrow.up.circle" : "arrow.down.circle")
-                        .foregroundStyle(t.error != nil ? Theme.red : (t.finished ? Theme.green : Theme.accent))
-                    Text(t.name).font(.system(size: 12)).lineLimit(1)
-                    Spacer(minLength: 8)
-                    if let err = t.error {
-                        Text(err).font(.system(size: 11)).foregroundStyle(Theme.red).lineLimit(1)
-                    } else if t.finished {
-                        Text("Done").font(.system(size: 11)).foregroundStyle(Theme.green)
-                    } else {
-                        ProgressView(value: t.fraction).frame(width: 120)
-                        Text(t.total > 0 ? "\(Int(t.fraction * 100))%" : t.bytes.byteString)
-                            .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal, 14).padding(.vertical, 4)
+            ScrollView {
+                ForEach(transfers) { t in transferRow(t) }
             }
         }
         .padding(.bottom, 6)
         .background(.regularMaterial)
-        .frame(maxHeight: 160)
+        .frame(maxHeight: 180)
+    }
+
+    @ViewBuilder
+    private func transferRow(_ t: SFTPTransfer) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon(for: t))
+                .foregroundStyle(tint(for: t))
+            Text(t.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 8)
+            switch t.state {
+            case .failed(let message):
+                Text(message).font(.system(size: 11)).foregroundStyle(Theme.red).lineLimit(1)
+                Button("Retry") { vm.retrySFTPTransfer(t.id) }
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
+            case .cancelled:
+                Text("Cancelled").font(.system(size: 11)).foregroundStyle(.secondary)
+                Button("Retry") { vm.retrySFTPTransfer(t.id) }
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
+            case .finished:
+                Text("Done").font(.system(size: 11)).foregroundStyle(Theme.green)
+            case .running:
+                ProgressView(value: t.fraction).frame(width: 110)
+                Text(t.total > 0 ? "\(Int(t.fraction * 100))%" : t.bytes.byteString)
+                    .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+                    .frame(width: 42, alignment: .trailing)
+                Button { vm.cancelSFTPTransfer(t.id) } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 4)
+    }
+
+    private func icon(for t: SFTPTransfer) -> String {
+        let base = t.direction == .upload ? "arrow.up.circle" : "arrow.down.circle"
+        return t.state == .finished ? base + ".fill" : base
+    }
+
+    private func tint(for t: SFTPTransfer) -> Color {
+        switch t.state {
+        case .failed: return Theme.red
+        case .finished: return Theme.green
+        case .cancelled: return .secondary
+        case .running: return Theme.accent
+        }
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -245,12 +282,26 @@ struct SFTPBrowserView: View {
                 group.leave()
             }
         }
+        let connection = model.connection
+        let remoteDir = model.path
         group.notify(queue: .main) {
-            // Skip directories — this browser uploads files only.
-            let files = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true }
-            if !files.isEmpty { model.upload(localURLs: files) }
+            // Files and folders both upload (folders recurse in the transfer center).
+            if !urls.isEmpty { vm.startUpload(items: urls, toRemoteDir: remoteDir, on: connection) }
         }
         return true
+    }
+
+    /// Pick local files and/or folders to upload into the current directory.
+    private func chooseUploadItems() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Upload"
+        panel.message = "Choose files or folders to upload to \(model.displayPath)"
+        if panel.runModal() == .OK, !panel.urls.isEmpty {
+            vm.startUpload(items: panel.urls, toRemoteDir: model.path, on: model.connection)
+        }
     }
 
     private func chooseDownloadFolder(for entry: SFTPEntry) {
@@ -260,7 +311,7 @@ struct SFTPBrowserView: View {
         panel.prompt = "Download Here"
         panel.message = "Choose where to save “\(entry.name)”"
         if panel.runModal() == .OK, let dir = panel.url {
-            model.download(entry, to: dir)
+            vm.startDownload(entry, from: model.connection, remoteDir: model.path, toLocalDir: dir)
         }
     }
 }

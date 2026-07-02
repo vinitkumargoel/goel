@@ -96,6 +96,27 @@ final class AppViewModel: ObservableObject {
     @Published var editingServer: SFTPConnection?
     @Published var isServerEditorPresented: Bool = false
 
+    // MARK: SFTP transfers (app-wide center — see AppViewModel+SFTPTransfers)
+
+    /// Uploads and browser-initiated downloads, owned here (not by the browser
+    /// view) so they survive closing/switching the server browser and stay
+    /// cancellable. Rendered by the browser's transfer strip and the status-bar
+    /// popover. Mutated only through the `AppViewModel+SFTPTransfers` helpers.
+    @Published var sftpTransfers: [SFTPTransfer] = []
+
+    /// A pending name-collision prompt, raised before an upload would overwrite
+    /// remote files and resolved by ``SFTPUploadConflictSheet``. `nil` when idle.
+    @Published var sftpUploadConflicts: SFTPUploadConflictRequest?
+
+    /// Bumped whenever a transfer mutates a remote directory, so a browser showing
+    /// that server re-lists to reflect the change.
+    @Published var sftpMutationTick: Int = 0
+
+    /// The running Task + cancel flag for each in-flight transfer, keyed by id.
+    /// Retained here (not by any view) so a transfer outlives the browser; the
+    /// entry is dropped when the transfer settles.
+    var sftpTransferTasks: [UUID: (task: Task<Void, Never>, cancel: CancelFlag)] = [:]
+
     // MARK: Speed history (sparklines)
 
     /// One second of aggregate throughput.
@@ -1062,7 +1083,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    private func toastNow(_ message: String) {
+    func toastNow(_ message: String) {
         toast = message
         Task {
             try? await Task.sleep(nanoseconds: 2_400_000_000)

@@ -1,34 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- GoelDownloader — app icon, LIGHT appearance.
-     "Swarm" concept, Graphite colorway: dark-charcoal squircle (a touch lighter
-     than the dark-mode variant) with a soft graphite glow, white peer rings,
-     nodes and download core. The whole mark is inset to ~88% of the 1024 canvas
-     so the tile reads a touch smaller than full-bleed; corners stay transparent. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="GoelDownloader">
+<!-- Goel° — app icon ("Sky + goel°" colorway).
+     The brand's monoline "g" monogram (circle bowl + hooked stem) and the raised
+     accent dot, in white, on a light-blue gradient squircle. Authored in the
+     brand's 48-unit space, scaled to 1024 and inset to 88% of the tile so the
+     four corners stay transparent (matching the shipped icon's footprint).
+     The same mark ships for both the light and dark appearance. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Goel">
   <defs>
-    <radialGradient id="bgLight" cx="0.5" cy="0.42" r="0.85">
-      <stop offset="0" stop-color="#4a5059"/>
-      <stop offset="1" stop-color="#20242b"/>
-    </radialGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5db4f5"/>
+      <stop offset="1" stop-color="#2f83e6"/>
+    </linearGradient>
   </defs>
-
-  <!-- inset the entire mark to ~88% so the icon sits a little smaller in its tile -->
   <g transform="translate(512 512) scale(0.88) translate(-512 -512)">
-    <rect width="1024" height="1024" rx="230" fill="url(#bgLight)"/>
-
-    <!-- concentric peer rings -->
-    <circle cx="512" cy="512" r="300" fill="none" stroke="#ffffff" stroke-width="14" opacity="0.24"/>
-    <circle cx="512" cy="512" r="220" fill="none" stroke="#ffffff" stroke-width="16" opacity="0.42"/>
-
-    <!-- swarm peer nodes -->
-    <circle cx="512" cy="172" r="34" fill="#ffffff" opacity="0.75"/>
-    <circle cx="804" cy="392" r="30" fill="#ffffff" opacity="0.60"/>
-    <circle cx="700" cy="760" r="30" fill="#ffffff" opacity="0.60"/>
-    <circle cx="300" cy="724" r="28" fill="#ffffff" opacity="0.55"/>
-    <circle cx="232" cy="392" r="30" fill="#ffffff" opacity="0.60"/>
-
-    <!-- download core -->
-    <path d="M512 376 L512 620 M512 624 L420 532 M512 624 L604 532"
-          fill="none" stroke="#ffffff" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="scale(21.3333)">
+      <rect width="48" height="48" rx="10.8" fill="url(#sky)"/>
+      <g stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <circle cx="24" cy="21" r="8.5"/>
+        <path d="M32.5 12.5 L32.5 32 Q32.5 36 27 36"/>
+      </g>
+      <circle cx="38.2" cy="11" r="3.1" fill="#ffffff"/>
+    </g>
   </g>
 </svg>

@@ -161,7 +161,7 @@ struct SettingsView: View {
                     .option("日本語", "日本語"),
                 ], width: 150)
             }
-            SetRow(name: "Launch at login", desc: "Start GoelDownloader when you log in.") {
+            SetRow(name: "Launch at login", desc: "Start Goel° when you log in.") {
                 SettingSwitch(isOn: binding(\.launchAtLogin))
             }
             SetRow(name: "Launch minimized", desc: "Open to the menu bar instead of a window.") {

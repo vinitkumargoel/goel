@@ -31,7 +31,7 @@ struct SchedulerPane: View {
             SetRow(name: "Then", desc: "One-shot — resets to “Do nothing” after it fires.") {
                 Dropdown(selection: setting(vm, \.autoShutdownAction), items: [
                     .option("none", "Do nothing"),
-                    .option("quit", "Quit GoelDownloader"),
+                    .option("quit", "Quit Goel°"),
                     .option("sleep", "Sleep"),
                     .option("shutdown", "Shut down"),
                 ], width: 180)
@@ -295,7 +295,7 @@ struct BrowserIntegrationPane: View {
                 }
             }
             SetRow(name: "3. Capture",
-                   desc: "Click the extension's toolbar button to toggle capture of all downloads, or right-click any link → “Download with GoelDownloader”.") {
+                   desc: "Click the extension's toolbar button to toggle capture of all downloads, or right-click any link → “Download with Goel°”.") {
                 EmptyView()
             }
 
@@ -305,11 +305,11 @@ struct BrowserIntegrationPane: View {
                 Button("Open Safari Extensions") { openSafariExtensionPrefs() }
             }
             SetRow(name: "2. Turn it on",
-                   desc: "Enable “GoelDownloader Capture” in the list. An unsigned (ad-hoc) build also needs Safari → Develop menu → “Allow Unsigned Extensions” each session.") {
+                   desc: "Enable “Goel° Capture” in the list. An unsigned (ad-hoc) build also needs Safari → Develop menu → “Allow Unsigned Extensions” each session.") {
                 EmptyView()
             }
             SetRow(name: "3. Capture",
-                   desc: "Right-click a link → “Download with GoelDownloader”. Safari-captured links open here with a quick confirmation.") {
+                   desc: "Right-click a link → “Download with Goel°”. Safari-captured links open here with a quick confirmation.") {
                 EmptyView()
             }
 
@@ -327,7 +327,7 @@ struct BrowserIntegrationPane: View {
                 }
             }
             SetRow(name: "Services menu",
-                   desc: "Select a link in any app → right-click → Services → “Download with GoelDownloader”.") {
+                   desc: "Select a link in any app → right-click → Services → “Download with Goel°”.") {
                 EmptyView()
             }
             SetRow(name: "Drop basket",
