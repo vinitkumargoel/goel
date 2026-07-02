@@ -7,7 +7,7 @@ public enum CSVEncoder {
     /// Quote a single field: wrap it in double-quotes when it contains a
     /// separator, quote, or newline, doubling any embedded quotes.
     public static func field(_ raw: String) -> String {
-        guard raw.contains(",") || raw.contains("\"") || raw.contains("\n") else { return raw }
+        guard raw.contains(",") || raw.contains("\"") || raw.contains("\n") || raw.contains("\r") else { return raw }
         return "\"" + raw.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 

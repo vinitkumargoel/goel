@@ -110,14 +110,29 @@ public actor SFTPEngine: DownloadEngine {
         let fileURL = URL(fileURLWithPath: task.savePath)
         if !fm.fileExists(atPath: fileURL.path) { fm.createFile(atPath: fileURL.path, contents: nil) }
         let attributes = try? fm.attributesOfItem(atPath: fileURL.path)
-        let resumeFrom = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        let localSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+
+        // A byte-offset resume trusts the on-disk size to be a prefix of the
+        // remote file. If the remote is now *smaller* than what we hold locally
+        // (it was replaced/truncated, or the save path already held a larger
+        // unrelated file), resuming would seek past EOF: the first read returns 0,
+        // the transfer "succeeds" at the stale local size, and we'd falsely report
+        // completion of mismatched data. Restart from scratch in that case.
+        let client = SFTPClient(target: target)
+        let remoteSize = try? await client.size(url.path)
+        var resumeFrom = localSize
+        if let remoteSize, localSize > remoteSize { resumeFrom = 0 }
 
         guard let handle = try? FileHandle(forWritingTo: fileURL) else {
             let e = DownloadError.fileMissing
             hub.fail(id, e)
             return
         }
-        _ = try? handle.seekToEnd()
+        if resumeFrom == 0 {
+            try? handle.truncate(atOffset: 0)
+        } else {
+            _ = try? handle.seekToEnd()
+        }
 
         let cap = profile.effectiveDownloadCap(taskLimit: task.speedLimitBytesPerSec)
 
@@ -126,7 +141,6 @@ public actor SFTPEngine: DownloadEngine {
         states[id] = state
         defer { states[id] = nil }
 
-        let client = SFTPClient(target: target)
         let result = await client.streamingDownload(
             remote: url.path, resumeFrom: resumeFrom, maxBytesPerSecond: cap,
             write: { buf in state.write(buf) },

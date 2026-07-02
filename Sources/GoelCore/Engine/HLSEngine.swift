@@ -259,7 +259,7 @@ public actor HLSEngine: HLSConfigurable {
     }
 
     private nonisolated func fetchSegment(_ segment: HLSSegment, keyCache: KeyCache) async throws -> Data {
-        let raw = try await fetchData(segment.url)
+        let raw = try await fetchData(segment.url, range: segment.byteRange)
         guard let key = segment.key else { return raw }
         switch key.method {
         case .none:
@@ -278,9 +278,15 @@ public actor HLSEngine: HLSConfigurable {
         }
     }
 
-    private nonisolated func fetchData(_ url: URL) async throws -> Data {
+    private nonisolated func fetchData(_ url: URL, range: HLSByteRange? = nil) async throws -> Data {
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        // EXT-X-BYTERANGE segments address a slice of a larger resource; request
+        // just that byte range (servers answer 206, already within 200...299).
+        if let range {
+            request.setValue("bytes=\(range.start)-\(range.start + range.length - 1)",
+                             forHTTPHeaderField: "Range")
+        }
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw DownloadError.httpStatus(http.statusCode)

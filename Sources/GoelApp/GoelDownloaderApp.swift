@@ -244,7 +244,12 @@ struct GoelCommands: Commands {
     private func exportList() {
         guard let url = FilePicker.save(name: "GoelDownloader-list.txt", type: .plainText) else { return }
         let body = viewModel.tasks.map(\.source.locator).joined(separator: "\n")
-        try? body.write(to: url, atomically: true, encoding: .utf8)
+        do {
+            try body.write(to: url, atomically: true, encoding: .utf8)
+            viewModel.toastNow("Download list exported")
+        } catch {
+            viewModel.toastNow("Export failed")
+        }
     }
 
     /// Re-queue every source locator from a previously exported list.
@@ -283,7 +288,11 @@ struct GoelCommands: Commands {
     /// Shared open-panel helper for the file-based paste/import flows; returns the
     /// chosen file's contents, or `nil` if the user cancels or it can't be read.
     private func readTextFile() -> String? {
-        guard let url = FilePicker.openFile(types: [.plainText, .text]) else { return nil }
-        return try? String(contentsOf: url, encoding: .utf8)
+        guard let url = FilePicker.openFile(types: [.plainText, .text]) else { return nil } // cancelled
+        guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
+            viewModel.toastNow("Couldn’t read that file")
+            return nil
+        }
+        return contents
     }
 }

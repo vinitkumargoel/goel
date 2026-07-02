@@ -542,7 +542,20 @@ public actor RemoteControlServer {
 
         // Clamp the requested range to the bytes that verifiably exist.
         let available = plan.availableBytes
-        guard available > 0 else { return await reject("409 Conflict", "Nothing downloaded yet") }
+        // A finished but empty (0-byte) payload is valid: reply 200 with an empty
+        // body instead of pretending the download hasn't produced anything yet.
+        if available == 0 {
+            var head = "HTTP/1.1 200 OK\r\n"
+            head += "Content-Type: \(Self.mimeType(forPath: plan.path))\r\n"
+            head += "Content-Length: 0\r\n"
+            head += "Accept-Ranges: bytes\r\n"
+            head += "Cache-Control: no-store\r\n"
+            head += "X-Content-Type-Options: nosniff\r\n"
+            head += "Connection: close\r\n\r\n"
+            _ = await send(connection, Data(head.utf8))
+            connection.cancel()
+            return
+        }
         var start: Int64 = 0
         var end: Int64 = available - 1
         var status = "200 OK"
@@ -594,9 +607,13 @@ public actor RemoteControlServer {
             // path that would escape the save directory (this path is streamed out
             // over the network, so a traversal here would be an arbitrary-file read).
             let path = task.primaryFilePath
-            let attributes = try? FileManager.default.attributesOfItem(atPath: path)
-            let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-            guard size > 0 else { return nil }
+            // The file must exist on disk to be streamable, but a legitimately
+            // empty (0-byte) finished payload is still streamable — serve it as
+            // an empty body rather than collapsing it into the not-ready path.
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else {
+                return nil
+            }
+            let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
             return StreamPlan(path: path, totalBytes: size, availableBytes: size)
         }
         // In flight: only a single-file sequential torrent has a contiguous,

@@ -66,13 +66,20 @@ extension AppViewModel {
         // can't steer the *local* path (../ traversal / absolute paths), then
         // confirm the join stays inside the chosen folder.
         let safeName = PathSafety.sanitizedName(entry.name)
-        let destination = localDir.appendingPathComponent(safeName)
+        // `downloadToFile` truncate-creates its destination, so writing onto an
+        // existing local file would silently destroy it — there's no download
+        // conflict prompt. Pick a non-colliding "name (n).ext" instead (matching
+        // the upload rename policy). This also stops two different remote dotfiles,
+        // which both sanitize to the literal "download", from clobbering each other.
+        let existingNames = Set((try? FileManager.default.contentsOfDirectory(atPath: localDir.path)) ?? [])
+        let localName = SFTPBrowserPaths.uniqueName(safeName, existing: existingNames)
+        let destination = localDir.appendingPathComponent(localName)
         guard SFTPBrowserModel.isContained(destination, in: localDir) else {
             toastNow("Refusing to write “\(entry.name)” outside the chosen folder."); return
         }
         let remoteSource = SFTPBrowserPaths.join(remoteDir, entry.name)
         let cancel = CancelFlag()
-        let transfer = SFTPTransfer(connectionID: connection.id, name: safeName, direction: .download,
+        let transfer = SFTPTransfer(connectionID: connection.id, name: localName, direction: .download,
                                     isDirectory: false, localURL: destination, remotePath: remoteSource,
                                     total: entry.size)
         sftpTransfers.append(transfer)
@@ -141,10 +148,20 @@ extension AppViewModel {
         let existing = Set(((try? await client.list(remoteDir)) ?? []).map(\.name))
         var free: [SFTPUploadConflictRequest.Item] = []
         var colliding: [SFTPUploadConflictRequest.Item] = []
+        // A name collides if it's already on the server *or* if an earlier item
+        // in this same batch already claimed it — otherwise two picked items
+        // that share a last path component (e.g. two "photo.jpg" from different
+        // folders) would both be "free" and race two writers onto one remote path.
+        var taken = existing
         for url in items {
             let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             let item = SFTPUploadConflictRequest.Item(url: url, isDirectory: isDir)
-            if existing.contains(url.lastPathComponent) { colliding.append(item) } else { free.append(item) }
+            if taken.contains(url.lastPathComponent) {
+                colliding.append(item)
+            } else {
+                free.append(item)
+                taken.insert(url.lastPathComponent)
+            }
         }
         if colliding.isEmpty {
             launchUploads(connection: connection, remoteDir: remoteDir,

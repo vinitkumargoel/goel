@@ -76,6 +76,13 @@ extension DownloadManager {
         tasks[i].resumeData = nil
         tasks[i].completedAt = nil
         tasks[i].scanVerdict = nil
+        // Drop the stale stats mark from the just-finished download. Its `down`
+        // equals the OLD file's full size; leaving it would make StatsAccumulator
+        // re-base the fresh (from-zero) re-download against that larger mark and
+        // report deltaDown == 0 for most/all of the transfer, so a real successful
+        // re-download would be under-counted (or entirely lost) in lifetime stats.
+        // The next `.progress` seeds a fresh mark from the zeroed byte counts.
+        statsMarks[tasks[i].id] = nil
         persist(tasks[i])
         publish()
         schedule()

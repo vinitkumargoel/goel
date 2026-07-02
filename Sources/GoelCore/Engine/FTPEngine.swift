@@ -84,10 +84,13 @@ public actor FTPEngine: DownloadEngine {
         guard case .url(let url) = source, source.kind == .ftp else { return nil }
         let name = PathSafety.sanitizedName(url.lastPathComponent, fallback: url.host ?? "download")
         let credential = credentials(for: url)
-        let size = await Self.remoteSizeBlocking(url: url.absoluteString,
-                                                 userpwd: credential?.userpwd,
-                                                 requireTLS: credential?.requireTLS ?? false)
-        return EngineMetadata(name: name, totalBytes: size > 0 ? size : nil, reachable: size >= 0)
+        let probe = await Self.remoteSizeBlocking(url: url.absoluteString,
+                                                  userpwd: credential?.userpwd,
+                                                  requireTLS: credential?.requireTLS ?? false)
+        // A reachable server that simply doesn't advertise a size (size == -1) is
+        // still reachable — don't mislabel it "couldn't reach the server".
+        return EngineMetadata(name: name, totalBytes: probe.size >= 0 ? probe.size : nil,
+                              reachable: probe.reachable)
     }
 
     // MARK: Transfer
@@ -237,11 +240,12 @@ public actor FTPEngine: DownloadEngine {
     }
 
     private static func remoteSizeBlocking(url: String, userpwd: String?,
-                                           requireTLS: Bool) async -> Int64 {
+                                           requireTLS: Bool) async -> (size: Int64, reachable: Bool) {
         await withCheckedContinuation { continuation in
             let thread = Thread {
-                continuation.resume(returning: Int64(gcb_remote_size(url, userpwd,
-                                                                     requireTLS ? 1 : 0)))
+                var reachable: Int32 = 0
+                let size = Int64(gcb_remote_size(url, userpwd, requireTLS ? 1 : 0, &reachable))
+                continuation.resume(returning: (size, reachable != 0))
             }
             thread.name = "goel.ftp-probe"
             thread.start()

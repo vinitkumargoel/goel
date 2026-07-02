@@ -44,6 +44,7 @@ public final class SFTPConnectionStore: @unchecked Sendable {
         lock.lock()
         var list = (try? JSONDecoder().decode([SFTPConnection].self,
                                               from: (try? Data(contentsOf: fileURL)) ?? Data())) ?? []
+        let previous = list.first { $0.id == connection.id }
         if let idx = list.firstIndex(where: { $0.id == connection.id }) {
             list[idx] = connection
         } else {
@@ -54,10 +55,24 @@ public final class SFTPConnectionStore: @unchecked Sendable {
         }
         lock.unlock()
 
+        // The Keychain is keyed by `credentialKey` (user@host:port), which is
+        // derived from mutable fields. When editing changes any of them the key
+        // moves, so we must keep the secret with the connection under its new key
+        // and delete the stale one — otherwise blank-password edits (the "keep
+        // the stored one" path) orphan the secret and silently break the login.
+        let keyChanged = previous.map { $0.credentialKey != connection.credentialKey } ?? false
         if let password {
             keychain.setCredential(username: connection.username,
                                    password: password,
                                    host: connection.credentialKey)
+            if keyChanged, let previous { keychain.removeCredential(host: previous.credentialKey) }
+        } else if keyChanged, let previous,
+                  let stored = keychain.credential(forHost: previous.credentialKey) {
+            // Password left unchanged but the key moved: migrate the stored secret.
+            keychain.setCredential(username: connection.username,
+                                   password: stored.password,
+                                   host: connection.credentialKey)
+            keychain.removeCredential(host: previous.credentialKey)
         }
     }
 

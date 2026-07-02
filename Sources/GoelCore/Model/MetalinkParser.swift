@@ -5,7 +5,8 @@ import Foundation
 /// add pipeline needs to create a mirrored, checksum-verified task.
 public struct MetalinkFile: Sendable, Equatable {
     public var name: String
-    /// Every http(s) source, in document order (document priority respected).
+    /// Every http(s) source, ordered by the document's priority/preference hint
+    /// (highest priority first; equal/unhinted mirrors keep document order).
     public var urls: [String]
     public var size: Int64?
     public var checksum: Checksum?
@@ -31,8 +32,12 @@ public enum MetalinkParser {
         private var text = ""
         /// The hash type attribute of the element being read ("sha-256", "md5"…).
         private var hashType: String?
-        /// Metalink 3 wraps hashes in `<verification>`; v4 puts `<hash>` on the file.
-        private var currentURLPreference: Int?
+        /// The current `<url>`'s normalised ordering hint — smaller sorts first
+        /// (higher priority). Absent hint uses `.max`, sorting the mirror last.
+        private var currentURLSortKey: Int = .max
+        /// http(s) mirrors collected for the current `<file>`, each with its sort
+        /// key; ordered by priority (stable within equal keys) when the file ends.
+        private var currentURLEntries: [(url: String, sortKey: Int)] = []
 
         func parser(_ parser: XMLParser, didStartElement name: String,
                     namespaceURI: String?, qualifiedName: String?,
@@ -41,10 +46,20 @@ public enum MetalinkParser {
             case "file":
                 current = MetalinkFile(name: attributes["name"] ?? "", urls: [],
                                        size: nil, checksum: nil)
+                currentURLEntries = []
             case "url":
                 // v3 carries type="http"/"ftp"; v4 has no type (scheme decides).
-                currentURLPreference = attributes["preference"].flatMap(Int.init)
-                    ?? attributes["priority"].flatMap(Int.init)
+                // Normalise the ordering hint to a key where *smaller sorts first*
+                // (higher priority): v4 `priority` is already "lower is better"
+                // (RFC 5854), while v3 `preference` is "higher is better", so it's
+                // negated. An absent hint sorts last.
+                if let priority = attributes["priority"].flatMap(Int.init) {
+                    currentURLSortKey = priority
+                } else if let preference = attributes["preference"].flatMap(Int.init) {
+                    currentURLSortKey = -preference
+                } else {
+                    currentURLSortKey = .max
+                }
             case "hash":
                 hashType = attributes["type"]?.lowercased()
             default:
@@ -62,12 +77,11 @@ public enum MetalinkParser {
             let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
             switch name.lowercased() {
             case "url":
-                if var file = current,
+                if current != nil,
                    let url = URL(string: value),
                    let scheme = url.scheme?.lowercased(),
                    scheme == "http" || scheme == "https" {
-                    file.urls.append(url.absoluteString)
-                    current = file
+                    currentURLEntries.append((url.absoluteString, currentURLSortKey))
                 }
             case "size":
                 if var file = current, let size = Int64(value), size >= 0 {
@@ -85,8 +99,18 @@ public enum MetalinkParser {
                 }
                 hashType = nil
             case "file":
-                if let file = current { files.append(file) }
+                if var file = current {
+                    // Order mirrors by their priority/preference hint. The offset
+                    // tiebreaker keeps document order among equal-priority (and
+                    // hint-less) mirrors, since `sorted(by:)` isn't guaranteed stable.
+                    file.urls = currentURLEntries
+                        .enumerated()
+                        .sorted { ($0.element.sortKey, $0.offset) < ($1.element.sortKey, $1.offset) }
+                        .map(\.element.url)
+                    files.append(file)
+                }
                 current = nil
+                currentURLEntries = []
             default:
                 break
             }

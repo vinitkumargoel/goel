@@ -109,12 +109,17 @@ public final class PersistenceStore: @unchecked Sendable {
     }
 
     /// Load every persisted task, ordered by `addedAt` (oldest first).
+    ///
+    /// A single undecodable row (e.g. a blob written by a future/older schema, or
+    /// on-disk corruption) is skipped individually rather than failing the whole
+    /// load — mirroring ``loadHistory(limit:)`` — so one bad task can't wipe the
+    /// user's entire restored queue or break the export/backup escape hatch.
     public func loadAllTasks() throws -> [DownloadTask] {
         try dbQueue.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT data FROM task ORDER BY addedAt ASC")
-            return try rows.map { row in
+            return rows.compactMap { row in
                 let data: Data = row["data"]
-                return try self.decoder.decode(DownloadTask.self, from: data)
+                return try? self.decoder.decode(DownloadTask.self, from: data)
             }
         }
     }

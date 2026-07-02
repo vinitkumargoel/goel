@@ -45,7 +45,10 @@ final class ThroughputSampler: ObservableObject {
 
     init(capacity: Int = 44) {
         self.capacity = capacity
-        self.samples = Array(repeating: 0, count: capacity)
+        // Start empty rather than a synthetic all-zero window: the graph draws
+        // nothing until real samples arrive, so "no data yet" never reads as a
+        // measured 0 B/s that ramps up over the buffer's length.
+        self.samples = []
     }
 
     /// Append the latest speed. If the identity changed since the last sample,
@@ -53,7 +56,7 @@ final class ThroughputSampler: ObservableObject {
     func record(_ value: Double, id: AnyHashable) {
         if id != currentID {
             currentID = id
-            samples = Array(repeating: 0, count: capacity)
+            samples = []
         }
         samples.append(value)
         if samples.count > capacity { samples.removeFirst(samples.count - capacity) }

@@ -16,7 +16,7 @@ public enum ForeignImportParser {
 
     /// URLs of a supported scheme, plus magnet links. Stops at whitespace or the
     /// quoting/markup characters that typically bound a URL in JSON/HTML/XML.
-    private static let pattern = #"(?:https?|ftps?)://[^\s"'<>\\)\]}]+|magnet:\?[^\s"'<>\\)\]}]+"#
+    private static let pattern = #"(?:https?|ftps?)://[^\s,"'<>\\)\]}]+|magnet:\?[^\s,"'<>\\)\]}]+"#
 
     /// Pull every recognised locator out of `text`, de-duplicated, order-stable.
     public static func extractLocators(from text: String) -> [String] {

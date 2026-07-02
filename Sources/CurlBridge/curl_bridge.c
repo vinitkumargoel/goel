@@ -71,12 +71,14 @@ GCBResult gcb_download(const char *url, long long resume_from,
     return result;
 }
 
-long long gcb_remote_size(const char *url, const char *userpwd, int require_tls) {
+long long gcb_remote_size(const char *url, const char *userpwd, int require_tls, int *out_reachable) {
+    if (out_reachable) *out_reachable = 0;
     CURL *h = curl_easy_init();
     if (!h) return -1;
     gcb_common(h, url, userpwd, require_tls);
     curl_easy_setopt(h, CURLOPT_NOBODY, 1L);
     CURLcode rc = curl_easy_perform(h);
+    if (out_reachable) *out_reachable = (rc == CURLE_OK) ? 1 : 0;
     curl_off_t length = -1;
     if (rc == CURLE_OK) {
         curl_easy_getinfo(h, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &length);

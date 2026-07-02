@@ -26,6 +26,11 @@ enum NotificationService {
             content.title = title
             content.body = body
             content.sound = sound ? .default : nil
+            // Attach the app mark so a logo shows on the banner even when the
+            // system doesn't surface the bundle icon (e.g. an unbundled/dev run).
+            if let icon = iconAttachment() {
+                content.attachments = [icon]
+            }
 
             let request = UNNotificationRequest(
                 identifier: UUID().uuidString,
@@ -33,6 +38,22 @@ enum NotificationService {
                 trigger: nil
             )
             center.add(request, withCompletionHandler: nil)
+        }
+    }
+
+    /// A logo attachment for the notification banner. The bundled icon is copied
+    /// to a unique temp file first because `UNNotificationAttachment` takes
+    /// ownership of (moves) the file it's handed and can't move a read-only
+    /// bundle resource. Returns nil (silently, no attachment) if anything fails.
+    private static func iconAttachment() -> UNNotificationAttachment? {
+        guard let src = Bundle.module.url(forResource: "AppIcon-Light", withExtension: "png") else { return nil }
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("goel-notify-\(UUID().uuidString).png")
+        do {
+            try FileManager.default.copyItem(at: src, to: tmp)
+            return try UNNotificationAttachment(identifier: "goel-icon", url: tmp, options: nil)
+        } catch {
+            return nil
         }
     }
 }

@@ -25,12 +25,20 @@ final class FileProgressPublisher {
             live.insert(task.id)
             let progress = published[task.id] ?? makeProgress(for: task, onCancel: onCancel)
             progress.totalUnitCount = total
-            progress.completedUnitCount = min(task.bytesDownloaded, total)
+            // `bytesDownloaded` can legitimately exceed `total` (revised
+            // Content-Length, stale probe, segmented overshoot); clamp once and
+            // reuse for both the count and the ETA so neither goes negative.
+            let delivered = min(task.bytesDownloaded, total)
+            progress.completedUnitCount = delivered
             progress.setUserInfoObject(NSNumber(value: task.downloadSpeed), forKey: .throughputKey)
             if task.downloadSpeed > 0 {
-                let remaining = Double(total - task.bytesDownloaded) / task.downloadSpeed
+                let remaining = Double(total - delivered) / task.downloadSpeed
                 progress.setUserInfoObject(NSNumber(value: remaining),
                                            forKey: .estimatedTimeRemainingKey)
+            } else {
+                // At 0 B/s the previous estimate is stale; clear it so Finder
+                // shows "Calculating…" rather than a frozen countdown.
+                progress.setUserInfoObject(nil, forKey: .estimatedTimeRemainingKey)
             }
         }
         for (id, progress) in published where !live.contains(id) {

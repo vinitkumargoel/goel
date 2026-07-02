@@ -270,6 +270,11 @@ final class AppViewModel: ObservableObject {
     /// the first row on the next snapshot.
     private var hasAutoSelected = false
 
+    /// Monotonic token identifying the most recent ``toastNow`` invocation, so a
+    /// later toast's timer never gets pre-empted by an earlier one that happens to
+    /// carry identical text.
+    private var toastGeneration = 0
+
     /// The carry-over state for the snapshot pump — the notification-diff baselines
     /// and the queue-drain edge — folded by the pure ``SnapshotReducer`` each tick.
     /// Replaces the four separate, order-dependent mutable fields this used to keep.
@@ -387,8 +392,8 @@ final class AppViewModel: ObservableObject {
                     // "Select none" sticks and the empty-detail state stays reachable
                     // while downloads are active.
                     if self.primarySelection == nil && !self.hasAutoSelected {
-                        self.hasAutoSelected = true
                         if let first = self.visibleTasks.first?.id {
+                            self.hasAutoSelected = true
                             self.primarySelection = first
                             self.selection = [first]
                         }
@@ -1340,10 +1345,12 @@ final class AppViewModel: ObservableObject {
     }
 
     func toastNow(_ message: String) {
+        toastGeneration &+= 1
+        let generation = toastGeneration
         toast = message
         Task {
             try? await Task.sleep(nanoseconds: 2_400_000_000)
-            if toast == message { toast = nil }
+            if toastGeneration == generation { toast = nil }
         }
     }
 

@@ -38,12 +38,8 @@ struct LinkGrabberSheet: View {
                     filterChips
                     linkList
                     HStack {
-                        Button(selected.count == visibleLinks.count ? "Select None" : "Select All") {
-                            if selected.count == visibleLinks.count {
-                                selected.removeAll()
-                            } else {
-                                selected = Set(visibleLinks.map(\.url))
-                            }
+                        Button(allVisibleSelected ? "Select None" : "Select All") {
+                            toggleVisibleSelection()
                         }
                         Spacer()
                         Text("\(selected.count) selected")
@@ -72,6 +68,23 @@ struct LinkGrabberSheet: View {
     private var visibleLinks: [GrabbedLink] {
         guard let categoryFilter else { return links }
         return links.filter { $0.category == categoryFilter }
+    }
+
+    /// True when every currently-visible (filtered) link is already selected.
+    private var allVisibleSelected: Bool {
+        let visible = visibleLinks
+        return !visible.isEmpty && visible.allSatisfy { selected.contains($0.url) }
+    }
+
+    /// Select/deselect only the visible (filtered) subset, leaving selections made
+    /// under a different category filter untouched.
+    private func toggleVisibleSelection() {
+        let visibleURLs = visibleLinks.map(\.url)
+        if allVisibleSelected {
+            visibleURLs.forEach { selected.remove($0) }
+        } else {
+            selected.formUnion(visibleURLs)
+        }
     }
 
     private var presentCategories: [GrabbedLink.Category] {

@@ -16,8 +16,9 @@ import GoelCore
 struct DetailBottomPanel: View {
     @EnvironmentObject private var vm: AppViewModel
 
-    /// Rolling download-speed history for zone 2's sparkline.
-    @StateObject private var sampler = ThroughputSampler()
+    /// Rolling download-speed history for zone 2's sparkline. Sized to 60 so the
+    /// once-a-second cadence gives a full 60-second window, matching the caption.
+    @StateObject private var sampler = ThroughputSampler(capacity: 60)
     /// Samples the selected task's speed on a steady once-a-second cadence, so
     /// the graph advances even when the rate holds constant.
     @State private var sampleTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -207,6 +208,12 @@ struct DetailBottomPanel: View {
             KVRow(key: "Added", value: task.addedString)
             KVRow(key: "Save path", value: task.savePath, copyable: true)
             KVRow(key: "Source", value: task.sourceLocator, copyable: true)
+
+            // The overlaid download + upload speed history. Self-hiding until it
+            // has enough samples, so it only appears for actively-transferring
+            // tasks that have accumulated a history.
+            TaskSpeedGraph(taskID: task.id)
+                .padding(.top, 14)
         }
     }
 

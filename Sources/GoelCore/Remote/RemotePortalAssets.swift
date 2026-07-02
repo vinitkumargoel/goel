@@ -124,7 +124,7 @@ enum RemotePortalAssets {
     textarea.finput{min-height:88px;font-family:inherit;resize:vertical}
     .fhint{font-size:11px;color:var(--text-faint);margin-top:6px;line-height:1.5}.fhint svg{width:12px;height:12px;display:inline;vertical-align:-2px;color:var(--orange)}
     .twocol{display:flex;gap:14px;margin-top:16px}.twocol .fg{flex:1}
-    .btn{height:38px;padding:0 16px;border:0;border-radius:10px;background:var(--bg-control);color:var(--text);font-size:13px;font-weight:600;cursor:pointer}.btn:hover{background:var(--bg-control-active)}.btn.primary{background:var(--accent);color:#fff}.btn.primary:hover{background:var(--accent-press)}
+    .btn{height:38px;padding:0 16px;border:0;border-radius:10px;background:var(--bg-control);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px}.btn:hover{background:var(--bg-control-active)}.btn.primary{background:var(--accent);color:#fff}.btn.primary:hover{background:var(--accent-press)}.btn svg{width:15px;height:15px;flex:0 0 auto}
     .menu{position:fixed;z-index:140;min-width:210px;background:var(--bg-modal);border:1px solid var(--border-strong);border-radius:11px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:5px;font-size:12.5px}
     .mi{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;cursor:pointer;color:var(--text);white-space:nowrap}.mi:hover{background:var(--accent);color:#fff}.mi:hover svg{color:#fff}.mi svg{width:15px;height:15px;color:var(--text-dim);flex:0 0 auto}.mi .t{flex:1}
     .mi.danger{color:var(--red)}.mi.danger svg{color:var(--red)}.mi.danger:hover{background:var(--red);color:#fff}.msep{height:1px;background:var(--border);margin:4px 6px}

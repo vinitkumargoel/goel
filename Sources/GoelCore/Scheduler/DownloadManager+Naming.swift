@@ -55,7 +55,12 @@ extension DownloadManager {
         if !leaf.isEmpty, !generic.contains(leaf.lowercased()) {
             stem = leaf
         } else if !parent.isEmpty, parent != "/" {
-            stem = parent
+            // Strip a video extension the parent folder may already carry (e.g.
+            // `.../trailer.mp4/index.m3u8`) so the appended `.mp4` below does not
+            // produce a doubled extension like `trailer.mp4.mp4`.
+            let videoExts: Set<String> = ["mp4", "mkv", "avi", "mov", "webm", "m4v", "flv", "ts", "m3u8"]
+            let ext = (parent as NSString).pathExtension.lowercased()
+            stem = videoExts.contains(ext) ? (parent as NSString).deletingPathExtension : parent
         } else {
             stem = url.host ?? "video"
         }

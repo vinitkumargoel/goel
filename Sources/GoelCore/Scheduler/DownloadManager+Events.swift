@@ -23,7 +23,15 @@ extension DownloadManager {
 
         switch event {
         case let .metadataResolved(name, totalBytes, files):
-            if tasks[i].name.isEmpty { tasks[i].name = name }
+            // Adopt the engine-resolved name (from DHT/peer metadata, Content-
+            // Disposition, …) while the task still carries only its source-derived
+            // placeholder — `DownloadTask.name` is never actually empty, so the old
+            // `isEmpty` check was dead code and left magnets stuck on "Magnet
+            // download". A user-supplied custom name (≠ the default) is preserved,
+            // and the adopted name is re-sanitized as defense-in-depth.
+            if !name.isEmpty, tasks[i].name == Self.defaultName(for: tasks[i].source) {
+                tasks[i].name = PathSafety.sanitizedName(name, fallback: tasks[i].name)
+            }
             tasks[i].totalBytes = totalBytes
             tasks[i].files = files
 
@@ -77,6 +85,14 @@ extension DownloadManager {
             break   // the subsequent .statusChanged carries the terminal/seeding state
 
         case let .failed(error):
+            // Same stale-echo guard as `.statusChanged`: an error an engine queued
+            // just before it was stopped can still be drained after the manager has
+            // authoritatively paused this task. If it's `.paused` and no longer holds
+            // a slot, that late failure must not clobber the user's pause (which would
+            // also block Resume, forcing a Retry).
+            if tasks[i].status == .paused, !runningSlots.contains(id) {
+                return
+            }
             tasks[i].status = .failed(error)
             handleStatusTransition(id, .failed(error))
 

@@ -39,7 +39,13 @@ struct SFTPConnectionEditor: View {
         guard let n = Int(port), (1...65535).contains(n) else { return 22 }
         return n
     }
-    private var canSave: Bool { !host.isEmpty && !username.isEmpty }
+    /// Whether the Port field holds a valid 1–65535 integer. Guards Save/Test so
+    /// invalid text is never silently coerced to 22 behind the user's back.
+    private var portIsValid: Bool {
+        guard let n = Int(port) else { return false }
+        return (1...65535).contains(n)
+    }
+    private var canSave: Bool { !host.isEmpty && !username.isEmpty && portIsValid }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -54,6 +60,10 @@ struct SFTPConnectionEditor: View {
                     HStack(spacing: 10) {
                         field("Host", "example.com", $host).frame(maxWidth: .infinity)
                         field("Port", "22", $port).frame(width: 80)
+                    }
+                    if !portIsValid {
+                        Text("Port must be a number between 1 and 65535.")
+                            .font(.system(size: 10)).foregroundStyle(Theme.red)
                     }
                     field("Username", "user", $username)
                     labeled("Password") {

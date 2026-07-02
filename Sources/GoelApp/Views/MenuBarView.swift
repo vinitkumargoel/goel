@@ -141,14 +141,18 @@ struct MenuBarView: View {
         if activeTasks.isEmpty { vm.resumeAll() } else { vm.pauseAll() }
     }
 
-    /// Bring the app forward and surface its main window (the popover dismisses
-    /// itself once focus leaves it). The status-bar popover is a panel that can't
-    /// become main, so the first `canBecomeMain` window is the real app window.
+    /// Bring the app forward and surface its main downloads window (the popover
+    /// dismisses itself once focus leaves it). The status-bar popover is a panel
+    /// that can't become main, but the SwiftUI `Settings` scene's window is also
+    /// `canBecomeMain`, so it must be excluded explicitly — otherwise whichever
+    /// main-capable window happens to be frontmost (possibly Settings) gets
+    /// raised instead of the downloads window.
     private func activateMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.canBecomeMain }) {
-            window.makeKeyAndOrderFront(nil)
-        }
+        // SwiftUI hosts the `Settings` scene under this well-known identifier.
+        let settingsID = NSUserInterfaceItemIdentifier("com_apple_SwiftUI_Settings_window")
+        let window = NSApp.windows.first { $0.canBecomeMain && $0.identifier != settingsID }
+        window?.makeKeyAndOrderFront(nil)
     }
 }
 

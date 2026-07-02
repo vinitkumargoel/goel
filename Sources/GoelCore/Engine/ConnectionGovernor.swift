@@ -24,20 +24,55 @@
 actor ConnectionGovernor {
     private var limit: Int
     private var active = 0
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [(id: Int, continuation: CheckedContinuation<Void, Error>)] = []
+    private var nextWaiterID = 0
 
     init(limit: Int) {
         self.limit = max(1, limit)
     }
 
     /// Suspends until a connection slot is free, then claims it.
-    func acquire() async {
+    ///
+    /// Honours task cancellation: a caller whose `Task` is cancelled — before it
+    /// queues, or while parked waiting for a slot — throws `CancellationError`
+    /// instead of being granted a slot and opening a doomed request. Without this,
+    /// a segment queued here when its sibling permanently fails (which cancels the
+    /// whole task group) would still be resumed by `pump()` and issue a fresh range
+    /// GET against an already-torn-down transfer.
+    func acquire() async throws {
+        try Task.checkCancellation()
         if active < limit {
             active += 1
             return
         }
-        await withCheckedContinuation { waiters.append($0) }
-        // Resumed by `pump()`, which already reserved the slot on our behalf.
+        let id = nextWaiterID
+        nextWaiterID += 1
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                // Re-check under the actor: a cancellation that fired between the
+                // guard above and here must not park a continuation the handler has
+                // already run past (it would then never be resumed).
+                if Task.isCancelled {
+                    cont.resume(throwing: CancellationError())
+                } else {
+                    waiters.append((id: id, continuation: cont))
+                }
+            }
+            // Resumed by `pump()`, which already reserved the slot on our behalf.
+        } onCancel: {
+            Task { await self.cancelWaiter(id) }
+        }
+    }
+
+    /// Cancellation fired for a parked waiter: if it is still queued, drop it and
+    /// resume it throwing `CancellationError` so it aborts instead of opening a
+    /// doomed connection. If it is no longer queued, `pump()` already admitted it
+    /// (reserving a slot) and the caller now owns that slot and will `release()` it
+    /// on its own cancellation-driven exit — so there is nothing to do here.
+    private func cancelWaiter(_ id: Int) {
+        guard let idx = waiters.firstIndex(where: { $0.id == id }) else { return }
+        let waiter = waiters.remove(at: idx)
+        waiter.continuation.resume(throwing: CancellationError())
     }
 
     /// Returns a slot and admits the next waiter if there is room.
@@ -55,7 +90,7 @@ actor ConnectionGovernor {
         while active < limit, !waiters.isEmpty {
             let waiter = waiters.removeFirst()
             active += 1                 // reserve on the waiter's behalf
-            waiter.resume()
+            waiter.continuation.resume()
         }
     }
 }

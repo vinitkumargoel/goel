@@ -278,10 +278,12 @@ struct RemoteAccessPane: View {
                 }
                 SetRow(name: "Open portal", desc: "Open it here, or from another device on your LAN.") {
                     HStack(spacing: 8) {
-                        Button("Open") { NSWorkspace.shared.open(controlURL) }
+                        Button("Open") { if let url = controlURL { NSWorkspace.shared.open(url) } }
+                            .disabled(controlURL == nil)
                         Button("Copy Link") {
-                            vm.copyToPasteboard(controlURL.absoluteString)
+                            if let url = controlURL { vm.copyToPasteboard(url.absoluteString) }
                         }
+                        .disabled(controlURL == nil)
                     }
                 }
                 if vm.settings.remoteAllowLAN {
@@ -318,8 +320,10 @@ struct RemoteAccessPane: View {
         )
     }
 
-    private var controlURL: URL {
-        URL(string: "http://127.0.0.1:\(vm.settings.remotePort)/?token=\(vm.settings.remoteToken)")!
+    /// The loopback control URL. Optional because the port field accepts any
+    /// `Int` (including negatives), which makes `URL(string:)` return nil.
+    private var controlURL: URL? {
+        URL(string: "http://127.0.0.1:\(vm.settings.remotePort)/?token=\(vm.settings.remoteToken)")
     }
 
     private static func newToken() -> String {
@@ -346,6 +350,8 @@ struct BrowserIntegrationPane: View {
                 Button("Show Folder") {
                     if let folder = BrowserIntegrationService.extensionFolder {
                         NSWorkspace.shared.activateFileViewerSelecting([folder])
+                    } else {
+                        vm.toastNow("The bundled extension folder is only available in the packaged app, not a dev build.")
                     }
                 }
             }
@@ -398,10 +404,18 @@ struct BrowserIntegrationPane: View {
         }
     }
 
-    /// Jump straight to this app's entry in Safari's extension settings.
+    /// Jump straight to this app's entry in Safari's extension settings. This only
+    /// works from the packaged, signed `.app` (Safari must have registered the
+    /// bundled `.appex`); from a dev build it fails, so surface that instead of
+    /// leaving the button feeling dead.
     private func openSafariExtensionPrefs() {
         SFSafariApplication.showPreferencesForExtension(
-            withIdentifier: "com.goel.downloader.SafariExtension") { _ in }
+            withIdentifier: "com.goel.downloader.SafariExtension") { error in
+            guard error != nil else { return }
+            Task { @MainActor in
+                vm.toastNow("Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app.")
+            }
+        }
     }
 }
 

@@ -214,10 +214,12 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         // suffix. Local `.torrent` files enter through the watch-folder /
         // file-open paths, which construct `.torrentFile` directly from a
         // user-action file URL and never go through `parse`.
-        if lower.hasSuffix(".torrent"),
-           let url = URL(string: trimmed),
+        if let url = URL(string: trimmed),
+           url.pathExtension.lowercased() == "torrent",
            let scheme = url.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {
+            // `pathExtension` ignores any `?query`, so tokenised tracker URLs
+            // (e.g. `…/movie.torrent?token=abc`) still route to the torrent engine.
             return .torrentFile(url)
         }
         if let url = URL(string: trimmed),
@@ -229,6 +231,9 @@ public enum DownloadSource: Codable, Sendable, Hashable {
                 return .url(url)
             }
             if scheme == "ftp" || scheme == "ftps" {
+                // Needs a host to be a real target (ftp://host/path); a bare
+                // `ftp:` or hostless form is junk that can only fail at connect.
+                guard url.host?.isEmpty == false else { return nil }
                 // Never persist an inline password (`ftp://user:pass@host`). Like
                 // the SFTP case below, a URL is stored/displayed/exported/copied
                 // verbatim, so an inline secret would leak into the task DB, JSON

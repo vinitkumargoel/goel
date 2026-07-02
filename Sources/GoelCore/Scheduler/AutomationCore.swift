@@ -185,14 +185,23 @@ public enum AutomationCore {
         let shouldPause = (s.settings.pauseOnExpensiveNetwork && s.networkExpensive)
             || (s.settings.pauseOnConstrainedNetwork && s.networkConstrained)
         if shouldPause, !memory.networkPaused {
-            memory.networkPaused = true
             var paused: Set<UUID> = []
             for t in s.tasks where t.downloadingPhase && !claimedThisTick.contains(t.id) {
                 actions.append(.pause(t.id, .network))
                 paused.insert(t.id)
                 claimedThisTick.insert(t.id)
             }
-            memory.networkPausedIDs = paused
+            // Only latch the policy once it has actually paused something. If every
+            // downloading-phase task is already paused by another ledger (e.g. the
+            // window), latching now with an empty set would "consume" the policy —
+            // when those tasks later resume over the still-expensive network, this
+            // branch would be skipped (`memory.networkPaused` already true) and they
+            // would never be re-paused. Leaving it unlatched lets the next tick pause
+            // the resumed task.
+            if !paused.isEmpty {
+                memory.networkPaused = true
+                memory.networkPausedIDs = paused
+            }
         } else if !shouldPause, memory.networkPaused {
             memory.networkPaused = false
             for id in memory.networkPausedIDs.sortedByUUID() { actions.append(.resume(id)) }
@@ -231,14 +240,25 @@ public enum AutomationCore {
         let start = settings.scheduleStartMinute
         let end = settings.scheduleEndMinute
         guard start != end else { return true }
-        guard settings.scheduleDays.contains(calendar.component(.weekday, from: date)) else {
-            return false
-        }
         let minutes = calendar.component(.hour, from: date) * 60
             + calendar.component(.minute, from: date)
-        return start < end
-            ? (minutes >= start && minutes < end)
-            : (minutes >= start || minutes < end)
+        let today = calendar.component(.weekday, from: date)
+        if start < end {
+            return settings.scheduleDays.contains(today) && minutes >= start && minutes < end
+        }
+        // Wrap-around window (e.g. 22:00 → 07:00). The evening portion (`>= start`)
+        // belongs to today; the early-morning portion (`< end`) belongs to the
+        // window that *started* the previous calendar day, so it must be gated on
+        // yesterday's weekday — otherwise an overnight window from an included day
+        // (e.g. Fri) wrongly closes at midnight when the next day (Sat) is excluded.
+        if minutes >= start {
+            return settings.scheduleDays.contains(today)
+        }
+        if minutes < end {
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: date) ?? date
+            return settings.scheduleDays.contains(calendar.component(.weekday, from: yesterday))
+        }
+        return false
     }
 }
 

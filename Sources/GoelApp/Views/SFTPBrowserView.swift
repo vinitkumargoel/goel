@@ -10,12 +10,21 @@ struct SFTPBrowserView: View {
     @EnvironmentObject private var vm: AppViewModel
     @StateObject private var model: SFTPBrowserModel
 
+    /// The connection/client as most recently handed down by the parent. Stored
+    /// as plain view properties (not `@StateObject`) so they always reflect the
+    /// latest edit; `.onChange` forwards them into the long-lived model, which
+    /// SwiftUI keeps alive across an edit because the connection `id` is stable.
+    private let connection: SFTPConnection
+    private let client: SFTPClient?
+
     @State private var dropTargeted = false
     @State private var showNewFolder = false
     @State private var newFolderName = ""
     @State private var pendingDelete: SFTPEntry?
 
     init(connection: SFTPConnection, client: SFTPClient?) {
+        self.connection = connection
+        self.client = client
         _model = StateObject(wrappedValue: SFTPBrowserModel(connection: connection, client: client))
     }
 
@@ -36,6 +45,14 @@ struct SFTPBrowserView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .task(id: model.connection.id) { await model.refresh() }
+        // When the connection is edited (host/username/port/password), the parent
+        // re-renders this view with the fresh value but the @StateObject model is
+        // kept alive — so forward the new credentials in and re-list, otherwise the
+        // open browser keeps using the pre-edit login.
+        .onChange(of: connection) {
+            model.update(connection: connection, client: client)
+            Task { await model.refresh() }
+        }
         // Re-list when a transfer changes the current server's contents (e.g. an
         // upload finishes) — the transfer center bumps this on completion.
         .onChange(of: vm.sftpMutationTick) { Task { await model.refresh() } }

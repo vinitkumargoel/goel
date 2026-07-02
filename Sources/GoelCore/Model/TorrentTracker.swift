@@ -44,7 +44,7 @@ public struct TorrentTracker: Codable, Sendable, Equatable, Hashable, Identifiab
         switch status {
         case .working:  return "Working"
         case .updating: return "Updating"
-        case .error:    return message.isEmpty ? "Error" : "Error"
+        case .error:    return message.isEmpty ? "Error" : message
         case .inactive: return "Idle"
         }
     }

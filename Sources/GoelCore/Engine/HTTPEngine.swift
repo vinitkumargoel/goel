@@ -357,7 +357,14 @@ public actor HTTPEngine: HTTPConfigurable {
                                         extraHeaders: task.requestHeaders ?? [:])
 
             if let total = probe.totalBytes {
-                try checkDiskSpace(task.saveDirectory, needed: total)
+                // On a resume/retry the partial file already holds the bytes
+                // recorded in the resume cursor, so only the remaining tail needs
+                // fresh space. Preflighting the full `total` would wrongly reject a
+                // mostly-complete large download on a disk that can hold the
+                // remainder but not the whole file again. Falls back to `total` when
+                // there is no usable cursor (a genuinely fresh download).
+                let alreadyOnDisk = Self.resumedBytesOnDisk(task.resumeData, total: total)
+                try checkDiskSpace(task.saveDirectory, needed: max(0, total - alreadyOnDisk))
             }
 
             // Surface the real response facts (Server / ETag / Accept-Ranges /
@@ -530,6 +537,19 @@ public actor HTTPEngine: HTTPConfigurable {
             jobs[id] = nil
             hub.fail(id, de)
         }
+    }
+
+    /// Bytes already persisted on disk for this download per its stored resume
+    /// cursor, used to preflight only the REMAINING free space a resume/retry
+    /// needs (the partial file already occupies the completed bytes). Returns 0 —
+    /// so a fresh download still checks the full size — when there is no cursor,
+    /// it doesn't decode, or it describes a differently-sized remote.
+    private static func resumedBytesOnDisk(_ resumeData: Data?, total: Int64) -> Int64 {
+        guard let data = resumeData,
+              let cursor = try? JSONDecoder().decode(SegmentedTransfer.ResumeCursor.self, from: data),
+              cursor.totalBytes == total else { return 0 }
+        let done = cursor.completed.reduce(0, +)
+        return max(0, min(done, total))
     }
 
     // Request building lives in `HTTPEngine+Requests.swift`.

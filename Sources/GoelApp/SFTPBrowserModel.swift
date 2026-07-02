@@ -81,8 +81,8 @@ final class CancelFlag: @unchecked Sendable {
 @MainActor
 final class SFTPBrowserModel: ObservableObject {
 
-    let connection: SFTPConnection
-    private let client: SFTPClient?
+    @Published private(set) var connection: SFTPConnection
+    private var client: SFTPClient?
 
     @Published var path: String
     @Published private(set) var entries: [SFTPEntry] = []
@@ -94,6 +94,16 @@ final class SFTPBrowserModel: ObservableObject {
         self.client = client
         self.path = connection.initialPath.isEmpty ? "." : connection.initialPath
         Self.sweepStaleDragTemps()
+    }
+
+    /// Re-point this browser at an edited connection (host/username/port/password
+    /// may have changed). SwiftUI keeps this `@StateObject` alive across an edit
+    /// because the connection's `id` is stable, so the owning view must forward
+    /// the fresh connection/client here — otherwise every operation keeps using
+    /// the pre-edit credentials captured at `init`. Keeps the current directory.
+    func update(connection: SFTPConnection, client: SFTPClient?) {
+        self.connection = connection
+        self.client = client
     }
 
     /// Whether we're at the login home (can't go up meaningfully).
@@ -126,12 +136,17 @@ final class SFTPBrowserModel: ObservableObject {
 
     func open(_ entry: SFTPEntry) async {
         guard entry.isDirectory else { return }
+        // Ignore a second navigation fired while the first listing is still in
+        // flight: `refresh()` sets `isLoading` synchronously before it suspends,
+        // so a re-entrant tap would otherwise join onto the already-mutated path
+        // (".../A/B") and race a concurrent `refresh()` over the same state.
+        guard !isLoading else { return }
         path = Self.join(path, entry.name)
         await refresh()
     }
 
     func goUp() async {
-        guard !isAtRoot else { return }
+        guard !isAtRoot, !isLoading else { return }
         path = Self.parent(of: path)
         await refresh()
     }

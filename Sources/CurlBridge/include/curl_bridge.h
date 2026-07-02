@@ -38,7 +38,10 @@ GCBResult gcb_download(const char *url, long long resume_from,
                        void *userdata);
 
 // The remote file's size via a body-less request, or -1 when unavailable.
-long long gcb_remote_size(const char *url, const char *userpwd, int require_tls);
+// Returns the advertised size (-1 if the server didn't advertise one), and, when
+// out_reachable is non-NULL, writes 1 if the probe connected OK / 0 otherwise —
+// so callers can tell "reachable but size unknown" from "couldn't connect".
+long long gcb_remote_size(const char *url, const char *userpwd, int require_tls, int *out_reachable);
 
 int gcb_is_aborted(int code);
 const char *gcb_error_message(int code);

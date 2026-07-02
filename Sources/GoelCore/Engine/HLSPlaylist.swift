@@ -21,12 +21,20 @@ public struct HLSKey: Sendable, Hashable {
     public var iv: Data?     // explicit IV, else derived from the sequence number
 }
 
+/// A byte sub-range within a segment's resource (`#EXT-X-BYTERANGE`), used by
+/// single-file/CMAF packaging where several segments share one URI.
+public struct HLSByteRange: Sendable, Hashable {
+    public var start: Int   // first byte offset (inclusive)
+    public var length: Int  // number of bytes
+}
+
 /// One media segment (`#EXTINF` + its URI).
 public struct HLSSegment: Sendable, Hashable {
     public var url: URL
     public var duration: Double
     public var sequence: Int
     public var key: HLSKey?  // nil = unencrypted
+    public var byteRange: HLSByteRange? = nil  // nil = fetch the whole resource
 }
 
 /// A parsed playlist: either a master (list of variants) or a media playlist
@@ -45,7 +53,11 @@ public enum HLSPlaylist: Sendable {
 public enum HLSParser {
 
     public static func parse(_ text: String, baseURL: URL) -> HLSPlaylist? {
-        let lines = text
+        // Strip a leading UTF-8 BOM (U+FEFF). Windows-authored playlists and some
+        // packagers emit it; left in place it prepends to the first line and makes
+        // the `#EXTM3U` prefix check below fail on an otherwise-valid playlist.
+        let source = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
+        let lines = source
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -62,6 +74,8 @@ public enum HLSParser {
         var mapURL: URL?
         var pendingVariant: (bw: Int, w: Int?, h: Int?, codecs: String?)?
         var pendingDuration: Double?
+        var pendingByteRange: HLSByteRange?
+        var lastByteRangeEnd = 0  // for `#EXT-X-BYTERANGE` lines that omit the offset
 
         for line in lines {
             if line.hasPrefix("#EXT-X-STREAM-INF:") {
@@ -85,6 +99,8 @@ public enum HLSParser {
             } else if line.hasPrefix("#EXTINF:") {
                 let field = value(of: line).split(separator: ",").first.map(String.init) ?? ""
                 pendingDuration = Double(field) ?? 0
+            } else if line.hasPrefix("#EXT-X-BYTERANGE:") {
+                pendingByteRange = parseByteRange(value(of: line), previousEnd: lastByteRangeEnd)
             } else if line.hasPrefix("#") {
                 continue   // an unhandled tag/comment
             } else {
@@ -97,11 +113,20 @@ public enum HLSParser {
                                                    codecs: variant.codecs))
                     }
                     pendingVariant = nil
-                } else if let duration = pendingDuration, let u = resolve(line, baseURL) {
-                    segments.append(HLSSegment(url: u, duration: duration,
-                                               sequence: seq, key: currentKey))
+                } else if let duration = pendingDuration {
+                    // Advance `seq` and clear pending state unconditionally — even
+                    // when the URI fails to resolve — so a dropped segment can never
+                    // desync the running sequence number that AES-128 IV derivation
+                    // depends on.
+                    if let u = resolve(line, baseURL) {
+                        segments.append(HLSSegment(url: u, duration: duration,
+                                                   sequence: seq, key: currentKey,
+                                                   byteRange: pendingByteRange))
+                    }
+                    if let br = pendingByteRange { lastByteRangeEnd = br.start + br.length }
                     seq += 1
                     pendingDuration = nil
+                    pendingByteRange = nil
                 }
             }
         }
@@ -132,6 +157,22 @@ public enum HLSParser {
     private static func value(of line: String) -> String {
         guard let colon = line.firstIndex(of: ":") else { return "" }
         return String(line[line.index(after: colon)...])
+    }
+
+    /// Parse a `#EXT-X-BYTERANGE` value of the form `<n>[@<o>]`. When the offset
+    /// is omitted the sub-range begins right after the previous sub-range's end
+    /// (RFC 8216 §4.3.2.2).
+    private static func parseByteRange(_ s: String, previousEnd: Int) -> HLSByteRange? {
+        let parts = s.split(separator: "@", maxSplits: 1)
+        guard let first = parts.first,
+              let length = Int(first.trimmingCharacters(in: .whitespaces)) else { return nil }
+        let start: Int
+        if parts.count == 2, let off = Int(parts[1].trimmingCharacters(in: .whitespaces)) {
+            start = off
+        } else {
+            start = previousEnd
+        }
+        return HLSByteRange(start: start, length: length)
     }
 
     private static func parseResolution(_ s: String) -> (Int, Int)? {

@@ -131,6 +131,12 @@ final class SegmentedTransfer: Sendable {
         }
 
         let bytesWritten = await ledger.totalBytes()
+        // Aggregate completeness net: every segment individually verified its range
+        // above, but assert the whole file is accounted for before reporting success
+        // so a silent gap can never be emitted as `.completed`.
+        guard bytesWritten == total else {
+            throw DownloadError.network("Incomplete download: wrote \(bytesWritten) of \(total) bytes")
+        }
         let resumeData = await ledger.currentResumeData()
         return TransferOutcome(bytesWritten: bytesWritten, resumeData: resumeData, usedSegments: ranges.count)
     }
@@ -167,7 +173,7 @@ final class SegmentedTransfer: Sendable {
                     // what the server actually tolerates (see ``ConnectionGovernor``).
                     // Each `acquire()` below is balanced by exactly one `release()` on
                     // every exit path of this attempt.
-                    await governor.acquire()
+                    try await governor.acquire()
                     var req = request(for: url)
                     req.setValue("bytes=\(segStart)-\(end)", forHTTPHeaderField: "Range")
 
@@ -243,7 +249,22 @@ final class SegmentedTransfer: Sendable {
                     }
 
                     await governor.release()
-                    break                                                // segment complete
+                    // `pumpBody` returned without throwing, but a clean completion
+                    // does NOT prove the whole range arrived: a close-delimited body
+                    // (no Content-Length, not chunked) or a body ended by an early
+                    // zero-length chunk surfaces to `ChunkStreamer` as a no-error
+                    // `didCompleteWithError`, so the pump loop simply ends. Only
+                    // finish the segment once the full requested range is on disk;
+                    // otherwise the unfetched tail would be left as a silent gap of
+                    // zero bytes in the preallocated file.
+                    if start + written > end { break }                   // segment complete
+                    if attempt >= settings.maxAttempts {
+                        throw DownloadError.network(
+                            "Incomplete segment \(index): got \(written) of \(end - start + 1) bytes")
+                    }
+                    // Clean but short: back off and retry the remaining range from
+                    // the last flushed offset (segStart advances via `written`).
+                    try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
                 }
             } onCancel: {
                 streamerBox.cancel()
@@ -273,6 +294,14 @@ final class SegmentedTransfer: Sendable {
                                url: plan.url, fileURL: plan.destination)
 
         let bytesWritten = await ledger.totalBytes()
+        // When the server declared a size (Content-Length known but ranges not
+        // supported), verify the whole body actually arrived — a close-delimited
+        // stream can end cleanly while short, and reporting that as `.completed`
+        // would be silent truncation. A genuinely size-unknown stream (totalBytes
+        // == nil) has nothing to check against.
+        if let total = plan.totalBytes, bytesWritten != total {
+            throw DownloadError.network("Incomplete download: wrote \(bytesWritten) of \(total) bytes")
+        }
         return TransferOutcome(bytesWritten: bytesWritten, resumeData: nil, usedSegments: 1)
     }
 

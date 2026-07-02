@@ -456,9 +456,12 @@ public actor MockTorrentEngine: TorrentControlling {
 
     private func seedRatioReached(_ id: UUID) -> Bool {
         guard let task = tasks[id] else { return true }
-        if profile.seedRatioLimit <= 0 { return true }      // no seeding requested
+        // A per-task limit (set via `setSeedRatioLimit`) overrides the engine-wide
+        // profile default, matching the real `TorrentEngine`'s behaviour.
+        let limit = task.seedRatioLimit ?? profile.seedRatioLimit
+        if limit <= 0 { return true }      // no seeding requested
         if task.bytesDownloaded <= 0 { return true }        // nothing to seed
-        return task.shareRatio >= profile.seedRatioLimit
+        return task.shareRatio >= limit
     }
 
     // MARK: Profile-aware rates

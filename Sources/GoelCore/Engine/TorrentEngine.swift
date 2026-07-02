@@ -257,7 +257,13 @@ public actor TorrentEngine: TorrentControlling {
             }
         case .torrentFile(let url):
             // libtorrent needs a local file; fetch a remote .torrent first.
-            let localPath = url.isFileURL ? url.path : try await downloadTorrentFile(url)
+            let isRemote = !url.isFileURL
+            let localPath = isRemote ? try await downloadTorrentFile(url) : url.path
+            // `gt_add_torrent_file` parses the file synchronously, so a fetched
+            // remote copy (a UUID-named temp file) is no longer needed once we
+            // return. Delete it on every exit — success, add failure, or a
+            // cancelled/timed-out metadata preview — so temp files don't pile up.
+            defer { if isRemote { try? FileManager.default.removeItem(atPath: localPath) } }
             handle = localPath.withCString { fp in
                 saveDir.withCString { sp in
                     errBuf.withUnsafeMutableBufferPointer { eb in

@@ -137,13 +137,22 @@ extension HTTPEngine {
 
         // Fall back to a one-byte ranged GET, which reveals both range support
         // (a 206 + Content-Range) and the total size.
+        //
+        // We must NOT use `session.data(for:)` here: a server that ignores the
+        // `Range` header and answers 200 with the whole body would make that API
+        // buffer the ENTIRE remote file into memory before returning — turning a
+        // cheap metadata probe into an OOM risk for large files. Drive the
+        // delegate-based streamer instead, which resolves as soon as the response
+        // headers arrive (and applies backpressure), then abort the task without
+        // ever draining the body.
         var get = makeRequest(url, userAgent: networkConfig.userAgent,
                               referer: referer, extraHeaders: extraHeaders)
         get.setValue("bytes=0-0", forHTTPHeaderField: "Range")
-        let (_, resp) = try await session.data(for: get)
-        guard let http = resp as? HTTPURLResponse else {
-            throw DownloadError.network("No HTTP response")
-        }
+        let (http, _, streamer) = try await SegmentedTransfer.openStream(
+            session: session, request: get) { _ in }
+        // Headers are all the probe needs; stop the transfer before the body
+        // streams so an unranged 200 can't pull the file into memory.
+        streamer.cancelTask()
         guard (200..<300).contains(http.statusCode) else {
             throw DownloadError.httpStatus(http.statusCode)
         }

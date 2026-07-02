@@ -43,6 +43,7 @@ enum YtDlpResolver {
         guard let executable,
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else { return nil }
+        if Task.isCancelled { return nil }
 
         let process = Process()
         let stdout = Pipe()
@@ -61,14 +62,20 @@ enum YtDlpResolver {
             try? await Task.sleep(nanoseconds: 45_000_000_000)
             if process.isRunning { process.terminate() }
         }
-        let data: Data = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let output = stdout.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                continuation.resume(returning: output)
+        let data: Data = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let output = stdout.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+                    continuation.resume(returning: output)
+                }
             }
+        } onCancel: {
+            if process.isRunning { process.terminate() }
         }
         watchdog.cancel()
+        // Caller walked away (sheet dismissed / Cancel): stay silent, no stale UI.
+        if Task.isCancelled { return nil }
         guard process.terminationStatus == 0,
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let mediaString = object["url"] as? String,
@@ -100,6 +107,7 @@ enum YtDlpResolver {
         guard let executable else { return .failed("yt-dlp not found.") }
         guard let scheme = pageURL.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else { return .failed("Unsupported URL.") }
+        if Task.isCancelled { return .none }
 
         let langs = languages
             .split(whereSeparator: { $0 == "," || $0 == " " })
@@ -128,14 +136,21 @@ enum YtDlpResolver {
             try? await Task.sleep(nanoseconds: 90_000_000_000)
             if process.isRunning { process.terminate() }
         }
-        let errData: Data = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
-                let data = errPipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                continuation.resume(returning: data)
+        let errData: Data = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .utility).async {
+                    let data = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+                    continuation.resume(returning: data)
+                }
             }
+        } onCancel: {
+            if process.isRunning { process.terminate() }
         }
         watchdog.cancel()
+        // Caller walked away (sheet dismissed / Cancel): the terminated process
+        // exits non-zero, so bail quietly instead of surfacing a stale toast.
+        if Task.isCancelled { return .none }
         guard process.terminationStatus == 0 else {
             let msg = String(data: errData, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
