@@ -122,7 +122,7 @@ enum FFmpegService {
     private static func uniqueSibling(of input: URL, extension ext: String) -> URL {
         let dir = input.deletingLastPathComponent()
         let stem = input.deletingPathExtension().lastPathComponent
-        let base = DownloadTask.uniqueName(base: "\(stem).\(ext)", in: dir.path)
+        let base = PathSafety.uniqueName(base: "\(stem).\(ext)", in: dir.path)
         return dir.appendingPathComponent(base)
     }
 }

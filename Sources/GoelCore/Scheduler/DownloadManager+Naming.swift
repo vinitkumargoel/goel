@@ -4,12 +4,12 @@ import Foundation
 
 /// Pure, source-derived naming helpers. Split out of ``DownloadManager`` so the
 /// scheduler proper stays focused on the queue; every name flows through
-/// ``DownloadTask/sanitizedName(_:fallback:)`` so a hostile filename can never
+/// ``PathSafety/sanitizedName(_:fallback:)`` so a hostile filename can never
 /// escape the save directory.
 extension DownloadManager {
 
     /// A sensible — and **safe** — initial display name derived purely from the
-    /// source. Every branch runs through ``DownloadTask/sanitizedName(_:fallback:)``
+    /// source. Every branch runs through ``PathSafety/sanitizedName(_:fallback:)``
     /// so a hostile filename (e.g. a magnet `dn=../../.ssh/authorized_keys`) can
     /// never become a `name` that escapes the save directory.
     static func defaultName(for source: DownloadSource) -> String {
@@ -17,10 +17,10 @@ extension DownloadManager {
         case let .url(url):
             let last = url.lastPathComponent
             let base = (last.isEmpty || last == "/") ? (url.host ?? "download") : last
-            return DownloadTask.sanitizedName(base, fallback: url.host ?? "download")
+            return PathSafety.sanitizedName(base, fallback: url.host ?? "download")
         case let .torrentFile(url):
             let name = url.deletingPathExtension().lastPathComponent
-            return DownloadTask.sanitizedName(name, fallback: "torrent")
+            return PathSafety.sanitizedName(name, fallback: "torrent")
         case let .magnet(magnet):
             return magnetDisplayName(magnet) ?? "Magnet download"
         case let .hlsStream(url):
@@ -59,7 +59,7 @@ extension DownloadManager {
         } else {
             stem = url.host ?? "video"
         }
-        return DownloadTask.sanitizedName(stem, fallback: "video") + ".mp4"
+        return PathSafety.sanitizedName(stem, fallback: "video") + ".mp4"
     }
 
     /// Apply the file-conflict policy to a freshly derived name. `overwrite`
@@ -68,7 +68,7 @@ extension DownloadManager {
     /// a pathological directory can never spin forever.
     static func resolveName(_ base: String, in directory: String, policy: String) -> String {
         guard policy == "rename" else { return base }
-        return DownloadTask.uniqueName(base: base, in: directory)
+        return PathSafety.uniqueName(base: base, in: directory)
     }
 
     private static func magnetDisplayName(_ magnet: String) -> String? {
@@ -78,6 +78,6 @@ extension DownloadManager {
             !value.isEmpty
         else { return nil }
         let cleaned = value.replacingOccurrences(of: "+", with: " ")
-        return DownloadTask.sanitizedName(cleaned, fallback: "Magnet download")
+        return PathSafety.sanitizedName(cleaned, fallback: "Magnet download")
     }
 }

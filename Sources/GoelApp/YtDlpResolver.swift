@@ -154,7 +154,7 @@ enum YtDlpResolver {
     static func preview(for resolved: Resolved) -> DownloadPreview? {
         guard let source = DownloadSource.parse(resolved.mediaURL.absoluteString) else { return nil }
         let ext = resolved.fileExtension ?? (source.kind == .hls ? "mp4" : "bin")
-        let name = DownloadTask.sanitizedName("\(resolved.title).\(ext)", fallback: "video.\(ext)")
+        let name = PathSafety.sanitizedName("\(resolved.title).\(ext)", fallback: "video.\(ext)")
         return DownloadPreview(
             source: source, suggestedName: name, totalBytes: nil,
             isEstimatedSize: source.kind == .hls, kind: source.kind,

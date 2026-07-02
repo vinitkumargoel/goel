@@ -6,18 +6,26 @@ public final class SFTPConnectionStore: @unchecked Sendable {
 
     public static let shared = SFTPConnectionStore()
 
-    private let keychain = KeychainCredentialStore()
+    /// Injected credential store (the ``CredentialManaging`` port) and, for tests,
+    /// an override base directory. Both default to production behaviour so
+    /// `SFTPConnectionStore()` and `.shared` are unchanged.
+    private let keychain: any CredentialManaging
+    private let directoryOverride: URL?
     private let lock = NSLock()
 
     private var fileURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory,
-                                            in: .userDomainMask)[0]
-            .appendingPathComponent("GoelDownloader", isDirectory: true)
+        let base = directoryOverride
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("GoelDownloader", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("sftp-connections.json")
     }
 
-    public init() {}
+    public init(credentials: any CredentialManaging = KeychainCredentialStore(),
+                directory: URL? = nil) {
+        self.keychain = credentials
+        self.directoryOverride = directory
+    }
 
     /// All saved connections, newest first is not implied — insertion order.
     public func load() -> [SFTPConnection] {

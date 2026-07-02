@@ -82,7 +82,7 @@ public actor FTPEngine: DownloadEngine {
     /// Preview probe: a body-less transfer reporting the remote size.
     public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard case .url(let url) = source, source.kind == .ftp else { return nil }
-        let name = DownloadTask.sanitizedName(url.lastPathComponent, fallback: url.host ?? "download")
+        let name = PathSafety.sanitizedName(url.lastPathComponent, fallback: url.host ?? "download")
         let credential = credentials(for: url)
         let size = await Self.remoteSizeBlocking(url: url.absoluteString,
                                                  userpwd: credential?.userpwd,

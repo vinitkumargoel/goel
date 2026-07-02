@@ -33,11 +33,11 @@ final class SecurityHardeningTests: XCTestCase {
 
     func testIsContainedRejectsTraversalAndAbsolute() {
         let root = "/Users/me/Downloads"
-        XCTAssertTrue(DownloadTask.isContained("/Users/me/Downloads/movie.mp4", within: root))
-        XCTAssertTrue(DownloadTask.isContained(root, within: root))
-        XCTAssertFalse(DownloadTask.isContained("/Users/me/Downloads/../../.zshrc", within: root))
-        XCTAssertFalse(DownloadTask.isContained("/etc/cron.d/x", within: root))
-        XCTAssertFalse(DownloadTask.isContained("/Users/me/DownloadsEvil/x", within: root),
+        XCTAssertTrue(PathSafety.isContained("/Users/me/Downloads/movie.mp4", within: root))
+        XCTAssertTrue(PathSafety.isContained(root, within: root))
+        XCTAssertFalse(PathSafety.isContained("/Users/me/Downloads/../../.zshrc", within: root))
+        XCTAssertFalse(PathSafety.isContained("/etc/cron.d/x", within: root))
+        XCTAssertFalse(PathSafety.isContained("/Users/me/DownloadsEvil/x", within: root),
                        "prefix match must be on a path boundary, not a string prefix")
     }
 
@@ -51,7 +51,7 @@ final class SecurityHardeningTests: XCTestCase {
                                 name: "t", saveDirectory: dir, files: files)
         // Largest wanted file declares a traversing path → falls back to savePath,
         // never a path outside the save directory.
-        XCTAssertTrue(DownloadTask.isContained(task.primaryFilePath, within: dir)
+        XCTAssertTrue(PathSafety.isContained(task.primaryFilePath, within: dir)
                         || task.primaryFilePath == task.savePath)
         XCTAssertFalse(task.primaryFilePath.contains("/etc/passwd"))
     }

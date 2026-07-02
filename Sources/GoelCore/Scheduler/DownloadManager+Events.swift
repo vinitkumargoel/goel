@@ -28,16 +28,17 @@ extension DownloadManager {
             tasks[i].files = files
 
         case let .progress(bytesDownloaded, bytesUploaded, downloadSpeed, uploadSpeed, connectionCount):
-            // Fold the byte deltas into the lifetime statistics against a
-            // per-task mark. A regression (retry/invalidated resume restarting
-            // below the previous count) re-bases the mark so history is never
-            // subtracted AND the re-transferred bytes still count.
-            var mark = statsMarks[id]
+            // Fold the byte deltas into the lifetime statistics against a per-task
+            // mark. A regression (retry/invalidated resume restarting below the
+            // previous count) re-bases the mark so history is never subtracted AND
+            // the re-transferred bytes still count — the rule lives in
+            // ``StatsAccumulator``.
+            let mark = statsMarks[id]
                 ?? StatsMark(down: tasks[i].bytesDownloaded, up: tasks[i].bytesUploaded)
-            if bytesDownloaded < mark.down { mark.down = bytesDownloaded }
-            if bytesUploaded < mark.up { mark.up = bytesUploaded }
-            stats.record(down: bytesDownloaded - mark.down, up: bytesUploaded - mark.up)
-            statsMarks[id] = StatsMark(down: bytesDownloaded, up: bytesUploaded)
+            let folded = StatsAccumulator.fold(previous: mark,
+                                               absoluteDown: bytesDownloaded, absoluteUp: bytesUploaded)
+            stats.record(down: folded.deltaDown, up: folded.deltaUp)
+            statsMarks[id] = folded.newMark
             persistStats()
             tasks[i].bytesDownloaded = bytesDownloaded
             tasks[i].bytesUploaded = bytesUploaded
@@ -53,7 +54,7 @@ extension DownloadManager {
         case let .nameResolved(name):
             // Adopt the engine's resolved name (re-sanitize as defense-in-depth;
             // it strips any path components so the save path stays contained).
-            tasks[i].name = DownloadTask.sanitizedName(name, fallback: tasks[i].name)
+            tasks[i].name = PathSafety.sanitizedName(name, fallback: tasks[i].name)
 
         case let .statusChanged(status):
             // Guard against a stale pre-pause event resurrecting a paused task: an

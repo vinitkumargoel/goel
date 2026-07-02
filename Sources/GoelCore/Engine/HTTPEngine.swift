@@ -310,7 +310,7 @@ public actor HTTPEngine: HTTPConfigurable {
         guard case .url(let url) = source else { return nil }
         let last = url.lastPathComponent
         let base = (last.isEmpty || last == "/") ? (url.host ?? "download") : last
-        let currentName = DownloadTask.sanitizedName(base, fallback: url.host ?? "download")
+        let currentName = PathSafety.sanitizedName(base, fallback: url.host ?? "download")
         let r = await resolveMetadata(for: url, currentName: currentName)
         return EngineMetadata(name: r.name, totalBytes: r.totalBytes, reachable: r.reachable,
                               suggestedChecksum: r.checksum)
@@ -380,7 +380,7 @@ public actor HTTPEngine: HTTPConfigurable {
             if let better = Self.refinedName(current: task.name,
                                              suggestedName: probe.suggestedName,
                                              contentType: probe.contentType) {
-                let unique = DownloadTask.uniqueName(base: better, in: task.saveDirectory)
+                let unique = PathSafety.uniqueName(base: better, in: task.saveDirectory)
                 if unique != task.name {
                     tasks[id]?.name = unique
                     emit(id, .nameResolved(unique))
@@ -574,8 +574,8 @@ public actor HTTPEngine: HTTPConfigurable {
         }
     }
 
-    // Disk preflight (ensureDirectory / checkDiskSpace / validateDiskSpace /
-    // preallocate) lives in `HTTPEngine+Disk.swift`.
+    // Disk preflight (ensureDirectory / checkDiskSpace / validateDiskSpace)
+    // lives in `HTTPEngine+Disk.swift`.
 
     // MARK: Errors / events
 

@@ -478,14 +478,16 @@ public actor HLSEngine: HLSConfigurable {
     }
 
     /// Accumulates downloaded bytes from concurrent segment tasks and emits a
-    /// throttled aggregate progress event with a smoothed speed.
+    /// throttled aggregate progress event with a smoothed speed. The throttle +
+    /// windowed-speed math is the shared, clock-tested ``TransferProgressMeter``;
+    /// this only holds the running total, the event hub, and the fixed connection
+    /// count (rather than re-deriving the same 0.2 s throttle + speed guard).
     private actor ProgressTracker {
         private let hub: EventHub
         private let id: UUID
         private let connections: Int
         private var bytes: Int64 = 0
-        private var lastEmit = Date.distantPast
-        private var lastBytes: Int64 = 0
+        private var meter = TransferProgressMeter(resumeFrom: 0)
 
         init(hub: EventHub, id: UUID, connections: Int) {
             self.hub = hub; self.id = id; self.connections = connections
@@ -493,14 +495,13 @@ public actor HLSEngine: HLSConfigurable {
 
         func add(_ n: Int64) {
             bytes += n
-            let now = Date()
-            let elapsed = now.timeIntervalSince(lastEmit)
-            guard elapsed >= 0.2 else { return }
-            let speed = lastEmit == .distantPast ? 0 : Double(bytes - lastBytes) / elapsed
-            hub.emit(id, .progress(bytesDownloaded: bytes, bytesUploaded: 0,
-                                   downloadSpeed: speed, uploadSpeed: 0, connectionCount: connections))
-            lastEmit = now
-            lastBytes = bytes
+            // HLS streams segments with no aggregate Content-Length, so pass
+            // total: 0 — the meter announces a total only once it's known (never,
+            // here), and still emits the throttled progress sample.
+            let tick = meter.step(total: 0, sofar: bytes, now: Date())
+            guard let progress = tick.progress else { return }
+            hub.emit(id, .progress(bytesDownloaded: progress.bytes, bytesUploaded: 0,
+                                   downloadSpeed: progress.speed, uploadSpeed: 0, connectionCount: connections))
         }
     }
 }

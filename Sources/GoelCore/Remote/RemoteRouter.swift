@@ -568,7 +568,7 @@ extension DownloadManager: RemoteBackend {
         guard let folder = folder?.trimmingCharacters(in: .whitespacesAndNewlines),
               !folder.isEmpty else { return nil }
         let root = settings.defaultSaveDirectory
-        if DownloadTask.isContained(folder, within: root) { return folder }
+        if PathSafety.isContained(folder, within: root) { return folder }
         FileHandle.standardError.write(Data(
             "[GoelDownloader] remote add: rejecting out-of-root save folder; using default\n".utf8))
         return nil

@@ -65,7 +65,7 @@ extension AppViewModel {
         // The entry name is server-supplied; sanitize to one safe component so it
         // can't steer the *local* path (../ traversal / absolute paths), then
         // confirm the join stays inside the chosen folder.
-        let safeName = DownloadTask.sanitizedName(entry.name)
+        let safeName = PathSafety.sanitizedName(entry.name)
         let destination = localDir.appendingPathComponent(safeName)
         guard SFTPBrowserModel.isContained(destination, in: localDir) else {
             toastNow("Refusing to write “\(entry.name)” outside the chosen folder."); return

@@ -64,7 +64,7 @@ public actor SFTPEngine: DownloadEngine {
     public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard case .url(let url) = source, source.kind == .sftp,
               let target = SFTPTarget(url: url) else { return nil }
-        let name = DownloadTask.sanitizedName(url.lastPathComponent, fallback: url.host ?? "download")
+        let name = PathSafety.sanitizedName(url.lastPathComponent, fallback: url.host ?? "download")
         let client = SFTPClient(target: target)
         let size = try? await client.size(url.path)
         return EngineMetadata(name: name, totalBytes: size, reachable: size != nil)

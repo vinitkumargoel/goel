@@ -186,7 +186,8 @@ final class SegmentedTransfer: Sendable {
                         await governor.release(); throw error
                     }
 
-                    if Self.isRetryableStatus(http.statusCode) {
+                    switch Self.classify(http.statusCode, ranged: true) {
+                    case .retry:
                         streamer.cancelTask()                            // stop the error body
                         if isMirror { await pool.demote(url) }
                         await governor.throttleDown()                    // server pushed back: shrink the ceiling
@@ -194,13 +195,11 @@ final class SegmentedTransfer: Sendable {
                         if attempt >= settings.maxAttempts { throw DownloadError.httpStatus(http.statusCode) }
                         try await backoff(attempt: attempt, response: http, retryInterval: settings.retryInterval)
                         continue
-                    }
-                    // Segments accept ONLY 206. A server that advertised range support
-                    // but answers a real ranged GET with 200 (full body) would have
-                    // every segment seek to its own offset and write the WHOLE file
-                    // there, overwriting siblings and corrupting the result. A mirror
-                    // that can't do ranges is demoted; the primary fails visibly.
-                    guard http.statusCode == 206 else {
+                    case .reject:
+                        // A ranged GET answered with a non-206 (e.g. a full 200 body)
+                        // is unusable for a segment (see ``classify``). A mirror that
+                        // can't do ranges is demoted and the segment retries elsewhere;
+                        // the primary fails visibly.
                         streamer.cancelTask()
                         await governor.release()
                         if isMirror, attempt < settings.maxAttempts {
@@ -208,6 +207,8 @@ final class SegmentedTransfer: Sendable {
                             continue
                         }
                         throw DownloadError.httpStatus(http.statusCode)
+                    case .accept:
+                        break   // 206 — proceed to the mirror content-range check + body
                     }
                     // A mirror must be serving the same representation: its 206 has
                     // to describe the same total size. Divergent mirrors are demoted
@@ -223,35 +224,11 @@ final class SegmentedTransfer: Sendable {
 
                     do {
                         try handle.seek(toOffset: UInt64(segStart))
-                        var buffer = Data()
-                        buffer.reserveCapacity(flushSize)
-                        // Body arrives as `Data` chunks from the task delegate (not
-                        // one byte per `await`), so appends are memcpys and the loop
-                        // isn't CPU-bound. `consumed` releases backpressure credit as
-                        // each chunk leaves the stream; cancellation is checked once
-                        // per flush (cheap, and cancelling aborts the URLSession task).
-                        for try await chunk in bytes {
-                            buffer.append(chunk)
-                            streamer.consumed(chunk.count)
-                            if buffer.count >= flushSize {
-                                try Task.checkCancellation()
-                                try handle.write(contentsOf: buffer)
-                                written += Int64(buffer.count)
-                                await ledger.advance(segment: index, by: buffer.count)
-                                // Pace against the profile's aggregate download cap.
-                                // Shared across all segments, so combined throughput
-                                // converges on the cap (no-op when unlimited).
-                                await limiter?.pace(buffer.count)
-                                buffer.removeAll(keepingCapacity: true)
-                            }
-                        }
-                        try Task.checkCancellation()
-                        if !buffer.isEmpty {
-                            try handle.write(contentsOf: buffer)
-                            written += Int64(buffer.count)
-                            await ledger.advance(segment: index, by: buffer.count)
-                            await limiter?.pace(buffer.count)
-                        }
+                        // `written` advances per flush so a mid-body retry resumes
+                        // from the last flushed offset without double-counting.
+                        try await pumpBody(bytes, into: handle, streamer: streamer, ledger: ledger,
+                                           segment: index, limiter: limiter, flushSize: flushSize,
+                                           written: &written)
                     } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
                         // Connection dropped mid-stream: back off and resume from the
                         // last flushed offset (on another mirror if this one flaked).
@@ -320,12 +297,13 @@ final class SegmentedTransfer: Sendable {
                 do {
                     let opened = try await Self.openStream(
                         session: session, request: req) { streamerBox.set($0) }
-                    if Self.isRetryableStatus(opened.0.statusCode), attempt < settings.maxAttempts {
+                    let decision = Self.classify(opened.0.statusCode, ranged: false)
+                    if decision == .retry, attempt < settings.maxAttempts {
                         opened.2.cancelTask()                        // drop the error body
                         try await backoff(attempt: attempt, response: opened.0, retryInterval: settings.retryInterval)
                         continue
                     }
-                    guard (200..<300).contains(opened.0.statusCode) else {
+                    guard decision == .accept else {
                         opened.2.cancelTask()
                         throw DownloadError.httpStatus(opened.0.statusCode)
                     }
@@ -341,26 +319,11 @@ final class SegmentedTransfer: Sendable {
 
             let handle = try FileHandle(forWritingTo: fileURL)
             do {
-                var buffer = Data()
-                buffer.reserveCapacity(flushSize)
-                for try await chunk in bytes {
-                    buffer.append(chunk)
-                    streamer.consumed(chunk.count)
-                    if buffer.count >= flushSize {
-                        try Task.checkCancellation()
-                        try handle.write(contentsOf: buffer)
-                        await ledger.advance(segment: 0, by: buffer.count)
-                        // Pace against the profile's download cap (no-op when unlimited).
-                        await limiter?.pace(buffer.count)
-                        buffer.removeAll(keepingCapacity: true)
-                    }
-                }
-                try Task.checkCancellation()
-                if !buffer.isEmpty {
-                    try handle.write(contentsOf: buffer)
-                    await ledger.advance(segment: 0, by: buffer.count)
-                    await limiter?.pace(buffer.count)
-                }
+                // A single stream can't resume a partial body, so the flushed count
+                // is unused here — but the flush/throttle loop is the shared pump.
+                var written: Int64 = 0
+                try await pumpBody(bytes, into: handle, streamer: streamer, ledger: ledger,
+                                   segment: 0, limiter: limiter, flushSize: flushSize, written: &written)
                 try handle.close()
             } catch {
                 streamer.cancelTask()
@@ -372,15 +335,47 @@ final class SegmentedTransfer: Sendable {
         }
     }
 
-    // MARK: Range math
-
-    /// Clamp the caller-resolved (budget-derived) segment count by file size: a
-    /// tiny file never gets more segments than 64 KiB chunks. The cross-download
-    /// connection budget is applied by ``HTTPEngine`` before it sets
-    /// ``TransferPlan/segmentCount``; this is the size-only half of the decision.
-    func computeSegmentCount(_ total: Int64) -> Int {
-        Self.clampSegmentCount(plan.segmentCount, total: total)
+    /// Drain `bytes` into `handle`, flushing to disk every `flushSize` and folding
+    /// each flush into `ledger` (under `segment`) and the rate `limiter`. Shared by
+    /// both pumps so the flush/throttle loop lives once. `written` accumulates the
+    /// bytes flushed in THIS call, updated incrementally so that if the stream
+    /// throws mid-body the ledger has already counted the flushed prefix and a
+    /// segment retry can resume from the right offset without double-counting.
+    /// Cancellation is checked once per flush; the caller owns cancel/close on the
+    /// error path (each pump handles a mid-body failure differently).
+    private func pumpBody(_ bytes: AsyncThrowingStream<Data, Error>, into handle: FileHandle,
+                          streamer: ChunkStreamer, ledger: Ledger, segment: Int,
+                          limiter: RateLimiter?, flushSize: Int, written: inout Int64) async throws {
+        // Body arrives as `Data` chunks from the task delegate (not one byte per
+        // `await`), so appends are memcpys and the loop isn't CPU-bound. `consumed`
+        // releases backpressure credit as each chunk leaves the stream.
+        var buffer = Data()
+        buffer.reserveCapacity(flushSize)
+        for try await chunk in bytes {
+            buffer.append(chunk)
+            streamer.consumed(chunk.count)
+            if buffer.count >= flushSize {
+                try Task.checkCancellation()
+                try handle.write(contentsOf: buffer)
+                written += Int64(buffer.count)
+                await ledger.advance(segment: segment, by: buffer.count)
+                // Pace against the profile's aggregate download cap. Shared across
+                // all segments, so combined throughput converges on the cap (no-op
+                // when unlimited).
+                await limiter?.pace(buffer.count)
+                buffer.removeAll(keepingCapacity: true)
+            }
+        }
+        try Task.checkCancellation()
+        if !buffer.isEmpty {
+            try handle.write(contentsOf: buffer)
+            written += Int64(buffer.count)
+            await ledger.advance(segment: segment, by: buffer.count)
+            await limiter?.pace(buffer.count)
+        }
     }
+
+    // MARK: Range math
 
     /// The size-only clamp, factored out as `static` so ``init`` can resolve the
     /// fan-out before any instance method is available.
@@ -494,6 +489,22 @@ final class SegmentedTransfer: Sendable {
     /// upstream/server errors.
     static func isRetryableStatus(_ status: Int) -> Bool {
         status == 429 || status == 500 || status == 502 || status == 503 || status == 504
+    }
+
+    /// The accept / retry / reject decision for a freshly-opened response,
+    /// shared by the segmented and single-stream pumps so the acceptance rule
+    /// cannot drift between them.
+    enum StatusClass: Equatable { case accept, retry, reject }
+
+    /// Classify a response status for the pump about to read its body. A ranged
+    /// (segmented) pump accepts ONLY `206` — a `200` full body would make every
+    /// segment write the whole file at its own offset and corrupt the result; a
+    /// single-stream pump accepts any `2xx`. Retryable statuses (rate-limit /
+    /// gateway errors) are `.retry` regardless of mode; everything else `.reject`.
+    static func classify(_ status: Int, ranged: Bool) -> StatusClass {
+        if isRetryableStatus(status) { return .retry }
+        let accepted = ranged ? (status == 206) : (200..<300).contains(status)
+        return accepted ? .accept : .reject
     }
 
     /// Network-level errors that a retry can plausibly recover from (a dropped

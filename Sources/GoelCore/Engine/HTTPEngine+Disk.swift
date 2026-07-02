@@ -2,9 +2,9 @@ import Foundation
 
 // MARK: - Disk / filesystem
 
-/// Filesystem preflight and preallocation: directory creation, the free-space
-/// gate, and sizing the destination file before segments seek into it. Split out
+/// Filesystem preflight: directory creation and the free-space gate. Split out
 /// of ``HTTPEngine``; the space gate is `static` and pure so it is unit-testable.
+/// (Destination sizing lives once as the static ``SegmentedTransfer/preallocate``.)
 extension HTTPEngine {
 
     func ensureDirectory(_ path: String) throws {
@@ -43,15 +43,5 @@ extension HTTPEngine {
         if needed > available {
             throw DownloadError.diskFull(needed: needed, available: available)
         }
-    }
-
-    func preallocate(_ url: URL, size: Int64) throws {
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: url.path) {
-            fm.createFile(atPath: url.path, contents: nil)
-        }
-        let handle = try FileHandle(forWritingTo: url)
-        defer { try? handle.close() }
-        try handle.truncate(atOffset: UInt64(size))
     }
 }

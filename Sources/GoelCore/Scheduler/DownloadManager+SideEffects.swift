@@ -232,7 +232,7 @@ extension DownloadManager {
         guard let en = fm.enumerator(atPath: target) else { return }
         for case let rel as String in en {
             let full = (target as NSString).appendingPathComponent(rel)
-            if !DownloadTask.isContained(full, within: target) {
+            if !PathSafety.isContained(full, within: target) {
                 try? fm.removeItem(atPath: full)
                 en.skipDescendants()
                 FileHandle.standardError.write(Data(

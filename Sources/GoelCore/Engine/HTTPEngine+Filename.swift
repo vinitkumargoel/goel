@@ -55,14 +55,14 @@ extension HTTPEngine {
     static func refinedName(current: String, suggestedName: String?, contentType: String?) -> String? {
         var name = current
         if let suggested = suggestedName {
-            let cleaned = DownloadTask.sanitizedName(suggested, fallback: "")
+            let cleaned = PathSafety.sanitizedName(suggested, fallback: "")
             if !cleaned.isEmpty { name = cleaned }
         }
         if (name as NSString).pathExtension.isEmpty,
            let ext = fileExtension(forMIME: contentType) {
             name += "." + ext
         }
-        let final = DownloadTask.sanitizedName(name, fallback: current)
+        let final = PathSafety.sanitizedName(name, fallback: current)
         return final == current ? nil : final
     }
 }

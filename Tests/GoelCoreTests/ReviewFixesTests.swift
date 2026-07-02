@@ -51,12 +51,12 @@ final class ReviewFixesTests: XCTestCase {
     // MARK: Name sanitisation + path containment (S1)
 
     func testSanitizedNameStripsTraversal() {
-        XCTAssertEqual(DownloadTask.sanitizedName("../../.ssh/authorized_keys"), "authorized_keys")
-        XCTAssertEqual(DownloadTask.sanitizedName("/etc/passwd"), "passwd")
-        XCTAssertEqual(DownloadTask.sanitizedName(".."), "download")
-        XCTAssertEqual(DownloadTask.sanitizedName(".hidden"), "download")
-        XCTAssertEqual(DownloadTask.sanitizedName(""), "download")
-        XCTAssertEqual(DownloadTask.sanitizedName("normal.iso"), "normal.iso")
+        XCTAssertEqual(PathSafety.sanitizedName("../../.ssh/authorized_keys"), "authorized_keys")
+        XCTAssertEqual(PathSafety.sanitizedName("/etc/passwd"), "passwd")
+        XCTAssertEqual(PathSafety.sanitizedName(".."), "download")
+        XCTAssertEqual(PathSafety.sanitizedName(".hidden"), "download")
+        XCTAssertEqual(PathSafety.sanitizedName(""), "download")
+        XCTAssertEqual(PathSafety.sanitizedName("normal.iso"), "normal.iso")
     }
 
     func testIsSavePathContained() {

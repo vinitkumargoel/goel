@@ -8,51 +8,30 @@ import Foundation
 extension DownloadManager {
 
     /// Promote queued tasks into free download slots, honouring the simultaneous
-    /// cap, the metadata-resolution cap, and task priority order. All bookkeeping
-    /// is done synchronously so the cap decision is atomic; the (async) engine
-    /// calls are then fired without holding up the decision.
+    /// cap, the metadata-resolution cap, and task priority order. The ordered
+    /// promotion decision is computed purely by ``SchedulingPolicy/promotions(tasks:runningSlots:maxSimultaneousDownloads:maxMetadataResolutions:windowOpen:)``;
+    /// this then applies the slot/resume/status bookkeeping synchronously (so the
+    /// cap decision stays atomic) and fires the async engine calls after.
     func schedule() {
-        // Outside the configured download window nothing is promoted; tasks
-        // stay `.queued` until the window reopens (or scheduling is disabled).
-        guard scheduleWindowOpen else { return }
-
         let profile = settings.selectedProfile
-        let maxDownloads = profile.maxSimultaneousDownloads > 0 ? profile.maxSimultaneousDownloads : .max
-        let maxMetadata = profile.maxMetadataResolutions > 0 ? profile.maxMetadataResolutions : .max
-
-        var freeSlots = maxDownloads - runningSlots.count
-        guard freeSlots > 0 else { return }
-
-        var activeMetadata = tasks.filter { $0.status == .requestingMetadata }.count
-
-        let candidates = tasks
-            .filter { $0.status == .queued && !runningSlots.contains($0.id) }
-            .sorted { lhs, rhs in
-                lhs.priority != rhs.priority
-                    ? lhs.priority > rhs.priority      // higher priority first
-                    : lhs.addedAt < rhs.addedAt        // then FIFO
-            }
+        let promoted = SchedulingPolicy.promotions(
+            tasks: tasks,
+            runningSlots: runningSlots,
+            maxSimultaneousDownloads: profile.maxSimultaneousDownloads,
+            maxMetadataResolutions: profile.maxMetadataResolutions,
+            windowOpen: scheduleWindowOpen
+        )
+        guard !promoted.isEmpty else { return }
 
         var launches: [(id: UUID, resume: Bool)] = []
-        for task in candidates {
-            guard freeSlots > 0 else { break }
-            // Only a magnet that STILL lacks metadata will actually occupy a
-            // metadata-resolution slot. An already-resolved (e.g. resumed) magnet
-            // must not be charged against the cap — doing so would wrongly hold
-            // back a fresh magnet that genuinely needs to resolve.
-            let needsMetadata = Self.isMagnet(task.source) && !task.hasMetadata
-            if needsMetadata, activeMetadata >= maxMetadata { continue }
-
-            runningSlots.insert(task.id)
-            let resume = engineStarted.contains(task.id)
-            if !resume { engineStarted.insert(task.id) }
-            setOptimisticStatus(task.id)
-            launches.append((task.id, resume))
-            freeSlots -= 1
-            if needsMetadata { activeMetadata += 1 }
+        for id in promoted {
+            runningSlots.insert(id)
+            let resume = engineStarted.contains(id)
+            if !resume { engineStarted.insert(id) }
+            setOptimisticStatus(id)
+            launches.append((id, resume))
         }
 
-        guard !launches.isEmpty else { return }
         publish()
         updatePowerAssertion()
         for launch in launches {

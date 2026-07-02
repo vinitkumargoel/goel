@@ -131,11 +131,9 @@ public actor DownloadManager {
     /// Per-task byte counts already folded into ``stats``. Kept separately from
     /// the task's own counters so a restart that begins above zero but below
     /// the previous absolute count re-bases and keeps recording, instead of
-    /// silently losing the whole re-transferred interval.
-    struct StatsMark {
-        var down: Int64
-        var up: Int64
-    }
+    /// silently losing the whole re-transferred interval. The re-base rule lives
+    /// in ``StatsAccumulator``.
+    typealias StatsMark = StatsAccumulator.Mark
     var statsMarks: [UUID: StatsMark] = [:]
 
     // MARK: Persistence pipeline
@@ -419,7 +417,7 @@ public actor DownloadManager {
         // A caller-supplied name (metalink `name=`) is sanitized like any
         // untrusted input before it can influence the on-disk path.
         let baseName = suggestedName.map {
-            DownloadTask.sanitizedName($0, fallback: Self.defaultName(for: source))
+            PathSafety.sanitizedName($0, fallback: Self.defaultName(for: source))
         } ?? Self.defaultName(for: source)
         let name: String
         if source.kind == .http || source.kind == .hls {
@@ -838,11 +836,11 @@ public actor DownloadManager {
         let task = tasks[i]
         guard task.kind != .torrent else { return .unsupported }
         guard !task.status.isActive else { return .active }
-        let sanitized = DownloadTask.sanitizedName(newName, fallback: task.name)
+        let sanitized = PathSafety.sanitizedName(newName, fallback: task.name)
         guard sanitized != task.name else { return .unchanged }
         let fm = FileManager.default
         let dir = task.saveDirectory
-        let finalName = DownloadTask.uniqueName(base: sanitized, in: dir)
+        let finalName = PathSafety.uniqueName(base: sanitized, in: dir)
         let oldPath = (dir as NSString).appendingPathComponent(task.name)
         let newPath = (dir as NSString).appendingPathComponent(finalName)
         if fm.fileExists(atPath: oldPath) {

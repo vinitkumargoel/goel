@@ -40,8 +40,9 @@ public actor MockTorrentEngine: TorrentControlling {
 
     /// Lock-based fan-out of events to subscribers. Lives outside the actor's
     /// isolation so the synchronous `events(for:)` requirement can be satisfied
-    /// by a `nonisolated` method.
-    private nonisolated let hub = TorrentEventHub()
+    /// by a `nonisolated` method. Uses the shared ``EventHub`` — the same
+    /// broadcaster every other engine holds.
+    private nonisolated let hub = EventHub()
 
     // MARK: Tunables
 
@@ -552,52 +553,5 @@ public actor MockTorrentEngine: TorrentControlling {
         var tick: Int = 0
         var metadataResolved: Bool = false
         var finishedEmitted: Bool = false
-    }
-}
-
-/// Thread-safe broadcaster of `EngineEvent`s to per-task subscribers.
-///
-/// Held by `MockTorrentEngine` as a `nonisolated let` so both the synchronous
-/// `events(for:)` and the actor-internal `emit` can reach it without crossing
-/// isolation boundaries. (Mirrors `HTTPEngine`'s private hub.)
-private final class TorrentEventHub: @unchecked Sendable {
-    private let lock = NSLock()
-    private var subscribers: [UUID: [UUID: AsyncStream<EngineEvent>.Continuation]] = [:]
-
-    func subscribe(_ id: UUID) -> AsyncStream<EngineEvent> {
-        // Unbounded is required: this stream also carries NON-idempotent lifecycle
-        // events (statusChanged / metadataResolved / finished / failed) that must
-        // never be dropped — a dropped `.downloading` after a resume would strand
-        // the task. The manager consumes promptly (apply no longer persists on
-        // progress), so the buffer stays small in practice.
-        // TODO(review): coalesce per-file `.fileProgress` at the source to cut the
-        // event rate further (perf review finding 8).
-        let (stream, continuation) = AsyncStream<EngineEvent>.makeStream(bufferingPolicy: .unbounded)
-        let subID = UUID()
-        lock.lock()
-        subscribers[id, default: [:]][subID] = continuation
-        lock.unlock()
-        continuation.onTermination = { [weak self] _ in
-            guard let self else { return }
-            self.lock.lock()
-            self.subscribers[id]?[subID] = nil
-            self.lock.unlock()
-        }
-        return stream
-    }
-
-    func emit(_ id: UUID, _ event: EngineEvent) {
-        lock.lock()
-        let continuations = subscribers[id]?.values.map { $0 } ?? []
-        lock.unlock()
-        for continuation in continuations { continuation.yield(event) }
-    }
-
-    func finishAll(_ id: UUID) {
-        lock.lock()
-        let continuations = subscribers[id]
-        subscribers[id] = nil
-        lock.unlock()
-        continuations?.values.forEach { $0.finish() }
     }
 }

@@ -281,7 +281,7 @@ public final class PersistenceStore: @unchecked Sendable {
     /// location. Such entries fall back to the system Downloads folder.
     public static func sanitizedForImport(_ task: DownloadTask) -> DownloadTask {
         var t = task
-        t.name = DownloadTask.sanitizedName(t.name, fallback: "download")
+        t.name = PathSafety.sanitizedName(t.name, fallback: "download")
         let dir = t.saveDirectory
         if !dir.hasPrefix("/") || dir.split(separator: "/").contains("..") {
             t.saveDirectory = AppSettings.systemDownloadsDirectory

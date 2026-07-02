@@ -11,7 +11,7 @@ final class FilenameResolutionTests: XCTestCase {
     func testSanitizedNameClampsOverlongName() {
         // The opaque-CDN token from the bug report: ~320 chars, no extension.
         let token = String(repeating: "A1b2C3d4", count: 40)   // 320 bytes
-        let name = DownloadTask.sanitizedName(token)
+        let name = PathSafety.sanitizedName(token)
         XCTAssertLessThanOrEqual(name.utf8.count, 240, "must clamp under NAME_MAX with headroom")
         XCTAssertFalse(name.contains("/"))
         XCTAssertFalse(name.isEmpty)
@@ -19,19 +19,19 @@ final class FilenameResolutionTests: XCTestCase {
 
     func testClampPreservesExtension() {
         let long = String(repeating: "x", count: 400) + ".mp4"
-        let clamped = DownloadTask.clampLength(long)
+        let clamped = PathSafety.clampLength(long)
         XCTAssertLessThanOrEqual(clamped.utf8.count, 240)
         XCTAssertEqual((clamped as NSString).pathExtension, "mp4", "extension must survive truncation")
     }
 
     func testClampLeavesShortNamesUntouched() {
-        XCTAssertEqual(DownloadTask.clampLength("video.mp4"), "video.mp4")
+        XCTAssertEqual(PathSafety.clampLength("video.mp4"), "video.mp4")
     }
 
     func testClampDoesNotSplitMultibyteCharacters() {
         // 200 emoji (4 bytes each in UTF-8) = 800 bytes -> must clamp on a boundary.
         let emoji = String(repeating: "😀", count: 200) + ".bin"
-        let clamped = DownloadTask.clampLength(emoji)
+        let clamped = PathSafety.clampLength(emoji)
         XCTAssertLessThanOrEqual(clamped.utf8.count, 240)
         XCTAssertNotNil(clamped.data(using: .utf8))   // still valid UTF-8
         XCTAssertEqual((clamped as NSString).pathExtension, "bin")
@@ -44,14 +44,14 @@ final class FilenameResolutionTests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        XCTAssertEqual(DownloadTask.uniqueName(base: "a.mp4", in: dir.path), "a.mp4",
+        XCTAssertEqual(PathSafety.uniqueName(base: "a.mp4", in: dir.path), "a.mp4",
                        "no conflict -> name unchanged")
 
         try Data().write(to: dir.appendingPathComponent("a.mp4"))
-        XCTAssertEqual(DownloadTask.uniqueName(base: "a.mp4", in: dir.path), "a (1).mp4")
+        XCTAssertEqual(PathSafety.uniqueName(base: "a.mp4", in: dir.path), "a (1).mp4")
 
         try Data().write(to: dir.appendingPathComponent("a (1).mp4"))
-        XCTAssertEqual(DownloadTask.uniqueName(base: "a.mp4", in: dir.path), "a (2).mp4")
+        XCTAssertEqual(PathSafety.uniqueName(base: "a.mp4", in: dir.path), "a (2).mp4")
     }
 
     // MARK: Content-Disposition parsing

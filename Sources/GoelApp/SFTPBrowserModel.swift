@@ -180,7 +180,7 @@ final class SFTPBrowserModel: ObservableObject {
         let provider = NSItemProvider()
         // Sanitize the server-supplied name: it names the *local* dropped file
         // and the temp path we write, so a traversal name must not escape.
-        let safeName = DownloadTask.sanitizedName(entry.name)
+        let safeName = PathSafety.sanitizedName(entry.name)
         provider.suggestedName = safeName
         guard let client, !entry.isDirectory else { return provider }
         let remote = Self.join(path, entry.name)

@@ -1196,15 +1196,11 @@ final class AppViewModel: ObservableObject {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let template = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !template.isEmpty else { return }
+        let candidates = PromptParsing.batchRename(template: template, over: eligible.map(\.name))
         Task {
             var renamed = 0
             var failed = 0
-            for (i, task) in eligible.enumerated() {
-                var candidate = template.replacingOccurrences(of: "#", with: String(i + 1))
-                if (candidate as NSString).pathExtension.isEmpty {
-                    let ext = (task.name as NSString).pathExtension
-                    if !ext.isEmpty { candidate += ".\(ext)" }
-                }
+            for (task, candidate) in zip(eligible, candidates) {
                 switch await manager.rename(task.id, to: candidate) {
                 case .renamed, .unchanged: renamed += 1
                 default: failed += 1
@@ -1234,7 +1230,7 @@ final class AppViewModel: ObservableObject {
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let tags = field.stringValue.split(separator: ",").map(String.init)
+        let tags = PromptParsing.tags(from: field.stringValue)
         Task { await manager.setTags(tags, task: task.id) }
         toastNow(tags.isEmpty ? "Tags cleared" : "Tags updated")
     }
@@ -1298,13 +1294,7 @@ final class AppViewModel: ObservableObject {
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        var headers: [String: String] = [:]
-        for line in headersView.string.split(separator: "\n") {
-            guard let colon = line.firstIndex(of: ":") else { continue }
-            let name = line[..<colon].trimmingCharacters(in: .whitespaces)
-            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            if !name.isEmpty { headers[name] = value }
-        }
+        let headers = PromptParsing.requestHeaders(from: headersView.string)
         Task {
             let dropped = await manager.setRequestOptions(referer: referer.stringValue,
                                                           headers: headers, task: task.id)

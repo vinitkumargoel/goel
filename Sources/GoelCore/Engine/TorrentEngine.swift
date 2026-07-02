@@ -213,7 +213,7 @@ public actor TorrentEngine: TorrentControlling {
     /// its own fallback. Returns nil when no peer supplied metadata in time.
     public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard let m = await resolveMetadata(for: source, saveDirectory: directory) else { return nil }
-        let name = m.name.isEmpty ? "" : DownloadTask.sanitizedName(m.name)
+        let name = m.name.isEmpty ? "" : PathSafety.sanitizedName(m.name)
         return EngineMetadata(name: name, totalBytes: m.totalBytes, files: m.files)
     }
 

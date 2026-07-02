@@ -413,7 +413,7 @@ struct CredentialsSection: View {
     @State private var newUser = ""
     @State private var newPassword = ""
 
-    private let store = KeychainCredentialStore()
+    private let store: any CredentialManaging = KeychainCredentialStore()
 
     var body: some View {
         SectionHeader("Site logins")
