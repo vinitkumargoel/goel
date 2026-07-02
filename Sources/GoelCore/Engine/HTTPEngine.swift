@@ -254,10 +254,12 @@ public actor HTTPEngine: HTTPConfigurable {
             let proxy = "http://\(config.proxyHost):\(config.proxyPort)"
             setenv("http_proxy", proxy, 1)
             setenv("https_proxy", proxy, 1)
-        case "none":
-            unsetenv("http_proxy"); unsetenv("https_proxy")
         default:
-            break   // "system": inherit whatever the environment already sets
+            // "none" (explicit bypass) and "system" (fall back to ambient) both
+            // must clear any manual proxy we set earlier — otherwise a manual→system
+            // switch would silently keep routing every download (and libcurl's
+            // FTP engine) through the stale proxy for the rest of the process.
+            unsetenv("http_proxy"); unsetenv("https_proxy")
         }
         #else
         switch config.proxyMode {

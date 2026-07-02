@@ -30,8 +30,14 @@ func stderrLine(_ s: String) { FileHandle.standardError.write(Data((s + "\n").ut
 
 let home = FileManager.default.homeDirectoryForCurrentUser
 let dbPath = env("GOEL_DB", home.appendingPathComponent(".local/share/goel-downloader/queue.sqlite").path)
-let port = Int(env("GOEL_PORT", "8080")) ?? 8080
-let allowLAN = envBool("GOEL_ALLOW_LAN", true)
+let portRaw = env("GOEL_PORT", "8080")
+guard let port = Int(portRaw), (1...65535).contains(port) else {
+    stderrLine("GoelDaemon: fatal — GOEL_PORT '\(portRaw)' is not a valid port (1–65535)")
+    exit(1)
+}
+// Safe default: loopback-only unless the operator explicitly opts into LAN (and
+// sets a password — the server refuses a passwordless LAN bind regardless).
+let allowLAN = envBool("GOEL_ALLOW_LAN", false)
 let requireAuth = envBool("GOEL_REQUIRE_AUTH", true)
 let username = env("GOEL_USERNAME", "admin")
 let password = ProcessInfo.processInfo.environment["GOEL_PASSWORD"] ?? ""
@@ -57,6 +63,14 @@ Task {
         retainer.manager = manager   // keep alive for the process lifetime
         await manager.restore()
 
+        // The queue DB stores the portal token + password hash; keep it private on
+        // multi-user Linux boxes (dir 0700, db + WAL/SHM sidecars 0600).
+        let dbDir = (dbPath as NSString).deletingLastPathComponent
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dbDir)
+        for p in [dbPath, dbPath + "-wal", dbPath + "-shm"] where FileManager.default.fileExists(atPath: p) {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: p)
+        }
+
         var settings = await manager.currentSettings
         settings.remoteAccessEnabled = true
         settings.remotePort = port
@@ -79,12 +93,19 @@ Task {
             port: UInt16(clamping: port), allowLAN: allowLAN, config: config,
             passwordHash: settings.remotePasswordHash, sessionMinutes: settings.remoteSessionMinutes)
 
-        let host = (allowLAN && requireAuth && !password.isEmpty) ? "0.0.0.0" : "127.0.0.1"
-        stderrLine("GoelDaemon: ready — portal on http://\(host):\(port)  (user: \(username))")
+        // Report the ACTUAL bound state — never claim "ready" if the bind failed,
+        // and derive loopback-vs-LAN from what the server really did (not a
+        // re-computed guess that can drift from the bind decision).
+        guard let bound = await server.boundState() else {
+            stderrLine("GoelDaemon: fatal — the portal failed to bind port \(port) (already in use, or a privileged port without permission)")
+            exit(1)
+        }
+        let host = bound.exposedLAN ? "0.0.0.0" : "127.0.0.1"
+        stderrLine("GoelDaemon: ready — portal on http://\(host):\(bound.port)  (user: \(username))")
         stderrLine("GoelDaemon: save dir \(saveDir) · db \(dbPath)")
         stderrLine("GoelDaemon: API token \(settings.remoteToken)")
-        if requireAuth && password.isEmpty {
-            stderrLine("GoelDaemon: WARNING — GOEL_PASSWORD unset; with sign-in required, LAN is refused (loopback only). Set GOEL_PASSWORD to expose it.")
+        if allowLAN && !bound.exposedLAN {
+            stderrLine("GoelDaemon: NOTE — LAN access was requested but refused (no password set); bound 127.0.0.1 only. Set GOEL_PASSWORD to expose it.")
         }
     } catch {
         stderrLine("GoelDaemon: fatal: \(error)")

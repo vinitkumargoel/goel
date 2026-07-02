@@ -35,11 +35,12 @@ public actor RemoteControlServer {
     // NIO transport handles.
     private var group: MultiThreadedEventLoopGroup?
     private var channel: Channel?
+    private var gate: ConnectionGate?
     private var boundPort: UInt16?
     private var boundExposeLAN: Bool?
 
-    // Concurrency caps (mirror the macOS shell).
-    private var openConnections = 0
+    // Concurrency caps (mirror the macOS shell). The connection cap is enforced at
+    // accept time by `gate` (see RequestAccumulator), not after buffering a request.
     private var sseConnections = 0
     private static let maxConnections = 32
     private static let maxSSEConnections = 4
@@ -65,10 +66,14 @@ public actor RemoteControlServer {
         self.passwordHash = passwordHash
         self.sessionSeconds = max(5, sessionMinutes) * 60
 
-        // Never expose an unauthenticated portal to the network.
-        let exposeLAN = allowLAN && config.requireAuth
+        // Never expose the portal to the network unless sign-in is required AND a
+        // password actually exists. `requireAuth` alone is just the policy toggle;
+        // with no password the mutating API is still reachable on the LAN via the
+        // bearer token, so a passwordless config must stay loopback-only.
+        let exposeLAN = allowLAN && config.requireAuth && !passwordHash.isEmpty
         if allowLAN && !exposeLAN {
-            FileHandle.standardError.write(Data("[GoelDownloader] LAN access ignored — sign-in is disabled, binding 127.0.0.1 only\n".utf8))
+            let why = config.requireAuth ? "no portal password is set" : "sign-in is disabled"
+            FileHandle.standardError.write(Data("[GoelDownloader] LAN access refused — \(why); binding 127.0.0.1 only\n".utf8))
         }
 
         if channel != nil, boundPort == port, boundExposeLAN == exposeLAN { return }
@@ -77,12 +82,14 @@ public actor RemoteControlServer {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let host = exposeLAN ? "0.0.0.0" : "127.0.0.1"
         let server = self
+        let gate = ConnectionGate(limit: Self.maxConnections)
+        self.gate = gate
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 32)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { ch in
-                ch.pipeline.addHandler(RequestAccumulator(server: server))
+                ch.pipeline.addHandler(RequestAccumulator(server: server, gate: gate))
             }
         do {
             let ch = try await bootstrap.bind(host: host, port: Int(port)).get()
@@ -100,21 +107,35 @@ public actor RemoteControlServer {
         generation += 1
         boundPort = nil
         boundExposeLAN = nil
-        if let ch = channel {
-            channel = nil
-            try? await ch.close()
+        gate = nil
+        let ch = channel; channel = nil
+        let g = group; group = nil
+        guard ch != nil || g != nil else { return }
+        // Backstop: a hung NIO teardown must not wedge the actor forever (a
+        // subsequent start()/dispatch would deadlock behind it). Race the teardown
+        // against a timer and move on after 3s. Mirrors the macOS shell's backstop.
+        await withTaskGroup(of: Void.self) { tg in
+            tg.addTask {
+                try? await ch?.close()
+                try? await g?.shutdownGracefully()
+            }
+            tg.addTask { try? await Task.sleep(nanoseconds: 3_000_000_000) }
+            _ = await tg.next()
+            tg.cancelAll()
         }
-        if let g = group {
-            group = nil
-            try? await g.shutdownGracefully()
-        }
+    }
+
+    /// Live bind state so the daemon can report — and act on — what actually
+    /// happened, instead of re-deriving it. `nil` when not listening.
+    public func boundState() -> (port: UInt16, exposedLAN: Bool)? {
+        guard channel != nil, let p = boundPort else { return nil }
+        return (p, boundExposeLAN ?? false)
     }
 
     // MARK: Dispatch (called by the per-connection handler once a request is whole)
 
     func dispatch(requestData: Data, sink: ChannelSink) async {
-        guard openConnections < Self.maxConnections else { sink.close(); return }
-        openConnections += 1
+        // Admission is capped at accept time by `ConnectionGate`; here we just route.
         let request = RemoteRequest(raw: requestData)
         switch (request.method, request.path) {
         case ("GET", "/api/events"):
@@ -126,7 +147,6 @@ public actor RemoteControlServer {
             _ = await sink.send(response)
             sink.close()
         }
-        openConnections = max(0, openConnections - 1)
     }
 
     // MARK: Server-sent events
@@ -425,6 +445,27 @@ final class ChannelSink: @unchecked Sendable {
     func close() { channel.close(promise: nil) }
 }
 
+/// A tiny thread-safe counting semaphore used to cap concurrent connections at
+/// accept time (the NIO handlers run on the event loop, so this must be usable
+/// synchronously off the actor).
+final class ConnectionGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private let limit: Int
+    init(limit: Int) { self.limit = limit }
+
+    func tryAcquire() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard count < limit else { return false }
+        count += 1
+        return true
+    }
+
+    func release() {
+        lock.lock(); count = max(0, count - 1); lock.unlock()
+    }
+}
+
 /// Per-connection inbound handler: accumulates the raw HTTP request (headers, plus
 /// any `Content-Length` body), then hands the whole thing to the actor exactly
 /// once. An idle timeout closes a client that connects and sends nothing.
@@ -432,15 +473,24 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = ByteBuffer
 
     private let server: RemoteControlServer
+    private let gate: ConnectionGate
+    private var acquired = false
     private var buffer = Data()
     private var dispatched = false
     private var idleTask: Scheduled<Void>?
     private static let maxRequestBytes = 2 * 1024 * 1024   // headers + body ceiling
     private static let idleTimeout = TimeAmount.seconds(15)
 
-    init(server: RemoteControlServer) { self.server = server }
+    init(server: RemoteControlServer, gate: ConnectionGate) {
+        self.server = server
+        self.gate = gate
+    }
 
     func channelActive(context: ChannelHandlerContext) {
+        // Cap concurrent connections at accept time — before allocating a buffer or
+        // reading a byte — so a flood of idle/slow clients can't exhaust memory.
+        guard gate.tryAcquire() else { context.close(promise: nil); return }
+        acquired = true
         let channel = context.channel
         idleTask = context.eventLoop.scheduleTask(in: Self.idleTimeout) { [weak self] in
             if self?.dispatched != true { channel.close(promise: nil) }
@@ -448,12 +498,21 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
         context.fireChannelActive()
     }
 
+    func channelInactive(context: ChannelHandlerContext) {
+        idleTask?.cancel()
+        if acquired { gate.release(); acquired = false }
+        context.fireChannelInactive()
+    }
+
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        // Once dispatched, the response is owned by the actor/sink (which may hold
+        // the socket open for SSE/streaming). Ignore any further inbound bytes so a
+        // client can't grow this handler's buffer without bound on a duplex socket.
+        if dispatched { return }
         var incoming = unwrapInboundIn(data)
         if let bytes = incoming.readBytes(length: incoming.readableBytes) {
             buffer.append(contentsOf: bytes)
         }
-        guard !dispatched else { return }
         if buffer.count > Self.maxRequestBytes { context.close(promise: nil); return }
         guard let bodyStart = Self.headerEnd(buffer) else { return }   // headers incomplete
         let needBody = Self.contentLength(buffer.prefix(bodyStart))
@@ -462,6 +521,7 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
         dispatched = true
         idleTask?.cancel()
         let requestData = buffer
+        buffer = Data()   // free the accumulated request; the Task holds its own copy
         let sink = ChannelSink(context.channel)
         let server = self.server
         Task { await server.dispatch(requestData: requestData, sink: sink) }

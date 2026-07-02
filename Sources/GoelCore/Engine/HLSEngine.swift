@@ -413,16 +413,22 @@ public actor HLSEngine: HLSConfigurable {
         ff.standardOutput = FileHandle.nullDevice
         let errPipe = Pipe()
         ff.standardError = errPipe
+        let errHandle = errPipe.fileHandleForReading
         do {
             try ff.run()
         } catch {
             throw DownloadError.unknown("ffmpeg not found for HLS remux (install ffmpeg): \(error)")
         }
+        // Drain stderr on a background thread WHILE ffmpeg runs. Reading it only
+        // after termination would deadlock: a chatty ffmpeg (e.g. many per-frame
+        // errors on a corrupt segment) fills the ~64 KB pipe, blocks in write(),
+        // and never exits — exactly the failure case this remux is meant to report.
+        let errData = Task.detached { errHandle.readDataToEndOfFile() }
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
             ff.terminationHandler = { _ in c.resume() }
         }
         if ff.terminationStatus != 0 {
-            let msg = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let msg = String(data: await errData.value, encoding: .utf8) ?? ""
             throw DownloadError.unknown("HLS → MP4 conversion failed: \(msg)")
         }
         #endif
