@@ -13,10 +13,10 @@ struct SidebarView: View {
                     item("All files", "tray.full", .all)
                 }
                 group("Status") {
-                    item("Active", "arrow.down.circle", .active)
-                    item("Paused", "pause.circle", .paused)
-                    item("Completed", "checkmark.circle", .completed)
-                    item("Seeding", "arrow.up.circle", .seeding)
+                    item(vm.localized("Active"), "arrow.down.circle", .active)
+                    item(vm.localized("Paused"), "pause.circle", .paused)
+                    item(vm.localized("Completed"), "checkmark.circle", .completed)
+                    item(vm.localized("Seeding"), "arrow.up.circle", .seeding)
                 }
                 group("Type") {
                     item("Video", "film", .type(.video))

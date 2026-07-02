@@ -186,6 +186,45 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(torrentTask.name, "Demo Pack")
     }
 
+    // MARK: (a′) Metadata resolved on the add screen seeds the task
+
+    /// The add-confirmation screen already resolved the name, size and file list;
+    /// `add` must carry them onto the created task so the download doesn't re-show
+    /// a "gathering details" state for facts we already have (the redundancy the
+    /// Add flow used to have — it discarded the preview and re-derived everything).
+    func testAddSeedsResolvedPreviewMetadata() async throws {
+        let http = FakeEngine(kind: .http)
+        let torrent = FakeEngine(kind: .torrent)
+        let manager = DownloadManager(
+            httpEngine: http,
+            torrentEngine: torrent,
+            settings: settings(profile(maxSimultaneousDownloads: 5))
+        )
+
+        let files = [
+            TransferFile(id: 0, path: "disc/track1.flac", length: 40_000_000),
+            TransferFile(id: 1, path: "disc/track2.flac", length: 35_000_000),
+        ]
+        let task = await manager.add(
+            source: urlSource("https://example.test/dl?token=abc"),
+            suggestedName: "Album.zip",
+            totalBytes: 75_000_000,
+            files: files
+        )
+
+        // The resolved name wins over the URL-derived fallback, and the size and
+        // file list are present immediately — no second resolution needed.
+        XCTAssertEqual(task.name, "Album.zip")
+        XCTAssertEqual(task.totalBytes, 75_000_000)
+        XCTAssertEqual(task.files.map(\.id), [0, 1])
+        XCTAssertEqual(task.files.map(\.path), ["disc/track1.flac", "disc/track2.flac"])
+
+        // And it survives into the published snapshot the UI renders.
+        let snap = await manager.snapshot.first { $0.id == task.id }
+        XCTAssertEqual(snap?.totalBytes, 75_000_000)
+        XCTAssertEqual(snap?.name, "Album.zip")
+    }
+
     // MARK: (b) Duplicate sources are rejected
 
     func testDuplicateSourceIsRejected() async throws {

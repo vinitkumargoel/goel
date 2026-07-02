@@ -14,12 +14,20 @@ extension HTTPEngine {
     /// plain `http://` request would broadcast the password in cleartext.
     /// `nonisolated` so callers off the actor can use it too. All outbound
     /// requests must go through here so none are sent UA-less.
-    nonisolated func makeRequest(_ url: URL, userAgent: String) -> URLRequest {
+    nonisolated func makeRequest(_ url: URL, userAgent: String,
+                                 referer: String? = nil,
+                                 extraHeaders: [String: String] = [:]) -> URLRequest {
         var req = URLRequest(url: url)
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        for (name, value) in extraHeaders {
+            req.setValue(value, forHTTPHeaderField: name)
+        }
         if url.scheme?.lowercased() == "https",
            let host = url.host, let auth = credentials.basicAuthorization(forHost: host) {
             req.setValue(auth, forHTTPHeaderField: "Authorization")
+        }
+        if let referer, !referer.isEmpty {
+            req.setValue(referer, forHTTPHeaderField: "Referer")
         }
         return req
     }

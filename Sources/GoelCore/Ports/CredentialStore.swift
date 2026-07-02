@@ -210,10 +210,10 @@ public final class KeychainCredentialStore: CredentialProviding, @unchecked Send
     #endif
 }
 
-/// Session delegate stripping the manually-attached `Authorization` header
-/// when a redirect crosses to a different host — Foundation doesn't scope a
-/// hand-set header to a protection space, so without this a mirror redirect
-/// could carry the user's Basic credentials to an arbitrary third party.
+/// Session delegate stripping manually-attached credential/context headers when a
+/// redirect crosses to a different host — Foundation doesn't scope a hand-set
+/// header to a protection space, so without this a redirect could carry the
+/// user's Basic credentials, `Referer`, or `Cookie` to an arbitrary third party.
 public final class RedirectSanitizer: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
 
     public static let shared = RedirectSanitizer()
@@ -226,9 +226,10 @@ public final class RedirectSanitizer: NSObject, URLSessionTaskDelegate, @uncheck
         let originalHost = task.originalRequest?.url?.host?.lowercased()
         let newHost = request.url?.host?.lowercased()
         let downgradedToHTTP = request.url?.scheme?.lowercased() != "https"
-        if sanitized.value(forHTTPHeaderField: "Authorization") != nil,
-           originalHost != newHost || downgradedToHTTP {
-            sanitized.setValue(nil, forHTTPHeaderField: "Authorization")
+        if originalHost != newHost || downgradedToHTTP {
+            for header in ["Authorization", "Referer", "Cookie"] {
+                sanitized.setValue(nil, forHTTPHeaderField: header)
+            }
         }
         completionHandler(sanitized)
     }

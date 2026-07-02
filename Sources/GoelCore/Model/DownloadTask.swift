@@ -91,7 +91,25 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     public var seedRatioLimit: Double?
 
     /// A free-form category the user assigns for grouping/filtering. nil = none.
+    /// Retained for back-compat; the multi-tag ``tags`` field supersedes it and
+    /// the UI treats a legacy `label` as one more tag.
     public var label: String?
+
+    /// User-assigned tags for grouping/filtering (many per task). nil/empty = none.
+    public var tags: [String]?
+
+    /// A free-form note the user attaches to the download. nil = none.
+    public var note: String?
+
+    /// A `Referer` header sent with the HTTP(S) request for this task (some hosts
+    /// gate downloads on it). Captured from the browser extension or entered by
+    /// the user. Only ever sent to the same origin as the download URL. nil = none.
+    public var referer: String?
+
+    /// Extra request headers (name → value) sent with the HTTP(S) request for this
+    /// task. Reserved header names (Host, Content-Length, …) are ignored by the
+    /// engine. nil/empty = none.
+    public var requestHeaders: [String: String]?
 
     /// File indices the user deselected on the add screen (torrents), before the
     /// per-file list exists. Applied once as `.skip` the moment metadata resolves
@@ -133,6 +151,10 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         uploadLimitBytesPerSec: Int64? = nil,
         seedRatioLimit: Double? = nil,
         label: String? = nil,
+        tags: [String]? = nil,
+        note: String? = nil,
+        referer: String? = nil,
+        requestHeaders: [String: String]? = nil,
         initialSkipFileIDs: [Int]? = nil
     ) {
         self.id = id
@@ -166,7 +188,24 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         self.uploadLimitBytesPerSec = uploadLimitBytesPerSec
         self.seedRatioLimit = seedRatioLimit
         self.label = label
+        self.tags = tags
+        self.note = note
+        self.referer = referer
+        self.requestHeaders = requestHeaders
         self.initialSkipFileIDs = initialSkipFileIDs
+    }
+
+    /// The union of ``tags`` and any legacy ``label``, de-duplicated, order-stable.
+    /// The one list the UI should show and filter on.
+    public var allTags: [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for t in (tags ?? []) + [label].compactMap({ $0 }) {
+            let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, seen.insert(trimmed.lowercased()).inserted else { continue }
+            out.append(trimmed)
+        }
+        return out
     }
 
     // MARK: Derived

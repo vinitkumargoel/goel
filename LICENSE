@@ -1,60 +1,21 @@
-Goel° Download Manager
-Copyright © 2026 Vinit Kumar Goel. All rights reserved.
+MIT License
 
-------------------------------------------------------------------------------
-END-USER LICENSE (the Goel° application and its original source code)
-------------------------------------------------------------------------------
+Copyright (c) 2026 Vinit Kumar Goel
 
-Permission is granted to any individual to download, install, and use the Goel°
-application, free of charge, for personal and commercial use.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-You MAY:
-  • Use the application on any number of your own Macs.
-  • Redistribute the UNMODIFIED, officially released application bundle.
-
-You MAY NOT, without prior written permission from the copyright holder:
-  • Sell the application or bundle it into a paid product.
-  • Modify, reverse-engineer, or create derivative works from the application
-    for redistribution.
-  • Remove or alter this notice or the third-party notices.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR OR
-COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN
-AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-The user is responsible for ensuring their use of this software — including the
-downloading of any content — complies with all applicable laws and the terms of
-service of the sites and networks they access.
-
-    NOTE ON LICENSING MODEL
-    This is a proprietary ("all rights reserved") license — the conservative
-    default that keeps every option open. If you would rather make Goel° open
-    source, replace the section above with a standard OSI license (e.g. MIT or
-    Apache-2.0). The third-party notices below must be kept either way, because
-    Goel° bundles and redistributes the components listed.
-
-------------------------------------------------------------------------------
-THIRD-PARTY SOFTWARE
-------------------------------------------------------------------------------
-
-Goel° bundles the following third-party components inside the application. Each
-is redistributed under its own license; the full texts are in
-THIRD-PARTY-NOTICES.md, which ships with the app and must accompany any
-redistribution.
-
-  Component                     Purpose                         License
-  ---------------------------   -----------------------------   ---------------
-  libtorrent-rasterbar 2.0.x    BitTorrent engine               BSD-3-Clause
-  Boost 1.9x                    (used by libtorrent)            BSL-1.0
-  OpenSSL 3.x (libssl/crypto)   TLS + crypto for torrent/SFTP   Apache-2.0
-  libssh2 1.11.x                SFTP engine + browser           BSD-3-Clause
-  GRDB.swift 6.x                SQLite persistence              MIT
-  Sparkle 2.x                   Auto-update framework           MIT
-  yt-dlp                        Optional video-site resolver    The Unlicense
-
-The system libraries Goel° links from macOS (libcurl, libsqlite3, the Swift
-runtime, and Apple frameworks) are provided by the operating system and are not
-redistributed by this project.
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -161,6 +161,18 @@ struct DetailPanelView: View {
             if let label = task.label {
                 KVRow(key: "Label", value: label, valueColor: Theme.accent)
             }
+            if !task.allTags.isEmpty {
+                KVRow(key: "Tags", value: task.allTags.joined(separator: ", "), valueColor: Theme.teal)
+            }
+            if let note = task.note, !note.isEmpty {
+                KVRow(key: "Note", value: note)
+            }
+            if let referer = task.referer, !referer.isEmpty {
+                KVRow(key: "Referer", value: referer, copyable: true)
+            }
+            if let headers = task.requestHeaders, !headers.isEmpty {
+                KVRow(key: "Headers", value: "\(headers.count) custom")
+            }
             KVRow(key: "Priority", value: task.priority.displayName)
             KVRow(key: "Added", value: task.addedString)
             KVRow(key: "Save path", value: task.savePath, copyable: true)

@@ -121,7 +121,16 @@ var targets: [Target] = [
     .target(name: "TorrentBridge", cxxSettings: torrentCxx, linkerSettings: torrentLink),
     .target(name: "CurlBridge", linkerSettings: curlLink),
     .target(name: "SSHBridge", cSettings: sshC, linkerSettings: sshLink),
-    .target(name: "GoelCore", dependencies: coreDeps, linkerSettings: linuxCoreLink),
+    .target(
+        name: "GoelCore",
+        dependencies: coreDeps,
+        resources: [
+            // Localization tables (en + de today). `.process` treats the
+            // `.lproj` folders as localizations in the target's resource bundle.
+            .process("Resources"),
+        ],
+        linkerSettings: linuxCoreLink
+    ),
 ]
 var products: [Product] = [
     .library(name: "GoelCore", targets: ["GoelCore"]),
@@ -160,6 +169,7 @@ products += [
 
 let package = Package(
     name: "GoelDownloader",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v14),
     ],

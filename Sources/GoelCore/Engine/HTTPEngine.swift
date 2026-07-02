@@ -264,14 +264,23 @@ public actor HTTPEngine: HTTPConfigurable {
         #else
         switch config.proxyMode {
         case "manual" where !config.proxyHost.isEmpty && config.proxyPort > 0:
-            cfg.connectionProxyDictionary = [
-                kCFNetworkProxiesHTTPEnable as String: 1,
-                kCFNetworkProxiesHTTPProxy as String: config.proxyHost,
-                kCFNetworkProxiesHTTPPort as String: config.proxyPort,
-                kCFNetworkProxiesHTTPSEnable as String: 1,
-                kCFNetworkProxiesHTTPSProxy as String: config.proxyHost,
-                kCFNetworkProxiesHTTPSPort as String: config.proxyPort,
-            ]
+            if config.proxyType == "socks5" {
+                // A SOCKS proxy tunnels every scheme (http + https) through one hop.
+                cfg.connectionProxyDictionary = [
+                    kCFNetworkProxiesSOCKSEnable as String: 1,
+                    kCFNetworkProxiesSOCKSProxy as String: config.proxyHost,
+                    kCFNetworkProxiesSOCKSPort as String: config.proxyPort,
+                ]
+            } else {
+                cfg.connectionProxyDictionary = [
+                    kCFNetworkProxiesHTTPEnable as String: 1,
+                    kCFNetworkProxiesHTTPProxy as String: config.proxyHost,
+                    kCFNetworkProxiesHTTPPort as String: config.proxyPort,
+                    kCFNetworkProxiesHTTPSEnable as String: 1,
+                    kCFNetworkProxiesHTTPSProxy as String: config.proxyHost,
+                    kCFNetworkProxiesHTTPSPort as String: config.proxyPort,
+                ]
+            }
         case "none":
             cfg.connectionProxyDictionary = [:]   // explicitly bypass any proxy
         default:
@@ -341,7 +350,8 @@ public actor HTTPEngine: HTTPConfigurable {
 
         do {
             try ensureDirectory(task.saveDirectory)
-            let probe = try await probe(url)
+            let probe = try await probe(url, referer: task.referer,
+                                        extraHeaders: task.requestHeaders ?? [:])
 
             if let total = probe.totalBytes {
                 try checkDiskSpace(task.saveDirectory, needed: total)
@@ -402,7 +412,9 @@ public actor HTTPEngine: HTTPConfigurable {
                 userAgent: networkConfig.userAgent,
                 maxAttempts: networkConfig.retryCount,
                 retryInterval: networkConfig.retryInterval,
-                authorization: authorization
+                authorization: authorization,
+                referer: resolved.referer,
+                extraHeaders: resolved.requestHeaders ?? [:]
             )
 
             // Resolve this download's connection count from the cross-download

@@ -118,9 +118,11 @@ extension HTTPEngine {
         return Checksum(algorithm: algorithm, value: hex)
     }
 
-    func probe(_ url: URL) async throws -> ProbeResult {
+    func probe(_ url: URL, referer: String? = nil,
+               extraHeaders: [String: String] = [:]) async throws -> ProbeResult {
         // Prefer a cheap HEAD.
-        var head = makeRequest(url, userAgent: networkConfig.userAgent)
+        var head = makeRequest(url, userAgent: networkConfig.userAgent,
+                               referer: referer, extraHeaders: extraHeaders)
         head.httpMethod = "HEAD"
         if let (_, resp) = try? await session.data(for: head),
            let http = resp as? HTTPURLResponse,
@@ -135,7 +137,8 @@ extension HTTPEngine {
 
         // Fall back to a one-byte ranged GET, which reveals both range support
         // (a 206 + Content-Range) and the total size.
-        var get = makeRequest(url, userAgent: networkConfig.userAgent)
+        var get = makeRequest(url, userAgent: networkConfig.userAgent,
+                              referer: referer, extraHeaders: extraHeaders)
         get.setValue("bytes=0-0", forHTTPHeaderField: "Range")
         let (_, resp) = try await session.data(for: get)
         guard let http = resp as? HTTPURLResponse else {

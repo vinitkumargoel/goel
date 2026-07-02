@@ -20,6 +20,15 @@ extension DownloadTask {
         return .doc
     }
 
+    /// Whether the finished file looks like audio/video ffmpeg can convert or
+    /// extract audio from. Drives the ffmpeg context-menu items.
+    var isMediaFile: Bool {
+        let ext = (name as NSString).pathExtension.lowercased()
+        return ["mp4", "mkv", "avi", "mov", "webm", "flv", "ts", "m4v", "mpg",
+                "mpeg", "wmv", "3gp", "mp3", "m4a", "aac", "flac", "wav", "ogg",
+                "opus", "wma"].contains(ext)
+    }
+
     /// "HTTP" / "BT" / "HLS" / "FTP" / "SFTP" badge text.
     var kindBadge: String {
         switch kind {

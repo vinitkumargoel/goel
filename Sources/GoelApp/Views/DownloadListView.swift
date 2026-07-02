@@ -227,8 +227,23 @@ struct DownloadRow: View {
         if task.status == .completed || playableWhileDownloading {
             Button("Open in Player") { vm.openFile(task) }
         }
+        if task.isMediaFile, task.status.hasData {
+            Button("Play in Goel°") { vm.playInApp(task) }
+        }
         if task.status.hasData {
             Button("Quick Look") { quickLook(URL(fileURLWithPath: task.savePath)) }
+        }
+        if task.status == .completed, task.isMediaFile, vm.ffmpegAvailable {
+            Menu("Convert To") {
+                ForEach(["mp4", "mkv", "webm", "mov"], id: \.self) { ext in
+                    Button(ext.uppercased()) { vm.convertFile(task: task, toExtension: ext) }
+                }
+            }
+            Menu("Extract Audio") {
+                ForEach(FFmpegService.AudioFormat.allCases, id: \.self) { fmt in
+                    Button(fmt.rawValue.uppercased()) { vm.extractAudio(task: task, format: fmt) }
+                }
+            }
         }
         Button("Copy source link") { vm.copyToPasteboard(task.sourceLocator) }
         if vm.settings.remoteAccessEnabled, !vm.settings.remoteToken.isEmpty,
@@ -272,6 +287,21 @@ struct DownloadRow: View {
             if isMagnet {
                 Button("Copy Magnet Link") { vm.copyToPasteboard(task.sourceLocator) }
             }
+        }
+        Divider()
+        if task.kind != .torrent, !task.status.isActive {
+            if vm.selection.count > 1, vm.selection.contains(task.id) {
+                Button("Rename \(vm.selection.count) Selected…") {
+                    vm.promptForBatchRename(tasks: vm.tasks.filter { vm.selection.contains($0.id) })
+                }
+            } else {
+                Button("Rename…") { vm.promptForRename(task: task) }
+            }
+        }
+        Button(task.allTags.isEmpty ? "Add Tags…" : "Edit Tags…") { vm.promptForTags(task: task) }
+        Button(task.note == nil ? "Add Note…" : "Edit Note…") { vm.promptForNote(task: task) }
+        if task.kind == .http {
+            Button("Request Options…") { vm.promptForRequestOptions(task: task) }
         }
         Button(task.label == nil ? "Add Label…" : "Edit Label…") { vm.promptForLabel(task: task) }
         if task.status == .paused || task.status == .queued || task.status.isActive {

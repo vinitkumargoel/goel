@@ -169,6 +169,7 @@ struct GoelCommands: Commands {
             Divider()
             Button("Export Download List…") { exportList() }
             Button("Import Download List…") { importList() }
+            Button("Import from Other App…") { importForeign() }
             Divider()
             Button("Export Backup (JSON)…") { exportBackup() }
             Button("Import Backup (JSON)…") { importBackup() }
@@ -260,6 +261,28 @@ struct GoelCommands: Commands {
     private func importList() {
         guard let contents = readTextFile() else { return }
         viewModel.add(rawLines: contents, saveDirectory: nil, priority: .normal)
+    }
+
+    /// Import a queue exported by another download manager or browser: read any
+    /// file, extract the download locators it contains, and add them.
+    private func importForeign() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a file exported by aria2, JDownloader, IDM, a browser, etc."
+        guard panel.runModal() == .OK, let url = panel.url else { return }   // cancelled
+        guard let data = try? Data(contentsOf: url) else {
+            viewModel.toastNow("Couldn’t read that file")
+            return
+        }
+        let text = String(decoding: data, as: UTF8.self)
+        let locators = ForeignImportParser.extractLocators(from: text)
+        guard !locators.isEmpty else {
+            viewModel.toastNow("No downloadable links found in that file")
+            return
+        }
+        viewModel.add(rawLines: locators.joined(separator: "\n"), saveDirectory: nil, priority: .normal)
+        viewModel.toastNow("Imported \(locators.count) link\(locators.count == 1 ? "" : "s")")
     }
 
     /// Advance the persisted theme to the next case (System → Light → Dark → …).

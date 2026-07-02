@@ -107,6 +107,10 @@ public actor DownloadManager {
     /// future ``DownloadTask/scheduledAt``.
     var scheduledStartTask: Task<Void, Never>?
 
+    /// The periodic "remote resource changed?" checker for finished HTTP tasks,
+    /// armed only while ``AppSettings/autoRedownloadOnRemoteChange`` is on.
+    var redownloadTask: Task<Void, Never>?
+
     // MARK: Network-awareness state
 
     /// The last path flags reported by the app layer, re-evaluated when the
@@ -287,6 +291,7 @@ public actor DownloadManager {
         updateBackupSchedule()
         updateDownloadSchedule()
         updateRSSSchedule()
+        updateRedownloadSchedule()
         armScheduledStarts()
         updatePowerAssertion()
         publish()
@@ -396,6 +401,8 @@ public actor DownloadManager {
         scheduledAt: Date? = nil,
         mirrors: [String]? = nil,
         suggestedName: String? = nil,
+        totalBytes: Int64? = nil,
+        files: [TransferFile] = [],
         deselectedFileIDs: [Int]? = nil
     ) -> DownloadTask {
         if let existing = tasks.first(where: { $0.source.dedupKey == source.dedupKey }) {
@@ -426,8 +433,14 @@ public actor DownloadManager {
             source: source,
             name: name,
             saveDirectory: directory,
+            // Seed the size/file list already resolved on the add screen so the
+            // task appears fully-formed instead of re-showing a "gathering" state
+            // for facts we already have. The engine still reconciles from truth as
+            // it runs; these are just a correct initial display.
+            totalBytes: totalBytes,
             status: holdPaused ? .paused : .queued,
             priority: priority,
+            files: files,
             expectedChecksum: expectedChecksum,
             scheduledAt: scheduledAt,
             mirrors: Self.sanitizedMirrors(mirrors, primary: source),
@@ -602,6 +615,8 @@ public actor DownloadManager {
         rssTask = nil
         scheduledStartTask?.cancel()
         scheduledStartTask = nil
+        redownloadTask?.cancel()
+        redownloadTask = nil
         let folderWatch = self.folderWatch
         Task { await folderWatch.stop() }
         power.setPreventSleep(false)
@@ -680,6 +695,7 @@ public actor DownloadManager {
         updateBackupSchedule()
         updateDownloadSchedule()
         updateRSSSchedule()
+        updateRedownloadSchedule()
         await applyNetworkPolicy(expensive: lastPathExpensive, constrained: lastPathConstrained)
         publish()
         schedule()
@@ -757,6 +773,129 @@ public actor DownloadManager {
         publish()
     }
 
+    /// Replace a task's tag set (trimmed, de-duped case-insensitively, order-stable).
+    public func setTags(_ tags: [String], task id: DownloadTask.ID) async {
+        guard let i = index(of: id) else { return }
+        let cleaned = Self.normalizeTags(tags)
+        tasks[i].tags = cleaned.isEmpty ? nil : cleaned
+        persist(tasks[i])
+        publish()
+    }
+
+    /// Set (or clear, with nil/empty) a free-form note on a task.
+    public func setNote(_ note: String?, task id: DownloadTask.ID) async {
+        guard let i = index(of: id) else { return }
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        tasks[i].note = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        persist(tasks[i])
+        publish()
+    }
+
+    /// Set the per-task `Referer` and extra request headers (HTTP downloads).
+    /// Reserved and malformed header names are dropped; nil/empty clears each
+    /// field. Returns the reserved header names that were ignored, so the UI can
+    /// tell the user rather than silently discarding them.
+    @discardableResult
+    public func setRequestOptions(referer: String?, headers: [String: String]?,
+                                  task id: DownloadTask.ID) async -> [String] {
+        guard let i = index(of: id) else { return [] }
+        var r = referer?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // A Referer carrying CR/LF/NUL could split the request — never store it.
+        if Self.hasHeaderControlChars(r) { r = "" }
+        tasks[i].referer = r.isEmpty ? nil : r
+        let raw = headers ?? [:]
+        let cleaned = Self.sanitizedHeaders(raw)
+        tasks[i].requestHeaders = cleaned.isEmpty ? nil : cleaned
+        persist(tasks[i])
+        publish()
+        // Names the user supplied that we refused to store (reserved only —
+        // control-char/empty are malformed, not "reserved", and reported as such
+        // is more confusing than useful).
+        return raw.keys
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { Self.reservedHeaderNames.contains($0) }
+            .sorted()
+    }
+
+    /// The outcome of a ``rename(_:to:)``, distinguishing each rejection cause so
+    /// the UI can show an accurate message instead of one catch-all string.
+    public enum RenameResult: Sendable, Equatable {
+        case renamed(String)      // applied, carrying the final (possibly deduped) name
+        case unchanged            // the new name equalled the old — a no-op success
+        case notFound             // no task with that id
+        case unsupported          // torrents own their on-disk layout
+        case active               // can't rename out from under the live writer
+        case ioError(String)      // the disk move failed (permissions, full, …)
+    }
+
+    /// Rename a download's output file and display name. Renames the file on disk
+    /// (never clobbering an existing one — appends ` (n)` if needed). Not supported
+    /// for torrents (libtorrent owns their on-disk layout) or while a task is
+    /// actively transferring (the writer holds the old path).
+    @discardableResult
+    public func rename(_ id: DownloadTask.ID, to newName: String) async -> RenameResult {
+        guard let i = index(of: id) else { return .notFound }
+        let task = tasks[i]
+        guard task.kind != .torrent else { return .unsupported }
+        guard !task.status.isActive else { return .active }
+        let sanitized = DownloadTask.sanitizedName(newName, fallback: task.name)
+        guard sanitized != task.name else { return .unchanged }
+        let fm = FileManager.default
+        let dir = task.saveDirectory
+        let finalName = DownloadTask.uniqueName(base: sanitized, in: dir)
+        let oldPath = (dir as NSString).appendingPathComponent(task.name)
+        let newPath = (dir as NSString).appendingPathComponent(finalName)
+        if fm.fileExists(atPath: oldPath) {
+            do { try fm.moveItem(atPath: oldPath, toPath: newPath) }
+            catch { return .ioError(error.localizedDescription) }
+        }
+        tasks[i].name = finalName
+        persist(tasks[i])
+        publish()
+        return .renamed(finalName)
+    }
+
+    /// Trim, drop empties, and de-duplicate tags case-insensitively (order-stable).
+    static func normalizeTags(_ raw: [String]) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for t in raw {
+            let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, seen.insert(trimmed.lowercased()).inserted else { continue }
+            out.append(trimmed)
+        }
+        return out
+    }
+
+    /// Header names the transport manages itself; a user value here is ignored.
+    static let reservedHeaderNames: Set<String> = [
+        "host", "content-length", "connection", "transfer-encoding", "keep-alive",
+        "upgrade", "te", "trailer", "referer", "authorization", "proxy-authorization",
+        "proxy-connection"
+    ]
+
+    /// Trim names/values, and drop reserved, empty, or control-char-bearing
+    /// headers (a `\r`/`\n`/NUL anywhere would let a value split the request).
+    static func sanitizedHeaders(_ raw: [String: String]) -> [String: String] {
+        var out: [String: String] = [:]
+        for (k, v) in raw {
+            let name = k.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = v.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty,
+                  !reservedHeaderNames.contains(name.lowercased()),
+                  !hasHeaderControlChars(name), !hasHeaderControlChars(value)
+            else { continue }
+            out[name] = value
+        }
+        return out
+    }
+
+    /// Whether a header name/value contains a character that must never appear in
+    /// one: CR, LF, or NUL (the classic header/response-splitting vectors).
+    static func hasHeaderControlChars(_ s: String) -> Bool {
+        s.unicodeScalars.contains { $0 == "\r" || $0 == "\n" || $0.value == 0 }
+    }
+
     // MARK: Export / Import
 
     /// A self-contained snapshot of the whole app: settings + every task with
@@ -819,6 +958,9 @@ public actor DownloadManager {
         safe.antivirusExecutablePath = current.antivirusExecutablePath
         safe.antivirusArgumentTemplate = current.antivirusArgumentTemplate
         safe.antivirusScanner = current.antivirusScanner
+        // ffmpeg path is an executable we run on demand — never adopt one from an
+        // imported backup (it would be a code-execution vector).
+        safe.ffmpegPath = current.ffmpegPath
         // Network listeners and auto-fetch surfaces.
         safe.remoteAccessEnabled = current.remoteAccessEnabled
         safe.remotePort = current.remotePort

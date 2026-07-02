@@ -80,6 +80,75 @@ enum YtDlpResolver {
             fileExtension: object["ext"] as? String)
     }
 
+    /// The outcome of a subtitle fetch, distinguishing "wrote N files" from the
+    /// legitimately-common "this video has none" and a genuine failure (yt-dlp
+    /// missing, launch error, or a non-zero exit) so the caller can stay quiet on
+    /// `none` but surface `failed`.
+    enum SubtitleOutcome: Sendable {
+        case downloaded(Int)
+        case none
+        case failed(String)
+    }
+
+    /// Fetch subtitles for `pageURL` into `directory`, named to sit beside the
+    /// video (`<baseName>.<lang>.<ext>`). Runs yt-dlp with `--skip-download` so no
+    /// media is re-fetched. `languages` is a comma/space list of codes; when
+    /// `includeAuto` is set, machine captions are accepted as a fallback.
+    @discardableResult
+    static func downloadSubtitles(pageURL: URL, into directory: String, baseName: String,
+                                  languages: String, includeAuto: Bool) async -> SubtitleOutcome {
+        guard let executable else { return .failed("yt-dlp not found.") }
+        guard let scheme = pageURL.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return .failed("Unsupported URL.") }
+
+        let langs = languages
+            .split(whereSeparator: { $0 == "," || $0 == " " })
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        let langArg = langs.isEmpty ? "en" : langs.joined(separator: ",")
+        let template = (directory as NSString).appendingPathComponent(baseName + ".%(ext)s")
+
+        var args = ["--skip-download", "--no-playlist", "--no-warnings", "--write-subs"]
+        if includeAuto { args.append("--write-auto-subs") }
+        args += ["--sub-langs", langArg, "-o", template, pageURL.absoluteString]
+
+        // Snapshot the directory so we can count only the subtitle files this run
+        // produced (yt-dlp exits 0 even when a video simply has no subtitles).
+        let fm = FileManager.default
+        let before = Set((try? fm.contentsOfDirectory(atPath: directory)) ?? [])
+
+        let process = Process()
+        let errPipe = Pipe()
+        process.executableURL = executable
+        process.arguments = args
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = errPipe
+        do { try process.run() } catch { return .failed("Couldn’t launch yt-dlp: \(error.localizedDescription)") }
+        let watchdog = Task {
+            try? await Task.sleep(nanoseconds: 90_000_000_000)
+            if process.isRunning { process.terminate() }
+        }
+        let errData: Data = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let data = errPipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                continuation.resume(returning: data)
+            }
+        }
+        watchdog.cancel()
+        guard process.terminationStatus == 0 else {
+            let msg = String(data: errData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return .failed(msg?.isEmpty == false ? String(msg!.suffix(200)) : "yt-dlp couldn’t fetch subtitles.")
+        }
+        let after = Set((try? fm.contentsOfDirectory(atPath: directory)) ?? [])
+        let subExtensions = ["vtt", "srt", "ass", "ssa", "lrc"]
+        let count = after.subtracting(before).filter {
+            subExtensions.contains(($0 as NSString).pathExtension.lowercased())
+        }.count
+        return count > 0 ? .downloaded(count) : .none
+    }
+
     /// Build the add-flow preview for a resolved stream. HLS manifests route to
     /// the HLS engine; direct files to HTTP.
     static func preview(for resolved: Resolved) -> DownloadPreview? {
