@@ -218,19 +218,10 @@ final class AppViewModel: ObservableObject {
     /// the first row on the next snapshot.
     private var hasAutoSelected = false
 
-    /// Per-task status from the previous snapshot, used to detect added/completed/
-    /// failed transitions for notifications. Seeded (not notified) on the first
-    /// snapshot so restored tasks don't fire "added" banners at launch.
-    private var lastStatuses: [DownloadTask.ID: DownloadStatus] = [:]
-    private var hasSeenFirstSnapshot = false
-
-    /// Per-task antivirus verdicts from the previous snapshot, so a flagged file
-    /// notifies exactly once.
-    private var lastScanVerdicts: [DownloadTask.ID: String] = [:]
-
-    /// Whether the previous snapshot had downloads in flight — the edge that
-    /// triggers the one-shot auto-shutdown action when the queue drains.
-    private var lastHadActiveWork = false
+    /// The carry-over state for the snapshot pump — the notification-diff baselines
+    /// and the queue-drain edge — folded by the pure ``SnapshotReducer`` each tick.
+    /// Replaces the four separate, order-dependent mutable fields this used to keep.
+    private var reducerState = ReducerState()
 
     /// Finder-visible per-file progress (the Safari-style pie on the file).
     private let fileProgress = FileProgressPublisher()
@@ -238,12 +229,17 @@ final class AppViewModel: ObservableObject {
     /// Dock-icon badge + aggregate progress bar.
     private let dockProgress = DockProgressService()
 
+    /// The OS side-effect boundary (posting banners + the irreversible drain
+    /// action), injected so the pure ``SnapshotReducer`` decision can be exercised
+    /// without a real `NSApp.terminate` / `pmset` / AppleScript.
+    private let system: SystemActions
+
     /// The live instance, for entry points that can't be injected (the
     /// AppleScript command classes). Weak: scripting must never keep a
     /// discarded view model alive.
     static private(set) weak var shared: AppViewModel?
 
-    init() {
+    init(system: SystemActions = LiveSystemActions()) {
         // File-backed persistence under Application Support, falling back to an
         // ephemeral in-memory store if the directory can't be created — and
         // surfacing a warning when it does, rather than silently losing state.
@@ -251,6 +247,7 @@ final class AppViewModel: ObservableObject {
         self.manager = DownloadManager(store: store)
         self.persistenceWarning = warning
         self.servers = SFTPConnectionStore.shared.load()
+        self.system = system
         Self.shared = self
     }
 
@@ -344,10 +341,9 @@ final class AppViewModel: ObservableObject {
                             self.selection = [first]
                         }
                     }
-                    // Order matters: the drained check compares against the
-                    // PREVIOUS statuses, which emitNotifications overwrites.
-                    self.checkQueueDrained(snapshot)
-                    self.emitNotifications(for: snapshot)
+                    // One pure fold decides notifications + the drain edge from the
+                    // same prior state — no order-dependence between the two passes.
+                    self.pump(snapshot)
                     self.fileProgress.update(with: snapshot) { [weak self] id in
                         self?.pause(id)
                     }
@@ -829,55 +825,31 @@ final class AppViewModel: ObservableObject {
         toastNow("Copied to clipboard")
     }
 
-    // MARK: Notifications
+    // MARK: Snapshot pump
 
-    /// Diff this snapshot against the previous one and post a user notification for
-    /// each added/completed/failed transition, gated by the matching `notify*`
-    /// preference and ``AppSettings/notifyOnlyWhenInactive`` (which suppresses
-    /// banners while the app is frontmost). The first snapshot only seeds the
-    /// baseline so restored tasks never fire "added" banners at launch.
-    private func emitNotifications(for snapshot: [DownloadTask]) {
-        defer {
-            lastStatuses = Dictionary(uniqueKeysWithValues: snapshot.map { ($0.id, $0.status) })
-            lastScanVerdicts = Dictionary(uniqueKeysWithValues: snapshot.compactMap { task in
-                task.scanVerdict.map { (task.id, $0) }
-            })
+    /// Fold the manager's snapshot into user-visible effects: run the pure
+    /// ``SnapshotReducer`` (notification diff + the one-shot queue-drain edge)
+    /// against the carried ``reducerState``, then apply its decision through the
+    /// injected ``SystemActions``. The reducer removes the old order-dependence
+    /// between the drain check and the notification pass — both read the same
+    /// prior state — and makes the destructive shutdown edge testable in Core.
+    private func pump(_ snapshot: [DownloadTask]) {
+        let env = ReducerEnv(
+            notify: NotifyPrefs(onAdded: settings.notifyOnAdded,
+                                onCompleted: settings.notifyOnCompleted,
+                                onFailed: settings.notifyOnFailed,
+                                onlyWhenInactive: settings.notifyOnlyWhenInactive),
+            isAppActive: NSApp.isActive,
+            autoShutdownAction: settings.autoShutdownAction)
+        let output = SnapshotReducer.reduce(reducerState, snapshot, env)
+        reducerState = output.state
+        // Drain first (it may terminate the app), then the banners — matching the
+        // original checkQueueDrained → emitNotifications ordering.
+        if let intent = output.drainIntent {
+            update { $0.autoShutdownAction = "none" }   // one-shot: never fire twice
+            system.perform(intent)
         }
-        guard hasSeenFirstSnapshot else {
-            hasSeenFirstSnapshot = true
-            return
-        }
-        if settings.notifyOnlyWhenInactive && NSApp.isActive { return }
-        let sound = settings.notificationSound
-        // A flagged antivirus verdict warrants a banner regardless of the
-        // added/completed preferences — the user explicitly enabled scanning.
-        for task in snapshot where task.scanVerdict == "flagged" {
-            if lastScanVerdicts[task.id] != "flagged" {
-                NotificationService.notify(title: "Antivirus flagged a file",
-                                           body: task.name, sound: sound)
-            }
-        }
-        for task in snapshot {
-            guard let previous = lastStatuses[task.id] else {
-                if settings.notifyOnAdded {
-                    NotificationService.notify(title: "Download added", body: task.name, sound: sound)
-                }
-                continue
-            }
-            guard previous != task.status else { continue }
-            switch task.status {
-            case .completed:
-                if settings.notifyOnCompleted {
-                    NotificationService.notify(title: "Download complete", body: task.name, sound: sound)
-                }
-            case .failed:
-                if settings.notifyOnFailed {
-                    NotificationService.notify(title: "Download failed", body: task.name, sound: sound)
-                }
-            default:
-                break
-            }
-        }
+        system.post(output.notifications, sound: settings.notificationSound)
     }
 
     // MARK: Speed sampling
@@ -958,7 +930,7 @@ final class AppViewModel: ObservableObject {
                 entry.totalBytes.map(String.init) ?? "",
                 entry.savePath,
                 iso.string(from: entry.completedAt),
-            ].map(Self.csvField).joined(separator: ","))
+            ].map(CSVEncoder.field).joined(separator: ","))
         }
         do {
             try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
@@ -966,12 +938,6 @@ final class AppViewModel: ObservableObject {
         } catch {
             toastNow("Export failed")
         }
-    }
-
-    /// RFC 4180 quoting: wrap fields containing separators/quotes/newlines.
-    private static func csvField(_ raw: String) -> String {
-        guard raw.contains(",") || raw.contains("\"") || raw.contains("\n") else { return raw }
-        return "\"" + raw.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
     // MARK: Scheduled starts
@@ -988,50 +954,9 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    // MARK: Queue automation (auto-shutdown)
-
-    /// Fire the one-shot auto-shutdown action on the edge where the last
-    /// downloading task finishes. Seeding doesn't block it (it can run
-    /// indefinitely); a queue that drains because everything failed or was
-    /// paused doesn't fire — a task must have transitioned INTO `.completed`
-    /// on this very tick (an old completed download sitting in the list must
-    /// not turn a manual "Pause All" into a system shutdown).
-    private func checkQueueDrained(_ snapshot: [DownloadTask]) {
-        let hasActiveWork = snapshot.contains { task in
-            switch task.status {
-            case .queued, .requestingMetadata, .downloading, .verifying: return true
-            default: return false
-            }
-        }
-        let completedThisTick = snapshot.contains { task in
-            task.status == .completed && lastStatuses[task.id] != .completed
-        }
-        defer { lastHadActiveWork = hasActiveWork }
-        guard settings.autoShutdownAction != "none",
-              lastHadActiveWork, !hasActiveWork,
-              completedThisTick else { return }
-        let action = settings.autoShutdownAction
-        update { $0.autoShutdownAction = "none" }   // one-shot: never fire twice
-        performQueueDrainedAction(action)
-    }
-
-    private func performQueueDrainedAction(_ action: String) {
-        switch action {
-        case "quit":
-            NSApp.terminate(nil)
-        case "sleep":
-            let pmset = Process()
-            pmset.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
-            pmset.arguments = ["sleepnow"]
-            try? pmset.run()
-        case "shutdown":
-            // Via System Events so the user gets the normal unsaved-work prompts.
-            let script = NSAppleScript(source: "tell application \"System Events\" to shut down")
-            script?.executeAndReturnError(nil)
-        default:
-            break
-        }
-    }
+    // Queue automation (auto-shutdown): the drain-edge DECISION now lives in the
+    // pure `SnapshotReducer` (folded by `pump`), and the irreversible OS EFFECT in
+    // `LiveSystemActions.perform(_:)` behind the `SystemActions` port.
 
     // MARK: Full-fidelity backup (JSON)
 
