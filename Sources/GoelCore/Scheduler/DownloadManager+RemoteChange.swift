@@ -125,6 +125,13 @@ extension DownloadManager {
     /// or the HTTP/SOCKS keys for a configured manual proxy. Mirrors the HTTP
     /// engine's own proxy handling so background probes don't bypass it.
     static func proxyDictionary(from settings: AppSettings) -> [String: Any]? {
+        #if os(Linux)
+        // The CFNetwork proxy-dictionary keys don't exist in swift-corelibs-foundation.
+        // On Linux the HTTP engine exports http(s)_proxy environment variables for a
+        // manual proxy, which URLSession here reads ambiently, so no per-session
+        // dictionary is needed (nil = follow the ambient/OS proxy).
+        return nil
+        #else
         switch settings.proxyMode {
         case "manual" where !settings.proxyHost.isEmpty && settings.proxyPort > 0:
             if settings.proxyType == "socks5" {
@@ -147,5 +154,6 @@ extension DownloadManager {
         default:
             return nil
         }
+        #endif
     }
 }
