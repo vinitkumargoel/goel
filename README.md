@@ -6,12 +6,18 @@
 
 **A fast, native macOS download manager that unifies HTTP, FTP, SFTP, BitTorrent, and HLS in one queue.**
 
-Inspired by Free Download Manager — rebuilt from scratch in Swift, self-contained, and Homebrew-free. Native SwiftUI on macOS; a headless daemon with a web-portal UI on Linux.
+Rebuilt from scratch in Swift, self-contained, and Homebrew-free. Native SwiftUI on macOS; a headless daemon with a web-portal UI on Linux.
 
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Linux-blue)
 ![Arch](https://img.shields.io/badge/arch-arm64%20%7C%20x86__64-black)
 ![Swift](https://img.shields.io/badge/Swift-5.10-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+<br>
+
+<img src="Assets/screenshots/desktop.png" width="900" alt="Goel° running on macOS — one unified queue mixing HTTP, BitTorrent, SFTP, HLS and FTP downloads, a Library/Status/Type sidebar with live counts, and a right-hand detail panel showing a circular progress ring at 62%, live down/up speeds, and file facts." />
+
+<sub><i>The macOS app. Downloads shown are illustrative mock data.</i></sub>
 
 </div>
 
@@ -25,6 +31,20 @@ or seeding a torrent. It ships as a **single self-contained app**: every native 
 inside, so there is nothing for your users to install.
 
 On **Linux**, the same engine runs headless as **`GoelDaemon`**, driven from the built-in web portal — see [Linux (headless daemon)](#linux-headless-daemon).
+
+---
+
+## Screenshots
+
+**Linux web portal** — the same engine, headless, driven from any browser. Token- or password-authenticated, with the same unified queue, detail panel, and four themes as the desktop app.
+
+<img src="Assets/screenshots/web-portal.png" width="900" alt="Goel° web portal in a browser — topbar with search, live down/up totals and an Add button; a sidebar of Library/Status filters with counts; the unified download list; and a detail panel with progress, save path, and source for the selected download." />
+
+**macOS menu-bar extra** — glance at active downloads and pause/resume or add new ones without opening the main window.
+
+<img src="Assets/screenshots/menubar.png" width="460" alt="Goel° macOS menu-bar popover — an 'Active · 4' header with global down/up speeds, four in-progress downloads each with a progress bar and speed, and a footer with Add download, Pause all, and Open Goel°." />
+
+<sub><i>All downloads shown are illustrative mock data.</i></sub>
 
 ---
 
@@ -52,7 +72,7 @@ On **Linux**, the same engine runs headless as **`GoelDaemon`**, driven from the
 > **Requires a Mac on macOS 14 (Sonoma) or later** — Apple Silicon **or** Intel.
 
 1. Download the latest `.dmg` for your Mac from
-   [Releases](https://github.com/vinitkumargoel/goel-downloader/releases):
+   [Releases](https://github.com/vinitkumargoel/goel/releases):
    **`Goel-Downloader-<version>-macos-arm64.dmg`** (Apple Silicon) or
    **`…-macos-x86_64.dmg`** (Intel).
 2. Open the `.dmg` and drag **Goel°** to **Applications**.
@@ -75,9 +95,41 @@ a direct download. Official releases bundle `yt-dlp`; otherwise install it yours
 
 On Linux, Goel° runs as a headless service — **`GoelDaemon`** — with the built-in **web portal as its UI**.
 The same engine (HTTP, FTP, SFTP, BitTorrent, HLS, scheduler, persistence) runs behind a token- or
-password-authenticated web server that you drive from any browser. Builds for **x86_64** and **ARM64**.
+password-authenticated web server that you drive from any browser.
 
-**Prerequisites** (Ubuntu 24.04):
+### Install (prebuilt tarball)
+
+> **Prebuilt for x86_64.** For ARM64, [build from source](#build-from-source).
+
+1. Download **`goel-daemon-<version>-linux-x86_64.tar.gz`** from
+   [Releases](https://github.com/vinitkumargoel/goel/releases) and unpack it:
+   ```bash
+   tar xzf goel-daemon-<version>-linux-x86_64.tar.gz
+   cd goel-daemon-<version>-linux-x86_64
+   ```
+2. Install the runtime libraries (Ubuntu 24.04):
+   ```bash
+   sudo apt-get install -y \
+     libtorrent-rasterbar2.0 libssh2-1 libcurl4 libssl3 libboost-system1.83.0 ffmpeg
+   ```
+3. Run it — `run.sh` bundles the Swift runtime, so **no toolchain needed**:
+   ```bash
+   GOEL_PORT=8080 \
+   GOEL_ALLOW_LAN=true \
+   GOEL_USERNAME=admin \
+   GOEL_PASSWORD='choose-a-strong-one' \    # required before it will expose over the LAN
+   GOEL_SAVE_DIR="$HOME/Downloads" \
+     ./run.sh
+   # then open http://<host>:8080, sign in, and add downloads
+   ```
+
+Config env vars: `GOEL_PORT`, `GOEL_ALLOW_LAN`, `GOEL_REQUIRE_AUTH`, `GOEL_USERNAME`, `GOEL_PASSWORD`,
+`GOEL_SAVE_DIR`, `GOEL_DB`. With sign-in enabled, LAN exposure requires `GOEL_PASSWORD` (otherwise it
+binds loopback only — the same safety rule as macOS).
+
+### Build from source
+
+You only need this to build the daemon yourself (or for ARM64). **Prerequisites** (Ubuntu 24.04):
 ```bash
 sudo apt-get install -y \
   libtorrent-rasterbar-dev libssh2-1-dev libcurl4-openssl-dev \
@@ -93,25 +145,17 @@ export GOEL_SQLITE_DIR="$PWD/Vendor/linux/sqlite"
 swift build -c release --product GoelDaemon
 ```
 
-**Run** (configured via environment):
-```bash
-GOEL_PORT=8080 \
-GOEL_ALLOW_LAN=true \
-GOEL_USERNAME=admin \
-GOEL_PASSWORD='choose-a-strong-one' \    # required before it will expose over the LAN
-GOEL_SAVE_DIR="$HOME/Downloads" \
-  ./.build/release/GoelDaemon
-# then open http://<host>:8080, sign in, and add downloads
-```
-
+Run the result the same way as above, pointing at `./.build/release/GoelDaemon` instead of `./run.sh`.
 If the Swift runtime isn't on the library path, prefix the run with
-`LD_LIBRARY_PATH=<toolchain>/usr/lib/swift/linux`. Config env vars: `GOEL_PORT`, `GOEL_ALLOW_LAN`,
-`GOEL_REQUIRE_AUTH`, `GOEL_USERNAME`, `GOEL_PASSWORD`, `GOEL_SAVE_DIR`, `GOEL_DB`. With sign-in enabled,
-LAN exposure requires `GOEL_PASSWORD` (otherwise it binds loopback only — the same safety rule as macOS).
+`LD_LIBRARY_PATH=<toolchain>/usr/lib/swift/linux`.
 
 ---
 
 ## Building the macOS app from source
+
+> **Just want to run it?** Download the `.dmg` from
+> [Releases](https://github.com/vinitkumargoel/goel/releases) — this section is only for
+> building the app yourself.
 
 You need Homebrew **only to build** — the resulting `.app` is self-contained.
 
