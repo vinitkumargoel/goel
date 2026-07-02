@@ -298,6 +298,33 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(bStatus, .requestingMetadata)
     }
 
+    // MARK: (d2) A stale engine event never resurrects a paused task
+
+    func testStaleDownloadingEventDoesNotUnpause() async throws {
+        let http = FakeEngine(kind: .http)
+        let manager = DownloadManager(
+            httpEngine: http, torrentEngine: FakeEngine(kind: .torrent),
+            settings: settings(profile(maxSimultaneousDownloads: 5)))
+
+        let task = await manager.add(source: urlSource("https://example.test/hold.bin"))
+        _ = await waitUntil { http.added == [task.id] }        // promoted + handed to the engine
+        await manager.pause(task.id)
+        _ = await waitUntil { await manager.task(task.id)?.status == .paused }
+
+        // A "downloading" event buffered before the engine stopped arrives late.
+        http.emit(.statusChanged(.downloading), for: task.id)
+        // Order-preserving sentinel: events fold in order, so once the name updates
+        // the stale status event has already been processed (and, per the guard,
+        // ignored) — no timing assumption needed.
+        http.emit(.nameResolved("SENTINEL"), for: task.id)
+        let sawSentinel = await waitUntil { await manager.task(task.id)?.name == "SENTINEL" }
+        XCTAssertTrue(sawSentinel)
+
+        // The user's pause survived the stale event.
+        let finalStatus = await manager.task(task.id)?.status
+        XCTAssertEqual(finalStatus, .paused)
+    }
+
     // MARK: (e) Switching profile / toggling the snail re-applies limits
 
     func testProfileSwitchAndSnailReapplyLimits() async throws {

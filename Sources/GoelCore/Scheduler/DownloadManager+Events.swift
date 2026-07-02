@@ -56,6 +56,19 @@ extension DownloadManager {
             tasks[i].name = DownloadTask.sanitizedName(name, fallback: tasks[i].name)
 
         case let .statusChanged(status):
+            // Guard against a stale pre-pause event resurrecting a paused task: an
+            // engine can have a "downloading"/"requesting metadata" event buffered
+            // in its stream from just before it was stopped. If the manager has
+            // authoritatively paused this task (it's `.paused` and no longer holds a
+            // slot), that late active-phase event must not un-pause it — the user's
+            // pause wins. Legitimate resumes pass through: they set `.queued` then an
+            // optimistic phase + a slot before the engine's event arrives, so the
+            // stored status is never `.paused` at that point.
+            if Self.isDownloadingPhase(status),
+               tasks[i].status == .paused,
+               !runningSlots.contains(id) {
+                return
+            }
             tasks[i].status = status
             handleStatusTransition(id, status)
 
