@@ -10,8 +10,8 @@
 # IMPORTANT for downloaded copies: a .dmg pulled from the internet is quarantined,
 # and the app inherits that. For the app to open WITHOUT the Gatekeeper warning,
 # the .app inside must be Developer-ID-signed + notarized + stapled BEFORE this
-# script runs (build with CODESIGN_IDENTITY + NOTARY_PROFILE — see build_app.sh /
-# SHIPPING.md). Set NOTARY_PROFILE here too to also notarize+staple the DMG itself.
+# script runs (build with CODESIGN_IDENTITY + NOTARY_PROFILE — see build_app.sh).
+# Set NOTARY_PROFILE here too to also notarize+staple the DMG itself.
 #
 # Usage: Scripts/make_dmg.sh [path/to/App.app]      (default: dist/Goel°.app)
 # Result: dist/Goel-Downloader-<version>-macos-<arch>.dmg
