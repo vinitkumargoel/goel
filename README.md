@@ -11,7 +11,7 @@ Inspired by Free Download Manager — rebuilt from scratch in Swift, self-contai
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue)
 ![Arch](https://img.shields.io/badge/arch-Apple%20Silicon-black)
 ![Swift](https://img.shields.io/badge/Swift-5.10-orange)
-![License](https://img.shields.io/badge/license-Proprietary-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 </div>
 
@@ -28,33 +28,19 @@ inside, so there is nothing for your users to install.
 
 ## Features
 
-**Protocols & engines**
-- **HTTP/HTTPS** — segmented multi-connection downloads (adaptive 4–16), resume with ETag/Last-Modified
-  validation, a governor that backs off on `429`, and shared aggregate rate limiting.
-- **Mirrors & Metalink** — round-robin segments across mirrors with health tracking and failover; parses `.meta4` / `.metalink`.
-- **BitTorrent** — real libtorrent: `.torrent` and magnets, per-file priority, DHT/PeX/LPD/µTP, wire
-  encryption, sequential or rarest-first, piece verification, full seeding controls.
-- **FTP/FTPS** — system libcurl, explicit/implicit TLS, REST-based resume.
-- **SFTP** — libssh2 with trust-on-first-use host-key pinning and an interactive server file browser.
-- **HLS video** — parses playlists, picks the best variant, handles AES-128 and fMP4/TS remux to `.mp4`.
-
-**Getting downloads in** — two-step add flow with clipboard auto-paste and metadata preview; batch add
-(paste many URLs/magnets or import a text file); drag & drop onto the window or the floating **Drop
-Basket**; **Link Grabber** to extract all links from a web page; optional bundled **`yt-dlp`** resolver;
-MD5/SHA-1/SHA-256 checksum verification.
-
-**Managing the queue** — sortable/filterable/searchable list with multi-select; a **Detail panel**
-(General, Details, Progress with live speed graph, Files, Connections); **Low/Medium/High traffic
-profiles**; menu-bar extra and Dock progress.
-
-**Automation & integration** — browser capture (Manifest V3 for Chrome/Edge/Brave/Firefox + a Safari
-Web Extension); macOS Services entry, `goeldownloader://` URL scheme, `magnet:`/`.torrent` handling,
-AppleScript, and notifications; watch folder, scheduled windows, auto-shutdown/sleep/quit; power &
-network awareness; post-download actions (extract, script, antivirus); optional token-authed remote
-control server; searchable re-downloadable history with CSV export and auto-backup.
-
-**Settings** — full panes for General, Network, Traffic Limits, BitTorrent, Scheduler, Advanced,
-Antivirus, Browser Integration, and Remote Access.
+- **One unified queue** — HTTP/HTTPS, FTP/FTPS, SFTP, BitTorrent, and HLS downloads share one list and one interface.
+- **Segmented HTTP** — adaptive multi-connection downloads with resume, mirror/Metalink failover, and rate limiting.
+- **Full BitTorrent** — `.torrent` files and magnets via libtorrent, per-file priority, and complete seeding controls.
+- **SFTP browser** — browse, upload, and download on remote servers with host-key pinning.
+- **HLS video** — download streaming video to a clean `.mp4`.
+- **Easy adding** — clipboard auto-paste, batch add, drag & drop, a floating Drop Basket, a web-page Link Grabber, and an optional bundled `yt-dlp` resolver.
+- **Queue management** — sortable/filterable list, a detail panel with live speed graphs, and Low/Medium/High traffic profiles.
+- **Browser integration** — capture downloads from Chrome/Edge/Brave/Firefox and Safari extensions.
+- **macOS native** — menu-bar extra, Dock progress, Services menu, URL scheme, AppleScript, and notifications.
+- **Automation** — watch folders, scheduled download windows, power/network awareness, and post-download actions (extract, script, antivirus scan).
+- **Remote control** — an optional token-authenticated local HTTP server to manage downloads from another device.
+- **Checksums & history** — MD5/SHA verification plus searchable, re-downloadable history with CSV export.
+- **Self-contained** — every native library is bundled; no Homebrew or dependencies for end users.
 
 ---
 
@@ -112,35 +98,6 @@ notary service, and staples the ticket — which is what lets a downloaded app o
 
 ---
 
-## Architecture
-
-Four layers, cleanly separated:
-
-```
-┌──────────────────────────── GoelApp (SwiftUI) ────────────────────────────┐
-│  Windows · menu-bar · Drop Basket · SFTP browser · Settings · Services ·   │
-│  URL scheme · AppleScript · notifications · Sparkle · browser extension    │
-└───────────────────────────────────┬────────────────────────────────────────┘
-                                     │  observes a live task stream
-┌───────────────────────────────────▼──────────── GoelCore ──────────────────┐
-│  Scheduler / DownloadManager — one unified queue, concurrency, priorities,  │
-│  traffic profiles, power/network/schedule automation (pure AutomationCore)  │
-│  Persistence (GRDB/SQLite) — tasks, resume blobs, settings, history         │
-│  Ports — power / folder-watch / file-scan behind protocols (testable)       │
-│  Engines — HTTP · FTP · SFTP · HLS · BitTorrent, one shared task model      │
-└───────────────────────────────────┬────────────────────────────────────────┘
-                                     │  thin C shims
-        TorrentBridge (libtorrent) · CurlBridge (libcurl) · SSHBridge (libssh2)
-```
-
-- **One unified task model.** Every engine presents the same `DownloadTask` upward, so the UI never
-  special-cases torrent vs file.
-- **Native library symbols stay sealed inside their engines**, reached only through the C shims.
-- **Self-contained.** `Scripts/bundle_dylibs.sh` vendors the full native-library closure into
-  `Goel°.app/Contents/Frameworks/` and rewrites it to load from inside the bundle.
-
----
-
 ## Updating
 
 - **Sparkle** — the bundled auto-update framework; point it at an appcast for silent in-app updates.
@@ -154,7 +111,7 @@ library updater by design.
 
 ## License
 
-Goel° is © 2026 Vinit Kumar Goel — see **[LICENSE](LICENSE)**.
+Goel° is released under the **MIT License** — © 2026 Vinit Kumar Goel; see **[LICENSE](LICENSE)**.
 
 The app bundles several third-party open-source components (libtorrent, OpenSSL, libssh2, Boost, GRDB,
 Sparkle, and optionally yt-dlp), each under its own license. Full attributions are in
