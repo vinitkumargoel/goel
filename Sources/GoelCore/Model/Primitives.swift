@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking   // URLError lives here on Linux
+#endif
 
 /// Which engine backs a task. The UI never branches on this; the scheduler may.
 public enum DownloadKind: String, Codable, Sendable, CaseIterable {
@@ -57,6 +60,26 @@ public enum DownloadError: Error, Codable, Sendable, Equatable, Hashable {
         case .timedOut: return "Connection timed out"
         case .unknown(let m): return m.isEmpty ? "Unknown error" : m
         }
+    }
+}
+
+public extension DownloadError {
+    /// Best-effort mapping of an arbitrary transfer error to a `DownloadError`:
+    /// pass an existing `DownloadError` through unchanged, translate the common
+    /// `URLError` codes, and otherwise fall back to `.network` with the
+    /// underlying description. Shared by the HTTP and HLS engines.
+    init(mapping error: Error) {
+        if let de = error as? DownloadError { self = de; return }
+        if let ue = error as? URLError {
+            switch ue.code {
+            case .timedOut: self = .timedOut
+            case .cancelled: self = .canceled
+            case .fileDoesNotExist: self = .fileMissing
+            default: self = .network(ue.localizedDescription)
+            }
+            return
+        }
+        self = .network((error as NSError).localizedDescription)
     }
 }
 

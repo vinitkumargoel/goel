@@ -37,7 +37,17 @@ public struct TrafficProfile: Codable, Sendable, Hashable, Identifiable {
     }
 
     public var isDownloadUnlimited: Bool { maxDownloadBytesPerSec <= 0 }
-    public var isUploadUnlimited: Bool { maxUploadBytesPerSec <= 0 }
+
+    /// The effective per-task download cap in bytes/sec: this profile's global
+    /// ceiling tightened by an optional per-task limit. `0` on either side means
+    /// "unlimited"; when both are finite the smaller wins.
+    public func effectiveDownloadCap(taskLimit: Int64?) -> Int64 {
+        var cap = maxDownloadBytesPerSec
+        if let taskLimit, taskLimit > 0 {
+            cap = cap == 0 ? taskLimit : min(cap, taskLimit)
+        }
+        return cap
+    }
 
     private static let MB: Int64 = 1024 * 1024
 

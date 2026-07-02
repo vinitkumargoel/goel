@@ -60,6 +60,9 @@ public actor RemoteControlServer {
     private var liveConnections = Set<ObjectIdentifier>()
     private static let maxConnections = 32
     private static let receiveTimeout: UInt64 = 10 * 1_000_000_000
+    /// Ceiling on a single request (headers + body) so a client can't grow the
+    /// accumulation buffer without bound. Matches the Linux server.
+    private static let maxRequestBytes = 2 * 1024 * 1024
 
     /// Live server-sent-event streams, capped separately (each holds a slot for
     /// its whole lifetime, unlike one-shot requests).
@@ -240,31 +243,61 @@ public actor RemoteControlServer {
             }
         }
         connection.start(queue: DispatchQueue(label: "goel.remote-conn"))
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 128 * 1024) { [weak self] data, _, _, error in
-            timeout.cancel()
-            guard let self, let data, error == nil, !data.isEmpty else {
+        readRequest(connection, buffer: Data(), timeout: timeout)
+    }
+
+    /// Read from `connection` until a COMPLETE HTTP request has arrived — headers
+    /// terminated by `\r\n\r\n` and a body at least as long as `Content-Length` —
+    /// then dispatch once. A single `receive` is not enough: a POST body can trail
+    /// the headers in a later TCP segment, or exceed one read, so parsing after one
+    /// read would see a truncated (often empty) body → 400. Re-arms until the
+    /// request is whole, the size cap trips, or the peer / idle-timeout closes it.
+    /// (The Linux server already accumulates this way via its NIO handler.)
+    private nonisolated func readRequest(_ connection: NWConnection, buffer: Data,
+                                         timeout: Task<Void, Never>) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] chunk, _, isComplete, error in
+            guard let self else { return }
+            var buffer = buffer
+            if let chunk, !chunk.isEmpty { buffer.append(chunk) }
+
+            func abort() {
+                timeout.cancel()
                 connection.cancel()
-                Task { await self?.connectionClosed(connection) }
-                return
+                Task { await self.connectionClosed(connection) }
             }
-            Task {
-                let request = RemoteRequest(raw: data)
-                // Streaming routes hold the connection open and send
-                // incrementally; everything else is one response and done.
-                switch (request.method, request.path) {
-                case ("GET", "/api/events"):
-                    await self.serveEvents(connection, request)
-                case ("GET", "/stream"):
-                    await self.serveStream(connection, request)
-                default:
-                    let response = await self.respond(to: request)
-                    connection.send(content: response, completion: .contentProcessed { _ in
-                        connection.cancel()
-                    })
-                }
-                await self.connectionClosed(connection)
+            // Peer error or an oversized request: give up.
+            if error != nil || buffer.count > Self.maxRequestBytes { return abort() }
+            guard let bodyStart = RemoteRequest.headerEnd(buffer) else {
+                if isComplete { return abort() }          // closed mid-headers
+                return self.readRequest(connection, buffer: buffer, timeout: timeout)
             }
+            let needBody = RemoteRequest.contentLength(buffer.prefix(bodyStart))
+            if buffer.count - bodyStart < needBody {
+                if isComplete { return abort() }          // closed mid-body
+                return self.readRequest(connection, buffer: buffer, timeout: timeout)
+            }
+            // Whole request in hand — the idle timeout has done its job.
+            timeout.cancel()
+            let data = buffer
+            Task { await self.serve(connection, RemoteRequest(raw: data)) }
         }
+    }
+
+    /// Dispatch a fully-read request. Streaming routes hold the connection open and
+    /// send incrementally; everything else is one response and done.
+    private func serve(_ connection: NWConnection, _ request: RemoteRequest) async {
+        switch (request.method, request.path) {
+        case ("GET", "/api/events"):
+            await serveEvents(connection, request)
+        case ("GET", "/stream"):
+            await serveStream(connection, request)
+        default:
+            let response = await respond(to: request)
+            connection.send(content: response, completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+        }
+        await connectionClosed(connection)
     }
 
     /// Send one buffer, reporting whether the stack accepted it. A torn-down

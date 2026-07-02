@@ -518,15 +518,6 @@ public actor DownloadManager {
         }
     }
 
-    /// Add several sources at once. Duplicates resolve to the existing task.
-    @discardableResult
-    public func addBatch(
-        sources: [DownloadSource],
-        saveDirectory: String? = nil
-    ) -> [DownloadTask] {
-        sources.map { add(source: $0, saveDirectory: saveDirectory) }
-    }
-
     /// Pause a task (queued or active). Frees its slot so a queued task can run.
     public func pause(_ id: DownloadTask.ID) async {
         guard let task = task(id) else { return }

@@ -31,8 +31,6 @@ public struct TransferFile: Identifiable, Codable, Sendable, Hashable {
         return min(1, Double(bytesCompleted) / Double(length))
     }
 
-    public var isComplete: Bool { bytesCompleted >= length && length > 0 }
-
     /// The file's display name (last path component).
     public var name: String {
         (path as NSString).lastPathComponent

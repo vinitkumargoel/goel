@@ -7,12 +7,13 @@ import GoelCore
 // Scheduler (auto-shutdown + download window), RSS auto-download, the real
 // Remote Access pane, the Browser integration pane (URL scheme + bookmarklet),
 // and the per-host credentials section used by the Network pane. Standalone
-// views (not SettingsView extensions) so each keeps its own compact binding
-// helper without widening SettingsView's private API.
+// views (not SettingsView extensions), so they share the free `setting(_:_:)`
+// binding helper below rather than reaching into SettingsView's private API.
 
-/// A two-way binding into `AppSettings` committing through `vm.update`.
+/// A two-way binding into `AppSettings` committing through `vm.update`. Shared
+/// by these panes and by `SettingsView.binding` so the get/set lives once.
 @MainActor
-private func setting<T>(_ vm: AppViewModel, _ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {
+func setting<T>(_ vm: AppViewModel, _ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {
     Binding(
         get: { vm.settings[keyPath: keyPath] },
         set: { newValue in vm.update { $0[keyPath: keyPath] = newValue } }

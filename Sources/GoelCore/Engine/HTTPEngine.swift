@@ -334,8 +334,7 @@ public actor HTTPEngine: HTTPConfigurable {
         guard let task = tasks[id], case .url(let url) = task.source else {
             let e = DownloadError.unknown("HTTPEngine requires a URL source")
             tasks[id]?.status = .failed(e)
-            emit(id, .failed(e))
-            emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
 
@@ -345,8 +344,7 @@ public actor HTTPEngine: HTTPConfigurable {
             let e = DownloadError.unknown("Path traversal blocked")
             tasks[id]?.status = .failed(e)
             jobs[id] = nil
-            emit(id, .failed(e))
-            emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
 
@@ -392,8 +390,7 @@ public actor HTTPEngine: HTTPConfigurable {
                 let e = DownloadError.unknown("Path traversal blocked")
                 tasks[id]?.status = .failed(e)
                 jobs[id] = nil
-                emit(id, .failed(e))
-                emit(id, .statusChanged(.failed(e)))
+                hub.fail(id, e)
                 return
             }
             let fileURL = URL(fileURLWithPath: resolved.savePath)
@@ -431,13 +428,8 @@ public actor HTTPEngine: HTTPConfigurable {
             let canSegment = probe.totalBytes != nil && probe.acceptsRanges
             let segmentCount = canSegment ? resolveSegmentCount(total: probe.totalBytes!, host: host) : 1
 
-            // The effective cap is the tighter of the profile ceiling and the
-            // task's own limit (either may be 0 = unlimited).
-            var maxBytesPerSecond = profile.maxDownloadBytesPerSec
-            if let taskCap = resolved.speedLimitBytesPerSec, taskCap > 0 {
-                maxBytesPerSecond = maxBytesPerSecond == 0
-                    ? taskCap : min(maxBytesPerSecond, taskCap)
-            }
+            // The tighter of the profile ceiling and the task's own limit.
+            let maxBytesPerSecond = profile.effectiveDownloadCap(taskLimit: resolved.speedLimitBytesPerSec)
 
             // Mirror URLs ride along for the segmented path (the manager already
             // sanitized them to http/https, deduped, capped).
@@ -495,8 +487,8 @@ public actor HTTPEngine: HTTPConfigurable {
             // Integrity check: when an expected hash was supplied, verify the
             // finished file before declaring success. `verify` is awaited so the
             // CPU-bound hashing runs off the actor; a mismatch throws
-            // `.checksumMismatch`, which `mapError` passes straight through to the
-            // catch block below.
+            // `.checksumMismatch`, which `DownloadError(mapping:)` passes straight
+            // through to the catch block below.
             if let expected = task.expectedChecksum {
                 tasks[id]?.downloadSpeed = 0
                 tasks[id]?.status = .verifying
@@ -531,13 +523,12 @@ public actor HTTPEngine: HTTPConfigurable {
             if let ue = error as? URLError, ue.code == .cancelled {
                 de = .network("Connection reset")
             } else {
-                de = mapError(error)
+                de = DownloadError(mapping: error)
             }
             tasks[id]?.status = .failed(de)
             tasks[id]?.downloadSpeed = 0
             jobs[id] = nil
-            emit(id, .failed(de))
-            emit(id, .statusChanged(.failed(de)))
+            hub.fail(id, de)
         }
     }
 
@@ -578,19 +569,6 @@ public actor HTTPEngine: HTTPConfigurable {
     // lives in `HTTPEngine+Disk.swift`.
 
     // MARK: Errors / events
-
-    private func mapError(_ error: Error) -> DownloadError {
-        if let de = error as? DownloadError { return de }
-        if let ue = error as? URLError {
-            switch ue.code {
-            case .timedOut: return .timedOut
-            case .cancelled: return .canceled
-            case .fileDoesNotExist: return .fileMissing
-            default: return .network(ue.localizedDescription)
-            }
-        }
-        return .network((error as NSError).localizedDescription)
-    }
 
     /// `internal` so the sibling-file extensions can publish events.
     nonisolated func emit(_ id: UUID, _ event: EngineEvent) {

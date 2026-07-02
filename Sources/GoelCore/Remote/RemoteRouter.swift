@@ -123,10 +123,6 @@ public struct RemoteRouter: Sendable {
             guard let id = queryID(request) else { return Self.badRequest() }
             await backend.forceRecheck(id); return Self.ok()
 
-        case ("POST", "/api/sequential"):
-            guard let id = queryID(request) else { return Self.badRequest() }
-            await backend.setSequential(boolQuery(request, "on"), task: id); return Self.ok()
-
         case ("POST", "/api/remove"):
             guard let id = queryID(request) else { return Self.badRequest() }
             await backend.remove(id, deleteData: boolQuery(request, "data")); return Self.ok()
@@ -155,9 +151,6 @@ public struct RemoteRouter: Sendable {
             return Self.json(CountRow(added: sources.count))
 
         // MARK: History mutations
-        case ("POST", "/api/history-clear"):
-            await backend.clearHistory(); return Self.ok()
-
         case ("POST", "/api/history-remove"):
             guard let id = queryID(request) else { return Self.badRequest() }
             await backend.removeHistoryEntry(id); return Self.ok()
@@ -503,6 +496,33 @@ public struct RemoteRequest: Sendable {
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             headers[key] = value
         }
+    }
+
+    /// Index just past the `\r\n\r\n` that terminates the header block, or nil if
+    /// the headers haven't fully arrived yet. Lets a socket layer know it has read
+    /// enough to begin parsing — and where the body starts — so it can keep reading
+    /// until a *complete* request is in hand (a POST body can trail the headers in
+    /// a later TCP segment). Shared by both the macOS and Linux server shells.
+    static func headerEnd(_ data: Data) -> Int? {
+        guard data.count >= 4 else { return nil }
+        let b = [UInt8](data)
+        var i = 0
+        while i + 4 <= b.count {
+            if b[i] == 13, b[i + 1] == 10, b[i + 2] == 13, b[i + 3] == 10 { return i + 4 }
+            i += 1
+        }
+        return nil
+    }
+
+    /// The `Content-Length` declared in a header block (0 if absent/malformed).
+    static func contentLength(_ header: Data) -> Int {
+        for line in String(decoding: header, as: UTF8.self).split(separator: "\r\n") {
+            let kv = line.split(separator: ":", maxSplits: 1)
+            if kv.count == 2, kv[0].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" {
+                return Int(kv[1].trimmingCharacters(in: .whitespaces)) ?? 0
+            }
+        }
+        return 0
     }
 
     /// Value of one cookie from the `Cookie:` header, or `nil`. Cookies are

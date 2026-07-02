@@ -94,16 +94,8 @@ struct AddDownloadSheet: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: 11) {
-            Image(systemName: phase == .input ? "link" : "checklist")
-                .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
-                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
-            Text(phase == .input ? "Add download" : "Review & start")
-                .font(.system(size: 15, weight: .semibold))
-            Spacer()
-        }
-        .padding(18)
+        SheetHeader(systemImage: phase == .input ? "link" : "checklist",
+                    title: phase == .input ? "Add download" : "Review & start")
     }
 
     // MARK: Step 1 — input
@@ -273,7 +265,7 @@ struct AddDownloadSheet: View {
     /// Name + kind badge + size header for the confirm screen.
     private func metadataSummary(_ preview: DownloadPreview) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: iconName(preview.kind))
+            Image(systemName: preview.kind.symbolName)
                 .font(.system(size: 20))
                 .foregroundStyle(.secondary)
                 .frame(width: 34, height: 34)
@@ -582,11 +574,7 @@ struct AddDownloadSheet: View {
             previousSaveSelection = newValue
             return
         }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
+        if let url = FilePicker.chooseDirectory() {
             customFolder = url.path
             saveSelection = url.path
             previousSaveSelection = url.path
@@ -596,25 +584,10 @@ struct AddDownloadSheet: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        let urlProviders = providers.filter { $0.canLoadObject(ofClass: URL.self) }
-        guard !urlProviders.isEmpty else { return false }
-        let group = DispatchGroup()
-        let lock = NSLock()
-        var dropped: [String] = []
-        for provider in urlProviders {
-            group.enter()
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                if let url {
-                    lock.lock(); dropped.append(url.absoluteString); lock.unlock()
-                }
-                group.leave()
-            }
+        collectDroppedURLs(providers) { urls in
+            guard !urls.isEmpty else { return }
+            appendLines(urls.map(\.absoluteString))
         }
-        group.notify(queue: .main) {
-            guard !dropped.isEmpty else { return }
-            appendLines(dropped)
-        }
-        return true
     }
 
     private func appendLines(_ lines: [String]) {
@@ -635,16 +608,6 @@ struct AddDownloadSheet: View {
             return preview.isEstimatedSize ? "Size resolved while downloading" : "Unknown size"
         }
         return (preview.isEstimatedSize ? "~" : "") + bytes.byteString
-    }
-
-    private func iconName(_ kind: DownloadKind) -> String {
-        switch kind {
-        case .http: return "arrow.down.circle"
-        case .torrent: return "point.3.connected.trianglepath.dotted"
-        case .hls: return "play.rectangle"
-        case .ftp: return "server.rack"
-        case .sftp: return "lock.rectangle.on.rectangle"
-        }
     }
 
     private func kindBadge(_ kind: DownloadKind) -> some View {

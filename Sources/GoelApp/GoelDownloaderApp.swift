@@ -217,20 +217,13 @@ struct GoelCommands: Commands {
     /// Write settings + the full task list (with progress and resume state) to a
     /// JSON file — the full-fidelity counterpart of the text export.
     private func exportBackup() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "GoelDownloader-backup.json"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = FilePicker.save(name: "GoelDownloader-backup.json", type: .json) else { return }
         viewModel.exportBackup(to: url)
     }
 
     /// Restore a JSON backup: merge its tasks and adopt its settings.
     private func importBackup() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = FilePicker.openFile(types: [.json]) else { return }
         viewModel.importBackup(from: url)
     }
 
@@ -249,10 +242,7 @@ struct GoelCommands: Commands {
     /// Write every task's source locator (one per line) to a chosen text file —
     /// the round-trip counterpart of ``importList()``.
     private func exportList() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.plainText]
-        panel.nameFieldStringValue = "GoelDownloader-list.txt"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = FilePicker.save(name: "GoelDownloader-list.txt", type: .plainText) else { return }
         let body = viewModel.tasks.map(\.source.locator).joined(separator: "\n")
         try? body.write(to: url, atomically: true, encoding: .utf8)
     }
@@ -266,11 +256,9 @@ struct GoelCommands: Commands {
     /// Import a queue exported by another download manager or browser: read any
     /// file, extract the download locators it contains, and add them.
     private func importForeign() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.message = "Choose a file exported by aria2, JDownloader, IDM, a browser, etc."
-        guard panel.runModal() == .OK, let url = panel.url else { return }   // cancelled
+        guard let url = FilePicker.openFile(
+            message: "Choose a file exported by aria2, JDownloader, IDM, a browser, etc."
+        ) else { return }   // cancelled
         guard let data = try? Data(contentsOf: url) else {
             viewModel.toastNow("Couldn’t read that file")
             return
@@ -295,11 +283,7 @@ struct GoelCommands: Commands {
     /// Shared open-panel helper for the file-based paste/import flows; returns the
     /// chosen file's contents, or `nil` if the user cancels or it can't be read.
     private func readTextFile() -> String? {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.plainText, .text]
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        guard let url = FilePicker.openFile(types: [.plainText, .text]) else { return nil }
         return try? String(contentsOf: url, encoding: .utf8)
     }
 }

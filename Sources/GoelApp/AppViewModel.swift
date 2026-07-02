@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import Combine
 import AppKit
 import Network
 import GoelCore
@@ -1132,20 +1131,34 @@ final class AppViewModel: ObservableObject {
         toastNow(label.map { "Labelled “\($0)”" } ?? "Label removed")
     }
 
+    /// The shared single-field text prompt: an `NSAlert` carrying one
+    /// `NSTextField` accessory. Returns the entered string on confirm, `nil` on
+    /// cancel — call sites layer their own trimming/validation on top.
+    @MainActor
+    static func promptText(title: String, message: String, confirm: String,
+                           initial: String, placeholder: String? = nil,
+                           width: CGFloat = 300) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: width, height: 24))
+        field.stringValue = initial
+        if let placeholder { field.placeholderString = placeholder }
+        alert.accessoryView = field
+        alert.addButton(withTitle: confirm)
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil
+    }
+
     /// Prompt for a free-form category label with a native text field, prefilled
     /// with the current label. An empty value clears it.
     func promptForLabel(task: DownloadTask) {
-        let alert = NSAlert()
-        alert.messageText = "Label for “\(task.name)”"
-        alert.informativeText = "Group this download under a category. Leave empty to remove."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-        field.stringValue = task.label ?? ""
-        field.placeholderString = "e.g. Movies, Linux ISOs"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn {
-            setLabel(field.stringValue, task: task.id)
+        if let value = Self.promptText(
+            title: "Label for “\(task.name)”",
+            message: "Group this download under a category. Leave empty to remove.",
+            confirm: "Save", initial: task.label ?? "",
+            placeholder: "e.g. Movies, Linux ISOs", width: 240) {
+            setLabel(value, task: task.id)
         }
     }
 
@@ -1153,16 +1166,10 @@ final class AppViewModel: ObservableObject {
 
     /// Prompt for a new file name and rename the download (and its file on disk).
     func promptForRename(task: DownloadTask) {
-        let alert = NSAlert()
-        alert.messageText = "Rename “\(task.name)”"
-        alert.informativeText = "Renames the download and its file on disk."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        field.stringValue = task.name
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let newName = field.stringValue
+        guard let newName = Self.promptText(
+            title: "Rename “\(task.name)”",
+            message: "Renames the download and its file on disk.",
+            confirm: "Rename", initial: task.name) else { return }
         Task {
             let result = await manager.rename(task.id, to: newName)
             await MainActor.run {
@@ -1184,17 +1191,12 @@ final class AppViewModel: ObservableObject {
     func promptForBatchRename(tasks: [DownloadTask]) {
         let eligible = tasks.filter { $0.kind != .torrent && !$0.status.isActive }
         guard !eligible.isEmpty else { toastNow("Nothing eligible to rename"); return }
-        let alert = NSAlert()
-        alert.messageText = "Rename \(eligible.count) downloads"
-        alert.informativeText = "Use “#” for a running number. The original extension is kept if you omit one."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        field.stringValue = "File #"
-        field.placeholderString = "e.g. Episode #"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Rename All")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let template = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let raw = Self.promptText(
+            title: "Rename \(eligible.count) downloads",
+            message: "Use “#” for a running number. The original extension is kept if you omit one.",
+            confirm: "Rename All", initial: "File #",
+            placeholder: "e.g. Episode #") else { return }
+        let template = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !template.isEmpty else { return }
         let candidates = PromptParsing.batchRename(template: template, over: eligible.map(\.name))
         Task {
@@ -1220,17 +1222,12 @@ final class AppViewModel: ObservableObject {
 
     /// Prompt for comma-separated tags, prefilled with the current set.
     func promptForTags(task: DownloadTask) {
-        let alert = NSAlert()
-        alert.messageText = "Tags for “\(task.name)”"
-        alert.informativeText = "Comma-separated. Leave empty to clear."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        field.stringValue = task.allTags.joined(separator: ", ")
-        field.placeholderString = "e.g. work, urgent, linux"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let tags = PromptParsing.tags(from: field.stringValue)
+        guard let value = Self.promptText(
+            title: "Tags for “\(task.name)”",
+            message: "Comma-separated. Leave empty to clear.",
+            confirm: "Save", initial: task.allTags.joined(separator: ", "),
+            placeholder: "e.g. work, urgent, linux") else { return }
+        let tags = PromptParsing.tags(from: value)
         Task { await manager.setTags(tags, task: task.id) }
         toastNow(tags.isEmpty ? "Tags cleared" : "Tags updated")
     }

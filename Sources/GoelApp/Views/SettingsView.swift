@@ -104,11 +104,9 @@ struct SettingsView: View {
 
     /// A two-way binding into an `AppSettings` field that commits through
     /// ``AppViewModel/update(_:)`` so every edit persists and reaches the core.
+    /// Forwards to the shared ``setting(_:_:)`` so the get/set logic lives once.
     private func binding<T>(_ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {
-        Binding(
-            get: { vm.settings[keyPath: keyPath] },
-            set: { newValue in vm.update { $0[keyPath: keyPath] = newValue } }
-        )
+        setting(vm, keyPath)
     }
 
     /// A binding into a field of the *currently selected* traffic profile. Edits
@@ -234,10 +232,7 @@ struct SettingsView: View {
     }
 
     private func chooseDefaultFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        if panel.runModal() == .OK, let url = panel.url {
+        if let url = FilePicker.chooseDirectory() {
             vm.setDefaultSaveDirectory(url.path)
         }
     }

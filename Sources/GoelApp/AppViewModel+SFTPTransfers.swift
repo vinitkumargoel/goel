@@ -194,12 +194,8 @@ extension AppViewModel {
                 }
             }
             settleTransfer(id, .finished)
-        } catch let e as SFTPError where e.kind == .aborted {
-            settleTransfer(id, .cancelled)
-        } catch let e as SFTPError {
-            settleTransfer(id, .failed(e.message))
         } catch {
-            settleTransfer(id, .failed(error.localizedDescription))
+            settleTransfer(id, error: error)
         }
         // Any outcome may have created/partially-written remote files
         // (libssh2 opens with CREAT), so refresh a browser on this server.
@@ -254,12 +250,8 @@ extension AppViewModel {
             }
             succeeded = true
             settleTransfer(id, .finished)
-        } catch let e as SFTPError where e.kind == .aborted {
-            settleTransfer(id, .cancelled)
-        } catch let e as SFTPError {
-            settleTransfer(id, .failed(e.message))
         } catch {
-            settleTransfer(id, .failed(error.localizedDescription))
+            settleTransfer(id, error: error)
         }
         if !succeeded { try? FileManager.default.removeItem(at: destination) }
     }
@@ -287,6 +279,17 @@ extension AppViewModel {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
         if state == .finished { sftpTransfers[i].bytes = max(sftpTransfers[i].bytes, sftpTransfers[i].total) }
         sftpTransfers[i].state = state
+    }
+
+    /// Settle a transfer that threw: an explicit abort is a user cancel, an
+    /// `SFTPError` carries its own message, anything else falls back to the
+    /// system description.
+    private func settleTransfer(_ id: UUID, error: Error) {
+        if let e = error as? SFTPError {
+            settleTransfer(id, e.kind == .aborted ? .cancelled : .failed(e.message))
+        } else {
+            settleTransfer(id, .failed(error.localizedDescription))
+        }
     }
 
     private func bumpMutation() { sftpMutationTick &+= 1 }

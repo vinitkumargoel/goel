@@ -110,7 +110,7 @@ public actor HLSEngine: HLSConfigurable {
     private func run(_ id: UUID, maxHeight: Int, concurrency: Int) async {
         guard let task = tasks[id], case .hlsStream(let playlistURL) = task.source else {
             let e = DownloadError.unknown("HLSEngine requires an HLS source")
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
         emit(id, .statusChanged(.downloading))
@@ -122,8 +122,8 @@ public actor HLSEngine: HLSConfigurable {
             // pause()/remove() cancelled the job; the manager owns the state.
         } catch {
             if Task.isCancelled { return }
-            let de = mapError(error)
-            emit(id, .failed(de)); emit(id, .statusChanged(.failed(de)))
+            let de = DownloadError(mapping: error)
+            hub.fail(id, de)
             jobs[id] = nil
         }
     }
@@ -294,17 +294,6 @@ public actor HLSEngine: HLSConfigurable {
 
     private func emit(_ id: UUID, _ event: EngineEvent) { hub.emit(id, event) }
 
-    private nonisolated func mapError(_ error: Error) -> DownloadError {
-        if let de = error as? DownloadError { return de }
-        if let ue = error as? URLError {
-            switch ue.code {
-            case .timedOut: return .timedOut
-            case .cancelled: return .canceled
-            default: return .network(ue.localizedDescription)
-            }
-        }
-        return .network((error as NSError).localizedDescription)
-    }
 
     // MARK: Static helpers
 

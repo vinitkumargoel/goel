@@ -82,7 +82,7 @@ struct HistoryView: View {
 
     private func row(_ entry: HistoryEntry) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: iconName(entry.kind))
+            Image(systemName: entry.kind.symbolName)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
@@ -128,21 +128,8 @@ struct HistoryView: View {
         .help(help)
     }
 
-    private func iconName(_ kind: DownloadKind) -> String {
-        switch kind {
-        case .http: return "arrow.down.circle"
-        case .torrent: return "point.3.connected.trianglepath.dotted"
-        case .hls: return "play.rectangle"
-        case .ftp: return "server.rack"
-        case .sftp: return "lock.rectangle.on.rectangle"
-        }
-    }
-
     private func exportCSV() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.commaSeparatedText]
-        panel.nameFieldStringValue = "GoelDownloader-history.csv"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = FilePicker.save(name: "GoelDownloader-history.csv", type: .commaSeparatedText) else { return }
         vm.exportHistoryCSV(entries ?? [], to: url)
     }
 }

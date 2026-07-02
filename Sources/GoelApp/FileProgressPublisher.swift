@@ -1,5 +1,4 @@
 import Foundation
-import AppKit
 import GoelCore
 
 /// Publishes an `NSProgress` per actively-downloading task, keyed to its

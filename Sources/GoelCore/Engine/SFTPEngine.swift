@@ -88,12 +88,12 @@ public actor SFTPEngine: DownloadEngine {
         guard let task = tasks[id], case .url(let url) = task.source,
               let target = SFTPTarget(url: url) else {
             let e = DownloadError.unknown("SFTPEngine requires an sftp:// source with a user and host")
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
         guard task.isSavePathContained else {
             let e = DownloadError.unknown("Path traversal blocked")
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
         emit(id, .statusChanged(.downloading))
@@ -103,7 +103,7 @@ public actor SFTPEngine: DownloadEngine {
             try fm.createDirectory(atPath: task.saveDirectory, withIntermediateDirectories: true)
         } catch {
             let e = DownloadError.unknown("Couldn’t create the download folder")
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
 
@@ -114,15 +114,12 @@ public actor SFTPEngine: DownloadEngine {
 
         guard let handle = try? FileHandle(forWritingTo: fileURL) else {
             let e = DownloadError.fileMissing
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
         _ = try? handle.seekToEnd()
 
-        var cap = profile.maxDownloadBytesPerSec
-        if let taskCap = task.speedLimitBytesPerSec, taskCap > 0 {
-            cap = cap == 0 ? taskCap : min(cap, taskCap)
-        }
+        let cap = profile.effectiveDownloadCap(taskLimit: task.speedLimitBytesPerSec)
 
         let state = SFTPDownloadState(hub: hub, id: id, name: task.name,
                                       handle: handle, resumeFrom: resumeFrom)
@@ -139,7 +136,7 @@ public actor SFTPEngine: DownloadEngine {
         if result.isAborted { return }   // our own pause/remove
         guard result.isSuccess else {
             let e = DownloadError.network(result.asError.message)
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
 
@@ -153,7 +150,7 @@ public actor SFTPEngine: DownloadEngine {
             let matches = (try? await ChecksumVerifier.verify(fileAt: fileURL, expected: expected)) ?? false
             guard matches else {
                 let e = DownloadError.checksumMismatch
-                emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+                hub.fail(id, e)
                 return
             }
         }

@@ -16,16 +16,8 @@ struct LinkGrabberSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 11) {
-                Image(systemName: "text.page.badge.magnifyingglass")
-                    .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
-                Text("Grab links from a page")
-                    .font(.system(size: 15, weight: .semibold))
-                Spacer()
-            }
-            .padding(18)
+            SheetHeader(systemImage: "text.page.badge.magnifyingglass",
+                        title: "Grab links from a page")
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {

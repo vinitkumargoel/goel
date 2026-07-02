@@ -136,11 +136,6 @@ final class SFTPBrowserModel: ObservableObject {
         await refresh()
     }
 
-    func navigate(to newPath: String) async {
-        path = newPath.isEmpty ? "." : newPath
-        await refresh()
-    }
-
     // MARK: Mutations
 
     @discardableResult

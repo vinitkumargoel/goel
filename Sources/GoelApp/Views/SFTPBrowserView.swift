@@ -256,49 +256,29 @@ struct SFTPBrowserView: View {
     // MARK: Drop / save handling
 
     private func handleUploadDrop(_ providers: [NSItemProvider]) -> Bool {
-        let fileProviders = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
-        guard !fileProviders.isEmpty else { return false }
-        var urls: [URL] = []
-        let group = DispatchGroup()
-        let lock = NSLock()
-        for provider in fileProviders {
-            group.enter()
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                if let url, url.isFileURL {
-                    lock.lock(); urls.append(url); lock.unlock()
-                }
-                group.leave()
-            }
-        }
         let connection = model.connection
         let remoteDir = model.path
-        group.notify(queue: .main) {
+        return collectDroppedURLs(providers, fileURLsOnly: true) { urls in
             // Files and folders both upload (folders recurse in the transfer center).
             if !urls.isEmpty { vm.startUpload(items: urls, toRemoteDir: remoteDir, on: connection) }
         }
-        return true
     }
 
     /// Pick local files and/or folders to upload into the current directory.
     private func chooseUploadItems() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = true
-        panel.prompt = "Upload"
-        panel.message = "Choose files or folders to upload to \(model.displayPath)"
-        if panel.runModal() == .OK, !panel.urls.isEmpty {
-            vm.startUpload(items: panel.urls, toRemoteDir: model.path, on: model.connection)
+        let urls = FilePicker.openItems(
+            canChooseFiles: true, canChooseDirectories: true,
+            prompt: "Upload",
+            message: "Choose files or folders to upload to \(model.displayPath)")
+        if !urls.isEmpty {
+            vm.startUpload(items: urls, toRemoteDir: model.path, on: model.connection)
         }
     }
 
     private func chooseDownloadFolder(for entry: SFTPEntry) {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.prompt = "Download Here"
-        panel.message = "Choose where to save “\(entry.name)”"
-        if panel.runModal() == .OK, let dir = panel.url {
+        if let dir = FilePicker.chooseDirectory(
+            prompt: "Download Here",
+            message: "Choose where to save “\(entry.name)”") {
             vm.startDownload(entry, from: model.connection, remoteDir: model.path, toLocalDir: dir)
         }
     }

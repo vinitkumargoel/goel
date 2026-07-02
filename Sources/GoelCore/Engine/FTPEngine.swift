@@ -110,12 +110,12 @@ public actor FTPEngine: DownloadEngine {
     private func run(_ id: UUID, profile: TrafficProfile) async {
         guard let task = tasks[id], case .url(let url) = task.source else {
             let e = DownloadError.unknown("FTPEngine requires an ftp:// source")
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
         guard task.isSavePathContained else {
             let e = DownloadError.unknown("Path traversal blocked")
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
         emit(id, .statusChanged(.downloading))
@@ -125,7 +125,7 @@ public actor FTPEngine: DownloadEngine {
             try fm.createDirectory(atPath: task.saveDirectory, withIntermediateDirectories: true)
         } catch {
             let e = DownloadError.unknown("Couldn’t create the download folder")
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
 
@@ -138,16 +138,13 @@ public actor FTPEngine: DownloadEngine {
 
         guard let handle = try? FileHandle(forWritingTo: fileURL) else {
             let e = DownloadError.fileMissing
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
         _ = try? handle.seekToEnd()
 
         // Effective cap: the tighter of the profile ceiling and the task cap.
-        var cap = profile.maxDownloadBytesPerSec
-        if let taskCap = task.speedLimitBytesPerSec, taskCap > 0 {
-            cap = cap == 0 ? taskCap : min(cap, taskCap)
-        }
+        let cap = profile.effectiveDownloadCap(taskLimit: task.speedLimitBytesPerSec)
 
         let context = FTPTransferContext(hub: hub, id: id, name: task.name,
                                          handle: handle, resumeFrom: resumeFrom)
@@ -171,7 +168,7 @@ public actor FTPEngine: DownloadEngine {
         guard result.code == 0 else {
             let message = String(cString: gcb_error_message(result.code))
             let e = DownloadError.network(message)
-            emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+            hub.fail(id, e)
             return
         }
 
@@ -186,7 +183,7 @@ public actor FTPEngine: DownloadEngine {
             let matches = (try? await ChecksumVerifier.verify(fileAt: fileURL, expected: expected)) ?? false
             guard matches else {
                 let e = DownloadError.checksumMismatch
-                emit(id, .failed(e)); emit(id, .statusChanged(.failed(e)))
+                hub.fail(id, e)
                 return
             }
         }

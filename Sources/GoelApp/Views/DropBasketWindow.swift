@@ -12,8 +12,6 @@ final class DropBasketController {
 
     private var panel: NSPanel?
 
-    var isVisible: Bool { panel != nil }
-
     func toggle() {
         if let panel {
             panel.close()

@@ -112,4 +112,74 @@ final class RemoteServerRestartTests: XCTestCase {
 
         await server.stop()
     }
+
+    /// Regression for the POST-body accumulator: a request whose body arrives in a
+    /// *separate* TCP segment from its headers must still be read in full. Before
+    /// the fix the macOS server did one un-re-armed `receive`, so it parsed a
+    /// truncated (empty) body and `/api/add` failed with 400. The header block is
+    /// sent first, then — after a delay — the JSON body, forcing the server to
+    /// re-arm its receive to see the body at all.
+    func testSplitPostBodyIsReadInFull() async throws {
+        let manager = DownloadManager()
+        let server = RemoteControlServer(manager: manager)
+        let port: UInt16 = 18976
+
+        await server.start(port: port, allowLAN: false,
+                           config: RemoteRouter.Config(token: "t"),
+                           passwordHash: "", sessionMinutes: 120)
+        try await expectServes(port: port, "portal should serve before the split-POST probe")
+
+        let status = await splitPostAddStatus(port: port)
+        await server.stop()
+
+        let line = try XCTUnwrap(status, "split POST got no response")
+        XCTAssertTrue(line.contains("200"),
+                      "a POST body split across TCP segments must be read in full — got: \(line)")
+    }
+
+    /// Open a loopback connection, send `POST /api/add`'s headers, pause, then send
+    /// the body in a second write. Returns the response status line, or nil.
+    private func splitPostAddStatus(port: UInt16) async -> String? {
+        await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+            let conn = NWConnection(host: .ipv4(.loopback),
+                                    port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+            let done = DispatchQueue(label: "splitpost.\(port)")
+            var finished = false
+            func finish(_ value: String?) {
+                done.async {
+                    guard !finished else { return }
+                    finished = true
+                    conn.cancel()
+                    cont.resume(returning: value)
+                }
+            }
+            let body = Data(#"{"url":"magnet:?xt=urn:btih:0000000000000000000000000000000000000000"}"#.utf8)
+            let head = "POST /api/add?token=t HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                + "Content-Type: application/json\r\nContent-Length: \(body.count)\r\n"
+                + "Connection: close\r\n\r\n"
+            conn.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    conn.send(content: Data(head.utf8), completion: .contentProcessed { _ in
+                        done.asyncAfter(deadline: .now() + 0.1) {
+                            conn.send(content: body, completion: .contentProcessed { _ in
+                                conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, _ in
+                                    let line = data.flatMap {
+                                        String(decoding: $0, as: UTF8.self).split(separator: "\r\n").first.map(String.init)
+                                    }
+                                    finish(line)
+                                }
+                            })
+                        }
+                    })
+                case .failed, .cancelled, .waiting:
+                    finish(nil)
+                default:
+                    break
+                }
+            }
+            done.asyncAfter(deadline: .now() + 2.0) { finish(nil) }
+            conn.start(queue: done)
+        }
+    }
 }

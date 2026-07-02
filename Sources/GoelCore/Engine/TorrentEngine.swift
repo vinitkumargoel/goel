@@ -67,8 +67,7 @@ public actor TorrentEngine: TorrentControlling {
             startPoller(task.id)
         } catch {
             let de = (error as? DownloadError) ?? .unknown((error as NSError).localizedDescription)
-            emit(task.id, .failed(de))
-            emit(task.id, .statusChanged(.failed(de)))
+            hub.fail(task.id, de)
         }
     }
 
@@ -347,8 +346,7 @@ public actor TorrentEngine: TorrentControlling {
             case .error:
                 let message = Self.cString(status.error)
                 let de = DownloadError.network(message.isEmpty ? "Torrent error" : message)
-                emit(id, .failed(de))
-                emit(id, .statusChanged(.failed(de)))
+                hub.fail(id, de)
                 pollers[id] = nil
                 return
             case .metadata:

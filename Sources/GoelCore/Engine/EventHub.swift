@@ -36,6 +36,14 @@ final class EventHub: @unchecked Sendable {
         for continuation in continuations { continuation.yield(event) }
     }
 
+    /// Emit the failure doublet an engine sends on error: the `.failed` event
+    /// plus the `.statusChanged(.failed)` that drives the task to its terminal
+    /// failed state. Kept in one call so the two can never drift apart.
+    func fail(_ id: UUID, _ error: DownloadError) {
+        emit(id, .failed(error))
+        emit(id, .statusChanged(.failed(error)))
+    }
+
     func finishAll(_ id: UUID) {
         lock.lock()
         let continuations = subscribers[id]

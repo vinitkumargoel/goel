@@ -1,6 +1,25 @@
 import SwiftUI
 import GoelCore
 
+/// The accent-icon-tile + title row that heads the Add and Link-Grabber sheets.
+struct SheetHeader: View {
+    let systemImage: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Image(systemName: systemImage)
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+            Spacer()
+        }
+        .padding(18)
+    }
+}
+
 /// The colored rounded type tile with an SF Symbol (the `.ftype` chip).
 struct FileTypeIcon: View {
     let type: FileType

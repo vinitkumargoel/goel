@@ -92,9 +92,8 @@ public actor MockTorrentEngine: TorrentControlling {
     /// / connection caps.
     private var profile: TrafficProfile
 
-    /// The active session-level BitTorrent settings. Stored as an honest
-    /// passthrough (the mock has no real network) and exposed via
-    /// ``sessionConfiguration()``.
+    /// The active session-level BitTorrent settings, stored as an honest
+    /// passthrough (the mock has no real network).
     private var sessionConfig: TorrentSessionConfig = TorrentSessionConfig()
 
     // MARK: Per-task state
@@ -192,15 +191,14 @@ public actor MockTorrentEngine: TorrentControlling {
     }
 
     /// Adopts new session-level BitTorrent settings. The mock does no real
-    /// networking, so this simply records the configuration so it is reflected in
-    /// ``sessionConfiguration()`` snapshots (honest passthrough).
+    /// networking, so this simply records the configuration (honest passthrough).
     public func applySessionConfig(_ config: TorrentSessionConfig) async {
         self.sessionConfig = config
     }
 
     /// Apply the session-level BitTorrent settings (honest passthrough — the mock
-    /// does no real networking, so the value is simply recorded and surfaced via
-    /// ``sessionConfiguration()``). PeX now rides through the shared config too.
+    /// does no real networking, so the value is simply recorded). PeX now rides
+    /// through the shared config too.
     public func configure(_ session: TorrentSessionConfig) async {
         await applySessionConfig(session)
     }
@@ -264,12 +262,6 @@ public actor MockTorrentEngine: TorrentControlling {
     /// A snapshot of the engine's current view of a task, or `nil` if unknown.
     public func snapshot(_ id: DownloadTask.ID) -> DownloadTask? {
         tasks[id]
-    }
-
-    /// The session-level BitTorrent settings currently in effect (honest
-    /// passthrough of the last ``applySessionConfig(_:)``).
-    public func sessionConfiguration() -> TorrentSessionConfig {
-        sessionConfig
     }
 
     // MARK: Driver

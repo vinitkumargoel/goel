@@ -142,3 +142,16 @@ extension DownloadTask {
     /// The canonical source string for display / copy.
     var sourceLocator: String { source.locator }
 }
+
+extension DownloadKind {
+    /// The SF Symbol representing this transport in preview and history rows.
+    var symbolName: String {
+        switch self {
+        case .http: return "arrow.down.circle"
+        case .torrent: return "point.3.connected.trianglepath.dotted"
+        case .hls: return "play.rectangle"
+        case .ftp: return "server.rack"
+        case .sftp: return "lock.rectangle.on.rectangle"
+        }
+    }
+}

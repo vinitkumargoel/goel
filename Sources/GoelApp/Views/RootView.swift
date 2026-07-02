@@ -157,28 +157,13 @@ struct RootView: View {
     /// locators to the manager. `.torrent` file URLs and http(s)/magnet links are
     /// validated downstream by `DownloadSource.parse`; anything else is dropped.
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        let urlProviders = providers.filter { $0.canLoadObject(ofClass: URL.self) }
-        guard !urlProviders.isEmpty else { return false }
-        let group = DispatchGroup()
-        let lock = NSLock()
-        var locators: [String] = []
-        for provider in urlProviders {
-            group.enter()
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                if let url {
-                    lock.lock(); locators.append(url.absoluteString); lock.unlock()
-                }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) {
-            guard !locators.isEmpty else { return }
-            let raw = locators.joined(separator: "\n")
+        collectDroppedURLs(providers) { urls in
+            guard !urls.isEmpty else { return }
+            let raw = urls.map(\.absoluteString).joined(separator: "\n")
             Task { @MainActor in
                 vm.add(rawLines: raw, saveDirectory: nil, priority: .normal)
             }
         }
-        return true
     }
 
     private func persistenceBanner(_ warning: String) -> some View {
