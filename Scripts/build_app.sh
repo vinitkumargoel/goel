@@ -21,12 +21,17 @@ APP_BUNDLE="Goel°"                  # user-facing app name → dist/Goel°.app
 CONFIG="release"
 APP="dist/$APP_BUNDLE.app"
 
+# Target arch: native by default. Set GOEL_ARCH=x86_64 (with an x86_64 Homebrew
+# via GOEL_BREW_PREFIX=/usr/local) to cross-build an Intel app from Apple Silicon.
+ARCH_ENV="${GOEL_ARCH:-$(uname -m)}"
+ARCH_FLAGS=(--arch "$ARCH_ENV")
+
 # Size-optimized release: -Osize favors smaller code over speed (irrelevant for
 # a UI/IO-bound downloader), -dead_strip drops unreferenced code at link time.
 BUILD_FLAGS=(-Xswiftc -Osize -Xlinker -dead_strip)
-echo "==> swift build -c $CONFIG (size-optimized)"
-swift build -c "$CONFIG" "${BUILD_FLAGS[@]}"
-BIN="$(swift build -c "$CONFIG" "${BUILD_FLAGS[@]}" --show-bin-path)"
+echo "==> swift build -c $CONFIG --arch $ARCH_ENV (size-optimized)"
+swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${BUILD_FLAGS[@]}"
+BIN="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${BUILD_FLAGS[@]}" --show-bin-path)"
 
 echo "==> Assembling $APP"
 rm -rf "$APP"
@@ -167,7 +172,7 @@ echo "==> Assembling Safari extension $APPEX"
 mkdir -p "$APPEX/Contents/MacOS" "$APPEX/Contents/Resources"
 cp SafariExtension/Info.plist "$APPEX/Contents/Info.plist"
 cp -R Sources/GoelApp/BrowserExtension/. "$APPEX/Contents/Resources/"
-ARCH="$(uname -m)"
+ARCH="$ARCH_ENV"
 swiftc -parse-as-library \
   SafariExtension/SafariWebExtensionHandler.swift \
   -o "$APPEX/Contents/MacOS/GoelSafariExtension" \
@@ -240,7 +245,7 @@ fi
 # installs at ~19 MB but the native dylibs compress well, so the download is
 # roughly half that.
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
-ZIP="dist/Goel-Downloader-${VERSION}-macos-$(uname -m).zip"
+ZIP="dist/Goel-Downloader-${VERSION}-macos-${ARCH_ENV}.zip"
 echo "==> Packaging $ZIP"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"

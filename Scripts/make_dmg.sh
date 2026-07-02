@@ -25,7 +25,16 @@ APP="${1:-dist/Goel°.app}"
 INFO_PLIST="$APP/Contents/Info.plist"
 VOL_NAME="Goel°"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")"
-DMG="dist/Goel-Downloader-${VERSION}-macos-$(uname -m).dmg"
+# Derive the arch label from the actual app binary (so a cross-built Intel app
+# on an Apple Silicon host is labelled x86_64, not the host's arm64).
+EXE="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
+ARCHES="$(lipo -archs "$EXE" 2>/dev/null || true)"
+case "$ARCHES" in
+  *" "*) ARCH="universal" ;;
+  "")    ARCH="$(uname -m)" ;;
+  *)     ARCH="$ARCHES" ;;
+esac
+DMG="dist/Goel-Downloader-${VERSION}-macos-${ARCH}.dmg"
 
 # Assemble a clean staging folder: the app + a symlink to /Applications so the
 # DMG window shows the classic "drag here to install" layout.

@@ -49,10 +49,12 @@ On **Linux**, the same engine runs headless as **`GoelDaemon`**, driven from the
 
 ## Installation (macOS)
 
-> **Requires a Mac on macOS 14 (Sonoma) or later.** Apple Silicon is the primary target; an Intel build is provided on a best-effort basis.
+> **Requires a Mac on macOS 14 (Sonoma) or later** — Apple Silicon **or** Intel.
 
-1. Download the latest **`Goel-Downloader-<version>-macos-arm64.dmg`** from
-   [Releases](https://github.com/vinitkumargoel/goel-downloader/releases).
+1. Download the latest `.dmg` for your Mac from
+   [Releases](https://github.com/vinitkumargoel/goel-downloader/releases):
+   **`Goel-Downloader-<version>-macos-arm64.dmg`** (Apple Silicon) or
+   **`…-macos-x86_64.dmg`** (Intel).
 2. Open the `.dmg` and drag **Goel°** to **Applications**.
 3. Launch it.
 

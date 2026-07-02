@@ -47,11 +47,16 @@ let linuxCoreLink: [LinkerSetting] = [
 
 #else
 
+// Homebrew prefix for the native libraries. Defaults to Apple Silicon's
+// /opt/homebrew; set GOEL_BREW_PREFIX=/usr/local to build against an Intel
+// (x86_64) Homebrew for a cross / Intel build.
+let brewPrefix = ProcessInfo.processInfo.environment["GOEL_BREW_PREFIX"] ?? "/opt/homebrew"
+
 let torrentCxx: [CXXSetting] = [
     .unsafeFlags([
-        "-I/opt/homebrew/opt/libtorrent-rasterbar/include",
-        "-I/opt/homebrew/opt/boost/include",
-        "-I/opt/homebrew/opt/openssl@3/include",
+        "-I\(brewPrefix)/opt/libtorrent-rasterbar/include",
+        "-I\(brewPrefix)/opt/boost/include",
+        "-I\(brewPrefix)/opt/openssl@3/include",
         "-fexceptions",
     ]),
     .define("TORRENT_LINKING_SHARED"),
@@ -68,17 +73,17 @@ let torrentCxx: [CXXSetting] = [
 ]
 let torrentLink: [LinkerSetting] = [
     .unsafeFlags([
-        "-L/opt/homebrew/opt/libtorrent-rasterbar/lib",
-        "-L/opt/homebrew/lib",
-        "-L/opt/homebrew/opt/openssl@3/lib",
+        "-L\(brewPrefix)/opt/libtorrent-rasterbar/lib",
+        "-L\(brewPrefix)/lib",
+        "-L\(brewPrefix)/opt/openssl@3/lib",
         "-ltorrent-rasterbar",
         "-lssl",
         "-lcrypto",
-        "-Xlinker", "-rpath", "-Xlinker", "/opt/homebrew/lib",
+        "-Xlinker", "-rpath", "-Xlinker", "\(brewPrefix)/lib",
     ]),
 ]
-let sshC: [CSetting] = [.unsafeFlags(["-I/opt/homebrew/opt/libssh2/include"])]
-let sshLink: [LinkerSetting] = [.unsafeFlags(["-L/opt/homebrew/opt/libssh2/lib", "-lssh2"])]
+let sshC: [CSetting] = [.unsafeFlags(["-I\(brewPrefix)/opt/libssh2/include"])]
+let sshLink: [LinkerSetting] = [.unsafeFlags(["-L\(brewPrefix)/opt/libssh2/lib", "-lssh2"])]
 let curlLink: [LinkerSetting] = [.linkedLibrary("curl")]
 let linuxCoreLink: [LinkerSetting] = []
 
