@@ -14,9 +14,18 @@ enum YtDlpResolver {
         var fileExtension: String?
     }
 
-    /// Common install locations (Homebrew arm64/intel, pipx/pip --user).
+    /// Resolve the yt-dlp binary. A packaged build carries its own copy inside
+    /// `Contents/Resources/` (see `Scripts/fetch_ytdlp.sh`), so the feature works
+    /// on a machine with nothing installed; we prefer that. Dev builds (run via
+    /// `swift run`, no bundle copy) and users who keep their own newer yt-dlp
+    /// fall back to the common install locations (Homebrew arm64/intel, pipx/pip).
     static var executable: URL? {
-        let candidates = [
+        var candidates: [String] = []
+        if let bundled = Bundle.main.resourceURL?
+            .appendingPathComponent("yt-dlp", isDirectory: false).path {
+            candidates.append(bundled)
+        }
+        candidates += [
             "/opt/homebrew/bin/yt-dlp",
             "/usr/local/bin/yt-dlp",
             NSHomeDirectory() + "/.local/bin/yt-dlp",

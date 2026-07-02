@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for the notarized, direct-distribution build.
+
+  The app is intentionally NOT App-Sandboxed (torrenting's listening ports and
+  arbitrary user-folder writes fight the sandbox — see SHIPPING.md / INITIAL_PROMPT.md),
+  so network access needs no entitlement here. What hardened runtime DOES require:
+
+  * disable-library-validation — the app loads its OWN vendored dylibs
+    (libtorrent/OpenSSL/libssh2) and spawns the bundled yt-dlp, which is
+    PyInstaller-frozen and dlopen's its own unsigned Python .so files at runtime.
+    Without this, those loads are rejected under hardened runtime.
+  * allow-jit / allow-unsigned-executable-memory — Python (inside yt-dlp) can
+    require executable memory that isn't code-signed.
+
+  These are all accepted by Apple's notary service (they are not App-Sandbox keys).
+  If you ship WITHOUT bundling yt-dlp and sign the vendored dylibs with the same
+  Developer ID (build_app.sh does), you can likely drop allow-jit /
+  allow-unsigned-executable-memory and keep only disable-library-validation.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

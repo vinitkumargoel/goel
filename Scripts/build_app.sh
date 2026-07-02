@@ -152,6 +152,11 @@ cp Assets/AppIcon-Dark.icns "$APP/Contents/Resources/AppIcon.icns"
 # AppleScript dictionary (OSAScriptingDefinition points here).
 cp Sources/GoelApp/Resources/GoelDownloader.sdef "$APP/Contents/Resources/GoelDownloader.sdef"
 
+# License + third-party notices ride inside the bundle — BSD/Apache require the
+# notices to accompany the redistributed native libraries.
+[ -f LICENSE ] && cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
+[ -f THIRD-PARTY-NOTICES.md ] && cp THIRD-PARTY-NOTICES.md "$APP/Contents/Resources/THIRD-PARTY-NOTICES.txt"
+
 # Safari Web Extension (.appex). Built by hand (no Xcode): the handler is a
 # minimal NSExtensionMain executable, and the SAME WebExtension resources the
 # Chrome/Firefox build ships are dropped into the appex's Resources so Safari
@@ -171,22 +176,57 @@ swiftc -parse-as-library \
   -Xlinker -e -Xlinker _NSExtensionMain
 codesign --force -s - "$APPEX"
 
+# Optional: bundle a self-contained yt-dlp (video-site → direct-stream resolver).
+# ~35 MB, so it roughly doubles the bundle; set BUNDLE_YTDLP=0 to ship without it
+# (the "Resolve with yt-dlp" button then stays hidden until the user installs one).
+# Signed ad-hoc now so bundle_dylibs can seal the app wrapper; the Developer ID
+# block below re-signs it with hardened runtime + entitlements.
+if [ "${BUNDLE_YTDLP:-1}" = "1" ]; then
+  Scripts/fetch_ytdlp.sh "$APP/Contents/Resources/yt-dlp"
+  codesign --force -s - "$APP/Contents/Resources/yt-dlp"
+fi
+
 # Vendor native dylibs, rewrite install names, and sign.
 Scripts/bundle_dylibs.sh "$APP"
 
 # Optional Developer ID distribution, gated on env vars so the default build
 # stays untouched:
 #   CODESIGN_IDENTITY="Developer ID Application: Name (TEAMID)" — sign with
-#     hardened runtime (innermost first: frameworks/dylibs/bundles, then app)
+#     hardened runtime, INSIDE-OUT (leaves first, app wrapper last)
 #   NOTARY_PROFILE="<notarytool keychain profile>" — submit + staple
+# The entitlements (disable-library-validation, allow-jit, …) let the hardened
+# app load its vendored dylibs and run the PyInstaller-based yt-dlp. See
+# Scripts/Goel.entitlements. Editing load commands invalidates signatures, so the
+# ORDER matters: every nested Mach-O must be signed before the thing that contains it.
+ENTITLEMENTS="Scripts/Goel.entitlements"
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then
-  echo "==> Codesigning with '$CODESIGN_IDENTITY' (hardened runtime)"
-  find "$APP/Contents" \( -name "*.dylib" -o -name "*.framework" -o -name "*.bundle" -o -name "*.appex" \) -prune | while read -r item; do
-    codesign --force --options runtime --timestamp -s "$CODESIGN_IDENTITY" "$item"
-  done
-  codesign --force --options runtime --timestamp -s "$CODESIGN_IDENTITY" "$APP"
-  codesign --verify --strict --deep "$APP"
-  echo "    signed."
+  echo "==> Codesigning with '$CODESIGN_IDENTITY' (hardened runtime, inside-out)"
+  sign() { codesign --force --options runtime --timestamp -s "$CODESIGN_IDENTITY" "$@"; }
+
+  # 1. Vendored native dylibs (leaves — no entitlements needed).
+  for f in "$APP/Contents/Frameworks/"*.dylib; do [ -e "$f" ] && sign "$f"; done
+
+  # 2. Sparkle's nested helpers, inside-out, preserving their own entitlements.
+  SPK="$APP/Contents/Frameworks/Sparkle.framework"
+  if [ -d "$SPK" ]; then
+    for x in "$SPK/Versions/B/XPCServices/"*.xpc; do [ -e "$x" ] && sign --preserve-metadata=entitlements "$x"; done
+    [ -e "$SPK/Versions/B/Updater.app" ] && sign "$SPK/Versions/B/Updater.app"
+    [ -e "$SPK/Versions/B/Autoupdate" ] && sign "$SPK/Versions/B/Autoupdate"
+    sign "$SPK"
+  fi
+
+  # 3. Bundled yt-dlp — needs the hardened-runtime entitlements to run its Python.
+  [ -e "$APP/Contents/Resources/yt-dlp" ] && sign --entitlements "$ENTITLEMENTS" "$APP/Contents/Resources/yt-dlp"
+
+  # 4. SwiftPM resource bundles, 5. Safari extension.
+  for b in "$APP/Contents/MacOS/"*.bundle; do [ -e "$b" ] && sign "$b"; done
+  for x in "$APP/Contents/PlugIns/"*.appex; do [ -e "$x" ] && sign "$x"; done
+
+  # 6. Main executable, then 7. the app wrapper — both carry the app entitlements.
+  sign --entitlements "$ENTITLEMENTS" "$APP/Contents/MacOS/$APP_NAME"
+  sign --entitlements "$ENTITLEMENTS" "$APP"
+
+  codesign --verify --strict --deep "$APP" && echo "    signed & verified."
   if [ -n "${NOTARY_PROFILE:-}" ]; then
     echo "==> Notarizing (profile: $NOTARY_PROFILE)"
     ditto -c -k --keepParent "$APP" "dist/$APP_NAME.zip"
