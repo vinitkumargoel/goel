@@ -105,9 +105,16 @@ public actor RemoteControlServer {
         // remove-with-data, stream) to anyone on the subnet. In that state we force
         // a loopback-only bind regardless of the LAN toggle — the UI warning is
         // then backed by the actual bind, not just advice.
-        let exposeLAN = allowLAN && config.requireAuth
+        //
+        // `requireAuth` alone is only the *policy* toggle: with it on but no password
+        // set, the password login can never succeed, yet ``RemoteRouter/authorize``
+        // still accepts the bearer token — so a LAN bind would expose the full
+        // mutating API to anyone holding (or sniffing) that token. Require a real
+        // password before ever binding to the network.
+        let exposeLAN = allowLAN && config.requireAuth && !passwordHash.isEmpty
         if allowLAN && !exposeLAN {
-            FileHandle.standardError.write(Data("[GoelDownloader] LAN access ignored — sign-in is disabled, binding 127.0.0.1 only\n".utf8))
+            let why = config.requireAuth ? "no portal password is set" : "sign-in is disabled"
+            FileHandle.standardError.write(Data("[GoelDownloader] LAN access refused — \(why); binding 127.0.0.1 only\n".utf8))
         }
 
         // Already listening on the same endpoint? The live config above is all that
