@@ -13,6 +13,10 @@ let package = Package(
     dependencies: [
         // GRDB is added in the persistence phase.
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
+        // Signed delta app updates. Active only in packaged builds that carry
+        // SUFeedURL + SUPublicEDKey; dev builds fall back to the HTTPS
+        // release-feed checker.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
     ],
     targets: [
         // C/C++ bridge over Homebrew's libtorrent-rasterbar (2.0.x). Exposes a
@@ -54,17 +58,34 @@ let package = Package(
                 ]),
             ]
         ),
+        // C shim over the system libcurl (variadic `curl_easy_setopt` can't be
+        // called from Swift) powering the FTP/FTPS engine.
+        .target(
+            name: "CurlBridge",
+            linkerSettings: [
+                .linkedLibrary("curl"),
+            ]
+        ),
         .target(
             name: "GoelCore",
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift"),
                 "TorrentBridge",
+                "CurlBridge",
             ]
         ),
         .executableTarget(
             name: "GoelApp",
-            dependencies: ["GoelCore"],
-            resources: [.process("Resources")]
+            dependencies: [
+                "GoelCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
+            resources: [
+                // The WebExtension ships as-is (a folder the user loads
+                // unpacked), so it is copied verbatim, not processed.
+                .copy("BrowserExtension"),
+                .process("Resources"),
+            ]
         ),
         .testTarget(
             name: "GoelCoreTests",

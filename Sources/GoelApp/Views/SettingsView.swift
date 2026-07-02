@@ -16,6 +16,8 @@ struct SettingsView: View {
         case network = "Network"
         case traffic = "Traffic Limits"
         case bittorrent = "BitTorrent"
+        case scheduler = "Scheduler"
+        case rss = "RSS Feeds"
         case advanced = "Advanced"
         case antivirus = "Antivirus"
         case browser = "Browser"
@@ -28,6 +30,8 @@ struct SettingsView: View {
             case .network: return "globe"
             case .traffic: return "speedometer"
             case .bittorrent: return "circle.grid.cross"
+            case .scheduler: return "clock"
+            case .rss: return "dot.radiowaves.up.forward"
             case .advanced: return "wand.and.stars"
             case .antivirus: return "shield"
             case .browser: return "safari"
@@ -35,13 +39,10 @@ struct SettingsView: View {
             }
         }
 
-        /// Panes that carry the dimmed "soon" badge in the sidebar. Browser &
-        /// Remote are placeholders; Antivirus persists its settings but its scan
-        /// step is still on the roadmap, matching the intended design.
-        var comingSoon: Bool { self == .browser || self == .remote || self == .antivirus }
+        /// Panes that carry the dimmed "soon" badge in the sidebar. Every pane
+        /// is live now; the badge remains only for genuinely-parked work.
+        var comingSoon: Bool { false }
 
-        /// Panes that render the placeholder scaffold instead of live controls.
-        var deferred: Bool { self == .browser || self == .remote }
     }
 
     @State private var selection: Pane = .general
@@ -90,14 +91,12 @@ struct SettingsView: View {
         case .network: networkPane
         case .traffic: trafficPane
         case .bittorrent: bittorrentPane
+        case .scheduler: SchedulerPane()
+        case .rss: RSSPane()
         case .advanced: advancedPane
         case .antivirus: antivirusPane
-        case .browser: DeferredPane(title: "Browser Integration",
-                                     desc: "A capture extension that hands downloads from your browser to GoelDownloader.",
-                                     phase: "Phase 4")
-        case .remote: DeferredPane(title: "Remote Access",
-                                   desc: "Connect to a remote instance and control it from a web UI.",
-                                   phase: "Phase 4")
+        case .browser: BrowserIntegrationPane()
+        case .remote: RemoteAccessPane()
         }
     }
 
@@ -155,11 +154,12 @@ struct SettingsView: View {
                 .frame(width: 200)
             }
             SetRow(name: "Language", desc: "English to start; structured for localization.") {
-                Picker("", selection: binding(\.language)) {
-                    ForEach(["English", "Deutsch", "हिन्दी", "日本語"], id: \.self) { Text($0).tag($0) }
-                }
-                .labelsHidden()
-                .frame(width: 150)
+                Dropdown(selection: binding(\.language), items: [
+                    .option("English", "English"),
+                    .option("Deutsch", "Deutsch"),
+                    .option("हिन्दी", "हिन्दी"),
+                    .option("日本語", "日本語"),
+                ], width: 150)
             }
             SetRow(name: "Launch at login", desc: "Start GoelDownloader when you log in.") {
                 SettingSwitch(isOn: binding(\.launchAtLogin))
@@ -167,16 +167,18 @@ struct SettingsView: View {
             SetRow(name: "Launch minimized", desc: "Open to the menu bar instead of a window.") {
                 SettingSwitch(isOn: binding(\.launchMinimized))
             }
+            SetRow(name: "Show in menu bar",
+                   desc: "Add a menu-bar item with live ↓/↑ speed and quick controls.") {
+                SettingSwitch(isOn: binding(\.menuBarExtraEnabled))
+            }
             SetRow(name: "Default download folder",
                    desc: "Choose automatically, by type, by source URL, or fixed.") {
-                Picker("", selection: binding(\.defaultFolderRule)) {
-                    Text("Automatic").tag("automatic")
-                    Text("By file type").tag("byType")
-                    Text("By source URL").tag("bySource")
-                    Text("Fixed folder…").tag("fixed")
-                }
-                .labelsHidden()
-                .frame(width: 150)
+                Dropdown(selection: binding(\.defaultFolderRule), items: [
+                    .option("automatic", "Automatic"),
+                    .option("byType", "By file type"),
+                    .option("bySource", "By source URL"),
+                    .option("fixed", "Fixed folder…"),
+                ], width: 150)
             }
             // For the "Fixed folder" rule, surface the actual destination and a
             // chooser so the existing default-save-directory feature stays usable.
@@ -201,15 +203,13 @@ struct SettingsView: View {
             }
             SetRow(name: "Max video quality",
                    desc: "Preferred rendition when grabbing an HLS (.m3u8) stream.") {
-                Picker("", selection: binding(\.hlsMaxHeight)) {
-                    Text("Best available").tag(0)
-                    Text("1080p").tag(1080)
-                    Text("720p").tag(720)
-                    Text("480p").tag(480)
-                    Text("360p").tag(360)
-                }
-                .labelsHidden()
-                .frame(width: 150)
+                Dropdown(selection: binding(\.hlsMaxHeight), items: [
+                    .option(0, "Best available"),
+                    .option(1080, "1080p"),
+                    .option(720, "720p"),
+                    .option(480, "480p"),
+                    .option(360, "360p"),
+                ], width: 150)
             }
         }
     }
@@ -228,13 +228,11 @@ struct SettingsView: View {
     private var networkPane: some View {
         PaneScaffold(title: "Network", subtitle: "Proxy, timeouts, retries, and authentication.") {
             SetRow(name: "Proxy", desc: "Route traffic through a proxy server.") {
-                Picker("", selection: binding(\.proxyMode)) {
-                    Text("None").tag("none")
-                    Text("System").tag("system")
-                    Text("Manual").tag("manual")
-                }
-                .labelsHidden()
-                .frame(width: 150)
+                Dropdown(selection: binding(\.proxyMode), items: [
+                    .option("none", "None"),
+                    .option("system", "System"),
+                    .option("manual", "Manual"),
+                ], width: 150)
             }
             SetRow(name: "Connection timeout", desc: "Seconds before a stalled connection drops.") {
                 SettingDouble(value: binding(\.connectionTimeout))
@@ -251,6 +249,16 @@ struct SettingsView: View {
             SetRow(name: "Cookie / auth handling", desc: "Reuse cookies for protected downloads.") {
                 SettingSwitch(isOn: binding(\.cookieAuthEnabled))
             }
+            SectionHeader("Network awareness")
+            SetRow(name: "Pause on expensive networks",
+                   desc: "Hold downloads while on a personal hotspot; resume automatically after.") {
+                SettingSwitch(isOn: binding(\.pauseOnExpensiveNetwork))
+            }
+            SetRow(name: "Pause in Low Data Mode",
+                   desc: "Hold downloads while the connection is constrained.") {
+                SettingSwitch(isOn: binding(\.pauseOnConstrainedNetwork))
+            }
+            CredentialsSection()
         }
     }
 
@@ -349,13 +357,11 @@ struct SettingsView: View {
                 SettingSwitch(isOn: binding(\.btWatchStartWithoutConfirmation))
             }
             SetRow(name: "Encryption mode", desc: "Protocol encryption for peer connections.") {
-                Picker("", selection: binding(\.btEncryptionMode)) {
-                    Text("Prefer").tag("prefer")
-                    Text("Require").tag("require")
-                    Text("Disable").tag("disable")
-                }
-                .labelsHidden()
-                .frame(width: 140)
+                Dropdown(selection: binding(\.btEncryptionMode), items: [
+                    .option("prefer", "Prefer"),
+                    .option("require", "Require"),
+                    .option("disable", "Disable"),
+                ], width: 140)
             }
             SetRow(name: "Enable DHT", desc: "Find peers without a tracker.") {
                 SettingSwitch(isOn: binding(\.btEnableDHT))
@@ -403,16 +409,48 @@ struct SettingsView: View {
                 }
             }
             SetRow(name: "Don't seed on battery", desc: "") { SettingSwitch(isOn: binding(\.dontSeedOnBattery)) }
+            SectionHeader("Post-download actions")
+            SetRow(name: "Auto-extract archives", desc: "Unpack finished .zip downloads next to the file.") {
+                SettingSwitch(isOn: binding(\.postDownloadExtractArchives))
+            }
+            SetRow(name: "Run a script on completion",
+                   desc: "An executable script; %path% in the arguments becomes the finished file.") {
+                SettingSwitch(isOn: binding(\.postDownloadScriptEnabled))
+            }
+            if vm.settings.postDownloadScriptEnabled {
+                SetRow(name: "Script path", desc: "Must be executable (not “bash script.sh”).") {
+                    SettingText(text: binding(\.postDownloadScriptPath), width: 200)
+                }
+                SetRow(name: "Arguments", desc: "") {
+                    SettingText(text: binding(\.postDownloadScriptArgs), width: 140)
+                }
+            }
             SectionHeader("Backup")
             SetRow(name: "Periodically back up the download list", desc: "") { SettingSwitch(isOn: binding(\.backupEnabled)) }
             SetRow(name: "Backup interval", desc: "") {
-                Picker("", selection: binding(\.backupIntervalHours)) {
-                    Text("Hourly").tag(1)
-                    Text("Daily").tag(24)
-                    Text("Weekly").tag(168)
-                }
-                .labelsHidden()
-                .frame(width: 140)
+                Dropdown(selection: binding(\.backupIntervalHours), items: [
+                    .option(1, "Hourly"),
+                    .option(24, "Daily"),
+                    .option(168, "Weekly"),
+                ], width: 140)
+            }
+            SetRow(name: "Keep", desc: "Older backups are pruned automatically.") {
+                Dropdown(selection: binding(\.backupKeepCount), items: [
+                    .option(5, "5 backups"),
+                    .option(20, "20 backups"),
+                    .option(50, "50 backups"),
+                ], width: 140)
+            }
+            SectionHeader("Updates")
+            SetRow(name: "Check for updates automatically", desc: "Once at launch.") {
+                SettingSwitch(isOn: binding(\.autoCheckUpdates))
+            }
+            SetRow(name: "Release feed URL",
+                   desc: "A GitHub releases API URL (or compatible JSON feed).") {
+                SettingText(text: binding(\.updateFeedURL), width: 220)
+            }
+            SetRow(name: "", desc: "") {
+                Button("Check Now") { vm.checkForUpdates() }
             }
         }
     }
@@ -423,12 +461,10 @@ struct SettingsView: View {
         PaneScaffold(title: "Antivirus", subtitle: "Run an external scanner on finished files. Optional, low priority on macOS.") {
             SetRow(name: "Scan finished files", desc: "") { SettingSwitch(isOn: binding(\.antivirusEnabled)) }
             SetRow(name: "Scanner", desc: "") {
-                Picker("", selection: binding(\.antivirusScanner)) {
-                    Text("Configure manually…").tag("")
-                    Text("ClamAV").tag("ClamAV")
-                }
-                .labelsHidden()
-                .frame(width: 170)
+                Dropdown(selection: binding(\.antivirusScanner), items: [
+                    .option("", "Configure manually…"),
+                    .option("ClamAV", "ClamAV"),
+                ], width: 170)
             }
             SetRow(name: "Executable path", desc: "") {
                 SettingText(text: binding(\.antivirusExecutablePath), width: 180)

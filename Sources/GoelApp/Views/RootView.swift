@@ -11,6 +11,13 @@ struct RootView: View {
     /// is dragged over the window. Drops are routed straight into the add flow.
     @State private var isDropTargeted = false
 
+    /// The detail panel is shown only when it's toggled on *and* a download is
+    /// actually selected — so clicking away (deselecting) makes it slide out, and
+    /// it returns when a task is picked again.
+    private var showDetail: Bool {
+        vm.detailPanelVisible && vm.selectedTask != nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             AppToolbar()
@@ -27,16 +34,32 @@ struct RootView: View {
                 SidebarView()
                     .frame(width: 200)
                 Divider()
-                DownloadListView()
-                    .frame(minWidth: 420)
-                if vm.detailPanelVisible {
+                // The list — with the detail panel docked *below* it when the user
+                // has chosen the bottom position. `maxWidth: .infinity` makes this
+                // the greedy pane so the fixed-width right panel always keeps its
+                // 340pt (and never gets pushed off the window edge).
+                VStack(spacing: 0) {
+                    DownloadListView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if showDetail && vm.detailPanelPosition == .bottom {
+                        Divider()
+                        DetailBottomPanel()
+                            .frame(height: 300)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .frame(minWidth: 420, maxWidth: .infinity)
+                // …or docked on the right edge (the default).
+                if showDetail && vm.detailPanelPosition == .right {
                     Divider()
                     DetailPanelView()
                         .frame(width: 340)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
-            .animation(.easeInOut(duration: 0.22), value: vm.detailPanelVisible)
+            .animation(.easeInOut(duration: 0.14), value: vm.detailPanelVisible)
+            .animation(.easeInOut(duration: 0.14), value: vm.detailPanelPosition)
+            .animation(.easeInOut(duration: 0.14), value: showDetail)
             Divider()
             StatusBarView()
         }
@@ -44,10 +67,23 @@ struct RootView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .bottom) { toastView }
         .overlay { dropOverlay }
-        .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
+        .overlay { confirmOverlay }
+        .animation(.easeInOut(duration: 0.08), value: isDropTargeted)
         .onDrop(of: [.url, .fileURL], isTargeted: $isDropTargeted) { handleDrop($0) }
         .sheet(isPresented: $vm.isAddSheetPresented) {
             AddDownloadSheet()
+                .environmentObject(vm)
+        }
+        .sheet(isPresented: $vm.isStatsPresented) {
+            StatsView()
+                .environmentObject(vm)
+        }
+        .sheet(isPresented: $vm.isHistoryPresented) {
+            HistoryView()
+                .environmentObject(vm)
+        }
+        .sheet(isPresented: $vm.isLinkGrabberPresented) {
+            LinkGrabberSheet()
                 .environmentObject(vm)
         }
     }
@@ -77,6 +113,15 @@ struct RootView: View {
             }
             .allowsHitTesting(false)
             .transition(.opacity)
+        }
+    }
+
+    /// The app's own confirmation dialog, shown whenever a call site raises a
+    /// ``AppViewModel/ConfirmRequest`` (replaces the system `.confirmationDialog`).
+    @ViewBuilder
+    private var confirmOverlay: some View {
+        if let request = vm.confirmRequest {
+            ConfirmDialogView(request: request) { vm.confirmRequest = nil }
         }
     }
 
@@ -167,7 +212,7 @@ struct RootView: View {
             .overlay(Capsule().stroke(Theme.hairline))
             .shadow(radius: 12, y: 6)
             .padding(.bottom, 52)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.opacity)
         }
     }
 }

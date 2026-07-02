@@ -41,4 +41,16 @@ public enum EngineEvent: Sendable, Equatable {
     /// ETag/Last-Modified validators). The manager persists this into the
     /// task's `resumeData` so a download can continue across relaunches.
     case resumeDataUpdated(Data)
+
+    /// A live snapshot of the task's transfer connections — HTTP segments or
+    /// torrent peers — for the detail panel. High-frequency and observational:
+    /// the manager folds it into the task without persisting.
+    case connectionsUpdated([TaskConnection])
+
+    /// Torrent swarm composition changed (peer/seed counts from the session).
+    case swarmUpdated(peers: Int, seeds: Int)
+
+    /// Real facts about the remote HTTP server (Server header, ETag,
+    /// Accept-Ranges, Content-Type) captured from the probe/first response.
+    case remoteInfoResolved(RemoteInfo)
 }

@@ -20,12 +20,13 @@ extension DownloadTask {
         return .doc
     }
 
-    /// "HTTP" / "BT" / "HLS" badge text.
+    /// "HTTP" / "BT" / "HLS" / "FTP" badge text.
     var kindBadge: String {
         switch kind {
         case .torrent: return "BT"
         case .hls: return "HLS"
         case .http: return "HTTP"
+        case .ftp: return "FTP"
         }
     }
 
@@ -34,6 +35,7 @@ extension DownloadTask {
         case .torrent: return Theme.purple
         case .hls: return Theme.orange
         case .http: return Theme.teal
+        case .ftp: return Theme.green
         }
     }
 

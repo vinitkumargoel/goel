@@ -98,6 +98,24 @@ enum FileType: String, CaseIterable, Hashable {
     }
 }
 
+/// Where the detail panel is docked — the right edge or the bottom edge —
+/// mirroring `AppSettings.detailPanelPosition`. The choice is persisted so it
+/// holds across selections and survives relaunch until the user flips it.
+enum DetailPanelPosition: String, CaseIterable, Identifiable {
+    case right = "Right"
+    case bottom = "Bottom"
+    var id: String { rawValue }
+
+    /// The lowercase token persisted in `AppSettings.detailPanelPosition`.
+    var settingsValue: String { rawValue.lowercased() }
+
+    /// Reconstruct from the persisted token, defaulting to ``right`` for any
+    /// unrecognized value.
+    init(settingsValue: String) {
+        self = DetailPanelPosition.allCases.first { $0.settingsValue == settingsValue } ?? .right
+    }
+}
+
 /// Light / dark / system, mirroring the Settings > General theme control.
 enum AppTheme: String, CaseIterable, Identifiable {
     case system = "System"

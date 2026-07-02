@@ -55,6 +55,10 @@ public actor TorrentEngine: DownloadEngine {
         do {
             let handle = try await makeHandle(for: task)
             handles[task.id] = handle
+            if task.sequentialDownload == true { gt_set_sequential(handle, 1) }
+            if let cap = task.speedLimitBytesPerSec, cap > 0 {
+                gt_set_download_limit(handle, Int32(clamping: cap))
+            }
             startPoller(task.id)
         } catch {
             let de = (error as? DownloadError) ?? .unknown((error as NSError).localizedDescription)
@@ -113,6 +117,12 @@ public actor TorrentEngine: DownloadEngine {
     public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {
         guard let handle = handles[id] else { return }
         gt_set_file_priority(handle, Int32(fileID), Int32(Self.toLibtorrentPriority(priority)))
+    }
+
+    public func setSequential(_ sequential: Bool, task id: UUID) async {
+        tasks[id]?.sequentialDownload = sequential
+        guard let handle = handles[id] else { return }
+        gt_set_sequential(handle, sequential ? 1 : 0)
     }
 
     public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
@@ -260,6 +270,8 @@ public actor TorrentEngine: DownloadEngine {
                                downloadSpeed: status.download_rate,
                                uploadSpeed: status.upload_rate,
                                connectionCount: Int(status.num_peers)))
+            emit(id, .swarmUpdated(peers: Int(status.num_peers), seeds: Int(status.num_seeds)))
+            emit(id, .connectionsUpdated(readPeers(handle)))
 
             let phase = TorrentState(rawValue: status.state) ?? .downloading
             switch phase {
@@ -288,6 +300,28 @@ public actor TorrentEngine: DownloadEngine {
             }
 
             try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+    }
+
+    /// Read up to 32 connected peers as ``TaskConnection`` rows for the detail
+    /// panel. The cap keeps the per-second snapshot bounded on huge swarms.
+    private func readPeers(_ handle: UnsafeMutableRawPointer) -> [TaskConnection] {
+        var buffer = [GTPeer](repeating: GTPeer(), count: 32)
+        let count = Int(buffer.withUnsafeMutableBufferPointer { buf in
+            gt_peers(handle, buf.baseAddress, 32)
+        })
+        guard count > 0 else { return [] }
+        return buffer.prefix(count).map { peer in
+            let address = Self.cString(peer.address)
+            let client = Self.cString(peer.client)
+            return TaskConnection(
+                id: address,
+                label: address,
+                detail: client.isEmpty ? "peer" : client,
+                downloadSpeed: peer.down_rate,
+                uploadSpeed: peer.up_rate,
+                progress: peer.progress
+            )
         }
     }
 

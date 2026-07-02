@@ -30,6 +30,10 @@ public protocol DownloadEngine: AnyObject, Sendable {
     /// Per-file selection / priority changed for a task.
     func setFilePriority(_ priority: FilePriority, fileID: Int, task: DownloadTask.ID) async
 
+    /// Switch a task between sequential (in-order) and rarest-first download.
+    /// Meaningful for torrents; other engines ignore it.
+    func setSequential(_ sequential: Bool, task: DownloadTask.ID) async
+
     /// The live event stream for a task. Multiple subscribers are supported.
     func events(for id: DownloadTask.ID) -> AsyncStream<EngineEvent>
 
@@ -61,6 +65,9 @@ public extension DownloadEngine {
 
     /// Default: the engine has nothing to configure.
     func configure(_ configuration: EngineConfiguration) async {}
+
+    /// Default: download order isn't controllable (non-torrent engines).
+    func setSequential(_ sequential: Bool, task: DownloadTask.ID) async {}
 }
 
 // MARK: - Capability description
@@ -97,19 +104,25 @@ public struct EngineMetadata: Sendable {
     /// Whether the source was reachable. False flags a probe that failed but may
     /// still succeed once the download actually starts.
     public var reachable: Bool
+    /// An integrity hash the server itself published (a `Digest`/`Content-MD5`
+    /// header or a `.sha256` sidecar file), offered as the pre-filled checksum on
+    /// the add-confirmation screen. Never trusted silently — the user sees it.
+    public var suggestedChecksum: Checksum?
 
     public init(
         name: String,
         totalBytes: Int64?,
         files: [TransferFile] = [],
         isEstimatedSize: Bool = false,
-        reachable: Bool = true
+        reachable: Bool = true,
+        suggestedChecksum: Checksum? = nil
     ) {
         self.name = name
         self.totalBytes = totalBytes
         self.files = files
         self.isEstimatedSize = isEstimatedSize
         self.reachable = reachable
+        self.suggestedChecksum = suggestedChecksum
     }
 }
 

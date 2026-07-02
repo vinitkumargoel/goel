@@ -47,6 +47,10 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Open to the menu bar instead of a window on launch.
     public var launchMinimized: Bool
 
+    /// Show the menu-bar status item — a compact popover with live ↓/↑ speed and
+    /// quick controls (the "Rich list" menu-bar concept).
+    public var menuBarExtraEnabled: Bool
+
     /// How the default save folder is chosen: `automatic` | `byType` |
     /// `bySource` | `fixed`.
     public var defaultFolderRule: String
@@ -62,6 +66,10 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Preferred maximum video height for HLS streams (0 = best available).
     /// The grabber picks the highest-bandwidth rendition at or below this height.
     public var hlsMaxHeight: Int
+
+    /// Where the detail panel is docked: `right` (side edge) | `bottom`. Stored as
+    /// a plain `String` (like ``theme``) so the app-layer enum stays out of core.
+    public var detailPanelPosition: String
 
     // MARK: Network
 
@@ -180,6 +188,89 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Argument template; `%path%` is replaced with the scanned file path.
     public var antivirusArgumentTemplate: String
 
+    // MARK: Queue automation
+
+    /// What to do once the last download finishes: `none` | `quit` | `sleep` |
+    /// `shutdown`. One-shot — the app resets it to `none` after firing so a
+    /// forgotten toggle can't shut the Mac down days later.
+    public var autoShutdownAction: String
+
+    /// Only download inside a daily time window (pause active tasks outside it).
+    public var scheduleEnabled: Bool
+
+    /// Window start, minutes after midnight (e.g. 1320 = 22:00).
+    public var scheduleStartMinute: Int
+
+    /// Window end, minutes after midnight. An end before the start wraps past
+    /// midnight (22:00 → 07:00).
+    public var scheduleEndMinute: Int
+
+    /// Weekdays the window applies to (Calendar convention, 1 = Sunday … 7 =
+    /// Saturday). Days not listed behave as outside the window.
+    public var scheduleDays: [Int]
+
+    /// Traffic profile to activate while inside the window ("" = keep current).
+    public var scheduleProfileName: String
+
+    // MARK: Network awareness
+
+    /// Pause downloads on expensive interfaces (personal hotspot).
+    public var pauseOnExpensiveNetwork: Bool
+
+    /// Pause downloads when the system is in Low Data Mode.
+    public var pauseOnConstrainedNetwork: Bool
+
+    // MARK: Post-download actions
+
+    /// Auto-extract recognised archives (.zip) next to the download when it
+    /// completes.
+    public var postDownloadExtractArchives: Bool
+
+    /// Run a user script after each completed download.
+    public var postDownloadScriptEnabled: Bool
+
+    /// Script/executable to run; receives the finished file path via `%path%`
+    /// in ``postDownloadScriptArgs``.
+    public var postDownloadScriptPath: String
+
+    /// Argument template for the post-download script.
+    public var postDownloadScriptArgs: String
+
+    // MARK: Remote access
+
+    /// Serve the remote-control web UI / JSON API.
+    public var remoteAccessEnabled: Bool
+
+    /// TCP port the embedded server listens on.
+    public var remotePort: Int
+
+    /// Bearer token remote clients must present. Generated when enabling.
+    public var remoteToken: String
+
+    /// Listen on all interfaces (LAN) instead of localhost only.
+    public var remoteAllowLAN: Bool
+
+    // MARK: RSS auto-download
+
+    /// Feeds watched for new items to queue automatically.
+    public var rssFeeds: [RSSFeed]
+
+    /// Minutes between feed refreshes.
+    public var rssPollIntervalMinutes: Int
+
+    // MARK: Backup retention
+
+    /// How many timestamped backups to keep before pruning the oldest.
+    public var backupKeepCount: Int
+
+    // MARK: Updates
+
+    /// Check for new releases periodically (manual check always available).
+    public var autoCheckUpdates: Bool
+
+    /// Override the release feed URL ("" = the built-in GitHub releases feed).
+    public var updateFeedURL: String
+
     public init(
         profiles: [TrafficProfile] = TrafficProfile.defaults,
         selectedProfileName: String = TrafficProfile.medium.name,
@@ -190,10 +281,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         language: String = "English",
         launchAtLogin: Bool = false,
         launchMinimized: Bool = false,
+        menuBarExtraEnabled: Bool = true,
         defaultFolderRule: String = "fixed",
         existingFileReaction: String = "rename",
         clipboardMonitorEnabled: Bool = false,
         hlsMaxHeight: Int = 0,
+        detailPanelPosition: String = "right",
         // Network
         proxyMode: String = "none",
         proxyHost: String = "",
@@ -234,7 +327,35 @@ public struct AppSettings: Codable, Sendable, Hashable {
         antivirusEnabled: Bool = false,
         antivirusScanner: String = "",
         antivirusExecutablePath: String = "",
-        antivirusArgumentTemplate: String = "%path%"
+        antivirusArgumentTemplate: String = "%path%",
+        // Queue automation
+        autoShutdownAction: String = "none",
+        scheduleEnabled: Bool = false,
+        scheduleStartMinute: Int = 22 * 60,
+        scheduleEndMinute: Int = 7 * 60,
+        scheduleDays: [Int] = [1, 2, 3, 4, 5, 6, 7],
+        scheduleProfileName: String = "",
+        // Network awareness
+        pauseOnExpensiveNetwork: Bool = false,
+        pauseOnConstrainedNetwork: Bool = false,
+        // Post-download actions
+        postDownloadExtractArchives: Bool = false,
+        postDownloadScriptEnabled: Bool = false,
+        postDownloadScriptPath: String = "",
+        postDownloadScriptArgs: String = "%path%",
+        // Remote access
+        remoteAccessEnabled: Bool = false,
+        remotePort: Int = 8899,
+        remoteToken: String = "",
+        remoteAllowLAN: Bool = false,
+        // RSS
+        rssFeeds: [RSSFeed] = [],
+        rssPollIntervalMinutes: Int = 30,
+        // Backup retention
+        backupKeepCount: Int = 20,
+        // Updates
+        autoCheckUpdates: Bool = false,
+        updateFeedURL: String = ""
     ) {
         self.profiles = profiles
         self.selectedProfileName = selectedProfileName
@@ -244,10 +365,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.language = language
         self.launchAtLogin = launchAtLogin
         self.launchMinimized = launchMinimized
+        self.menuBarExtraEnabled = menuBarExtraEnabled
         self.defaultFolderRule = defaultFolderRule
         self.existingFileReaction = existingFileReaction
         self.clipboardMonitorEnabled = clipboardMonitorEnabled
         self.hlsMaxHeight = hlsMaxHeight
+        self.detailPanelPosition = detailPanelPosition
         self.proxyMode = proxyMode
         self.proxyHost = proxyHost
         self.proxyPort = proxyPort
@@ -283,12 +406,33 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.antivirusScanner = antivirusScanner
         self.antivirusExecutablePath = antivirusExecutablePath
         self.antivirusArgumentTemplate = antivirusArgumentTemplate
+        self.autoShutdownAction = autoShutdownAction
+        self.scheduleEnabled = scheduleEnabled
+        self.scheduleStartMinute = scheduleStartMinute
+        self.scheduleEndMinute = scheduleEndMinute
+        self.scheduleDays = scheduleDays
+        self.scheduleProfileName = scheduleProfileName
+        self.pauseOnExpensiveNetwork = pauseOnExpensiveNetwork
+        self.pauseOnConstrainedNetwork = pauseOnConstrainedNetwork
+        self.postDownloadExtractArchives = postDownloadExtractArchives
+        self.postDownloadScriptEnabled = postDownloadScriptEnabled
+        self.postDownloadScriptPath = postDownloadScriptPath
+        self.postDownloadScriptArgs = postDownloadScriptArgs
+        self.remoteAccessEnabled = remoteAccessEnabled
+        self.remotePort = remotePort
+        self.remoteToken = remoteToken
+        self.remoteAllowLAN = remoteAllowLAN
+        self.rssFeeds = rssFeeds
+        self.rssPollIntervalMinutes = rssPollIntervalMinutes
+        self.backupKeepCount = backupKeepCount
+        self.autoCheckUpdates = autoCheckUpdates
+        self.updateFeedURL = updateFeedURL
     }
 
     private enum CodingKeys: String, CodingKey {
         case profiles, selectedProfileName, speedLimitEnabled, defaultSaveDirectory
-        case theme, language, launchAtLogin, launchMinimized, defaultFolderRule
-        case existingFileReaction, clipboardMonitorEnabled, hlsMaxHeight
+        case theme, language, launchAtLogin, launchMinimized, menuBarExtraEnabled, defaultFolderRule
+        case existingFileReaction, clipboardMonitorEnabled, hlsMaxHeight, detailPanelPosition
         case proxyMode, proxyHost, proxyPort, connectionTimeout, retryCount
         case retryInterval, userAgent, cookieAuthEnabled
         case btMakeDefaultClient, btAutoDeleteTorrent, btWatchFolderEnabled
@@ -300,6 +444,15 @@ public struct AppSettings: Codable, Sendable, Hashable {
         case pauseBelowBatteryThreshold, batteryThresholdPercent, dontSeedOnBattery
         case backupEnabled, backupIntervalHours
         case antivirusEnabled, antivirusScanner, antivirusExecutablePath, antivirusArgumentTemplate
+        case autoShutdownAction
+        case scheduleEnabled, scheduleStartMinute, scheduleEndMinute, scheduleDays, scheduleProfileName
+        case pauseOnExpensiveNetwork, pauseOnConstrainedNetwork
+        case postDownloadExtractArchives, postDownloadScriptEnabled
+        case postDownloadScriptPath, postDownloadScriptArgs
+        case remoteAccessEnabled, remotePort, remoteToken, remoteAllowLAN
+        case rssFeeds, rssPollIntervalMinutes
+        case backupKeepCount
+        case autoCheckUpdates, updateFeedURL
     }
 
     /// Decodes every field with `decodeIfPresent`, falling back to the default
@@ -315,10 +468,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         language = try c.decodeIfPresent(String.self, forKey: .language) ?? "English"
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         launchMinimized = try c.decodeIfPresent(Bool.self, forKey: .launchMinimized) ?? false
+        menuBarExtraEnabled = try c.decodeIfPresent(Bool.self, forKey: .menuBarExtraEnabled) ?? true
         defaultFolderRule = try c.decodeIfPresent(String.self, forKey: .defaultFolderRule) ?? "fixed"
         existingFileReaction = try c.decodeIfPresent(String.self, forKey: .existingFileReaction) ?? "rename"
         clipboardMonitorEnabled = try c.decodeIfPresent(Bool.self, forKey: .clipboardMonitorEnabled) ?? false
         hlsMaxHeight = try c.decodeIfPresent(Int.self, forKey: .hlsMaxHeight) ?? 0
+        detailPanelPosition = try c.decodeIfPresent(String.self, forKey: .detailPanelPosition) ?? "right"
         proxyMode = try c.decodeIfPresent(String.self, forKey: .proxyMode) ?? "none"
         proxyHost = try c.decodeIfPresent(String.self, forKey: .proxyHost) ?? ""
         proxyPort = try c.decodeIfPresent(Int.self, forKey: .proxyPort) ?? 0
@@ -354,6 +509,27 @@ public struct AppSettings: Codable, Sendable, Hashable {
         antivirusScanner = try c.decodeIfPresent(String.self, forKey: .antivirusScanner) ?? ""
         antivirusExecutablePath = try c.decodeIfPresent(String.self, forKey: .antivirusExecutablePath) ?? ""
         antivirusArgumentTemplate = try c.decodeIfPresent(String.self, forKey: .antivirusArgumentTemplate) ?? "%path%"
+        autoShutdownAction = try c.decodeIfPresent(String.self, forKey: .autoShutdownAction) ?? "none"
+        scheduleEnabled = try c.decodeIfPresent(Bool.self, forKey: .scheduleEnabled) ?? false
+        scheduleStartMinute = try c.decodeIfPresent(Int.self, forKey: .scheduleStartMinute) ?? 22 * 60
+        scheduleEndMinute = try c.decodeIfPresent(Int.self, forKey: .scheduleEndMinute) ?? 7 * 60
+        scheduleDays = try c.decodeIfPresent([Int].self, forKey: .scheduleDays) ?? [1, 2, 3, 4, 5, 6, 7]
+        scheduleProfileName = try c.decodeIfPresent(String.self, forKey: .scheduleProfileName) ?? ""
+        pauseOnExpensiveNetwork = try c.decodeIfPresent(Bool.self, forKey: .pauseOnExpensiveNetwork) ?? false
+        pauseOnConstrainedNetwork = try c.decodeIfPresent(Bool.self, forKey: .pauseOnConstrainedNetwork) ?? false
+        postDownloadExtractArchives = try c.decodeIfPresent(Bool.self, forKey: .postDownloadExtractArchives) ?? false
+        postDownloadScriptEnabled = try c.decodeIfPresent(Bool.self, forKey: .postDownloadScriptEnabled) ?? false
+        postDownloadScriptPath = try c.decodeIfPresent(String.self, forKey: .postDownloadScriptPath) ?? ""
+        postDownloadScriptArgs = try c.decodeIfPresent(String.self, forKey: .postDownloadScriptArgs) ?? "%path%"
+        remoteAccessEnabled = try c.decodeIfPresent(Bool.self, forKey: .remoteAccessEnabled) ?? false
+        remotePort = try c.decodeIfPresent(Int.self, forKey: .remotePort) ?? 8899
+        remoteToken = try c.decodeIfPresent(String.self, forKey: .remoteToken) ?? ""
+        remoteAllowLAN = try c.decodeIfPresent(Bool.self, forKey: .remoteAllowLAN) ?? false
+        rssFeeds = try c.decodeIfPresent([RSSFeed].self, forKey: .rssFeeds) ?? []
+        rssPollIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .rssPollIntervalMinutes) ?? 30
+        backupKeepCount = try c.decodeIfPresent(Int.self, forKey: .backupKeepCount) ?? 20
+        autoCheckUpdates = try c.decodeIfPresent(Bool.self, forKey: .autoCheckUpdates) ?? false
+        updateFeedURL = try c.decodeIfPresent(String.self, forKey: .updateFeedURL) ?? ""
     }
 
     /// The currently selected profile, falling back to the first available (or

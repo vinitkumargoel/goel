@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="GoelDownloader Terminology">
+    <suite name="GoelDownloader Suite" code="GoDL"
+           description="Control the download queue from AppleScript, Shortcuts (Run AppleScript), or Automator.">
+        <command name="add download" code="GoDLAddD"
+                 description="Queue a URL, magnet link, or .torrent link.">
+            <cocoa class="AddDownloadScriptCommand"/>
+            <direct-parameter type="text" description="The link to download."/>
+        </command>
+        <command name="pause all downloads" code="GoDLPaus"
+                 description="Pause every queued and active download.">
+            <cocoa class="PauseAllScriptCommand"/>
+        </command>
+        <command name="resume all downloads" code="GoDLResu"
+                 description="Start every paused download.">
+            <cocoa class="ResumeAllScriptCommand"/>
+        </command>
+        <command name="count downloads" code="GoDLCnts"
+                 description="The number of downloads in the list.">
+            <cocoa class="CountDownloadsScriptCommand"/>
+            <result type="integer"/>
+        </command>
+    </suite>
+</dictionary>

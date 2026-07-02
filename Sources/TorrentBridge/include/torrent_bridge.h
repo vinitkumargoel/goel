@@ -71,6 +71,26 @@ void gt_handle_free(GTHandle handle);
 /// Fill `out` with a status snapshot. Returns 1 on success, 0 if invalid.
 int gt_get_status(GTHandle handle, GTStatus *out);
 
+/* --- Peers ---------------------------------------------------------------- */
+
+/// A snapshot of one connected peer, filled by `gt_peers`.
+typedef struct {
+    char   address[64];   /* "ip:port" */
+    char   client[128];   /* remote client name, may be empty */
+    double down_rate;     /* payload bytes/sec */
+    double up_rate;       /* payload bytes/sec */
+    double progress;      /* remote peer's completeness, 0..1 */
+} GTPeer;
+
+/// Fill up to `cap` connected peers into `out`. Returns the number written.
+int gt_peers(GTHandle handle, GTPeer *out, int cap);
+
+/// Toggle sequential (in-order) piece download for streaming/preview.
+void gt_set_sequential(GTHandle handle, int sequential);
+
+/// Per-torrent download rate cap in bytes/sec (0 = unlimited).
+void gt_set_download_limit(GTHandle handle, int bytes_per_sec);
+
 /* --- Per-file selection (multi-file torrents) ---------------------------- */
 
 int  gt_file_count(GTHandle handle);

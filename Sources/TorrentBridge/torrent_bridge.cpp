@@ -11,9 +11,11 @@
 #include <libtorrent/torrent_flags.hpp>
 #include <libtorrent/file_storage.hpp>
 #include <libtorrent/download_priority.hpp>
+#include <libtorrent/peer_info.hpp>
 
 #include <cstring>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -172,6 +174,41 @@ int gt_get_status(GTHandle handle, GTStatus *out) {
     copy_string(out->name, sizeof(out->name), st.name);
     if (st.errc) copy_string(out->error, sizeof(out->error), st.errc.message());
     return 1;
+}
+
+int gt_peers(GTHandle handle, GTPeer *out, int cap) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid() || !out || cap <= 0) return 0;
+    std::vector<lt::peer_info> peers;
+    h->get_peer_info(peers);
+    int n = 0;
+    for (auto const &p : peers) {
+        if (n >= cap) break;
+        GTPeer &gp = out[n];
+        std::memset(&gp, 0, sizeof(GTPeer));
+        std::ostringstream endpoint;
+        endpoint << p.ip;
+        copy_string(gp.address, sizeof(gp.address), endpoint.str());
+        copy_string(gp.client, sizeof(gp.client), p.client);
+        gp.down_rate = static_cast<double>(p.payload_down_speed);
+        gp.up_rate = static_cast<double>(p.payload_up_speed);
+        gp.progress = static_cast<double>(p.progress);
+        ++n;
+    }
+    return n;
+}
+
+void gt_set_sequential(GTHandle handle, int sequential) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid()) return;
+    if (sequential) h->set_flags(lt::torrent_flags::sequential_download);
+    else h->unset_flags(lt::torrent_flags::sequential_download);
+}
+
+void gt_set_download_limit(GTHandle handle, int bytes_per_sec) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid()) return;
+    h->set_download_limit(bytes_per_sec > 0 ? bytes_per_sec : 0);
 }
 
 int gt_file_count(GTHandle handle) {

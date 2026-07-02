@@ -29,6 +29,7 @@ public actor DownloadManager {
     let httpEngine: any DownloadEngine
     let torrentEngine: any DownloadEngine
     let hlsEngine: any DownloadEngine
+    let ftpEngine: any DownloadEngine
 
     // MARK: State
 
@@ -83,6 +84,67 @@ public actor DownloadManager {
     /// The periodic backup loop, when ``AppSettings/backupEnabled`` is on.
     var backupTask: Task<Void, Never>?
 
+    // MARK: Download-window scheduling state
+
+    /// The minute-resolution loop evaluating the time-of-day download window.
+    var scheduleTask: Task<Void, Never>?
+
+    /// Whether the download window is currently open. `true` whenever
+    /// scheduling is disabled — the scheduler gates promotion on this.
+    var scheduleWindowOpen = true
+
+    /// Tasks the window-close transition paused, so reopening resumes exactly
+    /// those — never downloads the user paused by hand.
+    var schedulePausedIDs: Set<UUID> = []
+
+    /// The profile that was active before the window switched to
+    /// ``AppSettings/scheduleProfileName``, restored when the window closes.
+    var preScheduleProfileName: String?
+
+    /// The RSS feed polling loop, when any feed is enabled.
+    var rssTask: Task<Void, Never>?
+
+    /// The per-task scheduled-start loop, armed while any paused task carries a
+    /// future ``DownloadTask/scheduledAt``.
+    var scheduledStartTask: Task<Void, Never>?
+
+    /// GUIDs/links already queued from feeds, so a poll never re-adds items.
+    var rssSeenKeys: Set<String> = []
+
+    // MARK: Network-awareness state
+
+    /// Tasks paused by the expensive/constrained-network policy, so recovery
+    /// resumes exactly those.
+    var networkPausedIDs: Set<UUID> = []
+
+    /// Whether the network policy currently holds the queue paused.
+    var networkPaused = false
+
+    /// The last path flags reported by the app layer, re-evaluated when the
+    /// pause-on-expensive/constrained settings change.
+    var lastPathExpensive = false
+    var lastPathConstrained = false
+
+    // MARK: Statistics state
+
+    /// Lifetime/per-day transfer accounting, fed from progress deltas and
+    /// persisted (throttled) alongside the settings.
+    var stats = TransferStats()
+
+    /// The last time ``stats`` was flushed to disk (flushes are throttled to
+    /// ~30 s; status transitions flush immediately).
+    var lastStatsFlush = Date.distantPast
+
+    /// Per-task byte counts already folded into ``stats``. Kept separately from
+    /// the task's own counters so a restart that begins above zero but below
+    /// the previous absolute count re-bases and keeps recording, instead of
+    /// silently losing the whole re-transferred interval.
+    struct StatsMark {
+        var down: Int64
+        var up: Int64
+    }
+    var statsMarks: [UUID: StatsMark] = [:]
+
     // MARK: Persistence pipeline
 
     /// The serial persistence pipeline's state lives here; its behaviour lives in
@@ -93,6 +155,10 @@ public actor DownloadManager {
         case saveTask(DownloadTask)
         case deleteTask(UUID)
         case saveSettings(AppSettings)
+        case saveStats(TransferStats)
+        case saveHistory(HistoryEntry)
+        case deleteHistory(UUID)
+        case clearHistory
     }
 
     /// The (one-shot) source of the serial persistence stream, consumed the first
@@ -116,6 +182,7 @@ public actor DownloadManager {
         httpEngine: any DownloadEngine,
         torrentEngine: any DownloadEngine,
         hlsEngine: (any DownloadEngine)? = nil,
+        ftpEngine: (any DownloadEngine)? = nil,
         settings: AppSettings = AppSettings(),
         store: PersistenceStore? = nil,
         power: any PowerControlling = SystemPowerControl(),
@@ -125,6 +192,7 @@ public actor DownloadManager {
         self.httpEngine = httpEngine
         self.torrentEngine = torrentEngine
         self.hlsEngine = hlsEngine ?? HLSEngine(profile: settings.effectiveProfile)
+        self.ftpEngine = ftpEngine ?? FTPEngine(profile: settings.effectiveProfile)
         self.settings = settings
         self.store = store
         self.power = power
@@ -157,6 +225,7 @@ public actor DownloadManager {
             )
         )
         self.hlsEngine = HLSEngine(profile: settings.effectiveProfile)
+        self.ftpEngine = FTPEngine(profile: settings.effectiveProfile)
         self.settings = settings
         self.store = store
         self.power = power
@@ -191,6 +260,8 @@ public actor DownloadManager {
             notePersistenceError(error)
         }
 
+        if let savedStats = try? store.loadStats() { stats = savedStats }
+
         let loaded: [DownloadTask]
         do {
             loaded = try store.loadAllTasks()
@@ -222,6 +293,9 @@ public actor DownloadManager {
         await applyEngineConfigs()
         await updateWatchFolder()
         updateBackupSchedule()
+        updateDownloadSchedule()
+        updateRSSSchedule()
+        armScheduledStarts()
         updatePowerAssertion()
         publish()
     }
@@ -242,6 +316,29 @@ public actor DownloadManager {
 
     /// The current settings.
     public var currentSettings: AppSettings { settings }
+
+    /// The lifetime/per-day transfer statistics.
+    public var currentStats: TransferStats { stats }
+
+    // MARK: Download history
+
+    /// The archived completed downloads, newest first. Reads the store directly
+    /// (writes flow through the serial pipeline, so an entry archived a moment
+    /// ago may trail by one flush — fine for a browsing UI).
+    public func history(limit: Int = 1000) -> [HistoryEntry] {
+        guard let store else { return [] }
+        return (try? store.loadHistory(limit: limit)) ?? []
+    }
+
+    /// Delete one archived entry.
+    public func removeHistoryEntry(_ id: UUID) {
+        persistHistoryRemoval(id)
+    }
+
+    /// Wipe the download history archive.
+    public func clearHistory() {
+        persistHistoryClear()
+    }
 
     /// Look up a single task by id.
     public func task(_ id: DownloadTask.ID) -> DownloadTask? {
@@ -293,42 +390,79 @@ public actor DownloadManager {
     /// explicit `saveDirectory` is given the folder is chosen per the configured
     /// ``AppSettings/defaultFolderRule``. The new task starts `.queued`; the
     /// scheduler promotes it when a slot is free.
+    /// `startPaused` creates the task directly in `.paused` and skips the
+    /// scheduler entirely — the race-free form of "add then pause" (an
+    /// add-then-pause pair can lose to the scheduler's optimistic promotion,
+    /// leaving the engine actively downloading a task the caller wanted held).
     @discardableResult
     public func add(
         source: DownloadSource,
         saveDirectory: String? = nil,
         priority: FilePriority = .normal,
-        expectedChecksum: Checksum? = nil
+        expectedChecksum: Checksum? = nil,
+        startPaused: Bool = false,
+        scheduledAt: Date? = nil,
+        mirrors: [String]? = nil,
+        suggestedName: String? = nil
     ) -> DownloadTask {
         if let existing = tasks.first(where: { $0.source.dedupKey == source.dedupKey }) {
             return existing
         }
+        // A future start time implies "hold it until then" — same race-free
+        // create-paused path as `startPaused`.
+        let holdPaused = startPaused || scheduledAt != nil
         let directory = saveDirectory ?? defaultDirectory(for: source)
         // Resolve the on-disk name conflict at creation time only — never on
         // resume/retry, which reuse the stored name and rely on the partial file
         // still living at the same path. Torrent names are placeholders until
         // metadata resolves, so the policy applies to HTTP downloads only.
+        // A caller-supplied name (metalink `name=`) is sanitized like any
+        // untrusted input before it can influence the on-disk path.
+        let baseName = suggestedName.map {
+            DownloadTask.sanitizedName($0, fallback: Self.defaultName(for: source))
+        } ?? Self.defaultName(for: source)
         let name: String
         if source.kind == .http || source.kind == .hls {
-            name = Self.resolveName(Self.defaultName(for: source),
+            name = Self.resolveName(baseName,
                                     in: directory,
                                     policy: settings.existingFileReaction)
         } else {
-            name = Self.defaultName(for: source)
+            name = baseName
         }
         let task = DownloadTask(
             source: source,
             name: name,
             saveDirectory: directory,
-            status: .queued,
+            status: holdPaused ? .paused : .queued,
             priority: priority,
-            expectedChecksum: expectedChecksum
+            expectedChecksum: expectedChecksum,
+            scheduledAt: scheduledAt,
+            mirrors: Self.sanitizedMirrors(mirrors, primary: source)
         )
         tasks.append(task)
         persist(task)
         publish()
-        schedule()
+        if !holdPaused { schedule() }
+        if scheduledAt != nil { armScheduledStarts() }
         return task
+    }
+
+    /// Mirrors are untrusted input from add forms / metalink files: keep only
+    /// http(s) URLs, drop duplicates and the primary itself, cap the count.
+    static func sanitizedMirrors(_ raw: [String]?, primary: DownloadSource) -> [String]? {
+        guard let raw, !raw.isEmpty else { return nil }
+        var seen: Set<String> = [primary.locator]
+        var result: [String] = []
+        for line in raw {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let url = URL(string: trimmed),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https",
+                  seen.insert(url.absoluteString).inserted else { continue }
+            result.append(url.absoluteString)
+            if result.count >= 10 { break }
+        }
+        return result.isEmpty ? nil : result
     }
 
     /// Resolve a source's metadata for the add-confirmation screen, *without*
@@ -361,7 +495,8 @@ public actor DownloadManager {
         return DownloadPreview(
             source: source, suggestedName: name, totalBytes: meta.totalBytes,
             isEstimatedSize: meta.isEstimatedSize, files: meta.files, kind: kind,
-            note: meta.reachable ? nil : Self.unresolvedNote(for: kind))
+            note: meta.reachable ? nil : Self.unresolvedNote(for: kind),
+            suggestedChecksum: meta.suggestedChecksum)
     }
 
     /// The non-fatal note shown when a source's metadata couldn't be resolved up
@@ -369,7 +504,7 @@ public actor DownloadManager {
     /// always still start the download.
     private static func unresolvedNote(for kind: DownloadKind) -> String? {
         switch kind {
-        case .http:
+        case .http, .ftp:
             return "Couldn’t reach the server — it may still work when you start."
         case .torrent:
             return "No peers answered in time, so the file list isn’t available yet. You can still start — it will resolve while downloading."
@@ -407,6 +542,7 @@ public actor DownloadManager {
         tasks[i].status = .paused
         tasks[i].downloadSpeed = 0
         tasks[i].uploadSpeed = 0
+        tasks[i].connections = nil
         persist(tasks[i])
         updatePowerAssertion()
         publish()
@@ -418,6 +554,7 @@ public actor DownloadManager {
     public func resume(_ id: DownloadTask.ID) async {
         guard let i = index(of: id), tasks[i].status == .paused else { return }
         tasks[i].status = .queued
+        tasks[i].scheduledAt = nil   // starting now supersedes any scheduled start
         persist(tasks[i])
         publish()
         schedule()
@@ -431,6 +568,8 @@ public actor DownloadManager {
         tasks[i].status = .queued
         tasks[i].downloadSpeed = 0
         tasks[i].uploadSpeed = 0
+        tasks[i].scanVerdict = nil
+        tasks[i].scheduledAt = nil
         persist(tasks[i])
         publish()
         schedule()
@@ -446,6 +585,7 @@ public actor DownloadManager {
         consumers[id] = nil
         runningSlots.remove(id)
         engineStarted.remove(id)
+        statsMarks[id] = nil
         if let i = index(of: id) { tasks.remove(at: i) }
         persistRemoval(id)
         updatePowerAssertion()
@@ -462,10 +602,17 @@ public actor DownloadManager {
         observers.removeAll()
         backupTask?.cancel()
         backupTask = nil
+        scheduleTask?.cancel()
+        scheduleTask = nil
+        rssTask?.cancel()
+        rssTask = nil
+        scheduledStartTask?.cancel()
+        scheduledStartTask = nil
         let folderWatch = self.folderWatch
         Task { await folderWatch.stop() }
         power.setPreventSleep(false)
-        // Let the persistence worker drain any queued writes, then exit.
+        // Flush the stats then let the worker drain any queued writes and exit.
+        persistStats(force: true)
         persistContinuation?.finish()
     }
 
@@ -537,8 +684,107 @@ public actor DownloadManager {
         updatePowerAssertion()
         await updateWatchFolder()
         updateBackupSchedule()
+        updateDownloadSchedule()
+        updateRSSSchedule()
+        await applyNetworkPolicy(expensive: lastPathExpensive, constrained: lastPathConstrained)
         publish()
         schedule()
+    }
+
+    /// Switch a torrent between sequential (in-order, streamable) and
+    /// rarest-first piece download. No-op for HTTP/HLS tasks.
+    public func setSequential(_ sequential: Bool, task id: DownloadTask.ID) async {
+        guard let task = task(id) else { return }
+        await engine(for: task.source).setSequential(sequential, task: id)
+        if let i = index(of: id) {
+            tasks[i].sequentialDownload = sequential
+            persist(tasks[i])
+        }
+        publish()
+    }
+
+    /// Set (or clear, with nil/0) a per-task download cap in bytes/sec. Applied
+    /// on the task's next launch/resume; the global profile ceiling still holds.
+    public func setTaskSpeedLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {
+        guard let i = index(of: id) else { return }
+        tasks[i].speedLimitBytesPerSec = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
+        persist(tasks[i])
+        publish()
+    }
+
+    // MARK: Export / Import
+
+    /// A self-contained snapshot of the whole app: settings + every task with
+    /// its full state (progress, status, resume cursor). The JSON counterpart of
+    /// the locator-only text export in the File menu.
+    public func exportEnvelope() throws -> Data {
+        let envelope = AppExport(settings: settings, tasks: tasks)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        return try encoder.encode(envelope)
+    }
+
+    /// Import a snapshot produced by ``exportEnvelope()``: adopt its settings and
+    /// merge its tasks (skipping sources already in the queue). Restored tasks
+    /// come back `.paused` — like ``restore()`` — so nothing starts by surprise.
+    /// Returns the number of tasks actually added.
+    ///
+    /// Security: a backup file is untrusted input. Every task is re-sanitized,
+    /// and settings that can execute code or open network listeners (remote
+    /// access, post-download script, antivirus executable, RSS feeds, watch
+    /// folder) are NEVER adopted from a file — the current values are kept, so
+    /// a hostile "backup" can't silently turn the app into an exfiltration or
+    /// remote-control vector.
+    @discardableResult
+    public func importEnvelope(_ data: Data) async throws -> Int {
+        let envelope = try JSONDecoder().decode(AppExport.self, from: data)
+        var added = 0
+        for imported in envelope.tasks {
+            let task = PersistenceStore.sanitizedForImport(imported)
+            guard !tasks.contains(where: { $0.source.dedupKey == task.source.dedupKey }) else { continue }
+            var t = task
+            switch t.status {
+            case .downloading, .verifying, .requestingMetadata, .queued, .seeding:
+                t.status = .paused
+            default:
+                break
+            }
+            t.downloadSpeed = 0
+            t.uploadSpeed = 0
+            t.connectionCount = 0
+            t.connections = nil
+            tasks.append(t)
+            persist(t)
+            added += 1
+        }
+        await updateSettings(Self.sanitizedImportedSettings(envelope.settings, current: settings))
+        return added
+    }
+
+    /// Imported settings with every security-sensitive field forced back to
+    /// the CURRENT value. `internal` so tests can drive the matrix directly.
+    static func sanitizedImportedSettings(_ imported: AppSettings,
+                                          current: AppSettings) -> AppSettings {
+        var safe = imported
+        // Remote code / process execution.
+        safe.postDownloadScriptEnabled = current.postDownloadScriptEnabled
+        safe.postDownloadScriptPath = current.postDownloadScriptPath
+        safe.postDownloadScriptArgs = current.postDownloadScriptArgs
+        safe.antivirusEnabled = current.antivirusEnabled
+        safe.antivirusExecutablePath = current.antivirusExecutablePath
+        safe.antivirusArgumentTemplate = current.antivirusArgumentTemplate
+        safe.antivirusScanner = current.antivirusScanner
+        // Network listeners and auto-fetch surfaces.
+        safe.remoteAccessEnabled = current.remoteAccessEnabled
+        safe.remotePort = current.remotePort
+        safe.remoteToken = current.remoteToken
+        safe.remoteAllowLAN = current.remoteAllowLAN
+        safe.rssFeeds = current.rssFeeds
+        safe.btWatchFolderEnabled = current.btWatchFolderEnabled
+        safe.btWatchFolderPath = current.btWatchFolderPath
+        safe.btWatchStartWithoutConfirmation = current.btWatchStartWithoutConfirmation
+        safe.updateFeedURL = current.updateFeedURL
+        return safe
     }
 
     /// Change a file's selection / priority within a (multi-file) task.
@@ -598,6 +844,7 @@ public actor DownloadManager {
         case .http: return httpEngine
         case .torrent: return torrentEngine
         case .hls: return hlsEngine
+        case .ftp: return ftpEngine
         }
     }
 }

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import QuickLook
 import GoelCore
 
 /// The center list: a sortable header and selectable rows with inline progress,
@@ -7,6 +8,9 @@ import GoelCore
 /// ↓ Speed, ↑ Speed.
 struct DownloadListView: View {
     @EnvironmentObject private var vm: AppViewModel
+
+    /// The file being previewed with Quick Look (spacebar / context menu).
+    @State private var quickLookItem: URL?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,15 +26,34 @@ struct DownloadListView: View {
                                 task: task,
                                 displayIndex: index + 1,
                                 isSelected: vm.isSelected(task.id),
-                                vm: vm
+                                vm: vm,
+                                quickLook: { quickLookItem = $0 }
                             )
                             Divider()
                         }
+                        // Clicking the empty area below the rows clears the
+                        // selection, so the detail panel slides away.
+                        Color.clear
+                            .frame(maxWidth: .infinity, minHeight: 60)
+                            .contentShape(Rectangle())
+                            .onTapGesture { vm.selectNone() }
                     }
                 }
             }
         }
         .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
+        // A click anywhere in the list background (not on a row) deselects.
+        .contentShape(Rectangle())
+        .onTapGesture { vm.selectNone() }
+        .quickLookPreview($quickLookItem)
+        // Spacebar previews the primary selection, Finder-style.
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.space) {
+            guard let task = vm.selectedTask, task.status.hasData else { return .ignored }
+            quickLookItem = URL(fileURLWithPath: task.savePath)
+            return .handled
+        }
     }
 
     // MARK: Header
@@ -102,10 +125,7 @@ struct DownloadRow: View {
     let displayIndex: Int
     let isSelected: Bool
     let vm: AppViewModel
-
-    /// Gates the irreversible "Remove with data" disk delete behind an explicit
-    /// confirmation; plain "Remove from list" is non-destructive and needs none.
-    @State private var showDeleteConfirm = false
+    var quickLook: (URL) -> Void = { _ in }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -170,15 +190,10 @@ struct DownloadRow: View {
             if !vm.detailPanelVisible { vm.detailPanelVisible = true }
         }
         .contextMenu { contextMenu }
-        .confirmationDialog(
-            "Delete downloaded files for “\(task.name)”?",
-            isPresented: $showDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Delete Files", role: .destructive) { vm.remove(task.id, deleteData: true) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This permanently deletes the file from disk and can’t be undone.")
+        // A finished download can be dragged straight out to Finder/other apps.
+        .onDrag {
+            guard task.status.hasData else { return NSItemProvider() }
+            return NSItemProvider(object: URL(fileURLWithPath: task.savePath) as NSURL)
         }
     }
 
@@ -209,14 +224,77 @@ struct DownloadRow: View {
         }
         if isFailed { Button("Retry") { vm.retry(task.id) } }
         Button("Open folder") { vm.revealInFinder(task) }
+        if task.status == .completed || playableWhileDownloading {
+            Button("Open in Player") { vm.openFile(task) }
+        }
+        if task.status.hasData {
+            Button("Quick Look") { quickLook(URL(fileURLWithPath: task.savePath)) }
+        }
         Button("Copy source link") { vm.copyToPasteboard(task.sourceLocator) }
+        if vm.settings.remoteAccessEnabled, !vm.settings.remoteToken.isEmpty,
+           RemoteControlServer.streamPlan(for: task) != nil {
+            Button("Copy Stream Link") {
+                vm.copyToPasteboard("http://127.0.0.1:\(vm.settings.remotePort)/stream?id=\(task.id.uuidString)&token=\(vm.settings.remoteToken)")
+            }
+        }
+        Divider()
+        Menu("Speed Limit") {
+            Button(limitLabel(nil)) { vm.setTaskSpeedLimit(nil, task: task.id) }
+            ForEach([1, 2, 5, 10, 25], id: \.self) { mb in
+                Button(limitLabel(Int64(mb) * 1_000_000)) {
+                    vm.setTaskSpeedLimit(Int64(mb) * 1_000_000, task: task.id)
+                }
+            }
+        }
+        if task.kind == .torrent {
+            Button(task.sequentialDownload == true
+                   ? "✓ Sequential Download" : "Sequential Download") {
+                vm.setSequential(!(task.sequentialDownload == true), task: task.id)
+            }
+        }
+        if task.status == .paused || task.status == .queued || task.status.isActive {
+            Menu("Schedule Start") {
+                ForEach(ScheduledStartOption.presets) { preset in
+                    Button(preset.label) { vm.setScheduledStart(preset.date(), task: task.id) }
+                }
+                if task.scheduledAt != nil {
+                    Divider()
+                    Button("Cancel Scheduled Start") { vm.setScheduledStart(nil, task: task.id) }
+                }
+            }
+        }
         Divider()
         Button("Remove from list", role: .destructive) { vm.remove(task.id, deleteData: false) }
-        Button("Remove with data", role: .destructive) { showDeleteConfirm = true }
+        Button("Remove with data", role: .destructive) {
+            vm.requestConfirm(
+                title: "Delete downloaded files for “\(task.name)”?",
+                message: "This permanently deletes the file from disk and can’t be undone.",
+                confirmTitle: "Delete Files",
+                destructive: true
+            ) { vm.remove(task.id, deleteData: true) }
+        }
     }
 
     private var isFailed: Bool {
         if case .failed = task.status { return true }
         return false
+    }
+
+    /// A sequential torrent's video becomes watchable mid-download; offer the
+    /// player once a meaningful chunk exists.
+    private var playableWhileDownloading: Bool {
+        task.kind == .torrent
+            && task.sequentialDownload == true
+            && task.fileType == .video
+            && task.fractionCompleted > 0.02
+    }
+
+    private func limitLabel(_ bytesPerSec: Int64?) -> String {
+        let current = task.speedLimitBytesPerSec
+        let isActive = bytesPerSec == nil
+            ? (current == nil || current == 0)
+            : current == bytesPerSec
+        let name = bytesPerSec.map { "\($0 / 1_000_000) MB/s" } ?? "Unlimited"
+        return isActive ? "✓ \(name)" : name
     }
 }

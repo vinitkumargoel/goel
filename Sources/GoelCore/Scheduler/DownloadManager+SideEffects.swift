@@ -68,13 +68,11 @@ extension DownloadManager {
 
     /// Add a `.torrent` discovered in the watch folder. `add()` queues it and the
     /// scheduler promotes it automatically (the "start without confirmation"
-    /// behaviour); when confirmation is required we add it then pause it so it
-    /// waits for the user to explicitly resume.
+    /// behaviour); when confirmation is required it is created paused so it
+    /// waits for the user to explicitly resume (created-paused, not
+    /// add-then-pause, which can lose to the optimistic promotion).
     private func ingestWatchedTorrent(_ url: URL, autoStart: Bool) async {
-        let task = add(source: .torrentFile(url))
-        if !autoStart {
-            await pause(task.id)
-        }
+        add(source: .torrentFile(url), startPaused: !autoStart)
     }
 
     // MARK: Backup
@@ -96,12 +94,14 @@ extension DownloadManager {
     }
 
     /// Write a timestamped JSON backup of the current task list into a "Backups"
-    /// subfolder of the default save directory. Off-actor so disk I/O never stalls
+    /// subfolder of the default save directory, then prune the oldest backups
+    /// beyond ``AppSettings/backupKeepCount``. Off-actor so disk I/O never stalls
     /// the queue; failures are surfaced like any other persistence problem.
     private func writeBackup() async {
         guard let store else { return }
         let snapshot = tasks
         let baseDir = settings.defaultSaveDirectory
+        let keep = max(1, settings.backupKeepCount)
         Task.detached { [weak self] in
             do {
                 let data = try store.exportTasks(snapshot)
@@ -110,9 +110,25 @@ extension DownloadManager {
                 let stamp = Self.backupStampFormatter.string(from: Date())
                 let file = (dir as NSString).appendingPathComponent("backup-\(stamp).json")
                 try data.write(to: URL(fileURLWithPath: file))
+                Self.pruneBackups(in: dir, keep: keep)
             } catch {
                 await self?.notePersistenceError(error)
             }
+        }
+    }
+
+    /// Delete the oldest `backup-*.json` files beyond `keep`. The timestamp
+    /// format sorts lexicographically, so name order is age order. Best-effort:
+    /// a prune failure never surfaces (the new backup itself was written).
+    static func pruneBackups(in dir: String, keep: Int) {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: dir) else { return }
+        let backups = names
+            .filter { $0.hasPrefix("backup-") && $0.hasSuffix(".json") }
+            .sorted()
+        guard backups.count > keep else { return }
+        for name in backups.prefix(backups.count - keep) {
+            try? fm.removeItem(atPath: (dir as NSString).appendingPathComponent(name))
         }
     }
 
@@ -128,15 +144,17 @@ extension DownloadManager {
     // MARK: Completion side-effects
 
     /// React to a download reaching `.completed`: optionally screen the finished
-    /// file with the configured antivirus and delete a consumed local `.torrent`.
-    /// Both run off-actor and best-effort — neither can stall or crash the queue.
+    /// file with the configured antivirus, run the user's post-download actions,
+    /// and delete a consumed local `.torrent`. All run off-actor and best-effort
+    /// — none can stall or crash the queue.
     func onDownloadCompleted(_ task: DownloadTask) {
         if settings.antivirusEnabled {
+            let id = task.id
             let path = task.savePath
             let executable = settings.antivirusExecutablePath
             let template = settings.antivirusArgumentTemplate
             let scanner = self.scanner
-            Task.detached {
+            Task.detached { [weak self] in
                 let passed = await scanner.scan(
                     path: path, executablePath: executable, argumentTemplate: template
                 )
@@ -145,9 +163,51 @@ extension DownloadManager {
                         Data("[GoelDownloader] antivirus scan flagged or failed: \(path)\n".utf8)
                     )
                 }
+                await self?.recordScanVerdict(id, passed: passed)
             }
         }
+        runPostDownloadActions(task)
         deleteSourceTorrentIfRequested(task)
+    }
+
+    /// Fold the antivirus result back into the task so the verdict survives
+    /// relaunch and the UI can badge a flagged file.
+    func recordScanVerdict(_ id: UUID, passed: Bool) {
+        guard let i = index(of: id) else { return }
+        tasks[i].scanVerdict = passed ? "clean" : "flagged"
+        persist(tasks[i])
+        publish()
+    }
+
+    // MARK: Post-download actions
+
+    /// Run the configured post-completion actions: auto-extract recognised
+    /// archives and/or hand the file to a user script. Both detached and
+    /// best-effort; the script inherits the antivirus scanner's interpreter
+    /// blocklist and timeout by running through the same `FileScanning` port.
+    func runPostDownloadActions(_ task: DownloadTask) {
+        let path = task.savePath
+        if settings.postDownloadExtractArchives, path.lowercased().hasSuffix(".zip") {
+            let directory = task.saveDirectory
+            Task.detached {
+                let unzip = Process()
+                unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+                let target = (directory as NSString)
+                    .appendingPathComponent((path as NSString).lastPathComponent + " extracted")
+                unzip.arguments = ["-x", "-k", path, target]
+                try? unzip.run()
+                unzip.waitUntilExit()
+            }
+        }
+        if settings.postDownloadScriptEnabled, !settings.postDownloadScriptPath.isEmpty {
+            let executable = settings.postDownloadScriptPath
+            let template = settings.postDownloadScriptArgs
+            let scanner = self.scanner
+            Task.detached {
+                _ = await scanner.scan(path: path, executablePath: executable,
+                                       argumentTemplate: template)
+            }
+        }
     }
 
     /// Delete the originating local `.torrent` file once its download has the full

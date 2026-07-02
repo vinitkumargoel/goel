@@ -15,6 +15,7 @@ extension DownloadManager {
         await httpEngine.applyLimits(profile)
         await torrentEngine.applyLimits(profile)
         await hlsEngine.applyLimits(profile)
+        await ftpEngine.applyLimits(profile)
     }
 
     /// Push limits *and* the network/session configuration derived from the
@@ -26,7 +27,7 @@ extension DownloadManager {
     func applyEngineConfigs() async {
         await applyLimits()
         let configuration = engineConfiguration()
-        for engine in [httpEngine, torrentEngine, hlsEngine] {
+        for engine in [httpEngine, torrentEngine, hlsEngine, ftpEngine] {
             await engine.configure(configuration)
         }
     }

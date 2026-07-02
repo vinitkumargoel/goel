@@ -112,6 +112,9 @@ final class SegmentedTransfer: Sendable {
         // One governor per download: it begins at the requested fan-out and
         // adapts down to the server's real concurrent-connection ceiling.
         let governor = ConnectionGovernor(limit: ranges.count)
+        // Segments spread across the primary + mirrors round-robin; a mirror
+        // that misbehaves is demoted and its segment retries elsewhere.
+        let pool = MirrorPool(primary: plan.url, mirrors: plan.mirrors)
 
         try await withThrowingTaskGroup(of: Void.self) { group in
             for (i, range) in ranges.enumerated() {
@@ -120,7 +123,7 @@ final class SegmentedTransfer: Sendable {
                 if segStart > range.end { continue } // segment already complete
                 group.addTask {
                     try await self.downloadSegment(session: session, governor: governor, limiter: limiter,
-                                                   ledger: ledger, url: self.plan.url, index: i,
+                                                   ledger: ledger, pool: pool, index: i,
                                                    from: segStart, to: range.end, fileURL: self.plan.destination)
                 }
             }
@@ -137,7 +140,7 @@ final class SegmentedTransfer: Sendable {
     /// the whole point of segmented downloading. It hops to the ledger actor (via
     /// `await ledger.advance`) only once per ~`flushSize` flush.
     private func downloadSegment(session: URLSession, governor: ConnectionGovernor, limiter: RateLimiter?,
-                                 ledger: Ledger, url: URL, index: Int,
+                                 ledger: Ledger, pool: MirrorPool, index: Int,
                                  from start: Int64, to end: Int64, fileURL: URL) async throws {
         let settings = plan.settings
         let flushSize = plan.flushSize
@@ -151,13 +154,15 @@ final class SegmentedTransfer: Sendable {
             while start + written <= end {
                 attempt += 1
                 let segStart = start + written
+                let url = await pool.url(segment: index, attempt: attempt)
+                let isMirror = url != plan.url
 
                 // Wait for a connection slot. The governor adapts the ceiling to
                 // what the server actually tolerates (see ``ConnectionGovernor``).
                 // Each `acquire()` below is balanced by exactly one `release()` on
                 // every exit path of this attempt.
                 await governor.acquire()
-                var req = Self.makeRequest(url, userAgent: settings.userAgent)
+                var req = request(for: url)
                 req.setValue("bytes=\(segStart)-\(end)", forHTTPHeaderField: "Range")
 
                 let bytes: URLSession.AsyncBytes
@@ -169,6 +174,7 @@ final class SegmentedTransfer: Sendable {
                     }
                     bytes = b; http = h
                 } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
+                    if isMirror { await pool.demote(url) }
                     await governor.release()
                     try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
                     continue
@@ -178,6 +184,7 @@ final class SegmentedTransfer: Sendable {
 
                 if Self.isRetryableStatus(http.statusCode) {
                     for try await _ in bytes {}                       // drain the error body
+                    if isMirror { await pool.demote(url) }
                     await governor.throttleDown()                    // server pushed back: shrink the ceiling
                     await governor.release()
                     if attempt >= settings.maxAttempts { throw DownloadError.httpStatus(http.statusCode) }
@@ -187,10 +194,26 @@ final class SegmentedTransfer: Sendable {
                 // Segments accept ONLY 206. A server that advertised range support
                 // but answers a real ranged GET with 200 (full body) would have
                 // every segment seek to its own offset and write the WHOLE file
-                // there, overwriting siblings and corrupting the result. Reject it
-                // as a clean, visible failure instead.
+                // there, overwriting siblings and corrupting the result. A mirror
+                // that can't do ranges is demoted; the primary fails visibly.
                 guard http.statusCode == 206 else {
-                    await governor.release(); throw DownloadError.httpStatus(http.statusCode)
+                    await governor.release()
+                    if isMirror, attempt < settings.maxAttempts {
+                        await pool.demote(url)
+                        continue
+                    }
+                    throw DownloadError.httpStatus(http.statusCode)
+                }
+                // A mirror must be serving the same representation: its 206 has
+                // to describe the same total size. Divergent mirrors are demoted
+                // and the segment retries elsewhere (the wrong body is dropped
+                // unconsumed, which cancels the underlying request).
+                if isMirror, let expected = plan.totalBytes,
+                   Self.contentRangeTotal(http) != expected {
+                    await pool.demote(url)
+                    await governor.release()
+                    if attempt >= settings.maxAttempts { throw DownloadError.remoteFileChanged }
+                    continue
                 }
 
                 do {
@@ -223,7 +246,8 @@ final class SegmentedTransfer: Sendable {
                     }
                 } catch let error where !(error is CancellationError) && Self.isTransient(error) && attempt < settings.maxAttempts {
                     // Connection dropped mid-stream: back off and resume from the
-                    // last flushed offset.
+                    // last flushed offset (on another mirror if this one flaked).
+                    if isMirror { await pool.demote(url) }
                     await governor.release()
                     try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
                     continue
@@ -275,7 +299,7 @@ final class SegmentedTransfer: Sendable {
         let bytes: URLSession.AsyncBytes
         while true {
             attempt += 1
-            let req = Self.makeRequest(url, userAgent: settings.userAgent)
+            let req = Self.makeRequest(url, settings: settings)
             do {
                 let (stream, resp) = try await session.bytes(for: req)
                 guard let http = resp as? HTTPURLResponse else { throw DownloadError.network("No HTTP response") }
@@ -355,13 +379,35 @@ final class SegmentedTransfer: Sendable {
 
     // MARK: Request building & retry policy
 
-    /// Builds a request carrying the client `User-Agent`. All outbound requests
-    /// must go through here so none are sent UA-less (a missing UA causes some
+    /// Builds a request carrying the client `User-Agent` (and the preemptive
+    /// `Authorization` header for protected hosts). All outbound requests must
+    /// go through here so none are sent UA-less (a missing UA causes some
     /// CDNs / WAFs to reset the connection, surfacing as -1005).
-    static func makeRequest(_ url: URL, userAgent: String) -> URLRequest {
+    static func makeRequest(_ url: URL, settings: RequestSettings) -> URLRequest {
         var req = URLRequest(url: url)
-        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        req.setValue(settings.userAgent, forHTTPHeaderField: "User-Agent")
+        if let auth = settings.authorization {
+            req.setValue(auth, forHTTPHeaderField: "Authorization")
+        }
         return req
+    }
+
+    /// A request for any pool URL. The stored `Authorization` was resolved for
+    /// the PRIMARY host — it must never ride to a mirror on a different host
+    /// (that would hand the user's credentials to whoever runs the mirror).
+    private func request(for url: URL) -> URLRequest {
+        var settings = plan.settings
+        if settings.authorization != nil,
+           url.host?.lowercased() != plan.url.host?.lowercased() {
+            settings.authorization = nil
+        }
+        return Self.makeRequest(url, settings: settings)
+    }
+
+    /// The total-size suffix of a 206's `Content-Range` ("bytes 0-99/12345").
+    static func contentRangeTotal(_ http: HTTPURLResponse) -> Int64? {
+        http.value(forHTTPHeaderField: "Content-Range")?
+            .split(separator: "/").last.flatMap { Int64($0) }
     }
 
     /// HTTP statuses worth retrying: explicit rate-limiting plus transient
@@ -472,6 +518,34 @@ final class SegmentedTransfer: Sendable {
         var completed: [Int64]
     }
 
+    // MARK: - Mirror pool
+
+    /// Distributes segments across the primary + mirrors and tracks which of
+    /// them have misbehaved. Demoted URLs are skipped; if everything ends up
+    /// demoted the slate is wiped (the pool must never go empty — the primary
+    /// deserves another chance before the whole download fails).
+    actor MirrorPool {
+        private let urls: [URL]
+        private var demoted: Set<URL> = []
+
+        init(primary: URL, mirrors: [URL]) {
+            self.urls = [primary] + mirrors.filter { $0 != primary }
+        }
+
+        /// Round-robin by segment, shifting on each retry so a failed attempt
+        /// lands on a different (healthy) URL.
+        func url(segment: Int, attempt: Int) -> URL {
+            let healthy = urls.filter { !demoted.contains($0) }
+            let pool = healthy.isEmpty ? urls : healthy
+            return pool[(segment + attempt - 1) % pool.count]
+        }
+
+        func demote(_ url: URL) {
+            demoted.insert(url)
+            if demoted.count >= urls.count { demoted.removeAll() }
+        }
+    }
+
     // MARK: - Ledger
 
     /// The single point of mutable transfer state. The byte pumps hop here once
@@ -488,6 +562,9 @@ final class SegmentedTransfer: Sendable {
         private var lastEmit = Date.distantPast
         private var lastEmitBytes: Int64 = 0
         private var lastResumeEmit = Date.distantPast
+        /// Per-segment two-point speed window for the ~1 Hz connections snapshot.
+        private var lastConnectionsEmit = Date.distantPast
+        private var lastConnectionsBytes: [Int: Int64] = [:]
 
         init(continuation: AsyncStream<TransferProgress>.Continuation, meta: CursorMeta?,
              initialSegmentBytes: [Int: Int64], connectionCount: Int) {
@@ -515,7 +592,41 @@ final class SegmentedTransfer: Sendable {
 
             continuation.yield(TransferProgress(
                 bytesDownloaded: total, downloadSpeed: speed,
-                connectionCount: connectionCount, resumeData: maybeResume(now: now)))
+                connectionCount: connectionCount, resumeData: maybeResume(now: now),
+                connections: maybeConnections(now: now, overallSpeed: speed)))
+        }
+
+        /// A per-segment snapshot for the detail panel's Connections/Progress
+        /// tabs, throttled to ~1 Hz. Single-stream transfers (no range plan)
+        /// report one connection row.
+        private func maybeConnections(now: Date, overallSpeed: Double) -> [TaskConnection]? {
+            let dt = now.timeIntervalSince(lastConnectionsEmit)
+            guard dt >= 1.0 else { return nil }
+            defer {
+                lastConnectionsEmit = now
+                lastConnectionsBytes = segmentBytes
+            }
+            guard let meta else {
+                return [TaskConnection(
+                    id: "seg-0", label: "Connection 1", detail: "single stream",
+                    downloadSpeed: overallSpeed, progress: 0)]
+            }
+            return meta.ranges.indices.map { i in
+                let range = meta.ranges[i]
+                let length = range.end - range.start + 1
+                let done = segmentBytes[i] ?? 0
+                let speed = dt < 3600 ? Double(done - (lastConnectionsBytes[i] ?? 0)) / dt : 0
+                return TaskConnection(
+                    id: "seg-\(i)",
+                    label: "Segment \(i + 1)",
+                    detail: "\(Self.byteLabel(range.start)) – \(Self.byteLabel(range.end + 1))",
+                    downloadSpeed: max(0, speed),
+                    progress: length > 0 ? min(1, Double(done) / Double(length)) : 0)
+            }
+        }
+
+        private static func byteLabel(_ n: Int64) -> String {
+            ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
         }
 
         /// A fresh resume cursor, throttled to once a second (nil for single-stream
@@ -562,6 +673,10 @@ struct TransferPlan: Sendable {
     var settings: RequestSettings
     var maxBytesPerSecond: Int64
     var flushSize: Int
+    /// Alternative URLs for the same bytes. Only the segmented path uses them
+    /// (a 206's Content-Range total proves a mirror serves the same file; the
+    /// single-stream path has no such check, so it stays on the primary).
+    var mirrors: [URL] = []
 }
 
 /// Per-request knobs threaded into the byte pumps (which read no actor state).
@@ -569,6 +684,8 @@ struct RequestSettings: Sendable {
     var userAgent: String
     var maxAttempts: Int
     var retryInterval: Double
+    /// Preemptive `Authorization` header for protected hosts (nil = none).
+    var authorization: String?
 }
 
 /// The result of a finished transfer.
@@ -585,4 +702,6 @@ struct TransferProgress: Sendable {
     var connectionCount: Int
     /// A fresh resume cursor, present only on the (1 Hz) ticks that build one.
     var resumeData: Data?
+    /// Per-segment snapshots, present only on the (~1 Hz) ticks that build them.
+    var connections: [TaskConnection]?
 }

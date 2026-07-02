@@ -54,3 +54,6 @@ build/
 # ---- Local scratch binaries (one-off Sendable/audit probes) ----
 /check_sendable
 /check_sendable_strict
+
+# ---- UI scratch (contains a stale built .app + screenshots) ----
+/scratchpad-app/

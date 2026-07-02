@@ -5,6 +5,7 @@ public enum DownloadKind: String, Codable, Sendable, CaseIterable {
     case http
     case torrent
     case hls
+    case ftp
 }
 
 /// Per-file selection / priority within a multi-file transfer.
@@ -114,7 +115,11 @@ public enum DownloadSource: Codable, Sendable, Hashable {
 
     public var kind: DownloadKind {
         switch self {
-        case .url: return .http
+        case .url(let url):
+            // `.url` covers both engines' direct downloads; the scheme decides
+            // (reusing the case keeps every persisted blob decodable).
+            let scheme = url.scheme?.lowercased() ?? ""
+            return (scheme == "ftp" || scheme == "ftps") ? .ftp : .http
         case .magnet, .torrentFile: return .torrent
         case .hlsStream: return .hls
         }
@@ -149,25 +154,39 @@ public enum DownloadSource: Codable, Sendable, Hashable {
 
     /// Parse a raw, user-entered line into a source, enforcing a scheme allowlist.
     ///
-    /// Accepts `magnet:` links, `*.torrent` URLs, and HTTP(S) URLs only. Anything
-    /// else — `file:`, `ftp:`, `javascript:`, schemeless junk — is rejected
-    /// (returns `nil`). This is the single front door for adding downloads, so the
-    /// allowlist is enforced in one place (defends against SSRF / local-file reads).
+    /// Accepts `magnet:` links, `*.torrent` URLs, HTTP(S) URLs, and FTP(S) URLs
+    /// only. Anything else — `file:`, `javascript:`, schemeless junk — is
+    /// rejected (returns `nil`). This is the single front door for adding
+    /// downloads, so the allowlist is enforced in one place (defends against
+    /// SSRF / local-file reads).
     public static func parse(_ line: String) -> DownloadSource? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let lower = trimmed.lowercased()
         if lower.hasPrefix("magnet:") { return .magnet(trimmed) }
-        if lower.hasSuffix(".torrent"), let url = URL(string: trimmed) {
+        // The scheme check must run BEFORE the `.torrent`-suffix routing —
+        // otherwise `file:///…/x.torrent` (local-file read) or any other
+        // scheme URLSession accepts would slip past the allowlist via the
+        // suffix. Local `.torrent` files enter through the watch-folder /
+        // file-open paths, which construct `.torrentFile` directly from a
+        // user-action file URL and never go through `parse`.
+        if lower.hasSuffix(".torrent"),
+           let url = URL(string: trimmed),
+           let scheme = url.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
             return .torrentFile(url)
         }
         if let url = URL(string: trimmed),
-           let scheme = url.scheme?.lowercased(),
-           scheme == "http" || scheme == "https" {
-            // An `.m3u8` URL is an HLS stream playlist, routed to the HLS engine.
-            // `pathExtension` ignores any `?query` so tokenised CDN URLs still match.
-            if url.pathExtension.lowercased() == "m3u8" { return .hlsStream(url) }
-            return .url(url)
+           let scheme = url.scheme?.lowercased() {
+            if scheme == "http" || scheme == "https" {
+                // An `.m3u8` URL is an HLS stream playlist, routed to the HLS engine.
+                // `pathExtension` ignores any `?query` so tokenised CDN URLs still match.
+                if url.pathExtension.lowercased() == "m3u8" { return .hlsStream(url) }
+                return .url(url)
+            }
+            if scheme == "ftp" || scheme == "ftps" {
+                return .url(url)   // kind derives .ftp from the scheme
+            }
         }
         return nil
     }

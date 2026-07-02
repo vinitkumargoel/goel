@@ -36,6 +36,10 @@ extension DownloadManager {
                     case .saveTask(let task): try store.saveTask(task)
                     case .deleteTask(let id): try store.deleteTask(id)
                     case .saveSettings(let settings): try store.saveSettings(settings)
+                    case .saveStats(let stats): try store.saveStats(stats)
+                    case .saveHistory(let entry): try store.saveHistoryEntry(entry)
+                    case .deleteHistory(let id): try store.deleteHistoryEntry(id)
+                    case .clearHistory: try store.clearHistory()
                     }
                 } catch {
                     await self?.notePersistenceError(error)
@@ -64,5 +68,38 @@ extension DownloadManager {
         guard store != nil else { return }
         ensurePersistWorker()
         persistContinuation?.yield(.deleteTask(id))
+    }
+
+    /// Archive a completed download on the serial pipeline.
+    func persistHistory(_ entry: HistoryEntry) {
+        guard store != nil else { return }
+        ensurePersistWorker()
+        persistContinuation?.yield(.saveHistory(entry))
+    }
+
+    /// Remove one archived entry on the serial pipeline.
+    func persistHistoryRemoval(_ id: UUID) {
+        guard store != nil else { return }
+        ensurePersistWorker()
+        persistContinuation?.yield(.deleteHistory(id))
+    }
+
+    /// Wipe the archive on the serial pipeline.
+    func persistHistoryClear() {
+        guard store != nil else { return }
+        ensurePersistWorker()
+        persistContinuation?.yield(.clearHistory)
+    }
+
+    /// Persist the transfer statistics on the serial pipeline. Progress-driven
+    /// calls are throttled to ~30 s of churn; pass `force: true` on meaningful
+    /// transitions (a completed download) to flush immediately.
+    func persistStats(force: Bool = false) {
+        guard store != nil else { return }
+        let now = Date()
+        guard force || now.timeIntervalSince(lastStatsFlush) >= 30 else { return }
+        lastStatsFlush = now
+        ensurePersistWorker()
+        persistContinuation?.yield(.saveStats(stats))
     }
 }

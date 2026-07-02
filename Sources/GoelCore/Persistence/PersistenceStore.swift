@@ -63,6 +63,13 @@ public final class PersistenceStore: @unchecked Sendable {
                 t.column("data", .blob).notNull()
             }
         }
+        migrator.registerMigration("v2-history") { db in
+            try db.create(table: "history") { t in
+                t.column("id", .text).primaryKey()
+                t.column("completedAt", .double).notNull()
+                t.column("data", .blob).notNull()
+            }
+        }
         return migrator
     }()
 
@@ -160,6 +167,88 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
+    // MARK: Transfer statistics
+
+    /// The fixed key under which the singleton ``TransferStats`` blob is stored
+    /// (same key/value table as the settings).
+    private static let statsKey = "stats"
+
+    /// Persist the lifetime/per-day transfer statistics.
+    public func saveStats(_ stats: TransferStats) throws {
+        let data = try encoder.encode(stats)
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO settings (key, data) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET data = excluded.data
+                """,
+                arguments: [Self.statsKey, data]
+            )
+        }
+    }
+
+    /// Load the persisted statistics, or `nil` if none were ever saved.
+    public func loadStats() throws -> TransferStats? {
+        try dbQueue.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT data FROM settings WHERE key = ?",
+                arguments: [Self.statsKey]
+            ) else { return nil }
+            let data: Data = row["data"]
+            return try self.decoder.decode(TransferStats.self, from: data)
+        }
+    }
+
+    // MARK: Download history
+
+    /// Archive (or refresh) one completed download.
+    public func saveHistoryEntry(_ entry: HistoryEntry) throws {
+        let data = try encoder.encode(entry)
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO history (id, completedAt, data) VALUES (?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    completedAt = excluded.completedAt,
+                    data        = excluded.data
+                """,
+                arguments: [entry.id.uuidString,
+                            entry.completedAt.timeIntervalSinceReferenceDate,
+                            data]
+            )
+        }
+    }
+
+    /// The archived downloads, newest first, capped at `limit`.
+    public func loadHistory(limit: Int = 1000) throws -> [HistoryEntry] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT data FROM history ORDER BY completedAt DESC LIMIT ?",
+                arguments: [limit]
+            )
+            return rows.compactMap { row in
+                let data: Data = row["data"]
+                return try? self.decoder.decode(HistoryEntry.self, from: data)
+            }
+        }
+    }
+
+    /// Remove one archived entry.
+    public func deleteHistoryEntry(_ id: UUID) throws {
+        _ = try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM history WHERE id = ?", arguments: [id.uuidString])
+        }
+    }
+
+    /// Wipe the archive.
+    public func clearHistory() throws {
+        _ = try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM history")
+        }
+    }
+
     // MARK: Export / Import
 
     /// Export the full download list as a self-contained JSON array.
@@ -180,23 +269,24 @@ public final class PersistenceStore: @unchecked Sendable {
     @discardableResult
     public func importList(_ data: Data) throws -> [DownloadTask] {
         let decoded = try decoder.decode([DownloadTask].self, from: data)
-        // Security: an imported file is untrusted input. Re-sanitize each `name`
-        // so it can't carry a path-traversal payload, and reject a `saveDirectory`
-        // that isn't an absolute, non-traversing path — a relative or `..`-laden
-        // directory would otherwise resolve writes/deletes to an arbitrary location.
-        // Such entries fall back to the system Downloads folder.
-        let safeRoot = AppSettings.systemDownloadsDirectory
-        let tasks = decoded.map { task -> DownloadTask in
-            var t = task
-            t.name = DownloadTask.sanitizedName(t.name, fallback: "download")
-            let dir = t.saveDirectory
-            if !dir.hasPrefix("/") || dir.split(separator: "/").contains("..") {
-                t.saveDirectory = safeRoot
-            }
-            return t
-        }
+        let tasks = decoded.map(Self.sanitizedForImport)
         try saveTasks(tasks)
         return tasks
+    }
+
+    /// Security: an imported file is untrusted input. Re-sanitize the `name` so
+    /// it can't carry a path-traversal payload, and reject a `saveDirectory`
+    /// that isn't an absolute, non-traversing path — a relative or `..`-laden
+    /// directory would otherwise resolve writes/deletes to an arbitrary
+    /// location. Such entries fall back to the system Downloads folder.
+    public static func sanitizedForImport(_ task: DownloadTask) -> DownloadTask {
+        var t = task
+        t.name = DownloadTask.sanitizedName(t.name, fallback: "download")
+        let dir = t.saveDirectory
+        if !dir.hasPrefix("/") || dir.split(separator: "/").contains("..") {
+            t.saveDirectory = AppSettings.systemDownloadsDirectory
+        }
+        return t
     }
 
     // MARK: Helpers

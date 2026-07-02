@@ -12,6 +12,10 @@ extension DownloadManager {
     /// is done synchronously so the cap decision is atomic; the (async) engine
     /// calls are then fired without holding up the decision.
     func schedule() {
+        // Outside the configured download window nothing is promoted; tasks
+        // stay `.queued` until the window reopens (or scheduling is disabled).
+        guard scheduleWindowOpen else { return }
+
         let profile = settings.selectedProfile
         let maxDownloads = profile.maxSimultaneousDownloads > 0 ? profile.maxSimultaneousDownloads : .max
         let maxMetadata = profile.maxMetadataResolutions > 0 ? profile.maxMetadataResolutions : .max

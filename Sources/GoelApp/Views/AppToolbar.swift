@@ -19,46 +19,27 @@ struct AppToolbar: View {
 
             Divider().frame(height: 20)
 
-            Menu {
-                Button("Select all") { vm.selectAll() }
-                Button("Select none") { vm.selectNone() }
-                Button("Select completed") { vm.selectCompleted() }
-            } label: {
-                Label("Select", systemImage: "checkmark.circle")
+            ActionMenu(items: [
+                .button("Select all") { vm.selectAll() },
+                .button("Select none") { vm.selectNone() },
+                .button("Select completed") { vm.selectCompleted() },
+            ]) { open in
+                ToolbarMenuLabel(title: "Select", systemImage: "checkmark.circle", active: open)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
 
-            Menu {
-                ForEach(SortKey.allCases) { key in
-                    Button {
-                        vm.toggleSort(key)
-                    } label: {
-                        HStack {
-                            Text(key.rawValue)
-                            if vm.sortKey == key {
-                                Image(systemName: vm.sortAscending ? "chevron.up" : "chevron.down")
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Label("Sort", systemImage: "arrow.up.arrow.down")
+            ActionMenu(items: sortItems) { open in
+                ToolbarMenuLabel(title: "Sort", systemImage: "arrow.up.arrow.down", active: open)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
 
-            Menu {
-                Button("All files") { vm.filter = .all }
-                Button("Active") { vm.filter = .active }
-                Button("Paused") { vm.filter = .paused }
-                Button("Completed") { vm.filter = .completed }
-                Button("Seeding") { vm.filter = .seeding }
-            } label: {
-                Label("Filter", systemImage: "line.3.horizontal.decrease.circle")
+            ActionMenu(items: [
+                .button("All files") { vm.filter = .all },
+                .button("Active") { vm.filter = .active },
+                .button("Paused") { vm.filter = .paused },
+                .button("Completed") { vm.filter = .completed },
+                .button("Seeding") { vm.filter = .seeding },
+            ]) { open in
+                ToolbarMenuLabel(title: "Filter", systemImage: "line.3.horizontal.decrease.circle", active: open)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
 
             Spacer()
 
@@ -88,5 +69,15 @@ struct AppToolbar: View {
         .padding(.horizontal, 14)
         .frame(height: 52)
         .background(.bar)
+    }
+
+    /// Sort rows, with an up/down chevron marking the active key's direction.
+    private var sortItems: [ActionMenuItem] {
+        SortKey.allCases.map { key in
+            .button(key.rawValue,
+                    trailing: vm.sortKey == key ? (vm.sortAscending ? "chevron.up" : "chevron.down") : nil) {
+                vm.toggleSort(key)
+            }
+        }
     }
 }

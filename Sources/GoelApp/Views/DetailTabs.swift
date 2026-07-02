@@ -79,6 +79,8 @@ struct GeneralTab: View {
             .font(.system(size: 11.5))
             .foregroundStyle(.secondary)
 
+            TaskSpeedGraph(taskID: task.id)
+
             if case .failed(let error) = task.status {
                 Text("⚠ \(error.message)")
                     .font(.system(size: 12))
@@ -86,6 +88,16 @@ struct GeneralTab: View {
                     .padding(11)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+                    .padding(.top, 10)
+            }
+
+            if task.scanVerdict == "flagged" {
+                Text("⚠ Antivirus flagged this file — inspect it before opening.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.orange)
+                    .padding(11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
                     .padding(.top, 10)
             }
 
@@ -99,6 +111,21 @@ struct GeneralTab: View {
             }
             KVRow(key: "Added", value: task.addedString)
             KVRow(key: "Priority", value: task.priority.displayName)
+            if let verdict = task.scanVerdict {
+                KVRow(key: "Antivirus", value: verdict == "clean" ? "Clean" : "Flagged",
+                      valueColor: verdict == "clean" ? Theme.green : Theme.orange)
+            }
+            if let cap = task.speedLimitBytesPerSec, cap > 0 {
+                KVRow(key: "Speed limit", value: Double(cap).speedString)
+            }
+            if let startAt = task.scheduledAt, task.status == .paused {
+                KVRow(key: "Scheduled start",
+                      value: startAt.formatted(date: .abbreviated, time: .shortened),
+                      valueColor: Theme.accent)
+            }
+            if let mirrors = task.mirrors, !mirrors.isEmpty {
+                KVRow(key: "Mirrors", value: "\(mirrors.count) alternative source\(mirrors.count == 1 ? "" : "s")")
+            }
             KVRow(key: "Source", value: task.sourceLocator, copyable: true)
         }
     }
@@ -108,51 +135,80 @@ struct GeneralTab: View {
 
 struct DetailsTab: View {
     let task: DownloadTask
+    @EnvironmentObject private var vm: AppViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if task.kind == .torrent {
                 KVRow(key: "Info hash", value: task.infoHash ?? "—", copyable: task.infoHash != nil)
-                KVRow(key: "Pieces", value: pieceText)
                 KVRow(key: "Peers", value: "\(task.connectionCount) connected")
-                KVRow(key: "Seeds", value: "\(task.seedCount) available")
-                KVRow(key: "Protocol", value: "BitTorrent v1 · DHT · PeX")
-                KVRow(key: "Encryption", value: "Enabled (prefer)")
-                SectionLabel(text: "Trackers")
-                Text("udp://tracker.opentrackr.org:1337\nudp://open.demonii.com:1337\nudp://tracker.torrent.eu.org:451")
-                    .font(.system(size: 11.5, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                KVRow(key: "Seeds", value: task.seedCount.map { "\($0) available" } ?? "—")
+                KVRow(key: "Protocol", value: torrentProtocol)
+                KVRow(key: "Encryption", value: encryptionText)
+                if task.sequentialDownload == true {
+                    KVRow(key: "Piece order", value: "Sequential (streaming)", valueColor: Theme.teal)
+                }
+                if !trackers.isEmpty {
+                    SectionLabel(text: "Trackers")
+                    Text(trackers.joined(separator: "\n"))
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 KVRow(key: "URL", value: task.sourceLocator, copyable: true)
-                KVRow(key: "MIME type", value: mimeType)
-                // TODO: "Server", "Range support" and "ETag" are illustrative
-                // placeholders — the frozen core model doesn't surface live response
-                // headers yet. Wire these from real metadata when the engine exposes it.
-                KVRow(key: "Server", value: "nginx · HTTP/2")
-                KVRow(key: "Range support", value: "Yes (Accept-Ranges)", valueColor: Theme.green)
+                KVRow(key: "MIME type", value: task.remoteInfo?.mimeType ?? "—")
+                KVRow(key: "Server", value: task.remoteInfo?.server ?? "—")
+                KVRow(key: "Range support", value: rangeText, valueColor: rangeColor)
                 KVRow(key: "Segments", value: "\(max(1, task.connectionCount)) connections")
-                KVRow(key: "Resumable", value: task.resumeData != nil ? "Yes" : "Pending", valueColor: Theme.green)
-                KVRow(key: "ETag", value: "\"a3f9-62b1c0\"")
+                KVRow(key: "Resumable", value: task.resumeData != nil ? "Yes" : "Pending",
+                      valueColor: task.resumeData != nil ? Theme.green : .secondary)
+                KVRow(key: "ETag", value: task.remoteInfo?.etag ?? "—")
                 KVRow(key: "Checksum", value: checksumValue, valueColor: checksumColor)
             }
         }
     }
 
-    /// MIME type inferred from the file category, mirroring the design's `mimeFor()`.
-    private var mimeType: String {
-        switch task.fileType {
-        case .iso: return "application/x-iso9660-image"
-        case .video: return "video/x-matroska"
-        case .archive: return "application/gzip"
-        case .magnet: return "application/x-bittorrent"
-        case .app, .doc: return "application/octet-stream"
+    /// Real feature flags from the active BitTorrent settings.
+    private var torrentProtocol: String {
+        var parts = ["BitTorrent"]
+        if vm.settings.btEnableDHT { parts.append("DHT") }
+        if vm.settings.btEnablePeX { parts.append("PeX") }
+        if vm.settings.btEnableLPD { parts.append("LPD") }
+        return parts.joined(separator: " · ")
+    }
+
+    private var encryptionText: String {
+        switch vm.settings.btEncryptionMode {
+        case "require": return "Required"
+        case "disable": return "Disabled"
+        default: return "Enabled (prefer)"
         }
     }
 
-    private var pieceText: String {
-        guard let total = task.totalBytes else { return "—" }
-        let pieceSize: Int64 = 4 * 1024 * 1024
-        return "\(max(1, Int((total + pieceSize - 1) / pieceSize))) × 4 MB"
+    /// Tracker URLs parsed from the magnet's `tr=` parameters (real data — a
+    /// `.torrent` file's tracker list isn't surfaced by the engine yet).
+    private var trackers: [String] {
+        guard case .magnet = task.source,
+              let components = URLComponents(string: task.sourceLocator) else { return [] }
+        return (components.queryItems ?? [])
+            .filter { $0.name == "tr" }
+            .compactMap(\.value)
+    }
+
+    private var rangeText: String {
+        switch task.remoteInfo?.acceptRanges {
+        case .some(true): return "Yes (Accept-Ranges)"
+        case .some(false): return "No — single connection"
+        case .none: return "—"
+        }
+    }
+
+    private var rangeColor: Color {
+        switch task.remoteInfo?.acceptRanges {
+        case .some(true): return Theme.green
+        case .some(false): return Theme.orange
+        case .none: return .secondary
+        }
     }
 
     /// Reflects the integrity-check state for the HTTP "Checksum" row.
@@ -211,23 +267,37 @@ struct ProgressTab: View {
     }
 
     private var segments: some View {
-        let count = max(1, task.connectionCount)
-        let pct = task.fractionCompleted
+        let live = task.connections ?? []
         return VStack(alignment: .leading, spacing: 9) {
-            SectionLabel(text: "\(count) parallel segments")
-            ForEach(0..<count, id: \.self) { i in
-                let jitter = task.status == .downloading ? Double((i * 7) % 23 - 11) / 100 : 0
-                let sp = max(0, min(1, pct + jitter))
+            if live.isEmpty {
+                // No live per-segment data (queued / paused / completed / single
+                // stream before the first tick): show the aggregate bar honestly.
+                SectionLabel(text: "Overall progress")
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("Segment \(i + 1)")
+                        Text(task.name).lineLimit(1).truncationMode(.middle)
                         Spacer()
-                        Text("\(Int((sp * 100).rounded()))%")
+                        Text("\(Int((task.fractionCompleted * 100).rounded()))%")
                     }
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    ProgressView(value: sp)
+                    ProgressView(value: task.fractionCompleted)
                         .tint(task.status == .completed ? Theme.green : Theme.accent)
+                }
+            } else {
+                SectionLabel(text: "\(live.count) parallel segments")
+                ForEach(live) { segment in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(segment.label)
+                            Spacer()
+                            Text("\(Int((segment.progress * 100).rounded()))%")
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        ProgressView(value: segment.progress)
+                            .tint(segment.progress >= 1 ? Theme.green : Theme.accent)
+                    }
                 }
             }
         }
@@ -303,15 +373,21 @@ struct FilesTab: View {
                 .monospacedDigit()
 
             if let fileID {
-                Menu(priority.displayName) {
-                    ForEach([FilePriority.skip, .low, .normal, .high], id: \.self) { p in
-                        Button(p.displayName) { vm.setFilePriority(p, fileID: fileID, task: task.id) }
+                ActionMenu(items: [FilePriority.skip, .low, .normal, .high].map { p in
+                    .button(p.displayName) { vm.setFilePriority(p, fileID: fileID, task: task.id) }
+                }, menuWidth: 130) { open in
+                    HStack(spacing: 3) {
+                        Text(priority.displayName)
+                        Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold))
                     }
+                    .font(.system(size: 10))
+                    .foregroundStyle(priority == .high ? Theme.orange : Color.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(open ? Color.primary.opacity(0.08) : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 5))
+                    .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .font(.system(size: 10))
-                .foregroundStyle(priority == .high ? Theme.orange : Color.secondary)
             }
         }
         .padding(.vertical, 8)
@@ -332,28 +408,19 @@ struct ConnectionsTab: View {
     }
 
     private var peers: some View {
-        let sample: [(String, String, Double, Double)] = [
-            ("🇳🇱", "185.21.216.x:51413", 2.1, 0.4),
-            ("🇩🇪", "92.118.37.x:6881", 1.8, 0.9),
-            ("🇺🇸", "73.158.44.x:6889", 1.2, 0.2),
-            ("🇯🇵", "203.0.113.x:51820", 0.9, 0.6),
-            ("🇫🇷", "45.83.91.x:6881", 0.6, 1.1),
-        ]
-        let active = task.status == .downloading || task.status == .seeding
-        // No `max(1, …)` floor: an idle/paused/completed task has zero live peers,
-        // so the row count must match the header count (and a completed transfer
-        // shows none) rather than always forcing one sample row.
-        let shown = Array(sample.prefix(min(sample.count, task.connectionCount)))
+        let live = task.connections ?? []
+        let seeds = task.seedCount.map { " · \($0) seeds" } ?? ""
         return VStack(alignment: .leading, spacing: 0) {
-            SectionLabel(text: "\(task.connectionCount) peers · \(task.seedCount) seeds")
-            if shown.isEmpty {
+            SectionLabel(text: "\(task.connectionCount) peers\(seeds)")
+            if live.isEmpty {
                 emptyConnections("No active peers")
             } else {
                 connHeader(left: "Peer", trailing: "↑")
-                ForEach(Array(shown.enumerated()), id: \.offset) { _, p in
-                    connRow(label: "\(p.0) \(p.1)",
-                            down: active ? p.2 : 0,
-                            trailing: String(format: "%.1f", active ? p.3 : 0),
+                ForEach(live) { peer in
+                    connRow(label: peer.label,
+                            subtitle: peer.detail,
+                            down: peer.downloadSpeed,
+                            trailing: (peer.uploadSpeed / 1_000_000).oneDecimal,
                             trailingColor: Theme.teal)
                 }
             }
@@ -361,22 +428,20 @@ struct ConnectionsTab: View {
     }
 
     private var httpConnections: some View {
-        // No floor: a completed/paused HTTP task reports `connectionCount == 0`,
-        // so the panel shows no open connections instead of a phantom one.
-        let count = task.connectionCount
-        let active = task.status == .downloading
+        let live = task.connections ?? []
         let host = URLComponents(string: task.sourceLocator)?.host ?? ""
         let label = host.isEmpty ? "HTTP connections" : "HTTP connections · \(host)"
         return VStack(alignment: .leading, spacing: 0) {
             SectionLabel(text: label)
-            if count == 0 {
+            if live.isEmpty {
                 emptyConnections("No active connections")
             } else {
-                connHeader(left: "Segment", trailing: "range")
-                ForEach(0..<count, id: \.self) { i in
-                    connRow(label: "conn #\(i + 1) · keep-alive",
-                            down: active ? Double(3 + (i * 4) % 9) : 0,
-                            trailing: "\(i * 100 / count)–\((i + 1) * 100 / count)%",
+                connHeader(left: "Segment", trailing: "done")
+                ForEach(live) { segment in
+                    connRow(label: "\(segment.label) · \(segment.detail)",
+                            subtitle: nil,
+                            down: segment.downloadSpeed,
+                            trailing: "\(Int((segment.progress * 100).rounded()))%",
                             trailingColor: .secondary)
                 }
             }
@@ -407,14 +472,24 @@ struct ConnectionsTab: View {
         }
     }
 
-    /// A transfer row. The third column is `trailing` (a peer's upload speed, or an
-    /// HTTP segment's byte range) and is tinted with `trailingColor`.
-    private func connRow(label: String, down: Double, trailing: String, trailingColor: Color) -> some View {
+    /// A transfer row. `down` is a live bytes/sec figure (rendered in MB/s); the
+    /// third column is `trailing` (a peer's upload speed, or an HTTP segment's
+    /// completion) tinted with `trailingColor`. `subtitle` shows the peer's
+    /// client name under the address when present.
+    private func connRow(label: String, subtitle: String?, down: Double,
+                         trailing: String, trailingColor: Color) -> some View {
         VStack(spacing: 0) {
             HStack {
-                Text(label).font(.system(size: 11.5)).lineLimit(1).truncationMode(.middle)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label).font(.system(size: 11.5)).lineLimit(1).truncationMode(.middle)
+                    if let subtitle, !subtitle.isEmpty, subtitle != "peer" {
+                        Text(subtitle).font(.system(size: 10)).foregroundStyle(.tertiary)
+                            .lineLimit(1).truncationMode(.tail)
+                    }
+                }
                 Spacer()
-                Text(String(format: "%.1f", down)).frame(width: 50, alignment: .trailing).foregroundStyle(Theme.green)
+                Text((down / 1_000_000).oneDecimal)
+                    .frame(width: 50, alignment: .trailing).foregroundStyle(Theme.green)
                 Text(trailing).frame(width: 56, alignment: .trailing).foregroundStyle(trailingColor)
             }
             .font(.system(size: 11.5).monospacedDigit())
@@ -424,12 +499,7 @@ struct ConnectionsTab: View {
     }
 }
 
-// MARK: - Derived display values
-
-extension DownloadTask {
-    /// A representative seed count for the swarm display. The frozen core model
-    /// carries no live seed figure, so this scales off the (real, fluctuating)
-    /// live peer count and collapses to zero whenever the swarm is down
-    /// (paused / completed / idle), matching the design's "N peers · M seeds".
-    var seedCount: Int { connectionCount * 3 }
+private extension Double {
+    /// "2.4" — one-decimal rendering for the compact MB/s columns.
+    var oneDecimal: String { String(format: "%.1f", self) }
 }

@@ -37,6 +37,39 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// fails it with ``DownloadError/checksumMismatch``. `nil` = no verification.
     public var expectedChecksum: Checksum?
 
+    /// Live per-connection snapshots (HTTP segments / torrent peers) for the
+    /// detail panel. Transient — refreshed by the engine while transferring,
+    /// meaningless after relaunch. Optional so old persisted blobs still decode.
+    public var connections: [TaskConnection]?
+
+    /// Seeds available in the swarm (torrents only), from the live session.
+    public var seedCount: Int?
+
+    /// Real facts about the remote HTTP server (Server/ETag/Accept-Ranges/MIME).
+    public var remoteInfo: RemoteInfo?
+
+    /// Result of the post-completion antivirus screen: `"clean"`, `"flagged"`,
+    /// or nil when no scan ran (disabled, or still in flight).
+    public var scanVerdict: String?
+
+    /// Optional per-task download cap in bytes/sec (0 or nil = no per-task cap;
+    /// the global profile ceiling always applies on top).
+    public var speedLimitBytesPerSec: Int64?
+
+    /// Download pieces in order (torrents) so media files become playable while
+    /// still transferring. nil/false = rarest-first (default).
+    public var sequentialDownload: Bool?
+
+    /// When set on a paused task, the scheduler starts it automatically at (or
+    /// shortly after) this time. Cleared the moment the task starts — manually
+    /// or on schedule. Survives relaunch.
+    public var scheduledAt: Date?
+
+    /// Alternative URLs serving the same file (HTTP only). Segments spread
+    /// across them and fail over when one misbehaves; every response is checked
+    /// against the primary's size so a divergent mirror is dropped, not merged.
+    public var mirrors: [String]?
+
     public init(
         id: UUID = UUID(),
         source: DownloadSource,
@@ -54,7 +87,15 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         addedAt: Date = Date(),
         completedAt: Date? = nil,
         resumeData: Data? = nil,
-        expectedChecksum: Checksum? = nil
+        expectedChecksum: Checksum? = nil,
+        connections: [TaskConnection]? = nil,
+        seedCount: Int? = nil,
+        remoteInfo: RemoteInfo? = nil,
+        scanVerdict: String? = nil,
+        speedLimitBytesPerSec: Int64? = nil,
+        sequentialDownload: Bool? = nil,
+        scheduledAt: Date? = nil,
+        mirrors: [String]? = nil
     ) {
         self.id = id
         self.source = source
@@ -73,6 +114,14 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         self.completedAt = completedAt
         self.resumeData = resumeData
         self.expectedChecksum = expectedChecksum
+        self.connections = connections
+        self.seedCount = seedCount
+        self.remoteInfo = remoteInfo
+        self.scanVerdict = scanVerdict
+        self.speedLimitBytesPerSec = speedLimitBytesPerSec
+        self.sequentialDownload = sequentialDownload
+        self.scheduledAt = scheduledAt
+        self.mirrors = mirrors
     }
 
     // MARK: Derived

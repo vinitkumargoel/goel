@@ -30,10 +30,17 @@ struct AddDownloadSheet: View {
     @State private var isDropTargeted = false
     /// Optional integrity hash; verified after a single HTTP/HLS download finishes.
     @State private var checksumText: String = ""
+    /// Optional mirror URLs (one per line); segments fail over across them.
+    @State private var mirrorsText: String = ""
+    /// True while yt-dlp resolves a video-site page into its media stream.
+    @State private var isResolvingMedia = false
     /// Inline validation shown under the input field.
     @State private var inputError: String?
     /// The in-flight metadata resolution, so it can be cancelled.
     @State private var resolveTask: Task<Void, Never>?
+
+    /// When to start: "now", or a ``ScheduledStartOption`` preset id.
+    @State private var startSelection: String = "now"
 
     /// The chosen "Save to" preset, shown on the confirm screen. Defaults to
     /// ~/Downloads per the requested behaviour.
@@ -50,6 +57,22 @@ struct AddDownloadSheet: View {
 
     private var downloadsPath: String { ("~/Downloads" as NSString).expandingTildeInPath }
     private var moviesPath: String { ("~/Movies" as NSString).expandingTildeInPath }
+
+    /// The "Save to" dropdown rows: the two presets, the by-type rule, any folder
+    /// the user picked through the panel, then a separated "Choose folder…".
+    private var saveOptions: [Dropdown<String>.Item] {
+        var options: [Dropdown<String>.Item] = [
+            .option(downloadsPath, "~/Downloads"),
+            .option(moviesPath, "~/Movies"),
+            .option(SaveOption.automatic, "Automatic (by type)"),
+        ]
+        if let customFolder, customFolder != downloadsPath, customFolder != moviesPath {
+            options.append(.option(customFolder, (customFolder as NSString).abbreviatingWithTildeInPath))
+        }
+        options.append(.separator)
+        options.append(.option(SaveOption.choose, "Choose folder…"))
+        return options
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -104,7 +127,7 @@ struct AddDownloadSheet: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.orange)
                     } else {
-                        Text("Paste several lines to add them all at once (batch). A single link is previewed before it starts.")
+                        Text("Paste several lines to add them all at once (batch). Patterns expand too: file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts.")
                             .font(.system(size: 11))
                             .foregroundStyle(.tertiary)
                     }
@@ -157,6 +180,14 @@ struct AddDownloadSheet: View {
             VStack(alignment: .leading, spacing: 16) {
                 metadataSummary(preview)
 
+                if let duplicate = vm.existingDuplicate(of: preview.source) {
+                    Label("Already in your list (\(duplicate.status.displayName.lowercased())) — starting it again won’t add a second copy.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 if !preview.files.isEmpty {
                     fileList(preview.files)
                 }
@@ -171,34 +202,33 @@ struct AddDownloadSheet: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Save to").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                        Picker("", selection: $saveSelection) {
-                            Text("~/Downloads").tag(downloadsPath)
-                            Text("~/Movies").tag(moviesPath)
-                            Text("Automatic (by type)").tag(SaveOption.automatic)
-                            if let customFolder, customFolder != downloadsPath, customFolder != moviesPath {
-                                Text((customFolder as NSString).abbreviatingWithTildeInPath).tag(customFolder)
-                            }
-                            Divider()
-                            Text("Choose folder…").tag(SaveOption.choose)
+                        Dropdown(selection: $saveSelection, items: saveOptions) { newValue in
+                            handleSaveSelection(newValue)
                         }
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .onChange(of: saveSelection) { _, newValue in handleSaveSelection(newValue) }
+                        .frame(maxWidth: .infinity)
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Priority").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                        Picker("", selection: $priority) {
-                            Text("High").tag(FilePriority.high)
-                            Text("Normal").tag(FilePriority.normal)
-                            Text("Low").tag(FilePriority.low)
-                        }
-                        .labelsHidden()
-                        .frame(width: 120)
+                        Dropdown(selection: $priority, items: [
+                            .option(.high, "High"),
+                            .option(.normal, "Normal"),
+                            .option(.low, "Low"),
+                        ], width: 120)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Start").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                        Dropdown(selection: $startSelection, items: startOptions, width: 150)
                     }
                 }
 
                 if preview.kind != .torrent {
                     checksumField
+                }
+                if preview.kind == .http {
+                    mirrorsField
+                }
+                if preview.kind == .http, YtDlpResolver.isAvailable {
+                    ytDlpRow(preview)
                 }
             }
             .padding(20)
@@ -303,7 +333,7 @@ struct AddDownloadSheet: View {
                               style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
         )
         .onDrop(of: [.url, .fileURL], isTargeted: $isDropTargeted) { handleDrop($0) }
-        .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
+        .animation(.easeInOut(duration: 0.08), value: isDropTargeted)
     }
 
     private var checksumField: some View {
@@ -328,6 +358,57 @@ struct AddDownloadSheet: View {
                         .foregroundStyle(Theme.orange)
                 }
             }
+        }
+    }
+
+    /// Offered only when the user has yt-dlp installed: swap a video-site page
+    /// URL for the direct media stream it plays.
+    private func ytDlpRow(_ preview: DownloadPreview) -> some View {
+        HStack(spacing: 8) {
+            if isResolvingMedia {
+                ProgressView().controlSize(.small)
+                Text("Asking yt-dlp…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            } else {
+                Button("Resolve Media with yt-dlp") { resolveWithYtDlp(preview) }
+                Text("For video-site pages: download the stream, not the page.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+        }
+    }
+
+    private func resolveWithYtDlp(_ preview: DownloadPreview) {
+        guard case .url(let pageURL) = preview.source else { return }
+        isResolvingMedia = true
+        Task { @MainActor in
+            defer { isResolvingMedia = false }
+            if let resolved = await YtDlpResolver.resolve(pageURL),
+               let mediaPreview = YtDlpResolver.preview(for: resolved) {
+                phase = .confirm(mediaPreview)
+            } else {
+                inputError = nil
+                vm.toast = "yt-dlp couldn’t resolve that page"
+            }
+        }
+    }
+
+    private var mirrorsField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Mirrors (optional, one per line)")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            TextEditor(text: $mirrorsText)
+                .font(.system(size: 11, design: .monospaced))
+                .frame(height: 44)
+                .padding(4)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
+            Text("Alternative URLs for the same file — segments spread across them and fail over automatically.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -361,11 +442,23 @@ struct AddDownloadSheet: View {
             inputError = "Enter a valid URL, magnet, or .m3u8 link."
             return
         }
+        // A fresh resolution gets a clean slate: a checksum or mirror list
+        // entered for a previous link (then Back, then a different link) must
+        // never silently apply to this one.
+        checksumText = ""
+        mirrorsText = ""
         phase = .resolving
         resolveTask = Task { @MainActor in
             let preview = await vm.resolveMetadata(for: line, saveDirectory: nil)
             if Task.isCancelled { return }
             if let preview {
+                // Pre-fill a checksum the server itself published (Digest /
+                // Content-MD5 header or a .sha256 sidecar) — visible and
+                // editable, never silently applied.
+                if let suggested = preview.suggestedChecksum,
+                   checksumText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    checksumText = suggested.value
+                }
                 phase = .confirm(preview)
             } else {
                 phase = .input
@@ -374,10 +467,24 @@ struct AddDownloadSheet: View {
         }
     }
 
+    /// The "Start" dropdown rows: now, plus the scheduled presets.
+    private var startOptions: [Dropdown<String>.Item] {
+        [.option("now", "Now")]
+            + ScheduledStartOption.presets.map { .option($0.id, $0.label) }
+    }
+
     /// Commit the previewed download with the chosen destination/priority/checksum.
     private func start(_ preview: DownloadPreview) {
+        let startAt = ScheduledStartOption.presets
+            .first { $0.id == startSelection }?
+            .date()
+        let mirrors = mirrorsText
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
         vm.confirm(preview, saveDirectory: resolvedSaveDirectory, priority: priority,
-                   checksum: Checksum.parse(checksumText))
+                   checksum: Checksum.parse(checksumText), startAt: startAt,
+                   mirrors: mirrors.isEmpty ? nil : mirrors)
         dismiss()
     }
 
@@ -461,6 +568,7 @@ struct AddDownloadSheet: View {
         case .http: return "arrow.down.circle"
         case .torrent: return "point.3.connected.trianglepath.dotted"
         case .hls: return "play.rectangle"
+        case .ftp: return "server.rack"
         }
     }
 
@@ -471,6 +579,7 @@ struct AddDownloadSheet: View {
         case .http: label = "HTTP"; color = Theme.accent
         case .torrent: label = "BT"; color = Theme.green
         case .hls: label = "HLS"; color = Theme.orange
+        case .ftp: label = "FTP"; color = Theme.teal
         }
         return Text(label)
             .font(.system(size: 10, weight: .bold))

@@ -20,6 +20,10 @@ public struct DownloadPreview: Sendable, Equatable, Hashable {
     /// A non-fatal note explaining a partial/failed resolution (e.g. a magnet
     /// whose metadata didn't arrive in time). The user can still choose to start.
     public let note: String?
+    /// A checksum the server published (Digest / Content-MD5 header or a
+    /// `.sha256` sidecar), pre-filled — but user-visible and editable — on the
+    /// confirmation screen.
+    public let suggestedChecksum: Checksum?
 
     public init(
         source: DownloadSource,
@@ -28,7 +32,8 @@ public struct DownloadPreview: Sendable, Equatable, Hashable {
         isEstimatedSize: Bool = false,
         files: [TransferFile] = [],
         kind: DownloadKind,
-        note: String? = nil
+        note: String? = nil,
+        suggestedChecksum: Checksum? = nil
     ) {
         self.source = source
         self.suggestedName = suggestedName
@@ -37,5 +42,6 @@ public struct DownloadPreview: Sendable, Equatable, Hashable {
         self.files = files
         self.kind = kind
         self.note = note
+        self.suggestedChecksum = suggestedChecksum
     }
 }

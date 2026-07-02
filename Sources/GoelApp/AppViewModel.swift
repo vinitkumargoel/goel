@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 import AppKit
+import Network
 import GoelCore
 
 /// Which sidebar entry is selected. Drives the list filter and the live counts.
@@ -77,6 +78,26 @@ final class AppViewModel: ObservableObject {
     @Published var detailPanelVisible: Bool = true
     @Published var detailTab: DetailTab = .general
     @Published var isAddSheetPresented: Bool = false
+    @Published var isStatsPresented: Bool = false
+    @Published var isHistoryPresented: Bool = false
+    @Published var isLinkGrabberPresented: Bool = false
+
+    // MARK: Speed history (sparklines)
+
+    /// One second of aggregate throughput.
+    struct SpeedSample: Equatable {
+        var down: Double
+        var up: Double
+    }
+
+    /// The last ~2 minutes of global throughput, sampled at 1 Hz.
+    @Published private(set) var globalSpeedHistory: [SpeedSample] = []
+
+    /// Per-task history for the detail panel's sparkline (active tasks only).
+    private(set) var taskSpeedHistory: [DownloadTask.ID: [SpeedSample]] = [:]
+
+    private static let speedHistoryCap = 120
+    private var speedSampler: Task<Void, Never>?
 
     /// Light / Dark / System, derived from (and persisted through) the core
     /// ``AppSettings/theme`` string so the choice survives relaunch. The setter
@@ -86,8 +107,49 @@ final class AppViewModel: ObservableObject {
         set { update { $0.theme = newValue.settingsValue } }
     }
 
+    /// Where the detail panel is docked (right edge vs bottom edge), derived from
+    /// and persisted through ``AppSettings/detailPanelPosition`` so the choice
+    /// survives relaunch. The setter commits via ``update(_:)`` — which reflects
+    /// the new value locally this frame before the actor round-trip — so the panel
+    /// re-docks immediately and stays put until the user flips it again.
+    var detailPanelPosition: DetailPanelPosition {
+        get { DetailPanelPosition(settingsValue: settings.detailPanelPosition) }
+        set { update { $0.detailPanelPosition = newValue.settingsValue } }
+    }
+
+    /// Flip the panel between the right and bottom docks (used by the toggle on
+    /// the panel header).
+    func toggleDetailPanelPosition() {
+        detailPanelPosition = detailPanelPosition == .right ? .bottom : .right
+    }
+
     /// A transient banner shown after notable actions (mirrors the demo toasts).
     @Published var toast: String?
+
+    /// A pending confirmation rendered by the app's own ``ConfirmDialogView`` at
+    /// the window root (replacing the system `.confirmationDialog`). `nil` when
+    /// nothing is being confirmed.
+    @Published var confirmRequest: ConfirmRequest?
+
+    /// The payload for the custom confirm dialog: its copy, the destructive flag
+    /// (drives the red styling), and the action to run when the user confirms.
+    struct ConfirmRequest: Identifiable {
+        let id = UUID()
+        var title: String
+        var message: String
+        var confirmTitle: String
+        var isDestructive: Bool
+        var onConfirm: () -> Void
+    }
+
+    /// Raise the custom confirm dialog. The closure runs only if the user taps
+    /// the confirm button.
+    func requestConfirm(title: String, message: String, confirmTitle: String,
+                        destructive: Bool = false, onConfirm: @escaping () -> Void) {
+        confirmRequest = ConfirmRequest(title: title, message: message,
+                                        confirmTitle: confirmTitle,
+                                        isDestructive: destructive, onConfirm: onConfirm)
+    }
 
     /// A copied link the clipboard monitor is offering to download, shown as an
     /// actionable banner. `nil` when there is nothing to suggest.
@@ -100,6 +162,17 @@ final class AppViewModel: ObservableObject {
 
     /// Watches the pasteboard for copied download links (Tier-1 convenience).
     private var clipboardMonitor: ClipboardMonitor?
+
+    /// Watches the network path and reports expensive/constrained transitions
+    /// to the manager's pause-on-metered policy.
+    private var pathMonitor: NWPathMonitor?
+
+    /// The embedded remote-control HTTP server (Settings → Remote Access).
+    private var remoteServer: RemoteControlServer?
+
+    /// The remote settings the running server was started with, so only a real
+    /// change restarts it.
+    private var remoteConfig: (enabled: Bool, port: Int, token: String, lan: Bool)?
 
     /// The last link the clipboard monitor surfaced, so the same copy isn't
     /// offered twice (and a dismissed suggestion stays dismissed).
@@ -116,6 +189,25 @@ final class AppViewModel: ObservableObject {
     private var lastStatuses: [DownloadTask.ID: DownloadStatus] = [:]
     private var hasSeenFirstSnapshot = false
 
+    /// Per-task antivirus verdicts from the previous snapshot, so a flagged file
+    /// notifies exactly once.
+    private var lastScanVerdicts: [DownloadTask.ID: String] = [:]
+
+    /// Whether the previous snapshot had downloads in flight — the edge that
+    /// triggers the one-shot auto-shutdown action when the queue drains.
+    private var lastHadActiveWork = false
+
+    /// Finder-visible per-file progress (the Safari-style pie on the file).
+    private let fileProgress = FileProgressPublisher()
+
+    /// Dock-icon badge + aggregate progress bar.
+    private let dockProgress = DockProgressService()
+
+    /// The live instance, for entry points that can't be injected (the
+    /// AppleScript command classes). Weak: scripting must never keep a
+    /// discarded view model alive.
+    static private(set) weak var shared: AppViewModel?
+
     init() {
         // File-backed persistence under Application Support, falling back to an
         // ephemeral in-memory store if the directory can't be created — and
@@ -123,6 +215,7 @@ final class AppViewModel: ObservableObject {
         let (store, warning) = Self.makeStore()
         self.manager = DownloadManager(store: store)
         self.persistenceWarning = warning
+        Self.shared = self
     }
 
     private static func makeStore() -> (PersistenceStore?, String?) {
@@ -151,6 +244,44 @@ final class AppViewModel: ObservableObject {
         }
         monitor.start()
         clipboardMonitor = monitor
+        // Report expensive (hotspot) / constrained (Low Data Mode) transitions
+        // so the pause-on-metered settings can hold and release the queue.
+        let netMonitor = NWPathMonitor()
+        let core = self.manager
+        netMonitor.pathUpdateHandler = { path in
+            let expensive = path.isExpensive
+            let constrained = path.isConstrained
+            Task { await core.applyNetworkPolicy(expensive: expensive, constrained: constrained) }
+        }
+        netMonitor.start(queue: DispatchQueue(label: "goel.network-path"))
+        pathMonitor = netMonitor
+        startSpeedSampler()
+        applyRemoteAccess()
+        SparkleUpdaterService.shared.startIfConfigured()
+        if !SparkleUpdaterService.shared.isConfigured, settings.autoCheckUpdates {
+            Task { [weak self] in
+                guard let self else { return }
+                if case let .available(version, url) = await UpdateChecker.check(feedURL: self.settings.updateFeedURL) {
+                    self.offerUpdate(version: version, url: url)
+                }
+            }
+        }
+        // Downloads handed over from outside the UI: URL scheme, magnet links,
+        // .torrent double-clicks, the Services menu, and the drop basket.
+        // Registering also drains anything that arrived before we were ready
+        // (a cold launch triggered by a link/file open).
+        NotificationCenter.default.addObserver(
+            forName: ExternalAdd.notification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let box = note.object as? ExternalAdd.PayloadBox else { return }
+            Task { @MainActor [weak self] in
+                self?.handleExternalAdd(box.payload)
+            }
+        }
+        ExternalAdd.drainPending { handleExternalAdd($0) }
+        // Anything the browser extension spooled while we weren't running
+        // (including dev builds, where the URL-scheme poke can't reach us).
+        drainBrowserSpool()
         // Prime notification authorization so persisted "notify on completed/failed"
         // preferences can actually deliver banners after a relaunch (not just after
         // the user re-toggles a switch).
@@ -177,7 +308,14 @@ final class AppViewModel: ObservableObject {
                             self.selection = [first]
                         }
                     }
+                    // Order matters: the drained check compares against the
+                    // PREVIOUS statuses, which emitNotifications overwrites.
+                    self.checkQueueDrained(snapshot)
                     self.emitNotifications(for: snapshot)
+                    self.fileProgress.update(with: snapshot) { [weak self] id in
+                        self?.pause(id)
+                    }
+                    self.dockProgress.update(with: snapshot)
                     if let warning { self.persistenceWarning = warning }
                 }
             }
@@ -264,38 +402,111 @@ final class AppViewModel: ObservableObject {
 
     func add(rawLines: String, saveDirectory: String?, priority: FilePriority,
              expectedChecksum: Checksum? = nil) {
-        let lines = rawLines
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        let sources = lines.compactMap(Self.parseSource)
+        var sources = Self.expandedLines(rawLines).compactMap(Self.parseSource)
+        // A metalink URL describes downloads (mirrors + checksums) — fetch and
+        // expand it rather than downloading the XML itself.
+        let metalinks = sources.filter(Self.isMetalink)
+        sources.removeAll(where: Self.isMetalink)
+        for case .url(let metalink) in metalinks {
+            importMetalink(metalink, saveDirectory: saveDirectory, priority: priority)
+        }
         guard !sources.isEmpty else {
-            toastNow("Enter a URL or magnet link first")
+            if metalinks.isEmpty { toastNow("Enter a URL or magnet link first") }
+            return
+        }
+        // Surface duplicates instead of silently no-op-ing (the manager dedups by
+        // source identity, so re-adding an existing task would just be swallowed).
+        let existingKeys = Set(tasks.map(\.source.dedupKey))
+        var batchKeys = Set<String>()
+        let fresh = sources.filter {
+            batchKeys.insert($0.dedupKey).inserted && !existingKeys.contains($0.dedupKey)
+        }
+        let skipped = sources.count - fresh.count
+        guard !fresh.isEmpty else {
+            toastNow(sources.count == 1 ? "Already in your list"
+                                        : "All \(sources.count) are already in your list")
             return
         }
         // A checksum only makes sense for a single file — never apply one supplied
         // alongside a multi-line batch to every download.
-        let checksum = sources.count == 1 ? expectedChecksum : nil
+        let checksum = fresh.count == 1 ? expectedChecksum : nil
         Task {
-            for source in sources {
+            for source in fresh {
                 await manager.add(source: source, saveDirectory: saveDirectory,
                                   priority: priority, expectedChecksum: checksum)
             }
         }
-        toastNow(sources.count > 1 ? "Added \(sources.count) downloads to queue" : "Added to queue")
+        if skipped > 0 {
+            toastNow("Added \(fresh.count) · skipped \(skipped) already in your list")
+        } else {
+            toastNow(fresh.count > 1 ? "Added \(fresh.count) downloads to queue" : "Added to queue")
+        }
         filter = .all
+    }
+
+    /// Split pasted text into lines and expand the `file[01-20].zip` / `{a,b,c}`
+    /// batch shorthand, capped so a hostile range can't flood the queue.
+    static func expandedLines(_ raw: String) -> [String] {
+        raw.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .flatMap { BatchExpander.expand($0) }
+    }
+
+    /// The existing task (any status) matching a source's identity, so the add
+    /// flow can tell the user instead of silently deduplicating.
+    func existingDuplicate(of source: DownloadSource) -> DownloadTask? {
+        tasks.first { $0.source.dedupKey == source.dedupKey }
+    }
+
+    /// Whether a source points at a metalink document rather than a payload.
+    static func isMetalink(_ source: DownloadSource) -> Bool {
+        guard case .url(let url) = source else { return false }
+        return ["metalink", "meta4"].contains(url.pathExtension.lowercased())
+    }
+
+    /// Fetch a metalink document and add every file it describes — primary URL
+    /// plus mirrors, published size ignored (probed live), checksum adopted.
+    private func importMetalink(_ url: URL, saveDirectory: String?, priority: FilePriority) {
+        Task { @MainActor in
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let http = response as? HTTPURLResponse,
+                      (200..<300).contains(http.statusCode),
+                      data.count <= 5_000_000 else { throw URLError(.badServerResponse) }
+                let files = MetalinkParser.parse(data)
+                guard !files.isEmpty else {
+                    toastNow("No downloads found in the metalink")
+                    return
+                }
+                var added = 0
+                for file in files.prefix(50) {
+                    guard let primary = file.urls.first,
+                          let source = Self.parseSource(primary),
+                          existingDuplicate(of: source) == nil else { continue }
+                    await manager.add(source: source,
+                                      saveDirectory: saveDirectory,
+                                      priority: priority,
+                                      expectedChecksum: file.checksum,
+                                      mirrors: Array(file.urls.dropFirst()),
+                                      suggestedName: file.name.isEmpty ? nil : file.name)
+                    added += 1
+                }
+                toastNow(added > 0 ? "Added \(added) from metalink"
+                                   : "Metalink contents already in your list")
+                filter = .all
+            } catch {
+                toastNow("Couldn’t load the metalink file")
+            }
+        }
     }
 
     // MARK: Two-step add (resolve metadata, then confirm)
 
-    /// The parseable source locators in `rawLines`, in order. Used to decide
-    /// between the single-item confirm flow and a multi-item batch add.
+    /// The parseable source locators in `rawLines` (batch patterns expanded), in
+    /// order. Used to decide between the single-item confirm flow and a batch add.
     func parsedSources(in rawLines: String) -> [DownloadSource] {
-        rawLines
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .compactMap(Self.parseSource)
+        Self.expandedLines(rawLines).compactMap(Self.parseSource)
     }
 
     /// Resolve a single source's metadata for the confirmation screen. Returns
@@ -308,15 +519,31 @@ final class AppViewModel: ObservableObject {
     /// Commit a previewed download with the destination / priority / checksum the
     /// user chose on the confirmation screen.
     func confirm(_ preview: DownloadPreview, saveDirectory: String?,
-                 priority: FilePriority, checksum: Checksum?) {
+                 priority: FilePriority, checksum: Checksum?, startAt: Date? = nil,
+                 mirrors: [String]? = nil) {
+        // The manager dedups by source identity — starting an exact duplicate is
+        // a no-op, so say that instead of a misleading "Added".
+        guard existingDuplicate(of: preview.source) == nil else {
+            toastNow("Already in your list")
+            filter = .all
+            return
+        }
         // A checksum only applies to a single-file HTTP/HLS download.
         let checksum = preview.kind == .torrent ? nil : checksum
         let source = preview.source
+        // Mirrors only make sense for direct HTTP downloads.
+        let mirrors = preview.kind == .http ? mirrors : nil
         Task {
             await manager.add(source: source, saveDirectory: saveDirectory,
-                              priority: priority, expectedChecksum: checksum)
+                              priority: priority, expectedChecksum: checksum,
+                              scheduledAt: startAt, mirrors: mirrors)
         }
-        toastNow("Added to queue")
+        if let startAt {
+            let formatter = RelativeDateTimeFormatter()
+            toastNow("Will start \(formatter.localizedString(for: startAt, relativeTo: Date()))")
+        } else {
+            toastNow("Added to queue")
+        }
         filter = .all
     }
 
@@ -346,6 +573,44 @@ final class AppViewModel: ObservableObject {
     /// Dismiss the suggestion without adding it (it won't be offered again).
     func dismissClipboardSuggestion() {
         clipboardSuggestion = nil
+    }
+
+    // MARK: External adds
+
+    /// Handle a download handed over from outside the UI. Web-triggerable
+    /// sources (`goeldownloader://` links) surface as the suggestion banner so
+    /// the user confirms; explicit user actions queue directly. Local
+    /// `.torrent` file opens construct the source directly — the remote-input
+    /// parser deliberately rejects `file:` URLs.
+    private func handleExternalAdd(_ payload: ExternalAdd.Payload) {
+        NSApp.activate(ignoringOtherApps: true)
+        if payload.drainBrowserSpool {
+            drainBrowserSpool()
+            return
+        }
+        if let torrent = payload.torrentFile {
+            Task { await manager.add(source: .torrentFile(torrent)) }
+            toastNow("Added to queue")
+            return
+        }
+        guard let lines = payload.lines else { return }
+        if payload.needsConfirmation {
+            if let first = parsedSources(in: lines).first {
+                clipboardSuggestion = first.locator
+            }
+        } else {
+            add(rawLines: lines, saveDirectory: nil, priority: .normal)
+        }
+    }
+
+    /// Queue everything the browser extension spooled through the
+    /// native-messaging host. The spool contents were validated by the host
+    /// and can only be written by local processes, so no confirmation banner —
+    /// the user already clicked "download" in their browser.
+    private func drainBrowserSpool() {
+        let locators = BrowserSpool.drain()
+        guard !locators.isEmpty else { return }
+        add(rawLines: locators.joined(separator: "\n"), saveDirectory: nil, priority: .normal)
     }
 
     /// Delegates to the core parser, which enforces the scheme allowlist
@@ -407,6 +672,13 @@ final class AppViewModel: ObservableObject {
     func update(_ mutate: (inout AppSettings) -> Void) {
         var copy = settings
         mutate(&copy)
+        // Skip redundant commits. `@Published settings` fires on every assignment
+        // regardless of equality, so a no-op write (e.g. SwiftUI writing a control's
+        // current value back through its binding) would needlessly re-persist,
+        // re-apply engine configs, and re-publish — which, for scene-level bindings
+        // like the menu-bar toggle, can spin into an update loop. A true no-op is a
+        // no-op.
+        guard copy != settings else { return }
         let launchChanged = copy.launchAtLogin != settings.launchAtLogin
         let notificationsNewlyWanted =
             (copy.notifyOnAdded || copy.notifyOnCompleted || copy.notifyOnFailed) &&
@@ -421,10 +693,80 @@ final class AppViewModel: ObservableObject {
         }
         if launchChanged { LoginItemService.setEnabled(copy.launchAtLogin) }
         if notificationsNewlyWanted { NotificationService.requestAuthorization() }
+        applyRemoteAccess()
+    }
+
+    // MARK: Remote access
+
+    /// Start/stop/restart the embedded remote-control server to match the
+    /// current settings. Idempotent — only a real config change restarts it.
+    private func applyRemoteAccess() {
+        let desired = (enabled: settings.remoteAccessEnabled && !settings.remoteToken.isEmpty,
+                       port: settings.remotePort,
+                       token: settings.remoteToken,
+                       lan: settings.remoteAllowLAN)
+        guard remoteConfig == nil
+            || remoteConfig! != desired else { return }
+        remoteConfig = desired
+        let server = remoteServer ?? RemoteControlServer(manager: manager)
+        remoteServer = server
+        Task {
+            if desired.enabled {
+                await server.start(port: UInt16(clamping: desired.port),
+                                   token: desired.token, allowLAN: desired.lan)
+            } else {
+                await server.stop()
+            }
+        }
+    }
+
+    // MARK: Updates
+
+    /// Manual "Check for Updates…". Sparkle handles it (with its own UI) in
+    /// packaged builds configured with an appcast; everything else uses the
+    /// built-in HTTPS release-feed checker.
+    func checkForUpdates() {
+        if SparkleUpdaterService.shared.checkForUpdates() { return }
+        let feed = settings.updateFeedURL
+        Task { [weak self] in
+            guard let self else { return }
+            switch await UpdateChecker.check(feedURL: feed) {
+            case let .available(version, url):
+                self.offerUpdate(version: version, url: url)
+            case let .upToDate(current):
+                self.toastNow("Up to date — version \(current)")
+            case .notConfigured:
+                self.toastNow("Set an update feed URL in Settings → Advanced first")
+            case let .failed(message):
+                self.toastNow("Update check failed: \(message)")
+            }
+        }
+    }
+
+    private func offerUpdate(version: String, url: URL) {
+        requestConfirm(
+            title: "Version \(version) is available",
+            message: "You’re running \(UpdateChecker.currentVersion). Open the release page to download the update?",
+            confirmTitle: "Open Release Page"
+        ) {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func toggleSort(_ key: SortKey) {
         if sortKey == key { sortAscending.toggle() } else { sortKey = key; sortAscending = true }
+    }
+
+    /// Open the downloaded payload with its default app (the media player for
+    /// video). Multi-file torrents open their largest wanted file — the movie,
+    /// not the .nfo (libtorrent file paths are relative to the save directory).
+    func openFile(_ task: DownloadTask) {
+        var target = task.savePath
+        if task.isMultiFile,
+           let largest = task.files.filter(\.isWanted).max(by: { $0.length < $1.length }) {
+            target = (task.saveDirectory as NSString).appendingPathComponent(largest.path)
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: target))
     }
 
     func revealInFinder(_ task: DownloadTask) {
@@ -453,6 +795,9 @@ final class AppViewModel: ObservableObject {
     private func emitNotifications(for snapshot: [DownloadTask]) {
         defer {
             lastStatuses = Dictionary(uniqueKeysWithValues: snapshot.map { ($0.id, $0.status) })
+            lastScanVerdicts = Dictionary(uniqueKeysWithValues: snapshot.compactMap { task in
+                task.scanVerdict.map { (task.id, $0) }
+            })
         }
         guard hasSeenFirstSnapshot else {
             hasSeenFirstSnapshot = true
@@ -460,6 +805,14 @@ final class AppViewModel: ObservableObject {
         }
         if settings.notifyOnlyWhenInactive && NSApp.isActive { return }
         let sound = settings.notificationSound
+        // A flagged antivirus verdict warrants a banner regardless of the
+        // added/completed preferences — the user explicitly enabled scanning.
+        for task in snapshot where task.scanVerdict == "flagged" {
+            if lastScanVerdicts[task.id] != "flagged" {
+                NotificationService.notify(title: "Antivirus flagged a file",
+                                           body: task.name, sound: sound)
+            }
+        }
         for task in snapshot {
             guard let previous = lastStatuses[task.id] else {
                 if settings.notifyOnAdded {
@@ -480,6 +833,212 @@ final class AppViewModel: ObservableObject {
             default:
                 break
             }
+        }
+    }
+
+    // MARK: Speed sampling
+
+    /// Sample aggregate and per-task throughput once a second for the
+    /// sparklines. Runs for the app's lifetime; the ring caps keep memory flat.
+    private func startSpeedSampler() {
+        guard speedSampler == nil else { return }
+        speedSampler = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self else { return }
+                self.takeSpeedSample()
+            }
+        }
+    }
+
+    private func takeSpeedSample() {
+        // Fully idle (no active task and a flat history): skip the sample so
+        // the @Published append doesn't re-render the whole app every second
+        // while it sits in the menu bar doing nothing.
+        let hasActive = tasks.contains { $0.status.isActive }
+        if !hasActive, globalSpeedHistory.allSatisfy({ $0 == SpeedSample(down: 0, up: 0) }) {
+            return
+        }
+        var sample = SpeedSample(down: 0, up: 0)
+        for task in tasks {
+            sample.down += task.downloadSpeed
+            sample.up += task.uploadSpeed
+            guard task.status.isActive else { continue }
+            var history = taskSpeedHistory[task.id] ?? []
+            history.append(SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed))
+            if history.count > Self.speedHistoryCap { history.removeFirst() }
+            taskSpeedHistory[task.id] = history
+        }
+        // Drop history for tasks that no longer exist (kept for paused ones so
+        // a brief pause doesn't wipe the graph).
+        let known = Set(tasks.map(\.id))
+        taskSpeedHistory = taskSpeedHistory.filter { known.contains($0.key) }
+        globalSpeedHistory.append(sample)
+        if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }
+    }
+
+    /// Fetch the persisted transfer statistics for the Statistics sheet.
+    func fetchStats() async -> TransferStats {
+        await manager.currentStats
+    }
+
+    // MARK: Download history
+
+    /// Fetch the archived completed downloads for the History sheet.
+    func fetchHistory() async -> [HistoryEntry] {
+        await manager.history()
+    }
+
+    /// Queue an archived entry's source again.
+    func redownload(_ entry: HistoryEntry) {
+        add(rawLines: entry.locator, saveDirectory: nil, priority: .normal)
+    }
+
+    func deleteHistoryEntry(_ id: UUID) {
+        Task { await manager.removeHistoryEntry(id) }
+    }
+
+    func clearHistory() {
+        Task { await manager.clearHistory() }
+        toastNow("History cleared")
+    }
+
+    /// Write the given history entries as CSV (spreadsheet-friendly archive).
+    func exportHistoryCSV(_ entries: [HistoryEntry], to url: URL) {
+        let iso = ISO8601DateFormatter()
+        var rows = ["name,link,size_bytes,save_path,completed_at"]
+        for entry in entries {
+            rows.append([
+                entry.name,
+                entry.locator,
+                entry.totalBytes.map(String.init) ?? "",
+                entry.savePath,
+                iso.string(from: entry.completedAt),
+            ].map(Self.csvField).joined(separator: ","))
+        }
+        do {
+            try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+            toastNow("History exported")
+        } catch {
+            toastNow("Export failed")
+        }
+    }
+
+    /// RFC 4180 quoting: wrap fields containing separators/quotes/newlines.
+    private static func csvField(_ raw: String) -> String {
+        guard raw.contains(",") || raw.contains("\"") || raw.contains("\n") else { return raw }
+        return "\"" + raw.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    // MARK: Scheduled starts
+
+    /// Set (or clear) a one-shot start time on a task.
+    func setScheduledStart(_ date: Date?, task id: DownloadTask.ID) {
+        Task { await manager.setScheduledStart(date, task: id) }
+        if let date {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .full
+            toastNow("Will start \(formatter.localizedString(for: date, relativeTo: Date()))")
+        } else {
+            toastNow("Scheduled start cancelled")
+        }
+    }
+
+    // MARK: Queue automation (auto-shutdown)
+
+    /// Fire the one-shot auto-shutdown action on the edge where the last
+    /// downloading task finishes. Seeding doesn't block it (it can run
+    /// indefinitely); a queue that drains because everything failed or was
+    /// paused doesn't fire — a task must have transitioned INTO `.completed`
+    /// on this very tick (an old completed download sitting in the list must
+    /// not turn a manual "Pause All" into a system shutdown).
+    private func checkQueueDrained(_ snapshot: [DownloadTask]) {
+        let hasActiveWork = snapshot.contains { task in
+            switch task.status {
+            case .queued, .requestingMetadata, .downloading, .verifying: return true
+            default: return false
+            }
+        }
+        let completedThisTick = snapshot.contains { task in
+            task.status == .completed && lastStatuses[task.id] != .completed
+        }
+        defer { lastHadActiveWork = hasActiveWork }
+        guard settings.autoShutdownAction != "none",
+              lastHadActiveWork, !hasActiveWork,
+              completedThisTick else { return }
+        let action = settings.autoShutdownAction
+        update { $0.autoShutdownAction = "none" }   // one-shot: never fire twice
+        performQueueDrainedAction(action)
+    }
+
+    private func performQueueDrainedAction(_ action: String) {
+        switch action {
+        case "quit":
+            NSApp.terminate(nil)
+        case "sleep":
+            let pmset = Process()
+            pmset.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+            pmset.arguments = ["sleepnow"]
+            try? pmset.run()
+        case "shutdown":
+            // Via System Events so the user gets the normal unsaved-work prompts.
+            let script = NSAppleScript(source: "tell application \"System Events\" to shut down")
+            script?.executeAndReturnError(nil)
+        default:
+            break
+        }
+    }
+
+    // MARK: Full-fidelity backup (JSON)
+
+    /// Write the settings + full task list (progress, resume cursors and all) to
+    /// `url`. The JSON counterpart of the locator-only text export.
+    func exportBackup(to url: URL) {
+        Task {
+            do {
+                let data = try await manager.exportEnvelope()
+                try data.write(to: url)
+                toastNow("Backup exported")
+            } catch {
+                toastNow("Export failed")
+            }
+        }
+    }
+
+    /// Import a backup produced by ``exportBackup(to:)``: adopts its settings
+    /// and merges its tasks (existing sources are skipped; restored tasks come
+    /// back paused).
+    func importBackup(from url: URL) {
+        Task {
+            do {
+                let data = try Data(contentsOf: url)
+                let added = try await manager.importEnvelope(data)
+                settings = await manager.currentSettings
+                toastNow(added > 0 ? "Imported \(added) download\(added == 1 ? "" : "s")"
+                                   : "Nothing new to import")
+            } catch {
+                toastNow("Import failed — not a valid backup file")
+            }
+        }
+    }
+
+    // MARK: Per-task controls
+
+    /// Toggle sequential (in-order) download for a torrent so media can be
+    /// previewed while transferring.
+    func setSequential(_ sequential: Bool, task id: DownloadTask.ID) {
+        Task { await manager.setSequential(sequential, task: id) }
+        toastNow(sequential ? "Sequential download on" : "Sequential download off")
+    }
+
+    /// Cap one task's download speed (nil/0 = uncapped). Takes effect when the
+    /// task next starts or resumes.
+    func setTaskSpeedLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) {
+        Task { await manager.setTaskSpeedLimit(bytesPerSec, task: id) }
+        if let bytesPerSec, bytesPerSec > 0 {
+            toastNow("Limited to \(Double(bytesPerSec).speedString) — applies on next start")
+        } else {
+            toastNow("Per-download limit removed")
         }
     }
 

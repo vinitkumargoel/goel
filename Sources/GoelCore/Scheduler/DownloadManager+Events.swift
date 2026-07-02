@@ -28,6 +28,17 @@ extension DownloadManager {
             tasks[i].files = files
 
         case let .progress(bytesDownloaded, bytesUploaded, downloadSpeed, uploadSpeed, connectionCount):
+            // Fold the byte deltas into the lifetime statistics against a
+            // per-task mark. A regression (retry/invalidated resume restarting
+            // below the previous count) re-bases the mark so history is never
+            // subtracted AND the re-transferred bytes still count.
+            var mark = statsMarks[id]
+                ?? StatsMark(down: tasks[i].bytesDownloaded, up: tasks[i].bytesUploaded)
+            if bytesDownloaded < mark.down { mark.down = bytesDownloaded }
+            if bytesUploaded < mark.up { mark.up = bytesUploaded }
+            stats.record(down: bytesDownloaded - mark.down, up: bytesUploaded - mark.up)
+            statsMarks[id] = StatsMark(down: bytesDownloaded, up: bytesUploaded)
+            persistStats()
             tasks[i].bytesDownloaded = bytesDownloaded
             tasks[i].bytesUploaded = bytesUploaded
             tasks[i].downloadSpeed = downloadSpeed
@@ -57,6 +68,16 @@ extension DownloadManager {
 
         case let .resumeDataUpdated(data):
             tasks[i].resumeData = data
+
+        case let .connectionsUpdated(connections):
+            tasks[i].connections = connections
+
+        case let .swarmUpdated(peers, seeds):
+            tasks[i].connectionCount = peers
+            tasks[i].seedCount = seeds
+
+        case let .remoteInfoResolved(info):
+            tasks[i].remoteInfo = info
         }
 
         // P1: persist only on meaningful transitions — never on raw progress (a
@@ -65,7 +86,7 @@ extension DownloadManager {
         // write a stale `.downloading` snapshot that could land after — and clobber
         // — the authoritative terminal write; exclude it too.
         switch event {
-        case .progress, .fileProgress, .finished:
+        case .progress, .fileProgress, .finished, .connectionsUpdated, .swarmUpdated:
             break
         default:
             persist(tasks[i])
@@ -74,7 +95,7 @@ extension DownloadManager {
         // P2: coalesce high-frequency progress snapshots; publish everything else
         // immediately so the queue visibly moves the instant status changes.
         switch event {
-        case .progress, .fileProgress:
+        case .progress, .fileProgress, .connectionsUpdated, .swarmUpdated:
             throttledPublish()
         default:
             publish()
@@ -94,8 +115,16 @@ extension DownloadManager {
             // (Seeding keeps its subscription: it's still active.)
             consumers[id]?.cancel()
             consumers[id] = nil
+            if let i = index(of: id) { tasks[i].connections = nil }
             if status == .completed, let i = index(of: id) {
-                if tasks[i].completedAt == nil { tasks[i].completedAt = Date() }
+                if tasks[i].completedAt == nil {
+                    tasks[i].completedAt = Date()
+                    stats.completedCount += 1
+                    persistStats(force: true)
+                    // Archive the first completion. Removing the task later never
+                    // touches this row — history outlives the queue.
+                    persistHistory(HistoryEntry(task: tasks[i]))
+                }
                 onDownloadCompleted(tasks[i])
             }
             schedule()

@@ -3,14 +3,12 @@ import AppKit
 import UniformTypeIdentifiers
 import GoelCore
 
-/// The application entry point.
+/// The application entry point (invoked from `main.swift`, which first routes
+/// `--native-messaging-host` invocations to the stdio extension bridge).
 ///
-/// An SPM `executableTarget` has no `Info.plist` and no `main.swift`, so the
-/// `@main` `App` is the sole top-level entry. A small `NSApplicationDelegate`
-/// forces the process to behave like a normal foreground GUI app (dock icon +
-/// active window) since a bare SwiftUI executable can otherwise launch as a
-/// background accessory.
-@main
+/// A small `NSApplicationDelegate` forces the process to behave like a normal
+/// foreground GUI app (dock icon + active window) since a bare SwiftUI
+/// executable can otherwise launch as a background accessory.
 struct GoelDownloaderApp: App {
 
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -40,6 +38,39 @@ struct GoelDownloaderApp: App {
                 .preferredColorScheme(viewModel.preferredColorScheme)
                 .frame(width: 760, height: 560)
         }
+
+        // The optional menu-bar status item (the "Rich list" concept). Its
+        // presence is bound to the persisted `menuBarExtraEnabled` preference, so
+        // the General-pane toggle inserts/removes it live. `.window` style hosts
+        // the custom SwiftUI popover instead of a plain menu.
+        MenuBarExtra(isInserted: menuBarInserted) {
+            MenuBarView()
+                .environmentObject(viewModel)
+                .preferredColorScheme(viewModel.preferredColorScheme)
+        } label: {
+            MenuBarSpeedLabel(vm: viewModel)
+        }
+        .menuBarExtraStyle(.window)
+    }
+
+    /// Drives whether the status-bar item is shown, mirrored to the persisted
+    /// ``AppSettings/menuBarExtraEnabled`` preference. Dragging the item out of
+    /// the menu bar (⌘-drag) flips the binding, which writes the preference back
+    /// off so the Settings toggle stays in sync.
+    private var menuBarInserted: Binding<Bool> {
+        Binding(
+            get: { viewModel.settings.menuBarExtraEnabled },
+            set: { newValue in
+                // SwiftUI reconciles `isInserted` on every scene update and can
+                // write the *current* value straight back. Because `@Published
+                // settings` publishes on every assignment (it does not dedupe by
+                // equality), an unguarded write here would publish → re-evaluate
+                // the scene → write again … a synchronous update loop that
+                // overflows the stack. Only commit a genuine change.
+                guard newValue != viewModel.settings.menuBarExtraEnabled else { return }
+                viewModel.update { $0.menuBarExtraEnabled = newValue }
+            }
+        )
     }
 
     /// Best-effort registration as the system handler for `magnet:` links and
@@ -61,11 +92,16 @@ struct GoelDownloaderApp: App {
 /// Forces a normal foreground activation policy and brings the window to front.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appearanceObservation: NSKeyValueObservation?
+    private let servicesProvider = GoelServicesProvider()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         app.activate(ignoringOtherApps: true)
+
+        // "Download with GoelDownloader" in every app's Services menu.
+        app.servicesProvider = servicesProvider
+        NSUpdateDynamicServices()
 
         // Set the "Swarm" dock icon, choosing the light/dark appearance variant,
         // and keep it in sync if the system appearance changes at runtime.
@@ -77,6 +113,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    /// Opened URLs: the `goeldownloader://` scheme, `magnet:` links (when we're
+    /// the default handler) and double-clicked `.torrent` files. Posts are
+    /// buffered until the view model subscribes, so a cold launch via a link
+    /// or file never drops the add.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        Task { @MainActor in
+            for url in urls {
+                if let payload = ExternalAdd.payload(from: url) {
+                    ExternalAdd.post(payload)
+                }
+            }
+        }
     }
 
     /// Picks the icon variant matching the current effective appearance and sets
@@ -104,11 +154,14 @@ struct GoelCommands: Commands {
             Button("About GoelDownloader") {
                 NSApplication.shared.orderFrontStandardAboutPanel(nil)
             }
+            Button("Check for Updates…") { viewModel.checkForUpdates() }
         }
         // File menu — add, the two batch-paste flows, and list export/import.
         CommandGroup(replacing: .newItem) {
             Button("Add Download…") { viewModel.isAddSheetPresented = true }
                 .keyboardShortcut("n", modifiers: .command)
+            Button("Grab Links from Page…") { viewModel.isLinkGrabberPresented = true }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
             Divider()
             Button("Paste URLs from Clipboard") { pasteFromClipboard() }
                 .keyboardShortcut("v", modifiers: [.command, .shift])
@@ -116,10 +169,25 @@ struct GoelCommands: Commands {
             Divider()
             Button("Export Download List…") { exportList() }
             Button("Import Download List…") { importList() }
+            Divider()
+            Button("Export Backup (JSON)…") { exportBackup() }
+            Button("Import Backup (JSON)…") { importBackup() }
         }
         CommandMenu("Downloads") {
             Button("Start All") { viewModel.resumeAll() }
             Button("Pause All") { viewModel.pauseAll() }
+            Divider()
+            Button("Statistics…") { viewModel.isStatsPresented = true }
+                .keyboardShortcut("y", modifiers: .command)
+            Button("History…") { viewModel.isHistoryPresented = true }
+                .keyboardShortcut("y", modifiers: [.command, .shift])
+            Divider()
+            Picker("When Downloads Finish", selection: autoShutdownBinding) {
+                Text("Do Nothing").tag("none")
+                Text("Quit GoelDownloader").tag("quit")
+                Text("Sleep").tag("sleep")
+                Text("Shut Down").tag("shutdown")
+            }
         }
         // View menu — panel and theme toggles (both back existing features).
         CommandGroup(after: .sidebar) {
@@ -127,10 +195,43 @@ struct GoelCommands: Commands {
                 .keyboardShortcut("i", modifiers: .command)
             Button("Toggle Theme") { cycleTheme() }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
+            Button("Toggle Drop Basket") { DropBasketController.shared.toggle() }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
         }
     }
 
     // MARK: Command actions
+
+    /// The one-shot queue-drained action, committed like any other preference.
+    private var autoShutdownBinding: Binding<String> {
+        Binding(
+            get: { viewModel.settings.autoShutdownAction },
+            set: { newValue in
+                guard newValue != viewModel.settings.autoShutdownAction else { return }
+                viewModel.update { $0.autoShutdownAction = newValue }
+            }
+        )
+    }
+
+    /// Write settings + the full task list (with progress and resume state) to a
+    /// JSON file — the full-fidelity counterpart of the text export.
+    private func exportBackup() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "GoelDownloader-backup.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        viewModel.exportBackup(to: url)
+    }
+
+    /// Restore a JSON backup: merge its tasks and adopt its settings.
+    private func importBackup() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        viewModel.importBackup(from: url)
+    }
 
     /// Read newline-separated URLs/magnets from the pasteboard and queue them.
     private func pasteFromClipboard() {

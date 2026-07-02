@@ -107,27 +107,39 @@ public actor HTTPEngine: DownloadEngine {
         cookieAuthEnabled: true
     )
 
+    /// Per-host credentials for protected downloads (preemptive Basic auth).
+    /// `nonisolated` so the request builders off the actor can consult it.
+    nonisolated let credentials: any CredentialProviding
+
     // MARK: Init
 
     /// Inject a fully-configured `URLSession` (used by tests with a stub
     /// `URLProtocol`).
-    public init(session: URLSession, profile: TrafficProfile = .high) {
+    public init(session: URLSession, profile: TrafficProfile = .high,
+                credentials: any CredentialProviding = KeychainCredentialStore()) {
         self.session = session
         self.profile = profile
+        self.credentials = credentials
     }
 
     /// Build a session from a configuration.
-    public init(configuration: URLSessionConfiguration, profile: TrafficProfile = .high) {
-        self.session = URLSession(configuration: configuration)
+    public init(configuration: URLSessionConfiguration, profile: TrafficProfile = .high,
+                credentials: any CredentialProviding = KeychainCredentialStore()) {
+        self.session = URLSession(configuration: configuration,
+                                  delegate: RedirectSanitizer.shared, delegateQueue: nil)
         self.profile = profile
+        self.credentials = credentials
     }
 
     /// Default real-world session.
-    public init(profile: TrafficProfile = .high) {
+    public init(profile: TrafficProfile = .high,
+                credentials: any CredentialProviding = KeychainCredentialStore()) {
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
-        self.session = URLSession(configuration: config)
+        self.session = URLSession(configuration: config,
+                                  delegate: RedirectSanitizer.shared, delegateQueue: nil)
         self.profile = profile
+        self.credentials = credentials
     }
 
     // MARK: DownloadEngine
@@ -250,7 +262,8 @@ public actor HTTPEngine: DownloadEngine {
         let base = (last.isEmpty || last == "/") ? (url.host ?? "download") : last
         let currentName = DownloadTask.sanitizedName(base, fallback: url.host ?? "download")
         let r = await resolveMetadata(for: url, currentName: currentName)
-        return EngineMetadata(name: r.name, totalBytes: r.totalBytes, reachable: r.reachable)
+        return EngineMetadata(name: r.name, totalBytes: r.totalBytes, reachable: r.reachable,
+                              suggestedChecksum: r.checksum)
     }
 
     public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {
@@ -298,6 +311,15 @@ public actor HTTPEngine: DownloadEngine {
                 try checkDiskSpace(task.saveDirectory, needed: total)
             }
 
+            // Surface the real response facts (Server / ETag / Accept-Ranges /
+            // Content-Type) so the Details tab shows live data, not placeholders.
+            emit(id, .remoteInfoResolved(RemoteInfo(
+                server: probe.server,
+                etag: probe.etag,
+                acceptRanges: probe.acceptsRanges,
+                mimeType: probe.contentType
+            )))
+
             // Refine the on-disk name now that response headers are known:
             // `Content-Disposition` supplies the real filename, `Content-Type` a
             // missing extension. Doing this before the first byte is written means
@@ -336,10 +358,15 @@ public actor HTTPEngine: DownloadEngine {
 
             // Per-request knobs captured once: the per-request settings (User-Agent,
             // retry budget) the off-actor byte pumps can't read from actor state.
+            // Basic auth only ever rides over TLS (cleartext otherwise).
+            let authorization = url.scheme?.lowercased() == "https"
+                ? url.host.flatMap { credentials.basicAuthorization(forHost: $0) }
+                : nil
             let settings = RequestSettings(
                 userAgent: networkConfig.userAgent,
                 maxAttempts: networkConfig.retryCount,
-                retryInterval: networkConfig.retryInterval
+                retryInterval: networkConfig.retryInterval,
+                authorization: authorization
             )
 
             // Resolve this download's connection count from the cross-download
@@ -350,6 +377,18 @@ public actor HTTPEngine: DownloadEngine {
             let host = url.host
             let canSegment = probe.totalBytes != nil && probe.acceptsRanges
             let segmentCount = canSegment ? resolveSegmentCount(total: probe.totalBytes!, host: host) : 1
+
+            // The effective cap is the tighter of the profile ceiling and the
+            // task's own limit (either may be 0 = unlimited).
+            var maxBytesPerSecond = profile.maxDownloadBytesPerSec
+            if let taskCap = resolved.speedLimitBytesPerSec, taskCap > 0 {
+                maxBytesPerSecond = maxBytesPerSecond == 0
+                    ? taskCap : min(maxBytesPerSecond, taskCap)
+            }
+
+            // Mirror URLs ride along for the segmented path (the manager already
+            // sanitized them to http/https, deduped, capped).
+            let mirrors = (resolved.mirrors ?? []).compactMap(URL.init(string:))
 
             let plan = TransferPlan(
                 url: url,
@@ -362,8 +401,9 @@ public actor HTTPEngine: DownloadEngine {
                 segmentCount: segmentCount,
                 session: session,
                 settings: settings,
-                maxBytesPerSecond: profile.maxDownloadBytesPerSec,
-                flushSize: Self.flushSize
+                maxBytesPerSecond: maxBytesPerSecond,
+                flushSize: Self.flushSize,
+                mirrors: mirrors
             )
             let transfer = SegmentedTransfer(plan: plan)
 
@@ -475,6 +515,9 @@ public actor HTTPEngine: DownloadEngine {
             tasks[id]?.resumeData = data
             streamedResume[id] = data
             emit(id, .resumeDataUpdated(data))
+        }
+        if let connections = update.connections {
+            emit(id, .connectionsUpdated(connections))
         }
     }
 
