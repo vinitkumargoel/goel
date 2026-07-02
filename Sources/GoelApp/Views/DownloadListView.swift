@@ -251,7 +251,29 @@ struct DownloadRow: View {
                    ? "✓ Sequential Download" : "Sequential Download") {
                 vm.setSequential(!(task.sequentialDownload == true), task: task.id)
             }
+            Menu("Upload Limit") {
+                Button(uploadLimitLabel(nil)) { vm.setTaskUploadLimit(nil, task: task.id) }
+                ForEach([1, 2, 5, 10, 25], id: \.self) { mb in
+                    Button(uploadLimitLabel(Int64(mb) * 1_000_000)) {
+                        vm.setTaskUploadLimit(Int64(mb) * 1_000_000, task: task.id)
+                    }
+                }
+            }
+            Menu("Seed Until Ratio") {
+                Button(seedRatioLabel(nil)) { vm.setSeedRatioLimit(nil, task: task.id) }
+                ForEach([0.5, 1.0, 1.5, 2.0, 3.0], id: \.self) { r in
+                    Button(seedRatioLabel(r)) { vm.setSeedRatioLimit(r, task: task.id) }
+                }
+            }
+            if task.status.isActive || task.status == .seeding || task.status == .paused {
+                Button("Force Recheck") { vm.forceRecheck(task.id) }
+                Button("Re-announce to Trackers") { vm.forceReannounce(task.id) }
+            }
+            if isMagnet {
+                Button("Copy Magnet Link") { vm.copyToPasteboard(task.sourceLocator) }
+            }
         }
+        Button(task.label == nil ? "Add Label…" : "Edit Label…") { vm.promptForLabel(task: task) }
         if task.status == .paused || task.status == .queued || task.status.isActive {
             Menu("Schedule Start") {
                 ForEach(ScheduledStartOption.presets) { preset in
@@ -296,5 +318,28 @@ struct DownloadRow: View {
             : current == bytesPerSec
         let name = bytesPerSec.map { "\($0 / 1_000_000) MB/s" } ?? "Unlimited"
         return isActive ? "✓ \(name)" : name
+    }
+
+    private func uploadLimitLabel(_ bytesPerSec: Int64?) -> String {
+        let current = task.uploadLimitBytesPerSec
+        let isActive = bytesPerSec == nil
+            ? (current == nil || current == 0)
+            : current == bytesPerSec
+        let name = bytesPerSec.map { "\($0 / 1_000_000) MB/s" } ?? "Unlimited"
+        return isActive ? "✓ \(name)" : name
+    }
+
+    private func seedRatioLabel(_ ratio: Double?) -> String {
+        let current = task.seedRatioLimit
+        let isActive = ratio == nil
+            ? (current == nil)
+            : (current.map { abs($0 - ratio!) < 0.001 } ?? false)
+        let name = ratio.map { String(format: "%.1f", $0) } ?? "Unlimited"
+        return isActive ? "✓ \(name)" : name
+    }
+
+    private var isMagnet: Bool {
+        if case .magnet = task.source { return true }
+        return false
     }
 }

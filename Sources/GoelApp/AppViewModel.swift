@@ -556,7 +556,7 @@ final class AppViewModel: ObservableObject {
     /// user chose on the confirmation screen.
     func confirm(_ preview: DownloadPreview, saveDirectory: String?,
                  priority: FilePriority, checksum: Checksum?, startAt: Date? = nil,
-                 mirrors: [String]? = nil) {
+                 mirrors: [String]? = nil, deselectedFileIDs: [Int]? = nil) {
         // The manager dedups by source identity — starting an exact duplicate is
         // a no-op, so say that instead of a misleading "Added".
         guard existingDuplicate(of: preview.source) == nil else {
@@ -569,10 +569,13 @@ final class AppViewModel: ObservableObject {
         let source = preview.source
         // Mirrors only make sense for direct HTTP downloads.
         let mirrors = preview.kind == .http ? mirrors : nil
+        // Pre-add file deselection only applies to (multi-file) torrents.
+        let skipFiles = preview.kind == .torrent ? deselectedFileIDs : nil
         Task {
             await manager.add(source: source, saveDirectory: saveDirectory,
                               priority: priority, expectedChecksum: checksum,
-                              scheduledAt: startAt, mirrors: mirrors)
+                              scheduledAt: startAt, mirrors: mirrors,
+                              deselectedFileIDs: skipFiles)
         }
         if let startAt {
             let formatter = RelativeDateTimeFormatter()
@@ -1080,6 +1083,61 @@ final class AppViewModel: ObservableObject {
             toastNow("Limited to \(Double(bytesPerSec).speedString) — applies on next start")
         } else {
             toastNow("Per-download limit removed")
+        }
+    }
+
+    /// Cap one torrent's upload (seeding) rate. Takes effect immediately.
+    func setTaskUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) {
+        Task { await manager.setTaskUploadLimit(bytesPerSec, task: id) }
+        if let bytesPerSec, bytesPerSec > 0 {
+            toastNow("Upload limited to \(Double(bytesPerSec).speedString)")
+        } else {
+            toastNow("Upload limit removed")
+        }
+    }
+
+    /// Stop seeding a torrent once it reaches `ratio` (nil = seed indefinitely).
+    func setSeedRatioLimit(_ ratio: Double?, task id: DownloadTask.ID) {
+        Task { await manager.setSeedRatioLimit(ratio, task: id) }
+        if let ratio, ratio > 0 {
+            toastNow(String(format: "Will stop seeding at ratio %.1f", ratio))
+        } else {
+            toastNow("Seeding indefinitely")
+        }
+    }
+
+    /// Re-verify a torrent's downloaded data against its piece hashes.
+    func forceRecheck(_ id: DownloadTask.ID) {
+        Task { await manager.forceRecheck(id) }
+        toastNow("Rechecking downloaded data…")
+    }
+
+    /// Force a torrent to re-announce to its trackers now.
+    func forceReannounce(_ id: DownloadTask.ID) {
+        Task { await manager.forceReannounce(id) }
+        toastNow("Re-announcing to trackers…")
+    }
+
+    /// Assign or clear a category label for grouping downloads.
+    func setLabel(_ label: String?, task id: DownloadTask.ID) {
+        Task { await manager.setLabel(label, task: id) }
+        toastNow(label.map { "Labelled “\($0)”" } ?? "Label removed")
+    }
+
+    /// Prompt for a free-form category label with a native text field, prefilled
+    /// with the current label. An empty value clears it.
+    func promptForLabel(task: DownloadTask) {
+        let alert = NSAlert()
+        alert.messageText = "Label for “\(task.name)”"
+        alert.informativeText = "Group this download under a category. Leave empty to remove."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = task.label ?? ""
+        field.placeholderString = "e.g. Movies, Linux ISOs"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            setLabel(field.stringValue, task: task.id)
         }
     }
 

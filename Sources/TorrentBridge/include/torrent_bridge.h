@@ -106,6 +106,48 @@ int  gt_file_info(GTHandle handle, int index, char *name_out, int name_cap,
 /// Set libtorrent file priority (0 = don't download … 7 = top).
 void gt_set_file_priority(GTHandle handle, int index, int priority);
 
+/* --- Identity, trackers, pieces, maintenance ----------------------------- */
+
+/// Write the torrent's v1 info-hash (40-char hex) into `out`. Unlike parsing it
+/// from a magnet link, this works for `.torrent` files too. Returns 1 ok, 0 if
+/// the hash isn't known yet (pre-metadata) or the handle is invalid.
+int gt_info_hash(GTHandle handle, char *out, int cap);
+
+/// Tracker status flags (see `GTTracker.status`).
+typedef enum {
+    GT_TRACKER_INACTIVE = 0,  /* not yet contacted */
+    GT_TRACKER_UPDATING = 1,  /* announce in flight */
+    GT_TRACKER_WORKING  = 2,  /* announced/scraped successfully */
+    GT_TRACKER_ERROR    = 3   /* last announce failed */
+} GTTrackerStatus;
+
+/// A snapshot of one tracker, filled by `gt_trackers`.
+typedef struct {
+    char url[512];
+    char message[256];   /* last error / status message, may be empty */
+    int  tier;
+    int  num_seeds;      /* scrape "complete", -1 if unknown */
+    int  num_leeches;    /* scrape "incomplete", -1 if unknown */
+    int  status;         /* GTTrackerStatus */
+    int  verified;       /* 1 once the tracker has been reached */
+} GTTracker;
+
+/// Fill up to `cap` trackers into `out`. Returns the number written.
+int gt_trackers(GTHandle handle, GTTracker *out, int cap);
+
+/// Number of pieces in the torrent (0 before metadata is known).
+int gt_piece_count(GTHandle handle);
+/// Fill `out[i]` = 1 if piece `i` is downloaded, else 0, for up to `cap` pieces.
+/// Returns the number of piece bits written.
+int gt_pieces(GTHandle handle, uint8_t *out, int cap);
+
+/// Re-verify the on-disk data against the torrent's piece hashes.
+void gt_force_recheck(GTHandle handle);
+/// Force an immediate re-announce to all trackers.
+void gt_force_reannounce(GTHandle handle);
+/// Per-torrent upload rate cap in bytes/sec (0 = unlimited).
+void gt_set_upload_limit(GTHandle handle, int bytes_per_sec);
+
 #ifdef __cplusplus
 }
 #endif

@@ -81,6 +81,9 @@ extension DownloadTask {
         case .paused:
             return "Paused · \(Int((fractionCompleted * 100).rounded()))%"
         case .seeding:
+            if let limit = seedRatioLimit, limit > 0 {
+                return String(format: "Seeding · ratio %.2f / %.1f", shareRatio, limit)
+            }
             return String(format: "Seeding · ratio %.2f", shareRatio)
         case .completed:
             return "Completed"
@@ -114,12 +117,18 @@ extension DownloadTask {
         return Self.dateFormatter.string(from: addedAt)
     }
 
-    /// The info-hash for a magnet source, if present (Details tab).
-    var infoHash: String? {
+    /// The info-hash parsed from a magnet link, used as a fallback before the
+    /// engine resolves the real one (which also covers `.torrent` files). Prefer
+    /// the model's stored ``DownloadTask/infoHash``; fall back to this.
+    var magnetInfoHash: String? {
         guard case .magnet(let m) = source else { return nil }
         guard let range = m.range(of: #"btih:([a-zA-Z0-9]+)"#, options: .regularExpression) else { return nil }
         return String(m[range]).replacingOccurrences(of: "btih:", with: "")
     }
+
+    /// The best info-hash to display: the engine-resolved one (works for
+    /// `.torrent` files too), else the magnet link's.
+    var displayInfoHash: String? { infoHash ?? magnetInfoHash }
 
     /// The canonical source string for display / copy.
     var sourceLocator: String { source.locator }

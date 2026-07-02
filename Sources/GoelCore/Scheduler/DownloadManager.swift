@@ -94,13 +94,11 @@ public actor DownloadManager {
     /// scheduling is disabled — the scheduler gates promotion on this.
     var scheduleWindowOpen = true
 
-    /// Tasks the window-close transition paused, so reopening resumes exactly
-    /// those — never downloads the user paused by hand.
-    var schedulePausedIDs: Set<UUID> = []
-
-    /// The profile that was active before the window switched to
-    /// ``AppSettings/scheduleProfileName``, restored when the window closes.
-    var preScheduleProfileName: String?
+    /// The consolidated automation memory — the window/network paused-id ledgers,
+    /// the pre-window profile, and the RSS seen-keys — that the pure
+    /// ``AutomationCore`` reads and hands back each tick. It replaces the five
+    /// parallel ledgers this actor used to keep (which could drift apart).
+    var automationMemory = AutomationCore.Memory()
 
     /// The RSS feed polling loop, when any feed is enabled.
     var rssTask: Task<Void, Never>?
@@ -109,17 +107,7 @@ public actor DownloadManager {
     /// future ``DownloadTask/scheduledAt``.
     var scheduledStartTask: Task<Void, Never>?
 
-    /// GUIDs/links already queued from feeds, so a poll never re-adds items.
-    var rssSeenKeys: Set<String> = []
-
     // MARK: Network-awareness state
-
-    /// Tasks paused by the expensive/constrained-network policy, so recovery
-    /// resumes exactly those.
-    var networkPausedIDs: Set<UUID> = []
-
-    /// Whether the network policy currently holds the queue paused.
-    var networkPaused = false
 
     /// The last path flags reported by the app layer, re-evaluated when the
     /// pause-on-expensive/constrained settings change.
@@ -407,7 +395,8 @@ public actor DownloadManager {
         startPaused: Bool = false,
         scheduledAt: Date? = nil,
         mirrors: [String]? = nil,
-        suggestedName: String? = nil
+        suggestedName: String? = nil,
+        deselectedFileIDs: [Int]? = nil
     ) -> DownloadTask {
         if let existing = tasks.first(where: { $0.source.dedupKey == source.dedupKey }) {
             return existing
@@ -441,7 +430,8 @@ public actor DownloadManager {
             priority: priority,
             expectedChecksum: expectedChecksum,
             scheduledAt: scheduledAt,
-            mirrors: Self.sanitizedMirrors(mirrors, primary: source)
+            mirrors: Self.sanitizedMirrors(mirrors, primary: source),
+            initialSkipFileIDs: (deselectedFileIDs?.isEmpty ?? true) ? nil : deselectedFileIDs
         )
         tasks.append(task)
         persist(task)
@@ -716,6 +706,54 @@ public actor DownloadManager {
         publish()
     }
 
+    /// Cap one torrent's upload rate in bytes/sec (nil/0 = uncapped), applied live.
+    public func setTaskUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {
+        guard let task = task(id) else { return }
+        await engine(for: task.source).setUploadLimit(bytesPerSec, task: id)
+        // Re-resolve the index AFTER the actor hop: `tasks` may have been mutated
+        // (e.g. a concurrent remove) while suspended, so a pre-await index could
+        // now point past the end or at a different task.
+        if let i = index(of: id) {
+            tasks[i].uploadLimitBytesPerSec = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
+            persist(tasks[i])
+        }
+        publish()
+    }
+
+    /// Set (or clear, with nil) a per-torrent seed-ratio limit. When seeding
+    /// reaches it, the engine stops the torrent and marks it completed.
+    public func setSeedRatioLimit(_ ratio: Double?, task id: DownloadTask.ID) async {
+        guard let task = task(id) else { return }
+        await engine(for: task.source).setSeedRatioLimit(ratio, task: id)
+        // Re-resolve the index after the actor hop (see setTaskUploadLimit).
+        if let i = index(of: id) {
+            tasks[i].seedRatioLimit = (ratio ?? 0) > 0 ? ratio : nil
+            persist(tasks[i])
+        }
+        publish()
+    }
+
+    /// Re-verify a torrent's on-disk data against its piece hashes.
+    public func forceRecheck(_ id: DownloadTask.ID) async {
+        guard let task = task(id) else { return }
+        await engine(for: task.source).forceRecheck(id)
+    }
+
+    /// Force a torrent to re-announce to its trackers immediately.
+    public func forceReannounce(_ id: DownloadTask.ID) async {
+        guard let task = task(id) else { return }
+        await engine(for: task.source).forceReannounce(id)
+    }
+
+    /// Assign (or clear, with nil/empty) a free-form category label for grouping.
+    public func setLabel(_ label: String?, task id: DownloadTask.ID) async {
+        guard let i = index(of: id) else { return }
+        let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+        tasks[i].label = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        persist(tasks[i])
+        publish()
+    }
+
     // MARK: Export / Import
 
     /// A self-contained snapshot of the whole app: settings + every task with
@@ -799,9 +837,14 @@ public actor DownloadManager {
     ) async {
         guard let task = task(id) else { return }
         await engine(for: task.source).setFilePriority(priority, fileID: fileID, task: id)
-        if let i = index(of: id),
-           let f = tasks[i].files.firstIndex(where: { $0.id == fileID }) {
-            tasks[i].files[f].priority = priority
+        if let i = index(of: id) {
+            if let f = tasks[i].files.firstIndex(where: { $0.id == fileID }) {
+                tasks[i].files[f].priority = priority
+            }
+            // The user has now taken explicit control of this file, so drop it from
+            // the one-shot add-time skip set — otherwise a later resume/relaunch
+            // would silently re-skip a file the user just re-enabled.
+            tasks[i].initialSkipFileIDs?.removeAll { $0 == fileID }
             persist(tasks[i])
         }
         publish()

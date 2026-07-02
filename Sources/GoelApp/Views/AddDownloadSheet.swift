@@ -24,6 +24,8 @@ struct AddDownloadSheet: View {
         case confirm(DownloadPreview)
     }
     @State private var phase: Phase = .input
+    /// Torrent file indices the user unticked on the confirm screen (skip these).
+    @State private var deselectedFileIDs: Set<Int> = []
 
     @State private var text: String = ""
     @State private var priority: FilePriority = .normal
@@ -189,7 +191,7 @@ struct AddDownloadSheet: View {
                 }
 
                 if !preview.files.isEmpty {
-                    fileList(preview.files)
+                    fileList(preview.files, selectable: preview.kind == .torrent)
                 }
 
                 if let note = preview.note {
@@ -235,7 +237,7 @@ struct AddDownloadSheet: View {
 
             Divider()
             HStack {
-                Button("Back") { phase = .input }
+                Button("Back") { deselectedFileIDs = []; phase = .input }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -276,19 +278,42 @@ struct AddDownloadSheet: View {
         }
     }
 
-    /// Scrollable list of the files inside a torrent.
-    private func fileList(_ files: [TransferFile]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Files").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+    /// Scrollable list of the files inside a torrent. When `selectable`, each
+    /// file gets a tick so the user can choose what to download before it starts;
+    /// unticked files are recorded in `deselectedFileIDs` and skipped on add.
+    private func fileList(_ files: [TransferFile], selectable: Bool) -> some View {
+        let selectedCount = files.count - files.filter { deselectedFileIDs.contains($0.id) }.count
+        let selectedBytes = files.filter { !deselectedFileIDs.contains($0.id) }.reduce(Int64(0)) { $0 + $1.length }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Files").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                Spacer()
+                if selectable {
+                    Text("\(selectedCount) of \(files.count) · \(selectedBytes.byteString)")
+                        .font(.system(size: 11)).foregroundStyle(.tertiary).monospacedDigit()
+                }
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(files) { file in
+                        let wanted = !deselectedFileIDs.contains(file.id)
                         HStack(spacing: 8) {
-                            Image(systemName: "doc")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.tertiary)
+                            if selectable {
+                                Button {
+                                    if wanted { deselectedFileIDs.insert(file.id) }
+                                    else { deselectedFileIDs.remove(file.id) }
+                                } label: {
+                                    Image(systemName: wanted ? "checkmark.square.fill" : "square")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(wanted ? Theme.accent : Color.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(.tertiary)
+                            }
                             Text((file.path as NSString).lastPathComponent)
                                 .font(.system(size: 11))
+                                .foregroundStyle(wanted ? .primary : .secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Spacer(minLength: 8)
@@ -482,9 +507,14 @@ struct AddDownloadSheet: View {
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+        // Only forward deselections that map to a file in this preview (guards
+        // against stale indices from a previously previewed torrent).
+        let validIDs = Set(preview.files.map(\.id))
+        let skip = deselectedFileIDs.filter(validIDs.contains).sorted()
         vm.confirm(preview, saveDirectory: resolvedSaveDirectory, priority: priority,
                    checksum: Checksum.parse(checksumText), startAt: startAt,
-                   mirrors: mirrors.isEmpty ? nil : mirrors)
+                   mirrors: mirrors.isEmpty ? nil : mirrors,
+                   deselectedFileIDs: skip.isEmpty ? nil : skip)
         dismiss()
     }
 

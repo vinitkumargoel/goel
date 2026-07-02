@@ -34,6 +34,19 @@ public protocol DownloadEngine: AnyObject, Sendable {
     /// Meaningful for torrents; other engines ignore it.
     func setSequential(_ sequential: Bool, task: DownloadTask.ID) async
 
+    /// Re-verify a torrent's on-disk data against its piece hashes. Torrent-only.
+    func forceRecheck(_ id: DownloadTask.ID) async
+
+    /// Force an immediate re-announce to a torrent's trackers. Torrent-only.
+    func forceReannounce(_ id: DownloadTask.ID) async
+
+    /// Cap a task's upload rate in bytes/sec (nil/0 = uncapped). Torrent-only.
+    func setUploadLimit(_ bytesPerSec: Int64?, task: DownloadTask.ID) async
+
+    /// Stop seeding a torrent once its share ratio reaches `ratio` (nil = no
+    /// per-task limit). Torrent-only.
+    func setSeedRatioLimit(_ ratio: Double?, task: DownloadTask.ID) async
+
     /// The live event stream for a task. Multiple subscribers are supported.
     func events(for id: DownloadTask.ID) -> AsyncStream<EngineEvent>
 
@@ -68,6 +81,13 @@ public extension DownloadEngine {
 
     /// Default: download order isn't controllable (non-torrent engines).
     func setSequential(_ sequential: Bool, task: DownloadTask.ID) async {}
+
+    /// Defaults: the maintenance / seeding controls below are torrent-only, so
+    /// every other engine inherits a no-op.
+    func forceRecheck(_ id: DownloadTask.ID) async {}
+    func forceReannounce(_ id: DownloadTask.ID) async {}
+    func setUploadLimit(_ bytesPerSec: Int64?, task: DownloadTask.ID) async {}
+    func setSeedRatioLimit(_ ratio: Double?, task: DownloadTask.ID) async {}
 }
 
 // MARK: - Capability description

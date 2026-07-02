@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import GoelCore
 
 // The five detail-panel tab bodies (General, Details, Progress, Files,
@@ -140,20 +141,21 @@ struct DetailsTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if task.kind == .torrent {
-                KVRow(key: "Info hash", value: task.infoHash ?? "—", copyable: task.infoHash != nil)
+                KVRow(key: "Info hash", value: task.displayInfoHash ?? "—",
+                      copyable: task.displayInfoHash != nil)
                 KVRow(key: "Peers", value: "\(task.connectionCount) connected")
                 KVRow(key: "Seeds", value: task.seedCount.map { "\($0) available" } ?? "—")
+                KVRow(key: "Leechers", value: "\(task.leecherCount)")
                 KVRow(key: "Protocol", value: torrentProtocol)
                 KVRow(key: "Encryption", value: encryptionText)
                 if task.sequentialDownload == true {
                     KVRow(key: "Piece order", value: "Sequential (streaming)", valueColor: Theme.teal)
                 }
-                if !trackers.isEmpty {
-                    SectionLabel(text: "Trackers")
-                    Text(trackers.joined(separator: "\n"))
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                if let limit = task.seedRatioLimit, limit > 0 {
+                    KVRow(key: "Seed until ratio", value: String(format: "%.1f", limit),
+                          valueColor: Theme.teal)
                 }
+                trackerSection
             } else {
                 KVRow(key: "URL", value: task.sourceLocator, copyable: true)
                 KVRow(key: "MIME type", value: task.remoteInfo?.mimeType ?? "—")
@@ -185,9 +187,36 @@ struct DetailsTab: View {
         }
     }
 
-    /// Tracker URLs parsed from the magnet's `tr=` parameters (real data — a
-    /// `.torrent` file's tracker list isn't surfaced by the engine yet).
-    private var trackers: [String] {
+    /// Live tracker table from the engine, with a graceful fallback to the
+    /// magnet's declared trackers before the first announce report arrives.
+    @ViewBuilder private var trackerSection: some View {
+        if let live = task.trackers, !live.isEmpty {
+            SectionLabel(text: "Trackers · \(live.count)")
+            ForEach(live) { tracker in
+                TrackerRow(tracker: tracker)
+                Divider()
+            }
+        } else if !magnetTrackers.isEmpty {
+            SectionLabel(text: "Trackers · \(magnetTrackers.count)")
+            ForEach(magnetTrackers, id: \.self) { url in
+                HStack(spacing: 8) {
+                    Circle().fill(Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
+                    Text(URLComponents(string: url)?.host ?? url)
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Text("idle").font(.system(size: 10)).foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, 6)
+                Divider()
+            }
+        }
+    }
+
+    /// Tracker URLs parsed from the magnet's `tr=` parameters — the pre-announce
+    /// fallback used until the engine reports live tracker state.
+    private var magnetTrackers: [String] {
         guard case .magnet = task.source,
               let components = URLComponents(string: task.sourceLocator) else { return [] }
         return (components.queryItems ?? [])
@@ -230,6 +259,56 @@ struct DetailsTab: View {
     }
 }
 
+/// One row in the live tracker table: status dot, host, scrape counts, and a
+/// copy / open-in-browser context menu (the audit's "clickable trackers").
+struct TrackerRow: View {
+    let tracker: TorrentTracker
+    @EnvironmentObject private var vm: AppViewModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle().fill(statusColor).frame(width: 7, height: 7)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tracker.host)
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .lineLimit(1).truncationMode(.middle)
+                if !tracker.message.isEmpty {
+                    Text(tracker.message)
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .lineLimit(1).truncationMode(.tail)
+                }
+            }
+            Spacer(minLength: 8)
+            if let s = tracker.seeds {
+                Text("\(s)S").font(.system(size: 10.5)).monospacedDigit().foregroundStyle(Theme.green)
+            }
+            if let l = tracker.leeches {
+                Text("\(l)L").font(.system(size: 10.5)).monospacedDigit().foregroundStyle(Theme.orange)
+            }
+            Text(tracker.statusLabel)
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(statusColor)
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Copy Tracker URL") { vm.copyToPasteboard(tracker.url) }
+            if tracker.url.hasPrefix("http"), let url = URL(string: tracker.url) {
+                Button("Open in Browser") { NSWorkspace.shared.open(url) }
+            }
+        }
+    }
+
+    private var statusColor: Color {
+        switch tracker.status {
+        case .working:  return Theme.green
+        case .updating: return Theme.accent
+        case .error:    return Theme.red
+        case .inactive: return .secondary
+        }
+    }
+}
+
 // MARK: - Progress (segments / piece map)
 
 struct ProgressTab: View {
@@ -244,25 +323,36 @@ struct ProgressTab: View {
     }
 
     private var pieceMap: some View {
-        let total = 120
-        let filled = Int(Double(total) * task.fractionCompleted)
+        // Real availability from the engine: each cell is a bucket of pieces,
+        // coloured by how much of it is downloaded. Empty before the first report.
+        let buckets = task.pieceAvailability ?? []
         return VStack(alignment: .leading, spacing: 0) {
-            SectionLabel(text: "Piece map · \(filled)/\(total) pieces")
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(13), spacing: 3), count: 16), spacing: 3) {
-                ForEach(0..<total, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(pieceColor(i, filled: filled))
-                        .frame(width: 13, height: 13)
+            if buckets.isEmpty {
+                SectionLabel(text: "Piece map")
+                if task.status == .requestingMetadata {
+                    Text("Waiting for metadata…")
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary).padding(.vertical, 6)
+                } else {
+                    ProgressView(value: task.fractionCompleted).tint(Theme.accent).padding(.vertical, 6)
+                }
+            } else {
+                let have = buckets.filter { $0 >= 0.999 }.count
+                SectionLabel(text: "Piece map · \(have)/\(buckets.count) complete")
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(13), spacing: 3), count: 16), spacing: 3) {
+                    ForEach(buckets.indices, id: \.self) { i in
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(bucketColor(buckets[i]))
+                            .frame(width: 13, height: 13)
+                    }
                 }
             }
             legend
         }
     }
 
-    private func pieceColor(_ i: Int, filled: Int) -> Color {
-        if task.status == .requestingMetadata { return Theme.orange.opacity(0.7) }
-        if i < filled { return Theme.green }
-        if i == filled && task.status == .downloading { return Theme.accent }
+    private func bucketColor(_ fraction: Double) -> Color {
+        if fraction >= 0.999 { return Theme.green }
+        if fraction > 0 { return Theme.accent.opacity(0.3 + 0.6 * fraction) }
         return Color.primary.opacity(0.08)
     }
 

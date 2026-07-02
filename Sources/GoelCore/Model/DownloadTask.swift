@@ -70,6 +70,37 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// against the primary's size so a divergent mirror is dropped, not merged.
     public var mirrors: [String]?
 
+    /// The torrent's v1 info-hash (hex), resolved from libtorrent so it is known
+    /// for `.torrent` files too — not just magnet links. nil for non-torrents.
+    public var infoHash: String?
+
+    /// Live tracker status (torrents only), refreshed by the session. Transient —
+    /// meaningless after relaunch. Optional so old persisted blobs still decode.
+    public var trackers: [TorrentTracker]?
+
+    /// A downsampled piece-availability map (torrents only): each value is the
+    /// fraction 0…1 of the real pieces in that bucket that are downloaded. Drives
+    /// the Progress tab's piece grid with true data. Transient.
+    public var pieceAvailability: [Double]?
+
+    /// Optional per-task upload cap in bytes/sec (torrents; 0 or nil = uncapped).
+    public var uploadLimitBytesPerSec: Int64?
+
+    /// Stop seeding once the share ratio reaches this value (torrents). nil = seed
+    /// indefinitely (until the user stops it or a global rule applies).
+    public var seedRatioLimit: Double?
+
+    /// A free-form category the user assigns for grouping/filtering. nil = none.
+    public var label: String?
+
+    /// File indices the user deselected on the add screen (torrents), before the
+    /// per-file list exists. Applied once as `.skip` the moment metadata resolves
+    /// (after which the skip lives in each file's own `.priority`), then dropped:
+    /// the engine clears its copy after the first apply, and changing a file's
+    /// priority scrubs that id here — so re-enabling a file is never undone by a
+    /// later resume/relaunch re-applying a stale add-time skip.
+    public var initialSkipFileIDs: [Int]?
+
     public init(
         id: UUID = UUID(),
         source: DownloadSource,
@@ -95,7 +126,14 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         speedLimitBytesPerSec: Int64? = nil,
         sequentialDownload: Bool? = nil,
         scheduledAt: Date? = nil,
-        mirrors: [String]? = nil
+        mirrors: [String]? = nil,
+        infoHash: String? = nil,
+        trackers: [TorrentTracker]? = nil,
+        pieceAvailability: [Double]? = nil,
+        uploadLimitBytesPerSec: Int64? = nil,
+        seedRatioLimit: Double? = nil,
+        label: String? = nil,
+        initialSkipFileIDs: [Int]? = nil
     ) {
         self.id = id
         self.source = source
@@ -122,6 +160,13 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         self.sequentialDownload = sequentialDownload
         self.scheduledAt = scheduledAt
         self.mirrors = mirrors
+        self.infoHash = infoHash
+        self.trackers = trackers
+        self.pieceAvailability = pieceAvailability
+        self.uploadLimitBytesPerSec = uploadLimitBytesPerSec
+        self.seedRatioLimit = seedRatioLimit
+        self.label = label
+        self.initialSkipFileIDs = initialSkipFileIDs
     }
 
     // MARK: Derived
@@ -142,6 +187,19 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     public var shareRatio: Double {
         guard bytesDownloaded > 0 else { return 0 }
         return Double(bytesUploaded) / Double(bytesDownloaded)
+    }
+
+    /// Connected peers that are not seeds (the swarm leechers we're talking to).
+    /// Derived from the connected-peer and seed counts the session reports.
+    public var leecherCount: Int {
+        max(0, connectionCount - (seedCount ?? 0))
+    }
+
+    /// Progress toward the per-task seed-ratio target, 0…1, or nil when no target
+    /// is set. Lets the UI show a "seeding to 2.0 · 65%" countdown.
+    public var seedRatioProgress: Double? {
+        guard let limit = seedRatioLimit, limit > 0 else { return nil }
+        return min(1, shareRatio / limit)
     }
 
     /// Seconds remaining at the current speed, or nil if unknown/stalled.

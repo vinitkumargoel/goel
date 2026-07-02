@@ -59,6 +59,9 @@ public actor TorrentEngine: DownloadEngine {
             if let cap = task.speedLimitBytesPerSec, cap > 0 {
                 gt_set_download_limit(handle, Int32(clamping: cap))
             }
+            if let up = task.uploadLimitBytesPerSec, up > 0 {
+                gt_set_upload_limit(handle, Int32(clamping: up))
+            }
             startPoller(task.id)
         } catch {
             let de = (error as? DownloadError) ?? .unknown((error as NSError).localizedDescription)
@@ -120,6 +123,14 @@ public actor TorrentEngine: DownloadEngine {
     }
 
     public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {
+        // Keep the engine's own task copy current so that a fresh poll (e.g. after
+        // a pause→resume in the same session) re-applies the LIVE priority, not the
+        // add-time one, and drop the file from the one-shot skip set so it is never
+        // silently re-skipped.
+        if let f = tasks[id]?.files.firstIndex(where: { $0.id == fileID }) {
+            tasks[id]?.files[f].priority = priority
+        }
+        tasks[id]?.initialSkipFileIDs?.removeAll { $0 == fileID }
         guard let handle = handles[id] else { return }
         gt_set_file_priority(handle, Int32(fileID), Int32(Self.toLibtorrentPriority(priority)))
     }
@@ -128,6 +139,30 @@ public actor TorrentEngine: DownloadEngine {
         tasks[id]?.sequentialDownload = sequential
         guard let handle = handles[id] else { return }
         gt_set_sequential(handle, sequential ? 1 : 0)
+    }
+
+    public func forceRecheck(_ id: UUID) async {
+        guard let handle = handles[id] else { return }
+        gt_force_recheck(handle)
+    }
+
+    public func forceReannounce(_ id: UUID) async {
+        guard let handle = handles[id] else { return }
+        gt_force_reannounce(handle)
+    }
+
+    public func setUploadLimit(_ bytesPerSec: Int64?, task id: UUID) async {
+        let cap = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
+        tasks[id]?.uploadLimitBytesPerSec = cap
+        guard let handle = handles[id] else { return }
+        gt_set_upload_limit(handle, Int32(clamping: cap ?? 0))
+    }
+
+    public func setSeedRatioLimit(_ ratio: Double?, task id: UUID) async {
+        // Stored on the task and enforced in the poll loop (libtorrent has no
+        // per-torrent ratio cap in its simple API): once seeding reaches the
+        // ratio, the poller pauses the torrent and marks it completed.
+        tasks[id]?.seedRatioLimit = (ratio ?? 0) > 0 ? ratio : nil
     }
 
     public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
@@ -258,6 +293,7 @@ public actor TorrentEngine: DownloadEngine {
         var metadataEmitted = false
         var finishedEmitted = false
         var lastPhase: DownloadStatus?
+        var tick = 0
 
         while !Task.isCancelled {
             guard let handle = handles[id] else { return }
@@ -265,9 +301,14 @@ public actor TorrentEngine: DownloadEngine {
             guard gt_get_status(handle, &status) == 1 else { return }
 
             if !metadataEmitted, status.has_metadata != 0 {
+                // Apply any pre-add file selection (skip/priority) BEFORE reading
+                // the file list back, so the emitted files reflect the user's
+                // choice rather than libtorrent's default-normal for every file.
+                applyStoredFilePriorities(id, handle)
                 let files = readFiles(handle)
                 emit(id, .metadataResolved(name: Self.cString(status.name),
                                            totalBytes: status.total_bytes, files: files))
+                if let hash = readInfoHash(handle) { emit(id, .infoHashResolved(hash)) }
                 metadataEmitted = true
             }
 
@@ -278,6 +319,17 @@ public actor TorrentEngine: DownloadEngine {
                                connectionCount: Int(status.num_peers)))
             emit(id, .swarmUpdated(peers: Int(status.num_peers), seeds: Int(status.num_seeds)))
             emit(id, .connectionsUpdated(readPeers(handle)))
+
+            // Piece availability and tracker state change more slowly than the
+            // byte counters — sample them less often to keep the per-second poll
+            // cheap on large torrents/swarms.
+            if metadataEmitted, tick % 2 == 0 {
+                let pieces = readPieces(handle)
+                if !pieces.isEmpty { emit(id, .piecesUpdated(pieces)) }
+            }
+            if tick % 5 == 0 {
+                emit(id, .trackersUpdated(readTrackers(handle)))
+            }
 
             let phase = TorrentState(rawValue: status.state) ?? .downloading
             switch phase {
@@ -303,10 +355,89 @@ public actor TorrentEngine: DownloadEngine {
                     finishedEmitted = true
                     lastPhase = .seeding
                 }
+                // Per-task seed-ratio limit: stop seeding once the target ratio is
+                // reached, then mark the task completed (its payload is already on
+                // disk). No limit set → seed indefinitely, as before.
+                if let limit = tasks[id]?.seedRatioLimit, limit > 0, status.downloaded_bytes > 0 {
+                    let ratio = Double(status.uploaded_bytes) / Double(status.downloaded_bytes)
+                    if ratio >= limit {
+                        gt_pause(handle)
+                        emit(id, .statusChanged(.completed))
+                        pollers[id] = nil
+                        return
+                    }
+                }
             }
 
+            tick &+= 1
             try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
+    }
+
+    /// Apply the stored per-file selection to a freshly-resolved handle, so it
+    /// takes effect before any of those files download. Covers two sources: files
+    /// carried on a resumed task that already hold a non-normal priority, and the
+    /// `initialSkipFileIDs` a user deselected on the add screen (before the file
+    /// list existed on the task).
+    private func applyStoredFilePriorities(_ id: UUID, _ handle: UnsafeMutableRawPointer) {
+        if let files = tasks[id]?.files {
+            for file in files where file.priority != .normal {
+                gt_set_file_priority(handle, Int32(file.id),
+                                     Int32(Self.toLibtorrentPriority(file.priority)))
+            }
+        }
+        if let skip = tasks[id]?.initialSkipFileIDs {
+            for fid in skip {
+                gt_set_file_priority(handle, Int32(fid), Int32(Self.toLibtorrentPriority(.skip)))
+            }
+            // One-shot: the skip is now reflected in the handle (and, once
+            // `readFiles` runs, in the persisted per-file priorities). Clear it so a
+            // later poll on this same handle — a pause→resume starts a brand-new
+            // poll() with `metadataEmitted` reset — cannot re-skip a file the user
+            // has since re-enabled.
+            tasks[id]?.initialSkipFileIDs = nil
+        }
+    }
+
+    /// Read the torrent's v1 info-hash (hex), or nil before it is known.
+    private func readInfoHash(_ handle: UnsafeMutableRawPointer) -> String? {
+        var buf = [CChar](repeating: 0, count: 64)
+        let ok = buf.withUnsafeMutableBufferPointer { gt_info_hash(handle, $0.baseAddress, 64) }
+        guard ok == 1 else { return nil }
+        let s = String(cString: buf)
+        return s.isEmpty ? nil : s
+    }
+
+    /// Read up to 64 trackers with their live announce/scrape state.
+    private func readTrackers(_ handle: UnsafeMutableRawPointer) -> [TorrentTracker] {
+        var buffer = [GTTracker](repeating: GTTracker(), count: 64)
+        let count = Int(buffer.withUnsafeMutableBufferPointer { gt_trackers(handle, $0.baseAddress, 64) })
+        guard count > 0 else { return [] }
+        return buffer.prefix(count).map { t in
+            TorrentTracker(
+                url: Self.cString(t.url),
+                tier: Int(t.tier),
+                message: Self.cString(t.message),
+                seeds: t.num_seeds >= 0 ? Int(t.num_seeds) : nil,
+                leeches: t.num_leeches >= 0 ? Int(t.num_leeches) : nil,
+                status: TorrentTracker.Status(rawValue: Int(t.status)) ?? .inactive,
+                verified: t.verified != 0
+            )
+        }
+    }
+
+    /// Read the real piece bitfield and downsample it to `buckets` availability
+    /// fractions (0…1) for the Progress-tab grid. Huge torrents are capped and
+    /// averaged so the read stays cheap.
+    private func readPieces(_ handle: UnsafeMutableRawPointer, buckets: Int = 120) -> [Double] {
+        guard gt_piece_count(handle) > 0 else { return [] }
+        // gt_pieces downsamples the FULL piece bitfield into up to `buckets`
+        // fractional (0…255) availability values on the C++ side, so the map
+        // represents the whole torrent regardless of its piece count.
+        var vals = [UInt8](repeating: 0, count: buckets)
+        let n = Int(vals.withUnsafeMutableBufferPointer { gt_pieces(handle, $0.baseAddress, Int32(buckets)) })
+        guard n > 0 else { return [] }
+        return vals.prefix(n).map { Double($0) / 255.0 }
     }
 
     /// Read up to 32 connected peers as ``TaskConnection`` rows for the detail

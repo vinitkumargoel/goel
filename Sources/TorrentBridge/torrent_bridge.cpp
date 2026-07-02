@@ -12,6 +12,9 @@
 #include <libtorrent/file_storage.hpp>
 #include <libtorrent/download_priority.hpp>
 #include <libtorrent/peer_info.hpp>
+#include <libtorrent/announce_entry.hpp>
+#include <libtorrent/info_hash.hpp>
+#include <libtorrent/sha1_hash.hpp>
 
 #include <cstring>
 #include <memory>
@@ -262,7 +265,140 @@ int gt_file_info(GTHandle handle, int index, char *name_out, int name_cap,
 void gt_set_file_priority(GTHandle handle, int index, int priority) {
     auto *h = as_handle(handle);
     if (!h || !h->is_valid()) return;
-    h->file_priority(lt::file_index_t(index), lt::download_priority_t(static_cast<std::uint8_t>(priority)));
+    try {
+        // Bounds-check the index (like gt_file_info): this is now reached with
+        // indices sourced from persisted/preview state, not just a fresh
+        // 0..<count enumeration, so a stale out-of-range id must not be handed
+        // to libtorrent unchecked.
+        auto info = h->torrent_file();
+        if (!info) return;
+        if (index < 0 || index >= info->files().num_files()) return;
+        h->file_priority(lt::file_index_t(index),
+                         lt::download_priority_t(static_cast<std::uint8_t>(priority)));
+    } catch (...) {}
+}
+
+int gt_info_hash(GTHandle handle, char *out, int cap) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid() || !out || cap <= 0) return 0;
+    try {
+        lt::info_hash_t const ih = h->info_hashes();
+        lt::sha1_hash const hash = ih.has_v1() ? ih.v1 : lt::sha1_hash();
+        if (hash.is_all_zeros()) return 0;
+        std::ostringstream oss;
+        oss << hash;   // libtorrent renders a sha1_hash as lowercase hex
+        copy_string(out, cap, oss.str());
+        return 1;
+    } catch (...) { return 0; }
+}
+
+int gt_trackers(GTHandle handle, GTTracker *out, int cap) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid() || !out || cap <= 0) return 0;
+    try {
+    std::vector<lt::announce_entry> const trackers = h->trackers();
+    int n = 0;
+    for (auto const &ae : trackers) {
+        if (n >= cap) break;
+        GTTracker &gt = out[n];
+        std::memset(&gt, 0, sizeof(GTTracker));
+        copy_string(gt.url, sizeof(gt.url), ae.url);
+        gt.tier = ae.tier;
+        gt.verified = ae.verified ? 1 : 0;
+        gt.num_seeds = -1;
+        gt.num_leeches = -1;
+
+        // Aggregate the per-endpoint / per-protocol (v1+v2) announce state into a
+        // single row: worst-case status, best-known scrape counts, first message.
+        bool anyUpdating = false, anyError = false, anyWorking = false;
+        for (auto const &ep : ae.endpoints) {
+            for (int v = 0; v < 2; ++v) {
+                auto const &aih = ep.info_hashes[lt::protocol_version(v)];
+                if (aih.updating) anyUpdating = true;
+                if (aih.last_error) {
+                    anyError = true;
+                    if (gt.message[0] == '\0')
+                        copy_string(gt.message, sizeof(gt.message), aih.last_error.message());
+                } else if (!aih.message.empty() && gt.message[0] == '\0') {
+                    copy_string(gt.message, sizeof(gt.message), aih.message);
+                }
+                if (aih.scrape_complete >= 0) {
+                    anyWorking = true;
+                    if (aih.scrape_complete > gt.num_seeds) gt.num_seeds = aih.scrape_complete;
+                }
+                if (aih.scrape_incomplete >= 0 && aih.scrape_incomplete > gt.num_leeches)
+                    gt.num_leeches = aih.scrape_incomplete;
+                if (aih.start_sent || aih.complete_sent) anyWorking = true;
+            }
+        }
+        if (anyWorking) gt.status = GT_TRACKER_WORKING;
+        else if (anyUpdating) gt.status = GT_TRACKER_UPDATING;
+        else if (anyError) gt.status = GT_TRACKER_ERROR;
+        else gt.status = GT_TRACKER_INACTIVE;
+        ++n;
+    }
+    return n;
+    } catch (...) { return 0; }
+}
+
+int gt_piece_count(GTHandle handle) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid()) return 0;
+    try {
+        auto info = h->torrent_file();
+        if (!info) return 0;
+        return info->num_pieces();
+    } catch (...) { return 0; }
+}
+
+int gt_pieces(GTHandle handle, uint8_t *out, int cap) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid() || !out || cap <= 0) return 0;
+    try {
+        lt::torrent_status const st = h->status(lt::torrent_handle::query_pieces);
+        auto const &pieces = st.pieces;
+        int const total = static_cast<int>(pieces.size());
+        if (total <= 0) return 0;
+        // Downsample the WHOLE piece bitfield into up to `cap` contiguous
+        // buckets, each carrying the fraction of its pieces that are complete
+        // scaled to 0..255. libtorrent already materialises the full bitfield
+        // for query_pieces, so averaging here is cheap and — unlike copying just
+        // the first `cap` pieces — represents torrents of any size (a torrent
+        // with more pieces than `cap` previously showed only its head, hiding
+        // the tail's progress on the piece map).
+        int const buckets = total < cap ? total : cap;   // never more buckets than pieces
+        for (int b = 0; b < buckets; ++b) {
+            long long const lo = static_cast<long long>(b) * total / buckets;
+            long long hi = static_cast<long long>(b + 1) * total / buckets;
+            if (hi <= lo) hi = lo + 1;
+            if (hi > total) hi = total;
+            int have = 0;
+            int const cnt = static_cast<int>(hi - lo);
+            for (long long i = lo; i < hi; ++i) {
+                if (pieces[lt::piece_index_t{static_cast<int>(i)}]) ++have;
+            }
+            out[b] = static_cast<uint8_t>((have * 255 + cnt / 2) / cnt);
+        }
+        return buckets;
+    } catch (...) { return 0; }
+}
+
+void gt_force_recheck(GTHandle handle) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid()) return;
+    try { h->force_recheck(); } catch (...) {}
+}
+
+void gt_force_reannounce(GTHandle handle) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid()) return;
+    try { h->force_reannounce(); } catch (...) {}
+}
+
+void gt_set_upload_limit(GTHandle handle, int bytes_per_sec) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid()) return;
+    try { h->set_upload_limit(bytes_per_sec > 0 ? bytes_per_sec : 0); } catch (...) {}
 }
 
 } // extern "C"

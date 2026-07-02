@@ -76,6 +76,15 @@ extension DownloadManager {
             tasks[i].connectionCount = peers
             tasks[i].seedCount = seeds
 
+        case let .trackersUpdated(trackers):
+            tasks[i].trackers = trackers
+
+        case let .piecesUpdated(pieces):
+            tasks[i].pieceAvailability = pieces
+
+        case let .infoHashResolved(hash):
+            tasks[i].infoHash = hash
+
         case let .remoteInfoResolved(info):
             tasks[i].remoteInfo = info
         }
@@ -86,7 +95,8 @@ extension DownloadManager {
         // write a stale `.downloading` snapshot that could land after — and clobber
         // — the authoritative terminal write; exclude it too.
         switch event {
-        case .progress, .fileProgress, .finished, .connectionsUpdated, .swarmUpdated:
+        case .progress, .fileProgress, .finished, .connectionsUpdated, .swarmUpdated,
+             .trackersUpdated, .piecesUpdated:
             break
         default:
             persist(tasks[i])
@@ -95,7 +105,8 @@ extension DownloadManager {
         // P2: coalesce high-frequency progress snapshots; publish everything else
         // immediately so the queue visibly moves the instant status changes.
         switch event {
-        case .progress, .fileProgress, .connectionsUpdated, .swarmUpdated:
+        case .progress, .fileProgress, .connectionsUpdated, .swarmUpdated,
+             .trackersUpdated, .piecesUpdated:
             throttledPublish()
         default:
             publish()

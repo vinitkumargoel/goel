@@ -148,8 +148,18 @@ struct DetailPanelView: View {
                 KVRow(key: "Share ratio", value: String(format: "%.2f", task.shareRatio))
                 KVRow(key: "Uploaded", value: task.bytesUploaded.byteString)
                 KVRow(key: "Peers", value: task.swarmSummary.value)
+                KVRow(key: "Leechers", value: "\(task.leecherCount)")
+                if let limit = task.seedRatioLimit, limit > 0 {
+                    let pct = Int(((task.seedRatioProgress ?? 0) * 100).rounded())
+                    KVRow(key: "Seed target",
+                          value: String(format: "ratio %.1f · %d%%", limit, pct),
+                          valueColor: Theme.teal)
+                }
             } else {
                 KVRow(key: "Connections", value: "\(task.connectionCount)")
+            }
+            if let label = task.label {
+                KVRow(key: "Label", value: label, valueColor: Theme.accent)
             }
             KVRow(key: "Priority", value: task.priority.displayName)
             KVRow(key: "Added", value: task.addedString)

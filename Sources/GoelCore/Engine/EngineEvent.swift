@@ -50,6 +50,18 @@ public enum EngineEvent: Sendable, Equatable {
     /// Torrent swarm composition changed (peer/seed counts from the session).
     case swarmUpdated(peers: Int, seeds: Int)
 
+    /// Live per-tracker status for a torrent (announce state + scrape counts).
+    /// High-frequency and observational; the manager folds it in without persisting.
+    case trackersUpdated([TorrentTracker])
+
+    /// A downsampled piece-availability map for a torrent (fraction downloaded per
+    /// bucket, 0…1). Observational; folded in without persisting.
+    case piecesUpdated([Double])
+
+    /// The torrent's v1 info-hash (hex), resolved once metadata is known. Works
+    /// for `.torrent` files too, unlike parsing a magnet link.
+    case infoHashResolved(String)
+
     /// Real facts about the remote HTTP server (Server header, ETag,
     /// Accept-Ranges, Content-Type) captured from the probe/first response.
     case remoteInfoResolved(RemoteInfo)
