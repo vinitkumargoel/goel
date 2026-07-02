@@ -17,6 +17,13 @@ public actor RemoteControlServer {
     private weak var manager: DownloadManager?
     private var listener: NWListener?
 
+    /// The bind parameters the live `listener` was created with. Only these two
+    /// actually affect the socket, so any *other* settings change updates config in
+    /// place instead of tearing the listener down and rebinding — a rebind can't
+    /// reclaim the port instantly and used to fail (silently) with EADDRINUSE.
+    private var boundPort: UInt16?
+    private var boundExposeLAN: Bool?
+
     /// The current routing config (token, requireAuth, readOnly, theme, username),
     /// snapshotted from settings on each (re)start.
     private var routerConfig = RemoteRouter.Config(token: "")
@@ -57,23 +64,37 @@ public actor RemoteControlServer {
     /// A router bound to the current backend + config, rebuilt per use (cheap).
     private var router: RemoteRouter { RemoteRouter(backend: manager, config: routerConfig) }
 
-    /// Start (or restart) listening. `allowLAN: false` binds 127.0.0.1 only.
-    ///
-    /// The port must be specified exactly once: through `requiredLocalEndpoint`
-    /// for the loopback-only bind, or through the listener's `on:` port for the
-    /// LAN bind. Passing both is a conflicting specification NWListener rejects.
+    /// Start (or reconfigure) listening. `allowLAN: false` binds 127.0.0.1 only.
     ///
     /// `config` carries the token, requireAuth/readOnly flags, portal theme, and
     /// username; `passwordHash` and `sessionMinutes` drive the login flow. Any
     /// change to the credentials (username/password/requireAuth) invalidates
     /// existing sessions, so a password change actually logs everyone out.
+    ///
+    /// Called on *every* settings change. Only the port and the loopback/LAN choice
+    /// affect the socket, so when those are unchanged this just swaps the live config
+    /// on the running listener — it does **not** rebind. Rebinding on every change
+    /// used to tear the socket down and immediately re-create it, which failed with
+    /// EADDRINUSE (the port isn't reclaimable that fast) and, with no state handler,
+    /// failed silently: the UI still showed the portal "enabled" with nothing behind
+    /// it. A rebind now happens only when the port or LAN exposure actually changes,
+    /// and it first `await`s the old listener's full teardown.
     public func start(port: UInt16, allowLAN: Bool, config: RemoteRouter.Config,
-                      passwordHash: String, sessionMinutes: Int) {
+                      passwordHash: String, sessionMinutes: Int) async {
         let credentialsChanged = config.username != routerConfig.username
             || config.requireAuth != routerConfig.requireAuth
             || passwordHash != self.passwordHash
-        stop()
-        if credentialsChanged { sessions.removeAll() }
+        if credentialsChanged {
+            // A password/username/sign-in change logs everyone out: drop sessions,
+            // and bump the generation so any *already-open* SSE or file-stream loop
+            // winds down and has to reconnect (and re-authenticate). Without this,
+            // the same-port live-config path below would leave live streams running
+            // under the old credentials.
+            sessions.removeAll()
+            generation += 1
+        }
+        // Live config — applied whether or not we rebind, so a password / theme /
+        // read-only / token change takes effect on the existing socket immediately.
         self.routerConfig = config
         self.passwordHash = passwordHash
         self.sessionSeconds = max(5, sessionMinutes) * 60
@@ -88,36 +109,92 @@ public actor RemoteControlServer {
         if allowLAN && !exposeLAN {
             FileHandle.standardError.write(Data("[GoelDownloader] LAN access ignored — sign-in is disabled, binding 127.0.0.1 only\n".utf8))
         }
+
+        // Already listening on the same endpoint? The live config above is all that
+        // needed to change — keep the socket.
+        if listener != nil, boundPort == port, boundExposeLAN == exposeLAN {
+            return
+        }
+        // A real bind change: fully release any existing listener first, so the port
+        // is free before we re-create it.
+        await stop()
+
         let listenPort = NWEndpoint.Port(rawValue: port) ?? 8899
-        let listener: NWListener?
-        if exposeLAN {
-            listener = try? NWListener(using: .tcp, on: listenPort)
-        } else {
-            let parameters = NWParameters.tcp
+        // SO_REUSEADDR as belt-and-braces for any lingering TIME_WAIT; the awaited
+        // teardown above is what actually guarantees the port is free.
+        let parameters = NWParameters.tcp
+        parameters.allowLocalEndpointReuse = true
+        if !exposeLAN {
             parameters.requiredLocalEndpoint = NWEndpoint.hostPort(
                 host: .ipv4(.loopback), port: listenPort)
-            listener = try? NWListener(using: parameters)
         }
-        guard let listener else {
+        let newListener: NWListener?
+        if exposeLAN {
+            newListener = try? NWListener(using: parameters, on: listenPort)
+        } else {
+            newListener = try? NWListener(using: parameters)
+        }
+        guard let newListener else {
             FileHandle.standardError.write(Data("[GoelDownloader] remote server failed to bind port \(port)\n".utf8))
             return
         }
         // Advertise over Bonjour only when actually exposed to the network — a
         // loopback-only server has nothing to announce.
         if exposeLAN {
-            listener.service = NWListener.Service(name: "GoelDownloader", type: "_http._tcp")
+            newListener.service = NWListener.Service(name: "GoelDownloader", type: "_http._tcp")
         }
-        listener.newConnectionHandler = { [weak self] connection in
+        // Surface a listener that fails *after* start() — otherwise a bad bind
+        // leaves the UI claiming the portal is on with nothing behind it, exactly
+        // the state that made this hard to diagnose.
+        let portForLog = listenPort.rawValue
+        newListener.stateUpdateHandler = { state in
+            switch state {
+            case .failed(let error):
+                FileHandle.standardError.write(Data(
+                    "[GoelDownloader] remote server listener failed on port \(portForLog): \(error)\n".utf8))
+            case .waiting(let error):
+                FileHandle.standardError.write(Data(
+                    "[GoelDownloader] remote server waiting on port \(portForLog): \(error)\n".utf8))
+            default:
+                break
+            }
+        }
+        newListener.newConnectionHandler = { [weak self] connection in
             Task { await self?.accept(connection) }
         }
-        listener.start(queue: DispatchQueue(label: "goel.remote-server"))
-        self.listener = listener
+        newListener.start(queue: DispatchQueue(label: "goel.remote-server"))
+        self.listener = newListener
+        self.boundPort = port
+        self.boundExposeLAN = exposeLAN
     }
 
-    public func stop() {
+    /// Stop listening and **wait** for the socket to be fully released. Awaiting the
+    /// listener's `.cancelled` state (rather than firing `cancel()` and returning) is
+    /// what lets a subsequent `start()` rebind the same port without EADDRINUSE — the
+    /// cancel is asynchronous, so a fire-and-forget teardown leaves the port held.
+    public func stop() async {
         generation += 1
-        listener?.cancel()
-        listener = nil
+        boundPort = nil
+        boundExposeLAN = nil
+        guard let listener else { return }
+        self.listener = nil
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            // Resume exactly once, from whichever fires first — the listener's
+            // terminal state or the backstop timer. A `@Sendable` one-shot keeps
+            // this correct across the two concurrent callbacks.
+            let once = OneShotResume(cont)
+            listener.stateUpdateHandler = { state in
+                switch state {
+                case .cancelled, .failed: once.fire()
+                default: break
+                }
+            }
+            // Backstop: if the listener was already terminal, setting the handler
+            // above won't re-fire it — don't hang teardown waiting for a state that
+            // will never come.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { once.fire() }
+            listener.cancel()
+        }
     }
 
     // MARK: Connection handling
@@ -503,5 +580,23 @@ public actor RemoteControlServer {
     /// ``RemoteRouter/constantTimeEquals(_:_:)``.
     static func constantTimeEquals(_ a: String, _ b: String) -> Bool {
         RemoteRouter.constantTimeEquals(a, b)
+    }
+}
+
+/// A thread-safe one-shot resume for a `CheckedContinuation` that may be signalled
+/// by more than one concurrent callback (here: a listener's terminal state and a
+/// timeout backstop). Resuming a continuation twice traps, so the first caller wins
+/// and the rest are no-ops.
+private final class OneShotResume: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+    private let cont: CheckedContinuation<Void, Never>
+    init(_ cont: CheckedContinuation<Void, Never>) { self.cont = cont }
+    func fire() {
+        lock.lock()
+        let first = !fired
+        fired = true
+        lock.unlock()
+        if first { cont.resume() }
     }
 }
