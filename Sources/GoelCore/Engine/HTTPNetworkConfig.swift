@@ -13,6 +13,7 @@ public struct HTTPNetworkConfig: Sendable, Equatable {
     public var retryInterval: Double
     public var userAgent: String
     public var proxyMode: String   // none | system | manual
+    public var proxyType: String   // http | socks5 (only used when proxyMode == manual)
     public var proxyHost: String
     public var proxyPort: Int
     public var cookieAuthEnabled: Bool
@@ -23,6 +24,7 @@ public struct HTTPNetworkConfig: Sendable, Equatable {
         retryInterval: Double = 5,
         userAgent: String = "GoelDownloader/1.0 (macOS)",
         proxyMode: String = "none",
+        proxyType: String = "http",
         proxyHost: String = "",
         proxyPort: Int = 0,
         cookieAuthEnabled: Bool = true
@@ -32,6 +34,7 @@ public struct HTTPNetworkConfig: Sendable, Equatable {
         self.retryInterval = retryInterval
         self.userAgent = userAgent
         self.proxyMode = proxyMode
+        self.proxyType = proxyType
         self.proxyHost = proxyHost
         self.proxyPort = proxyPort
         self.cookieAuthEnabled = cookieAuthEnabled

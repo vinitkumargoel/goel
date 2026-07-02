@@ -273,6 +273,21 @@ struct DownloadRow: View {
                 Button("Copy Magnet Link") { vm.copyToPasteboard(task.sourceLocator) }
             }
         }
+        Divider()
+        if task.kind != .torrent, !task.status.isActive {
+            if vm.selection.count > 1, vm.selection.contains(task.id) {
+                Button("Rename \(vm.selection.count) Selected…") {
+                    vm.promptForBatchRename(tasks: vm.tasks.filter { vm.selection.contains($0.id) })
+                }
+            } else {
+                Button("Rename…") { vm.promptForRename(task: task) }
+            }
+        }
+        Button(task.allTags.isEmpty ? "Add Tags…" : "Edit Tags…") { vm.promptForTags(task: task) }
+        Button(task.note == nil ? "Add Note…" : "Edit Note…") { vm.promptForNote(task: task) }
+        if task.kind == .http {
+            Button("Request Options…") { vm.promptForRequestOptions(task: task) }
+        }
         Button(task.label == nil ? "Add Label…" : "Edit Label…") { vm.promptForLabel(task: task) }
         if task.status == .paused || task.status == .queued || task.status.isActive {
             Menu("Schedule Start") {

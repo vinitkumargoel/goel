@@ -405,7 +405,11 @@ final class AppViewModel: ObservableObject {
         var list = tasks.filter { matches($0, filter) }
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
         if !q.isEmpty {
-            list = list.filter { $0.name.lowercased().contains(q) }
+            list = list.filter { task in
+                task.name.lowercased().contains(q)
+                    || task.allTags.contains { $0.lowercased().contains(q) }
+                    || (task.note?.lowercased().contains(q) ?? false)
+            }
         }
         visibleTasks = list.sorted(by: sortComparator)
     }
@@ -610,10 +614,18 @@ final class AppViewModel: ObservableObject {
         let mirrors = preview.kind == .http ? mirrors : nil
         // Pre-add file deselection only applies to (multi-file) torrents.
         let skipFiles = preview.kind == .torrent ? deselectedFileIDs : nil
+        // Carry the metadata already gathered on the add screen into the task so
+        // the download doesn't re-derive it. For torrents the size/file list come
+        // from libtorrent's own handle (a seeded value would flicker against the
+        // poller's pre-metadata state), so only the resolved name is seeded there.
+        let seededBytes = preview.kind == .torrent ? nil : preview.totalBytes
+        let seededFiles = preview.kind == .torrent ? [] : preview.files
         Task {
             await manager.add(source: source, saveDirectory: saveDirectory,
                               priority: priority, expectedChecksum: checksum,
                               scheduledAt: startAt, mirrors: mirrors,
+                              suggestedName: preview.suggestedName,
+                              totalBytes: seededBytes, files: seededFiles,
                               deselectedFileIDs: skipFiles)
         }
         if let startAt {
@@ -1124,6 +1136,150 @@ final class AppViewModel: ObservableObject {
         if alert.runModal() == .alertFirstButtonReturn {
             setLabel(field.stringValue, task: task.id)
         }
+    }
+
+    // MARK: Rename
+
+    /// Prompt for a new file name and rename the download (and its file on disk).
+    func promptForRename(task: DownloadTask) {
+        let alert = NSAlert()
+        alert.messageText = "Rename “\(task.name)”"
+        alert.informativeText = "Renames the download and its file on disk."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.stringValue = task.name
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let newName = field.stringValue
+        Task {
+            let applied = await manager.rename(task.id, to: newName)
+            await MainActor.run {
+                if let applied { toastNow("Renamed to “\(applied)”") }
+                else { toastNow("Couldn’t rename — pause the download first") }
+            }
+        }
+    }
+
+    /// Batch-rename the eligible selected downloads using a template. `#` is
+    /// replaced with a running number (1, 2, …); the original extension is kept
+    /// when the template has none.
+    func promptForBatchRename(tasks: [DownloadTask]) {
+        let eligible = tasks.filter { $0.kind != .torrent && !$0.status.isActive }
+        guard !eligible.isEmpty else { toastNow("Nothing eligible to rename"); return }
+        let alert = NSAlert()
+        alert.messageText = "Rename \(eligible.count) downloads"
+        alert.informativeText = "Use “#” for a running number. The original extension is kept if you omit one."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.stringValue = "File #"
+        field.placeholderString = "e.g. Episode #"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename All")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let template = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !template.isEmpty else { return }
+        Task {
+            var renamed = 0
+            for (i, task) in eligible.enumerated() {
+                var candidate = template.replacingOccurrences(of: "#", with: String(i + 1))
+                if (candidate as NSString).pathExtension.isEmpty {
+                    let ext = (task.name as NSString).pathExtension
+                    if !ext.isEmpty { candidate += ".\(ext)" }
+                }
+                if await manager.rename(task.id, to: candidate) != nil { renamed += 1 }
+            }
+            await MainActor.run { toastNow("Renamed \(renamed) download\(renamed == 1 ? "" : "s")") }
+        }
+    }
+
+    // MARK: Tags & notes
+
+    /// Prompt for comma-separated tags, prefilled with the current set.
+    func promptForTags(task: DownloadTask) {
+        let alert = NSAlert()
+        alert.messageText = "Tags for “\(task.name)”"
+        alert.informativeText = "Comma-separated. Leave empty to clear."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.stringValue = task.allTags.joined(separator: ", ")
+        field.placeholderString = "e.g. work, urgent, linux"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let tags = field.stringValue.split(separator: ",").map(String.init)
+        Task { await manager.setTags(tags, task: task.id) }
+        toastNow(tags.isEmpty ? "Tags cleared" : "Tags updated")
+    }
+
+    /// Prompt for a free-form note with a multi-line field.
+    func promptForNote(task: DownloadTask) {
+        let alert = NSAlert()
+        alert.messageText = "Note for “\(task.name)”"
+        alert.informativeText = "Attach a free-form note. Leave empty to remove."
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 320, height: 90))
+        let text = NSTextView(frame: scroll.bounds)
+        text.string = task.note ?? ""
+        text.isRichText = false
+        text.font = .systemFont(ofSize: 12)
+        scroll.documentView = text
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { await manager.setNote(text.string, task: task.id) }
+        toastNow(text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Note removed" : "Note saved")
+    }
+
+    // MARK: Referer & custom headers
+
+    /// Prompt for a per-task `Referer` and extra request headers (HTTP downloads).
+    func promptForRequestOptions(task: DownloadTask) {
+        let alert = NSAlert()
+        alert.messageText = "Request options for “\(task.name)”"
+        alert.informativeText = "Sent only to the download’s own host. One header per line as “Name: value”."
+        let container = NSStackView(frame: NSRect(x: 0, y: 0, width: 340, height: 150))
+        container.orientation = .vertical
+        container.alignment = .leading
+        container.spacing = 4
+        let refererLabel = NSTextField(labelWithString: "Referer")
+        let referer = NSTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 22))
+        referer.stringValue = task.referer ?? ""
+        referer.placeholderString = "https://example.com/page"
+        let headersLabel = NSTextField(labelWithString: "Headers")
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 340, height: 84))
+        let headersView = NSTextView(frame: scroll.bounds)
+        headersView.string = (task.requestHeaders ?? [:])
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key): \($0.value)" }
+            .joined(separator: "\n")
+        headersView.isRichText = false
+        headersView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        scroll.documentView = headersView
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        container.addArrangedSubview(refererLabel)
+        container.addArrangedSubview(referer)
+        container.addArrangedSubview(headersLabel)
+        container.addArrangedSubview(scroll)
+        referer.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        scroll.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        scroll.heightAnchor.constraint(equalToConstant: 84).isActive = true
+        alert.accessoryView = container
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        var headers: [String: String] = [:]
+        for line in headersView.string.split(separator: "\n") {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let name = line[..<colon].trimmingCharacters(in: .whitespaces)
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty { headers[name] = value }
+        }
+        Task { await manager.setRequestOptions(referer: referer.stringValue, headers: headers, task: task.id) }
+        toastNow("Request options saved")
     }
 
     func toastNow(_ message: String) {

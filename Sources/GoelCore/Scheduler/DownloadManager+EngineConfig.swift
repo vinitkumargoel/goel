@@ -40,6 +40,7 @@ extension DownloadManager {
             retryInterval: settings.retryInterval,
             userAgent: settings.userAgent,
             proxyMode: settings.proxyMode,
+            proxyType: settings.proxyType,
             proxyHost: settings.proxyHost,
             proxyPort: settings.proxyPort,
             cookieAuthEnabled: settings.cookieAuthEnabled

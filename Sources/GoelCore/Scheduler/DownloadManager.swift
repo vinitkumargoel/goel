@@ -396,6 +396,8 @@ public actor DownloadManager {
         scheduledAt: Date? = nil,
         mirrors: [String]? = nil,
         suggestedName: String? = nil,
+        totalBytes: Int64? = nil,
+        files: [TransferFile] = [],
         deselectedFileIDs: [Int]? = nil
     ) -> DownloadTask {
         if let existing = tasks.first(where: { $0.source.dedupKey == source.dedupKey }) {
@@ -426,8 +428,14 @@ public actor DownloadManager {
             source: source,
             name: name,
             saveDirectory: directory,
+            // Seed the size/file list already resolved on the add screen so the
+            // task appears fully-formed instead of re-showing a "gathering" state
+            // for facts we already have. The engine still reconciles from truth as
+            // it runs; these are just a correct initial display.
+            totalBytes: totalBytes,
             status: holdPaused ? .paused : .queued,
             priority: priority,
+            files: files,
             expectedChecksum: expectedChecksum,
             scheduledAt: scheduledAt,
             mirrors: Self.sanitizedMirrors(mirrors, primary: source),
@@ -755,6 +763,95 @@ public actor DownloadManager {
         tasks[i].label = (trimmed?.isEmpty ?? true) ? nil : trimmed
         persist(tasks[i])
         publish()
+    }
+
+    /// Replace a task's tag set (trimmed, de-duped case-insensitively, order-stable).
+    public func setTags(_ tags: [String], task id: DownloadTask.ID) async {
+        guard let i = index(of: id) else { return }
+        let cleaned = Self.normalizeTags(tags)
+        tasks[i].tags = cleaned.isEmpty ? nil : cleaned
+        persist(tasks[i])
+        publish()
+    }
+
+    /// Set (or clear, with nil/empty) a free-form note on a task.
+    public func setNote(_ note: String?, task id: DownloadTask.ID) async {
+        guard let i = index(of: id) else { return }
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        tasks[i].note = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        persist(tasks[i])
+        publish()
+    }
+
+    /// Set the per-task `Referer` and extra request headers (HTTP downloads).
+    /// Reserved header names are dropped; nil/empty clears each field.
+    public func setRequestOptions(referer: String?, headers: [String: String]?,
+                                  task id: DownloadTask.ID) async {
+        guard let i = index(of: id) else { return }
+        let r = referer?.trimmingCharacters(in: .whitespacesAndNewlines)
+        tasks[i].referer = (r?.isEmpty ?? true) ? nil : r
+        let cleaned = Self.sanitizedHeaders(headers ?? [:])
+        tasks[i].requestHeaders = cleaned.isEmpty ? nil : cleaned
+        persist(tasks[i])
+        publish()
+    }
+
+    /// Rename a download's output file and display name. Renames the file on disk
+    /// (never clobbering an existing one — appends ` (n)` if needed). Not supported
+    /// for torrents (libtorrent owns their on-disk layout) or while a task is
+    /// actively transferring (the writer holds the old path). Returns the applied
+    /// name on success, `nil` if the rename was rejected or the disk move failed.
+    @discardableResult
+    public func rename(_ id: DownloadTask.ID, to newName: String) async -> String? {
+        guard let i = index(of: id) else { return nil }
+        let task = tasks[i]
+        guard task.kind != .torrent, !task.status.isActive else { return nil }
+        let sanitized = DownloadTask.sanitizedName(newName, fallback: task.name)
+        guard sanitized != task.name else { return task.name }   // no-op is a success
+        let fm = FileManager.default
+        let dir = task.saveDirectory
+        let finalName = DownloadTask.uniqueName(base: sanitized, in: dir)
+        let oldPath = (dir as NSString).appendingPathComponent(task.name)
+        let newPath = (dir as NSString).appendingPathComponent(finalName)
+        if fm.fileExists(atPath: oldPath) {
+            do { try fm.moveItem(atPath: oldPath, toPath: newPath) }
+            catch { return nil }
+        }
+        tasks[i].name = finalName
+        persist(tasks[i])
+        publish()
+        return finalName
+    }
+
+    /// Trim, drop empties, and de-duplicate tags case-insensitively (order-stable).
+    static func normalizeTags(_ raw: [String]) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for t in raw {
+            let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, seen.insert(trimmed.lowercased()).inserted else { continue }
+            out.append(trimmed)
+        }
+        return out
+    }
+
+    /// Header names the transport manages itself; a user value here is ignored.
+    static let reservedHeaderNames: Set<String> = [
+        "host", "content-length", "connection", "transfer-encoding", "keep-alive",
+        "upgrade", "te", "trailer", "referer", "authorization", "proxy-authorization",
+        "proxy-connection"
+    ]
+
+    /// Trim names/values and strip reserved headers.
+    static func sanitizedHeaders(_ raw: [String: String]) -> [String: String] {
+        var out: [String: String] = [:]
+        for (k, v) in raw {
+            let name = k.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = v.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, !reservedHeaderNames.contains(name.lowercased()) else { continue }
+            out[name] = value
+        }
+        return out
     }
 
     // MARK: Export / Import

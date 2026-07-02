@@ -234,6 +234,20 @@ struct SettingsView: View {
                     .option("manual", "Manual"),
                 ], width: 150)
             }
+            if vm.settings.proxyMode == "manual" {
+                SetRow(name: "Proxy type", desc: "HTTP or SOCKS5 (applies to HTTP/HTTPS downloads).") {
+                    Dropdown(selection: binding(\.proxyType), items: [
+                        .option("http", "HTTP"),
+                        .option("socks5", "SOCKS5"),
+                    ], width: 150)
+                }
+                SetRow(name: "Proxy host", desc: "Hostname or IP of the proxy server.") {
+                    SettingText(text: binding(\.proxyHost), width: 160)
+                }
+                SetRow(name: "Proxy port", desc: "Port the proxy listens on.") {
+                    SettingInt(value: binding(\.proxyPort))
+                }
+            }
             SetRow(name: "Connection timeout", desc: "Seconds before a stalled connection drops.") {
                 SettingDouble(value: binding(\.connectionTimeout))
             }

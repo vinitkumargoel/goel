@@ -6,12 +6,14 @@ public enum ChecksumAlgorithm: String, Codable, Sendable, CaseIterable, Hashable
     case md5
     case sha1
     case sha256
+    case sha512
 
     public var displayName: String {
         switch self {
         case .md5: return "MD5"
         case .sha1: return "SHA-1"
         case .sha256: return "SHA-256"
+        case .sha512: return "SHA-512"
         }
     }
 
@@ -22,6 +24,7 @@ public enum ChecksumAlgorithm: String, Codable, Sendable, CaseIterable, Hashable
         case .md5: return 32
         case .sha1: return 40
         case .sha256: return 64
+        case .sha512: return 128
         }
     }
 }
@@ -77,6 +80,7 @@ public enum ChecksumVerifier {
         case .md5:    return try hash(handle, into: Insecure.MD5())
         case .sha1:   return try hash(handle, into: Insecure.SHA1())
         case .sha256: return try hash(handle, into: SHA256())
+        case .sha512: return try hash(handle, into: SHA512())
         }
     }
 

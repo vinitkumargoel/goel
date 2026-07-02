@@ -413,8 +413,14 @@ final class SegmentedTransfer: Sendable {
     static func makeRequest(_ url: URL, settings: RequestSettings) -> URLRequest {
         var req = URLRequest(url: url)
         req.setValue(settings.userAgent, forHTTPHeaderField: "User-Agent")
+        for (name, value) in settings.extraHeaders {
+            req.setValue(value, forHTTPHeaderField: name)
+        }
         if let auth = settings.authorization {
             req.setValue(auth, forHTTPHeaderField: "Authorization")
+        }
+        if let referer = settings.referer {
+            req.setValue(referer, forHTTPHeaderField: "Referer")
         }
         return req
     }
@@ -424,9 +430,13 @@ final class SegmentedTransfer: Sendable {
     /// (that would hand the user's credentials to whoever runs the mirror).
     private func request(for url: URL) -> URLRequest {
         var settings = plan.settings
-        if settings.authorization != nil,
-           url.host?.lowercased() != plan.url.host?.lowercased() {
+        // The Authorization / Referer / custom headers were resolved for the
+        // PRIMARY host — none of them may ride to a mirror on a different host
+        // (that would leak the user's credentials/context to the mirror operator).
+        if url.host?.lowercased() != plan.url.host?.lowercased() {
             settings.authorization = nil
+            settings.referer = nil
+            settings.extraHeaders = [:]
         }
         return Self.makeRequest(url, settings: settings)
     }
@@ -742,6 +752,12 @@ struct RequestSettings: Sendable {
     var retryInterval: Double
     /// Preemptive `Authorization` header for protected hosts (nil = none).
     var authorization: String?
+    /// Per-task `Referer` header (nil = none). Same-origin only — stripped on a
+    /// cross-host mirror request, like ``authorization``.
+    var referer: String?
+    /// Extra per-task request headers (already sanitised of reserved names).
+    /// Same-origin only — stripped on a cross-host mirror request.
+    var extraHeaders: [String: String] = [:]
 }
 
 /// The result of a finished transfer.

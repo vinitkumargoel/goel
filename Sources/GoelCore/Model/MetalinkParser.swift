@@ -95,6 +95,7 @@ public enum MetalinkParser {
 
         private static func algorithm(for type: String) -> ChecksumAlgorithm? {
             switch type {
+            case "sha-512", "sha512": return .sha512
             case "sha-256", "sha256": return .sha256
             case "sha-1", "sha1": return .sha1
             case "md5": return .md5
@@ -107,6 +108,7 @@ public enum MetalinkParser {
             case .md5: return 0
             case .sha1: return 1
             case .sha256: return 2
+            case .sha512: return 3
             }
         }
     }

@@ -164,15 +164,36 @@ struct AddDownloadSheet: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
-            Button("Cancel") {
-                resolveTask?.cancel()
-                phase = .input
+            HStack(spacing: 10) {
+                Button("Cancel") {
+                    resolveTask?.cancel()
+                    phase = .input
+                }
+                // Don't wait for the preview: queue it now and let the details
+                // resolve while it downloads (a single metadata pass, not two).
+                Button("Continue anyway") { continueWithoutPreview() }
+                    .buttonStyle(.borderedProminent)
             }
             .padding(.top, 4)
+            Text("Continue anyway adds it straight to the queue — the name and size fill in as it starts.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
         .padding(.horizontal, 20)
+    }
+
+    /// Skip the metadata wait: cancel the in-flight resolve and queue the source
+    /// immediately, so it resolves once — during the download — instead of twice.
+    private func continueWithoutPreview() {
+        resolveTask?.cancel()
+        if let line = firstParseableLine() {
+            vm.add(rawLines: line, saveDirectory: resolvedSaveDirectory, priority: priority)
+        }
+        dismiss()
     }
 
     // MARK: Step 2 — confirm
