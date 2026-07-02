@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(UniformTypeIdentifiers)
 import UniformTypeIdentifiers
+#endif  // on Linux, `UTType` is provided by LinuxCompat.swift
 
 // MARK: - Filename resolution (Content-Disposition / Content-Type)
 

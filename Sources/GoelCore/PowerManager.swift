@@ -1,55 +1,52 @@
 import Foundation
+#if canImport(IOKit)
 import IOKit
 import IOKit.pwr_mgt
 import IOKit.ps
+#endif
 
-/// Thin wrapper over the IOKit power-management APIs the scheduler uses to keep
-/// the Mac awake while transfers are running and to tell whether we are on
-/// battery.
+/// Keeps the machine awake while transfers run and reports whether we're on
+/// battery. macOS uses IOKit power assertions; Linux uses `systemd-inhibit`
+/// (sleep block) plus the sysfs power-supply tree. Both expose the same API, so
+/// the scheduler is unchanged.
 ///
-/// macOS lets a process create a **power assertion** that prevents the system
-/// from idle-sleeping. The assertion stays in effect until it is explicitly
-/// released (or the owning process dies), so this type holds **at most one**
-/// assertion at a time and remembers its id to make ``setPreventSleep(_:)``
-/// idempotent: repeated `true` calls keep the single assertion rather than
-/// leaking new ones, and `false` releases whatever is outstanding.
-///
-/// `DownloadManager` (an `actor`) keeps a reference to this object, so it must
-/// be `Sendable`. Its only mutable state is the optional assertion id, guarded
-/// by an internal lock; hence the `@unchecked Sendable` conformance.
+/// `DownloadManager` (an `actor`) keeps a reference to this object, so it must be
+/// `Sendable`. Its only mutable state is guarded by an internal lock; hence the
+/// `@unchecked Sendable` conformance.
 public final class PowerManager: @unchecked Sendable {
 
     // MARK: State
 
-    /// Serializes access to ``assertionID`` so the manager can be touched from
-    /// any isolation domain.
+    /// Serializes access to the platform handle so the manager can be touched
+    /// from any isolation domain.
     private let lock = NSLock()
 
-    /// The id of the outstanding "prevent idle sleep" assertion, or `nil` when
-    /// none is held. Guarded by ``lock``.
+    #if canImport(IOKit)
+    /// The id of the outstanding "prevent idle sleep" assertion, or `nil`.
     private var assertionID: IOPMAssertionID?
+    #else
+    /// The running `systemd-inhibit` process holding the sleep lock, or `nil`.
+    private var inhibitor: Process?
+    #endif
 
     public init() {}
 
     deinit {
-        // Drop any assertion we still hold on the way out so we never leave the
-        // system pinned awake after the manager goes away.
+        // Drop any hold on the way out so we never leave the system pinned awake.
         setPreventSleep(false)
     }
 
     // MARK: Sleep prevention
 
-    /// Create or release the single "prevent idle system sleep" power assertion.
-    ///
-    /// Passing the same value repeatedly is safe: a second `true` keeps the
-    /// existing assertion instead of allocating another, and `false` with
-    /// nothing held is a no-op.
+    /// Create or release the single "prevent idle sleep" hold. Passing the same
+    /// value repeatedly is safe: a second `true` keeps the existing hold, and
+    /// `false` with nothing held is a no-op.
     public func setPreventSleep(_ on: Bool) {
         lock.lock()
         defer { lock.unlock() }
 
+        #if canImport(IOKit)
         if on {
-            // Already holding an assertion — nothing to do.
             guard assertionID == nil else { return }
             var id = IOPMAssertionID(0)
             let result = IOPMAssertionCreateWithName(
@@ -62,20 +59,38 @@ public final class PowerManager: @unchecked Sendable {
                 assertionID = id
             }
         } else {
-            // Release whatever assertion we are holding, if any.
             guard let id = assertionID else { return }
             IOPMAssertionRelease(id)
             assertionID = nil
         }
+        #else
+        if on {
+            guard inhibitor == nil else { return }
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/systemd-inhibit")
+            p.arguments = [
+                "--what=sleep:idle", "--who=GoelDownloader",
+                "--why=active download", "--mode=block",
+                "sleep", "infinity",
+            ]
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            // Best-effort: on a box without systemd-inhibit this simply does
+            // nothing (a headless server rarely idle-sleeps anyway).
+            do { try p.run(); inhibitor = p } catch { /* not available — ignore */ }
+        } else {
+            inhibitor?.terminate()
+            inhibitor = nil
+        }
+        #endif
     }
 
     // MARK: Power source
 
-    /// Whether the Mac is currently drawing from its battery rather than AC/UPS.
-    ///
-    /// Returns `false` on desktops (which report AC power) and whenever the
-    /// providing power source cannot be determined.
+    /// Whether the machine is currently drawing from a battery rather than AC.
+    /// Desktops/servers (AC online or no battery) report `false`.
     public var isOnBattery: Bool {
+        #if canImport(IOKit)
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
             return false
         }
@@ -85,5 +100,32 @@ public final class PowerManager: @unchecked Sendable {
             return false
         }
         return (providing as String) == kIOPMBatteryPowerKey
+        #else
+        // Read the sysfs power-supply tree. AC online → not on battery; a battery
+        // reporting "Discharging" → on battery.
+        let base = "/sys/class/power_supply"
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: base) else {
+            return false
+        }
+        func read(_ path: String) -> String? {
+            (try? String(contentsOfFile: path, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var sawMains = false
+        for entry in entries {
+            let dir = base + "/" + entry
+            switch read(dir + "/type") {
+            case "Mains", "USB":
+                sawMains = true
+                if read(dir + "/online") == "1" { return false }  // AC connected
+            case "Battery":
+                if read(dir + "/status") == "Discharging" { return true }
+            default:
+                break
+            }
+        }
+        // A mains adapter present but none online means we're on battery.
+        return sawMains
+        #endif
     }
 }

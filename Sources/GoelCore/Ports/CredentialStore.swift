@@ -1,5 +1,10 @@
 import Foundation
+#if canImport(Security)
 import Security
+#endif
+#if canImport(Glibc)
+import Glibc   // umask, for creating the Linux secrets file privately
+#endif
 
 // MARK: - Per-host download credentials
 
@@ -22,9 +27,12 @@ public struct HostCredential: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-/// Keychain-backed credential storage (`kSecClassInternetPassword`, keyed by
-/// server host). Secrets never leave the Keychain except to build the header.
-/// Security-framework calls are thread-safe, hence `@unchecked Sendable`.
+/// Per-host credential storage keyed by server host.
+///
+/// On macOS this is Keychain-backed (`kSecClassInternetPassword`); on Linux it is
+/// a `0600` JSON file under the user's config dir. The name is kept
+/// (`KeychainCredentialStore`) so call sites don't change; secrets are only ever
+/// read to build the `Authorization` header.
 public final class KeychainCredentialStore: CredentialProviding, @unchecked Sendable {
 
     /// The service label distinguishing our items from other apps' entries.
@@ -40,7 +48,9 @@ public final class KeychainCredentialStore: CredentialProviding, @unchecked Send
         return "Basic \(raw)"
     }
 
-    // MARK: Management
+    #if canImport(Security)
+
+    // MARK: Management (macOS / Keychain)
 
     /// The username + password stored for `host`, or nil.
     public func credential(forHost host: String) -> (username: String, password: String)? {
@@ -98,6 +108,106 @@ public final class KeychainCredentialStore: CredentialProviding, @unchecked Send
             kSecAttrLabel as String: label,
         ]
     }
+
+    #else
+
+    // MARK: Management (Linux / 0600 JSON file)
+
+    /// Serializes file access; the macOS Keychain was already thread-safe.
+    private static let fileLock = NSLock()
+
+    private struct Entry: Codable { var username: String; var password: String }
+
+    /// Distinguishes "no file yet" (fine) from "file present but unreadable"
+    /// (must NOT be overwritten, or every stored credential is silently lost).
+    private enum LoadResult {
+        case ok([String: Entry])
+        case missing
+        case unreadable
+    }
+
+    private var storeURL: URL {
+        let base = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config")
+        return base.appendingPathComponent("goel-downloader/credentials.json")
+    }
+
+    private func loadState() -> LoadResult {
+        guard FileManager.default.fileExists(atPath: storeURL.path) else { return .missing }
+        guard let data = try? Data(contentsOf: storeURL),
+              let dict = try? JSONDecoder().decode([String: Entry].self, from: data) else {
+            FileHandle.standardError.write(Data(
+                "[GoelDownloader] credentials file unreadable at \(storeURL.path) — leaving it untouched\n".utf8))
+            return .unreadable
+        }
+        return .ok(dict)
+    }
+
+    /// Persist the store; returns whether it actually reached disk. Reports the
+    /// real outcome (unlike the always-`true` stub this replaced) so a disk-full /
+    /// read-only-config failure is diagnosable instead of silently swallowed.
+    private func save(_ dict: [String: Entry]) -> Bool {
+        let url = storeURL
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        guard let data = try? JSONEncoder().encode(dict) else { return false }
+        #if canImport(Glibc)
+        // Tighten the umask so the atomic temp file is created 0600 from birth —
+        // no world-readable window between the write and the chmod below.
+        let previousMask = umask(0o077)
+        defer { umask(previousMask) }
+        #endif
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            FileHandle.standardError.write(Data("[GoelDownloader] failed to write credentials: \(error)\n".utf8))
+            return false
+        }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        if let mode = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? NSNumber,
+           mode.intValue & 0o077 != 0 {
+            FileHandle.standardError.write(Data(
+                "[GoelDownloader] WARNING credentials file is not private (mode \(String(mode.intValue, radix: 8)))\n".utf8))
+        }
+        return true
+    }
+
+    public func credential(forHost host: String) -> (username: String, password: String)? {
+        Self.fileLock.lock(); defer { Self.fileLock.unlock() }
+        guard case .ok(let dict) = loadState(), let e = dict[host] else { return nil }
+        return (e.username, e.password)
+    }
+
+    @discardableResult
+    public func setCredential(username: String, password: String, host: String) -> Bool {
+        Self.fileLock.lock(); defer { Self.fileLock.unlock() }
+        var dict: [String: Entry]
+        switch loadState() {
+        case .ok(let d): dict = d
+        case .missing: dict = [:]
+        case .unreadable: return false   // refuse to clobber an existing store we couldn't read
+        }
+        dict[host] = Entry(username: username, password: password)
+        return save(dict)
+    }
+
+    @discardableResult
+    public func removeCredential(host: String) -> Bool {
+        Self.fileLock.lock(); defer { Self.fileLock.unlock() }
+        guard case .ok(var dict) = loadState() else { return false }
+        guard dict.removeValue(forKey: host) != nil else { return false }
+        return save(dict)
+    }
+
+    public func allCredentials() -> [HostCredential] {
+        Self.fileLock.lock(); defer { Self.fileLock.unlock() }
+        guard case .ok(let dict) = loadState() else { return [] }
+        return dict.map { HostCredential(host: $0.key, username: $0.value.username) }
+            .sorted { $0.host < $1.host }
+    }
+
+    #endif
 }
 
 /// Session delegate stripping manually-attached credential/context headers when a

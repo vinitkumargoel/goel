@@ -147,7 +147,10 @@ public actor HTTPEngine: HTTPConfigurable {
     public init(profile: TrafficProfile = .high,
                 credentials: any CredentialProviding = KeychainCredentialStore()) {
         let config = URLSessionConfiguration.default
+        #if !os(Linux)
+        // `waitsForConnectivity` is get-only in swift-corelibs-foundation.
         config.waitsForConnectivity = true
+        #endif
         config.httpMaximumConnectionsPerHost = Self.maxConnectionsPerHost
         self.session = URLSession(configuration: config,
                                   delegate: RedirectSanitizer.shared, delegateQueue: nil)
@@ -242,6 +245,23 @@ public actor HTTPEngine: HTTPConfigurable {
         cfg.httpCookieAcceptPolicy = config.cookieAuthEnabled ? .always : .never
         cfg.httpCookieStorage = config.cookieAuthEnabled ? HTTPCookieStorage.shared : nil
 
+        #if os(Linux)
+        // The CFNetwork proxy-dictionary keys don't exist in swift-corelibs-foundation.
+        // Honour a manual proxy via the standard http(s)_proxy environment variables,
+        // which URLSession-on-Linux (libcurl-backed) already reads.
+        switch config.proxyMode {
+        case "manual" where !config.proxyHost.isEmpty && config.proxyPort > 0:
+            let proxy = "http://\(config.proxyHost):\(config.proxyPort)"
+            setenv("http_proxy", proxy, 1)
+            setenv("https_proxy", proxy, 1)
+        default:
+            // "none" (explicit bypass) and "system" (fall back to ambient) both
+            // must clear any manual proxy we set earlier — otherwise a manual→system
+            // switch would silently keep routing every download (and libcurl's
+            // FTP engine) through the stale proxy for the rest of the process.
+            unsetenv("http_proxy"); unsetenv("https_proxy")
+        }
+        #else
         switch config.proxyMode {
         case "manual" where !config.proxyHost.isEmpty && config.proxyPort > 0:
             if config.proxyType == "socks5" {
@@ -266,6 +286,7 @@ public actor HTTPEngine: HTTPConfigurable {
         default:
             cfg.connectionProxyDictionary = nil   // "system": follow OS proxy settings
         }
+        #endif
 
         self.session = URLSession(configuration: cfg)
     }
