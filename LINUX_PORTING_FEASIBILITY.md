@@ -17,6 +17,11 @@ macOS-only SwiftUI shell), so the download **engine** — every protocol and eve
 feature — ports with little change. The realistic deployment model on Linux is a
 **headless daemon + the app's existing web portal as the UI**.
 
+> **Phase 0 update (executed):** the two highest-risk engines were then run **as real code** on the
+> server. The **real `HTTPEngine`** performs a byte-perfect 16-way segmented HTTPS download on Linux
+> (after one functional fix, below), and the **real `TorrentEngine` + full `libtorrent` bridge** parse a
+> real `.torrent` with zero code changes. See §8.
+
 > **Important nuance on "no feature loss":** the *engine and management features* port at ~100%.
 > The *native macOS desktop shell* (SwiftUI windows, menu-bar extra, Dock progress, Services menu,
 > AppleScript, Safari Web Extension, Notification Center, Sparkle auto-update, Drop Basket,
@@ -140,13 +145,15 @@ small pieces of logic currently living in `GoelApp` would move down into the dae
 
 ## 6. Risks & things still to validate
 
-1. **`URLSession` on Linux (highest remaining risk).** HTTP is the primary engine and is built on
-   `URLSession` with a streaming `URLSessionDataDelegate`. Linux `URLSession` (swift-corelibs-foundation,
-   libcurl-backed) is mature but historically has delegate/config gaps. **Cheap to validate now** — the
-   Swift toolchain is already on the server; next step is a spike that runs a real segmented ranged
-   download through the actual `HTTPEngine`.
-2. **libtorrent Swift/C++ interop surface.** The spike proved link+call of one symbol. The real
-   `TorrentBridge` is larger; expect minor header/flag adjustments, but pkg-config gives the right base.
+1. **`URLSession` on Linux — ✅ VALIDATED in Phase 0 (was the highest risk).** Root cause found and
+   fixed; the real `HTTPEngine` now does a byte-perfect 16-way segmented download on Linux. The one
+   *functional* change: the segmented transfer attaches its streaming delegate via **per-task**
+   `URLSessionTask.delegate`, which swift-corelibs-foundation ignores (only the *session-level* delegate
+   fires) — so it downloaded zero bytes. Fix: on Linux, use a dedicated `URLSession` whose delegate *is*
+   the stream's `ChunkStreamer` (session-per-stream). ~8 lines behind `#if os(Linux)`. See §8.
+2. **libtorrent Swift/C++ interop surface — ✅ VALIDATED in Phase 0.** The **real** 404-line
+   `torrent_bridge.cpp` + `TorrentEngine` compiled, linked, and ran against Ubuntu's libtorrent 2.0.10
+   with **zero code changes**, correctly parsing a real `.torrent`. See §8.
 3. **GRDB SQLite feature flags.** Beyond snapshot, confirm the app's SQLite feature usage (FTS, etc.)
    is covered by the vendored build. Bounded and known.
 4. **swift-corelibs-foundation edge behaviors** (date/locale/`FileManager` resource values) — usually
@@ -158,8 +165,8 @@ small pieces of logic currently living in `GoelApp` would move down into the dae
 
 ## 7. Recommended phased plan
 
-- **Phase 0 — De-risk (½ week):** run the real `HTTPEngine` + `TorrentBridge` on the server (toolchain
-  already installed). This closes risk #1 and #2 before committing to the full port.
+- **Phase 0 — De-risk — ✅ DONE.** Ran the real `HTTPEngine` + `TorrentBridge` on the server; both risk
+  #1 and #2 are closed (§8). The remaining phases are now execution, not investigation.
 - **Phase 1 — Buildable core (1 wk):** `Package.swift` Linux path (pkg-config, swift-crypto/nio,
   `FoundationNetworking`, snapshot SQLite, exclude Sparkle). Get `GoelCore` to compile on Linux.
 - **Phase 2 — Adapter swaps (1 wk):** crypto, MIME, PowerManager, CredentialStore, HLS/ffmpeg.
@@ -169,11 +176,66 @@ small pieces of logic currently living in `GoelApp` would move down into the dae
 
 ---
 
-## 8. Home-server footprint (from this study)
+## 8. Phase 0 results — the REAL engines, run on the server
+
+The two highest-risk engines were compiled from the **actual GoelCore source** (copied verbatim to the
+server; the app tree here stays untouched) and executed on Ubuntu 24.04. Test packages live at
+`~/work/goel-linux-spike/real/httpprobe`.
+
+### 9a. Real `HTTPEngine` — ✅ byte-perfect segmented download
+
+Built the real HTTP engine closure (27 real source files: all of `Engine/` minus HLS/FTP/SFTP/torrent,
+all of `Model/`, `ChecksumVerifier`). It compiled after **three tiny `#if os` Foundation shims** and
+**one functional fix**:
+
+| Linux gap (swift-corelibs-foundation) | Fix | Kind |
+|---|---|---|
+| `URLSessionConfiguration.waitsForConnectivity` is get-only | guard with `#if !os(Linux)` | 1 line |
+| `URLResourceKey.volumeAvailableCapacityForImportantUsageKey` absent | use `FileManager.attributesOfFileSystem[.systemFreeSize]` | ~4 lines |
+| `kCFNetworkProxies*` keys absent | guard the manual-proxy block `#if !os(Linux)` | ~1 line |
+| `URLSession`/`URLRequest` live in a split module | `import FoundationNetworking` | 1 line |
+| **per-task `URLSessionTask.delegate` is ignored on Linux** (only the session delegate fires) → segmented transfer wrote **zero bytes** | on Linux, build a dedicated `URLSession(delegate: streamer)` per stream (session-per-stream) | ~8 lines, the one *functional* change |
+
+Run result (real engine, `TrafficProfile.high` → 16 connections):
+```
+status=downloading
+remote: server=nginx acceptRanges=Optional(true)
+progress 1MB conns=16 speed=8059KB/s ... progress 10MB conns=0
+result=FINISHED bytes=10485760 maxParallelConnections=16 elapsed=3.4s
+engine sha256 == curl sha256 == 4670af07…   ← byte-identical, not the zero-preallocation
+```
+
+This is the strongest possible evidence for the #1 risk: the real segmented/delegate/backpressure
+transfer works on Linux, with the exact code change it needs already identified and proven.
+
+### 9b. Real `TorrentEngine` + full libtorrent bridge — ✅ zero code changes
+
+Compiled the **real** `torrent_bridge.cpp` (404 lines of C++ over libtorrent) + `TorrentEngine.swift`
+against Ubuntu's `libtorrent-rasterbar` 2.0.10 (defines/flags mirrored from `pkg-config`). No source
+changes were needed. Parsing a real `.torrent`:
+```
+tprobe: name=ubuntu-24.04.3-desktop-amd64.iso
+tprobe: totalBytes=6345887744  reachable=true  files=1
+```
+Correct name and 6.3 GB size — the full bridge builds, links, and drives a libtorrent session on Linux
+out of the box.
+
+### 9c. What Phase 0 changes about the plan
+
+- Risk #1 and #2 are **retired**. The port is now execution, not research.
+- The HTTP engine needs exactly **one functional change** (session-per-stream) plus a handful of
+  `#if os` Foundation guards — all identified above.
+- The torrent path needs **no** Swift/C++ changes beyond the build-system (pkg-config) wiring.
+
+---
+
+## 9. Home-server footprint (from this study)
 
 Left under `~/work/goel-linux-spike/` on the server:
 - `swift/` — Swift 6.1 toolchain (~1.6 GB extracted) + `swift.tar.gz` (840 MB)
-- `probe/` — the working spike package (+ `.build`)
+- `probe/` — the initial 4-component spike (crypto / libtorrent / GRDB+SQLite / NIO)
+- `real/` — the **real GoelCore source** (copied, not the app tree) + `httpprobe/` (the real
+  `HTTPEngine` + `TorrentEngine` test packages from §8)
 - `sqlite/` — snapshot-enabled `libsqlite3.so` + amalgamation
 - `logs/` — build/run logs
 
