@@ -93,11 +93,17 @@ struct GoelDownloaderApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appearanceObservation: NSKeyValueObservation?
     private let servicesProvider = GoelServicesProvider()
+    private let memoryRelief = MemoryReliefService()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         app.activate(ignoringOtherApps: true)
+
+        // Return freed heap pages to the OS on system memory pressure, so a
+        // transient spike (a big transfer, a directory walk) doesn't leave the
+        // resident footprint inflated. Non-destructive — only already-free pages.
+        memoryRelief.start()
 
         // "Download with GoelDownloader" in every app's Services menu.
         app.servicesProvider = servicesProvider
@@ -113,6 +119,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    /// The user switched to another app: download latency no longer matters, so
+    /// give any freed-but-resident heap pages back to the OS. Off the main thread
+    /// so the walk never stalls the UI.
+    func applicationDidResignActive(_ notification: Notification) {
+        memoryRelief.reclaimAsync()
     }
 
     /// Opened URLs: the `goeldownloader://` scheme, `magnet:` links (when we're

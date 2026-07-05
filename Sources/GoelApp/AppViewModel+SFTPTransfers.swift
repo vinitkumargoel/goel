@@ -205,8 +205,10 @@ extension AppViewModel {
                                        remoteRoot: remoteTarget, cap: cap, cancel: cancel)
             } else {
                 setTransferTotal(id, Self.fileSize(localURL))
+                let coalescer = ProgressCoalescer()
                 try await client.upload(localURL: localURL, remote: remoteTarget, maxBytesPerSecond: cap,
-                                        shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, _ in
+                                        shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
+                    guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
                     Task { @MainActor in self?.setTransferBytes(id, sofar) }
                 }
             }
@@ -258,9 +260,11 @@ extension AppViewModel {
                 let remoteFile = file.rel.reduce(remoteRoot, SFTPBrowserPaths.join)
                 group.addTask { [weak self] in
                     if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
+                    let coalescer = ProgressCoalescer()
                     try await client.upload(localURL: file.url, remote: remoteFile,
                                             maxBytesPerSecond: perStreamCap,
-                                            shouldContinue: { !cancel.isCancelled }) { sofar, _ in
+                                            shouldContinue: { !cancel.isCancelled }) { sofar, total in
+                        guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
                         Task { @MainActor in self?.setFolderFileBytes(id, index: index, bytes: sofar) }
                     }
                     // Pin this file's contribution to its full size on completion so
@@ -288,9 +292,11 @@ extension AppViewModel {
         // leaves a partial file that must be cleaned up — not just on cancel.
         var succeeded = false
         do {
+            let coalescer = ProgressCoalescer()
             try await client.downloadToFile(remote: remoteSource, localURL: destination,
                                             maxBytesPerSecond: cap,
                                             shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
+                guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
                 Task { @MainActor in self?.setTransferProgress(id, bytes: sofar, total: total) }
             }
             succeeded = true
@@ -417,5 +423,39 @@ private struct FolderScan: Sendable {
                 total += size
             }
         }
+    }
+}
+
+/// Rate-limits progress → UI hops for a single transfer stream.
+///
+/// libssh2 reports progress on every 256 KB chunk, and each report we forward
+/// spawns a `Task { @MainActor }` that mutates a published transfer row. On a
+/// fast link — or several parallel folder streams — the transfer thread outruns
+/// the main actor, so those hops queue up unbounded: a multi-gigabyte transfer
+/// enqueues tens of thousands of jobs (millions across parallel streams) faster
+/// than they drain, ballooning resident memory until the transfer ends. Capping
+/// the hops to ~10/sec keeps the row just as smooth to the eye while bounding the
+/// queue to a handful of jobs at a time. The byte writes and per-chunk
+/// cancellation checks are untouched — only the UI notification is throttled.
+///
+/// `isFinal` always passes so the row lands exactly on 100% rather than freezing
+/// a fraction short until the transfer settles. Monotonic `systemUptime` avoids
+/// wall-clock jumps, and the lock makes it safe to call from the transfer thread.
+final class ProgressCoalescer: @unchecked Sendable {
+    private let minInterval: Double
+    private let lock = NSLock()
+    private var lastEmit = 0.0
+
+    init(minInterval: Double = 0.1) { self.minInterval = minInterval }
+
+    /// True at most once per `minInterval`, but always true when `isFinal`.
+    func shouldEmit(isFinal: Bool) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let now = ProcessInfo.processInfo.systemUptime
+        if isFinal || now - lastEmit >= minInterval {
+            lastEmit = now
+            return true
+        }
+        return false
     }
 }
