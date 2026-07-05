@@ -21,11 +21,17 @@ struct MenuBarView: View {
         vm.tasks.filter { $0.status.isActive }
     }
 
+    /// In-flight SFTP uploads/downloads (browser transfer center), listed below
+    /// the download queue so a background upload is visible from the menu bar.
+    private var activeTransfers: [SFTPTransfer] {
+        vm.sftpTransfers.filter { $0.isActive }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            if activeTasks.isEmpty {
+            if activeTasks.isEmpty && activeTransfers.isEmpty {
                 emptyState
             } else {
                 ScrollView {
@@ -33,6 +39,13 @@ struct MenuBarView: View {
                         ForEach(activeTasks) { task in
                             MenuBarDownloadRow(task: task, vm: vm)
                             Divider()
+                        }
+                        if !activeTransfers.isEmpty {
+                            sectionLabel("SFTP Transfers")
+                            ForEach(activeTransfers) { t in
+                                MenuBarTransferRow(transfer: t, vm: vm)
+                                Divider()
+                            }
                         }
                     }
                 }
@@ -44,15 +57,28 @@ struct MenuBarView: View {
         .frame(width: 340)
     }
 
+    private func sectionLabel(_ text: String) -> some View {
+        HStack {
+            Text(text.uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Text(activeTasks.isEmpty ? "Downloads" : "Active · \(activeTasks.count)")
+        let activeCount = activeTasks.count + activeTransfers.count
+        return HStack(spacing: 12) {
+            Text(activeCount == 0 ? "Downloads" : "Active · \(activeCount)")
                 .font(.system(size: 13, weight: .semibold))
             Spacer(minLength: 0)
-            speedStat(symbol: "arrow.down", value: vm.totalDownloadSpeed, color: Theme.green)
-            speedStat(symbol: "arrow.up", value: vm.totalUploadSpeed, color: Theme.teal)
+            speedStat(symbol: "arrow.down", value: vm.combinedDownloadSpeed, color: Theme.green)
+            speedStat(symbol: "arrow.up", value: vm.combinedUploadSpeed, color: Theme.teal)
         }
         .padding(.horizontal, 14)
         .frame(height: 46)
@@ -64,6 +90,7 @@ struct MenuBarView: View {
             Text(value > 0 ? value.speedString : "—")
                 .font(.system(size: 12, weight: .semibold))
                 .monospacedDigit()
+                .frame(minWidth: 66, alignment: .trailing)
         }
         .foregroundStyle(value > 0 ? color : Color.secondary)
     }
@@ -208,26 +235,93 @@ private struct MenuBarDownloadRow: View {
     }
 }
 
-/// The status-item label: two stacked lines — download speed on top (green),
-/// upload speed on bottom (teal) — while anything is transferring; a single
-/// glyph when idle. Observes the view model directly so it re-renders on each
-/// progress tick.
+/// One in-flight SFTP transfer in the menu-bar popover: direction icon, name +
+/// server, a thin progress bar, live speed (teal up / green down), and a cancel
+/// button. Mirrors ``MenuBarDownloadRow`` but for the SFTP transfer center.
+private struct MenuBarTransferRow: View {
+    let transfer: SFTPTransfer
+    let vm: AppViewModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: transfer.iconName(filledWhenFinished: false))
+                .font(.system(size: 20))
+                .foregroundStyle(transfer.direction == .upload ? Theme.teal : Theme.green)
+                .frame(width: 30)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(transfer.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    Text(transfer.progressLabel)
+                        .font(.system(size: 10.5)).monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                ProgressView(value: transfer.fraction)
+                HStack(spacing: 5) {
+                    Text(vm.server(transfer.connectionID)?.label ?? "Server")
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer(minLength: 0)
+                    if !transfer.speedLabel.isEmpty {
+                        Text(transfer.speedLabel)
+                            .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
+                            .foregroundStyle(transfer.direction == .upload ? Theme.teal : Theme.green)
+                    }
+                }
+            }
+            Button { vm.cancelSFTPTransfer(transfer.id) } label: {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 13))
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .contentShape(Rectangle())
+    }
+}
+
+/// The status-item label: two stacked lines — download speed on top, upload
+/// speed on bottom — while anything is transferring; a single glyph when idle.
+///
+/// Reads ``AppViewModel/menuBarSpeed`` (sampled at 1 Hz) rather than the live
+/// 10 Hz totals, so the label refreshes once a second and never flickers.
 ///
 /// The two lines are drawn into a single `NSImage` rather than a SwiftUI
 /// `VStack`, because the macOS menu bar gives a `MenuBarExtra` label only one
 /// line's worth of vertical space and clips a two-line stack to its top row. A
 /// pre-rendered image of the full menu-bar thickness sidesteps that and always
 /// shows both rows.
+///
+/// The image is a **template** (`isTemplate = true`): macOS tints it to match
+/// the menu bar — dark on a light bar, light on a dark bar — the way every other
+/// menu-bar item behaves. (It used explicit green/teal, which disappeared
+/// against a green wallpaper / tinted menu bar.) The image also keeps a **fixed
+/// width** so the item never shifts as the numbers grow and shrink.
 struct MenuBarSpeedLabel: View {
     @ObservedObject var vm: AppViewModel
 
     var body: some View {
-        if vm.tasks.contains(where: { $0.status.isActive }) {
-            Image(nsImage: Self.speedImage(down: vm.totalDownloadSpeed,
-                                           up: vm.totalUploadSpeed))
-        } else {
-            Image(systemName: "arrow.down.circle")
+        // The view model publishes at ~10 Hz, but the label's content depends only
+        // on the 1 Hz `menuBarSpeed`. Gate the (image-allocating) redraw on an
+        // Equatable subview so it rebuilds at most once per second.
+        SpeedContent(sample: vm.menuBarSpeed).equatable()
+    }
+
+    /// The actual label content, keyed purely on the sampled speed.
+    private struct SpeedContent: View, Equatable {
+        let sample: AppViewModel.SpeedSample
+
+        var body: some View {
+            if sample.down > 0 || sample.up > 0 {
+                Image(nsImage: MenuBarSpeedLabel.speedImage(down: sample.down, up: sample.up))
+            } else {
+                Image(systemName: "arrow.down.circle")
+            }
         }
+
+        static func == (a: SpeedContent, b: SpeedContent) -> Bool { a.sample == b.sample }
     }
 
     /// Compact per-line speed for the cramped menu bar, e.g. "14.2 MB/s"
@@ -236,31 +330,40 @@ struct MenuBarSpeedLabel: View {
         bytesPerSec > 0 ? Int64(bytesPerSec).byteString + "/s" : "0"
     }
 
-    /// Render "↓ <down>" over "↑ <up>" into one menu-bar-height image. Colored
-    /// (not a template) so the green/teal tinting survives; system colors keep it
-    /// legible in both the light and dark menu bar.
+    private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .semibold)
+
+    /// A constant width sized to a worst-case rate, so the item is rock-steady
+    /// regardless of the current speed (right-aligned within this box).
+    private static let fixedWidth: CGFloat =
+        ceil(("↓ 8888.88 MB/s" as NSString).size(withAttributes: [.font: labelFont]).width) + 2
+
+    /// Render "↓ <down>" over "↑ <up>", right-aligned within ``fixedWidth``, into
+    /// one menu-bar-height template image.
     static func speedImage(down: Double, up: Double) -> NSImage {
         let downText = "↓ " + compact(down)
         let upText   = "↑ " + compact(up)
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .semibold)
-        let downAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.systemGreen]
-        let upAttrs:   [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.systemTeal]
+        // Template images ignore colour and are masked by alpha, so labelColor is
+        // just a legible opaque fill; AppKit picks the real menu-bar tint.
+        let attrs: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: NSColor.labelColor]
 
-        let dSize = (downText as NSString).size(withAttributes: downAttrs)
-        let uSize = (upText   as NSString).size(withAttributes: upAttrs)
-        let lineH = ceil(max(dSize.height, uSize.height))
-        let width = ceil(max(dSize.width, uSize.width)) + 2
+        let lineH = ceil(("↑ 0" as NSString).size(withAttributes: attrs).height)
+        let width = fixedWidth
         let height = max(NSStatusBar.system.thickness, lineH * 2)
+
+        func drawRightAligned(_ text: String, atY y: CGFloat) {
+            let w = (text as NSString).size(withAttributes: attrs).width
+            (text as NSString).draw(at: NSPoint(x: width - w - 1, y: y), withAttributes: attrs)
+        }
 
         let image = NSImage(size: NSSize(width: width, height: height))
         image.lockFocus()
         // NSImage origin is bottom-left, so the upload row draws lower and the
         // download row a line-height above it; the pair is centred vertically.
         let bottomY = (height - lineH * 2) / 2
-        (upText   as NSString).draw(at: NSPoint(x: 1, y: bottomY), withAttributes: upAttrs)
-        (downText as NSString).draw(at: NSPoint(x: 1, y: bottomY + lineH), withAttributes: downAttrs)
+        drawRightAligned(upText,   atY: bottomY)
+        drawRightAligned(downText, atY: bottomY + lineH)
         image.unlockFocus()
-        image.isTemplate = false
+        image.isTemplate = true
         return image
     }
 }

@@ -10,8 +10,8 @@ struct StatusBarView: View {
     var body: some View {
         HStack(spacing: 14) {
             snail
-            stat(symbol: "arrow.down", value: vm.totalDownloadSpeed.speedString, color: Theme.green)
-            stat(symbol: "arrow.up", value: vm.totalUploadSpeed.speedString, color: Theme.teal)
+            stat(symbol: "arrow.down", value: vm.combinedDownloadSpeed.speedString, color: Theme.green)
+            stat(symbol: "arrow.up", value: vm.combinedUploadSpeed.speedString, color: Theme.teal)
             if !activeTransfers.isEmpty { transfersIndicator }
             Spacer()
             Text("Profile").font(.system(size: 11)).foregroundStyle(.tertiary)
@@ -83,6 +83,11 @@ struct StatusBarView: View {
             Spacer(minLength: 6)
             switch t.state {
             case .running:
+                if !t.speedLabel.isEmpty {
+                    Text(t.speedLabel)
+                        .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                        .foregroundStyle(t.direction == .upload ? Theme.teal : Theme.green)
+                }
                 Text(t.progressLabel)
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
                 Button { vm.cancelSFTPTransfer(t.id) } label: {
@@ -127,7 +132,10 @@ struct StatusBarView: View {
     private func stat(symbol: String, value: String, color: Color) -> some View {
         HStack(spacing: 5) {
             Image(systemName: symbol).font(.system(size: 11))
+            // Fixed width so the neighbouring stats / transfers pill don't shuffle
+            // sideways as the speed number grows and shrinks.
             Text(value).font(.system(size: 12, weight: .semibold)).monospacedDigit()
+                .frame(width: 72, alignment: .leading)
         }
         .foregroundStyle(color)
     }

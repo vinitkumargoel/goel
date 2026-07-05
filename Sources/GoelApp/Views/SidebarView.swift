@@ -65,6 +65,7 @@ struct SidebarView: View {
 
     private func serverItem(_ server: SFTPConnection) -> some View {
         let selected = vm.selectedServer == server.id
+        let transferring = vm.sftpTransfers.contains { $0.connectionID == server.id && $0.isActive }
         return Button {
             vm.selectServer(server.id)
         } label: {
@@ -73,6 +74,15 @@ struct SidebarView: View {
                     .font(.system(size: 13)).frame(width: 16)
                 Text(server.label).font(.system(size: 13)).lineLimit(1)
                 Spacer(minLength: 4)
+                // A live spinner while this server has an in-flight upload/download,
+                // so a transfer stays visible in the sidebar even with the browser
+                // closed.
+                if transferring {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(selected ? Color.white : Theme.accent)
+                        .help("Transferring…")
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)

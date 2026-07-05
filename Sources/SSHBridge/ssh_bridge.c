@@ -16,6 +16,14 @@
 #include <netinet/in.h>
 #include <pthread.h>
 
+// The per-transfer read/write buffer. libssh2 ≥1.11 pipelines a single
+// `libssh2_sftp_read`/`libssh2_sftp_write` internally, keeping multiple packets
+// in flight up to this size — so a bigger buffer is the main lever against the
+// request/response round-trip that otherwise caps SFTP throughput on any
+// non-LAN link. 256 KiB sits comfortably inside the 1 MiB transfer-thread stack
+// (see `SFTPClient` thread setup).
+#define GSB_XFER_BUF_SIZE (256 * 1024)
+
 // ---- one-time libssh2 init ------------------------------------------------
 
 static pthread_once_t g_once = PTHREAD_ONCE_INIT;
@@ -279,7 +287,7 @@ GSBResult gsb_download(const GSBAuth *auth, const char *remote,
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    char buf[32768];
+    char buf[GSB_XFER_BUF_SIZE];
     long long sofar = resume_from;
     long long window = 0;  // bytes since `start`, for throttling
     for (;;) {
@@ -330,7 +338,7 @@ GSBResult gsb_upload(const GSBAuth *auth, const char *remote, long long total,
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    char buf[32768];
+    char buf[GSB_XFER_BUF_SIZE];
     long long sofar = 0;
     for (;;) {
         long got = read_cb ? read_cb(buf, (long)sizeof(buf), userdata) : 0;

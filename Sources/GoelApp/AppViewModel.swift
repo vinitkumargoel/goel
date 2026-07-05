@@ -137,6 +137,12 @@ final class AppViewModel: ObservableObject {
     /// entry is dropped when the transfer settles.
     var sftpTransferTasks: [UUID: (task: Task<Void, Never>, cancel: CancelFlag)] = [:]
 
+    /// In-flight per-file byte counts for a folder upload (transfer id → file
+    /// index → bytes). A folder now uploads several files at once, so completions
+    /// arrive out of order; summing this map yields the row's monotonic aggregate.
+    /// Cleared when the transfer settles.
+    var sftpFolderBytes: [UUID: [Int: Int64]] = [:]
+
     // MARK: Speed history (sparklines)
 
     /// One second of aggregate throughput.
@@ -147,6 +153,11 @@ final class AppViewModel: ObservableObject {
 
     /// The last ~2 minutes of global throughput, sampled at 1 Hz.
     @Published private(set) var globalSpeedHistory: [SpeedSample] = []
+
+    /// Combined ↓/↑ throughput sampled once per second, driving the macOS menu-bar
+    /// status item. The item reads *this* (not the live 10 Hz totals) so its label
+    /// refreshes at a calm 1 Hz and never flickers.
+    @Published private(set) var menuBarSpeed = SpeedSample(down: 0, up: 0)
 
     /// Per-task history for the detail panel's sparkline (active tasks only).
     private(set) var taskSpeedHistory: [DownloadTask.ID: [SpeedSample]] = [:]
@@ -521,6 +532,21 @@ final class AppViewModel: ObservableObject {
 
     var totalDownloadSpeed: Double { tasks.reduce(0) { $0 + $1.downloadSpeed } }
     var totalUploadSpeed: Double { tasks.reduce(0) { $0 + $1.uploadSpeed } }
+
+    /// Live throughput from the SFTP transfer center (browser uploads/downloads),
+    /// which runs outside the download-manager task list. Only in-flight rows
+    /// count.
+    var sftpUploadSpeed: Double {
+        sftpTransfers.reduce(0) { $0 + ($1.isActive && $1.direction == .upload ? $1.speed : 0) }
+    }
+    var sftpDownloadSpeed: Double {
+        sftpTransfers.reduce(0) { $0 + ($1.isActive && $1.direction == .download ? $1.speed : 0) }
+    }
+
+    /// Grand totals shown in the status bar and menu-bar item: the download queue
+    /// plus the SFTP transfer center, so an SFTP upload registers in the ↑ total.
+    var combinedDownloadSpeed: Double { totalDownloadSpeed + sftpDownloadSpeed }
+    var combinedUploadSpeed: Double { totalUploadSpeed + sftpUploadSpeed }
 
     var preferredColorScheme: ColorScheme? { theme.colorScheme }
 
@@ -987,13 +1013,17 @@ final class AppViewModel: ObservableObject {
     }
 
     private func takeSpeedSample() {
-        // Fully idle (no active task and a flat history): skip the sample so
-        // the @Published append doesn't re-render the whole app every second
-        // while it sits in the menu bar doing nothing.
-        let hasActive = tasks.contains { $0.status.isActive }
-        if !hasActive, globalSpeedHistory.allSatisfy({ $0 == SpeedSample(down: 0, up: 0) }) {
+        // Fully idle (no active task/transfer, a flat history, and a zeroed
+        // menu-bar readout): skip the sample so the @Published writes don't
+        // re-render the whole app every second while it sits doing nothing.
+        let hasActive = tasks.contains { $0.status.isActive } || sftpTransfers.contains { $0.isActive }
+        if !hasActive,
+           globalSpeedHistory.allSatisfy({ $0 == SpeedSample(down: 0, up: 0) }),
+           menuBarSpeed == SpeedSample(down: 0, up: 0) {
             return
         }
+        // The menu-bar item's calm 1 Hz value: download queue + SFTP transfers.
+        menuBarSpeed = SpeedSample(down: combinedDownloadSpeed, up: combinedUploadSpeed)
         var sample = SpeedSample(down: 0, up: 0)
         for task in tasks {
             sample.down += task.downloadSpeed

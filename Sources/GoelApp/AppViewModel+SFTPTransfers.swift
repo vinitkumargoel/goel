@@ -109,7 +109,7 @@ extension AppViewModel {
         let t = sftpTransfers[i]
         guard let connection = server(t.connectionID) else { toastNow("That server no longer exists."); return }
         sftpTransfers[i].state = .running
-        sftpTransfers[i].bytes = 0
+        sftpTransfers[i].resetProgress()
         let cancel = CancelFlag()
         let task: Task<Void, Never>
         switch t.direction {
@@ -219,13 +219,20 @@ extension AppViewModel {
         bumpMutation()
     }
 
-    /// Recreate a local folder tree on the server and upload its files, keeping
-    /// the row's byte counters as a running total across the whole subtree.
+    /// How many files a single folder upload sends at once. Each stream is its own
+    /// libssh2 session on its own thread, so several small files (latency-bound on
+    /// their open/close round-trips) move in parallel instead of one at a time.
+    private static let maxParallelUploads = 4
+
+    /// Recreate a local folder tree on the server and upload its files — several
+    /// at a time — keeping the row's byte counters as a running total across the
+    /// whole subtree.
     private func uploadFolder(id: UUID, client: SFTPClient, root: URL,
                               remoteRoot: String, cap: Int64, cancel: CancelFlag) async throws {
         // Walk the tree off the main actor so a large folder doesn't hitch the UI.
         let scan = await Task.detached { FolderScan(scanning: root) }.value
         setTransferTotal(id, scan.total)
+        sftpFolderBytes[id] = [:]
 
         // Directories first (shallowest → deepest) so every file's parent exists.
         // mkdir on an existing dir errors; ignore it so overwrite/merge works.
@@ -235,17 +242,38 @@ extension AppViewModel {
             _ = try? await client.mkdir(rel.reduce(remoteRoot, SFTPBrowserPaths.join))
         }
 
-        var base: Int64 = 0
-        for file in scan.files {
-            if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
-            let remoteFile = file.rel.reduce(remoteRoot, SFTPBrowserPaths.join)
-            let fileBase = base
-            try await client.upload(localURL: file.url, remote: remoteFile, maxBytesPerSecond: cap,
-                                    shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, _ in
-                Task { @MainActor in self?.setTransferBytes(id, fileBase + sofar) }
+        let files = scan.files
+        guard !files.isEmpty else { return }
+        let parallel = min(Self.maxParallelUploads, files.count)
+        // Split the global upload cap across the concurrent streams so N parallel
+        // transfers still respect the one profile limit (0 = unlimited).
+        let perStreamCap = cap > 0 ? max(1, cap / Int64(parallel)) : 0
+
+        // Upload with a bounded window: prime `parallel` files, then start the next
+        // as each finishes. A throw (I/O error or cancel) cancels the group.
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            var next = 0
+            func submit(_ index: Int) {
+                let file = files[index]
+                let remoteFile = file.rel.reduce(remoteRoot, SFTPBrowserPaths.join)
+                group.addTask { [weak self] in
+                    if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
+                    try await client.upload(localURL: file.url, remote: remoteFile,
+                                            maxBytesPerSecond: perStreamCap,
+                                            shouldContinue: { !cancel.isCancelled }) { sofar, _ in
+                        Task { @MainActor in self?.setFolderFileBytes(id, index: index, bytes: sofar) }
+                    }
+                    // Pin this file's contribution to its full size on completion so
+                    // the aggregate lands exactly on the total even if the final
+                    // progress tick arrived just before EOF.
+                    await MainActor.run { self?.setFolderFileBytes(id, index: index, bytes: file.size) }
+                }
             }
-            base += file.size
-            setTransferBytes(id, base)
+            while next < parallel { submit(next); next += 1 }
+            while try await group.next() != nil {
+                if cancel.isCancelled { group.cancelAll(); throw SFTPError(kind: .aborted, message: "Cancelled") }
+                if next < files.count { submit(next); next += 1 }
+            }
         }
     }
 
@@ -277,7 +305,15 @@ extension AppViewModel {
 
     private func setTransferBytes(_ id: UUID, _ bytes: Int64) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
-        sftpTransfers[i].bytes = bytes
+        sftpTransfers[i].record(bytes: bytes)
+    }
+
+    /// Record one file's progress within a parallel folder upload and report the
+    /// summed aggregate as the row's byte count.
+    private func setFolderFileBytes(_ id: UUID, index: Int, bytes: Int64) {
+        sftpFolderBytes[id, default: [:]][index] = bytes
+        let sum = sftpFolderBytes[id]?.values.reduce(0, +) ?? 0
+        setTransferBytes(id, sum)
     }
 
     private func setTransferTotal(_ id: UUID, _ total: Int64) {
@@ -287,14 +323,18 @@ extension AppViewModel {
 
     private func setTransferProgress(_ id: UUID, bytes: Int64, total: Int64) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
-        sftpTransfers[i].bytes = bytes
         if total > 0 { sftpTransfers[i].total = total }
+        sftpTransfers[i].record(bytes: bytes)
     }
 
     private func settleTransfer(_ id: UUID, _ state: SFTPTransfer.State) {
         sftpTransferTasks[id] = nil
+        sftpFolderBytes[id] = nil
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
         if state == .finished { sftpTransfers[i].bytes = max(sftpTransfers[i].bytes, sftpTransfers[i].total) }
+        // A settled transfer contributes no throughput to the status-bar / menu-bar
+        // totals or the sidebar indicator.
+        sftpTransfers[i].speed = 0
         sftpTransfers[i].state = state
     }
 

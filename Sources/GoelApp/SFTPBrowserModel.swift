@@ -26,11 +26,62 @@ struct SFTPTransfer: Identifiable {
     let remotePath: String
     var bytes: Int64 = 0
     var total: Int64 = 0
+    /// Live throughput in bytes/sec, refreshed at most once per second (see
+    /// ``record(bytes:now:)``) so the readout is a steady per-second rate rather
+    /// than a per-chunk jitter.
+    var speed: Double = 0
     var state: State = .running
+
+    /// Sampling state behind the 1 Hz windowed ``speed`` (absolute bytes + the
+    /// wall-clock at the last sample).
+    private var sampleBytes: Int64 = 0
+    private var sampleAt: Date?
+
+    /// Explicit init: the private sampling fields would otherwise make the
+    /// synthesized memberwise initializer private.
+    init(connectionID: UUID, name: String, direction: Direction, isDirectory: Bool,
+         localURL: URL, remotePath: String, total: Int64 = 0) {
+        self.connectionID = connectionID
+        self.name = name
+        self.direction = direction
+        self.isDirectory = isDirectory
+        self.localURL = localURL
+        self.remotePath = remotePath
+        self.total = total
+    }
 
     var fraction: Double { total > 0 ? min(1, Double(bytes) / Double(total)) : 0 }
     var isActive: Bool { state == .running }
     var errorMessage: String? { if case .failed(let m) = state { return m }; return nil }
+
+    /// Seconds remaining at the current rate, or nil if unknown/stalled — used
+    /// for the transfer row's ETA.
+    var etaSeconds: TimeInterval? {
+        guard isActive, speed > 0, total > bytes else { return nil }
+        return Double(total - bytes) / speed
+    }
+
+    /// Absorb a fresh absolute byte count. `bytes` tracks every callback so the
+    /// progress bar stays smooth, but ``speed`` is recomputed only once the
+    /// sample window (1 s) has elapsed, giving a stable rate.
+    mutating func record(bytes newBytes: Int64, now: Date = Date()) {
+        bytes = newBytes
+        guard let at = sampleAt else { sampleAt = now; sampleBytes = newBytes; return }
+        let dt = now.timeIntervalSince(at)
+        if dt >= 1 {
+            speed = Swift.max(0, Double(newBytes - sampleBytes) / dt)
+            sampleAt = now
+            sampleBytes = newBytes
+        }
+    }
+
+    /// Zero the counters + speed sampler for an in-place retry.
+    mutating func resetProgress() {
+        bytes = 0
+        speed = 0
+        sampleBytes = 0
+        sampleAt = nil
+    }
 }
 
 // MARK: - Shared row presentation
@@ -62,6 +113,18 @@ extension SFTPTransfer {
     var progressLabel: String {
         total > 0 ? "\(Int(fraction * 100))%" : bytes.byteString
     }
+
+    /// "12.34 MB / 45.67 MB" — bytes done over the known total (or just the
+    /// running byte count when the total isn't known yet).
+    var sizeLabel: String {
+        total > 0 ? "\(bytes.byteString) / \(total.byteString)" : bytes.byteString
+    }
+
+    /// The live rate, e.g. "14.2 MB/s"; empty until the first windowed sample.
+    var speedLabel: String { speed > 0 ? speed.speedString : "" }
+
+    /// "1.2m" / "45s" remaining, or nil when unknown.
+    var etaLabel: String? { etaSeconds.map { DownloadTask.etaString($0) } }
 }
 
 /// A thread-safe cancel flag shared between a drag's `Progress.cancellationHandler`
