@@ -162,6 +162,20 @@ final class AppViewModel: ObservableObject {
     /// Per-task history for the detail panel's sparkline (active tasks only).
     private(set) var taskSpeedHistory: [DownloadTask.ID: [SpeedSample]] = [:]
 
+    /// The ↓/↑ throughput each task's speed *label* should display, refreshed
+    /// once per second by ``takeSpeedSample()``. The download list and detail
+    /// panels read this (via ``displaySpeed(for:)``) instead of the live
+    /// `DownloadTask.downloadSpeed`, which the engine updates ~10×/sec — so the
+    /// number settles to a calm 1 Hz and never flickers.
+    @Published private(set) var displayedTaskSpeed: [DownloadTask.ID: SpeedSample] = [:]
+
+    /// The ↓/↑ speed the UI should show for `task`: the 1 Hz sample when one
+    /// exists, else the live value (covers a task's first second, before the
+    /// sampler has run for it).
+    func displaySpeed(for task: DownloadTask) -> SpeedSample {
+        displayedTaskSpeed[task.id] ?? SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
+    }
+
     private static let speedHistoryCap = 120
     private var speedSampler: Task<Void, Never>?
 
@@ -1028,6 +1042,9 @@ final class AppViewModel: ObservableObject {
         for task in tasks {
             sample.down += task.downloadSpeed
             sample.up += task.uploadSpeed
+            // The calm 1 Hz value the speed labels read (all tasks, not just
+            // active, so a just-finished row settles to its final number).
+            displayedTaskSpeed[task.id] = SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
             guard task.status.isActive else { continue }
             var history = taskSpeedHistory[task.id] ?? []
             history.append(SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed))
@@ -1038,6 +1055,7 @@ final class AppViewModel: ObservableObject {
         // a brief pause doesn't wipe the graph).
         let known = Set(tasks.map(\.id))
         taskSpeedHistory = taskSpeedHistory.filter { known.contains($0.key) }
+        displayedTaskSpeed = displayedTaskSpeed.filter { known.contains($0.key) }
         globalSpeedHistory.append(sample)
         if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }
     }

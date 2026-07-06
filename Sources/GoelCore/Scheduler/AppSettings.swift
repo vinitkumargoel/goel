@@ -101,6 +101,16 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Seconds to wait between retries.
     public var retryInterval: Double
 
+    /// Automatically re-queue a whole download that has *failed* and try it
+    /// again — up to ``autoRetryMaxAttempts`` times, waiting an exponentially
+    /// growing delay between attempts. Distinct from ``retryCount`` (the HTTP
+    /// engine's per-request budget within a single run). Off by default.
+    public var autoRetryEnabled: Bool
+
+    /// How many times a failed download is auto-retried before it is left in the
+    /// failed state for a manual retry. Only used when ``autoRetryEnabled``.
+    public var autoRetryMaxAttempts: Int
+
     /// User-Agent header sent with HTTP requests.
     public var userAgent: String
 
@@ -353,6 +363,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
         connectionTimeout: Double = 30,
         retryCount: Int = 3,
         retryInterval: Double = 5,
+        autoRetryEnabled: Bool = false,
+        autoRetryMaxAttempts: Int = 5,
         userAgent: String = "GoelDownloader/1.0 (macOS)",
         cookieAuthEnabled: Bool = true,
         // BitTorrent
@@ -450,6 +462,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.connectionTimeout = connectionTimeout
         self.retryCount = retryCount
         self.retryInterval = retryInterval
+        self.autoRetryEnabled = autoRetryEnabled
+        self.autoRetryMaxAttempts = autoRetryMaxAttempts
         self.userAgent = userAgent
         self.cookieAuthEnabled = cookieAuthEnabled
         self.btMakeDefaultClient = btMakeDefaultClient
@@ -518,7 +532,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         case theme, language, launchAtLogin, launchMinimized, menuBarExtraEnabled, defaultFolderRule
         case existingFileReaction, clipboardMonitorEnabled, hlsMaxHeight, detailPanelPosition
         case proxyMode, proxyType, proxyAllProtocols, proxyHost, proxyPort, connectionTimeout, retryCount
-        case retryInterval, userAgent, cookieAuthEnabled
+        case retryInterval, autoRetryEnabled, autoRetryMaxAttempts, userAgent, cookieAuthEnabled
         case btMakeDefaultClient, btAutoDeleteTorrent, btWatchFolderEnabled
         case btWatchFolderPath, btWatchStartWithoutConfirmation, btEncryptionMode
         case btEnableDHT, btEnablePeX, btEnableLPD, btEnableUTP
@@ -570,6 +584,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
         connectionTimeout = try c.decodeIfPresent(Double.self, forKey: .connectionTimeout) ?? 30
         retryCount = try c.decodeIfPresent(Int.self, forKey: .retryCount) ?? 3
         retryInterval = try c.decodeIfPresent(Double.self, forKey: .retryInterval) ?? 5
+        autoRetryEnabled = try c.decodeIfPresent(Bool.self, forKey: .autoRetryEnabled) ?? false
+        autoRetryMaxAttempts = try c.decodeIfPresent(Int.self, forKey: .autoRetryMaxAttempts) ?? 5
         userAgent = try c.decodeIfPresent(String.self, forKey: .userAgent) ?? "GoelDownloader/1.0 (macOS)"
         cookieAuthEnabled = try c.decodeIfPresent(Bool.self, forKey: .cookieAuthEnabled) ?? true
         btMakeDefaultClient = try c.decodeIfPresent(Bool.self, forKey: .btMakeDefaultClient) ?? false

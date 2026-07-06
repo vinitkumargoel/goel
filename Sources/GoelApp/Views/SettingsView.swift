@@ -309,6 +309,16 @@ struct SettingsView: View {
             SetRow(name: "Retry interval", desc: "Seconds to wait between retries.") {
                 SettingDouble(value: binding(\.retryInterval))
             }
+            SetRow(name: "Auto-retry failed downloads",
+                   desc: "Automatically re-queue a failed download and try again, with an exponential backoff between attempts.") {
+                SettingSwitch(isOn: binding(\.autoRetryEnabled))
+            }
+            if vm.settings.autoRetryEnabled {
+                SetRow(name: "Auto-retry attempts",
+                       desc: "How many times to retry before leaving it failed for a manual retry.") {
+                    SettingInt(value: binding(\.autoRetryMaxAttempts))
+                }
+            }
             SetRow(name: "Custom user-agent", desc: "Sent with HTTP requests.") {
                 SettingText(text: binding(\.userAgent), width: 160)
             }

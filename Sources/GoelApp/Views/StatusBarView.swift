@@ -90,7 +90,7 @@ struct StatusBarView: View {
                 }
                 Text(t.progressLabel)
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
-                Button { vm.cancelSFTPTransfer(t.id) } label: {
+                Button { vm.requestCancelSFTPTransfer(t.id) } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12))
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")

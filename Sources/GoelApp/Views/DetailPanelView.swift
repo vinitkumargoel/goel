@@ -110,8 +110,8 @@ struct DetailPanelView: View {
             .padding(.top, 4)
 
             HStack(spacing: 22) {
-                DetailSpeedStat(symbol: "arrow.down", speed: task.downloadSpeed, color: Theme.green, size: 13)
-                DetailSpeedStat(symbol: "arrow.up", speed: task.uploadSpeed, color: Theme.teal, size: 13)
+                DetailSpeedStat(symbol: "arrow.down", speed: vm.displaySpeed(for: task).down, color: Theme.green, size: 13)
+                DetailSpeedStat(symbol: "arrow.up", speed: vm.displaySpeed(for: task).up, color: Theme.teal, size: 13)
             }
 
             Text(sizeAndETA(for: task))

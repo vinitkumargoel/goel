@@ -158,6 +158,9 @@ extension DownloadManager {
             consumers[id] = nil
             if let i = index(of: id) { tasks[i].connections = nil }
             if status == .completed, let i = index(of: id) {
+                // A clean finish ends the failure streak, so the next unrelated
+                // failure starts its auto-retry budget fresh.
+                tasks[i].retryAttempt = nil
                 if tasks[i].completedAt == nil {
                     tasks[i].completedAt = Date()
                     stats.completedCount += 1
@@ -168,6 +171,7 @@ extension DownloadManager {
                 }
                 onDownloadCompleted(tasks[i])
             }
+            if case .failed = status { scheduleAutoRetryIfNeeded(id) }
             schedule()
         case .seeding:
             runningSlots.remove(id)

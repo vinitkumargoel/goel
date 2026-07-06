@@ -99,10 +99,10 @@ struct DetailBottomPanel: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(task.downloadSpeed > 0 ? task.downloadSpeed.speedString : "—")
+                    Text(vm.displaySpeed(for: task).down > 0 ? vm.displaySpeed(for: task).down.speedString : "—")
                         .font(.system(size: 16, weight: .bold))
                         .monospacedDigit()
-                        .foregroundStyle(task.downloadSpeed > 0 ? Theme.green : Color.secondary)
+                        .foregroundStyle(vm.displaySpeed(for: task).down > 0 ? Theme.green : Color.secondary)
                     Text("last 60s").font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
                 .fixedSize()

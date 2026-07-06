@@ -162,18 +162,18 @@ struct DownloadRow: View {
                 .frame(width: 104, alignment: .leading)
                 .padding(.horizontal, 6)
 
-            Text(task.downloadSpeed.speedString)
+            Text(vm.displaySpeed(for: task).down.speedString)
                 .frame(width: 84, alignment: .trailing)
                 .padding(.horizontal, 6)
                 .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(task.downloadSpeed > 0 ? Theme.green : Color.secondary)
+                .foregroundStyle(vm.displaySpeed(for: task).down > 0 ? Theme.green : Color.secondary)
                 .monospacedDigit()
 
-            Text(task.uploadSpeed.speedString)
+            Text(vm.displaySpeed(for: task).up.speedString)
                 .frame(width: 84, alignment: .trailing)
                 .padding(.horizontal, 6)
                 .font(.system(size: 12.5))
-                .foregroundStyle(task.uploadSpeed > 0 ? Theme.teal : Color.secondary)
+                .foregroundStyle(vm.displaySpeed(for: task).up > 0 ? Theme.teal : Color.secondary)
                 .monospacedDigit()
         }
         .padding(.horizontal, 12)

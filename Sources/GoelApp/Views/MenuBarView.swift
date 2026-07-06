@@ -242,6 +242,10 @@ private struct MenuBarTransferRow: View {
     let transfer: SFTPTransfer
     let vm: AppViewModel
 
+    // The app's custom confirm overlay only renders on the main window, not in
+    // this separate menu-bar scene — so this surface asks with a native dialog.
+    @State private var confirmingCancel = false
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: transfer.iconName(filledWhenFinished: false))
@@ -271,7 +275,7 @@ private struct MenuBarTransferRow: View {
                     }
                 }
             }
-            Button { vm.cancelSFTPTransfer(transfer.id) } label: {
+            Button { confirmingCancel = true } label: {
                 Image(systemName: "xmark.circle.fill").font(.system(size: 13))
             }
             .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")
@@ -279,6 +283,15 @@ private struct MenuBarTransferRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .contentShape(Rectangle())
+        .confirmationDialog(
+            "Cancel this \(transfer.direction == .upload ? "upload" : "download")?",
+            isPresented: $confirmingCancel, titleVisibility: .visible
+        ) {
+            Button("Stop Transfer", role: .destructive) { vm.cancelSFTPTransfer(transfer.id) }
+            Button("Keep Going", role: .cancel) {}
+        } message: {
+            Text("“\(transfer.name)” will stop transferring and be removed from the list.")
+        }
     }
 }
 

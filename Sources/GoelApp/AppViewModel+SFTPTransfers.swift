@@ -94,12 +94,37 @@ extension AppViewModel {
 
     // MARK: Cancel / retry / clear
 
-    /// Abort an in-flight transfer. The libssh2 thread observes the flag on its
-    /// next progress tick and returns; the state flips to `.cancelled` then.
+    /// Ask before cancelling an in-flight transfer, then cancel + remove it.
+    /// Wired to every cancel button (browser strip, status bar, menu bar) so a
+    /// stray click can't silently abort a large transfer.
+    func requestCancelSFTPTransfer(_ id: UUID) {
+        guard let t = sftpTransfers.first(where: { $0.id == id }) else { return }
+        // An already-settled row (finished/failed/cancelled) just gets dropped —
+        // no need to ask.
+        guard t.isActive else { cancelSFTPTransfer(id); return }
+        let verb = t.direction == .upload ? "upload" : "download"
+        requestConfirm(
+            title: "Cancel this \(verb)?",
+            message: "“\(t.name)” will stop transferring and be removed from the list.",
+            confirmTitle: "Stop Transfer",
+            destructive: true
+        ) { [weak self] in self?.cancelSFTPTransfer(id) }
+    }
+
+    /// Abort an in-flight transfer *immediately*: signal the libssh2 thread to
+    /// stop (via the shared ``CancelFlag``), cancel the wrapping Task, and drop
+    /// the row from the list right away — the UI never waits for the transfer
+    /// thread to notice the flag on its next progress tick. The background task
+    /// still unwinds and cleans up any partial local file; its late
+    /// `settleTransfer` is a no-op because the row is already gone.
     func cancelSFTPTransfer(_ id: UUID) {
-        guard let entry = sftpTransferTasks[id] else { return }
-        entry.cancel.cancel()
-        entry.task.cancel()
+        if let entry = sftpTransferTasks[id] {
+            entry.cancel.cancel()
+            entry.task.cancel()
+        }
+        sftpTransferTasks[id] = nil
+        sftpFolderBytes[id] = nil
+        sftpTransfers.removeAll { $0.id == id }
         toastNow("Transfer cancelled")
     }
 

@@ -111,6 +111,12 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// engine. nil/empty = none.
     public var requestHeaders: [String: String]?
 
+    /// How many times the scheduler has already auto-retried this download in
+    /// the current failure streak (see ``AppSettings/autoRetryEnabled``). Reset
+    /// to nil on a successful completion or a manual retry. Optional so old
+    /// persisted blobs decode unchanged.
+    public var retryAttempt: Int?
+
     /// File indices the user deselected on the add screen (torrents), before the
     /// per-file list exists. Applied once as `.skip` the moment metadata resolves
     /// (after which the skip lives in each file's own `.priority`), then dropped:
@@ -155,6 +161,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         note: String? = nil,
         referer: String? = nil,
         requestHeaders: [String: String]? = nil,
+        retryAttempt: Int? = nil,
         initialSkipFileIDs: [Int]? = nil
     ) {
         self.id = id
@@ -192,6 +199,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         self.note = note
         self.referer = referer
         self.requestHeaders = requestHeaders
+        self.retryAttempt = retryAttempt
         self.initialSkipFileIDs = initialSkipFileIDs
     }
 
