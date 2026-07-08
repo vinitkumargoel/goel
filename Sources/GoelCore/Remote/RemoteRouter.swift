@@ -399,6 +399,8 @@ public struct RemoteRouter: Sendable {
         var down: Double
         var up: Double
         var progress: Double
+        var adapterId: String?
+        var adapterLabel: String?
         init(_ c: TaskConnection) {
             id = c.id
             label = c.label
@@ -406,6 +408,8 @@ public struct RemoteRouter: Sendable {
             down = c.downloadSpeed
             up = c.uploadSpeed
             progress = c.progress
+            adapterId = c.adapterId
+            adapterLabel = c.adapterLabel
         }
     }
 

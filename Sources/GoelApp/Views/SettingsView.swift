@@ -338,6 +338,46 @@ struct SettingsView: View {
                    desc: "Hold downloads while the connection is constrained.") {
                 SettingSwitch(isOn: binding(\.pauseOnConstrainedNetwork))
             }
+
+            SectionHeader("Network aggregation")
+            Text("Combine multiple internet adapters for one HTTP download (byte-range multi-path). Only helps when adapters use different internet paths — two cables to the same router usually will not double speed.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 8)
+            SetRow(name: "Enable multi-path downloads",
+                   desc: "Fan ranged HTTP downloads across selected adapters. Default off.") {
+                SettingSwitch(isOn: binding(\.aggregationEnabled))
+            }
+            if vm.settings.aggregationEnabled {
+                AggregationAdapterList()
+                SetRow(name: "Include expensive networks",
+                       desc: "Allow cellular / personal hotspot adapters. Uses mobile data — confirm you understand the cost.") {
+                    SettingSwitch(isOn: binding(\.aggregationIncludeExpensive))
+                }
+                SetRow(name: "Allow paths outside VPN",
+                       desc: "Dangerous: bind physical interfaces even when a VPN is the default route (may bypass the tunnel).") {
+                    SettingSwitch(isOn: binding(\.aggregationAllowOutsideVPN))
+                }
+                SetRow(name: "Streams per adapter",
+                       desc: "Parallel range connections targeted per adapter.") {
+                    SettingInt(value: binding(\.aggregationStreamsPerAdapter))
+                }
+                SetRow(name: "Check path diversity",
+                       desc: "Opt-in probe: warn when selected adapters share the same public IP (likely one WAN).") {
+                    SettingSwitch(isOn: binding(\.aggregationPathDiversityProbe))
+                }
+                if let reason = vm.aggregationInactiveReason {
+                    Text("Currently single-path: \(reason.rawValue)")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.orange)
+                        .padding(.top, 6)
+                } else {
+                    Text("Multi-path active with \(vm.usableAggregationAdapters.count) adapters.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
+                }
+            }
             CredentialsSection()
         }
     }
@@ -553,6 +593,80 @@ struct SettingsView: View {
                 SettingText(text: binding(\.antivirusArgumentTemplate), width: 120)
             }
         }
+    }
+}
+
+// MARK: - Aggregation adapter multi-select
+
+/// Live checklist of host network interfaces for multi-path downloads.
+private struct AggregationAdapterList: View {
+    @EnvironmentObject private var vm: AppViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Adapters")
+                    .font(.system(size: 13, weight: .medium))
+                Spacer()
+                Button("Refresh") { vm.refreshAggregationState() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            if vm.networkAdapters.isEmpty {
+                Text("No eligible interfaces found. Connect another network and refresh.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(vm.networkAdapters) { adapter in
+                    let selected = vm.settings.aggregationAdapterIds.isEmpty
+                        || vm.settings.aggregationAdapterIds.contains(adapter.bsdName)
+                    let disabled = adapter.isExpensive && !vm.settings.aggregationIncludeExpensive
+                    HStack(spacing: 10) {
+                        Image(systemName: selected && !disabled ? "checkmark.square.fill" : "square")
+                            .foregroundStyle(selected && !disabled ? Theme.accent : .secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(adapter.shortLabel)
+                                .font(.system(size: 12.5, weight: .medium))
+                            Text(subtitle(adapter))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if adapter.isExpensive {
+                            Text("expensive")
+                                .font(.system(size: 9, weight: .semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.15), in: Capsule())
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                    .opacity(disabled ? 0.45 : 1)
+                    .onTapGesture {
+                        guard !disabled else { return }
+                        // First explicit toggle materializes selection from "all".
+                        if vm.settings.aggregationAdapterIds.isEmpty {
+                            let allIds = vm.networkAdapters.map(\.bsdName)
+                            vm.update { $0.aggregationAdapterIds = allIds }
+                        }
+                        vm.toggleAggregationAdapter(adapter.bsdName)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .onAppear { vm.refreshAggregationState() }
+    }
+
+    private func subtitle(_ a: NetworkAdapter) -> String {
+        var parts: [String] = [a.type]
+        if let v4 = a.ipv4 { parts.append(v4) }
+        else if let v6 = a.ipv6 { parts.append(v6) }
+        parts.append(a.isUp ? "up" : "down")
+        return parts.joined(separator: " · ")
     }
 }
 

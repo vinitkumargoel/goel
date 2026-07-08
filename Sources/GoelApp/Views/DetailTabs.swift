@@ -448,8 +448,9 @@ struct ConnectionsTab: View {
             } else {
                 connHeader(left: "Segment", trailing: "done")
                 ForEach(live) { segment in
-                    connRow(label: "\(segment.label) · \(segment.detail)",
-                            subtitle: nil,
+                    let adapter = segment.adapterLabel.map { " · \($0)" } ?? ""
+                    connRow(label: "\(segment.label)\(adapter) · \(segment.detail)",
+                            subtitle: segment.adapterId,
                             down: segment.downloadSpeed,
                             trailing: "\(Int((segment.progress * 100).rounded()))%",
                             trailingColor: .secondary)

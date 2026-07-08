@@ -40,3 +40,23 @@ public struct HTTPNetworkConfig: Sendable, Equatable {
         self.cookieAuthEnabled = cookieAuthEnabled
     }
 }
+
+// MARK: - Network aggregation (multi-path)
+
+/// Snapshot of multi-adapter download policy pushed into ``HTTPEngine``.
+/// Built by ``DownloadManager`` from ``AppSettings`` + live adapter enumeration.
+public struct AggregationEngineConfig: Sendable, Equatable {
+    public var adapters: [BoundAdapter]
+    public var streamsPerAdapter: Int
+
+    public init(adapters: [BoundAdapter] = [], streamsPerAdapter: Int = 2) {
+        self.adapters = adapters
+        self.streamsPerAdapter = max(1, streamsPerAdapter)
+    }
+
+    public static let disabled = AggregationEngineConfig(adapters: [], streamsPerAdapter: 2)
+
+    public var isActive: Bool { adapters.count >= 2 }
+}
+
+

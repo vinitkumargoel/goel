@@ -70,6 +70,24 @@ final class AppViewModel: ObservableObject {
     /// warn the user that downloads/settings may not survive relaunch.
     @Published var persistenceWarning: String?
 
+    /// Live network interfaces for the aggregation settings list.
+    @Published private(set) var networkAdapters: [NetworkAdapter] = []
+
+    /// Why multi-path is currently inactive (nil when active).
+    @Published private(set) var aggregationInactiveReason: AggregationPolicy.SinglePathReason?
+
+    /// Adapters that would participate if multi-path is on.
+    var usableAggregationAdapters: [NetworkAdapter] {
+        let selected = AggregationPolicy.effectiveSelection(
+            selectedIds: settings.aggregationAdapterIds, all: networkAdapters)
+        return AggregationPolicy.usableAdapters(
+            all: networkAdapters,
+            selectedIds: selected,
+            includeExpensive: settings.aggregationIncludeExpensive,
+            includeVPN: settings.aggregationAllowOutsideVPN
+        )
+    }
+
     // MARK: Published view state
 
     /// The full multi-selection set. A row highlights when its id is contained;
@@ -396,13 +414,20 @@ final class AppViewModel: ObservableObject {
         // so the pause-on-metered settings can hold and release the queue.
         let netMonitor = NWPathMonitor()
         let core = self.manager
-        netMonitor.pathUpdateHandler = { path in
+        netMonitor.pathUpdateHandler = { [weak self] path in
             let expensive = path.isExpensive
             let constrained = path.isConstrained
-            Task { await core.applyNetworkPolicy(expensive: expensive, constrained: constrained) }
+            // VPN present and up — multi-path physical binds may bypass the tunnel.
+            let vpnActive = AdapterDirectory.enumerate().contains { $0.type == "vpn" && $0.isUp }
+            Task {
+                await core.applyNetworkPolicy(expensive: expensive, constrained: constrained)
+                await core.setVPNDefaultRouteActive(vpnActive)
+                await MainActor.run { self?.refreshAggregationState() }
+            }
         }
         netMonitor.start(queue: DispatchQueue(label: "goel.network-path"))
         pathMonitor = netMonitor
+        await refreshAggregationState()
         startSpeedSampler()
         applyRemoteAccess()
         SparkleUpdaterService.shared.startIfConfigured()
@@ -857,6 +882,19 @@ final class AppViewModel: ObservableObject {
     /// core deliberately doesn't own — login-item registration and notification
     /// authorization. The manager round-trip runs off the main actor so editing a
     /// settings field never blocks the UI.
+    /// Refresh adapter list + multi-path inactive reason (Settings UI + engine).
+    func refreshAggregationState() {
+        networkAdapters = AdapterDirectory.enumerate()
+        let vpn = networkAdapters.contains { $0.type == "vpn" && $0.isUp }
+        aggregationInactiveReason = DownloadManager.aggregationSinglePathReason(
+            settings: settings, vpnDefaultRoute: vpn, adapters: networkAdapters)
+        Task {
+            await manager.setVPNDefaultRouteActive(vpn)
+            // Re-push engine configs so HTTP multi-path set tracks live adapters.
+            await manager.reapplyEngineConfigsPublic()
+        }
+    }
+
     func update(_ mutate: (inout AppSettings) -> Void) {
         var copy = settings
         mutate(&copy)
@@ -878,10 +916,27 @@ final class AppViewModel: ObservableObject {
         let committed = copy
         Task {
             settings = await manager.apply { $0 = committed }
+            refreshAggregationState()
         }
         if launchChanged { LoginItemService.setEnabled(copy.launchAtLogin) }
         if notificationsNewlyWanted { NotificationService.requestAuthorization() }
         applyRemoteAccess()
+        // Immediate local refresh for adapter toggles (engine re-apply is async).
+        networkAdapters = AdapterDirectory.enumerate()
+        aggregationInactiveReason = DownloadManager.aggregationSinglePathReason(
+            settings: settings,
+            vpnDefaultRoute: networkAdapters.contains { $0.type == "vpn" && $0.isUp },
+            adapters: networkAdapters)
+    }
+
+    /// Toggle an adapter id in the aggregation multi-select list.
+    func toggleAggregationAdapter(_ bsdName: String) {
+        update { s in
+            var ids = Set(s.aggregationAdapterIds)
+            if ids.contains(bsdName) { ids.remove(bsdName) }
+            else { ids.insert(bsdName) }
+            s.aggregationAdapterIds = ids.sorted()
+        }
     }
 
     // MARK: Remote access

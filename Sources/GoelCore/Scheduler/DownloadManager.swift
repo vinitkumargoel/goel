@@ -128,6 +128,10 @@ public actor DownloadManager {
     var lastPathExpensive = false
     var lastPathConstrained = false
 
+    /// True when the system default route is a VPN interface. Multi-path physical
+    /// binds are refused unless ``AppSettings/aggregationAllowOutsideVPN``.
+    var vpnDefaultRouteActive = false
+
     // MARK: Statistics state
 
     /// Lifetime/per-day transfer accounting, fed from progress deltas and

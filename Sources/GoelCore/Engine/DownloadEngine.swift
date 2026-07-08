@@ -87,6 +87,12 @@ public protocol TorrentControlling: FilePrioritizing {
 /// selection for multi-file (metalink) transfers.
 public protocol HTTPConfigurable: FilePrioritizing {
     func configure(_ net: HTTPNetworkConfig) async
+    /// Multi-path adapter set for network aggregation. Default no-op for mocks.
+    func configureAggregation(_ config: AggregationEngineConfig) async
+}
+
+public extension HTTPConfigurable {
+    func configureAggregation(_ config: AggregationEngineConfig) async {}
 }
 
 /// The HLS engine's preferred-rendition-height seam.
