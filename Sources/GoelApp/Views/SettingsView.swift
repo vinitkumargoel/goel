@@ -340,7 +340,7 @@ struct SettingsView: View {
             }
 
             SectionHeader("Network aggregation")
-            Text("Combine multiple internet adapters for one HTTP download (byte-range multi-path). Only helps when adapters use different internet paths — two cables to the same router usually will not double speed.")
+            Text("Combine multiple internet adapters for one HTTP download (byte-range multi-path). Only helps when adapters use different internet paths — two cables to the same router usually will not double speed. Multi-path is disabled while a system or manual proxy is set, and while a VPN tunnel is up (unless you allow paths outside the VPN).")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 8)

@@ -417,8 +417,9 @@ final class AppViewModel: ObservableObject {
         netMonitor.pathUpdateHandler = { [weak self] path in
             let expensive = path.isExpensive
             let constrained = path.isConstrained
-            // VPN present and up — multi-path physical binds may bypass the tunnel.
-            let vpnActive = AdapterDirectory.enumerate().contains { $0.type == "vpn" && $0.isUp }
+            // VPN/tunnel iface up (utun/ipsec/…) — separate from multi-path adapter
+            // list, which intentionally excludes tunnels.
+            let vpnActive = AdapterDirectory.hasActiveVPNInterface()
             Task {
                 await core.applyNetworkPolicy(expensive: expensive, constrained: constrained)
                 await core.setVPNDefaultRouteActive(vpnActive)
@@ -885,7 +886,7 @@ final class AppViewModel: ObservableObject {
     /// Refresh adapter list + multi-path inactive reason (Settings UI + engine).
     func refreshAggregationState() {
         networkAdapters = AdapterDirectory.enumerate()
-        let vpn = networkAdapters.contains { $0.type == "vpn" && $0.isUp }
+        let vpn = AdapterDirectory.hasActiveVPNInterface()
         aggregationInactiveReason = DownloadManager.aggregationSinglePathReason(
             settings: settings, vpnDefaultRoute: vpn, adapters: networkAdapters)
         Task {
@@ -925,7 +926,7 @@ final class AppViewModel: ObservableObject {
         networkAdapters = AdapterDirectory.enumerate()
         aggregationInactiveReason = DownloadManager.aggregationSinglePathReason(
             settings: settings,
-            vpnDefaultRoute: networkAdapters.contains { $0.type == "vpn" && $0.isUp },
+            vpnDefaultRoute: AdapterDirectory.hasActiveVPNInterface(),
             adapters: networkAdapters)
     }
 

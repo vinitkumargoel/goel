@@ -103,6 +103,9 @@ public enum AggregationPolicy: Sendable {
     }
 
     /// Whether aggregation may run given settings + usable adapters + profile + proxy.
+    ///
+    /// Proxy: both `manual` **and** `system` disable multi-path — the bound curl
+    /// path does not honour PAC/system proxy, so allowing multi-path would bypass it.
     public static func shouldActivate(
         enabled: Bool,
         usableAdapterCount: Int,
@@ -113,7 +116,7 @@ public enum AggregationPolicy: Sendable {
     ) -> SinglePathReason? {
         if !enabled { return .disabled }
         if !enableExtraConnections { return .lowProfile }
-        if proxyMode == "manual" { return .proxy }
+        if proxyMode == "manual" || proxyMode == "system" { return .proxy }
         if vpnDefaultRoute && !allowOutsideVPN { return .vpn }
         if usableAdapterCount < 2 { return .tooFewAdapters }
         return nil
@@ -130,12 +133,13 @@ public enum AggregationPolicy: Sendable {
         return all.filter { a in
             guard a.isUp else { return false }
             guard selected.isEmpty || selected.contains(a.bsdName) else { return false }
-            if a.type == "vpn" && !includeVPN { return false }
-            // Virtual noise — never auto-include even if selected empty means "all".
+            // VPN tunnels never join multi-path fan-out (physical bind only).
+            // `includeVPN` is reserved for a future advanced mode; v1 always excludes.
+            _ = includeVPN
+            if a.type == "vpn" || isVPNInterfaceName(a.bsdName) { return false }
+            // Virtual noise — never multi-path candidates.
             if isHiddenVirtual(a.bsdName) { return false }
             if a.isExpensive && !includeExpensive { return false }
-            // Need at least one routable address signal when we have address info;
-            // adapters without any address are usually unusable for WAN.
             if a.ipv4 == nil && a.ipv6 == nil { return false }
             return true
         }
@@ -147,21 +151,35 @@ public enum AggregationPolicy: Sendable {
         return all.map(\.bsdName)
     }
 
+    /// Interfaces that must never appear as multi-path download adapters.
+    /// **Does not include `utun`/`bridge`** — those are handled as VPN / tether
+    /// classification, not blanket-hidden (hiding `utun` broke VPN detection;
+    /// hiding `bridge` hid iPhone USB tethering).
     public static func isHiddenVirtual(_ bsdName: String) -> Bool {
         let n = bsdName.lowercased()
-        if n == "lo" || n.hasPrefix("lo") && n.count <= 4 { return true }
-        let prefixes = ["awdl", "llw", "ap", "anpi", "bridge", "gif", "stf", "p2p", "utun", "vmnet", "veth", "docker", "br-"]
+        if n == "lo" || (n.hasPrefix("lo") && n.count <= 4) { return true }
+        let prefixes = ["awdl", "llw", "ap", "anpi", "gif", "stf", "p2p", "vmnet", "veth", "docker", "br-"]
         return prefixes.contains { n.hasPrefix($0) }
     }
 
-    /// Desired segment floor so each adapter gets work: adapters × streamsPerAdapter.
+    /// Tunnel / VPN interface names (used for policy detection, not multi-path bind).
+    public static func isVPNInterfaceName(_ bsdName: String) -> Bool {
+        let n = bsdName.lowercased()
+        return n.hasPrefix("utun") || n.hasPrefix("ipsec") || n.hasPrefix("ppp")
+            || n.hasPrefix("tun") || n.hasPrefix("tap") || n.hasPrefix("wg")
+    }
+
+    /// Desired segment count: `adapters × streamsPerAdapter`, clamped to `maxAllowed`.
     public static func preferredSegmentCount(
         adapters: Int,
         streamsPerAdapter: Int,
-        budget: Int
+        maxAllowed: Int
     ) -> Int {
         let want = max(1, adapters) * max(1, streamsPerAdapter)
-        return max(1, min(want, max(1, budget)))
+        let cap = max(1, maxAllowed)
+        // At least one segment per adapter when the budget allows.
+        let floor = min(max(1, adapters), cap)
+        return max(floor, min(want, cap))
     }
 }
 
@@ -169,25 +187,45 @@ public enum AggregationPolicy: Sendable {
 
 public enum AdapterDirectory {
 
-    /// Snapshot of currently up, non-virtual interfaces with addresses.
+    /// Snapshot of currently up interfaces suitable for multi-path UI / binding.
+    /// Excludes loopback noise and pure virtual radios; **includes** bridge
+    /// (USB tether) and classifies VPN names but leaves them out of usable set.
     public static func enumerate() -> [NetworkAdapter] {
-        var result: [NetworkAdapter] = []
+        rawEnumerate(includeVPNNames: false)
+            .filter { $0.isUp && ($0.ipv4 != nil || $0.ipv6 != nil) }
+            .filter { !AggregationPolicy.isVPNInterfaceName($0.bsdName) && $0.type != "vpn" }
+            .sorted { $0.bsdName < $1.bsdName }
+    }
+
+    /// True when any VPN/tunnel interface is up. **Does not** use the multi-path
+    /// virtual filter — `utun*` is exactly what we must see for VPN policy.
+    public static func hasActiveVPNInterface() -> Bool {
+        rawEnumerate(includeVPNNames: true).contains {
+            $0.isUp && (AggregationPolicy.isVPNInterfaceName($0.bsdName) || $0.type == "vpn")
+        }
+    }
+
+    /// Full scan. When `includeVPNNames` is false, VPN ifaces are still classified
+    /// but the multi-path list drops them later; when true they stay in the map
+    /// for VPN detection even without routable addresses.
+    private static func rawEnumerate(includeVPNNames: Bool) -> [NetworkAdapter] {
         var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifaddrPtr) == 0, let first = ifaddrPtr else { return [] }
         defer { freeifaddrs(first) }
 
-        // name → accumulated
         var map: [String: NetworkAdapter] = [:]
-
         var ptr: UnsafeMutablePointer<ifaddrs>? = first
         while let ifa = ptr {
             defer { ptr = ifa.pointee.ifa_next }
             let name = String(cString: ifa.pointee.ifa_name)
-            if AggregationPolicy.isHiddenVirtual(name) { continue }
+
+            let isVPN = AggregationPolicy.isVPNInterfaceName(name)
+            if !includeVPNNames || !isVPN {
+                if AggregationPolicy.isHiddenVirtual(name) { continue }
+            }
 
             let flags = Int32(ifa.pointee.ifa_flags)
             let isUp = (flags & IFF_UP) != 0 && (flags & IFF_RUNNING) != 0
-            // Skip pure loopback even if misnamed.
             if (flags & IFF_LOOPBACK) != 0 { continue }
 
             var entry = map[name] ?? NetworkAdapter(
@@ -218,7 +256,6 @@ public enum AdapterDirectory {
                                    &hostname, socklen_t(hostname.count),
                                    nil, 0, NI_NUMERICHOST) == 0 {
                         let ip = String(cString: hostname)
-                        // Skip link-local fe80::
                         if !ip.lowercased().hasPrefix("fe80") {
                             entry.ipv6 = entry.ipv6 ?? ip
                         }
@@ -227,28 +264,31 @@ public enum AdapterDirectory {
             }
             map[name] = entry
         }
-
-        result = map.values
-            .filter { $0.isUp && ($0.ipv4 != nil || $0.ipv6 != nil) }
-            .sorted { $0.bsdName < $1.bsdName }
-        return result
+        return Array(map.values)
     }
 
     public static func classify(_ bsdName: String) -> String {
         let n = bsdName.lowercased()
-        if n.hasPrefix("utun") || n.hasPrefix("ipsec") || n.hasPrefix("ppp") { return "vpn" }
-        if n.hasPrefix("wlan") || n.hasPrefix("wi") || n == "en0" { return "wifi" } // en0 often Wi‑Fi on Apple
-        if n.hasPrefix("eth") || n.hasPrefix("en") || n.hasPrefix("em") || n.hasPrefix("igb") { return "wired" }
+        if AggregationPolicy.isVPNInterfaceName(n) { return "vpn" }
+        if n.hasPrefix("wlan") || n.hasPrefix("wl") { return "wifi" }
+        // en0 is often Wi‑Fi on Apple laptops, but not always — leave as wired-class
+        // hardware and let the display name say "Ethernet/Wi‑Fi" generically.
+        if n.hasPrefix("eth") || n.hasPrefix("en") || n.hasPrefix("em") || n.hasPrefix("igb") {
+            return "wired"
+        }
         if n.hasPrefix("wwan") || n.hasPrefix("pdp") || n.hasPrefix("rmnet") { return "cellular" }
-        if n.hasPrefix("bridge") && (n.contains("phone") || n.count > 6) { return "cellular" }
+        // iPhone USB Personal Hotspot commonly appears as bridge100 / bridge*.
+        if n.hasPrefix("bridge") { return "cellular" }
         return "other"
     }
 
     public static func looksExpensive(_ bsdName: String) -> Bool {
         let n = bsdName.lowercased()
         if n.hasPrefix("wwan") || n.hasPrefix("pdp") || n.hasPrefix("rmnet") { return true }
-        // iPhone USB tethering often appears as bridge / en with limited heuristics —
-        // user must still opt in; we mark cellular-class names expensive.
+        // USB / Personal Hotspot tethering — treat as expensive so the independent
+        // aggregation expensive gate applies (default off).
+        if n.hasPrefix("bridge") { return true }
+        if classify(bsdName) == "cellular" { return true }
         return false
     }
 
@@ -256,8 +296,12 @@ public enum AdapterDirectory {
         let n = bsdName.lowercased()
         switch classify(bsdName) {
         case "wifi": return "Wi‑Fi"
-        case "wired": return n.hasPrefix("en") ? "Ethernet" : "Wired"
-        case "cellular": return "Cellular"
+        case "wired":
+            if n.hasPrefix("en") { return "Ethernet / Wi‑Fi" }
+            return "Wired"
+        case "cellular":
+            if n.hasPrefix("bridge") { return "Hotspot / USB tether" }
+            return "Cellular"
         case "vpn": return "VPN"
         default: return bsdName
         }

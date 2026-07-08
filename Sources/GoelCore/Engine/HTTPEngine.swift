@@ -449,14 +449,14 @@ public actor HTTPEngine: HTTPConfigurable {
             let boundAdapters: [BoundAdapter]
             if canSegment, aggregationConfig.isActive {
                 let adapters = aggregationConfig.adapters
-                let preferred = AggregationPolicy.preferredSegmentCount(
+                // Upper bound from the live connection budget (same as single-path).
+                let upper = resolveSegmentCount(total: probe.totalBytes!, host: host)
+                // streamsPerAdapter actually drives fan-out: adapters×streams,
+                // floored at one segment per adapter, clamped to `upper`.
+                segmentCount = AggregationPolicy.preferredSegmentCount(
                     adapters: adapters.count,
                     streamsPerAdapter: aggregationConfig.streamsPerAdapter,
-                    budget: segmentCount)
-                segmentCount = max(segmentCount, preferred)
-                // Re-clamp against live host budget after raising the floor.
-                segmentCount = min(segmentCount, resolveSegmentCount(total: probe.totalBytes!, host: host))
-                segmentCount = max(segmentCount, min(adapters.count, resolveSegmentCount(total: probe.totalBytes!, host: host)))
+                    maxAllowed: upper)
                 boundAdapters = adapters
             } else {
                 boundAdapters = []

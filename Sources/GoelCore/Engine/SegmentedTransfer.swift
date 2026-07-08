@@ -319,6 +319,8 @@ final class SegmentedTransfer: Sendable {
                     attempt += 1
                     let segStart = start + written
                     let url = await pool.url(segment: index, attempt: attempt)
+                    // Match URLSession path: strip secrets only on host change.
+                    let isCrossHost = url.host?.lowercased() != plan.url.host?.lowercased()
                     let isMirror = url != plan.url
                     guard let adapter = await adapters.assign(segment: index + attempt - 1) else {
                         throw DownloadError.network("No network adapters available for multi-path")
@@ -327,7 +329,7 @@ final class SegmentedTransfer: Sendable {
 
                     try await governor.acquire()
                     var reqSettings = settings
-                    if isMirror {
+                    if isCrossHost {
                         reqSettings.authorization = nil
                         reqSettings.referer = nil
                         reqSettings.extraHeaders = [:]
@@ -341,25 +343,39 @@ final class SegmentedTransfer: Sendable {
                         referer: reqSettings.referer,
                         authorization: reqSettings.authorization,
                         extraHeaders: reqSettings.extraHeaders,
-                        connectTimeout: plan.connectTimeout
+                        connectTimeout: plan.connectTimeout,
+                        expectedTotal: plan.totalBytes
                     )
 
-                    // Blocking curl path — pace via RateLimiter inside BoundHTTPClient;
-                    // advance the ledger once per attempt (avoids fire-and-forget races).
+                    // Blocking curl path — RateLimiter inside BoundHTTPClient.
+                    // Ledger is advanced only when we commit `written` (no double-count).
                     let response = await BoundHTTPClient.downloadRange(
                         boundReq, file: handle, fileOffset: UInt64(segStart),
                         limiter: limiter)
 
-                    if response.aborted {
+                    if response.aborted && !response.rangeTotalMismatch {
                         await governor.release()
                         throw CancellationError()
                     }
-                    if response.bytesWritten > 0 {
-                        await ledger.advance(segment: index, by: Int(response.bytesWritten))
+
+                    // Content-Range mismatch: CurlBridge aborts before writing body.
+                    // Do not credit ledger or `written`.
+                    if response.rangeTotalMismatch {
+                        if isMirror { await pool.demote(url) }
+                        await adapters.demote(adapter)
+                        await governor.release()
+                        if attempt >= settings.maxAttempts { throw DownloadError.remoteFileChanged }
+                        try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                        continue
                     }
 
-                    // Curl transport errors
+                    // Curl transport errors. Partial on-disk bytes (if any) are
+                    // committed so the next attempt resumes, without double-counting.
                     if response.curlCode != 0 {
+                        if response.bytesWritten > 0 {
+                            written += response.bytesWritten
+                            await ledger.advance(segment: index, by: Int(response.bytesWritten))
+                        }
                         await adapters.demote(adapter)
                         if isMirror { await pool.demote(url) }
                         await governor.release()
@@ -382,7 +398,6 @@ final class SegmentedTransfer: Sendable {
                         continue
                     case .reject:
                         await governor.release()
-                        // Auth / sticky-session on this adapter → demote adapter
                         if status == 401 || status == 403 {
                             await adapters.demote(adapter)
                         }
@@ -395,24 +410,27 @@ final class SegmentedTransfer: Sendable {
                         break
                     }
 
-                    // Content-Range total must match expected (primary + mirrors).
-                    if let expected = plan.totalBytes,
-                       let got = response.contentRangeTotal,
-                       got != expected {
-                        if isMirror { await pool.demote(url) }
-                        await adapters.demote(adapter)
-                        await governor.release()
-                        if attempt >= settings.maxAttempts { throw DownloadError.remoteFileChanged }
-                        continue
+                    // Multi-path requires a matching Content-Range total (Swift-side belt).
+                    if let expected = plan.totalBytes {
+                        guard let got = response.contentRangeTotal, got == expected else {
+                            if isMirror { await pool.demote(url) }
+                            await adapters.demote(adapter)
+                            await governor.release()
+                            if attempt >= settings.maxAttempts { throw DownloadError.remoteFileChanged }
+                            try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                            continue
+                        }
                     }
 
-                    // Bytes already on disk via write callback.
-                    written += response.bytesWritten
+                    // Commit progress only after accept + Content-Range validation.
+                    if response.bytesWritten > 0 {
+                        written += response.bytesWritten
+                        await ledger.advance(segment: index, by: Int(response.bytesWritten))
+                    }
                     await governor.release()
 
                     if start + written > end { break }
                     if response.bytesWritten == 0 {
-                        // No progress — demote adapter and retry remainder.
                         await adapters.demote(adapter)
                         if attempt >= settings.maxAttempts {
                             throw DownloadError.network(

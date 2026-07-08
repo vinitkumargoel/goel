@@ -19,6 +19,9 @@ enum BoundHTTPClient {
         var authorization: String?
         var extraHeaders: [String: String]
         var connectTimeout: Double
+        /// When > 0, CurlBridge requires Content-Range total to match and aborts
+        /// before writing a mismatched body.
+        var expectedTotal: Int64?
     }
 
     struct Response: Sendable {
@@ -27,6 +30,7 @@ enum BoundHTTPClient {
         var contentRangeTotal: Int64?
         var bytesWritten: Int64
         var aborted: Bool
+        var rangeTotalMismatch: Bool
     }
 
     /// Context shared with C write/progress callbacks. `@unchecked Sendable` —
@@ -78,7 +82,7 @@ enum BoundHTTPClient {
             try file.seek(toOffset: fileOffset)
         } catch {
             return Response(curlCode: -1, httpStatus: 0, contentRangeTotal: nil,
-                            bytesWritten: 0, aborted: false)
+                            bytesWritten: 0, aborted: false, rangeTotalMismatch: false)
         }
 
         return await withTaskCancellationHandler {
@@ -117,6 +121,7 @@ enum BoundHTTPClient {
         let ref = request.referer ?? ""
         let auth = request.authorization ?? ""
 
+        let expected = request.expectedTotal ?? 0
         let raw: GCBHTTPResult = url.withCString { urlC in
             ifname.withCString { ifC in
                 ua.withCString { uaC in
@@ -134,6 +139,7 @@ enum BoundHTTPClient {
                                     extra.isEmpty ? nil : extraC,
                                     timeout,
                                     0,
+                                    expected,
                                     boundWriteThunk,
                                     boundProgressThunk,
                                     context
@@ -152,7 +158,8 @@ enum BoundHTTPClient {
             httpStatus: Int(raw.http_status),
             contentRangeTotal: total,
             bytesWritten: raw.bytes_written,
-            aborted: gcb_is_aborted(raw.code) != 0 || ctx.aborted
+            aborted: gcb_is_aborted(raw.code) != 0 || ctx.aborted,
+            rangeTotalMismatch: raw.range_total_mismatch != 0
         )
     }
 }
