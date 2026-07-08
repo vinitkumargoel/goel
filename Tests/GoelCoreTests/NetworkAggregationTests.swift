@@ -105,6 +105,44 @@ final class NetworkAggregationTests: XCTestCase {
             AggregationPolicy.preferredSegmentCount(adapters: 3, streamsPerAdapter: 1, maxAllowed: 8), 3)
     }
 
+    func testMultiPathSegmentCountAtLeastOnePerAdapter() {
+        // 10 MB file, 2 adapters × 2 streams → 4 segments (not 1).
+        let n = AggregationPolicy.multiPathSegmentCount(
+            fileBytes: 10 * 1024 * 1024,
+            adapters: 2,
+            streamsPerAdapter: 2,
+            maxConnectionsPerServer: 8,
+            globalRoom: 200)
+        XCTAssertEqual(n, 4)
+
+        // Floor: even streams=1, still 2 segments for 2 adapters.
+        let floor = AggregationPolicy.multiPathSegmentCount(
+            fileBytes: 5 * 1024 * 1024,
+            adapters: 2,
+            streamsPerAdapter: 1,
+            maxConnectionsPerServer: 8,
+            globalRoom: 200)
+        XCTAssertEqual(floor, 2)
+
+        // Tiny file: only as many as size allows (32 KiB floor).
+        let tiny = AggregationPolicy.multiPathSegmentCount(
+            fileBytes: 40 * 1024,
+            adapters: 2,
+            streamsPerAdapter: 2,
+            maxConnectionsPerServer: 8,
+            globalRoom: 200)
+        XCTAssertEqual(tiny, 2) // 40KB / 32KB = 2 chunks
+
+        // Single 20KB blob cannot usefully multi-path.
+        let tiny2 = AggregationPolicy.multiPathSegmentCount(
+            fileBytes: 20 * 1024,
+            adapters: 2,
+            streamsPerAdapter: 2,
+            maxConnectionsPerServer: 8,
+            globalRoom: 200)
+        XCTAssertEqual(tiny2, 1)
+    }
+
     func testHiddenVirtualDoesNotHideBridgeOrUtun() {
         XCTAssertTrue(AggregationPolicy.isHiddenVirtual("lo0"))
         XCTAssertTrue(AggregationPolicy.isHiddenVirtual("awdl0"))

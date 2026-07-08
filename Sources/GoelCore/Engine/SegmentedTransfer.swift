@@ -59,23 +59,34 @@ final class SegmentedTransfer: Sendable {
             self.restoredBytes = [:]
             return
         }
+        let multiPath = plan.boundAdapters.count >= 2
+        let wanted = multiPath
+            ? max(plan.segmentCount, plan.boundAdapters.count)
+            : plan.segmentCount
+
         if let data = plan.existingResume,
            let cursor = try? JSONDecoder().decode(ResumeCursor.self, from: data),
            cursor.totalBytes == total,
            Self.cursorIsWellFormed(cursor, total: total),
            Self.validatorsAllowResume(
                 cursorETag: cursor.etag, cursorLastModified: cursor.lastModified,
-                probeETag: plan.etag, probeLastModified: plan.lastModified) {
+                probeETag: plan.etag, probeLastModified: plan.lastModified),
+           // Multi-path needs ≥1 range per adapter. A stale single-segment resume
+           // from before aggregation was enabled would pin everything to one NIC.
+           !(multiPath && cursor.ranges.count < plan.boundAdapters.count
+             && cursor.completed.allSatisfy { $0 == 0 }) {
             // Remote unchanged and cursor sound: continue from where we left off.
             self.segmented = true
             self.plannedRanges = cursor.ranges
             self.restoredBytes = Dictionary(
                 uniqueKeysWithValues: cursor.completed.enumerated().map { ($0.offset, $0.element) })
         } else {
-            // Fresh start (or remote changed / cursor unusable): rebuild from scratch.
+            // Fresh start (or remote changed / cursor unusable / multi-path upgrade).
             self.segmented = true
-            self.plannedRanges = Self.makeRanges(
-                total: total, count: Self.clampSegmentCount(plan.segmentCount, total: total))
+            let count = multiPath
+                ? Self.clampSegmentCount(wanted, total: total, minSegment: 32 * 1024)
+                : Self.clampSegmentCount(wanted, total: total)
+            self.plannedRanges = Self.makeRanges(total: total, count: count)
             self.restoredBytes = [:]
         }
     }
@@ -587,8 +598,8 @@ final class SegmentedTransfer: Sendable {
 
     /// The size-only clamp, factored out as `static` so ``init`` can resolve the
     /// fan-out before any instance method is available.
-    static func clampSegmentCount(_ requested: Int, total: Int64) -> Int {
-        let minSegment: Int64 = 64 * 1024
+    static func clampSegmentCount(_ requested: Int, total: Int64,
+                                  minSegment: Int64 = 64 * 1024) -> Int {
         let bySize = max(1, Int((total + minSegment - 1) / minSegment))
         return max(1, min(requested, bySize))
     }

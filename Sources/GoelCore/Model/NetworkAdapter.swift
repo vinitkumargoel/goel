@@ -181,6 +181,39 @@ public enum AggregationPolicy: Sendable {
         let floor = min(max(1, adapters), cap)
         return max(floor, min(want, cap))
     }
+
+    /// How many segments a multi-path download should open.
+    ///
+    /// Unlike the single-path planner (64 KiB floor + host budget only), this
+    /// **guarantees at least one segment per adapter** when the file is large
+    /// enough, so traffic is not pinned to a single NIC.
+    ///
+    /// - Parameters:
+    ///   - fileBytes: total size (must be known + ranged).
+    ///   - adapters: usable bind targets (≥ 2 when multi-path is active).
+    ///   - streamsPerAdapter: user setting (1…8).
+    ///   - maxConnectionsPerServer: traffic-profile cap.
+    ///   - globalRoom: remaining global connection slots.
+    public static func multiPathSegmentCount(
+        fileBytes: Int64,
+        adapters: Int,
+        streamsPerAdapter: Int,
+        maxConnectionsPerServer: Int,
+        globalRoom: Int
+    ) -> Int {
+        let nAdapters = max(1, adapters)
+        let streams = max(1, streamsPerAdapter)
+        // Smaller floor than single-path so a ~1–2 MB file can still split across NICs.
+        let minSeg: Int64 = 32 * 1024
+        let bySize = max(1, Int((max(0, fileBytes) + minSeg - 1) / minSeg))
+        let profileCap = max(1, maxConnectionsPerServer)
+        let room = max(1, globalRoom)
+        let hardCap = min(32, bySize, profileCap, room) // never absurd fan-out
+        let want = nAdapters * streams
+        // Floor: one segment per adapter whenever size allows ≥ adapters chunks.
+        let floor = min(nAdapters, hardCap)
+        return max(floor, min(want, hardCap))
+    }
 }
 
 // MARK: - Enumeration (getifaddrs)

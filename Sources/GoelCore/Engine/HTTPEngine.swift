@@ -444,19 +444,21 @@ public actor HTTPEngine: HTTPConfigurable {
             var segmentCount = canSegment ? resolveSegmentCount(total: probe.totalBytes!, host: host) : 1
 
             // Multi-path: when aggregation is active and the server supports
-            // ranges, raise the segment floor so each adapter gets work, and
-            // hand BoundAdapters into the transfer plan.
+            // ranges, open enough segments that each adapter gets real work.
+            // (Previously we clamped to resolveSegmentCount's 64 KiB floor first,
+            // which often collapsed to 1 segment → only one NIC was used.)
             let boundAdapters: [BoundAdapter]
             if canSegment, aggregationConfig.isActive {
                 let adapters = aggregationConfig.adapters
-                // Upper bound from the live connection budget (same as single-path).
-                let upper = resolveSegmentCount(total: probe.totalBytes!, host: host)
-                // streamsPerAdapter actually drives fan-out: adapters×streams,
-                // floored at one segment per adapter, clamped to `upper`.
-                segmentCount = AggregationPolicy.preferredSegmentCount(
+                let hostInUse = host.flatMap { connectionsByHost[$0] } ?? 0
+                let hostRoom = max(1, profile.maxConnectionsPerServer - hostInUse)
+                let globalRoom = max(1, profile.maxConnections - totalConnections)
+                segmentCount = AggregationPolicy.multiPathSegmentCount(
+                    fileBytes: probe.totalBytes!,
                     adapters: adapters.count,
                     streamsPerAdapter: aggregationConfig.streamsPerAdapter,
-                    maxAllowed: upper)
+                    maxConnectionsPerServer: hostRoom,
+                    globalRoom: globalRoom)
                 boundAdapters = adapters
             } else {
                 boundAdapters = []
