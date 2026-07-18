@@ -95,6 +95,10 @@ public actor DownloadManager {
     /// The periodic backup loop, when ``AppSettings/backupEnabled`` is on.
     var backupTask: Task<Void, Never>?
 
+    /// The periodic filesystem-reconciliation loop: drops completed downloads
+    /// whose payload the user has deleted or moved (see `+FileReconcile`).
+    var fileReconcileTask: Task<Void, Never>?
+
     // MARK: Download-window scheduling state
 
     /// The minute-resolution loop evaluating the time-of-day download window.
@@ -171,6 +175,7 @@ public actor DownloadManager {
         case saveHistory(HistoryEntry)
         case deleteHistory(UUID)
         case clearHistory
+        case saveSpeedHistory([String: [SpeedHistoryPoint]])
     }
 
     /// The (one-shot) source of the serial persistence stream, consumed the first
@@ -303,6 +308,11 @@ public actor DownloadManager {
             return t
         }
 
+        // Drop any completed download whose file was deleted/moved while the app
+        // was closed, before the row can flash in the list (pruned tasks are
+        // removed from disk here; the survivors are persisted just below).
+        pruneMissingCompletedFiles()
+
         // Reflect any status normalisation back to disk.
         for task in tasks { persist(task) }
         await applyEngineConfigs()
@@ -311,6 +321,7 @@ public actor DownloadManager {
         updateDownloadSchedule()
         updateRSSSchedule()
         updateRedownloadSchedule()
+        startFileReconcile()
         armScheduledStarts()
         updatePowerAssertion()
         publish()

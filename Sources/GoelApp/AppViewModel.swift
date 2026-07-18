@@ -198,6 +198,9 @@ final class AppViewModel: ObservableObject {
     /// The display refresh cadence: labels update twice a second. History rings
     /// stay at 1 Hz (every other tick) so the sparklines keep their time span.
     private static let speedRefreshNanos: UInt64 = 500_000_000
+    /// Persist the speed-chart samples every this many ticks (20 × 500 ms = 10 s)
+    /// — coarse enough to be cheap, fine enough that little is lost on quit.
+    private static let speedPersistEveryTicks = 20
     private var speedSampleTick = 0
     private var speedSampler: Task<Void, Never>?
 
@@ -327,6 +330,10 @@ final class AppViewModel: ObservableObject {
     private var aggregationWatchCount = 0
     private var lastVPNActive = false
     private var networkChangeObserver: NSObjectProtocol?
+    /// Fires the filesystem reconcile when the app is reactivated.
+    private var appActiveObserver: NSObjectProtocol?
+    /// Flushes the speed-chart samples on quit (best-effort).
+    private var appTerminateObserver: NSObjectProtocol?
 
     /// The embedded remote-control HTTP server (Settings → Remote Access).
     private var remoteServer: RemoteControlServer?
@@ -415,6 +422,9 @@ final class AppViewModel: ObservableObject {
         guard updatesTask == nil else { return }
         await manager.restore()
         settings = await manager.currentSettings
+        // Restore each download's persisted speed-chart samples so the throughput
+        // graph continues after relaunch instead of starting from scratch.
+        loadPersistedSpeedHistory(await manager.loadSpeedHistory())
         // Start watching the clipboard for copied download links.
         let monitor = ClipboardMonitor(isEnabled: settings.clipboardMonitorEnabled) { [weak self] text in
             self?.handleClipboardChange(text)
@@ -450,6 +460,23 @@ final class AppViewModel: ObservableObject {
         }
         await refreshAggregationState()
         startSpeedSampler()
+        // Returning to the app promptly reconciles the list with the filesystem:
+        // a download the user deleted or moved in Finder disappears without
+        // waiting for the manager's periodic sweep.
+        appActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            let manager = self.manager
+            Task { await manager.reconcileCompletedFiles() }
+        }
+        // Best-effort flush of the speed-chart samples on quit. The periodic save
+        // is the real guarantee; this just narrows the last-few-seconds gap.
+        appTerminateObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.persistSpeedHistory()
+        }
         applyRemoteAccess()
         SparkleUpdaterService.shared.startIfConfigured()
         if !SparkleUpdaterService.shared.isConfigured, settings.autoCheckUpdates {
@@ -1182,6 +1209,38 @@ final class AppViewModel: ObservableObject {
             globalSpeedHistory.append(sample)
             if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }
         }
+        // Persist the per-task chart samples on a coarse cadence (~5 s) so a
+        // download's throughput graph resumes after relaunch. Only runs while
+        // something is active (the idle guard above returns before here), so a
+        // fully paused/completed session never overwrites the restored samples.
+        if speedSampleTick.isMultiple(of: Self.speedPersistEveryTicks) {
+            persistSpeedHistory()
+        }
+    }
+
+    /// Write the current per-task speed-chart samples to the store (task-id
+    /// string → sample ring), filtered to tasks that still exist so removed
+    /// downloads don't linger on disk.
+    private func persistSpeedHistory() {
+        let known = Set(tasks.map(\.id))
+        var out: [String: [SpeedHistoryPoint]] = [:]
+        for (id, samples) in taskSpeedHistory where known.contains(id) && !samples.isEmpty {
+            out[id.uuidString] = samples.map { SpeedHistoryPoint(down: $0.down, up: $0.up) }
+        }
+        let manager = self.manager
+        Task { await manager.persistSpeedHistory(out) }
+    }
+
+    /// Seed ``taskSpeedHistory`` from the store at launch so each download's
+    /// throughput chart continues where it left off.
+    private func loadPersistedSpeedHistory(_ saved: [String: [SpeedHistoryPoint]]) {
+        guard !saved.isEmpty else { return }
+        var restored: [DownloadTask.ID: [SpeedSample]] = [:]
+        for (idString, points) in saved {
+            guard let id = UUID(uuidString: idString) else { continue }
+            restored[id] = points.map { SpeedSample(down: $0.down, up: $0.up) }
+        }
+        taskSpeedHistory = restored
     }
 
     /// Fetch the persisted transfer statistics for the Statistics sheet.

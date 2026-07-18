@@ -40,6 +40,7 @@ extension DownloadManager {
                     case .saveHistory(let entry): try store.saveHistoryEntry(entry)
                     case .deleteHistory(let id): try store.deleteHistoryEntry(id)
                     case .clearHistory: try store.clearHistory()
+                    case .saveSpeedHistory(let history): try store.saveSpeedHistory(history)
                     }
                 } catch {
                     await self?.notePersistenceError(error)
@@ -89,6 +90,23 @@ extension DownloadManager {
         guard store != nil else { return }
         ensurePersistWorker()
         persistContinuation?.yield(.clearHistory)
+    }
+
+    /// Persist the per-task speed-chart samples on the serial pipeline, so a
+    /// download's throughput chart resumes after relaunch instead of starting
+    /// blank. Called on a coarse cadence by the UI (the samples are a display
+    /// nicety, not queue state), keyed by task-id string.
+    public func persistSpeedHistory(_ history: [String: [SpeedHistoryPoint]]) {
+        guard store != nil else { return }
+        ensurePersistWorker()
+        persistContinuation?.yield(.saveSpeedHistory(history))
+    }
+
+    /// Load the persisted per-task speed-chart samples (empty when none saved).
+    /// A one-shot read at launch, mirroring how stats are restored.
+    public func loadSpeedHistory() -> [String: [SpeedHistoryPoint]] {
+        guard let store else { return [:] }
+        return (try? store.loadSpeedHistory()) ?? [:]
     }
 
     /// Persist the transfer statistics on the serial pipeline. Progress-driven

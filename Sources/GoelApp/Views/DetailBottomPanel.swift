@@ -46,6 +46,17 @@ struct DetailBottomPanel: View {
         .onReceive(sampleTimer) { _ in
             sampler.record(vm.displaySpeed(for: task).down, id: AnyHashable(task.id))
         }
+        // Resume the chart from the download's restored history rather than a
+        // blank window — both at first appearance and when the selection changes.
+        .onAppear { seedSampler(task) }
+        .onChange(of: task.id) { _, _ in seedSampler(task) }
+    }
+
+    /// Prime the telemetry sparkline with the task's restored (or accumulated)
+    /// speed history so it continues rather than starting empty.
+    private func seedSampler(_ task: DownloadTask) {
+        let history = vm.taskSpeedHistory[task.id]?.map(\.down) ?? []
+        sampler.seed(history, id: AnyHashable(task.id))
     }
 
     // MARK: - Zone 1 · identity + actions

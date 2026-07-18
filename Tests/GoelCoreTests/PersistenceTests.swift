@@ -147,6 +147,27 @@ final class PersistenceTests: XCTestCase {
         XCTAssertTrue(try store.loadAllTasks().isEmpty)
     }
 
+    // MARK: (a′) Speed-chart history round-trip
+
+    func testSpeedHistoryRoundTripsThroughStore() throws {
+        let store = try PersistenceStore()
+        // Absent until written.
+        XCTAssertTrue(try store.loadSpeedHistory().isEmpty)
+
+        let a = UUID().uuidString, b = UUID().uuidString
+        let history: [String: [SpeedHistoryPoint]] = [
+            a: [SpeedHistoryPoint(down: 100, up: 10), SpeedHistoryPoint(down: 200, up: 20)],
+            b: [SpeedHistoryPoint(down: 5, up: 0)],
+        ]
+        try store.saveSpeedHistory(history)
+        XCTAssertEqual(try store.loadSpeedHistory(), history)
+
+        // Second write replaces (single blob, not accumulated).
+        let updated: [String: [SpeedHistoryPoint]] = [a: [SpeedHistoryPoint(down: 1, up: 1)]]
+        try store.saveSpeedHistory(updated)
+        XCTAssertEqual(try store.loadSpeedHistory(), updated)
+    }
+
     // MARK: (b) Settings round-trip
 
     func testSettingsRoundTrip() throws {

@@ -205,6 +205,41 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
+    // MARK: Speed-chart history
+
+    /// The fixed key under which the per-task speed-chart samples are stored
+    /// (same key/value table as the settings and stats).
+    private static let speedHistoryKey = "speedHistory"
+
+    /// Persist the per-task speed-chart samples (task-id string → sample ring),
+    /// so a download's throughput chart survives quit & relaunch.
+    public func saveSpeedHistory(_ history: [String: [SpeedHistoryPoint]]) throws {
+        let data = try encoder.encode(history)
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO settings (key, data) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET data = excluded.data
+                """,
+                arguments: [Self.speedHistoryKey, data]
+            )
+        }
+    }
+
+    /// Load the persisted per-task speed-chart samples, or an empty map if none
+    /// were saved (or the blob is from an incompatible schema).
+    public func loadSpeedHistory() throws -> [String: [SpeedHistoryPoint]] {
+        try dbQueue.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT data FROM settings WHERE key = ?",
+                arguments: [Self.speedHistoryKey]
+            ) else { return [:] }
+            let data: Data = row["data"]
+            return (try? self.decoder.decode([String: [SpeedHistoryPoint]].self, from: data)) ?? [:]
+        }
+    }
+
     // MARK: Download history
 
     /// Archive (or refresh) one completed download.

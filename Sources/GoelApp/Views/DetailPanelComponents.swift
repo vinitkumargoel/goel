@@ -61,6 +61,15 @@ final class ThroughputSampler: ObservableObject {
         samples.append(value)
         if samples.count > capacity { samples.removeFirst(samples.count - capacity) }
     }
+
+    /// Prime the window with a download's restored history so its chart resumes
+    /// instead of starting blank. No-op once samples for this identity already
+    /// exist (a live session shouldn't be clobbered by a re-seed).
+    func seed(_ values: [Double], id: AnyHashable) {
+        guard id != currentID || samples.isEmpty else { return }
+        currentID = id
+        samples = Array(values.suffix(capacity))
+    }
 }
 
 /// Plots `samples` as a filled area under a stroked line, normalised to the
