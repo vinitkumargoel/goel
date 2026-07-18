@@ -83,6 +83,8 @@ extension DownloadManager {
         // re-download would be under-counted (or entirely lost) in lifetime stats.
         // The next `.progress` seeds a fresh mark from the zeroed byte counts.
         statsMarks[tasks[i].id] = nil
+        // Same for the speed meter: the re-download's counters restart at zero.
+        speedMeters[tasks[i].id] = nil
         persist(tasks[i])
         publish()
         schedule()

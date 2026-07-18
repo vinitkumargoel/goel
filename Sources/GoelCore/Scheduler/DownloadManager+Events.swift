@@ -35,7 +35,7 @@ extension DownloadManager {
             tasks[i].totalBytes = totalBytes
             tasks[i].files = files
 
-        case let .progress(bytesDownloaded, bytesUploaded, downloadSpeed, uploadSpeed, connectionCount):
+        case let .progress(bytesDownloaded, bytesUploaded, _, _, connectionCount):
             // Fold the byte deltas into the lifetime statistics against a per-task
             // mark. A regression (retry/invalidated resume restarting below the
             // previous count) re-bases the mark so history is never subtracted AND
@@ -50,8 +50,19 @@ extension DownloadManager {
             persistStats()
             tasks[i].bytesDownloaded = bytesDownloaded
             tasks[i].bytesUploaded = bytesUploaded
-            tasks[i].downloadSpeed = downloadSpeed
-            tasks[i].uploadSpeed = uploadSpeed
+            // The stored ↓/↑ rates are derived here from the byte counters — a
+            // sliding-window average (``SpeedMeter``), NOT the event's own speed
+            // fields. Engines measure over 100–200 ms, so their instantaneous
+            // rates swing with every TCP burst; the windowed average is what
+            // every reader (labels, ETA, sort, remote portal, Finder progress)
+            // should see. This is the single point where speeds enter the model.
+            let now = Date()
+            var meter = speedMeters[id] ?? SpeedMeter()
+            meter.record(down: bytesDownloaded, up: bytesUploaded, at: now)
+            let rate = meter.reading(at: now)
+            speedMeters[id] = meter
+            tasks[i].downloadSpeed = rate.down
+            tasks[i].uploadSpeed = rate.up
             tasks[i].connectionCount = connectionCount
 
         case let .fileProgress(fileID, bytesCompleted):
@@ -79,6 +90,17 @@ extension DownloadManager {
                 return
             }
             tasks[i].status = status
+            // A phase that transfers no payload shows no rate. Speeds are
+            // meter-derived (see `.progress`), so without this the last windowed
+            // average would linger through verifying/completed; dropping the
+            // meter also makes a later resume ramp a fresh window.
+            switch status {
+            case .downloading, .seeding: break
+            default:
+                tasks[i].downloadSpeed = 0
+                tasks[i].uploadSpeed = 0
+                speedMeters[id] = nil
+            }
             handleStatusTransition(id, status)
 
         case .finished:
@@ -94,6 +116,9 @@ extension DownloadManager {
                 return
             }
             tasks[i].status = .failed(error)
+            tasks[i].downloadSpeed = 0
+            tasks[i].uploadSpeed = 0
+            speedMeters[id] = nil
             handleStatusTransition(id, .failed(error))
 
         case let .resumeDataUpdated(data):

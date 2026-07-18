@@ -172,29 +172,33 @@ final class AppViewModel: ObservableObject {
     /// The last ~2 minutes of global throughput, sampled at 1 Hz.
     @Published private(set) var globalSpeedHistory: [SpeedSample] = []
 
-    /// Combined ↓/↑ throughput sampled once per second, driving the macOS menu-bar
-    /// status item. The item reads *this* (not the live 10 Hz totals) so its label
-    /// refreshes at a calm 1 Hz and never flickers.
-    @Published private(set) var menuBarSpeed = SpeedSample(down: 0, up: 0)
+    /// Combined ↓/↑ throughput for the menu-bar status item and the bottom
+    /// status bar, refreshed on the sampler's cadence. Both read *this* (not the
+    /// live raw sums) so their labels update ~2×/sec and never flicker.
+    @Published private(set) var displayedCombinedSpeed = SpeedSample(down: 0, up: 0)
 
     /// Per-task history for the detail panel's sparkline (active tasks only).
     private(set) var taskSpeedHistory: [DownloadTask.ID: [SpeedSample]] = [:]
 
-    /// The ↓/↑ throughput each task's speed *label* should display, refreshed
-    /// once per second by ``takeSpeedSample()``. The download list and detail
-    /// panels read this (via ``displaySpeed(for:)``) instead of the live
-    /// `DownloadTask.downloadSpeed`, which the engine updates ~10×/sec — so the
-    /// number settles to a calm 1 Hz and never flickers.
+    /// The ↓/↑ throughput each task's speed *label* should display, refreshed by
+    /// ``takeSpeedSample()``. The values themselves are already ~3 s window
+    /// averages (``SpeedMeter``, applied in the manager); this map additionally
+    /// pins the *refresh cadence* to the sampler's tick, so labels don't redraw
+    /// on every 10 Hz model publish.
     @Published private(set) var displayedTaskSpeed: [DownloadTask.ID: SpeedSample] = [:]
 
-    /// The ↓/↑ speed the UI should show for `task`: the 1 Hz sample when one
-    /// exists, else the live value (covers a task's first second, before the
+    /// The ↓/↑ speed the UI should show for `task`: the sampled value when one
+    /// exists, else the live value (covers a task's first moments, before the
     /// sampler has run for it).
     func displaySpeed(for task: DownloadTask) -> SpeedSample {
         displayedTaskSpeed[task.id] ?? SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
     }
 
     private static let speedHistoryCap = 120
+    /// The display refresh cadence: labels update twice a second. History rings
+    /// stay at 1 Hz (every other tick) so the sparklines keep their time span.
+    private static let speedRefreshNanos: UInt64 = 500_000_000
+    private var speedSampleTick = 0
     private var speedSampler: Task<Void, Never>?
 
     /// Light / Dark / System, derived from (and persisted through) the core
@@ -1126,13 +1130,14 @@ final class AppViewModel: ObservableObject {
 
     // MARK: Speed sampling
 
-    /// Sample aggregate and per-task throughput once a second for the
-    /// sparklines. Runs for the app's lifetime; the ring caps keep memory flat.
+    /// Sample aggregate and per-task throughput on a steady cadence for the
+    /// speed labels (every tick) and sparklines (1 Hz). Runs for the app's
+    /// lifetime; the ring caps keep memory flat.
     private func startSpeedSampler() {
         guard speedSampler == nil else { return }
         speedSampler = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(nanoseconds: Self.speedRefreshNanos)
                 guard let self else { return }
                 self.takeSpeedSample()
             }
@@ -1141,24 +1146,28 @@ final class AppViewModel: ObservableObject {
 
     private func takeSpeedSample() {
         // Fully idle (no active task/transfer, a flat history, and a zeroed
-        // menu-bar readout): skip the sample so the @Published writes don't
-        // re-render the whole app every second while it sits doing nothing.
+        // combined readout): skip the sample so the @Published writes don't
+        // re-render the whole app twice a second while it sits doing nothing.
         let hasActive = tasks.contains { $0.status.isActive } || sftpTransfers.contains { $0.isActive }
         if !hasActive,
            globalSpeedHistory.allSatisfy({ $0 == SpeedSample(down: 0, up: 0) }),
-           menuBarSpeed == SpeedSample(down: 0, up: 0) {
+           displayedCombinedSpeed == SpeedSample(down: 0, up: 0) {
             return
         }
-        // The menu-bar item's calm 1 Hz value: download queue + SFTP transfers.
-        menuBarSpeed = SpeedSample(down: combinedDownloadSpeed, up: combinedUploadSpeed)
+        speedSampleTick &+= 1
+        // Histories advance at 1 Hz (every other tick) so the graphs keep
+        // their time span; labels refresh every tick.
+        let recordHistory = speedSampleTick.isMultiple(of: 2)
+        // The status-bar / menu-bar combined value: download queue + SFTP transfers.
+        displayedCombinedSpeed = SpeedSample(down: combinedDownloadSpeed, up: combinedUploadSpeed)
         var sample = SpeedSample(down: 0, up: 0)
         for task in tasks {
             sample.down += task.downloadSpeed
             sample.up += task.uploadSpeed
-            // The calm 1 Hz value the speed labels read (all tasks, not just
+            // The calm value the speed labels read (all tasks, not just
             // active, so a just-finished row settles to its final number).
             displayedTaskSpeed[task.id] = SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
-            guard task.status.isActive else { continue }
+            guard recordHistory, task.status.isActive else { continue }
             var history = taskSpeedHistory[task.id] ?? []
             history.append(SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed))
             if history.count > Self.speedHistoryCap { history.removeFirst() }
@@ -1169,8 +1178,10 @@ final class AppViewModel: ObservableObject {
         let known = Set(tasks.map(\.id))
         taskSpeedHistory = taskSpeedHistory.filter { known.contains($0.key) }
         displayedTaskSpeed = displayedTaskSpeed.filter { known.contains($0.key) }
-        globalSpeedHistory.append(sample)
-        if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }
+        if recordHistory {
+            globalSpeedHistory.append(sample)
+            if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }
+        }
     }
 
     /// Fetch the persisted transfer statistics for the Statistics sheet.

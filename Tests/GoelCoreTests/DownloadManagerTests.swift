@@ -468,7 +468,11 @@ final class DownloadManagerTests: XCTestCase {
         let snap = await manager.task(task.id)
         XCTAssertEqual(snap?.totalBytes, 1000)
         XCTAssertEqual(snap?.bytesDownloaded, 400)
-        XCTAssertEqual(snap?.downloadSpeed, 200)
+        // The stored speed is meter-derived from byte-counter deltas (a ~3 s
+        // sliding window, see ``SpeedMeter``), never copied from the event — a
+        // single progress report has no window yet, so it reads 0. The window
+        // math itself is covered by `SpeedMeterTests`.
+        XCTAssertEqual(snap?.downloadSpeed, 0)
         XCTAssertEqual(snap?.connectionCount, 4)
         XCTAssertEqual(snap?.files.first?.bytesCompleted, 400)
         XCTAssertEqual(snap?.fractionCompleted ?? 0, 0.4, accuracy: 0.0001)

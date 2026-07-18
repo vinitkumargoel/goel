@@ -26,16 +26,15 @@ struct SFTPTransfer: Identifiable {
     let remotePath: String
     var bytes: Int64 = 0
     var total: Int64 = 0
-    /// Live throughput in bytes/sec, refreshed at most once per second (see
-    /// ``record(bytes:now:)``) so the readout is a steady per-second rate rather
-    /// than a per-chunk jitter.
+    /// Live throughput in bytes/sec — a sliding-window average (see
+    /// ``SpeedMeter``, the same smoothing behind the download queue's rates) so
+    /// the readout is steady rather than per-chunk jitter.
     var speed: Double = 0
     var state: State = .running
 
-    /// Sampling state behind the 1 Hz windowed ``speed`` (absolute bytes + the
-    /// wall-clock at the last sample).
-    private var sampleBytes: Int64 = 0
-    private var sampleAt: Date?
+    /// The window-averaging state behind ``speed``. Direction-agnostic: this
+    /// transfer's byte counter rides the meter's `down` channel either way.
+    private var meter = SpeedMeter()
 
     /// Explicit init: the private sampling fields would otherwise make the
     /// synthesized memberwise initializer private.
@@ -62,25 +61,19 @@ struct SFTPTransfer: Identifiable {
     }
 
     /// Absorb a fresh absolute byte count. `bytes` tracks every callback so the
-    /// progress bar stays smooth, but ``speed`` is recomputed only once the
-    /// sample window (1 s) has elapsed, giving a stable rate.
+    /// progress bar stays smooth; ``speed`` is the meter's window average, so
+    /// it stays stable no matter how bursty the callbacks are.
     mutating func record(bytes newBytes: Int64, now: Date = Date()) {
         bytes = newBytes
-        guard let at = sampleAt else { sampleAt = now; sampleBytes = newBytes; return }
-        let dt = now.timeIntervalSince(at)
-        if dt >= 1 {
-            speed = Swift.max(0, Double(newBytes - sampleBytes) / dt)
-            sampleAt = now
-            sampleBytes = newBytes
-        }
+        meter.record(down: newBytes, at: now)
+        speed = meter.reading(at: now).down
     }
 
-    /// Zero the counters + speed sampler for an in-place retry.
+    /// Zero the counters + speed meter for an in-place retry.
     mutating func resetProgress() {
         bytes = 0
         speed = 0
-        sampleBytes = 0
-        sampleAt = nil
+        meter = SpeedMeter()
     }
 }
 

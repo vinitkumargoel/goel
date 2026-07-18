@@ -44,7 +44,7 @@ struct DetailBottomPanel: View {
             detailZone(for: task).frame(maxWidth: .infinity)
         }
         .onReceive(sampleTimer) { _ in
-            sampler.record(task.downloadSpeed, id: AnyHashable(task.id))
+            sampler.record(vm.displaySpeed(for: task).down, id: AnyHashable(task.id))
         }
     }
 
@@ -112,7 +112,7 @@ struct DetailBottomPanel: View {
 
             HStack(alignment: .top, spacing: 16) {
                 telStat("Up") {
-                    DetailSpeedStat(symbol: "arrow.up", speed: task.uploadSpeed, color: Theme.teal, size: 12)
+                    DetailSpeedStat(symbol: "arrow.up", speed: vm.displaySpeed(for: task).up, color: Theme.teal, size: 12)
                 }
                 telStat("ETA") {
                     Text(task.etaText ?? "—")

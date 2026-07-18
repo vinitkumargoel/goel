@@ -150,6 +150,13 @@ public actor DownloadManager {
     typealias StatsMark = StatsAccumulator.Mark
     var statsMarks: [UUID: StatsMark] = [:]
 
+    /// Per-task sliding-window meters behind the displayed ↓/↑ rates. The
+    /// `.progress` handler feeds them the absolute byte counters and stores the
+    /// windowed average on the task — never the engine's raw 100–200 ms rate
+    /// (see ``SpeedMeter``). Dropped whenever a task leaves the transfer phase
+    /// so a later resume ramps a fresh window instead of averaging the gap.
+    var speedMeters: [UUID: SpeedMeter] = [:]
+
     // MARK: Persistence pipeline
 
     /// The serial persistence pipeline's state lives here; its behaviour lives in
@@ -553,6 +560,7 @@ public actor DownloadManager {
         tasks[i].downloadSpeed = 0
         tasks[i].uploadSpeed = 0
         tasks[i].connections = nil
+        speedMeters[id] = nil
         persist(tasks[i])
         updatePowerAssertion()
         publish()
@@ -585,6 +593,7 @@ public actor DownloadManager {
         tasks[i].scanVerdict = nil
         tasks[i].scheduledAt = nil
         tasks[i].retryAttempt = nil
+        speedMeters[id] = nil
         persist(tasks[i])
         publish()
         schedule()
@@ -624,6 +633,7 @@ public actor DownloadManager {
         tasks[i].uploadSpeed = 0
         tasks[i].scanVerdict = nil
         tasks[i].scheduledAt = nil
+        speedMeters[id] = nil
         persist(tasks[i])
         publish()
         schedule()
@@ -642,6 +652,7 @@ public actor DownloadManager {
         runningSlots.remove(id)
         engineStarted.remove(id)
         statsMarks[id] = nil
+        speedMeters[id] = nil
         if let i = index(of: id) { tasks.remove(at: i) }
         persistRemoval(id)
         updatePowerAssertion()

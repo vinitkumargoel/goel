@@ -77,8 +77,8 @@ struct MenuBarView: View {
             Text(activeCount == 0 ? "Downloads" : "Active · \(activeCount)")
                 .font(.system(size: 13, weight: .semibold))
             Spacer(minLength: 0)
-            speedStat(symbol: "arrow.down", value: vm.combinedDownloadSpeed, color: Theme.green)
-            speedStat(symbol: "arrow.up", value: vm.combinedUploadSpeed, color: Theme.teal)
+            speedStat(symbol: "arrow.down", value: vm.displayedCombinedSpeed.down, color: Theme.green)
+            speedStat(symbol: "arrow.up", value: vm.displayedCombinedSpeed.up, color: Theme.teal)
         }
         .padding(.horizontal, 14)
         .frame(height: 46)
@@ -227,10 +227,12 @@ private struct MenuBarDownloadRow: View {
     }
 
     /// The dominant per-row rate: download speed while fetching, upload speed
-    /// while seeding, nothing when idle.
+    /// while seeding, nothing when idle. Reads the sampled display speed so the
+    /// row updates on the same calm cadence as the main list.
     private var trailingSpeed: (text: String, color: Color)? {
-        if task.downloadSpeed > 0 { return (task.downloadSpeed.speedString, Theme.green) }
-        if task.uploadSpeed > 0 { return (task.uploadSpeed.speedString, Theme.teal) }
+        let speed = vm.displaySpeed(for: task)
+        if speed.down > 0 { return (speed.down.speedString, Theme.green) }
+        if speed.up > 0 { return (speed.up.speedString, Theme.teal) }
         return nil
     }
 }
@@ -298,8 +300,8 @@ private struct MenuBarTransferRow: View {
 /// The status-item label: two stacked lines — download speed on top, upload
 /// speed on bottom — while anything is transferring; a single glyph when idle.
 ///
-/// Reads ``AppViewModel/menuBarSpeed`` (sampled at 1 Hz) rather than the live
-/// 10 Hz totals, so the label refreshes once a second and never flickers.
+/// Reads ``AppViewModel/displayedCombinedSpeed`` (the sampled window average)
+/// rather than the live raw totals, so the label stays calm and never flickers.
 ///
 /// The two lines are drawn into a single `NSImage` rather than a SwiftUI
 /// `VStack`, because the macOS menu bar gives a `MenuBarExtra` label only one
@@ -317,9 +319,9 @@ struct MenuBarSpeedLabel: View {
 
     var body: some View {
         // The view model publishes at ~10 Hz, but the label's content depends only
-        // on the 1 Hz `menuBarSpeed`. Gate the (image-allocating) redraw on an
-        // Equatable subview so it rebuilds at most once per second.
-        SpeedContent(sample: vm.menuBarSpeed).equatable()
+        // on the sampled `displayedCombinedSpeed`. Gate the (image-allocating)
+        // redraw on an Equatable subview so it rebuilds only when that changes.
+        SpeedContent(sample: vm.displayedCombinedSpeed).equatable()
     }
 
     /// The actual label content, keyed purely on the sampled speed.

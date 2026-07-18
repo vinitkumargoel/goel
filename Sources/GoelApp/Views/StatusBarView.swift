@@ -10,8 +10,10 @@ struct StatusBarView: View {
     var body: some View {
         HStack(spacing: 14) {
             snail
-            stat(symbol: "arrow.down", value: vm.combinedDownloadSpeed.speedString, color: Theme.green)
-            stat(symbol: "arrow.up", value: vm.combinedUploadSpeed.speedString, color: Theme.teal)
+            // The sampled window average, not the live raw sums — the readout
+            // updates ~2×/sec and stays steady (see AppViewModel.takeSpeedSample).
+            stat(symbol: "arrow.down", value: vm.displayedCombinedSpeed.down.speedString, color: Theme.green)
+            stat(symbol: "arrow.up", value: vm.displayedCombinedSpeed.up.speedString, color: Theme.teal)
             if !activeTransfers.isEmpty { transfersIndicator }
             Spacer()
             Text("Profile").font(.system(size: 11)).foregroundStyle(.tertiary)
