@@ -70,6 +70,24 @@ final class AppViewModel: ObservableObject {
     /// warn the user that downloads/settings may not survive relaunch.
     @Published var persistenceWarning: String?
 
+    /// Live network interfaces for the aggregation settings list.
+    @Published private(set) var networkAdapters: [NetworkAdapter] = []
+
+    /// Why multi-path is currently inactive (nil when active).
+    @Published private(set) var aggregationInactiveReason: AggregationPolicy.SinglePathReason?
+
+    /// Adapters that would participate if multi-path is on.
+    var usableAggregationAdapters: [NetworkAdapter] {
+        let selected = AggregationPolicy.effectiveSelection(
+            selectedIds: settings.aggregationAdapterIds, all: networkAdapters)
+        return AggregationPolicy.usableAdapters(
+            all: networkAdapters,
+            selectedIds: selected,
+            includeExpensive: settings.aggregationIncludeExpensive,
+            includeVPN: settings.aggregationAllowOutsideVPN
+        )
+    }
+
     // MARK: Published view state
 
     /// The full multi-selection set. A row highlights when its id is contained;
@@ -161,6 +179,20 @@ final class AppViewModel: ObservableObject {
 
     /// Per-task history for the detail panel's sparkline (active tasks only).
     private(set) var taskSpeedHistory: [DownloadTask.ID: [SpeedSample]] = [:]
+
+    /// The ↓/↑ throughput each task's speed *label* should display, refreshed
+    /// once per second by ``takeSpeedSample()``. The download list and detail
+    /// panels read this (via ``displaySpeed(for:)``) instead of the live
+    /// `DownloadTask.downloadSpeed`, which the engine updates ~10×/sec — so the
+    /// number settles to a calm 1 Hz and never flickers.
+    @Published private(set) var displayedTaskSpeed: [DownloadTask.ID: SpeedSample] = [:]
+
+    /// The ↓/↑ speed the UI should show for `task`: the 1 Hz sample when one
+    /// exists, else the live value (covers a task's first second, before the
+    /// sampler has run for it).
+    func displaySpeed(for task: DownloadTask) -> SpeedSample {
+        displayedTaskSpeed[task.id] ?? SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
+    }
 
     private static let speedHistoryCap = 120
     private var speedSampler: Task<Void, Never>?
@@ -285,6 +317,13 @@ final class AppViewModel: ObservableObject {
     /// to the manager's pause-on-metered policy.
     private var pathMonitor: NWPathMonitor?
 
+    /// While the Aggregation settings pane is open, poll interfaces so new
+    /// adapters appear without waiting for a path status flip.
+    private var aggregationLiveTask: Task<Void, Never>?
+    private var aggregationWatchCount = 0
+    private var lastVPNActive = false
+    private var networkChangeObserver: NSObjectProtocol?
+
     /// The embedded remote-control HTTP server (Settings → Remote Access).
     private var remoteServer: RemoteControlServer?
 
@@ -382,13 +421,30 @@ final class AppViewModel: ObservableObject {
         // so the pause-on-metered settings can hold and release the queue.
         let netMonitor = NWPathMonitor()
         let core = self.manager
-        netMonitor.pathUpdateHandler = { path in
+        netMonitor.pathUpdateHandler = { [weak self] path in
             let expensive = path.isExpensive
             let constrained = path.isConstrained
-            Task { await core.applyNetworkPolicy(expensive: expensive, constrained: constrained) }
+            // VPN/tunnel iface up (utun/ipsec/…) — separate from multi-path adapter
+            // list, which intentionally excludes tunnels.
+            let vpnActive = AdapterDirectory.hasActiveVPNInterface()
+            Task {
+                await core.applyNetworkPolicy(expensive: expensive, constrained: constrained)
+                await core.setVPNDefaultRouteActive(vpnActive)
+                await MainActor.run { self?.refreshAggregationState() }
+            }
         }
         netMonitor.start(queue: DispatchQueue(label: "goel.network-path"))
         pathMonitor = netMonitor
+        // macOS posts this when interfaces/addresses change — often faster than
+        // waiting for NWPath "satisfied" status to flip.
+        networkChangeObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.system.config.network_change"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshAggregationState()
+        }
+        await refreshAggregationState()
         startSpeedSampler()
         applyRemoteAccess()
         SparkleUpdaterService.shared.startIfConfigured()
@@ -843,6 +899,60 @@ final class AppViewModel: ObservableObject {
     /// core deliberately doesn't own — login-item registration and notification
     /// authorization. The manager round-trip runs off the main actor so editing a
     /// settings field never blocks the UI.
+    /// Refresh adapter list + multi-path inactive reason (Settings UI + engine).
+    /// Only republishes / re-applies engines when something actually changed so a
+    /// 1 Hz live poll stays cheap and the list can update the moment a NIC appears.
+    func refreshAggregationState() {
+        let next = AdapterDirectory.enumerate()
+        let vpn = AdapterDirectory.hasActiveVPNInterface()
+        let reason = DownloadManager.aggregationSinglePathReason(
+            settings: settings, vpnDefaultRoute: vpn, adapters: next)
+
+        let adaptersChanged = next != networkAdapters
+        let reasonChanged = reason != aggregationInactiveReason
+        let vpnChanged = vpn != lastVPNActive
+
+        if adaptersChanged {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                networkAdapters = next
+            }
+        }
+        if reasonChanged {
+            aggregationInactiveReason = reason
+        }
+        lastVPNActive = vpn
+
+        // Engine only needs to know when the usable bind set / VPN policy changes.
+        if adaptersChanged || vpnChanged {
+            Task {
+                await manager.setVPNDefaultRouteActive(vpn)
+                await manager.reapplyEngineConfigsPublic()
+            }
+        }
+    }
+
+    /// Call while the Aggregation settings pane is visible so new networks show up
+    /// immediately (path monitor alone often misses hotplug until status changes).
+    func beginAggregationLiveUpdates() {
+        aggregationWatchCount += 1
+        refreshAggregationState()
+        guard aggregationLiveTask == nil else { return }
+        aggregationLiveTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 750_000_000) // 0.75 s
+                guard !Task.isCancelled else { break }
+                self?.refreshAggregationState()
+            }
+        }
+    }
+
+    func endAggregationLiveUpdates() {
+        aggregationWatchCount = max(0, aggregationWatchCount - 1)
+        guard aggregationWatchCount == 0 else { return }
+        aggregationLiveTask?.cancel()
+        aggregationLiveTask = nil
+    }
+
     func update(_ mutate: (inout AppSettings) -> Void) {
         var copy = settings
         mutate(&copy)
@@ -864,10 +974,27 @@ final class AppViewModel: ObservableObject {
         let committed = copy
         Task {
             settings = await manager.apply { $0 = committed }
+            refreshAggregationState()
         }
         if launchChanged { LoginItemService.setEnabled(copy.launchAtLogin) }
         if notificationsNewlyWanted { NotificationService.requestAuthorization() }
         applyRemoteAccess()
+        // Immediate local refresh for adapter toggles (engine re-apply is async).
+        networkAdapters = AdapterDirectory.enumerate()
+        aggregationInactiveReason = DownloadManager.aggregationSinglePathReason(
+            settings: settings,
+            vpnDefaultRoute: AdapterDirectory.hasActiveVPNInterface(),
+            adapters: networkAdapters)
+    }
+
+    /// Toggle an adapter id in the aggregation multi-select list.
+    func toggleAggregationAdapter(_ bsdName: String) {
+        update { s in
+            var ids = Set(s.aggregationAdapterIds)
+            if ids.contains(bsdName) { ids.remove(bsdName) }
+            else { ids.insert(bsdName) }
+            s.aggregationAdapterIds = ids.sorted()
+        }
     }
 
     // MARK: Remote access
@@ -1028,6 +1155,9 @@ final class AppViewModel: ObservableObject {
         for task in tasks {
             sample.down += task.downloadSpeed
             sample.up += task.uploadSpeed
+            // The calm 1 Hz value the speed labels read (all tasks, not just
+            // active, so a just-finished row settles to its final number).
+            displayedTaskSpeed[task.id] = SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
             guard task.status.isActive else { continue }
             var history = taskSpeedHistory[task.id] ?? []
             history.append(SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed))
@@ -1038,6 +1168,7 @@ final class AppViewModel: ObservableObject {
         // a brief pause doesn't wipe the graph).
         let known = Set(tasks.map(\.id))
         taskSpeedHistory = taskSpeedHistory.filter { known.contains($0.key) }
+        displayedTaskSpeed = displayedTaskSpeed.filter { known.contains($0.key) }
         globalSpeedHistory.append(sample)
         if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }
     }

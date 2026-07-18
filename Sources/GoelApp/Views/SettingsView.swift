@@ -14,6 +14,7 @@ struct SettingsView: View {
     enum Pane: String, CaseIterable, Identifiable {
         case general = "General"
         case network = "Network"
+        case aggregation = "Aggregation"
         case traffic = "Traffic Limits"
         case bittorrent = "BitTorrent"
         case scheduler = "Scheduler"
@@ -28,6 +29,7 @@ struct SettingsView: View {
             switch self {
             case .general: return "gearshape"
             case .network: return "globe"
+            case .aggregation: return "point.3.connected.trianglepath.dotted"
             case .traffic: return "speedometer"
             case .bittorrent: return "circle.grid.cross"
             case .scheduler: return "clock"
@@ -127,6 +129,7 @@ struct SettingsView: View {
         switch selection {
         case .general: generalPane
         case .network: networkPane
+        case .aggregation: AggregationSettingsPane()
         case .traffic: trafficPane
         case .bittorrent: bittorrentPane
         case .scheduler: SchedulerPane()
@@ -279,7 +282,8 @@ struct SettingsView: View {
 
     private var networkPane: some View {
         PaneScaffold(title: "Network", subtitle: "Proxy, timeouts, retries, and authentication.") {
-            SetRow(name: "Proxy", desc: "Route traffic through a proxy server.") {
+            SectionHeader("Proxy")
+            SetRow(name: "Proxy", desc: "Route traffic through a proxy server. Multi-path aggregation is disabled while a system or manual proxy is set.") {
                 Dropdown(selection: binding(\.proxyMode), items: [
                     .option("none", "None"),
                     .option("system", "System"),
@@ -308,6 +312,16 @@ struct SettingsView: View {
             }
             SetRow(name: "Retry interval", desc: "Seconds to wait between retries.") {
                 SettingDouble(value: binding(\.retryInterval))
+            }
+            SetRow(name: "Auto-retry failed downloads",
+                   desc: "Automatically re-queue a failed download and try again, with an exponential backoff between attempts.") {
+                SettingSwitch(isOn: binding(\.autoRetryEnabled))
+            }
+            if vm.settings.autoRetryEnabled {
+                SetRow(name: "Auto-retry attempts",
+                       desc: "How many times to retry before leaving it failed for a manual retry.") {
+                    SettingInt(value: binding(\.autoRetryMaxAttempts))
+                }
             }
             SetRow(name: "Custom user-agent", desc: "Sent with HTTP requests.") {
                 SettingText(text: binding(\.userAgent), width: 160)

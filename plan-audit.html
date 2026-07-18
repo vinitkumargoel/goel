@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Goel° — Network Aggregation · Deep Audit Trail</title>
+<style>
+  :root {
+    --bg: #0f1218; --bg2: #161b24; --bg3: #1c2330; --border: #2a3344;
+    --text: #e8ecf4; --muted: #8b96ab; --dim: #5c677a;
+    --accent: #4ea1ff; --accent-dim: rgba(78,161,255,.12);
+    --green: #3ecf8e; --green-dim: rgba(62,207,142,.12);
+    --amber: #f0b429; --amber-dim: rgba(240,180,41,.12);
+    --red: #f07178; --red-dim: rgba(240,113,120,.12);
+    --violet: #c4a0d0; --violet-dim: rgba(196,160,208,.12);
+    --radius: 12px;
+    font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--text); line-height: 1.55; font-size: 15px;
+    background: radial-gradient(1200px 600px at 10% -10%, #1a2740 0%, transparent 55%),
+                radial-gradient(900px 500px at 90% 0%, #241a30 0%, transparent 45%), var(--bg);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 48px 24px 96px; }
+  .hero {
+    border: 1px solid rgba(196,160,208,.35); border-radius: 18px; padding: 36px 40px; margin-bottom: 28px;
+    background: linear-gradient(180deg, #1c1a28, var(--bg2));
+  }
+  .eyebrow {
+    display: inline-flex; font-size: 12px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--violet); background: var(--violet-dim);
+    padding: 5px 10px; border-radius: 999px; margin-bottom: 14px;
+  }
+  h1 { font-size: 28px; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .subtitle { color: var(--muted); font-size: 15.5px; max-width: 72ch; margin: 0 0 16px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pill {
+    font-size: 12.5px; color: var(--muted); border: 1px solid var(--border);
+    background: var(--bg); padding: 5px 11px; border-radius: 999px;
+  }
+  .pill strong { color: var(--text); }
+  .verdict {
+    margin-top: 18px; padding: 14px 16px; border-radius: 12px;
+    border: 1px solid rgba(240,180,41,.4); background: var(--amber-dim); font-size: 14px; color: var(--text);
+  }
+  .verdict strong { color: var(--amber); }
+  nav.toc {
+    position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px);
+    background: rgba(15,18,24,.9); border: 1px solid var(--border); border-radius: 12px;
+    padding: 10px 14px; margin-bottom: 28px; display: flex; flex-wrap: wrap; gap: 4px 12px;
+  }
+  nav.toc a { color: var(--muted); font-size: 12.5px; font-weight: 500; }
+  nav.toc a:hover { color: var(--violet); text-decoration: none; }
+  section { margin-bottom: 36px; }
+  h2 {
+    font-size: 20px; margin: 0 0 12px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 15px; margin: 16px 0 8px; }
+  p { color: var(--muted); margin: 0 0 10px; }
+  p strong, li strong { color: var(--text); }
+  ul, ol { color: var(--muted); margin: 0 0 10px; padding-left: 1.25em; }
+  li { margin-bottom: 5px; }
+  code {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px;
+    background: var(--bg3); border: 1px solid var(--border); padding: 1px 5px;
+    border-radius: 5px; color: #c5d0e6;
+  }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 12.5px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; margin: 10px 0 14px;
+  }
+  th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th {
+    background: var(--bg3); color: var(--text); font-weight: 600;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  }
+  tr:last-child td { border-bottom: 0; }
+  td { color: var(--muted); }
+  td:first-child { color: var(--text); font-weight: 500; }
+  .ok { color: var(--green); font-weight: 700; }
+  .fix { color: var(--amber); font-weight: 700; }
+  .bad { color: var(--red); font-weight: 700; }
+  .callout {
+    border-left: 3px solid var(--violet); background: var(--violet-dim);
+    padding: 11px 14px; border-radius: 0 10px 10px 0; margin: 12px 0;
+    color: var(--text); font-size: 13.5px;
+  }
+  .callout.danger { border-color: var(--red); background: var(--red-dim); }
+  .callout.ok { border-color: var(--green); background: var(--green-dim); }
+  .diagram {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.45;
+    background: #0a0d12; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px; color: #9db0cc; overflow-x: auto; white-space: pre; margin: 10px 0 14px;
+  }
+  .diagram .hi { color: var(--accent); }
+  .diagram .ok { color: var(--green); }
+  .diagram .bad { color: var(--red); }
+  .badge {
+    display: inline-block; font-size: 10.5px; font-weight: 700;
+    padding: 2px 7px; border-radius: 999px;
+  }
+  .badge.go { background: var(--green-dim); color: var(--green); }
+  .badge.warn { background: var(--amber-dim); color: var(--amber); }
+  .badge.no { background: var(--red-dim); color: var(--red); }
+  footer {
+    margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--border);
+    color: var(--dim); font-size: 12px;
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 800px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    .hero { padding: 24px; }
+  }
+  .card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 14px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 13.5px; }
+  .card p { margin: 0; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Verification companion · not the product plan</div>
+    <h1>Deep Audit — Network Aggregation</h1>
+    <p class="subtitle">
+      Four-track verification of <a href="plan.html"><code>plan.html</code></a>: engine code line-checks,
+      networking/egress research, gap analysis, and decision locks. This page is the audit trail;
+      the product plan was revised to <strong>v3</strong> from the findings below.
+    </p>
+    <div class="meta-row">
+      <span class="pill"><strong>Engine claims</strong> · ~90% verified</span>
+      <span class="pill"><strong>Headline fix</strong> · macOS egress binding</span>
+      <span class="pill"><strong>Canonical plan</strong> · <a href="plan.html">plan.html v3</a></span>
+    </div>
+    <div class="verdict">
+      <strong>Audit verdict:</strong> Plan was unusually well-grounded, but MVP transport
+      (<code>CURLOPT_INTERFACE</code> as equivalent on both platforms) was <em>materially wrong on macOS</em>.
+      Source-address bind ≠ interface egress. Fix keeps curl via
+      <code>CURLOPT_SOCKOPTFUNCTION</code> + <code>IP_BOUND_IF</code> / <code>SO_BINDTODEVICE</code>.
+      Re-order Phase‑0 around egress proof. Feasible if that spike passes.
+    </div>
+  </header>
+
+  <nav class="toc">
+    <a href="#a">A. Code grounding</a>
+    <a href="#b">B. Transport linchpin</a>
+    <a href="#c">C. Gaps</a>
+    <a href="#d">D. Decisions</a>
+    <a href="#e">E. Open Qs</a>
+    <a href="#f">F. Edits applied</a>
+  </nav>
+
+  <section id="a">
+    <h2>A. How well the plan was grounded in code</h2>
+
+    <h3>Verified TRUE</h3>
+    <table>
+      <thead><tr><th>Plan claim</th><th></th><th>Evidence</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>SegmentedTransfer multi-range fan-out + preallocate</td>
+          <td class="ok">✓</td>
+          <td><code>SegmentedTransfer.swift</code> task group per range; truncate/preallocate</td>
+        </tr>
+        <tr>
+          <td>Resume validates ETag/Last-Modified</td>
+          <td class="ok">✓+</td>
+          <td>Refuses resume if neither validator present — stronger than claimed</td>
+        </tr>
+        <tr>
+          <td>Incomplete-segment detection</td>
+          <td class="ok">✓+</td>
+          <td>Per-segment + aggregate completeness checks</td>
+        </tr>
+        <tr>
+          <td>200-to-Range → reject</td>
+          <td class="ok">✓</td>
+          <td><code>classify(..., ranged:true)</code> accepts only 206</td>
+        </tr>
+        <tr>
+          <td>Governor shrinks on 429</td>
+          <td class="ok">✓</td>
+          <td><code>throttleDown()</code> floor 1; monotonic decrease</td>
+        </tr>
+        <tr>
+          <td>RateLimiter aggregate per download</td>
+          <td class="ok">✓</td>
+          <td>Shared limiter into every segment <code>pace</code></td>
+        </tr>
+        <tr>
+          <td>Resume cursor has no adapter identity</td>
+          <td class="ok">✓</td>
+          <td><code>ResumeCursor{etag,lastModified,totalBytes,ranges,completed}</code></td>
+        </tr>
+        <tr>
+          <td>RedirectSanitizer allow-list</td>
+          <td class="ok">✓+</td>
+          <td>Strips everything except safe client headers; host change or https→non-https</td>
+        </tr>
+        <tr>
+          <td>URLSession + no bind knob</td>
+          <td class="ok">✓</td>
+          <td><code>ChunkStreamer</code>; zero bind/CURLOPT_INTERFACE in tree</td>
+        </tr>
+        <tr>
+          <td>CurlBridge FTP-only</td>
+          <td class="ok">✓</td>
+          <td>Header + only FTPEngine; stall detection already present</td>
+        </tr>
+        <tr>
+          <td>TaskConnection / Connections / ConnRow</td>
+          <td class="ok">✓</td>
+          <td>DetailTabs + RemoteRouter</td>
+        </tr>
+        <tr>
+          <td>Portal settings desktop-only</td>
+          <td class="ok">✓</td>
+          <td>No settings-write remote route</td>
+        </tr>
+        <tr>
+          <td>libcurl linked both platforms</td>
+          <td class="ok">✓</td>
+          <td><code>Package.swift</code> <code>.linkedLibrary("curl")</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Overstated / wrong (corrected in plan v3)</h3>
+    <table>
+      <thead><tr><th>#</th><th>Issue</th><th>Truth</th><th>Plan fix</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td class="fix">“Expensive already pauses”</td>
+          <td><code>pauseOnExpensiveNetwork</code> default false; detection app-layer <code>NWPathMonitor</code> (macOS only)</td>
+          <td>Independent multi-path expensive gate; Linux classifier gap</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td class="fix">Content-Range “mirrors already guard”</td>
+          <td>Guard is <code>if isMirror</code> only; primary never re-validated</td>
+          <td>New MVP: validate total on every ranged response</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td class="fix">Timeout “split” parity</td>
+          <td>Only request timeout set; resource intentionally unbounded</td>
+          <td>Port curl connect + low-speed stall model</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td class="fix">Governor rebalance as reuse</td>
+          <td>Monotonic-decreasing; never re-opens slots</td>
+          <td>Weighted rebalance = Phase 3 new mechanism</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td class="fix">Governor double-free confidence</td>
+          <td>Relies on <code>max(0,…)</code> floor, not structural ownership</td>
+          <td>Stress-test reassignment paths; don’t overclaim</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td class="fix">NetworkGuard for public-IP probe</td>
+          <td>Allows private LAN; side-channels only</td>
+          <td>Stricter probe guard</td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td class="fix">AggregationSettings type / SOCKS top-level / CAP_NET_RAW</td>
+          <td>Flat AppSettings; SOCKS is manual subtype; CAP largely obsolete ≥5.7</td>
+          <td>Flat fields; bind by name/index</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="b">
+    <h2>B. Transport linchpin (headline finding)</h2>
+    <div class="callout danger">
+      <strong>Load-bearing false assumption in v2:</strong> “bind an adapter → traffic egresses that WAN.”
+      Only conditionally true — and <strong>not</strong> true for plain <code>CURLOPT_INTERFACE</code> on macOS.
+    </div>
+
+    <h3>Routing physics</h3>
+    <div class="diagram">Source-IP bind() alone:
+  socket bound to en0's IP
+  kernel routes by <span class="hi">destination</span>
+  packet may leave via en1 (default route)
+  wire sees src=en0_IP on en1 → <span class="bad">BCP38 / RPF drop at ISP</span>
+
+Interface-scoped socket (required):
+  setsockopt IP_BOUND_IF / SO_BINDTODEVICE
+  → packets forced out that interface</div>
+
+    <h3>Platform reality</h3>
+    <table>
+      <thead><tr><th>Platform</th><th>curl CURLOPT_INTERFACE today</th><th>Real egress control</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>macOS</td>
+          <td>Name→IP then plain source bind. No IP_BOUND_IF in curl non-Linux path.</td>
+          <td class="bad">Fails flagship non-primary NIC (hotspot beside Wi‑Fi)</td>
+        </tr>
+        <tr>
+          <td>Linux</td>
+          <td>Name → SO_BINDTODEVICE. IP alone → source-bind only.</td>
+          <td class="ok">Works with name; plan’s “prefer IP” was wrong</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>The fix (keeps curl, ~MVP effort)</h3>
+    <div class="diagram"><span class="hi">CURLOPT_SOCKOPTFUNCTION</span> after socket(), before connect():
+  <span class="ok">macOS:</span>  ifindex = if_nametoindex(name)
+           setsockopt(fd, IPPROTO_IP,   IP_BOUND_IF,   &ifindex)
+           setsockopt(fd, IPPROTO_IPV6, IPV6_BOUND_IF, &ifindex)
+  <span class="ok">Linux:</span>  setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, name, …)
+
+Phase-0 must prove:
+  · nettop/interface counters show bytes on non-primary NIC
+  · echo service shows distinct public IPs when paths truly diverge
+  · control: plain CURLOPT_INTERFACE fails non-primary (documents why)</div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Also correct in research</h3>
+        <p>URLSession no bind · MPTCP insufficient · H3 off defensible as conservative · aria2 <code>--interface</code> is global single-NIC, not multi-segment fan-out.</p>
+      </div>
+      <div class="card">
+        <h3>Fallback if spike fails</h3>
+        <p>Network.framework <code>requiredInterface</code> is reliable on macOS but implies HTTP client rewrite (“very high”) — only if SOCKOPT path fails.</p>
+      </div>
+    </div>
+
+    <p style="font-size:12.5px;color:var(--dim)">
+      Refs: curl <code>lib/cf-socket.c</code> bindlocal; Apple DTS forums; curl issues 13613/11599;
+      Linux SO_BINDTODEVICE unprivileged since 5.7; codingrelic / networkop on source-bind vs egress.
+    </p>
+  </section>
+
+  <section id="c">
+    <h2>C. Gaps the original plan missed (now in v3)</h2>
+    <ol>
+      <li><strong>RateLimiter × curl</strong> — per-handle <code>MAX_RECV_SPEED</code> ⇒ N× cap. Fix: curl cap 0, Swift <code>pace</code> only.</li>
+      <li><strong>HTTP/2</strong> — multiplex = one interface. Fix: ≥1 distinct connection per adapter; no cross-adapter reuse.</li>
+      <li><strong>Cookie domain parity</strong> — Foundation scopes per domain automatically; curl jar must replicate deliberately.</li>
+      <li><strong>Blocking bridge threads</strong> — adapters × streams × tasks OS threads; Sendable callback boundary; <code>check_sendable</code> in repo.</li>
+      <li><strong>CGNAT double edge</strong> — same public IP on “two” WANs kills gain and multi-client fear; more relevant than port exhaustion.</li>
+      <li><strong>Linux expensive signal missing</strong> — no NWPathMonitor on daemon; consent story incomplete without heuristics/manual flag.</li>
+      <li><strong>Primary Content-Range total</strong> — not already handled; multi-path on primary needs new validation.</li>
+      <li><strong>rp_filter / policy routing</strong> — only if someone falls back to source-IP bind (not MVP); was absent from v2.</li>
+    </ol>
+  </section>
+
+  <section id="d">
+    <h2>D. Decisions — plan rec vs audit lock</h2>
+    <table>
+      <thead><tr><th>#</th><th>Topic</th><th>v2 plan</th><th>Audit lock (v3)</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Transport</td><td>CurlBridge + CURLOPT_INTERFACE</td><td class="fix">Curl + SOCKOPT → IP_BOUND_IF / SO_BINDTODEVICE</td></tr>
+        <tr><td>2</td><td>Master default</td><td>Off</td><td class="ok">Agree Off</td></tr>
+        <tr><td>3</td><td>Expensive</td><td>Opt-in</td><td class="ok">Agree + independent of pause-on-expensive</td></tr>
+        <tr><td>4</td><td>VPN bypass</td><td>Forbid default</td><td class="ok">Agree strongly</td></tr>
+        <tr><td>5</td><td>Manual proxy</td><td>Single-path</td><td class="ok">Agree v1</td></tr>
+        <tr><td>6</td><td>Mirrors</td><td>Adapters primary</td><td class="ok">+ primary 206 total validation</td></tr>
+        <tr><td>7</td><td>Low profile</td><td>Respect</td><td class="ok">Agree</td></tr>
+        <tr><td>8</td><td>Mid-download settings</td><td>Next resume</td><td class="ok">Agree</td></tr>
+        <tr><td>9</td><td>v1 protocols</td><td>HTTP(S)</td><td class="ok">Agree (FTP later)</td></tr>
+        <tr><td>10</td><td>Linux timing</td><td>Core MVP, polish later</td><td class="fix">Linux in Phase‑0 spike</td></tr>
+        <tr><td>11</td><td>Auto-disable</td><td>Phase 3</td><td class="ok">Agree</td></tr>
+        <tr><td>12</td><td>Public-IP probe</td><td>Optional Phase 3</td><td class="fix">Minimal opt-in MVP</td></tr>
+        <tr><td>13</td><td>Rate limit</td><td>(undecided)</td><td class="fix">Swift aggregate; curl cap 0</td></tr>
+        <tr><td>14</td><td>H2 isolation</td><td>(noted only)</td><td class="fix">≥1 conn/adapter; no cross reuse</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="e">
+    <h2>E. Implicit open questions — locked</h2>
+    <ul>
+      <li>Toggle aggregation mid-download → <strong>next resume</strong></li>
+      <li>Change selected adapters mid-download → <strong>next resume</strong> (live replan = Phase 3)</li>
+      <li>H2 efficiency → distinct connection per adapter; multiplex free within one adapter</li>
+      <li>RateLimiter → Swift-side only</li>
+      <li>Public-IP probe → stricter-than-NetworkGuard echo, opt-in, privacy disclosed</li>
+    </ul>
+  </section>
+
+  <section id="f">
+    <h2>F. Edits applied to plan.html</h2>
+    <div class="callout ok">
+      All §F items from the audit are incorporated into <a href="plan.html">plan.html v3</a>.
+    </div>
+    <ol>
+      <li>§4 transport table + decision #1 → SOCKOPT + bind-if; source-bind marked top spike risk</li>
+      <li>§12 Phase‑0 gate #1 → non-primary egress on macOS + Linux name bind</li>
+      <li>Removed prefer-local-IP / CAP_NET_RAW as primary risk; bind by name/index</li>
+      <li>§2/§5 expensive story corrected (opt-in, macOS-only detection, independent gate)</li>
+      <li>§6.2 primary Content-Range total = new MVP task</li>
+      <li>§6/§10 RateLimiter×curl, H2 isolation, cookies, threads, CGNAT</li>
+      <li>§10 governor monotonic; rebalance is new</li>
+      <li>Decision 12 public-IP probe promoted to MVP opt-in</li>
+    </ol>
+  </section>
+
+  <footer>
+    Audit companion for Goel° Network Aggregation · engine line-checks + networking research ·
+    product plan: <a href="plan.html">plan.html v3</a> · Phase‑0 egress spike remains mandatory.
+  </footer>
+</div>
+</body>
+</html>

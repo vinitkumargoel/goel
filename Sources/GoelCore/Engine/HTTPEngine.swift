@@ -50,6 +50,10 @@ public actor HTTPEngine: HTTPConfigurable {
     /// pushes a config derived from the user's Network settings.
     var networkConfig = HTTPEngine.defaultNetworkConfig
 
+    /// Multi-path aggregation snapshot pushed from ``DownloadManager``. Default
+    /// inactive so tests and single-path downloads stay on URLSession.
+    var aggregationConfig = AggregationEngineConfig.disabled
+
     /// Aggregate open-connection accounting across ALL concurrent downloads, so
     /// the profile's global `maxConnections` and per-host `maxConnectionsPerServer`
     /// caps hold in sum — not merely within a single task. Reserved when a
@@ -302,6 +306,10 @@ public actor HTTPEngine: HTTPConfigurable {
         await applyNetworkConfig(net)
     }
 
+    public func configureAggregation(_ config: AggregationEngineConfig) async {
+        aggregationConfig = config
+    }
+
     /// Resolve a URL's name + size for the preview, adapting the concrete
     /// ``resolveMetadata(for:currentName:)`` probe to the engine-agnostic seam. The
     /// URL-derived base name mirrors the scheduler's default-name rule so a failed
@@ -433,7 +441,28 @@ public actor HTTPEngine: HTTPConfigurable {
             // count here and hands it down via the plan.
             let host = url.host
             let canSegment = probe.totalBytes != nil && probe.acceptsRanges
-            let segmentCount = canSegment ? resolveSegmentCount(total: probe.totalBytes!, host: host) : 1
+            var segmentCount = canSegment ? resolveSegmentCount(total: probe.totalBytes!, host: host) : 1
+
+            // Multi-path: when aggregation is active and the server supports
+            // ranges, open enough segments that each adapter gets real work.
+            // (Previously we clamped to resolveSegmentCount's 64 KiB floor first,
+            // which often collapsed to 1 segment → only one NIC was used.)
+            let boundAdapters: [BoundAdapter]
+            if canSegment, aggregationConfig.isActive {
+                let adapters = aggregationConfig.adapters
+                let hostInUse = host.flatMap { connectionsByHost[$0] } ?? 0
+                let hostRoom = max(1, profile.maxConnectionsPerServer - hostInUse)
+                let globalRoom = max(1, profile.maxConnections - totalConnections)
+                segmentCount = AggregationPolicy.multiPathSegmentCount(
+                    fileBytes: probe.totalBytes!,
+                    adapters: adapters.count,
+                    streamsPerAdapter: aggregationConfig.streamsPerAdapter,
+                    maxConnectionsPerServer: hostRoom,
+                    globalRoom: globalRoom)
+                boundAdapters = adapters
+            } else {
+                boundAdapters = []
+            }
 
             // The tighter of the profile ceiling and the task's own limit.
             let maxBytesPerSecond = profile.effectiveDownloadCap(taskLimit: resolved.speedLimitBytesPerSec)
@@ -455,7 +484,9 @@ public actor HTTPEngine: HTTPConfigurable {
                 settings: settings,
                 maxBytesPerSecond: maxBytesPerSecond,
                 flushSize: Self.flushSize,
-                mirrors: mirrors
+                mirrors: mirrors,
+                boundAdapters: boundAdapters,
+                connectTimeout: networkConfig.timeout
             )
             let transfer = SegmentedTransfer(plan: plan)
 

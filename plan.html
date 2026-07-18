@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Goel° — Network Aggregation · Plan v3 (post-audit)</title>
+<style>
+  :root {
+    --bg: #0f1218; --bg2: #161b24; --bg3: #1c2330; --border: #2a3344;
+    --text: #e8ecf4; --muted: #8b96ab; --dim: #5c677a;
+    --accent: #4ea1ff; --accent-dim: rgba(78,161,255,.12);
+    --green: #3ecf8e; --green-dim: rgba(62,207,142,.12);
+    --amber: #f0b429; --amber-dim: rgba(240,180,41,.12);
+    --red: #f07178; --red-dim: rgba(240,113,120,.12);
+    --violet: #c4a0d0; --violet-dim: rgba(196,160,208,.12);
+    --radius: 12px;
+    font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--text); line-height: 1.55; font-size: 15px;
+    background: radial-gradient(1200px 600px at 10% -10%, #1a2740 0%, transparent 55%),
+                radial-gradient(900px 500px at 100% 0%, #1a2430 0%, transparent 50%), var(--bg);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 48px 24px 96px; }
+  .hero {
+    border: 1px solid var(--border); border-radius: 18px; padding: 36px 40px; margin-bottom: 28px;
+    background: linear-gradient(180deg, var(--bg3), var(--bg2));
+    box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 12px 40px rgba(0,0,0,.35);
+  }
+  .eyebrow {
+    display: inline-flex; font-size: 12px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--accent); background: var(--accent-dim);
+    padding: 5px 10px; border-radius: 999px; margin-bottom: 14px;
+  }
+  h1 { font-size: 30px; line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .subtitle { color: var(--muted); font-size: 16px; max-width: 70ch; margin: 0 0 18px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pill {
+    font-size: 12.5px; color: var(--muted); border: 1px solid var(--border);
+    background: var(--bg); padding: 5px 11px; border-radius: 999px;
+  }
+  .pill strong { color: var(--text); }
+  .verdict {
+    margin-top: 20px; padding: 16px 18px; border-radius: 12px;
+    border: 1px solid rgba(240,180,41,.45); background: var(--amber-dim);
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .verdict .mark {
+    flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(240,180,41,.22); color: var(--amber);
+    display: grid; place-items: center; font-weight: 700;
+  }
+  .verdict h2 { margin: 0 0 4px; font-size: 15px; color: var(--amber); }
+  .verdict p { margin: 0; color: var(--text); font-size: 14px; }
+  nav.toc {
+    position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px); background: rgba(15,18,24,.9);
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px;
+    margin-bottom: 32px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-height: 76px; overflow: auto;
+  }
+  nav.toc a { color: var(--muted); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+  nav.toc a:hover { color: var(--accent); text-decoration: none; }
+  section { margin-bottom: 40px; }
+  h2 {
+    font-size: 21px; letter-spacing: -0.015em; margin: 0 0 12px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 15.5px; margin: 18px 0 8px; }
+  h4 { font-size: 13.5px; margin: 12px 0 6px; }
+  p { color: var(--muted); margin: 0 0 10px; }
+  p strong, li strong { color: var(--text); }
+  ul, ol { color: var(--muted); margin: 0 0 10px; padding-left: 1.25em; }
+  li { margin-bottom: 5px; }
+  code {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+    background: var(--bg3); border: 1px solid var(--border); padding: 1px 5px;
+    border-radius: 5px; color: #c5d0e6;
+  }
+  .grid { display: grid; gap: 12px; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 800px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .hero { padding: 24px; } h1 { font-size: 24px; }
+  }
+  .card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 14px; }
+  .card p { margin: 0; font-size: 13px; }
+  .tag {
+    display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; padding: 2px 7px; border-radius: 5px; margin-bottom: 8px;
+  }
+  .tag.go { background: var(--green-dim); color: var(--green); }
+  .tag.warn { background: var(--amber-dim); color: var(--amber); }
+  .tag.no { background: var(--red-dim); color: var(--red); }
+  .tag.info { background: var(--accent-dim); color: var(--accent); }
+  .tag.crit { background: var(--red-dim); color: var(--red); }
+  .tag.fix { background: var(--violet-dim); color: var(--violet); }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; margin: 10px 0 14px;
+  }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th {
+    background: var(--bg3); color: var(--text); font-weight: 600;
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em;
+  }
+  tr:last-child td { border-bottom: 0; }
+  td { color: var(--muted); }
+  td:first-child { color: var(--text); font-weight: 500; }
+  .badge {
+    display: inline-block; font-size: 10.5px; font-weight: 700;
+    padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  }
+  .badge.go { background: var(--green-dim); color: var(--green); }
+  .badge.warn { background: var(--amber-dim); color: var(--amber); }
+  .badge.no { background: var(--red-dim); color: var(--red); }
+  .badge.info { background: var(--accent-dim); color: var(--accent); }
+  .badge.crit { background: var(--red); color: #1a0a0a; }
+  .diagram {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.45;
+    background: #0a0d12; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 18px; color: #9db0cc; overflow-x: auto; white-space: pre; margin: 10px 0 14px;
+  }
+  .diagram .hi { color: var(--accent); }
+  .diagram .ok { color: var(--green); }
+  .diagram .warn { color: var(--amber); }
+  .diagram .bad { color: var(--red); }
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--accent-dim);
+    padding: 11px 14px; border-radius: 0 10px 10px 0; margin: 12px 0;
+    color: var(--text); font-size: 13.5px;
+  }
+  .callout.warn { border-color: var(--amber); background: var(--amber-dim); }
+  .callout.danger { border-color: var(--red); background: var(--red-dim); }
+  .callout.ok { border-color: var(--green); background: var(--green-dim); }
+  .sev {
+    display: inline-grid; place-items: center; min-width: 52px; height: 22px;
+    border-radius: 6px; font-size: 10.5px; font-weight: 800; letter-spacing: .03em;
+  }
+  .sev.p0 { background: var(--red); color: #1a0a0a; }
+  .sev.p1 { background: var(--amber); color: #1a1400; }
+  .sev.p2 { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(78,161,255,.35); }
+  .sev.p3 { background: var(--bg3); color: var(--dim); border: 1px solid var(--border); }
+  .phase {
+    display: grid; grid-template-columns: 64px 1fr; gap: 14px; padding: 16px;
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg2); margin-bottom: 10px;
+  }
+  .phase-num {
+    width: 52px; height: 52px; border-radius: 12px; display: grid; place-items: center;
+    font-weight: 700; font-size: 16px; background: var(--bg3); border: 1px solid var(--border); color: var(--accent);
+  }
+  .phase h3 { margin: 0 0 4px; font-size: 14.5px; }
+  .phase p { margin: 0 0 6px; font-size: 13px; }
+  .phase .meta { font-size: 11.5px; color: var(--dim); }
+  .phase ul { margin: 4px 0 0; font-size: 13px; }
+  details {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; margin: 8px 0;
+  }
+  details summary {
+    cursor: pointer; padding: 12px 14px; font-weight: 600; font-size: 13.5px; color: var(--text); list-style: none;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "▸ "; color: var(--accent); }
+  details[open] summary::before { content: "▾ "; }
+  details .body { padding: 0 14px 14px; }
+  details .body p, details .body li { font-size: 13px; }
+  footer {
+    margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border);
+    color: var(--dim); font-size: 12px;
+  }
+  .changelog {
+    background: var(--violet-dim); border: 1px solid rgba(196,160,208,.35);
+    border-radius: 12px; padding: 14px 16px; margin-bottom: 28px; font-size: 13.5px;
+  }
+  .changelog h3 { margin: 0 0 8px; color: var(--violet); font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+  .changelog ul { margin: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Goel° · Plan v3 · post deep-audit</div>
+    <h1>Network Aggregation</h1>
+    <p class="subtitle">
+      Combine multiple internet adapters so one file fans out across them, with live
+      UI showing which adapter each connection uses. This revision incorporates the
+      deep code + networking audit: the MVP transport is no longer plain
+      <code>CURLOPT_INTERFACE</code> — it is <strong>egress-scoped socket bind</strong>
+      via <code>CURLOPT_SOCKOPTFUNCTION</code> + platform APIs.
+    </p>
+    <div class="meta-row">
+      <span class="pill"><strong>Verdict</strong> · Feasible if egress spike passes</span>
+      <span class="pill"><strong>MVP transport</strong> · SOCKOPT + IP_BOUND_IF / SO_BINDTODEVICE</span>
+      <span class="pill"><strong>Top risk</strong> · macOS non-primary NIC egress</span>
+      <span class="pill"><strong>Companion</strong> · <a href="plan-audit.html">plan-audit.html</a></span>
+    </div>
+    <div class="verdict">
+      <div class="mark">!</div>
+      <div>
+        <h2>Headline change from v2: source-IP bind ≠ multi-WAN</h2>
+        <p>
+          Kernel routes by <em>destination</em>. A plain source-address bind
+          (<code>CURLOPT_INTERFACE</code> on macOS today) does <strong>not</strong>
+          force packets out a non-primary interface — and may even produce BCP38-dropped
+          packets (src IP from en0, egress en1). Flagship scenario “Wi‑Fi + phone hotspot”
+          requires interface-scoped sockets: macOS <code>IP_BOUND_IF</code> /
+          <code>IPV6_BOUND_IF</code>, Linux <code>SO_BINDTODEVICE</code> (name, not IP).
+          <strong>Phase‑0 must prove per-interface <em>egress</em>, not mere bind success.</strong>
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <div class="changelog">
+    <h3>v3 changelog (from deep audit)</h3>
+    <ul>
+      <li>Transport decision rewritten: SOCKOPTFUNCTION + platform bind-if, not source-IP curl interface alone.</li>
+      <li>Phase‑0 gate #1 = non-primary NIC bytes in <code>nettop</code> + distinct public IPs where paths diverge.</li>
+      <li>Expensive-path story corrected: pause is opt-in default-off + macOS-only; multi-path needs independent gate; Linux classifier gap noted.</li>
+      <li>Primary Content-Range total validation elevated to <strong>new MVP task</strong> (mirror-only today).</li>
+      <li>Removed “prefer bind to local IP” and CAP_NET_RAW as primary Linux risk; bind by <strong>name/index</strong>.</li>
+      <li>Added RateLimiter×curl, H2 per-adapter connect, cookie domain parity, blocking-thread budget, CGNAT, public-IP probe in MVP (opt-in).</li>
+      <li>Governor rebalance marked <strong>new</strong>, not a reuse (current governor is monotonic-decreasing).</li>
+    </ul>
+  </div>
+
+  <nav class="toc">
+    <a href="#exec">0. Exec</a>
+    <a href="#clarify">1. Clarify</a>
+    <a href="#today">2. Today</a>
+    <a href="#physics">3. Physics</a>
+    <a href="#transport">4. Transport ★</a>
+    <a href="#threats">5. Risks</a>
+    <a href="#edges">6. Edges</a>
+    <a href="#failure">7. Failures</a>
+    <a href="#security">8. Security</a>
+    <a href="#ux">9. UX</a>
+    <a href="#design">10. Design</a>
+    <a href="#test">11. Tests</a>
+    <a href="#plan">12. Phases</a>
+    <a href="#decide">13. Decisions</a>
+    <a href="#kill">14. Kill</a>
+  </nav>
+
+  <section id="exec">
+    <h2>0. Executive summary</h2>
+    <div class="grid grid-3">
+      <div class="card">
+        <span class="tag go">Doable</span>
+        <h3>What works</h3>
+        <p>HTTP range segments already fan out. Pin each segment’s socket to a NIC with real egress scoping. Label adapters in Connections UI.</p>
+      </div>
+      <div class="card">
+        <span class="tag warn">Hard (corrected)</span>
+        <h3>What is hard</h3>
+        <p>macOS curl cannot IP_BOUND_IF today — we must install SOCKOPTFUNCTION. Linux name≠IP. Dual stack HTTP parity, cookies, rate limit aggregate.</p>
+      </div>
+      <div class="card">
+        <span class="tag no">Not this</span>
+        <h3>What it is not</h3>
+        <p>Not LACP, not Speedify bonding, not plain <code>bind(sourceIP)</code>, not aria2-style global single-interface, not guaranteed 2×.</p>
+      </div>
+    </div>
+    <div class="callout danger">
+      <strong>Definition of done unchanged in spirit, stricter in verification:</strong>
+      Wi‑Fi (primary) + phone hotspot (non-primary) must show bytes on <em>both</em> interfaces in
+      <code>nettop</code> / interface counters — not just “socket bound successfully.”
+    </div>
+  </section>
+
+  <section id="clarify">
+    <h2>1. What we are building</h2>
+    <table>
+      <thead><tr><th>User words</th><th>Precise meaning</th><th>Not this</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Multiple adapters combined</td>
+          <td>Parallel TCP streams with <strong>egress-scoped</strong> sockets on selected NICs; different byte ranges</td>
+          <td>Source-IP bind only; OS LACP; one MPTCP socket</td>
+        </tr>
+        <tr>
+          <td>Setting to add adapters</td>
+          <td>Enumerate live interfaces; multi-select; persist BSD names in flat <code>AppSettings</code></td>
+          <td>Separate AggregationSettings type; invent virtual NICs</td>
+        </tr>
+        <tr>
+          <td>Show which adapter</td>
+          <td>Per-connection label from actual bound interface after connect (prefer truth over assignment)</td>
+          <td>Guess from speed alone</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="today">
+    <h2>2. Codebase reality (audit-verified)</h2>
+    <h3>In our favor (verified line-for-line)</h3>
+    <ul>
+      <li><code>SegmentedTransfer</code> multi-range fan-out, preallocate, incomplete-segment guards (per-segment + aggregate).</li>
+      <li>Resume refuses without ETag/Last-Modified validators — stronger than many clients.</li>
+      <li>206-only for ranged; full 200 → reject. Governor shrinks on 429 (monotonic decrease).</li>
+      <li><code>RateLimiter</code> is per-download <em>aggregate</em> across segments — must preserve this with curl.</li>
+      <li><code>RedirectSanitizer</code> allow-list strips Auth/Cookie/Referer/custom on host change or https→http.</li>
+      <li><code>TaskConnection</code> + Connections tab + remote <code>ConnRow</code> exist; resume cursor has no adapter identity.</li>
+      <li>CurlBridge FTP-only today; libcurl already linked both platforms; blocking by design.</li>
+    </ul>
+    <h3>Corrections vs earlier plan claims</h3>
+    <table>
+      <thead><tr><th>Earlier claim</th><th>Actual</th><th>Plan consequence</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Expensive path “already pauses” downloads</td>
+          <td><code>pauseOnExpensiveNetwork</code> defaults <strong>false</strong>; detection via app-layer <code>NWPathMonitor</code> (macOS only)</td>
+          <td>Multi-path needs <strong>independent</strong> expensive opt-in gate; Linux needs its own classifier</td>
+        </tr>
+        <tr>
+          <td>Content-Range total guarded (mirrors)</td>
+          <td>Guard is <code>if isMirror</code> only — primary 206 total never re-checked</td>
+          <td><strong>New MVP task:</strong> validate Content-Range total on every ranged response, all adapters</td>
+        </tr>
+        <tr>
+          <td>Timeout “split” to mirror URLSession</td>
+          <td>Only request/idle timeout set; resource timeout deliberately unbounded</td>
+          <td>Port curl connect-timeout + low-speed stall (already in <code>curl_bridge.c</code>)</td>
+        </tr>
+        <tr>
+          <td>Governor rebalance / per-adapter governors as reuse</td>
+          <td>Governor is monotonic-decreasing; never re-opens</td>
+          <td>Weighted rebalance is a <strong>new</strong> Phase‑3 mechanism</td>
+        </tr>
+        <tr>
+          <td>Prefer bind to local IP (Linux)</td>
+          <td>IP → source-bind only; name → SO_BINDTODEVICE</td>
+          <td>Always bind by <strong>interface name/index</strong></td>
+        </tr>
+        <tr>
+          <td>NetworkGuard for public-IP probe</td>
+          <td>Allows private LAN; side-channel only</td>
+          <td>Stricter probe guard (no LAN, no link-local)</td>
+        </tr>
+        <tr>
+          <td>Separate AggregationSettings type</td>
+          <td>Flat ~80-field <code>AppSettings</code> + <code>decodeIfPresent</code></td>
+          <td>Add fields there (established pattern)</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="physics">
+    <h2>3. Network physics + routing truth</h2>
+    <div class="diagram"><span class="hi">WRONG mental model (v2 risk)</span>
+socket.bind(en0_IP)  →  kernel still routes by destination
+                     →  packet may leave via en1 (default route)
+                     →  src=en0_IP on en1 wire → <span class="bad">ISP BCP38 drop</span>
+
+<span class="hi">RIGHT model (v3)</span>
+socket() → <span class="ok">IP_BOUND_IF / SO_BINDTODEVICE(ifindex|name)</span> → connect()
+         → packets forced out that interface's L2/L3 path
+
+<span class="hi">Case A — real multi-WAN</span>
+en0 Wi‑Fi → Router A → ISP fiber  ──┐
+en1 USB tether → Phone → cellular ──┼── Internet
+⇒ independent last-mile; public IPs often differ
+
+<span class="hi">Case B — multi-NIC same gateway</span>
+en0+en1 → same home router → one WAN
+⇒ no speedup (honest UX / same-public-IP probe)
+
+<span class="bad">Case C — VPN full tunnel</span>
+Default route utun0; physical bind may <span class="bad">bypass VPN</span> (security)
+⇒ forbid physical multi-path unless scary override</div>
+    <div class="callout warn">
+      <strong>CGNAT double edge:</strong> two “different” WANs on the same mobile carrier can share one public IP —
+      undermines throughput premise and reduces multi-client 429 risk. More important than “port exhaustion”
+      (dozens of conns ≪ typical CGNAT port pools).
+    </div>
+  </section>
+
+  <section id="transport">
+    <h2>4. Transport ★ (load-bearing — corrected)</h2>
+
+    <h3>4.1 Why plain CURLOPT_INTERFACE fails the flagship scenario</h3>
+    <table>
+      <thead><tr><th>Platform</th><th>What curl does today</th><th>Egress control?</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>macOS</strong></td>
+          <td><code>CURLOPT_INTERFACE</code> → resolve name to IP → plain source <code>bind()</code>. No <code>IP_BOUND_IF</code> in curl’s non-Linux path.</td>
+          <td><span class="badge no">No</span> — non-primary NICs (hotspot) won’t carry traffic reliably; Service Order default wins</td>
+        </tr>
+        <tr>
+          <td><strong>Linux</strong></td>
+          <td>Interface <strong>name</strong> (or <code>if!name</code>) → <code>SO_BINDTODEVICE</code>. IP alone → source-bind only.</td>
+          <td><span class="badge go">Yes</span> only with name; <span class="badge no">No</span> with IP-only</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>4.2 MVP transport decision (replaces v2 “CURLOPT_INTERFACE”)</h3>
+    <div class="diagram"><span class="hi">CurlBridge extension</span>
+gcb_http_range(..., const char *ifname, ...)
+  CURLOPT_SOCKOPTFUNCTION → after socket(), before connect():
+    <span class="ok">macOS:</span>  ifindex = if_nametoindex(ifname)
+             setsockopt(fd, IPPROTO_IP,   IP_BOUND_IF,   &ifindex)
+             setsockopt(fd, IPPROTO_IPV6, IPV6_BOUND_IF, &ifindex)
+    <span class="ok">Linux:</span>  setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, ifname, …)
+             (or CURLOPT_INTERFACE with name — not IP)
+
+  Also for multi-path HTTP:
+    · CURLOPT_MAX_RECV_SPEED_LARGE = 0  → pace via Swift RateLimiter only
+    · distinct easy handle per stream; no multi-adapter connection reuse
+      (FRESH_CONNECT / separate share pools per adapter)
+    · HTTP/3 off in MVP (QUIC migration vs pin — treat unverified)
+    · redirect callback ports RedirectSanitizer allow-list
+    · connect-timeout + LOW_SPEED stall (already in FTP bridge)</div>
+
+    <table>
+      <thead><tr><th>Option</th><th>Notes</th><th>Rec</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Curl + SOCKOPTFUNCTION + bind-if</strong></td>
+          <td>Keeps HTTP in one library; modest C shim; works both OS</td>
+          <td><span class="badge go">MVP</span></td>
+        </tr>
+        <tr>
+          <td><strong>Network.framework requiredInterface</strong></td>
+          <td>Reliable macOS egress; no HTTP stack — rewrite cost “very high”</td>
+          <td><span class="badge info">Fallback if spike fails</span></td>
+        </tr>
+        <tr>
+          <td><strong>Plain CURLOPT_INTERFACE / source-IP</strong></td>
+          <td>Fails flagship macOS multi-WAN; Linux IP-only also fails</td>
+          <td><span class="badge no">Rejected</span></td>
+        </tr>
+        <tr>
+          <td><strong>URLSession</strong></td>
+          <td>No bind knob</td>
+          <td><span class="badge no">Dead end</span></td>
+        </tr>
+        <tr>
+          <td><strong>MPTCP only</strong></td>
+          <td>Server support rare; not aggregation + no per-adapter UI</td>
+          <td><span class="badge no">Insufficient</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <strong>aria2 note:</strong> <code>--interface</code> is a <em>global</em> single-NIC bind for all sockets —
+      not a reference for per-segment multi-interface fan-out. That logic is ours to build.
+    </div>
+
+    <h3>4.3 HTTP parity checklist (curl path)</h3>
+    <ul>
+      <li>Range + 206-only + <strong>Content-Range total on every response (primary included)</strong></li>
+      <li>Redirect sanitizer allow-list parity (host change / https→http)</li>
+      <li>UA, Referer, extra headers, Basic auth TLS-only</li>
+      <li>Cookie jar with <strong>domain scoping</strong> like Foundation (not a naive shared bag)</li>
+      <li>Proxy: system / manual HTTP / SOCKS5-as-manual-subtype / none — aggregation inactive under manual proxy (v1)</li>
+      <li>Linux proxy today = env vars (<code>http_proxy</code>), not CFNetwork dictionary</li>
+      <li>Cancel on pause; progress → resume cursor cadence; stall detection</li>
+      <li>Swift <code>RateLimiter.pace</code> in write path; curl per-handle speed cap = 0</li>
+    </ul>
+
+    <h3>4.4 Linux extras for spike</h3>
+    <ul>
+      <li>Confirm unprivileged <code>SO_BINDTODEVICE</code> on target kernels (5.7+ relaxed CAP_NET_RAW need for unbound sockets).</li>
+      <li>If ever testing source-IP-only fallback: need policy routing + <code>rp_filter</code> — <strong>not MVP path</strong>.</li>
+      <li>Include Linux in Phase‑0; do not defer “does egress work?” to polish.</li>
+    </ul>
+  </section>
+
+  <section id="threats">
+    <h2>5. Risk matrix</h2>
+    <table>
+      <thead><tr><th>Sev</th><th>Risk</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="sev p0">P0</span></td>
+          <td>macOS non-primary NIC never carries bytes (source-bind illusion)</td>
+          <td>SOCKOPT+IP_BOUND_IF; Phase‑0 nettop proof; kill if fails and NW rewrite rejected</td>
+        </tr>
+        <tr>
+          <td><span class="sev p0">P0</span></td>
+          <td>Cellular/hotspot data bill without consent</td>
+          <td><strong>Independent</strong> expensive gate default-off + confirm + counter; do not rely on pause-on-expensive (also default-off)</td>
+        </tr>
+        <tr>
+          <td><span class="sev p0">P0</span></td>
+          <td>Silent corrupt completion / range gaps</td>
+          <td>Keep incomplete-segment guards; primary Content-Range total validation (new)</td>
+        </tr>
+        <tr>
+          <td><span class="sev p0">P0</span></td>
+          <td>Credential leak via curl redirects without sanitizer</td>
+          <td>Port RedirectSanitizer allow-list; reuse existing tests</td>
+        </tr>
+        <tr>
+          <td><span class="sev p0">P0</span></td>
+          <td>VPN bypass via physical interface bind</td>
+          <td>Default forbid multi-path when VPN is default route; scary override only</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>“Broken” on multi-NIC same WAN</td>
+          <td>Honest copy + <strong>MVP opt-in same-public-IP probe</strong> (stricter than NetworkGuard)</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>RateLimiter N× if curl MAX_RECV per handle</td>
+          <td>curl cap 0; Swift aggregate pace only</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>H2 multiplex collapses multi-adapter fan-out</td>
+          <td>≥1 distinct connection per adapter; no cross-adapter reuse</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>Proxy collapses all paths / Linux global env proxy</td>
+          <td>Aggregation inactive under manual proxy v1</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>CDN multi-IP 403/429; IP-sticky sessions</td>
+          <td>Governor; demote; single-path fallback; collapse to first working adapter</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>Adapter death mid-transfer</td>
+          <td>Demote + reassign ranges; fail only if zero paths</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>Cookie domain mismatch vs URLSession</td>
+          <td>Domain-scoped jar parity tests</td>
+        </tr>
+        <tr>
+          <td><span class="sev p2">P2</span></td>
+          <td>Blocking bridge: adapters×streams×tasks OS threads</td>
+          <td>Cap streams/adapter; budget threads; Sendable callback design</td>
+        </tr>
+        <tr>
+          <td><span class="sev p2">P2</span></td>
+          <td>Linux expensive classification missing</td>
+          <td>Heuristic (wwan*, usb tether names) or manual flag; document gap</td>
+        </tr>
+        <tr>
+          <td><span class="sev p2">P2</span></td>
+          <td>Governor slot races under reassignment</td>
+          <td>Strict acquire/release; tests; don’t overtrust max(0) floor alone</td>
+        </tr>
+        <tr>
+          <td><span class="sev p2">P2</span></td>
+          <td>IPv6/IPv4 split per NIC; DNS on wrong path</td>
+          <td>Bind name/index; demote failing family; document DNS limitation v1</td>
+        </tr>
+        <tr>
+          <td><span class="sev p3">P3</span></td>
+          <td>Portal cannot configure host adapters</td>
+          <td>Telemetry only; settings on host/desktop</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="edges">
+    <h2>6. Edge cases (condensed + audit additions)</h2>
+
+    <details open>
+      <summary>Egress / bind / OS</summary>
+      <div class="body">
+        <ul>
+          <li>Source-IP bind without bind-if → wrong egress / BCP38 drop.</li>
+          <li>Linux IP-only CURLOPT_INTERFACE → no SO_BINDTODEVICE.</li>
+          <li>Non-primary Service Order interface (hotspot) — must be index-scoped.</li>
+          <li>VPN full tunnel vs split tunnel destination failures.</li>
+          <li>CGNAT same public IP on “two” WANs.</li>
+          <li>Virtual ifaces: utun, awdl, llw, bridge, ap — hide by default.</li>
+          <li>Hotplug USB Ethernet / iPhone tether mid-session.</li>
+        </ul>
+      </div>
+    </details>
+    <details open>
+      <summary>HTTP (MVP)</summary>
+      <div class="body">
+        <ul>
+          <li><strong>NEW:</strong> validate Content-Range total on primary + every adapter (not just mirrors).</li>
+          <li>No ranges / unknown size → single stream on preferred adapter.</li>
+          <li>Resume cursor: ranges+validators only — never adapter IDs.</li>
+          <li>H2: distinct conn per adapter; multiplex OK within one adapter.</li>
+          <li>H3 off in MVP.</li>
+          <li>RateLimiter Swift-side only; curl speed cap off.</li>
+          <li>Cookies: domain-scoped like Foundation.</li>
+          <li>Signed URL expiry on slow path; captcha HTML ≠ success.</li>
+          <li>Mirrors: adapters primary, mirrors failover only.</li>
+        </ul>
+      </div>
+    </details>
+    <details>
+      <summary>Scheduling / multi-task / concurrency</summary>
+      <div class="body">
+        <ul>
+          <li>Low profile <code>enableExtraConnections=false</code> → no multi-path override.</li>
+          <li>Global connection budgets still apply across multi-path tasks.</li>
+          <li>Governor monotonic — weighted rebalance is Phase‑3 new code.</li>
+          <li>Auto-retry: after multi-path fail streak, try single-path once.</li>
+          <li>Settings / adapter set changes → apply on <strong>next resume</strong> (v1).</li>
+          <li>Blocking threads: adapters × streams × concurrent tasks — hard cap streamsPerAdapter.</li>
+        </ul>
+      </div>
+    </details>
+    <details>
+      <summary>Expensive / Linux / consent</summary>
+      <div class="body">
+        <ul>
+          <li>Independent multi-path expensive gate (default off), separate from pause-on-expensive.</li>
+          <li>macOS: can use NWPathMonitor isExpensive for classification hints.</li>
+          <li>Linux: no NWPathMonitor — name heuristics / user marks adapter expensive / always confirm.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <section id="failure">
+    <h2>7. Failure playbook</h2>
+    <table>
+      <thead><tr><th>Symptom</th><th>Response</th><th>User-visible</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Bind-if fails on secondary NIC</td>
+          <td>Demote adapter; continue; if all fail → error</td>
+          <td>“Could not bind to Hotspot (enX)”</td>
+        </tr>
+        <tr>
+          <td>Bytes only on primary despite multi-select</td>
+          <td>Treat as spike/regression failure of egress scoping</td>
+          <td>Diagnostic: “Secondary path not carrying traffic”</td>
+        </tr>
+        <tr>
+          <td>Same public IP on all adapters</td>
+          <td>Amber tip; optional continue</td>
+          <td>“Paths may share one internet link — speed may not increase”</td>
+        </tr>
+        <tr>
+          <td>429 / multi-IP ban</td>
+          <td>Governor down → single-path fallback</td>
+          <td>“Server limited multi-path; continuing single path”</td>
+        </tr>
+        <tr>
+          <td>403 on some adapters only</td>
+          <td>Collapse to first successful adapter</td>
+          <td>“Multi-path blocked; using Wi‑Fi only”</td>
+        </tr>
+        <tr>
+          <td>N× speed under cap</td>
+          <td>Bug: curl MAX_RECV left on — fix to Swift-only pace</td>
+          <td>Speeds respect profile aggregate</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="security">
+    <h2>8. Security &amp; privacy</h2>
+    <ul>
+      <li><strong>RedirectSanitizer allow-list</strong> on every curl redirect — P0 tests.</li>
+      <li><strong>VPN bypass</strong> default forbid when default route is VPN.</li>
+      <li><strong>Expensive consent</strong> independent gate + counter; Linux no automatic detector.</li>
+      <li><strong>Public-IP probe</strong>: stricter than NetworkGuard (block LAN + link-local); opt-in; privacy copy (“server may see multiple client IPs”).</li>
+      <li>No LAN scanning — enumerate local NICs only.</li>
+    </ul>
+  </section>
+
+  <section id="ux">
+    <h2>9. UX</h2>
+    <div class="diagram"><span class="hi">Settings → Network → Aggregation</span>  [master off]
+├── Adapters multi-select (BSD name, type, IP, up/expensive)
+├── Include expensive          [off · confirm]
+├── Allow paths outside VPN    [off · danger]
+├── Streams per adapter        [2]
+├── Strategy                   Round-robin | Weighted (Phase 3)
+├── Check path diversity       [opt-in probe]
+└── Help: independent internet paths required
+
+<span class="hi">Connections tab</span>
+Segment · Adapter chip · Range · ↓ · Progress · state
+Footer share bar + “Why single path?” diagnostic</div>
+    <p><strong>Why single path?</strong> always one of: disabled · &lt;2 adapters up · Low profile · proxy · VPN policy · no ranges · server rejected multi-path · protocol unsupported.</p>
+  </section>
+
+  <section id="design">
+    <h2>10. Design sketch</h2>
+    <div class="diagram"><span class="hi">AppSettings</span> (flat fields, decodeIfPresent)
+  aggregationEnabled, aggregationAdapterIds[],
+  aggregationIncludeExpensive, aggregationAllowOutsideVPN,
+  aggregationStreamsPerAdapter, aggregationStrategy
+
+<span class="hi">AdapterDirectory</span>  snapshot + path events
+<span class="hi">AdapterPool</span>       assign / demote  (rebalance weights = Phase 3 NEW)
+<span class="hi">ConnectionGovernor</span>  existing monotonic — do not assume re-open
+<span class="hi">RateLimiter</span>         Swift aggregate pace; curl max_recv = 0
+
+<span class="hi">SegmentedTransfer</span>
+  if aggregationActive:
+    BoundHTTPClient(ifname) via CurlBridge SOCKOPT bind-if
+    validate Content-Range total always
+  else: existing URLSession path
+
+<span class="hi">TaskConnection</span> +adapterId +adapterLabel +localAddress? (optional Codable fields)
+
+<span class="hi">BoundHTTPClient</span>  blocking easy handles on worker threads;
+  one handle per stream; per-adapter isolation; redirect sanitizer</div>
+    <h3>Key files</h3>
+    <ul>
+      <li><code>CurlBridge</code> — SOCKOPTFUNCTION + HTTP range API</li>
+      <li><code>SegmentedTransfer</code>, <code>HTTPEngine</code>, <code>AppSettings</code>, <code>TaskConnection</code></li>
+      <li>New adapter enum port; Settings Network pane; <code>DetailTabs</code> Connections</li>
+      <li><code>RemoteRouter</code> ConnRow; tests for bind/sanitizer/rate/fallback</li>
+    </ul>
+  </section>
+
+  <section id="test">
+    <h2>11. Test plan</h2>
+    <h3>Phase‑0 (blocking)</h3>
+    <ol>
+      <li><strong>macOS:</strong> Wi‑Fi primary + USB hotspot secondary — SOCKOPT IP_BOUND_IF — <code>nettop</code> shows bytes on both; echo shows distinct public IPs when paths diverge.</li>
+      <li><strong>macOS control:</strong> plain CURLOPT_INTERFACE only — document failure on non-primary (proves why SOCKOPT is required).</li>
+      <li><strong>Linux:</strong> name-based SO_BINDTODEVICE works unprivileged; IP-only does not steer.</li>
+      <li>VPN present: physical bind behavior documented; default product policy = off.</li>
+    </ol>
+    <h3>Unit / integration</h3>
+    <ul>
+      <li>Adapter filters; pool demotion; resume cursor adapter-free; primary Content-Range validation.</li>
+      <li>Redirect sanitizer on curl redirects; cookie domain scoping; RateLimiter aggregate under N handles.</li>
+      <li>H2/isolation: two adapters ⇒ two connections (no cross reuse).</li>
+      <li>Policy: proxy / VPN / Low profile / expensive gate matrix.</li>
+      <li>Chaos: unplug secondary; flapping; pause/remove cancel (no zombie writers).</li>
+    </ul>
+  </section>
+
+  <section id="plan">
+    <h2>12. Phases (re-ordered gates)</h2>
+    <div class="phase">
+      <div class="phase-num">0</div>
+      <div>
+        <h3>Spike — egress proof (mandatory, both OS)</h3>
+        <ul>
+          <li><strong>Gate #1:</strong> Does per-interface <em>egress</em> (not just bind) work on macOS non-primary NIC via SOCKOPT+IP_BOUND_IF?</li>
+          <li>Linux name bind-if + negative test for IP-only.</li>
+          <li>VPN / proxy observations; nettop + public IP echo.</li>
+          <li>Thread/blocking budget sketch for N streams.</li>
+        </ul>
+        <div class="meta">No-go → Network.framework rewrite estimate OR kill multi-path; do not start Settings UI pretending transport works.</div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">1</div>
+      <div>
+        <h3>Settings + discovery (inert)</h3>
+        <ul>
+          <li>Flat AppSettings fields; AdapterDirectory; expensive independent gate; VPN danger toggle; help copy; opt-in path-diversity probe UI stub.</li>
+        </ul>
+        <div class="meta">No transfer behavior yet.</div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">2</div>
+      <div>
+        <h3>HTTP multi-path MVP</h3>
+        <ul>
+          <li>CurlBridge HTTP range + SOCKOPT bind-if + sanitizer + cancel.</li>
+          <li>AdapterPool; primary Content-Range validation; Swift RateLimiter only; per-adapter connection isolation.</li>
+          <li>Connections telemetry truth; Why single path?; feature flag kill-switch.</li>
+          <li>Minimal same-public-IP probe (stricter guard).</li>
+        </ul>
+        <div class="meta">Lab dual-WAN proof matches Definition of Done.</div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">3</div>
+      <div>
+        <h3>Hardening</h3>
+        <ul>
+          <li>Weighted rebalance (new — not governor reuse); auto single-path if not helping; cellular counters; portal labels; localization expansion.</li>
+        </ul>
+        <div class="meta">No open P0/P1; dogfood week.</div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">4</div>
+      <div>
+        <h3>Expand (optional)</h3>
+        <ul>
+          <li>HLS · torrent outgoing_interfaces · FTP pin (same bind-if) · Linux expensive heuristics polish.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="decide">
+    <h2>13. Decisions (audit-locked)</h2>
+    <table>
+      <thead><tr><th>#</th><th>Decision</th><th>Lock</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Transport</td><td><strong>Curl + SOCKOPTFUNCTION → IP_BOUND_IF (macOS) / SO_BINDTODEVICE (Linux)</strong> — not source-IP CURLOPT_INTERFACE alone</td></tr>
+        <tr><td>2</td><td>Master switch default</td><td>Off</td></tr>
+        <tr><td>3</td><td>Expensive</td><td>Independent gate, default off + confirm (not pause-on-expensive)</td></tr>
+        <tr><td>4</td><td>VPN physical bypass</td><td>Forbidden by default + scary override</td></tr>
+        <tr><td>5</td><td>Manual proxy</td><td>Aggregation inactive (v1)</td></tr>
+        <tr><td>6</td><td>Mirrors + adapters</td><td>Adapters primary; mirrors failover; primary 206 total always validated</td></tr>
+        <tr><td>7</td><td>Low profile</td><td>Respect no-extra-connections</td></tr>
+        <tr><td>8</td><td>Mid-download settings / adapter set</td><td>Apply on next resume</td></tr>
+        <tr><td>9</td><td>v1 protocols</td><td>HTTP(S) only</td></tr>
+        <tr><td>10</td><td>Linux</td><td>In Phase‑0 spike (not deferred risk); product polish can lag</td></tr>
+        <tr><td>11</td><td>Auto-disable if not helping</td><td>Phase 3</td></tr>
+        <tr><td>12</td><td>Public-IP diversity probe</td><td><strong>Minimal opt-in in MVP</strong>, stricter-than-NetworkGuard</td></tr>
+        <tr><td>13</td><td>Rate limit</td><td>Swift RateLimiter aggregate; curl max_recv = 0</td></tr>
+        <tr><td>14</td><td>H2 / connections</td><td>≥1 distinct connection per adapter; no cross-adapter reuse</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="kill">
+    <h2>14. Kill / pivot criteria</h2>
+    <div class="grid grid-2">
+      <div class="card">
+        <span class="tag no">Kill multi-path</span>
+        <h3>Stop</h3>
+        <p>SOCKOPT+IP_BOUND_IF cannot make non-primary NIC carry download bytes on release builds · VPN-safe design impossible · dual stacks unmaintainable · dual-WAN lab shows no gain when egress works.</p>
+      </div>
+      <div class="card">
+        <span class="tag warn">Pivot</span>
+        <h3>Alternatives</h3>
+        <p>Per-download single-adapter pin only · Network.framework HTTP rewrite · external bonding · “path preference” without fan-out.</p>
+      </div>
+    </div>
+    <div class="callout ok">
+      <strong>MVP done when:</strong> Wi‑Fi + hotspot both carry ranged bytes (nettop truth) · Connections labels match · unplug hotspot still finishes ·
+      expensive off · VPN not bypassed by default · same-router users get honest tip · RateLimiter still aggregate · feature flag can kill engine path instantly.
+    </div>
+  </section>
+
+  <footer>
+    Goel° Network Aggregation plan <strong>v3</strong> · incorporates deep audit (code line-checks + curl/macOS/Linux egress research) ·
+    companion verification: <a href="plan-audit.html">plan-audit.html</a> · Phase‑0 egress spike is mandatory before product UI.
+  </footer>
+</div>
+</body>
+</html>

@@ -22,15 +22,26 @@ public struct TaskConnection: Codable, Sendable, Equatable, Hashable, Identifiab
     /// remote peer's own completeness). 0…1.
     public var progress: Double
 
+    /// Network adapter carrying this connection (multi-path HTTP), e.g. `en0`.
+    /// Optional for backward-compatible decode of older snapshots.
+    public var adapterId: String?
+
+    /// Display label for the adapter (e.g. `Wi‑Fi`).
+    public var adapterLabel: String?
+
     public init(id: String, label: String, detail: String,
                 downloadSpeed: Double = 0, uploadSpeed: Double = 0,
-                progress: Double = 0) {
+                progress: Double = 0,
+                adapterId: String? = nil,
+                adapterLabel: String? = nil) {
         self.id = id
         self.label = label
         self.detail = detail
         self.downloadSpeed = downloadSpeed
         self.uploadSpeed = uploadSpeed
         self.progress = progress
+        self.adapterId = adapterId
+        self.adapterLabel = adapterLabel
     }
 }
 

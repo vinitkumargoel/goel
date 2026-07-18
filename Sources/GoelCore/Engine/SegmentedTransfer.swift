@@ -1,4 +1,5 @@
 import Foundation
+import CurlBridge
 
 // MARK: - Segmented transfer
 
@@ -58,23 +59,34 @@ final class SegmentedTransfer: Sendable {
             self.restoredBytes = [:]
             return
         }
+        let multiPath = plan.boundAdapters.count >= 2
+        let wanted = multiPath
+            ? max(plan.segmentCount, plan.boundAdapters.count)
+            : plan.segmentCount
+
         if let data = plan.existingResume,
            let cursor = try? JSONDecoder().decode(ResumeCursor.self, from: data),
            cursor.totalBytes == total,
            Self.cursorIsWellFormed(cursor, total: total),
            Self.validatorsAllowResume(
                 cursorETag: cursor.etag, cursorLastModified: cursor.lastModified,
-                probeETag: plan.etag, probeLastModified: plan.lastModified) {
+                probeETag: plan.etag, probeLastModified: plan.lastModified),
+           // Multi-path needs ≥1 range per adapter. A stale single-segment resume
+           // from before aggregation was enabled would pin everything to one NIC.
+           !(multiPath && cursor.ranges.count < plan.boundAdapters.count
+             && cursor.completed.allSatisfy { $0 == 0 }) {
             // Remote unchanged and cursor sound: continue from where we left off.
             self.segmented = true
             self.plannedRanges = cursor.ranges
             self.restoredBytes = Dictionary(
                 uniqueKeysWithValues: cursor.completed.enumerated().map { ($0.offset, $0.element) })
         } else {
-            // Fresh start (or remote changed / cursor unusable): rebuild from scratch.
+            // Fresh start (or remote changed / cursor unusable / multi-path upgrade).
             self.segmented = true
-            self.plannedRanges = Self.makeRanges(
-                total: total, count: Self.clampSegmentCount(plan.segmentCount, total: total))
+            let count = multiPath
+                ? Self.clampSegmentCount(wanted, total: total, minSegment: 32 * 1024)
+                : Self.clampSegmentCount(wanted, total: total)
+            self.plannedRanges = Self.makeRanges(total: total, count: count)
             self.restoredBytes = [:]
         }
     }
@@ -115,6 +127,17 @@ final class SegmentedTransfer: Sendable {
         // Segments spread across the primary + mirrors round-robin; a mirror
         // that misbehaves is demoted and its segment retries elsewhere.
         let pool = MirrorPool(primary: plan.url, mirrors: plan.mirrors)
+        // Multi-path: pin segments to selected adapters via CurlBridge bind-if.
+        let adapterPool: AdapterPool? = plan.boundAdapters.count >= 2
+            ? AdapterPool(plan.boundAdapters) : nil
+        if let adapterPool {
+            // Seed ledger adapter labels for Connections UI before first tick.
+            for i in ranges.indices {
+                if let a = await adapterPool.assign(segment: i) {
+                    await ledger.setAdapter(segment: i, id: a.bsdName, label: a.label)
+                }
+            }
+        }
 
         try await withThrowingTaskGroup(of: Void.self) { group in
             for (i, range) in ranges.enumerated() {
@@ -122,9 +145,16 @@ final class SegmentedTransfer: Sendable {
                 let segStart = range.start + already
                 if segStart > range.end { continue } // segment already complete
                 group.addTask {
-                    try await self.downloadSegment(session: session, governor: governor, limiter: limiter,
-                                                   ledger: ledger, pool: pool, index: i,
-                                                   from: segStart, to: range.end, fileURL: self.plan.destination)
+                    if let adapterPool {
+                        try await self.downloadSegmentBound(
+                            governor: governor, limiter: limiter, ledger: ledger,
+                            pool: pool, adapters: adapterPool, index: i,
+                            from: segStart, to: range.end, fileURL: self.plan.destination)
+                    } else {
+                        try await self.downloadSegment(session: session, governor: governor, limiter: limiter,
+                                                       ledger: ledger, pool: pool, index: i,
+                                                       from: segStart, to: range.end, fileURL: self.plan.destination)
+                    }
                 }
             }
             try await group.waitForAll()
@@ -216,13 +246,13 @@ final class SegmentedTransfer: Sendable {
                     case .accept:
                         break   // 206 — proceed to the mirror content-range check + body
                     }
-                    // A mirror must be serving the same representation: its 206 has
-                    // to describe the same total size. Divergent mirrors are demoted
-                    // and the segment retries elsewhere (the wrong body is cancelled).
-                    if isMirror, let expected = plan.totalBytes,
-                       Self.contentRangeTotal(http) != expected {
+                    // Every 206 (primary *and* mirror, any adapter path) must describe
+                    // the same total size — geo-split / wrong-object must not merge.
+                    if let expected = plan.totalBytes,
+                       let got = Self.contentRangeTotal(http),
+                       got != expected {
                         streamer.cancelTask()
-                        await pool.demote(url)
+                        if isMirror { await pool.demote(url) }
                         await governor.release()
                         if attempt >= settings.maxAttempts { throw DownloadError.remoteFileChanged }
                         continue
@@ -271,6 +301,166 @@ final class SegmentedTransfer: Sendable {
             }
             // Close explicitly so a flush/close failure propagates and fails the
             // task, instead of reporting `.completed` over a half-flushed file.
+            try handle.close()
+        } catch {
+            try? handle.close()
+            throw error
+        }
+    }
+
+    // MARK: Multi-path (interface-bound) segmented download
+
+    /// Same segment pump as ``downloadSegment`` but each attempt uses
+    /// ``BoundHTTPClient`` (CurlBridge + IP_BOUND_IF / SO_BINDTODEVICE) so
+    /// traffic egresses a chosen adapter. Adapters are assigned round-robin and
+    /// demoted on bind/auth failures; mirrors still provide URL failover.
+    private func downloadSegmentBound(
+        governor: ConnectionGovernor, limiter: RateLimiter?,
+        ledger: Ledger, pool: MirrorPool, adapters: AdapterPool,
+        index: Int, from start: Int64, to end: Int64, fileURL: URL
+    ) async throws {
+        let settings = plan.settings
+        let handle = try FileHandle(forWritingTo: fileURL)
+        var written: Int64 = 0
+        var attempt = 0
+        do {
+            try await withTaskCancellationHandler {
+                while start + written <= end {
+                    try Task.checkCancellation()
+                    attempt += 1
+                    let segStart = start + written
+                    let url = await pool.url(segment: index, attempt: attempt)
+                    // Match URLSession path: strip secrets only on host change.
+                    let isCrossHost = url.host?.lowercased() != plan.url.host?.lowercased()
+                    let isMirror = url != plan.url
+                    guard let adapter = await adapters.assign(segment: index + attempt - 1) else {
+                        throw DownloadError.network("No network adapters available for multi-path")
+                    }
+                    await ledger.setAdapter(segment: index, id: adapter.bsdName, label: adapter.label)
+
+                    try await governor.acquire()
+                    var reqSettings = settings
+                    if isCrossHost {
+                        reqSettings.authorization = nil
+                        reqSettings.referer = nil
+                        reqSettings.extraHeaders = [:]
+                    }
+                    let boundReq = BoundHTTPClient.Request(
+                        url: url,
+                        rangeStart: segStart,
+                        rangeEnd: end,
+                        interfaceName: adapter.bsdName,
+                        userAgent: reqSettings.userAgent,
+                        referer: reqSettings.referer,
+                        authorization: reqSettings.authorization,
+                        extraHeaders: reqSettings.extraHeaders,
+                        connectTimeout: plan.connectTimeout,
+                        expectedTotal: plan.totalBytes
+                    )
+
+                    // Blocking curl path — RateLimiter inside BoundHTTPClient.
+                    // Ledger is advanced only when we commit `written` (no double-count).
+                    let response = await BoundHTTPClient.downloadRange(
+                        boundReq, file: handle, fileOffset: UInt64(segStart),
+                        limiter: limiter)
+
+                    if response.aborted && !response.rangeTotalMismatch {
+                        await governor.release()
+                        throw CancellationError()
+                    }
+
+                    // Content-Range mismatch: CurlBridge aborts before writing body.
+                    // Do not credit ledger or `written`.
+                    if response.rangeTotalMismatch {
+                        if isMirror { await pool.demote(url) }
+                        await adapters.demote(adapter)
+                        await governor.release()
+                        if attempt >= settings.maxAttempts { throw DownloadError.remoteFileChanged }
+                        try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                        continue
+                    }
+
+                    // Curl transport errors. Partial on-disk bytes (if any) are
+                    // committed so the next attempt resumes, without double-counting.
+                    if response.curlCode != 0 {
+                        if response.bytesWritten > 0 {
+                            written += response.bytesWritten
+                            await ledger.advance(segment: index, by: Int(response.bytesWritten))
+                        }
+                        await adapters.demote(adapter)
+                        if isMirror { await pool.demote(url) }
+                        await governor.release()
+                        if attempt >= settings.maxAttempts {
+                            let msg = String(cString: gcb_error_message(Int32(response.curlCode)))
+                            throw DownloadError.network(msg)
+                        }
+                        try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                        continue
+                    }
+
+                    let status = response.httpStatus
+                    switch Self.classify(status, ranged: true) {
+                    case .retry:
+                        if isMirror { await pool.demote(url) }
+                        await governor.throttleDown()
+                        await governor.release()
+                        if attempt >= settings.maxAttempts { throw DownloadError.httpStatus(status) }
+                        try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                        continue
+                    case .reject:
+                        await governor.release()
+                        if status == 401 || status == 403 {
+                            await adapters.demote(adapter)
+                        }
+                        if isMirror, attempt < settings.maxAttempts {
+                            await pool.demote(url)
+                            continue
+                        }
+                        throw DownloadError.httpStatus(status)
+                    case .accept:
+                        break
+                    }
+
+                    // Multi-path requires a matching Content-Range total (Swift-side belt).
+                    if let expected = plan.totalBytes {
+                        guard let got = response.contentRangeTotal, got == expected else {
+                            if isMirror { await pool.demote(url) }
+                            await adapters.demote(adapter)
+                            await governor.release()
+                            if attempt >= settings.maxAttempts { throw DownloadError.remoteFileChanged }
+                            try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                            continue
+                        }
+                    }
+
+                    // Commit progress only after accept + Content-Range validation.
+                    if response.bytesWritten > 0 {
+                        written += response.bytesWritten
+                        await ledger.advance(segment: index, by: Int(response.bytesWritten))
+                    }
+                    await governor.release()
+
+                    if start + written > end { break }
+                    if response.bytesWritten == 0 {
+                        await adapters.demote(adapter)
+                        if attempt >= settings.maxAttempts {
+                            throw DownloadError.network(
+                                "Incomplete segment \(index): got \(written) of \(end - start + 1) bytes")
+                        }
+                        try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                        continue
+                    }
+                    if start + written <= end {
+                        if attempt >= settings.maxAttempts {
+                            throw DownloadError.network(
+                                "Incomplete segment \(index): got \(written) of \(end - start + 1) bytes")
+                        }
+                        try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
+                    }
+                }
+            } onCancel: {
+                // BoundHTTPClient observes Task cancellation via withTaskCancellationHandler.
+            }
             try handle.close()
         } catch {
             try? handle.close()
@@ -408,8 +598,8 @@ final class SegmentedTransfer: Sendable {
 
     /// The size-only clamp, factored out as `static` so ``init`` can resolve the
     /// fan-out before any instance method is available.
-    static func clampSegmentCount(_ requested: Int, total: Int64) -> Int {
-        let minSegment: Int64 = 64 * 1024
+    static func clampSegmentCount(_ requested: Int, total: Int64,
+                                  minSegment: Int64 = 64 * 1024) -> Int {
         let bySize = max(1, Int((total + minSegment - 1) / minSegment))
         return max(1, min(requested, bySize))
     }
@@ -678,6 +868,8 @@ final class SegmentedTransfer: Sendable {
         private var segmentBytes: [Int: Int64]
         /// Constant for a download's lifetime (the live fan-out reported to the UI).
         private let connectionCount: Int
+        /// Multi-path adapter labels per segment index (bsdName / display).
+        private var segmentAdapters: [Int: (id: String, label: String)] = [:]
         /// Two-point speed window: the time and byte count at the previous emit.
         private var lastEmit = Date.distantPast
         private var lastEmitBytes: Int64 = 0
@@ -692,6 +884,10 @@ final class SegmentedTransfer: Sendable {
             self.meta = meta
             self.segmentBytes = initialSegmentBytes
             self.connectionCount = connectionCount
+        }
+
+        func setAdapter(segment: Int, id: String, label: String) {
+            segmentAdapters[segment] = (id, label)
         }
 
         func totalBytes() -> Int64 { segmentBytes.values.reduce(0, +) }
@@ -736,12 +932,15 @@ final class SegmentedTransfer: Sendable {
                 let length = range.end - range.start + 1
                 let done = segmentBytes[i] ?? 0
                 let speed = dt < 3600 ? Double(done - (lastConnectionsBytes[i] ?? 0)) / dt : 0
+                let adapter = segmentAdapters[i]
                 return TaskConnection(
                     id: "seg-\(i)",
                     label: "Segment \(i + 1)",
                     detail: "\(Self.byteLabel(range.start)) – \(Self.byteLabel(range.end + 1))",
                     downloadSpeed: max(0, speed),
-                    progress: length > 0 ? min(1, Double(done) / Double(length)) : 0)
+                    progress: length > 0 ? min(1, Double(done) / Double(length)) : 0,
+                    adapterId: adapter?.id,
+                    adapterLabel: adapter?.label)
             }
         }
 
@@ -797,6 +996,11 @@ struct TransferPlan: Sendable {
     /// (a 206's Content-Range total proves a mirror serves the same file; the
     /// single-stream path has no such check, so it stays on the primary).
     var mirrors: [URL] = []
+    /// When non-empty **and** ranges are used, segments bind to these adapters
+    /// via CurlBridge egress scoping (network aggregation). Empty ⇒ URLSession path.
+    var boundAdapters: [BoundAdapter] = []
+    /// Connect timeout forwarded to bound HTTP (seconds).
+    var connectTimeout: Double = 30
 }
 
 /// Per-request knobs threaded into the byte pumps (which read no actor state).
@@ -812,6 +1016,12 @@ struct RequestSettings: Sendable {
     /// Extra per-task request headers (already sanitised of reserved names).
     /// Same-origin only — stripped on a cross-host mirror request.
     var extraHeaders: [String: String] = [:]
+}
+
+/// Per-segment adapter assignment for Connections UI (multi-path).
+struct SegmentAdapterBinding: Sendable {
+    var adapterId: String
+    var adapterLabel: String
 }
 
 /// The result of a finished transfer.

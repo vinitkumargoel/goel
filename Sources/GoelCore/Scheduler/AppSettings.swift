@@ -101,11 +101,45 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Seconds to wait between retries.
     public var retryInterval: Double
 
+    /// Automatically re-queue a whole download that has *failed* and try it
+    /// again — up to ``autoRetryMaxAttempts`` times, waiting an exponentially
+    /// growing delay between attempts. Distinct from ``retryCount`` (the HTTP
+    /// engine's per-request budget within a single run). Off by default.
+    public var autoRetryEnabled: Bool
+
+    /// How many times a failed download is auto-retried before it is left in the
+    /// failed state for a manual retry. Only used when ``autoRetryEnabled``.
+    public var autoRetryMaxAttempts: Int
+
     /// User-Agent header sent with HTTP requests.
     public var userAgent: String
 
     /// Reuse cookies for protected downloads.
     public var cookieAuthEnabled: Bool
+
+    // MARK: Network aggregation (multi-path)
+
+    /// Master switch for multi-adapter HTTP downloads. Default off.
+    public var aggregationEnabled: Bool
+
+    /// BSD interface names selected to participate. Empty = all eligible adapters
+    /// when aggregation is enabled.
+    public var aggregationAdapterIds: [String]
+
+    /// Allow expensive (cellular/hotspot) adapters. Independent of pause-on-expensive.
+    public var aggregationIncludeExpensive: Bool
+
+    /// Allow binding outside an active VPN default route (dangerous; default off).
+    public var aggregationAllowOutsideVPN: Bool
+
+    /// Parallel streams targeted per adapter (segment floor ≈ adapters × this).
+    public var aggregationStreamsPerAdapter: Int
+
+    /// `roundRobin` (v1) | `weighted` (reserved).
+    public var aggregationStrategy: String
+
+    /// Opt-in same-public-IP diversity probe (honest UX when multi-NIC shares one WAN).
+    public var aggregationPathDiversityProbe: Bool
 
     // MARK: BitTorrent
 
@@ -353,8 +387,18 @@ public struct AppSettings: Codable, Sendable, Hashable {
         connectionTimeout: Double = 30,
         retryCount: Int = 3,
         retryInterval: Double = 5,
+        autoRetryEnabled: Bool = false,
+        autoRetryMaxAttempts: Int = 5,
         userAgent: String = "GoelDownloader/1.0 (macOS)",
         cookieAuthEnabled: Bool = true,
+        // Network aggregation
+        aggregationEnabled: Bool = false,
+        aggregationAdapterIds: [String] = [],
+        aggregationIncludeExpensive: Bool = false,
+        aggregationAllowOutsideVPN: Bool = false,
+        aggregationStreamsPerAdapter: Int = 2,
+        aggregationStrategy: String = "roundRobin",
+        aggregationPathDiversityProbe: Bool = false,
         // BitTorrent
         btMakeDefaultClient: Bool = false,
         btAutoDeleteTorrent: Bool = false,
@@ -450,8 +494,17 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.connectionTimeout = connectionTimeout
         self.retryCount = retryCount
         self.retryInterval = retryInterval
+        self.autoRetryEnabled = autoRetryEnabled
+        self.autoRetryMaxAttempts = autoRetryMaxAttempts
         self.userAgent = userAgent
         self.cookieAuthEnabled = cookieAuthEnabled
+        self.aggregationEnabled = aggregationEnabled
+        self.aggregationAdapterIds = aggregationAdapterIds
+        self.aggregationIncludeExpensive = aggregationIncludeExpensive
+        self.aggregationAllowOutsideVPN = aggregationAllowOutsideVPN
+        self.aggregationStreamsPerAdapter = aggregationStreamsPerAdapter
+        self.aggregationStrategy = aggregationStrategy
+        self.aggregationPathDiversityProbe = aggregationPathDiversityProbe
         self.btMakeDefaultClient = btMakeDefaultClient
         self.btAutoDeleteTorrent = btAutoDeleteTorrent
         self.btWatchFolderEnabled = btWatchFolderEnabled
@@ -518,7 +571,10 @@ public struct AppSettings: Codable, Sendable, Hashable {
         case theme, language, launchAtLogin, launchMinimized, menuBarExtraEnabled, defaultFolderRule
         case existingFileReaction, clipboardMonitorEnabled, hlsMaxHeight, detailPanelPosition
         case proxyMode, proxyType, proxyAllProtocols, proxyHost, proxyPort, connectionTimeout, retryCount
-        case retryInterval, userAgent, cookieAuthEnabled
+        case retryInterval, autoRetryEnabled, autoRetryMaxAttempts, userAgent, cookieAuthEnabled
+        case aggregationEnabled, aggregationAdapterIds, aggregationIncludeExpensive
+        case aggregationAllowOutsideVPN, aggregationStreamsPerAdapter, aggregationStrategy
+        case aggregationPathDiversityProbe
         case btMakeDefaultClient, btAutoDeleteTorrent, btWatchFolderEnabled
         case btWatchFolderPath, btWatchStartWithoutConfirmation, btEncryptionMode
         case btEnableDHT, btEnablePeX, btEnableLPD, btEnableUTP
@@ -570,8 +626,17 @@ public struct AppSettings: Codable, Sendable, Hashable {
         connectionTimeout = try c.decodeIfPresent(Double.self, forKey: .connectionTimeout) ?? 30
         retryCount = try c.decodeIfPresent(Int.self, forKey: .retryCount) ?? 3
         retryInterval = try c.decodeIfPresent(Double.self, forKey: .retryInterval) ?? 5
+        autoRetryEnabled = try c.decodeIfPresent(Bool.self, forKey: .autoRetryEnabled) ?? false
+        autoRetryMaxAttempts = try c.decodeIfPresent(Int.self, forKey: .autoRetryMaxAttempts) ?? 5
         userAgent = try c.decodeIfPresent(String.self, forKey: .userAgent) ?? "GoelDownloader/1.0 (macOS)"
         cookieAuthEnabled = try c.decodeIfPresent(Bool.self, forKey: .cookieAuthEnabled) ?? true
+        aggregationEnabled = try c.decodeIfPresent(Bool.self, forKey: .aggregationEnabled) ?? false
+        aggregationAdapterIds = try c.decodeIfPresent([String].self, forKey: .aggregationAdapterIds) ?? []
+        aggregationIncludeExpensive = try c.decodeIfPresent(Bool.self, forKey: .aggregationIncludeExpensive) ?? false
+        aggregationAllowOutsideVPN = try c.decodeIfPresent(Bool.self, forKey: .aggregationAllowOutsideVPN) ?? false
+        aggregationStreamsPerAdapter = try c.decodeIfPresent(Int.self, forKey: .aggregationStreamsPerAdapter) ?? 2
+        aggregationStrategy = try c.decodeIfPresent(String.self, forKey: .aggregationStrategy) ?? "roundRobin"
+        aggregationPathDiversityProbe = try c.decodeIfPresent(Bool.self, forKey: .aggregationPathDiversityProbe) ?? false
         btMakeDefaultClient = try c.decodeIfPresent(Bool.self, forKey: .btMakeDefaultClient) ?? false
         btAutoDeleteTorrent = try c.decodeIfPresent(Bool.self, forKey: .btAutoDeleteTorrent) ?? false
         btWatchFolderEnabled = try c.decodeIfPresent(Bool.self, forKey: .btWatchFolderEnabled) ?? false

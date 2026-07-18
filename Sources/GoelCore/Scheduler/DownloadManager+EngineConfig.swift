@@ -31,6 +31,80 @@ extension DownloadManager {
         await (httpEngine as? HTTPConfigurable)?.configure(httpNetworkConfig())
         await (torrentEngine as? TorrentControlling)?.configure(torrentSessionConfig())
         await (hlsEngine as? HLSConfigurable)?.configure(maxHeight: settings.hlsMaxHeight)
+        await applyAggregationConfig()
+    }
+
+    /// Public re-entry for the app layer after adapter/settings changes.
+    public func reapplyEngineConfigsPublic() async {
+        await applyEngineConfigs()
+    }
+
+    /// Build multi-path config from settings + live interfaces and push to HTTPEngine.
+    func applyAggregationConfig() async {
+        let config = Self.makeAggregationConfig(settings: settings, vpnDefaultRoute: vpnDefaultRouteActive)
+        await (httpEngine as? HTTPConfigurable)?.configureAggregation(config)
+    }
+
+    /// Whether the system default route appears to be a VPN interface (utun/…).
+    /// Updated by the app layer via ``setVPNDefaultRouteActive``.
+    public func setVPNDefaultRouteActive(_ active: Bool) {
+        vpnDefaultRouteActive = active
+    }
+
+    /// Pure builder for the aggregation engine snapshot (unit-testable).
+    static func makeAggregationConfig(
+        settings: AppSettings,
+        vpnDefaultRoute: Bool,
+        adapters: [NetworkAdapter]? = nil
+    ) -> AggregationEngineConfig {
+        let all = adapters ?? AdapterDirectory.enumerate()
+        let selected = AggregationPolicy.effectiveSelection(
+            selectedIds: settings.aggregationAdapterIds, all: all)
+        let usable = AggregationPolicy.usableAdapters(
+            all: all,
+            selectedIds: selected,
+            includeExpensive: settings.aggregationIncludeExpensive,
+            includeVPN: settings.aggregationAllowOutsideVPN
+        )
+        if AggregationPolicy.shouldActivate(
+            enabled: settings.aggregationEnabled,
+            usableAdapterCount: usable.count,
+            enableExtraConnections: settings.effectiveProfile.enableExtraConnections,
+            proxyMode: settings.proxyMode,
+            vpnDefaultRoute: vpnDefaultRoute,
+            allowOutsideVPN: settings.aggregationAllowOutsideVPN
+        ) != nil {
+            return .disabled
+        }
+        return AggregationEngineConfig(
+            adapters: usable.map(BoundAdapter.init),
+            streamsPerAdapter: settings.aggregationStreamsPerAdapter
+        )
+    }
+
+    /// User-visible reason multi-path is inactive (nil when active).
+    public static func aggregationSinglePathReason(
+        settings: AppSettings,
+        vpnDefaultRoute: Bool,
+        adapters: [NetworkAdapter]? = nil
+    ) -> AggregationPolicy.SinglePathReason? {
+        let all = adapters ?? AdapterDirectory.enumerate()
+        let selected = AggregationPolicy.effectiveSelection(
+            selectedIds: settings.aggregationAdapterIds, all: all)
+        let usable = AggregationPolicy.usableAdapters(
+            all: all,
+            selectedIds: selected,
+            includeExpensive: settings.aggregationIncludeExpensive,
+            includeVPN: settings.aggregationAllowOutsideVPN
+        )
+        return AggregationPolicy.shouldActivate(
+            enabled: settings.aggregationEnabled,
+            usableAdapterCount: usable.count,
+            enableExtraConnections: settings.effectiveProfile.enableExtraConnections,
+            proxyMode: settings.proxyMode,
+            vpnDefaultRoute: vpnDefaultRoute,
+            allowOutsideVPN: settings.aggregationAllowOutsideVPN
+        )
     }
 
     private func httpNetworkConfig() -> HTTPNetworkConfig {

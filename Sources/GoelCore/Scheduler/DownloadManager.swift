@@ -63,6 +63,16 @@ public actor DownloadManager {
     /// Per-task event-stream consumers.
     var consumers: [UUID: Task<Void, Never>] = [:]
 
+    /// Pending auto-retry timers: one per failed task waiting out its backoff
+    /// before being re-queued (see ``AppSettings/autoRetryEnabled``). Cancelled
+    /// if the task is removed, manually retried, or resumed in the meantime.
+    var autoRetryTasks: [UUID: Task<Void, Never>] = [:]
+
+    /// Auto-retry backoff shape: `base · 2^(attempt-1)`, capped. Mirrors the
+    /// HTTP engine's per-request backoff so the two feel consistent.
+    static let autoRetryBaseDelay: TimeInterval = 2
+    static let autoRetryMaxBackoff: TimeInterval = 60
+
     /// Snapshot observers.
     private var observers: [UUID: AsyncStream<[DownloadTask]>.Continuation] = [:]
 
@@ -117,6 +127,10 @@ public actor DownloadManager {
     /// pause-on-expensive/constrained settings change.
     var lastPathExpensive = false
     var lastPathConstrained = false
+
+    /// True when the system default route is a VPN interface. Multi-path physical
+    /// binds are refused unless ``AppSettings/aggregationAllowOutsideVPN``.
+    var vpnDefaultRouteActive = false
 
     // MARK: Statistics state
 
@@ -561,6 +575,50 @@ public actor DownloadManager {
     /// it. A no-op unless the task is currently `.failed`.
     public func retry(_ id: DownloadTask.ID) async {
         guard let i = index(of: id), case .failed = tasks[i].status else { return }
+        // A deliberate manual retry supersedes any armed auto-retry and restarts
+        // the auto-retry budget from scratch.
+        autoRetryTasks[id]?.cancel()
+        autoRetryTasks[id] = nil
+        tasks[i].status = .queued
+        tasks[i].downloadSpeed = 0
+        tasks[i].uploadSpeed = 0
+        tasks[i].scanVerdict = nil
+        tasks[i].scheduledAt = nil
+        tasks[i].retryAttempt = nil
+        persist(tasks[i])
+        publish()
+        schedule()
+    }
+
+    /// Arm an automatic retry for a task that just failed, if
+    /// ``AppSettings/autoRetryEnabled`` is on and its retry budget isn't spent.
+    /// Bumps the task's ``DownloadTask/retryAttempt`` and schedules a re-queue
+    /// after an exponential backoff; when the budget is exhausted the task is
+    /// left `.failed` for the user to retry by hand. Called from the `.failed`
+    /// status transition.
+    func scheduleAutoRetryIfNeeded(_ id: DownloadTask.ID) {
+        guard settings.autoRetryEnabled, settings.autoRetryMaxAttempts > 0 else { return }
+        guard let i = index(of: id), case .failed = tasks[i].status else { return }
+        let attempt = tasks[i].retryAttempt ?? 0
+        guard attempt < settings.autoRetryMaxAttempts else { return }
+        let next = attempt + 1
+        tasks[i].retryAttempt = next
+        persist(tasks[i])
+        let delay = min(Self.autoRetryMaxBackoff, Self.autoRetryBaseDelay * pow(2, Double(next - 1)))
+        autoRetryTasks[id]?.cancel()
+        autoRetryTasks[id] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.performAutoRetry(id)
+        }
+    }
+
+    /// Fire a scheduled auto-retry once its backoff elapses: re-queue the task,
+    /// but only if it is *still* failed — the user may have removed, resumed, or
+    /// manually retried it while the timer was waiting.
+    private func performAutoRetry(_ id: DownloadTask.ID) async {
+        autoRetryTasks[id] = nil
+        guard let i = index(of: id), case .failed = tasks[i].status else { return }
         tasks[i].status = .queued
         tasks[i].downloadSpeed = 0
         tasks[i].uploadSpeed = 0
@@ -577,6 +635,8 @@ public actor DownloadManager {
         if engineStarted.contains(id) {
             await engine(for: task.source).remove(id, deleteData: deleteData)
         }
+        autoRetryTasks[id]?.cancel()
+        autoRetryTasks[id] = nil
         consumers[id]?.cancel()
         consumers[id] = nil
         runningSlots.remove(id)
@@ -594,6 +654,8 @@ public actor DownloadManager {
     public func shutdown() {
         for consumer in consumers.values { consumer.cancel() }
         consumers.removeAll()
+        for retry in autoRetryTasks.values { retry.cancel() }
+        autoRetryTasks.removeAll()
         for observer in observers.values { observer.finish() }
         observers.removeAll()
         backupTask?.cancel()
