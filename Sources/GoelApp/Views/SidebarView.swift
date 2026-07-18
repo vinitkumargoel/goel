@@ -153,17 +153,27 @@ struct SidebarView: View {
     @ViewBuilder
     private func serverSubtitle(_ server: SFTPConnection, meta: ServerMeta?, selected: Bool) -> some View {
         let secondary = selected ? Color.white.opacity(0.75) : Color.secondary
-        HStack(spacing: 5) {
-            Text(meta?.ip.map { "\(server.host) · \($0)" } ?? server.host)
-                .font(.system(size: 10.5, design: .monospaced))
-                .foregroundStyle(secondary)
-                .lineLimit(1).truncationMode(.middle)
-            if let ms = meta?.latencyMS, meta?.reachability == .online {
-                Text("\(ms)ms")
-                    .font(.system(size: 9.5, weight: .medium)).monospacedDigit()
-                    .foregroundStyle(selected ? Color.white.opacity(0.6) : Color(nsColor: .tertiaryLabelColor))
+        // Don't repeat the address when the saved host is already an IP literal —
+        // "192.168.1.5 · 192.168.1.5" just truncates to a meaningless "192…5".
+        let hostLine: String = {
+            if let ip = meta?.ip, ip != server.host { return "\(server.host) · \(ip)" }
+            return server.host
+        }()
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                Text(hostLine)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(secondary)
+                    .lineLimit(1).truncationMode(.middle)
+                if let ms = meta?.latencyMS, meta?.reachability == .online {
+                    Text("\(ms)ms")
+                        .font(.system(size: 9.5, weight: .medium)).monospacedDigit()
+                        .foregroundStyle(selected ? Color.white.opacity(0.6) : Color(nsColor: .tertiaryLabelColor))
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            // The OS chip gets its own line so "Ubuntu 24.04 LTS" reads in full,
+            // instead of being squeezed to "Ub…" next to the address.
             if let os = meta?.os {
                 osChip(os, selected: selected)
             }
