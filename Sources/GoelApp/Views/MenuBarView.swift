@@ -21,6 +21,21 @@ struct MenuBarView: View {
         vm.tasks.filter { $0.status.isActive }
     }
 
+    /// The rows the popover lists: every unfinished download — actively
+    /// transferring first, then the queued/paused ones waiting on a slot — so the
+    /// list is useful even when the concurrency cap leaves most downloads waiting
+    /// (previously only the 1–2 actively transferring rows showed, so the popover
+    /// looked empty while a queue was clearly in flight). Capped to keep the
+    /// popover compact; the full queue lives in the main window.
+    private var listedTasks: [DownloadTask] {
+        let active = vm.tasks.filter { $0.status.isActive }
+        let pending = vm.tasks.filter { !$0.status.isActive && !$0.status.isTerminal }
+        return Array((active + pending).prefix(Self.maxListedRows))
+    }
+
+    /// Upper bound on popover rows (the main window shows the rest).
+    private static let maxListedRows = 8
+
     /// In-flight SFTP uploads/downloads (browser transfer center), listed below
     /// the download queue so a background upload is visible from the menu bar.
     private var activeTransfers: [SFTPTransfer] {
@@ -31,12 +46,12 @@ struct MenuBarView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if activeTasks.isEmpty && activeTransfers.isEmpty {
+            if listedTasks.isEmpty && activeTransfers.isEmpty {
                 emptyState
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(activeTasks) { task in
+                        ForEach(listedTasks) { task in
                             MenuBarDownloadRow(task: task, vm: vm)
                             Divider()
                         }
@@ -72,9 +87,12 @@ struct MenuBarView: View {
     // MARK: Header
 
     private var header: some View {
-        let activeCount = activeTasks.count + activeTransfers.count
+        // Count what the popover actually lists (unfinished downloads + live SFTP
+        // transfers), so the header number matches the rows below rather than only
+        // the actively-transferring subset.
+        let count = listedTasks.count + activeTransfers.count
         return HStack(spacing: 12) {
-            Text(activeCount == 0 ? "Downloads" : "Active · \(activeCount)")
+            Text(count == 0 ? "Downloads" : "Downloads · \(count)")
                 .font(.system(size: 13, weight: .semibold))
             Spacer(minLength: 0)
             speedStat(symbol: "arrow.down", value: vm.displayedCombinedSpeed.down, color: Theme.green)

@@ -322,6 +322,42 @@ final class MoreFeatureTests: XCTestCase {
         XCTAssertNil(DownloadSource.parse("file:///etc/passwd"))
     }
 
+    // MARK: Clipboard capture — downloadable-file heuristic
+
+    func testLooksLikeDownloadableFileAcceptsRealFiles() {
+        // Concrete file extensions → offered by the passive clipboard banner.
+        for locator in ["https://host.example/movie.mp4",
+                        "https://host.example/archive.zip?token=abc",
+                        "http://host.example/pub/report.pdf",
+                        "https://host.example/app-1.2.3.dmg",
+                        "https://host.example/os.iso"] {
+            XCTAssertEqual(DownloadSource.parse(locator)?.looksLikeDownloadableFile, true,
+                           "\(locator) should read as a downloadable file")
+        }
+    }
+
+    func testLooksLikeDownloadableFileRejectsWebPages() {
+        // Page/markup extensions and extensionless URLs → NOT offered.
+        for locator in ["https://news.example/article.html",
+                        "https://host.example/index.php",
+                        "https://host.example/search.aspx?q=x",
+                        "https://github.com/user/repo",
+                        "https://host.example/",
+                        "https://host.example/some/path"] {
+            XCTAssertEqual(DownloadSource.parse(locator)?.looksLikeDownloadableFile, false,
+                           "\(locator) should NOT be offered as a download")
+        }
+    }
+
+    func testLooksLikeDownloadableFileAlwaysAcceptsFileTransferSources() {
+        // Magnet / torrent / HLS / FTP / SFTP are file transfers regardless of path.
+        XCTAssertEqual(DownloadSource.parse("magnet:?xt=urn:btih:abcdef")?.looksLikeDownloadableFile, true)
+        XCTAssertEqual(DownloadSource.parse("https://host.example/x.torrent")?.looksLikeDownloadableFile, true)
+        XCTAssertEqual(DownloadSource.parse("https://host.example/stream.m3u8")?.looksLikeDownloadableFile, true)
+        XCTAssertEqual(DownloadSource.parse("ftp://mirror.example/pub/file.iso")?.looksLikeDownloadableFile, true)
+        XCTAssertEqual(DownloadSource.parse("sftp://user@host.example/f.bin")?.looksLikeDownloadableFile, true)
+    }
+
     // MARK: SFTP routing + host-key pinning
 
     func testSFTPURLsParseAndDeriveSFTPKind() {

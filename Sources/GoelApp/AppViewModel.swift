@@ -800,13 +800,19 @@ final class AppViewModel: ObservableObject {
     // MARK: Clipboard capture
 
     /// Called by the clipboard monitor when new text is copied. Surfaces the first
-    /// downloadable link as a suggestion banner — unless it's the same link we
-    /// already offered, or it's already in the queue.
+    /// downloadable *file* link as a suggestion banner — unless it's the same link
+    /// we already offered, or it's already in the queue.
+    ///
+    /// The passive banner deliberately skips web-page URLs (an article, a repo, a
+    /// search result the user copied to read, not to download): it offers only
+    /// sources that ``DownloadSource/looksLikeDownloadableFile`` accepts. The
+    /// explicit Add box still takes any allowed URL, so nothing is lost — this
+    /// only stops the banner nagging on ordinary browsing copies.
     func handleClipboardChange(_ text: String) {
         let link = text
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { Self.parseSource($0) != nil }
+            .first { Self.parseSource($0)?.looksLikeDownloadableFile == true }
         guard let link, link != lastClipboardHandled, let source = Self.parseSource(link) else { return }
         if tasks.contains(where: { $0.source.dedupKey == source.dedupKey }) { return }
         lastClipboardHandled = link

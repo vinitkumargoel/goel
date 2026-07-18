@@ -168,6 +168,39 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         }
     }
 
+    /// Web-page / server-script path extensions that are pages to *view*, not
+    /// files to download. Used to gate the passive clipboard-capture banner so a
+    /// copied article/repo/search URL isn't offered as a download.
+    public static let nonDownloadPageExtensions: Set<String> = [
+        "html", "htm", "xhtml", "shtml", "php", "php3", "php4", "php5", "phtml",
+        "asp", "aspx", "jsp", "jspx", "cfm", "cgi", "pl", "do", "action",
+    ]
+
+    /// A conservative heuristic for the *automatic* clipboard suggestion: does
+    /// this source look like a downloadable file rather than a web page the user
+    /// merely copied? Gates ONLY the passive clipboard banner — the explicit Add
+    /// box and the browser-extension capture still accept any allowed URL, so the
+    /// user can always download an edge-case URL by hand.
+    ///
+    /// Non-HTTP sources (magnet/torrent/HLS/FTP/SFTP) are always file transfers,
+    /// so they pass. An HTTP(S) URL passes only when its path ends in a concrete
+    /// file extension that isn't a known page/markup type — an extensionless URL
+    /// (`…/user/repo`, a bare domain, a dynamic endpoint) reads as a page and is
+    /// skipped.
+    public var looksLikeDownloadableFile: Bool {
+        switch self {
+        case .magnet, .torrentFile, .hlsStream:
+            return true
+        case .url(let url):
+            let scheme = url.scheme?.lowercased()
+            if scheme == "ftp" || scheme == "ftps" || scheme == "sftp" { return true }
+            // http/https: require a file-ish extension that isn't a web page.
+            let ext = url.pathExtension.lowercased()
+            guard !ext.isEmpty else { return false }
+            return !Self.nonDownloadPageExtensions.contains(ext)
+        }
+    }
+
     /// A canonical string used for display and copy — the full, original source
     /// (for a magnet, the complete link including its `dn=`/`tr=` parameters).
     public var locator: String {
