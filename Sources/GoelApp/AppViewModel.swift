@@ -134,6 +134,16 @@ final class AppViewModel: ObservableObject {
     @Published var editingServer: SFTPConnection?
     @Published var isServerEditorPresented: Bool = false
 
+    /// Live reachability + host/IP/OS metadata for each saved server, keyed by id
+    /// and shown in the sidebar. Refreshed by the unauthenticated probe loop and
+    /// the lazy OS detection (see `AppViewModel+SFTPStatus`).
+    @Published var serverMeta: [SFTPConnection.ID: ServerMeta] = [:]
+
+    /// Server ids whose one-shot OS probe is currently running, so switching away
+    /// and back to a server mid-probe doesn't fire a duplicate `/etc/os-release`
+    /// read. Internal bookkeeping — deliberately not `@Published`.
+    var osProbesInFlight: Set<SFTPConnection.ID> = []
+
     // MARK: SFTP transfers (app-wide center — see AppViewModel+SFTPTransfers)
 
     /// Uploads and browser-initiated downloads, owned here (not by the browser

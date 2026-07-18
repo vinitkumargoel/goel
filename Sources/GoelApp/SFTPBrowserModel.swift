@@ -36,6 +36,10 @@ struct SFTPTransfer: Identifiable {
     /// transfer's byte counter rides the meter's `down` channel either way.
     private var meter = SpeedMeter()
 
+    /// When the first byte was recorded — the origin for the warm-up average in
+    /// ``displaySpeed``. Nil until the transfer actually starts moving data.
+    private var firstByteAt: Date?
+
     /// Explicit init: the private sampling fields would otherwise make the
     /// synthesized memberwise initializer private.
     init(connectionID: UUID, name: String, direction: Direction, isDirectory: Bool,
@@ -53,17 +57,33 @@ struct SFTPTransfer: Identifiable {
     var isActive: Bool { state == .running }
     var errorMessage: String? { if case .failed(let m) = state { return m }; return nil }
 
+    /// The rate to *display*. Prefers the smoothed window average (``speed``), but
+    /// while that window is still filling — under ``SpeedMeter/minimumSpan`` of
+    /// history, where a fast LAN upload or a small file can finish before it warms
+    /// up — falls back to the plain average since the first byte. Same code path
+    /// for uploads and downloads, so a rate appears promptly either direction
+    /// rather than the smoothing swallowing short transfers whole.
+    var displaySpeed: Double {
+        if speed > 0 { return speed }
+        guard isActive, bytes > 0, let firstByteAt else { return 0 }
+        let elapsed = Date().timeIntervalSince(firstByteAt)
+        guard elapsed >= 0.2 else { return 0 }   // too little history to be meaningful
+        return Double(bytes) / elapsed
+    }
+
     /// Seconds remaining at the current rate, or nil if unknown/stalled — used
     /// for the transfer row's ETA.
     var etaSeconds: TimeInterval? {
-        guard isActive, speed > 0, total > bytes else { return nil }
-        return Double(total - bytes) / speed
+        let rate = displaySpeed
+        guard isActive, rate > 0, total > bytes else { return nil }
+        return Double(total - bytes) / rate
     }
 
     /// Absorb a fresh absolute byte count. `bytes` tracks every callback so the
     /// progress bar stays smooth; ``speed`` is the meter's window average, so
     /// it stays stable no matter how bursty the callbacks are.
     mutating func record(bytes newBytes: Int64, now: Date = Date()) {
+        if firstByteAt == nil, newBytes > 0 { firstByteAt = now }
         bytes = newBytes
         meter.record(down: newBytes, at: now)
         speed = meter.reading(at: now).down
@@ -74,6 +94,7 @@ struct SFTPTransfer: Identifiable {
         bytes = 0
         speed = 0
         meter = SpeedMeter()
+        firstByteAt = nil
     }
 }
 
@@ -113,8 +134,9 @@ extension SFTPTransfer {
         total > 0 ? "\(bytes.byteString) / \(total.byteString)" : bytes.byteString
     }
 
-    /// The live rate, e.g. "14.2 MB/s"; empty until the first windowed sample.
-    var speedLabel: String { speed > 0 ? speed.speedString : "" }
+    /// The live rate, e.g. "14.2 MB/s"; empty only for the first fraction of a
+    /// second, before even the warm-up average is meaningful.
+    var speedLabel: String { displaySpeed > 0 ? displaySpeed.speedString : "" }
 
     /// "1.2m" / "45s" remaining, or nil when unknown.
     var etaLabel: String? { etaSeconds.map { DownloadTask.etaString($0) } }

@@ -22,6 +22,15 @@ struct SFTPBrowserView: View {
     @State private var newFolderName = ""
     @State private var pendingDelete: SFTPEntry?
 
+    /// The entry currently under the pointer, for the hover highlight (list + grid).
+    @State private var hoveredEntry: SFTPEntry.ID?
+    /// The folder currently being dragged *onto*, so a drop uploads *into* it
+    /// rather than the open directory. One id at a time (the pointer is over one
+    /// folder), which also suppresses the whole-pane drop hint.
+    @State private var folderDropTarget: SFTPEntry.ID?
+    /// List vs. grid layout, remembered across launches.
+    @AppStorage("sftp.browser.gridView") private var isGrid = false
+
     init(connection: SFTPConnection, client: SFTPClient?) {
         self.connection = connection
         self.client = client
@@ -44,7 +53,12 @@ struct SFTPBrowserView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .task(id: model.connection.id) { await model.refresh() }
+        .task(id: model.connection.id) {
+            await model.refresh()
+            // Piggy-back OS detection on this already-authenticated session, so it
+            // never opens a connection of its own to an un-browsed server.
+            vm.detectServerOSIfNeeded(connection, client: client)
+        }
         // When the connection is edited (host/username/port/password), the parent
         // re-renders this view with the fresh value but the @StateObject model is
         // kept alive — so forward the new credentials in and re-list, otherwise the
@@ -56,6 +70,10 @@ struct SFTPBrowserView: View {
         // Re-list when a transfer changes the current server's contents (e.g. an
         // upload finishes) — the transfer center bumps this on completion.
         .onChange(of: vm.sftpMutationTick) { Task { await model.refresh() } }
+        // Clear any stale hover/drop highlight when the listing changes — SFTPEntry
+        // ids are just names, so a same-named entry in the new folder must not
+        // inherit the previous folder's highlight until the pointer next moves.
+        .onChange(of: model.path) { hoveredEntry = nil; folderDropTarget = nil }
         .alert("New Folder", isPresented: $showNewFolder) {
             TextField("Name", text: $newFolderName)
             Button("Cancel", role: .cancel) { newFolderName = "" }
@@ -101,6 +119,15 @@ struct SFTPBrowserView: View {
                     .lineLimit(1).truncationMode(.head)
             }
             Spacer()
+            Picker("", selection: $isGrid) {
+                Image(systemName: "list.bullet").tag(false)
+                Image(systemName: "square.grid.2x2").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 78)
+            .help("Switch between list and grid view")
+
             Button { Task { await model.goUp() } } label: {
                 Image(systemName: "arrow.up")
             }
@@ -124,22 +151,40 @@ struct SFTPBrowserView: View {
 
     private var entryList: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(model.entries) { entry in
-                    row(entry)
-                    Divider().opacity(0.35)
-                }
-            }
+            if isGrid { gridBody } else { listBody }
         }
         .overlay { if model.entries.isEmpty && !model.isLoading { emptyState } }
-        .overlay { if dropTargeted { dropHint } }
+        // Suppress the whole-pane "upload here" hint while a folder is being
+        // hovered, so that folder's own drop target reads clearly.
+        .overlay { if dropTargeted && folderDropTarget == nil { dropHint } }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             handleUploadDrop(providers)
         }
     }
 
+    private var listBody: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(model.entries) { entry in
+                row(entry)
+                Divider().opacity(0.35)
+            }
+        }
+    }
+
+    private var gridBody: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 132, maximum: 190), spacing: 12)],
+                  spacing: 12) {
+            ForEach(model.entries) { entry in
+                gridTile(entry)
+            }
+        }
+        .padding(14)
+    }
+
     private func row(_ entry: SFTPEntry) -> some View {
-        HStack(spacing: 10) {
+        let hovered = hoveredEntry == entry.id
+        let dropping = folderDropTarget == entry.id
+        return HStack(spacing: 10) {
             Image(systemName: entry.isDirectory ? "folder.fill" : "doc")
                 .foregroundStyle(entry.isDirectory ? Theme.accent : .secondary)
                 .frame(width: 18)
@@ -158,7 +203,9 @@ struct SFTPBrowserView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
+        .background(entryHighlight(hovered: hovered, dropping: dropping))
         .contentShape(Rectangle())
+        .onHover { inside in updateHover(entry.id, inside: inside) }
         .onTapGesture(count: 2) {
             if entry.isDirectory { Task { await model.open(entry) } }
         }
@@ -166,7 +213,87 @@ struct SFTPBrowserView: View {
         .ifLet(entry.isDirectory ? nil : entry) { view, file in
             view.onDrag { model.fileProvider(for: file) }
         }
+        // Drop local files onto a folder row to upload straight into it.
+        .ifLet(entry.isDirectory ? entry : nil) { view, folder in
+            view.onDrop(of: [.fileURL], isTargeted: folderDropBinding(folder.id)) { providers in
+                handleUploadDrop(providers, into: folder)
+            }
+        }
         .contextMenu { rowMenu(entry) }
+    }
+
+    /// A file/folder tile for the grid layout — same behaviours as ``row`` (open,
+    /// drag-out, drop-into, context menu) with hover + drop highlighting.
+    private func gridTile(_ entry: SFTPEntry) -> some View {
+        let hovered = hoveredEntry == entry.id
+        let dropping = folderDropTarget == entry.id
+        return VStack(spacing: 7) {
+            Image(systemName: entry.isDirectory ? "folder.fill" : "doc.fill")
+                .font(.system(size: 32))
+                .foregroundStyle(entry.isDirectory ? Theme.accent : .secondary)
+                .frame(height: 38)
+            Text(entry.name)
+                .font(.system(size: 12)).lineLimit(2).multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+            Text(entry.isDirectory ? "Folder" : entry.size.byteString)
+                .font(.system(size: 10)).monospacedDigit().foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 14).padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, minHeight: 118)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(dropping ? Theme.accent.opacity(0.16)
+                      : hovered ? Color.primary.opacity(0.06)
+                      : Color(nsColor: .controlBackgroundColor).opacity(0.45))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(dropping ? Theme.accent
+                              : hovered ? Color.primary.opacity(0.12) : Color.clear,
+                              lineWidth: dropping ? 2 : 1)
+        )
+        .contentShape(Rectangle())
+        .onHover { inside in updateHover(entry.id, inside: inside) }
+        .onTapGesture(count: 2) {
+            if entry.isDirectory { Task { await model.open(entry) } }
+        }
+        .ifLet(entry.isDirectory ? nil : entry) { view, file in
+            view.onDrag { model.fileProvider(for: file) }
+        }
+        .ifLet(entry.isDirectory ? entry : nil) { view, folder in
+            view.onDrop(of: [.fileURL], isTargeted: folderDropBinding(folder.id)) { providers in
+                handleUploadDrop(providers, into: folder)
+            }
+        }
+        .contextMenu { rowMenu(entry) }
+    }
+
+    /// The hover / drop-target fill shared by list rows.
+    @ViewBuilder
+    private func entryHighlight(hovered: Bool, dropping: Bool) -> some View {
+        if dropping {
+            Theme.accent.opacity(0.16)
+        } else if hovered {
+            Color.primary.opacity(0.06)
+        } else {
+            Color.clear
+        }
+    }
+
+    /// Track the hovered entry, only clearing when the pointer leaves the row that
+    /// currently owns the highlight (avoids a leave-event race between neighbours).
+    private func updateHover(_ id: SFTPEntry.ID, inside: Bool) {
+        if inside { hoveredEntry = id }
+        else if hoveredEntry == id { hoveredEntry = nil }
+    }
+
+    /// A per-folder `isTargeted` binding that records which folder is being dragged
+    /// onto — drives the highlight and suppresses the whole-pane hint.
+    private func folderDropBinding(_ id: SFTPEntry.ID) -> Binding<Bool> {
+        Binding(
+            get: { folderDropTarget == id },
+            set: { folderDropTarget = $0 ? id : (folderDropTarget == id ? nil : folderDropTarget) }
+        )
     }
 
     @ViewBuilder
@@ -300,6 +427,27 @@ struct SFTPBrowserView: View {
         return collectDroppedURLs(providers, fileURLsOnly: true) { urls in
             // Files and folders both upload (folders recurse in the transfer center).
             if !urls.isEmpty { vm.startUpload(items: urls, toRemoteDir: remoteDir, on: connection) }
+        }
+    }
+
+    /// Drop straight onto a folder row/tile: upload into *that* folder rather than
+    /// the open directory.
+    private func handleUploadDrop(_ providers: [NSItemProvider], into folder: SFTPEntry) -> Bool {
+        // `folder.name` comes from the server's directory listing — untrusted. Refuse
+        // any separator or parent-traversal so a hostile listing can't steer an
+        // upload outside the browsed directory. (Hidden ".config"-style names stay
+        // allowed; only path structure is rejected.)
+        guard !folder.name.contains("/"), folder.name != "..", folder.name != "." else {
+            vm.toastNow("Can’t upload into “\(folder.name)”")
+            return false
+        }
+        let connection = model.connection
+        let remoteDir = SFTPBrowserModel.join(model.path, folder.name)
+        return collectDroppedURLs(providers, fileURLsOnly: true) { urls in
+            if !urls.isEmpty {
+                vm.startUpload(items: urls, toRemoteDir: remoteDir, on: connection)
+                vm.toastNow("Uploading to “\(folder.name)”")
+            }
         }
     }
 
