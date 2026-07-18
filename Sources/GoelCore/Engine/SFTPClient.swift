@@ -87,6 +87,11 @@ public struct SFTPClient: Sendable {
         _ = try await run { auth in gsb_remove(auth, path, isDirectory ? 1 : 0) }
     }
 
+    /// Rename or move `from` to `to` on the server (works across directories).
+    public func rename(_ from: String, to: String) async throws {
+        _ = try await run { auth in gsb_rename(auth, from, to) }
+    }
+
     /// Download a remote file to a local URL, reporting (bytesSoFar, total).
     /// `shouldContinue`, when supplied, is polled on every progress tick; return
     /// false to abort the transfer (used to make an interactive drag-out
@@ -295,6 +300,7 @@ public struct SFTPResult: Sendable {
         case Int(GSB_ERR_ABORTED): kind = .aborted
         case Int(GSB_ERR_MKDIR): kind = .mkdir
         case Int(GSB_ERR_REMOVE): kind = .remove
+        case Int(GSB_ERR_RENAME): kind = .rename
         case Int(GSB_ERR_STAT): kind = .stat
         default: kind = .unknown
         }

@@ -91,7 +91,7 @@ public enum SFTPBrowserPaths {
 public struct SFTPError: Error, Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
         case resolve, connect, handshake, hostKey, hostKeyMismatch
-        case auth, sftp, open, io, aborted, mkdir, remove, stat, unknown
+        case auth, sftp, open, io, aborted, mkdir, remove, rename, stat, unknown
     }
     public var kind: Kind
     public var message: String

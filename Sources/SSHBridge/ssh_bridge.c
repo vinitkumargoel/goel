@@ -400,3 +400,18 @@ GSBResult gsb_remove(const GSBAuth *auth, const char *path, int is_dir) {
     gsb_teardown(s, sock);
     return r;
 }
+
+GSBResult gsb_rename(const GSBAuth *auth, const char *from, const char *to) {
+    GSBResult r = { GSB_OK, 0, {0}, {0} };
+    int sock = -1;
+    LIBSSH2_SESSION *s = gsb_open(auth, &sock, &r);
+    if (!s) return r;
+    LIBSSH2_SFTP *sftp = libssh2_sftp_init(s);
+    if (!sftp) { gsb_set(&r, GSB_ERR_SFTP, "SFTP subsystem unavailable"); gsb_teardown(s, sock); return r; }
+    if (libssh2_sftp_rename(sftp, from, to) != 0) {
+        gsb_set(&r, GSB_ERR_RENAME, "Could not rename item");
+    }
+    libssh2_sftp_shutdown(sftp);
+    gsb_teardown(s, sock);
+    return r;
+}

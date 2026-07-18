@@ -32,6 +32,7 @@ enum {
     GSB_ERR_MKDIR        = -12,
     GSB_ERR_REMOVE       = -13,
     GSB_ERR_STAT         = -14,
+    GSB_ERR_RENAME       = -15,
 };
 
 typedef struct GSBResult {
@@ -96,6 +97,10 @@ GSBResult gsb_upload(const GSBAuth *auth, const char *remote, long long total,
 
 GSBResult gsb_mkdir(const GSBAuth *auth, const char *path);
 GSBResult gsb_remove(const GSBAuth *auth, const char *path, int is_dir);
+
+// Rename / move `from` to `to` (same session; works across directories on the
+// same server). Fails if the server rejects it (e.g. target exists).
+GSBResult gsb_rename(const GSBAuth *auth, const char *from, const char *to);
 
 #ifdef __cplusplus
 }

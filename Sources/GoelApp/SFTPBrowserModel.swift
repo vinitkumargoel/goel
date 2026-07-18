@@ -167,6 +167,12 @@ final class SFTPBrowserModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published var error: String?
 
+    /// Visited-path history for browser-style back / forward navigation.
+    @Published private(set) var backStack: [String] = []
+    @Published private(set) var forwardStack: [String] = []
+    var canGoBack: Bool { !backStack.isEmpty }
+    var canGoForward: Bool { !forwardStack.isEmpty }
+
     init(connection: SFTPConnection, client: SFTPClient?) {
         self.connection = connection
         self.client = client
@@ -214,18 +220,45 @@ final class SFTPBrowserModel: ObservableObject {
 
     func open(_ entry: SFTPEntry) async {
         guard entry.isDirectory else { return }
-        // Ignore a second navigation fired while the first listing is still in
-        // flight: `refresh()` sets `isLoading` synchronously before it suspends,
-        // so a re-entrant tap would otherwise join onto the already-mutated path
-        // (".../A/B") and race a concurrent `refresh()` over the same state.
-        guard !isLoading else { return }
-        path = Self.join(path, entry.name)
-        await refresh()
+        await navigate(to: Self.join(path, entry.name))
     }
 
     func goUp() async {
-        guard !isAtRoot, !isLoading else { return }
-        path = Self.parent(of: path)
+        guard !isAtRoot else { return }
+        await navigate(to: Self.parent(of: path))
+    }
+
+    /// Jump straight to a path — used by the breadcrumb bar.
+    func go(toPath newPath: String) async {
+        await navigate(to: newPath)
+    }
+
+    /// Push the current path onto the back history and list `newPath`. Ignores a
+    /// navigation fired while a listing is still in flight (re-entrancy guard:
+    /// `refresh()` sets `isLoading` synchronously before it suspends, so a
+    /// re-entrant tap would otherwise join onto the already-mutated path and race
+    /// a concurrent `refresh()`).
+    private func navigate(to newPath: String) async {
+        guard !isLoading, newPath != path else { return }
+        backStack.append(path)
+        forwardStack.removeAll()
+        path = newPath
+        await refresh()
+    }
+
+    /// Step back to the previously-visited path (browser-style).
+    func goBack() async {
+        guard !isLoading, let previous = backStack.popLast() else { return }
+        forwardStack.append(path)
+        path = previous
+        await refresh()
+    }
+
+    /// Step forward again after going back.
+    func goForward() async {
+        guard !isLoading, let next = forwardStack.popLast() else { return }
+        backStack.append(path)
+        path = next
         await refresh()
     }
 
@@ -246,6 +279,38 @@ final class SFTPBrowserModel: ObservableObject {
         guard let client else { return false }
         do {
             try await client.remove(Self.join(path, entry.name), isDirectory: entry.isDirectory)
+            await refresh()
+            return true
+        } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
+    }
+
+    /// Rename an entry in place. Rejects empty/separator/`..` names and refuses to
+    /// clobber an existing sibling.
+    @discardableResult
+    func rename(_ entry: SFTPEntry, to newName: String) async -> Bool {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let client, !trimmed.isEmpty, trimmed != entry.name,
+              !trimmed.contains("/"), trimmed != ".", trimmed != ".." else { return false }
+        if entries.contains(where: { $0.name == trimmed }) {
+            error = "“\(trimmed)” already exists here."; return false
+        }
+        do {
+            try await client.rename(Self.join(path, entry.name), to: Self.join(path, trimmed))
+            await refresh()
+            return true
+        } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
+    }
+
+    /// Move an entry into another directory on the same server (a sibling
+    /// subfolder, or the parent). `destDir` is the target directory path.
+    @discardableResult
+    func move(_ entry: SFTPEntry, toDirectory destDir: String) async -> Bool {
+        guard let client else { return false }
+        let source = Self.join(path, entry.name)
+        let dest = Self.join(destDir, entry.name)
+        guard dest != source else { return false }
+        do {
+            try await client.rename(source, to: dest)
             await refresh()
             return true
         } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
