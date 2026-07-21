@@ -8,10 +8,10 @@ import Foundation
 ///
 /// Credentials come from the URL's inline userinfo or the Keychain (via the
 /// connection store). Host keys are pinned trust-on-first-use in ``HostKeyStore``.
-public actor SFTPEngine: DownloadEngine {
+actor SFTPEngine: DownloadEngine {
 
     public nonisolated let kind: DownloadKind = .sftp
-    public nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata] }
+    nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata] }
 
     private nonisolated let hub = EventHub()
 
@@ -20,7 +20,7 @@ public actor SFTPEngine: DownloadEngine {
     private var states: [UUID: SFTPDownloadState] = [:]
     private var profile: TrafficProfile
 
-    public init(profile: TrafficProfile) {
+    init(profile: TrafficProfile) {
         self.profile = profile
     }
 
@@ -28,22 +28,22 @@ public actor SFTPEngine: DownloadEngine {
 
     public nonisolated func canHandle(_ source: DownloadSource) -> Bool { source.kind == .sftp }
 
-    public func add(_ task: DownloadTask) async {
+    func add(_ task: DownloadTask) async {
         tasks[task.id] = task
         startJob(task.id)
     }
 
-    public func pause(_ id: UUID) async {
+    func pause(_ id: UUID) async {
         states[id]?.abort()
         jobs[id]?.cancel()
     }
 
-    public func resume(_ id: UUID) async {
+    func resume(_ id: UUID) async {
         guard tasks[id] != nil else { return }
         startJob(id)
     }
 
-    public func remove(_ id: UUID, deleteData: Bool) async {
+    func remove(_ id: UUID, deleteData: Bool) async {
         states[id]?.abort()
         let job = jobs[id]
         job?.cancel()
@@ -57,11 +57,11 @@ public actor SFTPEngine: DownloadEngine {
         hub.finishAll(id)
     }
 
-    public func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
+    func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
 
-    public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
+    nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 
-    public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
+    func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard case .url(let url) = source, source.kind == .sftp,
               let client = SFTPSession.client(for: url) else { return nil }
         let name = PathSafety.sanitizedName(url.lastPathComponent, fallback: url.host ?? "download")

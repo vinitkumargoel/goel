@@ -11,7 +11,7 @@ import Foundation
 /// succeeded with a clean result, while any non-zero status — or a failure to
 /// launch the process at all — is reported as a failure so the caller can act
 /// on it rather than silently trusting an unscanned file.
-public enum AntivirusScanner {
+enum AntivirusScanner {
 
     /// Run `executablePath` against `path`, expanding `%path%` in the argument
     /// template, and report whether the scan passed (process exited `0`).
@@ -31,7 +31,7 @@ public enum AntivirusScanner {
     /// process and parking the continuation forever.
     private static let timeout: Duration = .seconds(300)
 
-    public static func scan(
+    static func scan(
         path: String,
         executablePath: String,
         argumentTemplate: String

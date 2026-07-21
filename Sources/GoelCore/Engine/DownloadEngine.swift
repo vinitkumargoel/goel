@@ -67,7 +67,7 @@ public protocol FilePrioritizing: DownloadEngine {
 
 /// Torrent engines: piece-order control plus the libtorrent session knobs. Refines
 /// ``FilePrioritizing`` because a torrent engine also honours per-file priority.
-public protocol TorrentControlling: FilePrioritizing {
+protocol TorrentControlling: FilePrioritizing {
     /// Switch a task between sequential (in-order, streamable) and rarest-first.
     func setSequential(_ sequential: Bool, task: DownloadTask.ID) async
     /// Apply the session-level BitTorrent settings (DHT / PeX / LPD / uTP / encryption).
@@ -85,18 +85,18 @@ public protocol TorrentControlling: FilePrioritizing {
 /// The HTTP engine's network-configuration seam (timeout / proxy / UA / cookies /
 /// retry). Refines ``FilePrioritizing`` — the HTTP engine also carries per-file
 /// selection for multi-file (metalink) transfers.
-public protocol HTTPConfigurable: FilePrioritizing {
+protocol HTTPConfigurable: FilePrioritizing {
     func configure(_ net: HTTPNetworkConfig) async
     /// Multi-path adapter set for network aggregation. Default no-op for mocks.
     func configureAggregation(_ config: AggregationEngineConfig) async
 }
 
-public extension HTTPConfigurable {
+extension HTTPConfigurable {
     func configureAggregation(_ config: AggregationEngineConfig) async {}
 }
 
 /// The HLS engine's preferred-rendition-height seam.
-public protocol HLSConfigurable: DownloadEngine {
+protocol HLSConfigurable: DownloadEngine {
     func configure(maxHeight: Int) async
 }
 

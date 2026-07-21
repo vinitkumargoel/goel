@@ -561,5 +561,5 @@ struct SettingsView: View {
 }
 
 // The reusable pane building blocks (PaneScaffold, SectionHeader, SetRow) and the
-// bound controls (SettingSwitch, SettingText, SettingInt, SettingDouble) plus the
-// DeferredPane placeholder live in `SettingsControls.swift`.
+// bound controls (SettingSwitch, SettingText, SettingInt, SettingDouble) live in
+// `SettingsControls.swift`.

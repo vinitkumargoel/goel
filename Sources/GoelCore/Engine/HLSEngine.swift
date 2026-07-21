@@ -19,12 +19,12 @@ import CryptoBridge  // OpenSSL-backed AES-128-CBC on Linux
 /// Segment files are written under a per-task work directory, so a paused stream
 /// resumes by skipping segments already on disk. Conforms to ``DownloadEngine``
 /// so the scheduler and UI treat it like any other download.
-public actor HLSEngine: HLSConfigurable {
+actor HLSEngine: HLSConfigurable {
     public nonisolated let kind: DownloadKind = .hls
 
     /// HLS has no cheap up-front probe (size needs a full playlist walk) and no
     /// per-file selection, so it advertises no optional capabilities.
-    public nonisolated var capabilities: EngineCapabilities { [] }
+    nonisolated var capabilities: EngineCapabilities { [] }
 
     private nonisolated let hub = EventHub()
     private nonisolated let session: URLSession
@@ -36,7 +36,7 @@ public actor HLSEngine: HLSConfigurable {
     /// Preferred maximum video height (0 = best available).
     private var maxHeight: Int = 0
 
-    public init(profile: TrafficProfile, userAgent: String = "GoelDownloader/1.0 (macOS)") {
+    init(profile: TrafficProfile, userAgent: String = "GoelDownloader/1.0 (macOS)") {
         self.profile = profile
         self.userAgent = userAgent
         let config = URLSessionConfiguration.default
@@ -52,22 +52,22 @@ public actor HLSEngine: HLSConfigurable {
 
     public nonisolated func canHandle(_ source: DownloadSource) -> Bool { source.kind == .hls }
 
-    public func add(_ task: DownloadTask) async {
+    func add(_ task: DownloadTask) async {
         tasks[task.id] = task
         startJob(task.id)
     }
 
-    public func pause(_ id: UUID) async {
+    func pause(_ id: UUID) async {
         jobs[id]?.cancel()
         jobs[id] = nil
     }
 
-    public func resume(_ id: UUID) async {
+    func resume(_ id: UUID) async {
         guard tasks[id] != nil else { return }
         startJob(id)
     }
 
-    public func remove(_ id: UUID, deleteData: Bool) async {
+    func remove(_ id: UUID, deleteData: Bool) async {
         jobs[id]?.cancel()
         jobs[id] = nil
         let task = tasks[id]
@@ -77,12 +77,12 @@ public actor HLSEngine: HLSConfigurable {
         hub.finishAll(id)
     }
 
-    public func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
+    func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
 
-    public func setMaxHeight(_ height: Int) { maxHeight = max(0, height) }
+    func setMaxHeight(_ height: Int) { maxHeight = max(0, height) }
 
     /// Apply the preferred maximum rendition height (0 = best available).
-    public func configure(maxHeight: Int) async {
+    func configure(maxHeight: Int) async {
         setMaxHeight(maxHeight)
     }
 
@@ -90,11 +90,11 @@ public actor HLSEngine: HLSConfigurable {
     /// preview deliberately skips. It surfaces no name and no size, flagging the
     /// size as an estimate so the UI shows it as approximate until the download
     /// settles the exact figure. The manager folds in its own fallback name.
-    public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
+    func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         EngineMetadata(name: "", totalBytes: nil, isEstimatedSize: true)
     }
 
-    public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
+    nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 
     // MARK: Orchestration
 

@@ -65,7 +65,7 @@ struct AggregationSettingsPane: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(active ? "Multi-path ready" : (enabled ? "Multi-path idle" : "Multi-path off"))
                     .font(.system(size: 13, weight: .semibold))
-                Text(statusDetail(active: active))
+                Text(statusDetail())
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -92,7 +92,7 @@ struct AggregationSettingsPane: View {
         )
     }
 
-    private func statusDetail(active: Bool) -> String {
+    private func statusDetail() -> String {
         if !enabled {
             return "Turn on multi-path below, then select at least two adapters with independent internet paths."
         }

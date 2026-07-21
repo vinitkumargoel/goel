@@ -55,7 +55,6 @@ struct SFTPTransfer: Identifiable {
 
     var fraction: Double { total > 0 ? min(1, Double(bytes) / Double(total)) : 0 }
     var isActive: Bool { state == .running }
-    var errorMessage: String? { if case .failed(let m) = state { return m }; return nil }
 
     /// The rate to *display*. Prefers the smoothed window average (``speed``), but
     /// while that window is still filling — under ``SpeedMeter/minimumSpan`` of

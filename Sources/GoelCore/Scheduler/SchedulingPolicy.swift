@@ -9,7 +9,7 @@ import Foundation
 /// hand-off); this owns only the *decision*, which is the subtle part: priority
 /// order, FIFO tie-breaking, the simultaneous-download cap, and the
 /// metadata-resolution cap that charges only a magnet still lacking metadata.
-public enum SchedulingPolicy {
+enum SchedulingPolicy {
 
     /// The ordered IDs to promote into free download slots.
     ///
@@ -24,7 +24,7 @@ public enum SchedulingPolicy {
     ///   - windowOpen: whether the configured download window is currently open.
     /// - Returns: the IDs to promote, in the order they should start. Empty when
     ///   the window is closed, no slots are free, or nothing is eligible.
-    public static func promotions(
+    static func promotions(
         tasks: [DownloadTask],
         runningSlots: Set<UUID>,
         maxSimultaneousDownloads: Int,

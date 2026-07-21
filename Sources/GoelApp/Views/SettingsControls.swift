@@ -85,27 +85,3 @@ struct SettingDouble: View {
         TextField("", value: $value, format: .number).textFieldStyle(.roundedBorder).frame(width: width)
     }
 }
-
-struct DeferredPane: View {
-    let title: String
-    let desc: String
-    let phase: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title).font(.system(size: 15, weight: .semibold))
-            Text(desc).font(.system(size: 12)).foregroundStyle(.secondary).padding(.bottom, 8)
-            VStack(spacing: 10) {
-                Text("🚧").font(.system(size: 34))
-                Text("Reserved for \(phase)").font(.system(size: 14)).foregroundStyle(.secondary)
-                Text("This panel is intentionally a placeholder.\nThe feature is acknowledged in the roadmap and ships later.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(30)
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(style: StrokeStyle(lineWidth: 1, dash: [4])).foregroundStyle(Theme.hairline))
-            .padding(.top, 8)
-        }
-    }
-}

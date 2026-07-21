@@ -72,12 +72,12 @@ public struct Checksum: Codable, Sendable, Hashable {
 /// Reads in fixed windows so multi-gigabyte files never load fully into memory,
 /// and checks for cancellation between chunks so a removed/paused task stops
 /// hashing promptly.
-public enum ChecksumVerifier {
+enum ChecksumVerifier {
     /// Read window: 1 MiB.
     static let chunkSize = 1 << 20
 
     /// Compute the lowercase hex digest of the file at `url` using `algorithm`.
-    public static func digest(fileAt url: URL, algorithm: ChecksumAlgorithm) throws -> String {
+    static func digest(fileAt url: URL, algorithm: ChecksumAlgorithm) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         switch algorithm {
@@ -90,7 +90,7 @@ public enum ChecksumVerifier {
 
     /// Whether the file at `url` matches `expected`. Async so that, when awaited
     /// from an actor, the CPU-bound hashing runs off the actor's executor.
-    public static func verify(fileAt url: URL, expected: Checksum) async throws -> Bool {
+    static func verify(fileAt url: URL, expected: Checksum) async throws -> Bool {
         let actual = try digest(fileAt: url, algorithm: expected.algorithm)
         return constantTimeEquals(actual, expected.value)
     }

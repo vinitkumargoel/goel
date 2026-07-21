@@ -37,6 +37,4 @@ actor AdapterPool {
     func demote(_ adapter: BoundAdapter) {
         demoted.insert(adapter.bsdName)
     }
-
-    func all() -> [BoundAdapter] { adapters }
 }
