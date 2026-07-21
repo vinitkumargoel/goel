@@ -141,8 +141,6 @@ struct ActionMenuItem: Identifiable {
         ActionMenuItem(kind: .action, title: title, leadingSymbol: leading,
                        trailingSymbol: trailing, isDestructive: destructive, action: action)
     }
-
-    static var separator: ActionMenuItem { ActionMenuItem(kind: .separator) }
 }
 
 /// A custom replacement for `Menu`: a caller-styled trigger that opens a popover

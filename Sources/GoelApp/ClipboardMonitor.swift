@@ -34,11 +34,6 @@ final class ClipboardMonitor {
         self.timer = timer
     }
 
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-    }
-
     private func poll() {
         let pasteboard = NSPasteboard.general
         let count = pasteboard.changeCount

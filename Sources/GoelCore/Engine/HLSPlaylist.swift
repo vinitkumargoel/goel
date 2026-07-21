@@ -4,7 +4,6 @@ import Foundation
 public struct HLSVariant: Sendable, Hashable {
     public var url: URL
     public var bandwidth: Int        // bits/sec; 0 when unknown
-    public var width: Int?
     public var height: Int?
     public var codecs: String?
 }
@@ -50,9 +49,9 @@ public enum HLSPlaylist: Sendable {
 /// A line-oriented parser for the subset of HLS (RFC 8216) needed to download a
 /// VOD stream: master variant selection, media segments, AES-128 keys, and the
 /// fMP4 init map. Pure and synchronous so it is unit-testable without a network.
-public enum HLSParser {
+enum HLSParser {
 
-    public static func parse(_ text: String, baseURL: URL) -> HLSPlaylist? {
+    static func parse(_ text: String, baseURL: URL) -> HLSPlaylist? {
         // Strip a leading UTF-8 BOM (U+FEFF). Windows-authored playlists and some
         // packagers emit it; left in place it prepends to the first line and makes
         // the `#EXTM3U` prefix check below fail on an otherwise-valid playlist.
@@ -72,7 +71,7 @@ public enum HLSParser {
         var seq = 0
         var currentKey: HLSKey?
         var mapURL: URL?
-        var pendingVariant: (bw: Int, w: Int?, h: Int?, codecs: String?)?
+        var pendingVariant: (bw: Int, h: Int?, codecs: String?)?
         var pendingDuration: Double?
         var pendingByteRange: HLSByteRange?
         var lastByteRangeEnd = 0  // for `#EXT-X-BYTERANGE` lines that omit the offset
@@ -83,7 +82,7 @@ public enum HLSParser {
                 let res = attrs["RESOLUTION"].map(parseResolution)
                 pendingVariant = (
                     bw: Int(attrs["BANDWIDTH"] ?? "") ?? Int(attrs["AVERAGE-BANDWIDTH"] ?? "") ?? 0,
-                    w: res??.0, h: res??.1,
+                    h: res??.1,
                     codecs: attrs["CODECS"]
                 )
             } else if line.hasPrefix("#EXT-X-MEDIA-SEQUENCE:") {
@@ -109,7 +108,7 @@ public enum HLSParser {
                 if let variant = pendingVariant {
                     if let u = resolve(line, baseURL) {
                         variants.append(HLSVariant(url: u, bandwidth: variant.bw,
-                                                   width: variant.w, height: variant.h,
+                                                   height: variant.h,
                                                    codecs: variant.codecs))
                     }
                     pendingVariant = nil
@@ -142,7 +141,7 @@ public enum HLSParser {
 
     /// Pick the best variant: highest bandwidth at or below `maxHeight` (when
     /// given), else the highest bandwidth overall.
-    public static func selectVariant(_ variants: [HLSVariant], maxHeight: Int? = nil) -> HLSVariant? {
+    static func selectVariant(_ variants: [HLSVariant], maxHeight: Int? = nil) -> HLSVariant? {
         guard !variants.isEmpty else { return nil }
         if let cap = maxHeight {
             let eligible = variants.filter { ($0.height ?? 0) <= cap }

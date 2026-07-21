@@ -28,7 +28,7 @@ import Foundation
 /// Like `HTTPEngine` it is an `actor` (so all mutable bookkeeping is serialized
 /// and it is `Sendable` for free); the synchronous `kind` requirement is met by a
 /// `nonisolated let`, and `events(for:)` is satisfied by a `nonisolated` hub.
-public actor MockTorrentEngine: TorrentControlling {
+actor MockTorrentEngine: TorrentControlling {
 
     // MARK: Identity
 
@@ -36,7 +36,7 @@ public actor MockTorrentEngine: TorrentControlling {
 
     /// Mirrors ``TorrentEngine``: the mock synthesises a file list up front and
     /// honours per-file priority, but emits no resume-data blobs.
-    public nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .perFilePriority] }
+    nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .perFilePriority] }
 
     /// Lock-based fan-out of events to subscribers. Lives outside the actor's
     /// isolation so the synchronous `events(for:)` requirement can be satisfied
@@ -47,24 +47,24 @@ public actor MockTorrentEngine: TorrentControlling {
     // MARK: Tunables
 
     /// Knobs controlling the pace and shape of the simulation.
-    public struct Simulation: Sendable, Hashable {
+    struct Simulation: Sendable, Hashable {
         /// Wall-clock seconds between simulation ticks. `0` ticks as fast as the
         /// cooperative scheduler allows (used for instant tests).
-        public var tickInterval: TimeInterval
+        var tickInterval: TimeInterval
         /// Simulated bytes downloaded per tick (before any profile cap).
-        public var bytesPerTick: Int64
+        var bytesPerTick: Int64
         /// Simulated bytes uploaded per tick, both while downloading (tit-for-tat)
         /// and while seeding.
-        public var uploadBytesPerTick: Int64
+        var uploadBytesPerTick: Int64
         /// How many `.requestingMetadata` ticks a magnet waits before its metadata
         /// resolves. Ignored for `.torrentFile` sources (metadata is immediate).
-        public var metadataDelayTicks: Int
+        var metadataDelayTicks: Int
         /// Lower bound of the simulated peer count.
-        public var minPeers: Int
+        var minPeers: Int
         /// Upper bound of the simulated peer count.
-        public var maxPeers: Int
+        var maxPeers: Int
 
-        public init(
+        init(
             tickInterval: TimeInterval = 0.25,
             bytesPerTick: Int64 = 8 * 1024 * 1024,
             uploadBytesPerTick: Int64 = 1024 * 1024,
@@ -81,7 +81,7 @@ public actor MockTorrentEngine: TorrentControlling {
         }
 
         /// Pleasant defaults for a live demo (~32 MB/s, 1.5 s to resolve a magnet).
-        public static let demo = Simulation()
+        static let demo = Simulation()
     }
 
     // MARK: Dependencies
@@ -91,10 +91,6 @@ public actor MockTorrentEngine: TorrentControlling {
     /// The active traffic profile. Drives the seed-ratio cutoff and the bandwidth
     /// / connection caps.
     private var profile: TrafficProfile
-
-    /// The active session-level BitTorrent settings, stored as an honest
-    /// passthrough (the mock has no real network).
-    private var sessionConfig: TorrentSessionConfig = TorrentSessionConfig()
 
     // MARK: Per-task state
 
@@ -116,14 +112,14 @@ public actor MockTorrentEngine: TorrentControlling {
     ///   - simulation: pace/shape of the simulation. Defaults to `.demo`.
     ///   - profile: initial traffic profile (its `seedRatioLimit` decides when
     ///     seeding stops). Defaults to `.high`.
-    public init(simulation: Simulation = .demo, profile: TrafficProfile = .high) {
+    init(simulation: Simulation = .demo, profile: TrafficProfile = .high) {
         self.sim = simulation
         self.profile = profile
     }
 
     // MARK: DownloadEngine
 
-    public func add(_ task: DownloadTask) async {
+    func add(_ task: DownloadTask) async {
         guard tasks[task.id] == nil else { return }
         tasks[task.id] = task
         // Seed the simulation from the task's persisted progress so a torrent
@@ -141,7 +137,7 @@ public actor MockTorrentEngine: TorrentControlling {
         jobs[id] = Task { await self.run(id) }
     }
 
-    public func pause(_ id: DownloadTask.ID) async {
+    func pause(_ id: DownloadTask.ID) async {
         guard let job = jobs[id] else { return }
         job.cancel()
         jobs[id] = nil
@@ -154,7 +150,7 @@ public actor MockTorrentEngine: TorrentControlling {
         // resume would wrongly flip the task back to paused and strand it.
     }
 
-    public func resume(_ id: DownloadTask.ID) async {
+    func resume(_ id: DownloadTask.ID) async {
         guard tasks[id] != nil, jobs[id] == nil else { return }
         if states[id] == nil { states[id] = SimState() }
         // run() re-emits the appropriate status (downloading or seeding) for the
@@ -162,7 +158,7 @@ public actor MockTorrentEngine: TorrentControlling {
         jobs[id] = Task { await self.run(id) }
     }
 
-    public func remove(_ id: DownloadTask.ID, deleteData: Bool) async {
+    func remove(_ id: DownloadTask.ID, deleteData: Bool) async {
         let job = jobs[id]
         job?.cancel()
         jobs[id] = nil
@@ -186,49 +182,46 @@ public actor MockTorrentEngine: TorrentControlling {
         return false
     }
 
-    public func applyLimits(_ profile: TrafficProfile) async {
+    func applyLimits(_ profile: TrafficProfile) async {
         self.profile = profile
     }
 
     /// Adopts new session-level BitTorrent settings. The mock does no real
-    /// networking, so this simply records the configuration (honest passthrough).
-    public func applySessionConfig(_ config: TorrentSessionConfig) async {
-        self.sessionConfig = config
-    }
+    /// networking, so this is a no-op passthrough (protocol surface only).
+    func applySessionConfig(_ config: TorrentSessionConfig) async {}
 
-    /// Apply the session-level BitTorrent settings (honest passthrough — the mock
-    /// does no real networking, so the value is simply recorded). PeX now rides
-    /// through the shared config too.
-    public func configure(_ session: TorrentSessionConfig) async {
+    /// Apply the session-level BitTorrent settings (no-op passthrough — the mock
+    /// does no real networking). PeX still rides through the shared config type.
+    func configure(_ session: TorrentSessionConfig) async {
         await applySessionConfig(session)
     }
 
     /// Record the sequential-download preference for a task. The mock has no wire
     /// protocol, so this only updates the tracked task's flag.
-    public func setSequential(_ sequential: Bool, task id: DownloadTask.ID) async {
+    func setSequential(_ sequential: Bool, task id: DownloadTask.ID) async {
         tasks[id]?.sequentialDownload = sequential
     }
 
     // Torrent maintenance/seeding controls — the mock records the caps and treats
     // the recheck/reannounce as no-ops (no real session to drive).
-    public func setUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {
+    func setUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {
         tasks[id]?.uploadLimitBytesPerSec = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
     }
-    public func setSeedRatioLimit(_ ratio: Double?, task id: DownloadTask.ID) async {
+    func setSeedRatioLimit(_ ratio: Double?, task id: DownloadTask.ID) async {
         tasks[id]?.seedRatioLimit = (ratio ?? 0) > 0 ? ratio : nil
     }
-    public func forceRecheck(_ id: DownloadTask.ID) async {}
-    public func forceReannounce(_ id: DownloadTask.ID) async {}
+    func forceRecheck(_ id: DownloadTask.ID) async {}
+    func forceReannounce(_ id: DownloadTask.ID) async {}
 
     /// Resolve metadata for the add-confirmation preview through the engine-agnostic
     /// seam. The mock has no real network, so it returns the same synthesised
     /// multi-file payload its run loop would produce, exercising the preview path.
-    public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
+    func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         let meta = Self.synthesizeMetadata(name: "")
         return EngineMetadata(name: meta.name, totalBytes: meta.total, files: meta.files)
     }
 
-    public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {
+    func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {
         guard var task = tasks[id] else { return }
         guard let idx = task.files.firstIndex(where: { $0.id == fileID }) else { return }
         task.files[idx].priority = priority
@@ -253,14 +246,14 @@ public actor MockTorrentEngine: TorrentControlling {
         jobs[id] = Task { await self.run(id) }
     }
 
-    public nonisolated func events(for id: DownloadTask.ID) -> AsyncStream<EngineEvent> {
+    nonisolated func events(for id: DownloadTask.ID) -> AsyncStream<EngineEvent> {
         hub.subscribe(id)
     }
 
     // MARK: Inspection (additive, used by tests / the manager)
 
     /// A snapshot of the engine's current view of a task, or `nil` if unknown.
-    public func snapshot(_ id: DownloadTask.ID) -> DownloadTask? {
+    func snapshot(_ id: DownloadTask.ID) -> DownloadTask? {
         tasks[id]
     }
 

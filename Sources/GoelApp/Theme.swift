@@ -19,7 +19,6 @@ enum Theme {
     static var green:       Color { ThemePalette.color(\.green) }
     static var orange:      Color { ThemePalette.color(\.orange) }
     static var red:         Color { ThemePalette.color(\.red) }
-    static var yellow:      Color { ThemePalette.color(\.yellow) }
     static var purple:      Color { ThemePalette.color(\.purple) }
     static var teal:        Color { ThemePalette.color(\.teal) }
     static var indigo:      Color { ThemePalette.color(\.indigo) }
@@ -97,17 +96,6 @@ extension NSColor {
 /// the sidebar "by type" filters). Derived purely from the task's name/source.
 enum FileType: String, CaseIterable, Hashable {
     case iso, video, archive, app, magnet, doc
-
-    var displayName: String {
-        switch self {
-        case .iso: return "Disc images"
-        case .video: return "Video"
-        case .archive: return "Archives"
-        case .app: return "Apps"
-        case .magnet: return "Magnet"
-        case .doc: return "Documents"
-        }
-    }
 
     var symbol: String {
         switch self {

@@ -12,14 +12,14 @@ import Foundation
 /// yet the bytes re-transferred after the restart must still count. ``fold(_:)``
 /// re-bases the mark DOWN to the regressed reading (delta 0 for that step) so
 /// subsequent progress records the re-transferred interval from there.
-public enum StatsAccumulator {
+enum StatsAccumulator {
 
     /// A per-task watermark of the last absolute byte counts folded into the
     /// lifetime statistics.
-    public struct Mark: Equatable, Sendable {
-        public var down: Int64
-        public var up: Int64
-        public init(down: Int64, up: Int64) {
+    struct Mark: Equatable, Sendable {
+        var down: Int64
+        var up: Int64
+        init(down: Int64, up: Int64) {
             self.down = down
             self.up = up
         }
@@ -31,7 +31,7 @@ public enum StatsAccumulator {
     ///   totals, and the `newMark` to store for the next fold. On a regression
     ///   (either absolute count below the mark) the mark re-bases down to the new
     ///   reading, so the delta is never negative and history is never subtracted.
-    public static func fold(previous mark: Mark, absoluteDown: Int64, absoluteUp: Int64)
+    static func fold(previous mark: Mark, absoluteDown: Int64, absoluteUp: Int64)
         -> (deltaDown: Int64, deltaUp: Int64, newMark: Mark) {
         var rebased = mark
         if absoluteDown < rebased.down { rebased.down = absoluteDown }

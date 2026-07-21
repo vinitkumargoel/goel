@@ -41,7 +41,6 @@ enum BoundHTTPClient {
         let onBytes: (@Sendable (Int) -> Void)?
         private let lock = NSLock()
         private var _aborted = false
-        private var _written: Int64 = 0
 
         init(handle: FileHandle, limiter: RateLimiter?,
              onBytes: (@Sendable (Int) -> Void)? = nil) {
@@ -57,15 +56,6 @@ enum BoundHTTPClient {
 
         func abort() {
             lock.lock(); _aborted = true; lock.unlock()
-        }
-
-        var written: Int64 {
-            lock.lock(); defer { lock.unlock() }
-            return _written
-        }
-
-        func addWritten(_ n: Int64) {
-            lock.lock(); _written += n; lock.unlock()
         }
     }
 
@@ -174,7 +164,6 @@ private func boundWriteThunk(_ data: UnsafePointer<CChar>?, _ size: Int, _ userd
     let buffer = Data(bytes: data, count: size)
     do {
         try ctx.handle.write(contentsOf: buffer)
-        ctx.addWritten(Int64(size))
         ctx.onBytes?(size)
         if let limiter = ctx.limiter {
             let sem = DispatchSemaphore(value: 0)

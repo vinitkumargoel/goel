@@ -463,12 +463,15 @@ final class AppViewModel: ObservableObject {
             let manager = self.manager
             Task { await manager.reconcileCompletedFiles() }
         }
-        // Best-effort flush of the speed-chart samples on quit. The periodic save
-        // is the real guarantee; this just narrows the last-few-seconds gap.
+        // Best-effort flush of the speed-chart samples on quit. AppKit does not
+        // await fire-and-forget Tasks on willTerminate, so do not half-wire
+        // manager.shutdown() here. Periodic save remains the real guarantee;
+        // this narrows the last-few-seconds gap.
         appTerminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            self?.persistSpeedHistory()
+            guard let self else { return }
+            self.persistSpeedHistory()
         }
         applyRemoteAccess()
         SparkleUpdaterService.shared.startIfConfigured()

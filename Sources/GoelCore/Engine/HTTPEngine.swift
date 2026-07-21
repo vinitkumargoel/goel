@@ -13,7 +13,7 @@ import Foundation
 /// The engine is an `actor`, so all of its mutable bookkeeping is serialized and
 /// it is `Sendable` for free. The synchronous `kind` requirement is satisfied by
 /// a `nonisolated let`.
-public actor HTTPEngine: HTTPConfigurable {
+actor HTTPEngine: HTTPConfigurable {
 
     // MARK: Identity
 
@@ -21,7 +21,7 @@ public actor HTTPEngine: HTTPConfigurable {
 
     /// The HTTP engine probes servers for the add-confirmation preview and emits
     /// resume data, but has no per-file priority (a URL download is one file).
-    public nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .producesResumeData] }
+    nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .producesResumeData] }
 
     /// Lock-based fan-out of events to subscribers. Lives outside the actor's
     /// isolation so the synchronous `events(for:)` requirement can be satisfied
@@ -138,7 +138,7 @@ public actor HTTPEngine: HTTPConfigurable {
     }
 
     /// Build a session from a configuration.
-    public init(configuration: URLSessionConfiguration, profile: TrafficProfile = .high,
+    init(configuration: URLSessionConfiguration, profile: TrafficProfile = .high,
                 credentials: any CredentialProviding = KeychainCredentialStore()) {
         configuration.httpMaximumConnectionsPerHost = Self.maxConnectionsPerHost
         self.session = URLSession(configuration: configuration,
@@ -148,7 +148,7 @@ public actor HTTPEngine: HTTPConfigurable {
     }
 
     /// Default real-world session.
-    public init(profile: TrafficProfile = .high,
+    init(profile: TrafficProfile = .high,
                 credentials: any CredentialProviding = KeychainCredentialStore()) {
         let config = URLSessionConfiguration.default
         #if !os(Linux)
@@ -164,14 +164,14 @@ public actor HTTPEngine: HTTPConfigurable {
 
     // MARK: DownloadEngine
 
-    public func add(_ task: DownloadTask) async {
+    func add(_ task: DownloadTask) async {
         guard tasks[task.id] == nil else { return }
         tasks[task.id] = task
         let id = task.id
         jobs[id] = Task { await self.run(id) }
     }
 
-    public func pause(_ id: DownloadTask.ID) async {
+    func pause(_ id: DownloadTask.ID) async {
         guard let job = jobs[id] else { return }
         job.cancel()
         jobs[id] = nil
@@ -193,13 +193,13 @@ public actor HTTPEngine: HTTPConfigurable {
         // resume would wrongly flip the task back to paused and strand it.
     }
 
-    public func resume(_ id: DownloadTask.ID) async {
+    func resume(_ id: DownloadTask.ID) async {
         guard tasks[id] != nil, jobs[id] == nil else { return }
         emit(id, .statusChanged(.downloading))
         jobs[id] = Task { await self.run(id) }
     }
 
-    public func remove(_ id: DownloadTask.ID, deleteData: Bool) async {
+    func remove(_ id: DownloadTask.ID, deleteData: Bool) async {
         let job = jobs[id]
         let task = tasks[id]
         job?.cancel()
@@ -218,7 +218,7 @@ public actor HTTPEngine: HTTPConfigurable {
         streamedResume[id] = nil
     }
 
-    public func applyLimits(_ profile: TrafficProfile) async {
+    func applyLimits(_ profile: TrafficProfile) async {
         self.profile = profile
     }
 
@@ -229,7 +229,7 @@ public actor HTTPEngine: HTTPConfigurable {
     /// the current configuration (preserving any injected protocol classes used
     /// by tests), mutate it, and swap the session. In-flight downloads keep the
     /// session they captured; the change takes effect on the next download.
-    public func applyNetworkConfig(_ config: HTTPNetworkConfig) async {
+    func applyNetworkConfig(_ config: HTTPNetworkConfig) async {
         self.networkConfig = config
 
         let cfg = session.configuration
@@ -302,11 +302,11 @@ public actor HTTPEngine: HTTPConfigurable {
 
     /// Apply the HTTP network configuration (via the existing
     /// ``applyNetworkConfig(_:)``).
-    public func configure(_ net: HTTPNetworkConfig) async {
+    func configure(_ net: HTTPNetworkConfig) async {
         await applyNetworkConfig(net)
     }
 
-    public func configureAggregation(_ config: AggregationEngineConfig) async {
+    func configureAggregation(_ config: AggregationEngineConfig) async {
         aggregationConfig = config
     }
 
@@ -314,7 +314,7 @@ public actor HTTPEngine: HTTPConfigurable {
     /// ``resolveMetadata(for:currentName:)`` probe to the engine-agnostic seam. The
     /// URL-derived base name mirrors the scheduler's default-name rule so a failed
     /// refinement returns the same fallback the manager would have chosen.
-    public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
+    func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard case .url(let url) = source else { return nil }
         let last = url.lastPathComponent
         let base = (last.isEmpty || last == "/") ? (url.host ?? "download") : last
@@ -324,7 +324,7 @@ public actor HTTPEngine: HTTPConfigurable {
                               suggestedChecksum: r.checksum)
     }
 
-    public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {
+    func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {
         guard var task = tasks[id] else { return }
         if let idx = task.files.firstIndex(where: { $0.id == fileID }) {
             task.files[idx].priority = priority
@@ -332,7 +332,7 @@ public actor HTTPEngine: HTTPConfigurable {
         }
     }
 
-    public nonisolated func events(for id: DownloadTask.ID) -> AsyncStream<EngineEvent> {
+    nonisolated func events(for id: DownloadTask.ID) -> AsyncStream<EngineEvent> {
         hub.subscribe(id)
     }
 

@@ -1038,12 +1038,6 @@ struct RequestSettings: Sendable {
     var extraHeaders: [String: String] = [:]
 }
 
-/// Per-segment adapter assignment for Connections UI (multi-path).
-struct SegmentAdapterBinding: Sendable {
-    var adapterId: String
-    var adapterLabel: String
-}
-
 /// The result of a finished transfer.
 struct TransferOutcome: Sendable {
     var bytesWritten: Int64

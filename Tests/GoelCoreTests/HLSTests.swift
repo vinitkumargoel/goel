@@ -78,9 +78,9 @@ final class HLSTests: XCTestCase {
 
     func testSelectVariantRespectsHeightCapThenBandwidth() {
         let v = [
-            HLSVariant(url: base, bandwidth: 800_000, width: 640, height: 360, codecs: nil),
-            HLSVariant(url: base, bandwidth: 2_400_000, width: 1280, height: 720, codecs: nil),
-            HLSVariant(url: base, bandwidth: 6_000_000, width: 1920, height: 1080, codecs: nil),
+            HLSVariant(url: base, bandwidth: 800_000, height: 360, codecs: nil),
+            HLSVariant(url: base, bandwidth: 2_400_000, height: 720, codecs: nil),
+            HLSVariant(url: base, bandwidth: 6_000_000, height: 1080, codecs: nil),
         ]
         XCTAssertEqual(HLSParser.selectVariant(v, maxHeight: 720)?.height, 720)
         XCTAssertEqual(HLSParser.selectVariant(v, maxHeight: nil)?.height, 1080)

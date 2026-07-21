@@ -8,22 +8,22 @@ import TorrentBridge
 /// status snapshot ~once a second and folds it into ``EngineEvent``s, so the
 /// scheduler and UI treat torrents exactly like HTTP/HLS downloads. Magnets
 /// resolve metadata through libtorrent's DHT before the file list is known.
-public actor TorrentEngine: TorrentControlling {
+actor TorrentEngine: TorrentControlling {
     public nonisolated let kind: DownloadKind = .torrent
 
     /// libtorrent resolves a torrent's file list up front and honours per-file
     /// priority, but doesn't expose the HTTP engine's resume-data blobs.
-    public nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .perFilePriority] }
+    nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .perFilePriority] }
 
     private nonisolated let hub = EventHub()
 
     /// libtorrent session configuration (DHT/LSD/uTP/encryption).
-    public struct SessionConfig: Sendable, Equatable {
-        public var enableDHT: Bool
-        public var enableLSD: Bool
-        public var enableUTP: Bool
-        public var encryptionMode: String   // "prefer" | "require" | "disable"
-        public init(enableDHT: Bool = true, enableLSD: Bool = true,
+    struct SessionConfig: Sendable, Equatable {
+        var enableDHT: Bool
+        var enableLSD: Bool
+        var enableUTP: Bool
+        var encryptionMode: String // "prefer" | "require" | "disable"
+        init(enableDHT: Bool = true, enableLSD: Bool = true,
                     enableUTP: Bool = true, encryptionMode: String = "prefer") {
             self.enableDHT = enableDHT; self.enableLSD = enableLSD
             self.enableUTP = enableUTP; self.encryptionMode = encryptionMode
@@ -39,7 +39,7 @@ public actor TorrentEngine: TorrentControlling {
     /// Proxy policy for the remote `.torrent`-file body fetch (see `configure`).
     private var httpProxy = NetworkGuard.ProxySpec()
 
-    public init(profile: TrafficProfile, config: SessionConfig = SessionConfig()) {
+    init(profile: TrafficProfile, config: SessionConfig = SessionConfig()) {
         self.profile = profile
         self.config = config
     }
@@ -50,9 +50,9 @@ public actor TorrentEngine: TorrentControlling {
 
     // MARK: DownloadEngine
 
-    public nonisolated func canHandle(_ source: DownloadSource) -> Bool { source.kind == .torrent }
+    nonisolated func canHandle(_ source: DownloadSource) -> Bool { source.kind == .torrent }
 
-    public func add(_ task: DownloadTask) async {
+    func add(_ task: DownloadTask) async {
         tasks[task.id] = task
         do {
             let handle = try await makeHandle(for: task)
@@ -71,12 +71,12 @@ public actor TorrentEngine: TorrentControlling {
         }
     }
 
-    public func pause(_ id: UUID) async {
+    func pause(_ id: UUID) async {
         pollers[id]?.cancel(); pollers[id] = nil
         if let handle = handles[id] { gt_pause(handle) }
     }
 
-    public func resume(_ id: UUID) async {
+    func resume(_ id: UUID) async {
         guard let handle = handles[id] else {
             // Engine was torn down (e.g. after relaunch): re-add from the stored task.
             if let task = tasks[id] { await add(task) }
@@ -86,7 +86,7 @@ public actor TorrentEngine: TorrentControlling {
         startPoller(id)
     }
 
-    public func remove(_ id: UUID, deleteData: Bool) async {
+    func remove(_ id: UUID, deleteData: Bool) async {
         pollers[id]?.cancel(); pollers[id] = nil
         if let session, let handle = handles[id] {
             gt_remove(session, handle, deleteData ? 1 : 0)   // frees the handle wrapper
@@ -98,7 +98,7 @@ public actor TorrentEngine: TorrentControlling {
         hub.finishAll(id)
     }
 
-    public func applyLimits(_ profile: TrafficProfile) async {
+    func applyLimits(_ profile: TrafficProfile) async {
         self.profile = profile
         if let session {
             gt_session_set_rate_limits(session,
@@ -114,12 +114,12 @@ public actor TorrentEngine: TorrentControlling {
 
     /// Apply DHT/LSD/uTP/encryption. Takes effect when the session is next
     /// created; an already-running session keeps its current settings.
-    public func applySessionConfig(_ config: SessionConfig) { self.config = config }
+    func applySessionConfig(_ config: SessionConfig) { self.config = config }
 
     /// Apply the session-level BitTorrent settings, mapping the shared
     /// ``TorrentSessionConfig`` onto libtorrent's internal ``SessionConfig`` (the
     /// engine consumes DHT / LPD / uTP / encryption; PeX isn't wired to the shim).
-    public func configure(_ session: TorrentSessionConfig) async {
+    func configure(_ session: TorrentSessionConfig) async {
         httpProxy = session.proxy
         applySessionConfig(SessionConfig(
             enableDHT: session.enableDHT,
@@ -128,7 +128,7 @@ public actor TorrentEngine: TorrentControlling {
             encryptionMode: session.encryptionMode))
     }
 
-    public func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {
+    func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {
         // Keep the engine's own task copy current so that a fresh poll (e.g. after
         // a pause→resume in the same session) re-applies the LIVE priority, not the
         // add-time one, and drop the file from the one-shot skip set so it is never
@@ -141,37 +141,37 @@ public actor TorrentEngine: TorrentControlling {
         gt_set_file_priority(handle, Int32(fileID), Int32(Self.toLibtorrentPriority(priority)))
     }
 
-    public func setSequential(_ sequential: Bool, task id: UUID) async {
+    func setSequential(_ sequential: Bool, task id: UUID) async {
         tasks[id]?.sequentialDownload = sequential
         guard let handle = handles[id] else { return }
         gt_set_sequential(handle, sequential ? 1 : 0)
     }
 
-    public func forceRecheck(_ id: UUID) async {
+    func forceRecheck(_ id: UUID) async {
         guard let handle = handles[id] else { return }
         gt_force_recheck(handle)
     }
 
-    public func forceReannounce(_ id: UUID) async {
+    func forceReannounce(_ id: UUID) async {
         guard let handle = handles[id] else { return }
         gt_force_reannounce(handle)
     }
 
-    public func setUploadLimit(_ bytesPerSec: Int64?, task id: UUID) async {
+    func setUploadLimit(_ bytesPerSec: Int64?, task id: UUID) async {
         let cap = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
         tasks[id]?.uploadLimitBytesPerSec = cap
         guard let handle = handles[id] else { return }
         gt_set_upload_limit(handle, Int32(clamping: cap ?? 0))
     }
 
-    public func setSeedRatioLimit(_ ratio: Double?, task id: UUID) async {
+    func setSeedRatioLimit(_ ratio: Double?, task id: UUID) async {
         // Stored on the task and enforced in the poll loop (libtorrent has no
         // per-torrent ratio cap in its simple API): once seeding reaches the
         // ratio, the poller pauses the torrent and marks it completed.
         tasks[id]?.seedRatioLimit = (ratio ?? 0) > 0 ? ratio : nil
     }
 
-    public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
+    nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 
     // MARK: Metadata preview
 
@@ -181,7 +181,7 @@ public actor TorrentEngine: TorrentControlling {
     /// round-trip for a magnet), then removed and any bytes deleted. Used by the
     /// add-confirmation preview so the user sees the files before committing.
     /// Returns nil on timeout, error, or cancellation.
-    public func resolveMetadata(
+    func resolveMetadata(
         for source: DownloadSource,
         saveDirectory: String,
         timeout: TimeInterval = 60
@@ -210,7 +210,7 @@ public actor TorrentEngine: TorrentControlling {
     /// seam, adapting the concrete ``resolveMetadata(for:saveDirectory:timeout:)``.
     /// The torrent name is sanitised here; an empty name lets the manager fold in
     /// its own fallback. Returns nil when no peer supplied metadata in time.
-    public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
+    func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard let m = await resolveMetadata(for: source, saveDirectory: directory) else { return nil }
         let name = m.name.isEmpty ? "" : PathSafety.sanitizedName(m.name)
         return EngineMetadata(name: name, totalBytes: m.totalBytes, files: m.files)

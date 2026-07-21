@@ -10,10 +10,10 @@ import CurlBridge
 /// size using FTP `REST`, so no resume cursor is needed. `ftps://` is
 /// implicit TLS; plain `ftp://` opportunistically upgrades via `AUTH TLS`
 /// when the server supports it.
-public actor FTPEngine: DownloadEngine {
+actor FTPEngine: DownloadEngine {
 
     public nonisolated let kind: DownloadKind = .ftp
-    public nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata] }
+    nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata] }
 
     private nonisolated let hub = EventHub()
     /// Username/password lookup for hosts the user stored logins for.
@@ -25,7 +25,7 @@ public actor FTPEngine: DownloadEngine {
     private var contexts: [UUID: FTPTransferContext] = [:]
     private var profile: TrafficProfile
 
-    public init(profile: TrafficProfile,
+    init(profile: TrafficProfile,
                 credentialLookup: (@Sendable (String) -> (username: String, password: String)?)? = nil) {
         self.profile = profile
         if let credentialLookup {
@@ -40,12 +40,12 @@ public actor FTPEngine: DownloadEngine {
 
     public nonisolated func canHandle(_ source: DownloadSource) -> Bool { source.kind == .ftp }
 
-    public func add(_ task: DownloadTask) async {
+    func add(_ task: DownloadTask) async {
         tasks[task.id] = task
         startJob(task.id)
     }
 
-    public func pause(_ id: UUID) async {
+    func pause(_ id: UUID) async {
         contexts[id]?.abort()
         // Cancel a queued-but-not-started job; a mid-flight curl transfer
         // stops via the abort flag. `jobs[id]` is kept so the next start
@@ -53,12 +53,12 @@ public actor FTPEngine: DownloadEngine {
         jobs[id]?.cancel()
     }
 
-    public func resume(_ id: UUID) async {
+    func resume(_ id: UUID) async {
         guard tasks[id] != nil else { return }
         startJob(id)
     }
 
-    public func remove(_ id: UUID, deleteData: Bool) async {
+    func remove(_ id: UUID, deleteData: Bool) async {
         contexts[id]?.abort()
         let job = jobs[id]
         job?.cancel()
@@ -75,12 +75,12 @@ public actor FTPEngine: DownloadEngine {
         hub.finishAll(id)
     }
 
-    public func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
+    func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
 
-    public nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
+    nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 
     /// Preview probe: a body-less transfer reporting the remote size.
-    public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
+    func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard case .url(let url) = source, source.kind == .ftp else { return nil }
         let name = PathSafety.sanitizedName(url.lastPathComponent, fallback: url.host ?? "download")
         let credential = credentials(for: url)

@@ -14,22 +14,22 @@ import Foundation
 /// (`schedulePausedIDs`, `preScheduleProfileName`, `networkPaused`,
 /// `networkPausedIDs`, `rssSeenKeys`) are consolidated into the single
 /// ``Memory`` value, so they can never drift apart.
-public enum AutomationCore {
+enum AutomationCore {
 
     /// The only per-task data ``decide(_:)`` needs — a projection, so the 24-field
     /// ``DownloadTask`` never enters the decision core and test construction stays
     /// trivial.
-    public struct TaskPhase: Sendable, Equatable {
-        public var id: UUID
+    struct TaskPhase: Sendable, Equatable {
+        var id: UUID
         /// In a download phase the window/network policies act on
         /// (`.downloading` / `.verifying` / `.requestingMetadata` — never seeding).
-        public var downloadingPhase: Bool
-        public var paused: Bool
-        public var terminal: Bool
-        public var scheduledAt: Date?
-        public var dedupKey: String
+        var downloadingPhase: Bool
+        var paused: Bool
+        var terminal: Bool
+        var scheduledAt: Date?
+        var dedupKey: String
 
-        public init(id: UUID, downloadingPhase: Bool, paused: Bool, terminal: Bool,
+        init(id: UUID, downloadingPhase: Bool, paused: Bool, terminal: Bool,
                     scheduledAt: Date?, dedupKey: String) {
             self.id = id
             self.downloadingPhase = downloadingPhase
@@ -41,12 +41,12 @@ public enum AutomationCore {
     }
 
     /// One already-fetched, already-title-matched feed item.
-    public struct FeedCandidate: Sendable, Equatable {
-        public var key: String            // per-run identity: "feedID|guid-or-locator"
-        public var source: DownloadSource
-        public var dedupKey: String       // == source.dedupKey, precomputed by the caller
+    struct FeedCandidate: Sendable, Equatable {
+        var key: String // per-run identity: "feedID|guid-or-locator"
+        var source: DownloadSource
+        var dedupKey: String // == source.dedupKey, precomputed by the caller
 
-        public init(key: String, source: DownloadSource, dedupKey: String) {
+        init(key: String, source: DownloadSource, dedupKey: String) {
             self.key = key
             self.source = source
             self.dedupKey = dedupKey
@@ -55,39 +55,39 @@ public enum AutomationCore {
 
     /// A feed's contribution to a poll: its `startPaused` flag plus the candidates
     /// that survived the title filter. The impure fetch/parse stays in the manager.
-    public struct FeedFetch: Sendable, Equatable {
-        public var startPaused: Bool
-        public var candidates: [FeedCandidate]
+    struct FeedFetch: Sendable, Equatable {
+        var startPaused: Bool
+        var candidates: [FeedCandidate]
 
-        public init(startPaused: Bool, candidates: [FeedCandidate]) {
+        init(startPaused: Bool, candidates: [FeedCandidate]) {
             self.startPaused = startPaused
             self.candidates = candidates
         }
     }
 
     /// The consolidated automation state — replaces all five parallel ledgers.
-    public struct Memory: Sendable, Equatable {
+    struct Memory: Sendable, Equatable {
         /// Whether the download window was open as of the last decision.
-        public var windowOpen = true
+        var windowOpen = true
         /// Tasks the window-close paused, so reopening resumes exactly those.
-        public var windowPausedIDs: Set<UUID> = []
+        var windowPausedIDs: Set<UUID> = []
         /// The profile active before the window switched to its own, restored on close.
-        public var preWindowProfile: String?
+        var preWindowProfile: String?
         /// Whether the network policy currently holds the queue paused.
-        public var networkPaused = false
+        var networkPaused = false
         /// Tasks the network policy paused, so recovery resumes exactly those.
-        public var networkPausedIDs: Set<UUID> = []
+        var networkPausedIDs: Set<UUID> = []
         /// Feed item keys already queued this run, so a poll never re-adds items.
-        public var rssSeenKeys: Set<String> = []
+        var rssSeenKeys: Set<String> = []
 
-        public init() {}
+        init() {}
     }
 
     /// Which policy paused a task — so the manager can un-record a pause it could
     /// not actually apply (the task changed phase across an `await`).
-    public enum Ledger: Sendable, Equatable, Hashable { case window, network }
+    enum Ledger: Sendable, Equatable, Hashable { case window, network }
 
-    public enum Action: Sendable, Equatable, Hashable {
+    enum Action: Sendable, Equatable, Hashable {
         case pause(UUID, Ledger)
         case resume(UUID)
         /// Narrow set-active-profile + persist + push-to-engines (bypasses the full
@@ -96,17 +96,17 @@ public enum AutomationCore {
         case add(DownloadSource, startPaused: Bool)
     }
 
-    public struct Snapshot: Sendable {
-        public var now: Date
-        public var calendar: Calendar
-        public var settings: AppSettings
-        public var tasks: [TaskPhase]
-        public var networkExpensive: Bool
-        public var networkConstrained: Bool
-        public var feeds: [FeedFetch]
-        public var memory: Memory
+    struct Snapshot: Sendable {
+        var now: Date
+        var calendar: Calendar
+        var settings: AppSettings
+        var tasks: [TaskPhase]
+        var networkExpensive: Bool
+        var networkConstrained: Bool
+        var feeds: [FeedFetch]
+        var memory: Memory
 
-        public init(now: Date, calendar: Calendar, settings: AppSettings,
+        init(now: Date, calendar: Calendar, settings: AppSettings,
                     tasks: [TaskPhase], networkExpensive: Bool, networkConstrained: Bool,
                     feeds: [FeedFetch] = [], memory: Memory) {
             self.now = now
@@ -120,11 +120,11 @@ public enum AutomationCore {
         }
     }
 
-    public struct Decision: Sendable, Equatable {
-        public var actions: [Action]
-        public var memory: Memory
+    struct Decision: Sendable, Equatable {
+        var actions: [Action]
+        var memory: Memory
 
-        public init(actions: [Action], memory: Memory) {
+        init(actions: [Action], memory: Memory) {
             self.actions = actions
             self.memory = memory
         }
@@ -136,7 +136,7 @@ public enum AutomationCore {
     /// awareness, then per-task scheduled starts, then RSS — and a task is
     /// pause-claimed by at most one ledger per tick (window wins), so a paused id
     /// is attributed to a single owner and recovers deterministically.
-    public static func decide(_ s: Snapshot) -> Decision {
+    static func decide(_ s: Snapshot) -> Decision {
         var memory = s.memory
         var actions: [Action] = []
         var claimedThisTick: Set<UUID> = []
@@ -234,7 +234,7 @@ public enum AutomationCore {
     /// tests can drive the day/time matrix directly. A disabled schedule — or a
     /// degenerate window whose start equals its end — is always open; an end
     /// before the start wraps past midnight (22:00 → 07:00).
-    public static func isWindowOpen(settings: AppSettings, date: Date,
+    static func isWindowOpen(settings: AppSettings, date: Date,
                                     calendar: Calendar = .current) -> Bool {
         guard settings.scheduleEnabled else { return true }
         let start = settings.scheduleStartMinute
