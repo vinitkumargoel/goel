@@ -52,12 +52,11 @@ try? FileManager.default.createDirectory(
     atPath: (dbPath as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
 try? FileManager.default.createDirectory(atPath: saveDir, withIntermediateDirectories: true)
 
-// The server holds `manager` weakly, and both are built inside the async task
-// below; without a strong process-lifetime reference they'd be deallocated the
-// moment setup returns, leaving the portal with a nil backend ("Shutting down").
+// Manager + RemoteAccess held weakly inside the portal — keep strong refs for
+// the process lifetime so setup return doesn't deallocate them.
 final class Retainer: @unchecked Sendable {
     var manager: DownloadManager?
-    var server: RemoteControlServer?
+    var remote: RemoteAccess?
 }
 let retainer = Retainer()
 
@@ -91,20 +90,15 @@ Task {
         await manager.updateSettings(settings)
         _ = await manager.setDefaultSaveDirectory(saveDir)
 
-        let server = RemoteControlServer(manager: manager)
-        retainer.server = server
-        let config = RemoteRouter.Config(
-            token: settings.remoteToken, requireAuth: settings.remoteRequireAuth,
-            readOnly: settings.remoteReadOnly, theme: settings.remoteTheme,
-            username: settings.remoteUsername)
-        await server.start(
-            port: UInt16(clamping: port), allowLAN: allowLAN, config: config,
-            passwordHash: settings.remotePasswordHash, sessionMinutes: settings.remoteSessionMinutes)
+        // Same lifecycle façade as the desktop app — policy, restart, bind state.
+        let remote = RemoteAccess()
+        retainer.remote = remote
+        await remote.apply(settings: settings, backend: manager)
 
         // Report the ACTUAL bound state — never claim "ready" if the bind failed,
         // and derive loopback-vs-LAN from what the server really did (not a
         // re-computed guess that can drift from the bind decision).
-        guard let bound = await server.boundState() else {
+        guard let bound = await remote.boundState() else {
             stderrLine("GoelDaemon: fatal — the portal failed to bind port \(port) (already in use, or a privileged port without permission)")
             exit(1)
         }

@@ -221,11 +221,15 @@ enum RemotePortalAssets {
     async function logout(){try{await post('/logout');}catch(_){}location.href='/';}
     // ---- SSE / polling ----
     let es=null,live=false;
-    function connect(){try{es=new EventSource('/api/events');es.onmessage=e=>{live=true;S.tasks=JSON.parse(e.data);if(S.view==='library')renderList();else{counts();totals();}};es.onerror=()=>{live=false;};}catch(_){live=false;}}
+    function connect(){try{if(es){try{es.close();}catch(_){}}es=new EventSource('/api/events');es.onmessage=e=>{live=true;S.tasks=JSON.parse(e.data);if(S.view==='library')renderList();else{counts();totals();}
+      // Keep selected detail row live from the SSE snapshot (progress/speed/status).
+      if(S.sel!=null&&S.panel&&S.detail&&S.detail.row){const t=S.tasks.find(x=>x.id===S.sel);if(t){S.detail.row=Object.assign(S.detail.row,t);renderDetail(S.detail);}}
+    };es.onerror=()=>{live=false;try{es&&es.close();}catch(_){}es=null;setTimeout(connect,2000);};}catch(_){live=false;setTimeout(connect,2000);}}
     async function refresh(){try{const r=await api('/api/tasks');S.tasks=await r.json();if(S.view==='library')renderList();else{counts();totals();}}catch(_){}}
-    // detail refresh loop
+    // List poll only when SSE is dead. Detail: always refresh heavy fields (peers/files)
+    // while the panel is open — slower while live (SSE already patches the row).
     setInterval(()=>{if(!live)refresh();},2500);
-    setInterval(()=>{if(S.sel!=null&&S.view==='library'&&S.panel){const t=S.tasks.find(x=>x.id===S.sel);if(!t||t.statusToken!=='completed')loadDetail();}},1600);
+    setInterval(()=>{if(S.sel!=null&&S.view==='library'&&S.panel){const t=S.tasks.find(x=>x.id===S.sel);if(!t||t.statusToken!=='completed')loadDetail();}},4000);
     // ---- events ----
     $('#sidebar').addEventListener('click',e=>{const it=e.target.closest('.s-item');if(!it)return;if(it.dataset.filter)S.filter=it.dataset.filter;switchView(it.dataset.view);});
     $('#hamburger').onclick=()=>{$('#sidebar').classList.toggle('open');$('#sbBackdrop').classList.toggle('show');};

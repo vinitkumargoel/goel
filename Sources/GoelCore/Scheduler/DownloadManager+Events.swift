@@ -97,9 +97,7 @@ extension DownloadManager {
             switch status {
             case .downloading, .seeding: break
             default:
-                tasks[i].downloadSpeed = 0
-                tasks[i].uploadSpeed = 0
-                speedMeters[id] = nil
+                clearLiveRates(id)
             }
             handleStatusTransition(id, status)
 
@@ -116,9 +114,7 @@ extension DownloadManager {
                 return
             }
             tasks[i].status = .failed(error)
-            tasks[i].downloadSpeed = 0
-            tasks[i].uploadSpeed = 0
-            speedMeters[id] = nil
+            clearLiveRates(id)
             handleStatusTransition(id, .failed(error))
 
         case let .resumeDataUpdated(data):
@@ -150,6 +146,9 @@ extension DownloadManager {
         // write a stale `.downloading` snapshot that could land after — and clobber
         // — the authoritative terminal write; exclude it too.
         switch event {
+        // Progress/swarm/piece chatter is high-frequency — never persist those.
+        // `.resumeDataUpdated` still persists: it is the durable cursor + the
+        // concurrent byte count that would otherwise never hit disk until pause.
         case .progress, .fileProgress, .finished, .connectionsUpdated, .swarmUpdated,
              .trackersUpdated, .piecesUpdated:
             break

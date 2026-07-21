@@ -58,8 +58,11 @@ actor HLSEngine: HLSConfigurable {
     }
 
     func pause(_ id: UUID) async {
+        // Cancel but KEEP `jobs[id]`: cancellation is a request, not an exit, and
+        // the next `startJob` serializes on this handle so a rapid pause→resume
+        // can't run two producers over the same workDir. Clearing it here would
+        // hand the resume a nil predecessor. Mirrors FTP/SFTP.
         jobs[id]?.cancel()
-        jobs[id] = nil
     }
 
     func resume(_ id: UUID) async {
@@ -68,12 +71,17 @@ actor HLSEngine: HLSConfigurable {
     }
 
     func remove(_ id: UUID, deleteData: Bool) async {
-        jobs[id]?.cancel()
+        let job = jobs[id]
+        job?.cancel()
         jobs[id] = nil
         let task = tasks[id]
         tasks[id] = nil
+        // Wait for writers to stop before unlinking — matches HTTP/FTP/SFTP.
+        await job?.value
         try? FileManager.default.removeItem(at: Self.workDir(for: id))
-        if deleteData, let task { try? FileManager.default.removeItem(atPath: task.savePath) }
+        if deleteData, let task, task.isSavePathContained {
+            try? FileManager.default.removeItem(atPath: task.savePath)
+        }
         hub.finishAll(id)
     }
 
@@ -99,15 +107,24 @@ actor HLSEngine: HLSConfigurable {
     // MARK: Orchestration
 
     private func startJob(_ id: UUID) {
-        jobs[id]?.cancel()
+        // Serialize like FTP/SFTP: a rapid pause→resume must not run two producers
+        // against the same workDir/segments (cancel alone does not wait for exit).
+        let previous = jobs[id]
+        previous?.cancel()
         let height = maxHeight
         let bound = max(1, min(8, profile.maxConnectionsPerServer == 0 ? 6 : profile.maxConnectionsPerServer))
-        jobs[id] = Task { await self.run(id, maxHeight: height, concurrency: bound) }
+        // Capture the bandwidth cap at start (same pattern as HTTP/FTP/SFTP).
+        let rateCap = tasks[id].map { profile.effectiveDownloadCap(taskLimit: $0.speedLimitBytesPerSec) } ?? 0
+        jobs[id] = Task {
+            _ = await previous?.value
+            guard !Task.isCancelled else { return }
+            await self.run(id, maxHeight: height, concurrency: bound, rateCap: rateCap)
+        }
     }
 
     private func clearJob(_ id: UUID) { jobs[id] = nil }
 
-    private func run(_ id: UUID, maxHeight: Int, concurrency: Int) async {
+    private func run(_ id: UUID, maxHeight: Int, concurrency: Int, rateCap: Int64) async {
         guard let task = tasks[id], case .hlsStream(let playlistURL) = task.source else {
             let e = DownloadError.unknown("HLSEngine requires an HLS source")
             hub.fail(id, e)
@@ -117,7 +134,7 @@ actor HLSEngine: HLSConfigurable {
         do {
             try Task.checkCancellation()
             let plan = try await resolveMediaPlaylist(playlistURL, maxHeight: maxHeight)
-            try await produce(id: id, task: task, plan: plan, concurrency: concurrency)
+            try await produce(id: id, task: task, plan: plan, concurrency: concurrency, rateCap: rateCap)
         } catch is CancellationError {
             // pause()/remove() cancelled the job; the manager owns the state.
         } catch {
@@ -153,7 +170,8 @@ actor HLSEngine: HLSConfigurable {
     /// Download every segment, assemble, and emit completion. `nonisolated` so the
     /// concurrent fetch/decrypt/assemble work runs off the actor; it reaches the
     /// engine only through the thread-safe `hub` and `nonisolated` fetch helpers.
-    private nonisolated func produce(id: UUID, task: DownloadTask, plan: MediaPlan, concurrency: Int) async throws {
+    private nonisolated func produce(id: UUID, task: DownloadTask, plan: MediaPlan,
+                                      concurrency: Int, rateCap: Int64) async throws {
         let segments = plan.segments
         guard !segments.isEmpty else { throw DownloadError.unknown("HLS playlist had no segments") }
         // Defense in depth: the destination is derived from a sanitised task name,
@@ -173,6 +191,9 @@ actor HLSEngine: HLSConfigurable {
 
         let keyCache = KeyCache()
         let progress = ProgressTracker(hub: hub, id: id, connections: concurrency)
+        // Shared across concurrent segments so aggregate throughput respects the
+        // profile/task cap (0 = unlimited → no limiter).
+        let limiter: RateLimiter? = rateCap > 0 ? RateLimiter(bytesPerSecond: rateCap) : nil
 
         // fMP4 init map first, if present.
         if let mapURL = plan.mapURL {
@@ -183,6 +204,7 @@ actor HLSEngine: HLSConfigurable {
                                                              key: segments.first?.key),
                                                   keyCache: keyCache)
                 try data.write(to: initFile)
+                if let limiter { await limiter.pace(data.count) }
             }
         }
 
@@ -194,14 +216,14 @@ actor HLSEngine: HLSConfigurable {
                 let i = started; started += 1
                 group.addTask { try await self.downloadSegment(index: i, segment: segments[i],
                                                                workDir: workDir, keyCache: keyCache,
-                                                               progress: progress) }
+                                                               progress: progress, limiter: limiter) }
             }
             while started < segments.count {
                 try await group.next()
                 let i = started; started += 1
                 group.addTask { try await self.downloadSegment(index: i, segment: segments[i],
                                                                workDir: workDir, keyCache: keyCache,
-                                                               progress: progress) }
+                                                               progress: progress, limiter: limiter) }
             }
             try await group.waitForAll()
         }
@@ -233,15 +255,15 @@ actor HLSEngine: HLSConfigurable {
         hub.emit(id, .progress(bytesDownloaded: actual, bytesUploaded: 0,
                                downloadSpeed: 0, uploadSpeed: 0, connectionCount: 0))
         try? FileManager.default.removeItem(at: workDir)
-        hub.emit(id, .finished)
-        hub.emit(id, .statusChanged(.completed))
+        hub.complete(id)
         await clearJob(id)
     }
 
     // MARK: Segment fetch / decrypt
 
     private nonisolated func downloadSegment(index: Int, segment: HLSSegment, workDir: URL,
-                                             keyCache: KeyCache, progress: ProgressTracker) async throws {
+                                             keyCache: KeyCache, progress: ProgressTracker,
+                                             limiter: RateLimiter?) async throws {
         try Task.checkCancellation()
         let dest = workDir.appendingPathComponent(Self.segmentName(index))
         if let existing = Self.fileSize(dest) {
@@ -256,6 +278,7 @@ actor HLSEngine: HLSConfigurable {
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.moveItem(at: tmp, to: dest)
         await progress.add(Int64(data.count))
+        if let limiter { await limiter.pace(data.count) }
     }
 
     private nonisolated func fetchSegment(_ segment: HLSSegment, keyCache: KeyCache) async throws -> Data {
@@ -317,14 +340,18 @@ actor HLSEngine: HLSConfigurable {
         return size
     }
 
-    /// Concatenate `parts` (in order) into `dest`, streaming part-by-part.
+    /// Concatenate `parts` (in order) into `dest`, streaming part-by-part without
+    /// loading whole segments into RAM (large VOD can be multi-100MB).
     private static func concatenate(_ parts: [URL], to dest: URL) throws {
         FileManager.default.createFile(atPath: dest.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: dest)
-        defer { try? handle.close() }
+        let out = try FileHandle(forWritingTo: dest)
+        defer { try? out.close() }
         for part in parts {
-            let data = try Data(contentsOf: part)
-            try handle.write(contentsOf: data)
+            let input = try FileHandle(forReadingFrom: part)
+            defer { try? input.close() }
+            while let chunk = try input.read(upToCount: 256 * 1024), !chunk.isEmpty {
+                try out.write(contentsOf: chunk)
+            }
         }
     }
 

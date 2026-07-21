@@ -43,6 +43,13 @@ public actor DownloadManager {
     /// extensions in sibling files can read it; only this file mutates it.
     var tasks: [DownloadTask] = []
 
+    /// O(1) id → index into ``tasks``. Kept in sync by ``appendTask`` /
+    /// ``removeTask(at:)`` / ``rebuildTaskIndex()``.
+    var taskIndex: [UUID: Int] = [:]
+
+    /// O(1) ``DownloadSource/dedupKey`` → task id. Kept in sync with the list.
+    var dedupIndex: [String: UUID] = [:]
+
     /// User configuration (active profile, snail flag, default folder, plus the
     /// General/Network/BitTorrent/Notification/Power/Backup/Antivirus panes).
     /// `internal` so the cross-cutting extensions can read it.
@@ -273,7 +280,11 @@ public actor DownloadManager {
             notePersistenceError(error)
         }
 
-        if let savedStats = try? store.loadStats() { stats = savedStats }
+        do {
+            if let savedStats = try store.loadStats() { stats = savedStats }
+        } catch {
+            notePersistenceError(error)
+        }
 
         let loaded: [DownloadTask]
         do {
@@ -287,19 +298,8 @@ public actor DownloadManager {
             return
         }
 
-        tasks = loaded.map { task in
-            var t = task
-            switch t.status {
-            case .downloading, .verifying, .requestingMetadata, .queued, .seeding:
-                t.status = .paused
-            default:
-                break   // paused / completed / failed are preserved
-            }
-            t.downloadSpeed = 0
-            t.uploadSpeed = 0
-            t.connectionCount = 0
-            return t
-        }
+        tasks = loaded.map(Self.normalizeRestored)
+        rebuildTaskIndex()
 
         // Drop any completed download whose file was deleted/moved while the app
         // was closed, before the row can flash in the list (pruned tasks are
@@ -372,7 +372,8 @@ public actor DownloadManager {
 
     /// Look up a single task by id.
     public func task(_ id: DownloadTask.ID) -> DownloadTask? {
-        tasks.first { $0.id == id }
+        guard let i = index(of: id) else { return nil }
+        return tasks[i]
     }
 
     /// A live stream of task-list snapshots. The current list is delivered
@@ -438,8 +439,9 @@ public actor DownloadManager {
         files: [TransferFile] = [],
         deselectedFileIDs: [Int]? = nil
     ) -> DownloadTask {
-        if let existing = tasks.first(where: { $0.source.dedupKey == source.dedupKey }) {
-            return existing
+        if let existingID = dedupIndex[source.dedupKey],
+           let i = index(of: existingID) {
+            return tasks[i]
         }
         // A future start time implies "hold it until then" — same race-free
         // create-paused path as `startPaused`.
@@ -479,7 +481,7 @@ public actor DownloadManager {
             mirrors: Self.sanitizedMirrors(mirrors, primary: source),
             initialSkipFileIDs: (deselectedFileIDs?.isEmpty ?? true) ? nil : deselectedFileIDs
         )
-        tasks.append(task)
+        appendTask(task)
         persist(task)
         publish()
         if !holdPaused { schedule() }
@@ -571,10 +573,8 @@ public actor DownloadManager {
             return
         }
         tasks[i].status = .paused
-        tasks[i].downloadSpeed = 0
-        tasks[i].uploadSpeed = 0
         tasks[i].connections = nil
-        speedMeters[id] = nil
+        clearLiveRates(id)
         persist(tasks[i])
         updatePowerAssertion()
         publish()
@@ -602,12 +602,10 @@ public actor DownloadManager {
         autoRetryTasks[id]?.cancel()
         autoRetryTasks[id] = nil
         tasks[i].status = .queued
-        tasks[i].downloadSpeed = 0
-        tasks[i].uploadSpeed = 0
         tasks[i].scanVerdict = nil
         tasks[i].scheduledAt = nil
         tasks[i].retryAttempt = nil
-        speedMeters[id] = nil
+        clearLiveRates(id)
         persist(tasks[i])
         publish()
         schedule()
@@ -643,11 +641,9 @@ public actor DownloadManager {
         autoRetryTasks[id] = nil
         guard let i = index(of: id), case .failed = tasks[i].status else { return }
         tasks[i].status = .queued
-        tasks[i].downloadSpeed = 0
-        tasks[i].uploadSpeed = 0
         tasks[i].scanVerdict = nil
         tasks[i].scheduledAt = nil
-        speedMeters[id] = nil
+        clearLiveRates(id)
         persist(tasks[i])
         publish()
         schedule()
@@ -659,15 +655,7 @@ public actor DownloadManager {
         if engineStarted.contains(id) {
             await engine(for: task.source).remove(id, deleteData: deleteData)
         }
-        autoRetryTasks[id]?.cancel()
-        autoRetryTasks[id] = nil
-        consumers[id]?.cancel()
-        consumers[id] = nil
-        runningSlots.remove(id)
-        engineStarted.remove(id)
-        statsMarks[id] = nil
-        speedMeters[id] = nil
-        if let i = index(of: id) { tasks.remove(at: i) }
+        clearLocalState(id, removeFromList: true)
         persistRemoval(id)
         updatePowerAssertion()
         publish()
@@ -797,10 +785,9 @@ public actor DownloadManager {
     /// Set (or clear, with nil/0) a per-task download cap in bytes/sec. Applied
     /// on the task's next launch/resume; the global profile ceiling still holds.
     public func setTaskSpeedLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {
-        guard let i = index(of: id) else { return }
-        tasks[i].speedLimitBytesPerSec = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
-        persist(tasks[i])
-        publish()
+        _ = mutateTask(id) {
+            $0.speedLimitBytesPerSec = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
+        }
     }
 
     /// Cap one torrent's upload rate in bytes/sec (nil/0 = uncapped), applied live.
@@ -844,29 +831,26 @@ public actor DownloadManager {
 
     /// Assign (or clear, with nil/empty) a free-form category label for grouping.
     public func setLabel(_ label: String?, task id: DownloadTask.ID) async {
-        guard let i = index(of: id) else { return }
         let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines)
-        tasks[i].label = (trimmed?.isEmpty ?? true) ? nil : trimmed
-        persist(tasks[i])
-        publish()
+        _ = mutateTask(id) {
+            $0.label = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        }
     }
 
     /// Replace a task's tag set (trimmed, de-duped case-insensitively, order-stable).
     public func setTags(_ tags: [String], task id: DownloadTask.ID) async {
-        guard let i = index(of: id) else { return }
         let cleaned = Self.normalizeTags(tags)
-        tasks[i].tags = cleaned.isEmpty ? nil : cleaned
-        persist(tasks[i])
-        publish()
+        _ = mutateTask(id) {
+            $0.tags = cleaned.isEmpty ? nil : cleaned
+        }
     }
 
     /// Set (or clear, with nil/empty) a free-form note on a task.
     public func setNote(_ note: String?, task id: DownloadTask.ID) async {
-        guard let i = index(of: id) else { return }
         let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
-        tasks[i].note = (trimmed?.isEmpty ?? true) ? nil : trimmed
-        persist(tasks[i])
-        publish()
+        _ = mutateTask(id) {
+            $0.note = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        }
     }
 
     /// Set the per-task `Referer` and extra request headers (HTTP downloads).
@@ -1015,19 +999,9 @@ public actor DownloadManager {
         var added = 0
         for imported in envelope.tasks {
             let task = PersistenceStore.sanitizedForImport(imported)
-            guard !tasks.contains(where: { $0.source.dedupKey == task.source.dedupKey }) else { continue }
-            var t = task
-            switch t.status {
-            case .downloading, .verifying, .requestingMetadata, .queued, .seeding:
-                t.status = .paused
-            default:
-                break
-            }
-            t.downloadSpeed = 0
-            t.uploadSpeed = 0
-            t.connectionCount = 0
-            t.connections = nil
-            tasks.append(t)
+            guard dedupIndex[task.source.dedupKey] == nil else { continue }
+            let t = Self.normalizeRestored(task)
+            appendTask(t)
             persist(t)
             added += 1
         }
@@ -1120,7 +1094,104 @@ public actor DownloadManager {
 
     /// `internal` so the `+Scheduling` / `+Events` extensions can locate a task.
     func index(of id: UUID) -> Int? {
-        tasks.firstIndex { $0.id == id }
+        if let i = taskIndex[id], i < tasks.count, tasks[i].id == id { return i }
+        // Stale map (should be rare) — rebuild once.
+        rebuildTaskIndex()
+        return taskIndex[id]
+    }
+
+    /// Rebuild ``taskIndex`` and ``dedupIndex`` from ``tasks``. Call after bulk replace.
+    ///
+    /// Built first-wins with an explicit loop, never `Dictionary(uniqueKeysWithValues:)`:
+    /// a database written by an older build can hold two tasks that today share a
+    /// ``DownloadSource/dedupKey`` (two magnets for one infohash differing only in
+    /// `dn=`/`tr=`), and a duplicate key would trap here — an unrecoverable crash on
+    /// every launch. First-wins also matches the `tasks.first(where:)` lookup this
+    /// map replaced.
+    func rebuildTaskIndex() {
+        taskIndex.removeAll(keepingCapacity: true)
+        dedupIndex.removeAll(keepingCapacity: true)
+        for (offset, task) in tasks.enumerated() {
+            taskIndex[task.id] = offset
+            let key = task.source.dedupKey
+            if dedupIndex[key] == nil { dedupIndex[key] = task.id }
+        }
+    }
+
+    /// Append and keep the index maps current.
+    func appendTask(_ task: DownloadTask) {
+        taskIndex[task.id] = tasks.count
+        dedupIndex[task.source.dedupKey] = task.id
+        tasks.append(task)
+    }
+
+    /// Remove at a known index and shift subsequent index entries.
+    func removeTask(at i: Int) {
+        let removed = tasks[i]
+        let key = removed.source.dedupKey
+        tasks.remove(at: i)
+        taskIndex[removed.id] = nil
+        if dedupIndex[key] == removed.id {
+            // A legacy queue can hold a second task under the same key — hand the
+            // entry to the survivor rather than leaving it unindexed (which would
+            // let the duplicate be added a third time).
+            dedupIndex[key] = tasks.first { $0.source.dedupKey == key }?.id
+        }
+        for j in i..<tasks.count {
+            taskIndex[tasks[j].id] = j
+        }
+    }
+
+    /// Mid-flight → `.paused`, zero live rates. Shared by restore and import.
+    static func normalizeRestored(_ task: DownloadTask) -> DownloadTask {
+        var t = task
+        switch t.status {
+        case .downloading, .verifying, .requestingMetadata, .queued, .seeding:
+            t.status = .paused
+        default:
+            break
+        }
+        t.downloadSpeed = 0
+        t.uploadSpeed = 0
+        t.connectionCount = 0
+        t.connections = nil
+        return t
+    }
+
+    /// Drop per-task bookkeeping (and optionally the list row). Does not touch
+    /// disk or engines — callers that need those do them around this.
+    func clearLocalState(_ id: UUID, removeFromList: Bool) {
+        autoRetryTasks[id]?.cancel()
+        autoRetryTasks[id] = nil
+        consumers[id]?.cancel()
+        consumers[id] = nil
+        runningSlots.remove(id)
+        engineStarted.remove(id)
+        statsMarks[id] = nil
+        speedMeters[id] = nil
+        if removeFromList, let i = index(of: id) {
+            removeTask(at: i)
+        }
+    }
+
+    /// Zero live rates and drop the speed meter (pause / fail / retry).
+    func clearLiveRates(_ id: UUID) {
+        if let i = index(of: id) {
+            tasks[i].downloadSpeed = 0
+            tasks[i].uploadSpeed = 0
+        }
+        speedMeters[id] = nil
+    }
+
+    /// Mutate one task, persist, optionally publish. Returns false if missing.
+    @discardableResult
+    func mutateTask(_ id: UUID, publishAfter: Bool = true,
+                    _ body: (inout DownloadTask) -> Void) -> Bool {
+        guard let i = index(of: id) else { return false }
+        body(&tasks[i])
+        persist(tasks[i])
+        if publishAfter { publish() }
+        return true
     }
 
     /// `internal` so the `+Scheduling` extension can route to the right engine.

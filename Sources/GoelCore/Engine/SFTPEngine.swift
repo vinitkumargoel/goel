@@ -97,40 +97,23 @@ actor SFTPEngine: DownloadEngine {
         }
         emit(id, .statusChanged(.downloading))
 
-        let fm = FileManager.default
-        do {
-            try fm.createDirectory(atPath: task.saveDirectory, withIntermediateDirectories: true)
-        } catch {
-            let e = DownloadError.unknown("Couldn’t create the download folder")
-            hub.fail(id, e)
-            return
-        }
-
-        let fileURL = URL(fileURLWithPath: task.savePath)
-        if !fm.fileExists(atPath: fileURL.path) { fm.createFile(atPath: fileURL.path, contents: nil) }
-        let attributes = try? fm.attributesOfItem(atPath: fileURL.path)
-        let localSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-
-        // A byte-offset resume trusts the on-disk size to be a prefix of the
-        // remote file. If the remote is now *smaller* than what we hold locally
-        // (it was replaced/truncated, or the save path already held a larger
-        // unrelated file), resuming would seek past EOF: the first read returns 0,
-        // the transfer "succeeds" at the stale local size, and we'd falsely report
-        // completion of mismatched data. Restart from scratch in that case.
         let remoteSize = try? await client.size(url.path)
-        var resumeFrom = localSize
-        if let remoteSize, localSize > remoteSize { resumeFrom = 0 }
-
-        guard let handle = try? FileHandle(forWritingTo: fileURL) else {
-            let e = DownloadError.fileMissing
-            hub.fail(id, e)
+        let opened: RemoteTransferPrep.Opened
+        do {
+            opened = try RemoteTransferPrep.openForResume(
+                saveDirectory: task.saveDirectory, savePath: task.savePath,
+                remoteSize: remoteSize)
+        } catch {
+            if let de = error as? DownloadError {
+                hub.fail(id, de)
+            } else {
+                hub.fail(id, DownloadError.unknown("Couldn’t create the download folder"))
+            }
             return
         }
-        if resumeFrom == 0 {
-            try? handle.truncate(atOffset: 0)
-        } else {
-            _ = try? handle.seekToEnd()
-        }
+        let handle = opened.handle
+        let resumeFrom = opened.resumeFrom
+        let fileURL = opened.fileURL
 
         let cap = profile.effectiveDownloadCap(taskLimit: task.speedLimitBytesPerSec)
 
@@ -152,22 +135,9 @@ actor SFTPEngine: DownloadEngine {
             return
         }
 
-        let written = state.finalBytes
-        emit(id, .metadataResolved(name: task.name, totalBytes: written,
-                                   files: [TransferFile(id: 0, path: task.name, length: written)]))
-        emit(id, .progress(bytesDownloaded: written, bytesUploaded: 0,
-                           downloadSpeed: 0, uploadSpeed: 0, connectionCount: 0))
-        if let expected = task.expectedChecksum {
-            emit(id, .statusChanged(.verifying))
-            let matches = (try? await ChecksumVerifier.verify(fileAt: fileURL, expected: expected)) ?? false
-            guard matches else {
-                let e = DownloadError.checksumMismatch
-                hub.fail(id, e)
-                return
-            }
-        }
-        emit(id, .finished)
-        emit(id, .statusChanged(.completed))
+        await RemoteTransferPrep.finishWithOptionalChecksum(
+            hub: hub, id: id, name: task.name, fileURL: fileURL,
+            written: state.finalBytes, expected: task.expectedChecksum)
     }
 
     private nonisolated func emit(_ id: UUID, _ event: EngineEvent) { hub.emit(id, event) }
@@ -207,7 +177,7 @@ final class SFTPDownloadState: @unchecked Sendable {
 
     func write(_ buf: UnsafeRawBufferPointer) -> Bool {
         do {
-            try handle.write(contentsOf: Data(bytes: buf.baseAddress!, count: buf.count))
+            try handle.write(contentsOf: buf)
             return true
         } catch {
             return false

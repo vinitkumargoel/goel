@@ -180,10 +180,7 @@ extension DownloadManager {
     /// Fold the antivirus result back into the task so the verdict survives
     /// relaunch and the UI can badge a flagged file.
     func recordScanVerdict(_ id: UUID, passed: Bool) {
-        guard let i = index(of: id) else { return }
-        tasks[i].scanVerdict = passed ? "clean" : "flagged"
-        persist(tasks[i])
-        publish()
+        _ = mutateTask(id) { $0.scanVerdict = passed ? "clean" : "flagged" }
     }
 
     // MARK: Post-download actions

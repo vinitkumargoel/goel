@@ -22,12 +22,7 @@ public enum SnapshotReducer {
                               _ env: ReducerEnv) -> ReducerOutput {
         // MARK: Queue-drain edge — reads the PRE-overwrite statuses.
         // Seeding never counts as active work (it can run indefinitely).
-        let hasActiveWork = snapshot.contains { task in
-            switch task.status {
-            case .queued, .requestingMetadata, .downloading, .verifying: return true
-            default: return false
-            }
-        }
+        let hasActiveWork = snapshot.contains { $0.status.isActiveWork }
         // A task must have transitioned INTO `.completed` on this very tick — an
         // old completed download sitting in the list must not turn a manual
         // "Pause All" into a system shutdown.

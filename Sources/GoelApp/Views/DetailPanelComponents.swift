@@ -126,7 +126,7 @@ private struct SparkPath: Shape {
 
 // MARK: - Shared chrome
 
-/// A ↓ / ↑ speed readout: coloured while transferring, dimmed to "—" at rest.
+/// A ↓ / ↑ speed readout — thin wrapper over ``SpeedStat`` for existing call sites.
 struct DetailSpeedStat: View {
     let symbol: String
     let speed: Double
@@ -134,13 +134,7 @@ struct DetailSpeedStat: View {
     var size: CGFloat = 12.5
 
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol).font(.system(size: size - 1.5, weight: .bold))
-            Text(speed > 0 ? speed.speedString : "—")
-                .font(.system(size: size, weight: .semibold))
-                .monospacedDigit()
-        }
-        .foregroundStyle(speed > 0 ? color : Color.secondary)
+        SpeedStat(symbol: symbol, speed: speed, color: color, size: size)
     }
 }
 

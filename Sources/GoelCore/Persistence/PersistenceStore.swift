@@ -117,10 +117,20 @@ public final class PersistenceStore: @unchecked Sendable {
     public func loadAllTasks() throws -> [DownloadTask] {
         try dbQueue.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT data FROM task ORDER BY addedAt ASC")
-            return rows.compactMap { row in
+            var skipped = 0
+            let tasks: [DownloadTask] = rows.compactMap { row in
                 let data: Data = row["data"]
-                return try? self.decoder.decode(DownloadTask.self, from: data)
+                if let task = try? self.decoder.decode(DownloadTask.self, from: data) {
+                    return task
+                }
+                skipped += 1
+                return nil
             }
+            if skipped > 0 {
+                FileHandle.standardError.write(
+                    Data("[GoelDownloader] skipped \(skipped) corrupt task row(s) on load\n".utf8))
+            }
+            return tasks
         }
     }
 
@@ -147,14 +157,17 @@ public final class PersistenceStore: @unchecked Sendable {
 
     /// Persist the user settings (active profile, snail flag, default folder, …).
     public func saveSettings(_ settings: AppSettings) throws {
-        let data = try encoder.encode(settings)
+        try upsertBlob(key: Self.settingsKey, data: encoder.encode(settings))
+    }
+
+    private func upsertBlob(key: String, data: Data) throws {
         try dbQueue.write { db in
             try db.execute(
                 sql: """
                 INSERT INTO settings (key, data) VALUES (?, ?)
                 ON CONFLICT(key) DO UPDATE SET data = excluded.data
                 """,
-                arguments: [Self.settingsKey, data]
+                arguments: [key, data]
             )
         }
     }
@@ -180,16 +193,7 @@ public final class PersistenceStore: @unchecked Sendable {
 
     /// Persist the lifetime/per-day transfer statistics.
     public func saveStats(_ stats: TransferStats) throws {
-        let data = try encoder.encode(stats)
-        try dbQueue.write { db in
-            try db.execute(
-                sql: """
-                INSERT INTO settings (key, data) VALUES (?, ?)
-                ON CONFLICT(key) DO UPDATE SET data = excluded.data
-                """,
-                arguments: [Self.statsKey, data]
-            )
-        }
+        try upsertBlob(key: Self.statsKey, data: encoder.encode(stats))
     }
 
     /// Load the persisted statistics, or `nil` if none were ever saved.
@@ -214,16 +218,7 @@ public final class PersistenceStore: @unchecked Sendable {
     /// Persist the per-task speed-chart samples (task-id string → sample ring),
     /// so a download's throughput chart survives quit & relaunch.
     public func saveSpeedHistory(_ history: [String: [SpeedHistoryPoint]]) throws {
-        let data = try encoder.encode(history)
-        try dbQueue.write { db in
-            try db.execute(
-                sql: """
-                INSERT INTO settings (key, data) VALUES (?, ?)
-                ON CONFLICT(key) DO UPDATE SET data = excluded.data
-                """,
-                arguments: [Self.speedHistoryKey, data]
-            )
-        }
+        try upsertBlob(key: Self.speedHistoryKey, data: encoder.encode(history))
     }
 
     /// Load the persisted per-task speed-chart samples, or an empty map if none

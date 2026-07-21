@@ -194,17 +194,11 @@ struct DetailPanelView: View {
             }
             .padding(12)
             Spacer(minLength: 0)
-            VStack(spacing: 8) {
-                Image(systemName: "doc.text.magnifyingglass")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.quaternary)
-                Text("No selection").font(.system(size: 14)).foregroundStyle(.secondary)
-                Text("Select a download to see its progress, live speed, and details.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.horizontal, 30)
+            EmptyStateView(systemImage: "doc.text.magnifyingglass",
+                           title: "No selection",
+                           subtitle: "Select a download to see its progress, live speed, and details.",
+                           symbolSize: 40)
+                .padding(.horizontal, 30)
             Spacer(minLength: 0)
         }
     }

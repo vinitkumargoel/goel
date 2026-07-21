@@ -123,28 +123,27 @@ actor FTPEngine: DownloadEngine {
         }
         emit(id, .statusChanged(.downloading))
 
-        let fm = FileManager.default
+        let credential = credentials(for: url)
+        let probe = await Self.remoteSizeBlocking(
+            url: url.absoluteString, userpwd: credential?.userpwd,
+            requireTLS: credential?.requireTLS ?? false)
+        // Shared prep: mkdir, open, resume clamp when remote smaller than local.
+        let opened: RemoteTransferPrep.Opened
         do {
-            try fm.createDirectory(atPath: task.saveDirectory, withIntermediateDirectories: true)
+            opened = try RemoteTransferPrep.openForResume(
+                saveDirectory: task.saveDirectory, savePath: task.savePath,
+                remoteSize: probe.size >= 0 ? probe.size : nil)
         } catch {
-            let e = DownloadError.unknown("Couldn’t create the download folder")
-            hub.fail(id, e)
+            if let de = error as? DownloadError {
+                hub.fail(id, de)
+            } else {
+                hub.fail(id, DownloadError.unknown("Couldn’t create the download folder"))
+            }
             return
         }
-
-        let fileURL = URL(fileURLWithPath: task.savePath)
-        if !fm.fileExists(atPath: fileURL.path) {
-            fm.createFile(atPath: fileURL.path, contents: nil)
-        }
-        let attributes = try? fm.attributesOfItem(atPath: fileURL.path)
-        let resumeFrom = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-
-        guard let handle = try? FileHandle(forWritingTo: fileURL) else {
-            let e = DownloadError.fileMissing
-            hub.fail(id, e)
-            return
-        }
-        _ = try? handle.seekToEnd()
+        let handle = opened.handle
+        let resumeFrom = opened.resumeFrom
+        let fileURL = opened.fileURL
 
         // Effective cap: the tighter of the profile ceiling and the task cap.
         let cap = profile.effectiveDownloadCap(taskLimit: task.speedLimitBytesPerSec)
@@ -154,7 +153,6 @@ actor FTPEngine: DownloadEngine {
         contexts[id] = context
         defer { contexts[id] = nil }
 
-        let credential = credentials(for: url)
         let result = await Self.downloadBlocking(
             url: url.absoluteString, resumeFrom: resumeFrom,
             userpwd: credential?.userpwd,
@@ -175,23 +173,10 @@ actor FTPEngine: DownloadEngine {
             return
         }
 
-        // Success: report the final byte count, verify if asked, complete.
         let written = resumeFrom + context.bytesWritten
-        emit(id, .metadataResolved(name: task.name, totalBytes: written,
-                                   files: [TransferFile(id: 0, path: task.name, length: written)]))
-        emit(id, .progress(bytesDownloaded: written, bytesUploaded: 0,
-                           downloadSpeed: 0, uploadSpeed: 0, connectionCount: 0))
-        if let expected = task.expectedChecksum {
-            emit(id, .statusChanged(.verifying))
-            let matches = (try? await ChecksumVerifier.verify(fileAt: fileURL, expected: expected)) ?? false
-            guard matches else {
-                let e = DownloadError.checksumMismatch
-                hub.fail(id, e)
-                return
-            }
-        }
-        emit(id, .finished)
-        emit(id, .statusChanged(.completed))
+        await RemoteTransferPrep.finishWithOptionalChecksum(
+            hub: hub, id: id, name: task.name, fileURL: fileURL,
+            written: written, expected: task.expectedChecksum)
     }
 
     /// The login for a URL, plus whether TLS must be REQUIRED to send it.
@@ -293,15 +278,16 @@ final class FTPTransferContext: @unchecked Sendable {
 
     /// Write callback body. Returns false on a write failure (aborts curl). The
     /// shared meter announces the total once and throttles progress over the
-    /// absolute offset (`resumeFrom + written`).
-    func write(_ data: Data) -> Bool {
+    /// absolute offset (`resumeFrom + written`). Accepts a raw buffer so the C
+    /// thunk avoids an intermediate `Data` copy on the hot path.
+    func write(_ buf: UnsafeRawBufferPointer) -> Bool {
         do {
-            try handle.write(contentsOf: data)
+            try handle.write(contentsOf: buf)
         } catch {
             return false
         }
         lock.lock()
-        written += Int64(data.count)
+        written += Int64(buf.count)
         let tick = meter.step(total: totalHint, sofar: resumeFrom + written, now: Date())
         lock.unlock()
         if let announce = tick.announceTotal {
@@ -328,10 +314,10 @@ final class FTPTransferContext: @unchecked Sendable {
 /// C write thunk (`gcb_write`): forward the buffer to the context.
 private func ftpWriteThunk(data: UnsafePointer<CChar>?, size: Int,
                            userdata: UnsafeMutableRawPointer?) -> Int {
-    guard let data, let userdata else { return 0 }
+    guard let data, size > 0, let userdata else { return 0 }
     let context = Unmanaged<FTPTransferContext>.fromOpaque(userdata).takeUnretainedValue()
-    let buffer = Data(bytes: data, count: size)
-    return context.write(buffer) ? size : 0
+    let buf = UnsafeRawBufferPointer(start: data, count: size)
+    return context.write(buf) ? size : 0
 }
 
 /// C progress thunk (`gcb_progress`): nonzero return aborts the transfer.
