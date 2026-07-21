@@ -62,7 +62,11 @@ struct StatusBarView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     ForEach(vm.sftpTransfers) { t in
-                        transferRow(t)
+                        SFTPTransferRow(
+                            transfer: t, density: .compact,
+                            serverLabel: vm.server(t.connectionID)?.label ?? "Server",
+                            onCancel: { vm.requestCancelSFTPTransfer(t.id) },
+                            onRetry: { vm.retrySFTPTransfer(t.id) })
                         Divider().opacity(0.3)
                     }
                 }
@@ -70,43 +74,6 @@ struct StatusBarView: View {
             .frame(maxHeight: 260)
         }
         .frame(width: 320)
-    }
-
-    @ViewBuilder
-    private func transferRow(_ t: SFTPTransfer) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: t.iconName(filledWhenFinished: false))
-                .foregroundStyle(t.tint)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(t.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
-                Text(vm.server(t.connectionID)?.label ?? "Server")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
-            }
-            Spacer(minLength: 6)
-            switch t.state {
-            case .running:
-                if !t.speedLabel.isEmpty {
-                    Text(t.speedLabel)
-                        .font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                        .foregroundStyle(t.direction == .upload ? Theme.teal : Theme.green)
-                }
-                Text(t.progressLabel)
-                    .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
-                Button { vm.requestCancelSFTPTransfer(t.id) } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
-                }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")
-            case .finished:
-                Text("Done").font(.system(size: 11)).foregroundStyle(Theme.green)
-            case .cancelled:
-                Button("Retry") { vm.retrySFTPTransfer(t.id) }
-                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
-            case .failed:
-                Button("Retry") { vm.retrySFTPTransfer(t.id) }
-                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
-            }
-        }
-        .padding(.horizontal, 12).padding(.vertical, 6)
     }
 
     private var snail: some View {

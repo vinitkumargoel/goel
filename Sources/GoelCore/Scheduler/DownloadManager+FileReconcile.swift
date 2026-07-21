@@ -69,15 +69,7 @@ extension DownloadManager {
     /// bookkeeping of ``remove(_:deleteData:)`` minus the engine call — a
     /// completed task holds no live engine state.
     private func dropTaskLocally(_ id: DownloadTask.ID) {
-        autoRetryTasks[id]?.cancel()
-        autoRetryTasks[id] = nil
-        consumers[id]?.cancel()
-        consumers[id] = nil
-        runningSlots.remove(id)
-        engineStarted.remove(id)
-        statsMarks[id] = nil
-        speedMeters[id] = nil
-        if let i = index(of: id) { tasks.remove(at: i) }
+        clearLocalState(id, removeFromList: true)
         persistRemoval(id)
     }
 }

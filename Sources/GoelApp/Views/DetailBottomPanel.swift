@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import GoelCore
 
 /// The detail panel as it appears when docked to the **bottom** edge — the
@@ -15,13 +14,6 @@ import GoelCore
 ///     same deep views the right dock shows, given the width to breathe.
 struct DetailBottomPanel: View {
     @EnvironmentObject private var vm: AppViewModel
-
-    /// Rolling download-speed history for zone 2's sparkline. Sized to 60 so the
-    /// once-a-second cadence gives a full 60-second window, matching the caption.
-    @StateObject private var sampler = ThroughputSampler(capacity: 60)
-    /// Samples the selected task's speed on a steady once-a-second cadence, so
-    /// the graph advances even when the rate holds constant.
-    @State private var sampleTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         Group {
@@ -43,20 +35,12 @@ struct DetailBottomPanel: View {
             Divider()
             detailZone(for: task).frame(maxWidth: .infinity)
         }
-        .onReceive(sampleTimer) { _ in
-            sampler.record(vm.displaySpeed(for: task).down, id: AnyHashable(task.id))
-        }
-        // Resume the chart from the download's restored history rather than a
-        // blank window — both at first appearance and when the selection changes.
-        .onAppear { seedSampler(task) }
-        .onChange(of: task.id) { _, _ in seedSampler(task) }
     }
 
-    /// Prime the telemetry sparkline with the task's restored (or accumulated)
-    /// speed history so it continues rather than starting empty.
-    private func seedSampler(_ task: DownloadTask) {
-        let history = vm.taskSpeedHistory[task.id]?.map(\.down) ?? []
-        sampler.seed(history, id: AnyHashable(task.id))
+    /// Last-N download samples from the VM history (already sampled ~1 Hz).
+    private func downSamples(for task: DownloadTask, cap: Int = 60) -> [Double] {
+        let pts = vm.taskSpeedHistory[task.id]?.map(\.down) ?? []
+        return pts.count > cap ? Array(pts.suffix(cap)) : pts
     }
 
     // MARK: - Zone 1 · identity + actions
@@ -106,14 +90,14 @@ struct DetailBottomPanel: View {
                 .foregroundStyle(.tertiary)
 
             HStack(spacing: 12) {
-                ThroughputGraph(samples: sampler.samples)
+                // Drive sparkline from VM history — no local Timer.publish.
+                ThroughputGraph(samples: downSamples(for: task))
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(vm.displaySpeed(for: task).down > 0 ? vm.displaySpeed(for: task).down.speedString : "—")
-                        .font(.system(size: 16, weight: .bold))
-                        .monospacedDigit()
-                        .foregroundStyle(vm.displaySpeed(for: task).down > 0 ? Theme.green : Color.secondary)
+                    DetailSpeedStat(symbol: "arrow.down",
+                                    speed: vm.displaySpeed(for: task).down,
+                                    color: Theme.green, size: 16)
                     Text("last 60s").font(.system(size: 10)).foregroundStyle(.tertiary)
                 }
                 .fixedSize()
@@ -238,19 +222,10 @@ struct DetailBottomPanel: View {
             }
             .padding(12)
             Spacer(minLength: 0)
-            HStack(spacing: 13) {
-                Image(systemName: "doc.text.magnifyingglass")
-                    .font(.system(size: 30))
-                    .foregroundStyle(.quaternary)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("No selection")
-                        .font(.system(size: 13.5))
-                        .foregroundStyle(.secondary)
-                    Text("Select a download to see its details, progress, and live throughput.")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.tertiary)
-                }
-            }
+            EmptyStateView(systemImage: "doc.text.magnifyingglass",
+                           title: "No selection",
+                           subtitle: "Select a download to see its details, progress, and live throughput.",
+                           symbolSize: 30)
             Spacer(minLength: 0)
         }
     }

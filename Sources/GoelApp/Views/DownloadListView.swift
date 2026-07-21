@@ -98,18 +98,9 @@ struct DownloadListView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "tray")
-                .font(.system(size: 38))
-                .foregroundStyle(.quaternary)
-            Text("No downloads match")
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-            Text("Try a different filter or search term.")
-                .font(.system(size: 12))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EmptyStateView(systemImage: "tray", title: "No downloads match",
+                       subtitle: "Try a different filter or search term.")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -247,7 +238,7 @@ struct DownloadRow: View {
         }
         Button("Copy source link") { vm.copyToPasteboard(task.sourceLocator) }
         if vm.settings.remoteAccessEnabled, !vm.settings.remoteToken.isEmpty,
-           RemoteControlServer.streamPlan(for: task) != nil {
+           RemoteStreamService.streamPlan(for: task) != nil {
             Button("Copy Stream Link") {
                 vm.copyToPasteboard("http://127.0.0.1:\(vm.settings.remotePort)/stream?id=\(task.id.uuidString)&token=\(vm.settings.remoteToken)")
             }

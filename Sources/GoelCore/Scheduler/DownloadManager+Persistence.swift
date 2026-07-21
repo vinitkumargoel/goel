@@ -16,39 +16,33 @@ extension DownloadManager {
     }
 
     /// Persist a single task. Enqueued on the serial pipeline so it can never be
-    /// overtaken by an older write.
+    /// overtaken by an older write. Error bridge is installed once at restore.
     func persist(_ task: DownloadTask) {
-        installPersistErrorBridge()
         pipeline?.enqueue(.saveTask(task))
     }
 
     /// Persist the current settings on the serial pipeline.
     func persistSettings() {
-        installPersistErrorBridge()
         pipeline?.enqueue(.saveSettings(settings))
     }
 
     /// Remove a persisted task on the serial pipeline.
     func persistRemoval(_ id: DownloadTask.ID) {
-        installPersistErrorBridge()
         pipeline?.enqueue(.deleteTask(id))
     }
 
     /// Archive a completed download on the serial pipeline.
     func persistHistory(_ entry: HistoryEntry) {
-        installPersistErrorBridge()
         pipeline?.enqueue(.saveHistory(entry))
     }
 
     /// Remove one archived entry on the serial pipeline.
     func persistHistoryRemoval(_ id: UUID) {
-        installPersistErrorBridge()
         pipeline?.enqueue(.deleteHistory(id))
     }
 
     /// Wipe the archive on the serial pipeline.
     func persistHistoryClear() {
-        installPersistErrorBridge()
         pipeline?.enqueue(.clearHistory)
     }
 
@@ -57,7 +51,6 @@ extension DownloadManager {
     /// blank. Called on a coarse cadence by the UI (the samples are a display
     /// nicety, not queue state), keyed by task-id string.
     public func persistSpeedHistory(_ history: [String: [SpeedHistoryPoint]]) {
-        installPersistErrorBridge()
         pipeline?.enqueue(.saveSpeedHistory(history))
     }
 
@@ -76,7 +69,6 @@ extension DownloadManager {
         let now = Date()
         guard force || now.timeIntervalSince(lastStatsFlush) >= 30 else { return }
         lastStatsFlush = now
-        installPersistErrorBridge()
         pipeline?.enqueue(.saveStats(stats))
     }
 }

@@ -874,6 +874,8 @@ final class SegmentedTransfer: Sendable {
         /// fraction for its one connection row (nil when the size is unknown).
         private let expectedTotal: Int64?
         private var segmentBytes: [Int: Int64]
+        /// Running sum of `segmentBytes` — O(1) total instead of reduce-per-flush.
+        private var runningTotal: Int64 = 0
         /// Constant for a download's lifetime (the live fan-out reported to the UI).
         private let connectionCount: Int
         /// Multi-path adapter labels per segment index (bsdName / display).
@@ -891,6 +893,7 @@ final class SegmentedTransfer: Sendable {
             self.continuation = continuation
             self.meta = meta
             self.segmentBytes = initialSegmentBytes
+            self.runningTotal = initialSegmentBytes.values.reduce(0, +)
             self.connectionCount = connectionCount
             self.expectedTotal = expectedTotal
         }
@@ -899,13 +902,14 @@ final class SegmentedTransfer: Sendable {
             segmentAdapters[segment] = (id, label)
         }
 
-        func totalBytes() -> Int64 { segmentBytes.values.reduce(0, +) }
+        func totalBytes() -> Int64 { runningTotal }
 
         /// Record `n` flushed bytes for `segment` and, when the throttle allows,
         /// yield a progress tick (with a fresh resume cursor at most once a second).
         func advance(segment: Int, by n: Int) {
             segmentBytes[segment, default: 0] += Int64(n)
-            let total = segmentBytes.values.reduce(0, +)
+            runningTotal += Int64(n)
+            let total = runningTotal
 
             let now = Date()
             guard now.timeIntervalSince(lastEmit) > 0.1 else { return }

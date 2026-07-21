@@ -41,6 +41,9 @@ enum BoundHTTPClient {
         let onBytes: (@Sendable (Int) -> Void)?
         private let lock = NSLock()
         private var _aborted = false
+        /// Coalesce RateLimiter hops — Task-per-write thrashes under multi-path.
+        private var pendingPace = 0
+        private static let paceBatch = 64 * 1024
 
         init(handle: FileHandle, limiter: RateLimiter?,
              onBytes: (@Sendable (Int) -> Void)? = nil) {
@@ -56,6 +59,24 @@ enum BoundHTTPClient {
 
         func abort() {
             lock.lock(); _aborted = true; lock.unlock()
+        }
+
+        /// Pace after accumulating ~64 KiB (or force flush remaining).
+        func paceIfNeeded(_ size: Int, force: Bool = false) {
+            guard limiter != nil else { return }
+            lock.lock()
+            pendingPace += size
+            let n = pendingPace
+            let fire = force ? n > 0 : n >= Self.paceBatch
+            if fire { pendingPace = 0 }
+            lock.unlock()
+            guard fire, let limiter, n > 0 else { return }
+            let sem = DispatchSemaphore(value: 0)
+            Task {
+                await limiter.pace(n)
+                sem.signal()
+            }
+            _ = sem.wait(timeout: .now() + 60)
         }
     }
 
@@ -112,6 +133,7 @@ enum BoundHTTPClient {
         let auth = request.authorization ?? ""
 
         let expected = request.expectedTotal ?? 0
+        let ctx = contextBox.takeUnretainedValue()
         let raw: GCBHTTPResult = url.withCString { urlC in
             ifname.withCString { ifC in
                 ua.withCString { uaC in
@@ -140,9 +162,10 @@ enum BoundHTTPClient {
                 }
             }
         }
+        // Drain any residual paced bytes so the last <64 KiB is still limited.
+        ctx.paceIfNeeded(0, force: true)
 
         let total: Int64? = raw.content_range_total > 0 ? raw.content_range_total : nil
-        let ctx = contextBox.takeUnretainedValue()
         return Response(
             curlCode: Int(raw.code),
             httpStatus: Int(raw.http_status),
@@ -161,18 +184,10 @@ private func boundWriteThunk(_ data: UnsafePointer<CChar>?, _ size: Int, _ userd
     let ctx = Unmanaged<BoundHTTPClient.TransferContext>.fromOpaque(userdata).takeUnretainedValue()
     if ctx.aborted { return 0 }
 
-    let buffer = Data(bytes: data, count: size)
     do {
-        try ctx.handle.write(contentsOf: buffer)
+        try ctx.handle.write(contentsOf: UnsafeRawBufferPointer(start: data, count: size))
         ctx.onBytes?(size)
-        if let limiter = ctx.limiter {
-            let sem = DispatchSemaphore(value: 0)
-            Task {
-                await limiter.pace(size)
-                sem.signal()
-            }
-            _ = sem.wait(timeout: .now() + 60)
-        }
+        ctx.paceIfNeeded(size)
         return size
     } catch {
         return 0

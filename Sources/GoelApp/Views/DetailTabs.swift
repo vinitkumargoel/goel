@@ -499,8 +499,8 @@ struct ConnectionsTab: View {
                     }
                 }
                 Spacer()
-                Text((down / 1_000_000).oneDecimal)
-                    .frame(width: 50, alignment: .trailing).foregroundStyle(Theme.green)
+                Text(down > 0 ? down.speedString : "—")
+                    .frame(width: 64, alignment: .trailing).foregroundStyle(Theme.green)
                 Text(trailing).frame(width: 56, alignment: .trailing).foregroundStyle(trailingColor)
             }
             .font(.system(size: 11.5).monospacedDigit())

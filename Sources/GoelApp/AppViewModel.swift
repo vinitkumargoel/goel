@@ -513,8 +513,12 @@ final class AppViewModel: ObservableObject {
                 guard let self else { return }
                 let warning = await manager.currentPersistenceWarning
                 await MainActor.run {
-                    self.tasks = snapshot
-                    self.recomputeVisible()
+                    // Equality-gate: identical snapshots (common when only an
+                    // unrelated observer woke) skip the full UI republish.
+                    if self.tasks != snapshot {
+                        self.tasks = snapshot
+                        self.recomputeVisible()
+                    }
                     // Auto-select the first visible row exactly once, at launch, so
                     // "Select none" sticks and the empty-detail state stays reachable
                     // while downloads are active.
@@ -1131,14 +1135,18 @@ final class AppViewModel: ObservableObject {
         // their time span; labels refresh every tick.
         let recordHistory = speedSampleTick.isMultiple(of: 2)
         // The status-bar / menu-bar combined value: download queue + SFTP transfers.
-        displayedCombinedSpeed = SpeedSample(down: combinedDownloadSpeed, up: combinedUploadSpeed)
+        // Equality-gate @Published writes so a steady rate does not rebuild the
+        // whole EnvironmentObject tree twice a second.
+        let nextCombined = SpeedSample(down: combinedDownloadSpeed, up: combinedUploadSpeed)
+        if nextCombined != displayedCombinedSpeed { displayedCombinedSpeed = nextCombined }
         var sample = SpeedSample(down: 0, up: 0)
+        var nextTaskSpeed = displayedTaskSpeed
         for task in tasks {
             sample.down += task.downloadSpeed
             sample.up += task.uploadSpeed
             // The calm value the speed labels read (all tasks, not just
             // active, so a just-finished row settles to its final number).
-            displayedTaskSpeed[task.id] = SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
+            nextTaskSpeed[task.id] = SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
             guard recordHistory, task.status.isActive else { continue }
             var history = taskSpeedHistory[task.id] ?? []
             history.append(SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed))
@@ -1149,7 +1157,8 @@ final class AppViewModel: ObservableObject {
         // a brief pause doesn't wipe the graph).
         let known = Set(tasks.map(\.id))
         taskSpeedHistory = taskSpeedHistory.filter { known.contains($0.key) }
-        displayedTaskSpeed = displayedTaskSpeed.filter { known.contains($0.key) }
+        nextTaskSpeed = nextTaskSpeed.filter { known.contains($0.key) }
+        if nextTaskSpeed != displayedTaskSpeed { displayedTaskSpeed = nextTaskSpeed }
         if recordHistory {
             globalSpeedHistory.append(sample)
             if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }

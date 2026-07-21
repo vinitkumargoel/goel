@@ -325,7 +325,7 @@ public struct RemoteRouter: Sendable {
             source = task.source.locator
             multiFile = task.isMultiFile
             fileCount = task.files.count
-            streamable = RemoteControlServer.streamPlan(for: task) != nil
+            streamable = RemoteStreamService.streamPlan(for: task) != nil
         }
     }
 

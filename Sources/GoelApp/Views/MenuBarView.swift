@@ -68,7 +68,7 @@ struct MenuBarView: View {
                         if !activeTransfers.isEmpty {
                             sectionLabel("SFTP Transfers")
                             ForEach(activeTransfers) { t in
-                                MenuBarTransferRow(transfer: t, vm: vm)
+                                MenuBarSFTPTransferRow(transfer: t, vm: vm)
                                 Divider()
                             }
                         }
@@ -135,32 +135,17 @@ struct MenuBarView: View {
     }
 
     private func speedStat(symbol: String, value: Double, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: symbol).font(.system(size: 10, weight: .bold))
-            Text(value > 0 ? value.speedString : "—")
-                .font(.system(size: 12, weight: .semibold))
-                .monospacedDigit()
-                .frame(minWidth: 66, alignment: .trailing)
-        }
-        .foregroundStyle(value > 0 ? color : Color.secondary)
+        SpeedStat(symbol: symbol, speed: value, color: color, size: 12, minWidth: 66)
     }
 
     // MARK: Empty state
 
     private var emptyState: some View {
-        VStack(spacing: 7) {
-            Image(systemName: "arrow.down.circle")
-                .font(.system(size: 26))
-                .foregroundStyle(.tertiary)
-            Text("No active downloads")
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(.secondary)
-            Text("Add a URL or magnet link to get started.")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 26)
+        EmptyStateView(systemImage: "arrow.down.circle", title: "No active downloads",
+                       subtitle: "Add a URL or magnet link to get started.",
+                       symbolSize: 26, symbolStyle: .tertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 26)
     }
 
     // MARK: Footer
@@ -296,54 +281,20 @@ private struct MenuBarDownloadRow: View {
     }
 }
 
-/// One in-flight SFTP transfer in the menu-bar popover: direction icon, name +
-/// server, a thin progress bar, live speed (teal up / green down), and a cancel
-/// button. Mirrors ``MenuBarDownloadRow`` but for the SFTP transfer center.
-private struct MenuBarTransferRow: View {
+/// Menu-bar SFTP row: shared ``SFTPTransferRow`` plus a native confirm dialog
+/// (app overlay only lives on the main window, not this scene).
+private struct MenuBarSFTPTransferRow: View {
     let transfer: SFTPTransfer
     let vm: AppViewModel
-
-    // The app's custom confirm overlay only renders on the main window, not in
-    // this separate menu-bar scene — so this surface asks with a native dialog.
     @State private var confirmingCancel = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: transfer.iconName(filledWhenFinished: false))
-                .font(.system(size: 20))
-                .foregroundStyle(transfer.direction == .upload ? Theme.teal : Theme.green)
-                .frame(width: 30)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(transfer.name)
-                        .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 0)
-                    Text(transfer.progressLabel)
-                        .font(.system(size: 10.5)).monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                ProgressView(value: transfer.fraction)
-                HStack(spacing: 5) {
-                    Text(vm.server(transfer.connectionID)?.label ?? "Server")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer(minLength: 0)
-                    if !transfer.speedLabel.isEmpty {
-                        Text(transfer.speedLabel)
-                            .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
-                            .foregroundStyle(transfer.direction == .upload ? Theme.teal : Theme.green)
-                    }
-                }
-            }
-            Button { confirmingCancel = true } label: {
-                Image(systemName: "xmark.circle.fill").font(.system(size: 13))
-            }
-            .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .contentShape(Rectangle())
+        SFTPTransferRow(
+            transfer: transfer,
+            density: .full,
+            serverLabel: vm.server(transfer.connectionID)?.label ?? "Server",
+            onCancel: { confirmingCancel = true },
+            onRetry: { vm.retrySFTPTransfer(transfer.id) })
         .confirmationDialog(
             "Cancel this \(transfer.direction == .upload ? "upload" : "download")?",
             isPresented: $confirmingCancel, titleVisibility: .visible

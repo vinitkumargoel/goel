@@ -715,15 +715,12 @@ struct SFTPBrowserView: View {
 
     private var emptyState: some View {
         let searching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
-        return VStack(spacing: 8) {
-            Image(systemName: searching ? "magnifyingglass" : "tray")
-                .font(.system(size: 30)).foregroundStyle(.tertiary)
-            Text(searching ? "No matches" : "This folder is empty")
-                .font(.system(size: 13)).foregroundStyle(.secondary)
-            Text(searching ? "Nothing here matches “\(searchText)”."
-                           : "Drop files or folders here to upload")
-                .font(.system(size: 11)).foregroundStyle(.tertiary)
-        }
+        return EmptyStateView(
+            systemImage: searching ? "magnifyingglass" : "tray",
+            title: searching ? "No matches" : "This folder is empty",
+            subtitle: searching ? "Nothing here matches “\(searchText)”."
+                                : "Drop files or folders here to upload",
+            symbolSize: 30, symbolStyle: .tertiary)
     }
 
     private var dropHint: some View {
@@ -752,66 +749,17 @@ struct SFTPBrowserView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 5)
             ScrollView {
-                ForEach(transfers) { t in transferRow(t) }
+                ForEach(transfers) { t in
+                    SFTPTransferRow(
+                        transfer: t, density: .full,
+                        onCancel: { vm.requestCancelSFTPTransfer(t.id) },
+                        onRetry: { vm.retrySFTPTransfer(t.id) })
+                }
             }
         }
         .padding(.bottom, 6)
         .background(.regularMaterial)
         .frame(maxHeight: 180)
-    }
-
-    @ViewBuilder
-    private func transferRow(_ t: SFTPTransfer) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
-                Image(systemName: t.iconName(filledWhenFinished: true))
-                    .foregroundStyle(t.tint)
-                Text(t.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 8)
-                switch t.state {
-                case .failed(let message):
-                    Text(message).font(.system(size: 11)).foregroundStyle(Theme.red).lineLimit(1)
-                    Button("Retry") { vm.retrySFTPTransfer(t.id) }
-                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
-                case .cancelled:
-                    Text("Cancelled").font(.system(size: 11)).foregroundStyle(.secondary)
-                    Button("Retry") { vm.retrySFTPTransfer(t.id) }
-                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
-                case .finished:
-                    Text(t.total > 0 ? "Done · \(t.total.byteString)" : "Done")
-                        .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.green)
-                case .running:
-                    Text(t.progressLabel)
-                        .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
-                        .frame(width: 42, alignment: .trailing)
-                    Button { vm.requestCancelSFTPTransfer(t.id) } label: {
-                        Image(systemName: "xmark.circle.fill").font(.system(size: 12))
-                    }
-                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")
-                }
-            }
-            // Full running statistics: progress bar, bytes done / total, live
-            // speed (green download / teal upload), and ETA.
-            if t.isActive {
-                HStack(spacing: 10) {
-                    ProgressView(value: t.fraction).frame(maxWidth: 160)
-                    Text(t.sizeLabel)
-                        .font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.secondary)
-                    if !t.speedLabel.isEmpty {
-                        Label(t.speedLabel, systemImage: t.direction == .upload ? "arrow.up" : "arrow.down")
-                            .labelStyle(.titleAndIcon)
-                            .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
-                            .foregroundStyle(t.direction == .upload ? Theme.teal : Theme.green)
-                    }
-                    if let eta = t.etaLabel {
-                        Text(eta).font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.tertiary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, 22)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 5)
     }
 
     private func errorBanner(_ message: String) -> some View {

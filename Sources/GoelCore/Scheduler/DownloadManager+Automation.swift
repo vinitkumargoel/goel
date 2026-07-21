@@ -102,18 +102,14 @@ extension DownloadManager {
 
     /// Whether a status occupies a download phase the automation pause loops act
     /// on. Excludes seeding — the window and network policies restrict downloads,
-    /// not uploads.
+    /// not uploads. Delegates to ``DownloadStatus/isDownloadingPhase``.
     static func isDownloadingPhase(_ status: DownloadStatus) -> Bool {
-        switch status {
-        case .downloading, .verifying, .requestingMetadata: return true
-        default: return false
-        }
+        status.isDownloadingPhase
     }
 
     /// Whether the task is currently occupying a download phase.
     func isInDownloadingPhase(_ id: UUID) -> Bool {
-        guard let status = task(id)?.status else { return false }
-        return Self.isDownloadingPhase(status)
+        task(id)?.status.isDownloadingPhase ?? false
     }
 
     /// Narrow profile switch used by automation: set the active profile, persist

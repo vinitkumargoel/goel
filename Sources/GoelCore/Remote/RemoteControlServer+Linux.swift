@@ -22,17 +22,10 @@ public actor RemoteControlServer {
 
     private weak var manager: RemoteBackend?
 
-    // Routing config + login state (identical semantics to the macOS shell).
+    // Routing config + shared session store (identical semantics to the macOS shell).
     private var routerConfig = RemoteRouter.Config(token: "")
     private var passwordHash = ""
-    private var sessionSeconds = 120 * 60
-    private var sessions: [String: Date] = [:]
-    private var loginFailCount = 0
-    private var loginLockUntil: Date?
-    /// Cap on concurrent (expensive) password verifications — bounds CPU under a
-    /// login flood without locking out a correct credential. Mirrors the macOS shell.
-    private var activeVerifications = 0
-    private static let maxConcurrentVerifications = 2
+    private let sessionStore = RemoteSessionStore()
     /// Bumped on every start/stop so long-lived SSE / streaming loops wind down.
     private var generation = 0
 
@@ -66,12 +59,15 @@ public actor RemoteControlServer {
         if credentialsChanged {
             // Rotating the bearer token counts as a credential change too, so a
             // leaked token's already-open stream is wound down when it's rotated.
-            sessions.removeAll()
             generation += 1
         }
         self.routerConfig = config
         self.passwordHash = passwordHash
-        self.sessionSeconds = max(5, sessionMinutes) * 60
+        // Single hop: rotate credentials and drop sessions together, so no login
+        // can slip through this actor's suspension holding stale credentials.
+        await sessionStore.configure(username: config.username, passwordHash: passwordHash,
+                                     sessionMinutes: sessionMinutes,
+                                     invalidatingSessions: credentialsChanged)
 
         // Never expose the portal to the network unless sign-in is required AND a
         // password actually exists. `requireAuth` alone is just the policy toggle;
@@ -160,7 +156,7 @@ public actor RemoteControlServer {
 
     private func serveEvents(_ sink: ChannelSink, _ request: RemoteRequest) async {
         let router = self.router
-        guard router.authorize(request, sessionAuthed: validSession(request)) else {
+        guard router.authorize(request, sessionAuthed: await validSession(request)) else {
             _ = await sink.send(RemoteRouter.response(status: "401 Unauthorized", type: "text/plain",
                                                       body: Data("Invalid token\n".utf8)))
             sink.close(); return
@@ -191,7 +187,7 @@ public actor RemoteControlServer {
     // MARK: Auth, sessions & login
 
     private func respond(to request: RemoteRequest) async -> Data {
-        let authed = validSession(request)
+        let authed = await validSession(request)
         let cfg = routerConfig
         switch (request.method, request.path) {
         case ("GET", "/login"):
@@ -200,7 +196,7 @@ public actor RemoteControlServer {
         case ("POST", "/login"):
             return await handleLogin(request)
         case ("GET", "/logout"), ("POST", "/logout"):
-            return handleLogout(request)
+            return await handleLogout(request)
         default:
             if cfg.requireAuth, !authed, !tokenAuthed(request),
                request.method == "GET", !request.path.hasPrefix("/api") {
@@ -210,110 +206,29 @@ public actor RemoteControlServer {
         }
     }
 
-    private func validSession(_ request: RemoteRequest) -> Bool {
-        guard let sid = request.cookie("goel_session"), let expiry = sessions[sid] else { return false }
-        guard expiry > Date() else { sessions[sid] = nil; return false }
-        return true
+    private func validSession(_ request: RemoteRequest) async -> Bool {
+        await sessionStore.validSession(request)
     }
 
     private func tokenAuthed(_ request: RemoteRequest) -> Bool {
-        let token = routerConfig.token
-        guard !token.isEmpty else { return false }
-        if let header = request.headers["authorization"],
-           RemoteRouter.constantTimeEquals(header, "Bearer \(token)") { return true }
-        if let query = request.query["token"] { return RemoteRouter.constantTimeEquals(query, token) }
-        return false
+        RemoteAuthService.tokenAuthed(request, token: routerConfig.token)
     }
 
     private func handleLogin(_ request: RemoteRequest) async -> Data {
-        guard activeVerifications < Self.maxConcurrentVerifications else {
-            return Self.jsonError(status: "429 Too Many Requests",
-                                  message: "Server busy — try again in a moment.")
-        }
-        let creds = Self.parseCredentials(request)
-        let userOK = RemoteRouter.constantTimeEquals(creds.username, routerConfig.username)
-        let hash = passwordHash
-        let password = creds.password
-        let passOK: Bool
-        if hash.isEmpty {
-            passOK = false
-        } else {
-            activeVerifications += 1
-            passOK = await Task.detached { RemotePassword.verify(password, against: hash) }.value
-            activeVerifications -= 1
-        }
-
-        if userOK && passOK {
-            loginFailCount = 0
-            loginLockUntil = nil
-            pruneSessions()
-            let sid = RemotePassword.randomHex(bytes: 32)
-            sessions[sid] = Date().addingTimeInterval(TimeInterval(sessionSeconds))
-            let cookie = "goel_session=\(sid); Path=/; HttpOnly; SameSite=Strict; Max-Age=\(sessionSeconds)"
-            return RemoteRouter.response(status: "200 OK", type: "application/json",
-                                         body: Data("{\"ok\":true}".utf8),
-                                         extraHeaders: ["Set-Cookie": cookie])
-        }
-
-        if let until = loginLockUntil, until > Date() {
-            return Self.jsonError(status: "429 Too Many Requests",
-                                  message: "Too many attempts — wait a moment and try again.")
-        }
-        loginFailCount += 1
-        if loginFailCount >= 5 {
-            loginLockUntil = Date().addingTimeInterval(30)
-            loginFailCount = 0
-        }
-        let message = hash.isEmpty
-            ? "No portal password is set yet — set one in the app under Settings → Web Access."
-            : "Wrong username or password."
-        return Self.jsonError(status: "401 Unauthorized", message: message)
+        await sessionStore.handleLogin(request)
     }
 
-    private func handleLogout(_ request: RemoteRequest) -> Data {
-        if let sid = request.cookie("goel_session") { sessions[sid] = nil }
-        // Wind down already-open SSE / file-stream loops (they authorise once at
-        // setup) so a signed-out or hijacked session's stream can't keep flowing.
+    private func handleLogout(_ request: RemoteRequest) async -> Data {
         generation += 1
-        let cookie = "goel_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
-        return RemoteRouter.response(status: "200 OK", type: "application/json",
-                                     body: Data("{\"ok\":true}".utf8),
-                                     extraHeaders: ["Set-Cookie": cookie])
-    }
-
-    private func pruneSessions() {
-        let now = Date()
-        sessions = sessions.filter { $0.value > now }
-    }
-
-    private static func parseCredentials(_ request: RemoteRequest) -> (username: String, password: String) {
-        struct Creds: Decodable { var username: String?; var password: String? }
-        if let obj = try? JSONDecoder().decode(Creds.self, from: request.body) {
-            return (obj.username ?? "", obj.password ?? "")
-        }
-        var username = "", password = ""
-        for pair in String(decoding: request.body, as: UTF8.self).split(separator: "&") {
-            let kv = pair.split(separator: "=", maxSplits: 1)
-            guard kv.count == 2 else { continue }
-            let value = String(kv[1]).replacingOccurrences(of: "+", with: " ").removingPercentEncoding ?? ""
-            if kv[0] == "username" { username = value } else if kv[0] == "password" { password = value }
-        }
-        return (username, password)
+        return await sessionStore.handleLogout(request)
     }
 
     private static func redirect(to location: String) -> Data {
-        RemoteRouter.response(status: "303 See Other", type: "text/plain",
-                              body: Data(), extraHeaders: ["Location": location])
+        RemoteAuthService.redirect(to: location)
     }
 
     private static func htmlResponse(_ html: String) -> Data {
-        RemoteRouter.response(status: "200 OK", type: "text/html; charset=utf-8", body: Data(html.utf8))
-    }
-
-    private static func jsonError(status: String, message: String) -> Data {
-        let safe = message.replacingOccurrences(of: "\"", with: "'")
-        return RemoteRouter.response(status: status, type: "application/json",
-                                     body: Data("{\"ok\":false,\"error\":\"\(safe)\"}".utf8))
+        RemoteAuthService.htmlResponse(html)
     }
 
     // MARK: File streaming (Range support)
@@ -324,7 +239,7 @@ public actor RemoteControlServer {
                                                       body: Data("\(message)\n".utf8)))
             sink.close()
         }
-        guard router.authorize(request, sessionAuthed: validSession(request)) else {
+        guard router.authorize(request, sessionAuthed: await validSession(request)) else {
             return await reject("401 Unauthorized", "Not signed in")
         }
         guard let manager,
@@ -341,7 +256,20 @@ public actor RemoteControlServer {
         defer { try? handle.close() }
 
         let available = plan.availableBytes
-        guard available > 0 else { return await reject("409 Conflict", "Nothing downloaded yet") }
+        // Finished empty (0-byte) payload is valid — serve 200 with empty body
+        // (matches macOS RemoteControlServer; don't pretend the download isn't ready).
+        if available == 0 {
+            var head = "HTTP/1.1 200 OK\r\n"
+            head += "Content-Type: \(Self.mimeType(forPath: plan.path))\r\n"
+            head += "Content-Length: 0\r\n"
+            head += "Accept-Ranges: bytes\r\n"
+            head += "Cache-Control: no-store\r\n"
+            head += "X-Content-Type-Options: nosniff\r\n"
+            head += "Connection: close\r\n\r\n"
+            _ = await sink.send(Data(head.utf8))
+            sink.close()
+            return
+        }
         var start: Int64 = 0
         var end: Int64 = available - 1
         var status = "200 OK"
@@ -376,67 +304,20 @@ public actor RemoteControlServer {
         sink.close()
     }
 
-    // MARK: Stream planning (pure — mirrors the macOS shell)
+    // MARK: Stream planning — shared with macOS via ``RemoteStreamService``
 
-    public struct StreamPlan {
-        var path: String
-        var totalBytes: Int64
-        var availableBytes: Int64
-    }
+    public typealias StreamPlan = RemoteStreamService.StreamPlan
 
     public static func streamPlan(for task: DownloadTask) -> StreamPlan? {
-        if task.status.hasData {
-            // Resolve the multi-file torrent's streamed file through `primaryFilePath`,
-            // which rejects an engine-declared path escaping the save directory
-            // (this file's bytes are streamed out to a network client).
-            let path = task.primaryFilePath
-            let attributes = try? FileManager.default.attributesOfItem(atPath: path)
-            let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-            guard size > 0 else { return nil }
-            return StreamPlan(path: path, totalBytes: size, availableBytes: size)
-        }
-        guard task.sequentialDownload == true, !task.isMultiFile,
-              task.status == .downloading || task.status == .verifying,
-              let total = task.totalBytes, total > 0 else { return nil }
-        let margin: Int64 = 8 * 1024 * 1024
-        let available = max(0, task.bytesDownloaded - margin)
-        guard available > 0 else { return nil }
-        return StreamPlan(path: task.savePath, totalBytes: total, availableBytes: available)
+        RemoteStreamService.streamPlan(for: task)
     }
 
     static func parseByteRange(_ header: String, available: Int64) -> (Int64, Int64)? {
-        let trimmed = header.trimmingCharacters(in: .whitespaces).lowercased()
-        guard trimmed.hasPrefix("bytes=") else { return nil }
-        let spec = trimmed.dropFirst("bytes=".count).split(separator: ",")[0]
-        let parts = spec.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count == 2 else { return nil }
-        if parts[0].isEmpty {
-            guard let n = Int64(parts[1]), n > 0 else { return nil }
-            return (max(0, available - n), available - 1)
-        }
-        guard let start = Int64(parts[0]), start >= 0, start < available else { return nil }
-        let end = Int64(parts[1]).map { min($0, available - 1) } ?? (available - 1)
-        return (start, end)
+        RemoteStreamService.parseByteRange(header, available: available)
     }
 
     static func mimeType(forPath path: String) -> String {
-        switch (path as NSString).pathExtension.lowercased() {
-        case "mp4", "m4v": return "video/mp4"
-        case "mov": return "video/quicktime"
-        case "mkv": return "video/x-matroska"
-        case "webm": return "video/webm"
-        case "avi": return "video/x-msvideo"
-        case "mp3": return "audio/mpeg"
-        case "m4a": return "audio/mp4"
-        case "flac": return "audio/flac"
-        case "wav": return "audio/wav"
-        case "ogg", "oga": return "audio/ogg"
-        case "pdf": return "application/pdf"
-        case "jpg", "jpeg": return "image/jpeg"
-        case "png": return "image/png"
-        case "gif": return "image/gif"
-        default: return "application/octet-stream"
-        }
+        RemoteStreamService.mimeType(forPath: path)
     }
 
     static func constantTimeEquals(_ a: String, _ b: String) -> Bool {

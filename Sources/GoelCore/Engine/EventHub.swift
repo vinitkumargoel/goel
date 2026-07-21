@@ -44,6 +44,13 @@ final class EventHub: @unchecked Sendable {
         emit(id, .statusChanged(.failed(error)))
     }
 
+    /// Emit the success completion doublet: `.finished` then `.statusChanged(.completed)`.
+    /// Kept in one call so the two can never drift apart (mirrors ``fail``).
+    func complete(_ id: UUID) {
+        emit(id, .finished)
+        emit(id, .statusChanged(.completed))
+    }
+
     func finishAll(_ id: UUID) {
         lock.lock()
         let continuations = subscribers[id]

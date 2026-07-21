@@ -549,8 +549,7 @@ actor HTTPEngine: HTTPConfigurable {
             tasks[id]?.status = .completed
             tasks[id]?.completedAt = Date()
             jobs[id] = nil
-            emit(id, .finished)
-            emit(id, .statusChanged(.completed))
+            hub.complete(id)
         } catch is CancellationError {
             // Our own pause()/remove() cancelled the job; they publish the state.
         } catch {

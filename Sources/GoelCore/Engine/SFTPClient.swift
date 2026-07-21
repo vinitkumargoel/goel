@@ -105,7 +105,7 @@ public struct SFTPClient: Sendable {
             throw SFTPError(kind: .io, message: "Could not open the local file for writing")
         }
         let ctx = TransferContext(
-            onWrite: { buf in (try? handle.write(contentsOf: Data(buffer: buf.bindMemory(to: UInt8.self)))) != nil },
+            onWrite: { buf in (try? handle.write(contentsOf: buf)) != nil },
             onProgress: { total, sofar in progress(sofar, total); return shouldContinue?() ?? true },
             onRead: nil)
         defer { try? handle.close() }

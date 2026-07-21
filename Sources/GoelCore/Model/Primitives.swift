@@ -101,6 +101,22 @@ public enum DownloadStatus: Codable, Sendable, Equatable, Hashable {
         }
     }
 
+    /// Occupies a download slot (not seeding — seeding can run indefinitely).
+    public var isDownloadingPhase: Bool {
+        switch self {
+        case .downloading, .verifying, .requestingMetadata: return true
+        default: return false
+        }
+    }
+
+    /// Counts as "work in flight" for queue-drain / power (queued + download phases).
+    public var isActiveWork: Bool {
+        switch self {
+        case .queued, .requestingMetadata, .downloading, .verifying: return true
+        default: return false
+        }
+    }
+
     public var isTerminal: Bool {
         switch self {
         case .completed, .failed: return true
