@@ -44,7 +44,10 @@ enum ExternalAdd {
 
     /// Post raw add-lines from an explicit user action (no confirmation).
     static func post(lines: String) {
-        post(Payload(lines: lines, torrentFile: nil, needsConfirmation: false))
+        guard let payload = fromDisposition(
+            InboundAdd.classify(origin: .userExplicit, payload: .init(lines: lines))
+        ) else { return }
+        post(payload)
     }
 
     /// Mark the channel live and replay anything buffered before the view
@@ -63,6 +66,7 @@ enum ExternalAdd {
     }
 
     /// Convert an opened URL into a payload, or nil when it carries nothing.
+    /// Trust (confirm vs enqueue vs drain) is decided by ``InboundAdd/classify``.
     static func payload(from url: URL) -> Payload? {
         switch url.scheme?.lowercased() {
         case "goeldownloader":
@@ -71,8 +75,10 @@ enum ExternalAdd {
             // page can trigger the drain, but only a local process can have
             // put anything in the spool.
             if url.host?.lowercased() == "drain-browser-queue" {
-                return Payload(lines: nil, torrentFile: nil,
-                               needsConfirmation: false, drainBrowserSpool: true)
+                return fromDisposition(
+                    InboundAdd.classify(origin: .browserSpool,
+                                        payload: .init(drainBrowserSpool: true))
+                )
             }
             // goeldownloader://add?url=<percent-encoded target>. Web pages can
             // trigger this scheme, so the inner target is restricted to
@@ -82,15 +88,48 @@ enum ExternalAdd {
                   let inner = URL(string: target),
                   ["http", "https", "magnet"].contains(inner.scheme?.lowercased() ?? "")
             else { return nil }
-            return Payload(lines: target, torrentFile: nil, needsConfirmation: true)
+            return fromDisposition(
+                InboundAdd.classify(origin: .urlScheme, payload: .init(lines: target))
+            )
         case "magnet":
-            return Payload(lines: url.absoluteString, torrentFile: nil, needsConfirmation: false)
+            return fromDisposition(
+                InboundAdd.classify(origin: .userExplicit,
+                                    payload: .init(lines: url.absoluteString))
+            )
         case "file":
             guard url.pathExtension.lowercased() == "torrent" else { return nil }
-            return Payload(lines: nil, torrentFile: url, needsConfirmation: false)
+            return fromDisposition(
+                InboundAdd.classify(origin: .userExplicit,
+                                    payload: .init(torrentFilePath: url.path))
+            )
         default:
-            // A plain remote URL handed to us directly.
-            return Payload(lines: url.absoluteString, torrentFile: nil, needsConfirmation: false)
+            // A plain remote URL handed to us directly (file-open / system handoff).
+            return fromDisposition(
+                InboundAdd.classify(origin: .userExplicit,
+                                    payload: .init(lines: url.absoluteString))
+            )
+        }
+    }
+
+    /// Map an ``InboundAdd/Disposition`` onto the wire `Payload` shape the rest
+    /// of the app already consumes. `ignore` becomes nil (drop).
+    private static func fromDisposition(_ disposition: InboundAdd.Disposition) -> Payload? {
+        switch disposition {
+        case .ignore:
+            return nil
+        case .drainSpool:
+            return Payload(lines: nil, torrentFile: nil,
+                           needsConfirmation: false, drainBrowserSpool: true)
+        case .enqueue(let p):
+            return Payload(lines: p.lines,
+                           torrentFile: p.torrentFilePath.map { URL(fileURLWithPath: $0) },
+                           needsConfirmation: false,
+                           drainBrowserSpool: false)
+        case .needsConfirmation(let p):
+            return Payload(lines: p.lines,
+                           torrentFile: p.torrentFilePath.map { URL(fileURLWithPath: $0) },
+                           needsConfirmation: true,
+                           drainBrowserSpool: false)
         }
     }
 }

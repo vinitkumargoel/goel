@@ -187,13 +187,15 @@ struct SFTPConnectionEditor: View {
         let connection = draftConnection()
         let pw = testPassword()
         Task {
-            guard let target = SFTPTarget(connection: connection, password: pw) else {
+            // Explicit `password:` so an empty field + agent-only auth doesn't
+            // re-pull a stale Keychain secret mid-edit of the password field.
+            guard let client = SFTPSession.client(for: connection, password: pw) else {
                 testing = false
                 testResult = .failure("Enter a host and username first.")
                 return
             }
             do {
-                let fingerprint = try await SFTPClient(target: target).probe()
+                let fingerprint = try await client.probe()
                 testing = false
                 testResult = .success(fingerprint)
             } catch let e as SFTPError {

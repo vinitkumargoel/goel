@@ -14,12 +14,13 @@ import CurlBridge
 /// aggregate throughput. Resume cursors are validated against `ETag` /
 /// `Last-Modified` so a changed remote restarts rather than corrupts.
 ///
-/// It owns NO cross-download state: the global / per-host connection budget and
+/// It owns NO cross-download state: the global / per-host ``ConnectionBudget`` and
 /// task bookkeeping stay on ``HTTPEngine``, which resolves ``TransferPlan/segmentCount``
-/// from that budget before handing a plan here. The byte pumps run off any actor
-/// (this is a plain `Sendable` class, not an actor) and hop to an internal ledger
-/// actor only once per flush — to accumulate per-segment bytes, build the resume
-/// cursor and throttle progress — keeping the hot path off the executor.
+/// from that budget before wrapping a ``PlannedTransfer`` here. The byte pumps run
+/// off any actor (this is a plain `Sendable` class, not an actor) and hop to an
+/// internal ledger actor only once per flush — to accumulate per-segment bytes,
+/// build the resume cursor and throttle progress — keeping the hot path off the
+/// executor.
 final class SegmentedTransfer: Sendable {
 
     let plan: TransferPlan

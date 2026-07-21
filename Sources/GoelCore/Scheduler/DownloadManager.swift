@@ -2,6 +2,10 @@ import Foundation
 
 /// The scheduler — the single brain that owns the unified download queue.
 ///
+/// Public contract for callers that only need queue lifecycle / observation /
+/// mutation: ``DownloadQueue``. This actor is the production implementation;
+/// pure cores (``AutomationCore``, ``SchedulingPolicy``, …) live underneath.
+///
 /// It keeps one ordered list of ``DownloadTask``, routes each task to the right
 /// engine by `source.kind` (HTTP vs torrent), subscribes to every engine's
 /// `events(for:)` stream and folds those events back into the stored task, then
@@ -163,33 +167,14 @@ public actor DownloadManager {
 
     // MARK: Persistence pipeline
 
-    /// The serial persistence pipeline's state lives here; its behaviour lives in
-    /// `DownloadManager+Persistence.swift`, hence `internal` rather than `private`.
+    /// Serial on-disk writer (nil when there is no store). Behaviour façade lives
+    /// in `DownloadManager+Persistence.swift`; this property is `internal` so that
+    /// file can enqueue / drain it.
+    let pipeline: PersistencePipeline?
 
-    /// A single on-disk mutation, funnelled through the serial ``persistContinuation``.
-    enum PersistOp: Sendable {
-        case saveTask(DownloadTask)
-        case deleteTask(UUID)
-        case saveSettings(AppSettings)
-        case saveStats(TransferStats)
-        case saveHistory(HistoryEntry)
-        case deleteHistory(UUID)
-        case clearHistory
-        case saveSpeedHistory([String: [SpeedHistoryPoint]])
-    }
-
-    /// The (one-shot) source of the serial persistence stream, consumed the first
-    /// time a write is enqueued. `nil` once started, or when there is no store.
-    var persistStream: AsyncStream<PersistOp>?
-
-    /// The write side of the serial persistence pipeline.
-    var persistContinuation: AsyncStream<PersistOp>.Continuation?
-
-    /// The single worker draining ``persistStream`` in enqueue order.
-    var persistWorker: Task<Void, Never>?
-
-    /// Whether ``persistWorker`` has been started.
-    var persistStarted = false
+    /// Bridges detached-writer failures back onto this actor's
+    /// ``notePersistenceError``. Installed after `self` is fully formed.
+    let persistErrorHandler: PersistenceErrorHandler?
 
     // MARK: Init
 
@@ -217,10 +202,13 @@ public actor DownloadManager {
         self.power = power
         self.folderWatch = folderWatch
         self.scanner = scanner
-        if store != nil {
-            let (stream, continuation) = AsyncStream<PersistOp>.makeStream(bufferingPolicy: .unbounded)
-            self.persistStream = stream
-            self.persistContinuation = continuation
+        if let store {
+            let handler = PersistenceErrorHandler()
+            self.persistErrorHandler = handler
+            self.pipeline = PersistencePipeline(store: store, errorHandler: handler)
+        } else {
+            self.persistErrorHandler = nil
+            self.pipeline = nil
         }
     }
 
@@ -251,12 +239,16 @@ public actor DownloadManager {
         self.power = power
         self.folderWatch = folderWatch
         self.scanner = scanner
-        if store != nil {
-            let (stream, continuation) = AsyncStream<PersistOp>.makeStream(bufferingPolicy: .unbounded)
-            self.persistStream = stream
-            self.persistContinuation = continuation
+        if let store {
+            let handler = PersistenceErrorHandler()
+            self.persistErrorHandler = handler
+            self.pipeline = PersistencePipeline(store: store, errorHandler: handler)
+        } else {
+            self.persistErrorHandler = nil
+            self.pipeline = nil
         }
     }
+
 
     // MARK: Persistence
 
@@ -273,6 +265,7 @@ public actor DownloadManager {
     /// restored settings are re-applied to the engines and side-effect services.
     public func restore() async {
         guard let store else { return }
+        installPersistErrorBridge()
 
         do {
             if let saved = try store.loadSettings() { settings = saved }
@@ -331,6 +324,16 @@ public actor DownloadManager {
     /// write means the queue silently diverges from disk — the user must know).
     /// `internal` so `notePersistenceError` (in `+Persistence`) can set it.
     var persistenceWarning: String?
+
+
+    /// Wire the detached writer back to ``notePersistenceError``. Safe to call
+    /// repeatedly; no-ops once installed or when there is no store.
+    func installPersistErrorBridge() {
+        guard let handler = persistErrorHandler else { return }
+        handler.install { [weak self] error in
+            await self?.notePersistenceError(error)
+        }
+    }
 
     // The persistence pipeline's behaviour (currentPersistenceWarning,
     // notePersistenceError, persist, persistSettings, persistRemoval) lives in
@@ -673,7 +676,7 @@ public actor DownloadManager {
 
     /// Tear down all live subscriptions, observers and side-effect services. Call
     /// before releasing the manager so nothing is left dangling.
-    public func shutdown() {
+    public func shutdown() async {
         for consumer in consumers.values { consumer.cancel() }
         consumers.removeAll()
         for retry in autoRetryTasks.values { retry.cancel() }
@@ -690,12 +693,14 @@ public actor DownloadManager {
         scheduledStartTask = nil
         redownloadTask?.cancel()
         redownloadTask = nil
+        fileReconcileTask?.cancel()
+        fileReconcileTask = nil
         let folderWatch = self.folderWatch
-        Task { await folderWatch.stop() }
+        await folderWatch.stop()
         power.setPreventSleep(false)
-        // Flush the stats then let the worker drain any queued writes and exit.
+        // Flush the stats then drain every queued write before returning.
         persistStats(force: true)
-        persistContinuation?.finish()
+        await pipeline?.shutdown()
     }
 
     /// Pause every queued or active task.
