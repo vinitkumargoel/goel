@@ -15,6 +15,10 @@ import GoelCore
 struct MenuBarView: View {
     @EnvironmentObject private var vm: AppViewModel
 
+    /// Measured height of the row list, used to size the scroll view (see
+    /// ``listHeight`` for why this is needed).
+    @State private var measuredListHeight: CGFloat = 0
+
     /// Everything currently transferring — downloading, verifying, resolving
     /// metadata, or seeding (the same predicate the sidebar's "Active" uses).
     private var activeTasks: [DownloadTask] {
@@ -50,7 +54,13 @@ struct MenuBarView: View {
                 emptyState
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    // A plain `VStack`, not a `LazyVStack`: the height below is
+                    // derived from this stack's own measurement, and a lazy stack
+                    // asked for zero height would build no rows and report zero
+                    // back — a deadlock that leaves the list permanently collapsed.
+                    // The row count is capped (``maxListedRows`` + live transfers),
+                    // so building them all eagerly is cheap.
+                    VStack(spacing: 0) {
                         ForEach(listedTasks) { task in
                             MenuBarDownloadRow(task: task, vm: vm)
                             Divider()
@@ -63,14 +73,36 @@ struct MenuBarView: View {
                             }
                         }
                     }
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: ListHeightKey.self, value: geo.size.height)
+                        }
+                    )
                 }
-                .frame(maxHeight: 360)
+                .frame(height: listHeight)
+                .onPreferenceChange(ListHeightKey.self) { measuredListHeight = $0 }
             }
             Divider()
             footer
         }
         .frame(width: 340)
     }
+
+    /// Height to give the row list.
+    ///
+    /// A `.window`-style `MenuBarExtra` sizes its host to the content's *ideal*
+    /// height, and a `ScrollView` has no intrinsic height — with only a
+    /// `maxHeight` it collapsed to zero, so the popover showed its header and
+    /// footer with no rows between them even while downloads were clearly running.
+    /// Feeding back the measured content height (clamped) gives it a real size.
+    private var listHeight: CGFloat {
+        min(max(measuredListHeight, Self.minListHeight), Self.maxListHeight)
+    }
+
+    /// Enough to show one row before the first measurement lands.
+    private static let minListHeight: CGFloat = 62
+    /// Past this the list scrolls; the full queue lives in the main window.
+    private static let maxListHeight: CGFloat = 360
 
     private func sectionLabel(_ text: String) -> some View {
         HStack {
@@ -198,6 +230,15 @@ struct MenuBarView: View {
         let settingsID = NSUserInterfaceItemIdentifier("com_apple_SwiftUI_Settings_window")
         let window = NSApp.windows.first { $0.canBecomeMain && $0.identifier != settingsID }
         window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+/// Carries the measured height of the popover's row stack up to ``MenuBarView``,
+/// which needs a concrete height for the scroll view around it.
+private struct ListHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

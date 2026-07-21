@@ -117,7 +117,8 @@ final class SegmentedTransfer: Sendable {
             : restoredBytes
         let meta = CursorMeta(etag: plan.etag, lastModified: plan.lastModified, total: total, ranges: ranges)
         let ledger = Ledger(continuation: continuation, meta: meta,
-                            initialSegmentBytes: initialBytes, connectionCount: ranges.count)
+                            initialSegmentBytes: initialBytes, connectionCount: ranges.count,
+                            expectedTotal: total)
 
         let limiter = plan.maxBytesPerSecond > 0 ? RateLimiter(bytesPerSecond: plan.maxBytesPerSecond) : nil
         let session = plan.session
@@ -477,7 +478,8 @@ final class SegmentedTransfer: Sendable {
         try Data().write(to: plan.destination)
 
         let ledger = Ledger(continuation: continuation, meta: nil,
-                            initialSegmentBytes: [0: 0], connectionCount: 1)
+                            initialSegmentBytes: [0: 0], connectionCount: 1,
+                            expectedTotal: plan.totalBytes)
         let limiter = plan.maxBytesPerSecond > 0 ? RateLimiter(bytesPerSecond: plan.maxBytesPerSecond) : nil
 
         try await streamSingle(session: plan.session, limiter: limiter, ledger: ledger,
@@ -865,6 +867,11 @@ final class SegmentedTransfer: Sendable {
     private actor Ledger {
         private let continuation: AsyncStream<TransferProgress>.Continuation
         private let meta: CursorMeta?
+        /// Declared size of the whole transfer, when the server gave one. The
+        /// segmented path also carries it in ``meta``; the single-stream path has
+        /// no range plan, so this is the only way it can report a real progress
+        /// fraction for its one connection row (nil when the size is unknown).
+        private let expectedTotal: Int64?
         private var segmentBytes: [Int: Int64]
         /// Constant for a download's lifetime (the live fan-out reported to the UI).
         private let connectionCount: Int
@@ -879,11 +886,12 @@ final class SegmentedTransfer: Sendable {
         private var lastConnectionsBytes: [Int: Int64] = [:]
 
         init(continuation: AsyncStream<TransferProgress>.Continuation, meta: CursorMeta?,
-             initialSegmentBytes: [Int: Int64], connectionCount: Int) {
+             initialSegmentBytes: [Int: Int64], connectionCount: Int, expectedTotal: Int64?) {
             self.continuation = continuation
             self.meta = meta
             self.segmentBytes = initialSegmentBytes
             self.connectionCount = connectionCount
+            self.expectedTotal = expectedTotal
         }
 
         func setAdapter(segment: Int, id: String, label: String) {
@@ -923,9 +931,20 @@ final class SegmentedTransfer: Sendable {
                 lastConnectionsBytes = segmentBytes
             }
             guard let meta else {
+                // Single stream: the one row *is* the whole transfer, so its
+                // progress is the overall fraction. (It used to report a constant
+                // 0%, which read as a stalled connection while the download was
+                // plainly advancing.) A size-unknown stream has no fraction to
+                // report and honestly stays at 0.
+                let done = segmentBytes[0] ?? 0
+                let fraction = (expectedTotal ?? 0) > 0
+                    ? min(1, Double(done) / Double(expectedTotal!)) : 0
+                let detail = (expectedTotal ?? 0) > 0
+                    ? "single stream · \(Self.byteLabel(done)) of \(Self.byteLabel(expectedTotal!))"
+                    : "single stream · \(Self.byteLabel(done))"
                 return [TaskConnection(
-                    id: "seg-0", label: "Connection 1", detail: "single stream",
-                    downloadSpeed: overallSpeed, progress: 0)]
+                    id: "seg-0", label: "Connection 1", detail: detail,
+                    downloadSpeed: overallSpeed, progress: fraction)]
             }
             return meta.ranges.indices.map { i in
                 let range = meta.ranges[i]
