@@ -1,0 +1,16 @@
+{
+  // Static-assets Worker serving the marketing site at goel.vinitk.dev.
+  // Deploy with:  wrangler deploy
+  "name": "goel-site",
+  "compatibility_date": "2024-11-01",
+  "assets": {
+    "directory": "./website",
+    // serves website/404.html for unknown paths
+    "not_found_handling": "404-page"
+  },
+  // custom_domain: true creates the goel.vinitk.dev DNS record and the
+  // certificate, provided vinitk.dev is a zone on the same account
+  "routes": [
+    { "pattern": "goel.vinitk.dev", "custom_domain": true }
+  ]
+}
