@@ -329,8 +329,8 @@ public actor DownloadManager {
     /// Wire the detached writer back to ``notePersistenceError``. Safe to call
     /// repeatedly; no-ops once installed or when there is no store.
     func installPersistErrorBridge() {
-        guard let handler = persistErrorHandler, handler.onError == nil else { return }
-        handler.onError = { [weak self] error in
+        guard let handler = persistErrorHandler else { return }
+        handler.install { [weak self] error in
             await self?.notePersistenceError(error)
         }
     }

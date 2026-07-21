@@ -198,6 +198,14 @@ public actor RemoteControlServer {
     /// listener's `.cancelled` state (rather than firing `cancel()` and returning) is
     /// what lets a subsequent `start()` rebind the same port without EADDRINUSE — the
     /// cancel is asynchronous, so a fire-and-forget teardown leaves the port held.
+    /// The port / LAN exposure of the live listener, or nil when not bound.
+    /// Used by ``RemoteAccess`` so `isRunning` reflects a real socket, not a
+    /// hoped-for start.
+    public func boundState() -> (port: UInt16, exposedLAN: Bool)? {
+        guard listener != nil, let p = boundPort else { return nil }
+        return (p, boundExposeLAN ?? false)
+    }
+
     public func stop() async {
         generation += 1
         boundPort = nil

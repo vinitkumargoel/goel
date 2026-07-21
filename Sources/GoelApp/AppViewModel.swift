@@ -633,6 +633,8 @@ final class AppViewModel: ObservableObject {
     /// Split pasted text into lines and expand the `file[01-20].zip` / `{a,b,c}`
     /// batch shorthand, capped so a hostile range can't flood the queue.
     static func expandedLines(_ raw: String) -> [String] {
+        // Same expand path as ``InboundAdd/parseSources`` (BatchExpander), kept as
+        // lines for metalink detection / toast paths that need the raw locator.
         raw.split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -692,7 +694,7 @@ final class AppViewModel: ObservableObject {
     /// The parseable source locators in `rawLines` (batch patterns expanded), in
     /// order. Used to decide between the single-item confirm flow and a batch add.
     func parsedSources(in rawLines: String) -> [DownloadSource] {
-        Self.expandedLines(rawLines).compactMap(Self.parseSource)
+        InboundAdd.parseSources(from: rawLines)
     }
 
     /// Resolve a single source's metadata for the confirmation screen. Returns
@@ -756,7 +758,16 @@ final class AppViewModel: ObservableObject {
     /// explicit Add box still takes any allowed URL, so nothing is lost — this
     /// only stops the banner nagging on ordinary browsing copies.
     func handleClipboardChange(_ text: String) {
-        let link = text
+        // Trust: clipboard is never auto-queued — only surfaces a suggestion.
+        // Content still filtered to downloadable-looking file URLs so ordinary
+        // page copies don't nag (explicit Add still accepts any allowed URL).
+        let disposition = InboundAdd.classify(
+            origin: .clipboard,
+            payload: .init(lines: text)
+        )
+        guard case .needsConfirmation(let payload) = disposition,
+              let raw = payload.lines else { return }
+        let link = raw
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .first { Self.parseSource($0)?.looksLikeDownloadableFile == true }

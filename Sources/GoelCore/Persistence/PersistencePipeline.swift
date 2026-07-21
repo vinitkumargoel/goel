@@ -21,12 +21,32 @@ public enum PersistOp: Sendable {
 ///
 /// `DownloadManager` installs a handler that points at
 /// ``DownloadManager/notePersistenceError(_:)`` once `self` is fully formed.
+/// `onError` is set-once under a lock so concurrent install/report is safe.
 public final class PersistenceErrorHandler: @unchecked Sendable {
-    public var onError: (@Sendable (Error) async -> Void)?
+    /// Set-once box: sync install/snapshot never holds a lock across `await`.
+    private final class Box: @unchecked Sendable {
+        private let lock = NSLock()
+        private var handler: (@Sendable (Error) async -> Void)?
+        func install(_ h: @escaping @Sendable (Error) async -> Void) {
+            lock.lock(); defer { lock.unlock() }
+            if handler == nil { handler = h }
+        }
+        func snapshot() -> (@Sendable (Error) async -> Void)? {
+            lock.lock(); defer { lock.unlock() }
+            return handler
+        }
+    }
+    private let box = Box()
+
     public init() {}
 
+    /// Install the failure bridge. No-op if already set (first writer wins).
+    public func install(_ handler: @escaping @Sendable (Error) async -> Void) {
+        box.install(handler)
+    }
+
     public func report(_ error: Error) async {
-        if let onError {
+        if let onError = box.snapshot() {
             await onError(error)
         } else {
             FileHandle.standardError.write(
@@ -52,9 +72,9 @@ public actor PersistencePipeline {
     /// Holds the write-side continuation + worker handle outside actor isolation
     /// so ``enqueue`` can stay `nonisolated` (sync yield, ordered from one actor).
     ///
-    /// `nonisolated(unsafe)` is deliberate: `AsyncStream.Continuation.yield` is
-    /// thread-safe, and all yields from `DownloadManager` are serialized by that
-    /// actor. The worker Task is only mutated from ``shutdown()`` on this actor.
+    /// `AsyncStream.Continuation.yield` is thread-safe; yields from
+    /// ``DownloadManager`` are serialized by that actor. The worker Task is only
+    /// mutated from ``shutdown()`` on this actor.
     private final class State: @unchecked Sendable {
         let continuation: AsyncStream<PersistOp>.Continuation
         var worker: Task<Void, Never>?
@@ -64,7 +84,7 @@ public actor PersistencePipeline {
         }
     }
 
-    nonisolated(unsafe) private let state: State
+    nonisolated private let state: State
     private let errorHandler: PersistenceErrorHandler
 
     public init(

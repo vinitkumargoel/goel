@@ -34,7 +34,7 @@ public enum RemoteAccessPolicy {
 public actor RemoteAccess {
 
     private var server: RemoteControlServer?
-    /// Last settings we applied while enabled (nil when stopped / never started).
+    /// Last settings we successfully bound with (nil when stopped / bind failed).
     private var applied: AppSettings?
     private var running = false
 
@@ -42,6 +42,9 @@ public actor RemoteAccess {
 
     /// Apply desired settings: if remote disabled → stop; if enabled → start or
     /// reconfigure when bind/auth/token (or other live config) changed.
+    ///
+    /// `isRunning` / `applied` only advance when the server actually has a bound
+    /// listener — a failed bind leaves us stopped so a later identical apply retries.
     public func apply(settings: AppSettings, backend: RemoteBackend) async {
         guard RemoteAccessPolicy.shouldRun(settings) else {
             await stop()
@@ -64,8 +67,15 @@ public actor RemoteAccess {
             config: config,
             passwordHash: settings.remotePasswordHash,
             sessionMinutes: settings.remoteSessionMinutes)
-        self.applied = settings
-        self.running = true
+        if await server.boundState() != nil {
+            self.applied = settings
+            self.running = true
+        } else {
+            // Bind failed (port in use, privilege, …). Do not claim success — leave
+            // `applied` nil so the next apply with the same settings retries.
+            self.applied = nil
+            self.running = false
+        }
     }
 
     public func stop() async {
@@ -75,9 +85,17 @@ public actor RemoteAccess {
             return
         }
         await server?.stop()
+        // Drop the server so a later apply with a different backend rebuilds
+        // the weak manager pointer (RemoteControlServer holds backend weakly).
+        server = nil
         applied = nil
         running = false
     }
 
     public var isRunning: Bool { running }
+
+    /// Bound port / LAN exposure from the live server, if any.
+    public func boundState() async -> (port: UInt16, exposedLAN: Bool)? {
+        await server?.boundState()
+    }
 }

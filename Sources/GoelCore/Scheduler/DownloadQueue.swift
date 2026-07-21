@@ -1,17 +1,14 @@
 import Foundation
 
-/// The deep interface for the unified download queue (UI, remote, daemon).
+/// Optional narrow port over the unified download queue.
 ///
-/// Callers that only need queue lifecycle, observation, and mutation should
-/// depend on this port rather than the concrete ``DownloadManager`` surface
-/// (settings, engines, export, …). ``DownloadManager`` is the production
-/// implementation; pure cores such as ``AutomationCore`` and
-/// ``SchedulingPolicy`` sit underneath it.
+/// ``DownloadManager`` is the production implementation. Prefer the concrete
+/// manager (or ``RemoteBackend`` for the portal) unless a caller needs only
+/// lifecycle / observation / basic mutation. Not yet injected at app/daemon
+/// call sites — add a typed dependency when a second implementation appears.
 ///
 /// Requirements are `async` so an actor can witness them (same pattern as
-/// ``RemoteBackend``). Concrete sync helpers on ``DownloadManager``
-/// (`updates()`, `add(...)` with defaults, non-async `task(_:)`) stay on the
-/// concrete type for ergonomic app call sites.
+/// ``RemoteBackend``).
 public protocol DownloadQueue: AnyObject, Sendable {
     // MARK: Lifecycle
 
