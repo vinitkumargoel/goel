@@ -9,9 +9,9 @@
 # installed. The app's YtDlpResolver looks for this copy in Contents/Resources
 # first, then falls back to a user-installed yt-dlp.
 #
-# The binary is ~35 MB, so it roughly doubles the bundle. Set BUNDLE_YTDLP=0 in
-# build_app.sh (or don't call this) to ship without it — the button just hides
-# until the user installs yt-dlp themselves.
+# The binary is ~35 MB, so it roughly triples the download. build_app.sh therefore
+# does NOT call this by default — the resolve button just hides until the user
+# installs yt-dlp themselves. Set BUNDLE_YTDLP=1 for a self-contained build.
 #
 # Under hardened runtime + notarization this binary needs the entitlements in
 # Scripts/Goel.entitlements (PyInstaller dlopen's unsigned .so files at runtime);

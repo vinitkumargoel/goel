@@ -28,7 +28,9 @@ ARCH_FLAGS=(--arch "$ARCH_ENV")
 
 # Size-optimized release: -Osize favors smaller code over speed (irrelevant for
 # a UI/IO-bound downloader), -dead_strip drops unreferenced code at link time.
-BUILD_FLAGS=(-Xswiftc -Osize -Xlinker -dead_strip)
+# -gnone skips DWARF generation: the shipped executable is fully stripped later
+# anyway, so the debug info only ever inflated .build and the compile.
+BUILD_FLAGS=(-Xswiftc -Osize -Xswiftc -gnone -Xlinker -dead_strip)
 echo "==> swift build -c $CONFIG --arch $ARCH_ENV (size-optimized)"
 swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${BUILD_FLAGS[@]}"
 BIN="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${BUILD_FLAGS[@]}" --show-bin-path)"
@@ -182,11 +184,15 @@ swiftc -parse-as-library \
 codesign --force -s - "$APPEX"
 
 # Optional: bundle a self-contained yt-dlp (video-site → direct-stream resolver).
-# ~35 MB, so it roughly doubles the bundle; set BUNDLE_YTDLP=0 to ship without it
-# (the "Resolve with yt-dlp" button then stays hidden until the user installs one).
+# OFF by default. The binary is ~35 MB — two thirds of the installed app and
+# ~80% of the download, since its PyInstaller payload is already compressed and
+# so survives zipping intact. Without it the "Resolve with yt-dlp" button stays
+# hidden unless the user has their own copy (Homebrew/pipx are probed), which is
+# a far better default than making every user pay 35 MB for an optional feature.
+# Set BUNDLE_YTDLP=1 to ship the self-contained build.
 # Signed ad-hoc now so bundle_dylibs can seal the app wrapper; the Developer ID
 # block below re-signs it with hardened runtime + entitlements.
-if [ "${BUNDLE_YTDLP:-1}" = "1" ]; then
+if [ "${BUNDLE_YTDLP:-0}" = "1" ]; then
   Scripts/fetch_ytdlp.sh "$APP/Contents/Resources/yt-dlp"
   codesign --force -s - "$APP/Contents/Resources/yt-dlp"
 fi

@@ -117,6 +117,23 @@ delete_stale_rpaths() {
 delete_stale_rpaths "$EXE"
 for f in "$FRAMEWORKS"/*.dylib; do [ -e "$f" ] && delete_stale_rpaths "$f"; done
 
+# Thin fat binaries to the one arch this .app actually ships. Sparkle is
+# distributed universal (x86_64 + arm64), but the app itself is single-arch, so
+# the other slice is dead weight the user downloads and never executes.
+# Scoped to Frameworks on purpose: Resources/yt-dlp is left alone, since its
+# x86_64 side is a ~50 KB stub (all 35 MB of PyInstaller payload rides in the
+# arm64 slice), so thinning it buys nothing and only risks the frozen archive.
+APP_ARCH="$(lipo -archs "$EXE" 2>/dev/null | awk '{print $1}')"
+echo "==> Thinning fat binaries to $APP_ARCH"
+find "$FRAMEWORKS" -type f | while read -r m; do
+  file "$m" | grep -q "Mach-O universal" || continue
+  lipo -archs "$m" 2>/dev/null | grep -qw "$APP_ARCH" || continue
+  before=$(stat -f%z "$m")
+  lipo -thin "$APP_ARCH" "$m" -output "$m.thin" 2>/dev/null || continue
+  mv "$m.thin" "$m"
+  echo "    $(basename "$m"): $((before/1024))KB -> $(( $(stat -f%z "$m") / 1024 ))KB"
+done
+
 # Strip symbols. The executable is fully stripped — nothing links against it,
 # and Swift runtime reflection lives in __swift5_* sections (not the symbol
 # table), so this is safe. Dylibs keep their exported (global) symbols and drop

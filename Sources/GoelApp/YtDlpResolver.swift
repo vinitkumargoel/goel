@@ -3,9 +3,11 @@ import GoelCore
 
 /// Optional hand-off to a user-installed `yt-dlp` for video-site pages: given
 /// a page URL, it resolves the direct media stream (plus a human title) that
-/// the normal engines can download. Nothing here runs unless the user has
-/// installed yt-dlp themselves and explicitly clicks the resolve button —
-/// the app never downloads or bundles the tool.
+/// the normal engines can download. Nothing here runs unless a yt-dlp is
+/// actually present and the user explicitly clicks the resolve button; the app
+/// never downloads the tool itself. Standard builds do not bundle it either
+/// (see `BUNDLE_YTDLP` in `Scripts/build_app.sh`), so in practice this means a
+/// copy the user installed — the button hides entirely when none is found.
 enum YtDlpResolver {
 
     struct Resolved {
@@ -14,11 +16,11 @@ enum YtDlpResolver {
         var fileExtension: String?
     }
 
-    /// Resolve the yt-dlp binary. A packaged build carries its own copy inside
-    /// `Contents/Resources/` (see `Scripts/fetch_ytdlp.sh`), so the feature works
-    /// on a machine with nothing installed; we prefer that. Dev builds (run via
-    /// `swift run`, no bundle copy) and users who keep their own newer yt-dlp
-    /// fall back to the common install locations (Homebrew arm64/intel, pipx/pip).
+    /// Resolve the yt-dlp binary. A build made with `BUNDLE_YTDLP=1` carries its
+    /// own copy inside `Contents/Resources/` (see `Scripts/fetch_ytdlp.sh`) and we
+    /// prefer that when present. Standard builds, dev runs (`swift run`), and users
+    /// who keep their own newer yt-dlp fall through to the common install
+    /// locations (Homebrew arm64/intel, pipx/pip).
     static var executable: URL? {
         var candidates: [String] = []
         if let bundled = Bundle.main.resourceURL?
