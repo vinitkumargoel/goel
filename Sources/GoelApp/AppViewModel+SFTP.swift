@@ -56,9 +56,7 @@ extension AppViewModel {
     /// Build a usable client for a connection, resolving the Keychain password.
     /// Returns nil only if the connection is malformed (no host).
     func sftpClient(for connection: SFTPConnection) -> SFTPClient? {
-        let password = SFTPConnectionStore.shared.password(for: connection)
-        guard let target = SFTPTarget(connection: connection, password: password) else { return nil }
-        return SFTPClient(target: target)
+        SFTPSession.client(for: connection)
     }
 
     /// The `sftp://user@host:port/path` locator for a remote file on a server,

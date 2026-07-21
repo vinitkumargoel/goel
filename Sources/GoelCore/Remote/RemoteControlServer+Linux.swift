@@ -20,7 +20,7 @@ import FoundationNetworking
 
 public actor RemoteControlServer {
 
-    private weak var manager: DownloadManager?
+    private weak var manager: RemoteBackend?
 
     // Routing config + login state (identical semantics to the macOS shell).
     private var routerConfig = RemoteRouter.Config(token: "")
@@ -51,7 +51,7 @@ public actor RemoteControlServer {
 
     private var router: RemoteRouter { RemoteRouter(backend: manager, config: routerConfig) }
 
-    public init(manager: DownloadManager) {
+    public init(manager: RemoteBackend) {
         self.manager = manager
     }
 
@@ -179,7 +179,7 @@ public actor RemoteControlServer {
         head += "Connection: keep-alive\r\n\r\n"
         if await sink.send(Data(head.utf8)) {
             while generation == myGeneration, let manager {
-                let frame = router.eventFrame(for: await manager.snapshot)
+                let frame = router.eventFrame(for: await manager.taskSnapshot())
                 guard await sink.send(frame) else { break }
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
             }

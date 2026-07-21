@@ -15,7 +15,7 @@ import Network
 /// while this file keeps only the parts that genuinely need a socket or a file.
 public actor RemoteControlServer {
 
-    private weak var manager: DownloadManager?
+    private weak var manager: RemoteBackend?
     private var listener: NWListener?
 
     /// The bind parameters the live `listener` was created with. Only these two
@@ -48,7 +48,7 @@ public actor RemoteControlServer {
     private var activeVerifications = 0
     private static let maxConcurrentVerifications = 2
 
-    public init(manager: DownloadManager) {
+    public init(manager: RemoteBackend) {
         self.manager = manager
     }
 
@@ -339,7 +339,7 @@ public actor RemoteControlServer {
         head += "Connection: keep-alive\r\n\r\n"
         if await send(connection, Data(head.utf8)) {
             while generation == myGeneration, let manager {
-                let frame = router.eventFrame(for: await manager.snapshot)
+                let frame = router.eventFrame(for: await manager.taskSnapshot())
                 guard await send(connection, frame) else { break }
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
             }

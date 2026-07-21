@@ -63,9 +63,8 @@ public actor SFTPEngine: DownloadEngine {
 
     public func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard case .url(let url) = source, source.kind == .sftp,
-              let target = SFTPTarget(url: url) else { return nil }
+              let client = SFTPSession.client(for: url) else { return nil }
         let name = PathSafety.sanitizedName(url.lastPathComponent, fallback: url.host ?? "download")
-        let client = SFTPClient(target: target)
         let size = try? await client.size(url.path)
         return EngineMetadata(name: name, totalBytes: size, reachable: size != nil)
     }
@@ -86,7 +85,7 @@ public actor SFTPEngine: DownloadEngine {
 
     private func run(_ id: UUID, profile: TrafficProfile) async {
         guard let task = tasks[id], case .url(let url) = task.source,
-              let target = SFTPTarget(url: url) else {
+              let client = SFTPSession.client(for: url) else {
             let e = DownloadError.unknown("SFTPEngine requires an sftp:// source with a user and host")
             hub.fail(id, e)
             return
@@ -118,7 +117,6 @@ public actor SFTPEngine: DownloadEngine {
         // unrelated file), resuming would seek past EOF: the first read returns 0,
         // the transfer "succeeds" at the stale local size, and we'd falsely report
         // completion of mismatched data. Restart from scratch in that case.
-        let client = SFTPClient(target: target)
         let remoteSize = try? await client.size(url.path)
         var resumeFrom = localSize
         if let remoteSize, localSize > remoteSize { resumeFrom = 0 }

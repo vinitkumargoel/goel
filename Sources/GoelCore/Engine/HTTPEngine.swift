@@ -58,8 +58,8 @@ public actor HTTPEngine: HTTPConfigurable {
     /// the profile's global `maxConnections` and per-host `maxConnectionsPerServer`
     /// caps hold in sum — not merely within a single task. Reserved when a
     /// download's segments start and released when it finishes / pauses / fails.
-    var totalConnections = 0
-    var connectionsByHost: [String: Int] = [:]
+    /// Distinct from the per-download ``ConnectionGovernor`` (adaptive 429 shrink).
+    var connectionBudget = ConnectionBudget()
 
     // MARK: Per-task state
 
@@ -450,9 +450,10 @@ public actor HTTPEngine: HTTPConfigurable {
             let boundAdapters: [BoundAdapter]
             if canSegment, aggregationConfig.isActive {
                 let adapters = aggregationConfig.adapters
-                let hostInUse = host.flatMap { connectionsByHost[$0] } ?? 0
-                let hostRoom = max(1, profile.maxConnectionsPerServer - hostInUse)
-                let globalRoom = max(1, profile.maxConnections - totalConnections)
+                let hostRoom = connectionBudget.hostRoom(
+                    host: host, maxPerServer: profile.maxConnectionsPerServer)
+                let globalRoom = connectionBudget.globalRoom(
+                    maxConnections: profile.maxConnections)
                 segmentCount = AggregationPolicy.multiPathSegmentCount(
                     fileBytes: probe.totalBytes!,
                     adapters: adapters.count,
@@ -488,16 +489,16 @@ public actor HTTPEngine: HTTPConfigurable {
                 boundAdapters: boundAdapters,
                 connectTimeout: networkConfig.timeout
             )
-            let transfer = SegmentedTransfer(plan: plan)
+            let planned = PlannedTransfer(plan: plan)
 
             // Charge the cross-download budget with the connection count the
             // transfer will ACTUALLY open, and release the same count on every
             // exit. The resume path may restore a different range count than the
             // freshly-resolved `segmentCount`, so reserve against the transfer's
-            // resolved fan-out rather than `segmentCount`. `SegmentedTransfer.init`
+            // resolved fan-out rather than `segmentCount`. `PlannedTransfer.init`
             // is synchronous, so the budget read above and this reservation remain
             // atomic on the actor (no suspension between them).
-            let reserved = transfer.connectionCount
+            let reserved = planned.connectionCount
             reserveConnections(host: host, count: reserved)
             defer { releaseConnections(host: host, count: reserved) }
 
@@ -505,14 +506,14 @@ public actor HTTPEngine: HTTPConfigurable {
             // re-emit the SAME EngineEvents as before (.progress, .fileProgress,
             // .resumeDataUpdated). The byte pumps run off-actor; this is the only
             // place transfer state crosses back onto the engine.
-            let progressStream = transfer.progress
+            let progressStream = planned.progress
             let consumer = Task { [weak self] in
                 for await update in progressStream { await self?.applyProgress(id, update) }
             }
 
             let outcome: TransferOutcome
             do {
-                outcome = try await transfer.run()
+                outcome = try await planned.run()
                 await consumer.value          // drain remaining progress before finishing
             } catch {
                 consumer.cancel()

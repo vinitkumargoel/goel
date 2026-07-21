@@ -345,25 +345,8 @@ final class AppViewModel: ObservableObject {
     /// Flushes the speed-chart samples on quit (best-effort).
     private var appTerminateObserver: NSObjectProtocol?
 
-    /// The embedded remote-control HTTP server (Settings → Remote Access).
-    private var remoteServer: RemoteControlServer?
-
-    /// The remote settings the running server was started with, so only a real
-    /// change restarts it. A struct (not a tuple) because it now carries more
-    /// than six fields and needs synthesized `Equatable`.
-    private struct RemoteDesired: Equatable {
-        var enabled: Bool
-        var port: Int
-        var lan: Bool
-        var token: String
-        var requireAuth: Bool
-        var username: String
-        var passwordHash: String
-        var readOnly: Bool
-        var theme: String
-        var sessionMinutes: Int
-    }
-    private var remoteConfig: RemoteDesired?
+    /// Deep façade over the embedded remote-control server (Settings → Remote Access).
+    private let remoteAccess = RemoteAccess()
 
     /// The last link the clipboard monitor surfaced, so the same copy isn't
     /// offered twice (and a dismissed suggestion stays dismissed).
@@ -557,63 +540,17 @@ final class AppViewModel: ObservableObject {
     /// Recompute the memoized ``visibleTasks``. Called when `tasks` updates or any
     /// filter/search/sort input changes — never per render.
     private func recomputeVisible() {
-        var list = tasks.filter { matches($0, filter) }
-        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
-        if !q.isEmpty {
-            list = list.filter { task in
-                task.name.lowercased().contains(q)
-                    || task.allTags.contains { $0.lowercased().contains(q) }
-                    || (task.note?.lowercased().contains(q) ?? false)
-            }
-        }
-        visibleTasks = list.sorted(by: sortComparator)
-    }
-
-    private func matches(_ task: DownloadTask, _ filter: SidebarFilter) -> Bool {
-        switch filter {
-        case .all: return true
-        case .active: return task.status.isActive
-        case .paused: return task.status == .paused
-        case .completed: return task.status == .completed
-        case .seeding: return task.status == .seeding
-        case .type(let t): return task.fileType == t
-        }
-    }
-
-    private func sortComparator(_ a: DownloadTask, _ b: DownloadTask) -> Bool {
-        let result: Bool
-        switch sortKey {
-        case .index, .added:
-            result = a.addedAt < b.addedAt
-        case .name:
-            result = a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
-        case .size:
-            result = (a.totalBytes ?? 0) < (b.totalBytes ?? 0)
-        case .status:
-            result = Self.statusOrder(a.status) < Self.statusOrder(b.status)
-        case .downloadSpeed:
-            result = a.downloadSpeed < b.downloadSpeed
-        case .uploadSpeed:
-            result = a.uploadSpeed < b.uploadSpeed
-        }
-        return sortAscending ? result : !result
-    }
-
-    private static func statusOrder(_ s: DownloadStatus) -> Int {
-        switch s {
-        case .downloading: return 0
-        case .verifying: return 0
-        case .requestingMetadata: return 1
-        case .seeding: return 2
-        case .queued: return 3
-        case .paused: return 4
-        case .failed: return 5
-        case .completed: return 6
-        }
+        visibleTasks = ListPresentation.visible(
+            tasks: tasks,
+            filter: filter,
+            search: search,
+            sortKey: sortKey,
+            ascending: sortAscending
+        )
     }
 
     func count(for filter: SidebarFilter) -> Int {
-        tasks.filter { matches($0, filter) }.count
+        ListPresentation.count(tasks: tasks, filter: filter)
     }
 
     var selectedTask: DownloadTask? {
@@ -1047,34 +984,12 @@ final class AppViewModel: ObservableObject {
     // MARK: Remote access
 
     /// Start/stop/restart the embedded remote-control server to match the
-    /// current settings. Idempotent — only a real config change restarts it.
+    /// current settings. Idempotent — `RemoteAccess` owns restart comparison.
     private func applyRemoteAccess() {
-        let desired = RemoteDesired(
-            enabled: settings.remoteAccessEnabled,
-            port: settings.remotePort,
-            lan: settings.remoteAllowLAN,
-            token: settings.remoteToken,
-            requireAuth: settings.remoteRequireAuth,
-            username: settings.remoteUsername,
-            passwordHash: settings.remotePasswordHash,
-            readOnly: settings.remoteReadOnly,
-            theme: settings.remoteTheme,
-            sessionMinutes: settings.remoteSessionMinutes)
-        guard remoteConfig != desired else { return }
-        remoteConfig = desired
-        let server = remoteServer ?? RemoteControlServer(manager: manager)
-        remoteServer = server
+        let settings = self.settings
+        let manager = self.manager
         Task {
-            if desired.enabled {
-                let config = RemoteRouter.Config(
-                    token: desired.token, requireAuth: desired.requireAuth,
-                    readOnly: desired.readOnly, theme: desired.theme, username: desired.username)
-                await server.start(port: UInt16(clamping: desired.port), allowLAN: desired.lan,
-                                   config: config, passwordHash: desired.passwordHash,
-                                   sessionMinutes: desired.sessionMinutes)
-            } else {
-                await server.stop()
-            }
+            await remoteAccess.apply(settings: settings, backend: manager)
         }
     }
 
