@@ -1,0 +1,88 @@
+/* Hallmark · tokens for the Goel° marketing site (final: Terminal theme)
+ * theme: studied-DNA (source: superset.sh screenshots, user-supplied)
+ * paper dark · display mono (IBM Plex Mono) · accent cool sky-blue
+ * every colour used anywhere on the site is named here — no literals in the pages
+ */
+
+.theme-terminal {
+  --color-paper: oklch(16% 0.008 260);
+  --color-paper-2: oklch(19% 0.01 260);
+  --color-paper-3: oklch(23% 0.012 260);
+  --color-ink: oklch(96% 0.005 250);
+  --color-ink-soft: oklch(74% 0.01 250);
+  /* 62%: clears WCAG AA (4.5:1) on paper, paper-3, app-bg and app-bar */
+  --color-ink-faint: oklch(62% 0.012 250);
+  --color-accent: oklch(72% 0.135 240);
+  --color-accent-soft: oklch(72% 0.135 240 / 0.12);
+  --color-on-accent: oklch(15% 0.03 250);
+  --color-good: oklch(78% 0.16 155);
+  --color-warn: oklch(80% 0.14 80);
+  --color-bad: oklch(66% 0.19 25);
+  --color-line: oklch(96% 0.005 250 / 0.10);
+  --color-line-strong: oklch(96% 0.005 250 / 0.22);
+  --color-focus: oklch(72% 0.135 240);
+
+  /* product-simulation surfaces — the live demo panels */
+  --color-app-bg: oklch(17% 0.012 255);
+  --color-app-bar: oklch(19% 0.014 255);
+  --color-app-side: oklch(16% 0.011 255);
+  --color-app-hover: oklch(20% 0.014 255);
+  --color-app-hover-2: oklch(21% 0.014 255);
+  --color-app-chip: oklch(22% 0.015 255);
+  --color-app-chip-hover: oklch(23% 0.015 255);
+  --color-track: oklch(26% 0.015 255);
+  --color-track-2: oklch(28% 0.015 255);
+  --color-map-bg: oklch(22% 0.012 255);
+  --color-qr: oklch(25% 0.015 255);
+
+  /* window traffic lights */
+  --color-tl-off: oklch(45% 0.02 255);
+  --color-tl-red: oklch(65% 0.19 25);
+  --color-tl-amber: oklch(80% 0.15 85);
+  --color-tl-green: oklch(72% 0.17 150);
+
+  /* file-kind swatches */
+  --color-kind-disc: oklch(70% 0.15 55);
+  --color-kind-video: oklch(62% 0.17 300);
+  --color-kind-arch: oklch(66% 0.13 240);
+  --color-kind-mag: oklch(60% 0.19 20);
+
+  --shadow-app: 0 40px 90px -30px oklch(0% 0 0 / 0.7);
+  --shadow-panel: 0 30px 70px -30px oklch(0% 0 0 / 0.65);
+  --shadow-window: 0 30px 80px oklch(0% 0 0 / 0.45);
+  --shadow-nav: 0 10px 34px -20px oklch(0% 0 0 / 0.85);
+
+  --font-display: "IBM Plex Mono", ui-monospace, monospace;
+  --font-body: "Inter", -apple-system, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 7rem;
+  --text-sm: 0.8125rem;
+  --text-base: 1rem;
+  --text-lg: 1.1875rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-display-s: clamp(1.9rem, 4.5vw, 3rem);
+  --text-display: clamp(2.4rem, 6vw, 4.6rem);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 140ms;
+  --dur-med: 240ms;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  /* sticky-nav height — anchor targets clear it via scroll-margin-top */
+  --nav-h: 64px;
+}
+
+@media (max-width: 980px) {
+  .theme-terminal { --nav-h: 100px; } /* nav wraps to two rows below 980px */
+}

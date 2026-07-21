@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-terminal">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cookie Policy — Goel°</title>
+<meta name="description" content="Cookie policy for the Goel° website. Short version: this site sets no cookies.">
+<meta name="theme-color" content="#16181d">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<link rel="canonical" href="https://goel.vinitk.dev/cookies.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<style>
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V4 · legal page, terminal theme, shared with index */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { overflow-x: clip; }
+body { background: var(--color-paper); color: var(--color-ink); font-family: var(--font-body); line-height: 1.7; -webkit-font-smoothing: antialiased; }
+::selection { background: var(--color-accent); color: var(--color-paper); }
+.wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+.nav { position: sticky; top: 0; z-index: 10; background: color-mix(in oklch, var(--color-paper) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--color-line); }
+.nav-in { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); height: 64px; max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-weight: 600; font-size: 1.05rem; letter-spacing: 0.18em; text-decoration: none; color: inherit; white-space: nowrap; }
+.brand img { width: 24px; height: 24px; border-radius: 6px; display: block; }
+.brand .deg { color: var(--color-accent); margin-left: -0.34em; letter-spacing: 0; }
+.nav a.back { font-size: var(--text-sm); color: var(--color-ink-soft); text-decoration: none; }
+.nav a.back:hover { color: var(--color-ink); }
+main { padding: var(--space-2xl) 0 var(--space-3xl); }
+.kicker { display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.16em; color: var(--color-accent); border: 1px solid var(--color-line-strong); border-radius: 999px; padding: 4px 12px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-display-s); letter-spacing: -0.015em; margin-top: var(--space-md); overflow-wrap: anywhere; min-width: 0; }
+.updated { font-family: var(--font-mono); font-size: 0.78rem; color: var(--color-ink-faint); margin-top: var(--space-xs); }
+.tldr { margin-top: var(--space-lg); border: 1px solid var(--color-line-strong); border-left: 3px solid var(--color-accent); border-radius: var(--radius-sm); padding: var(--space-md) var(--space-lg); color: var(--color-ink-soft); }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); letter-spacing: -0.01em; margin: var(--space-xl) 0 var(--space-sm); }
+p, li { color: var(--color-ink-soft); margin-top: var(--space-sm); }
+ul { padding-left: 1.2em; }
+a { color: var(--color-accent); }
+.mono { font-family: var(--font-mono); font-size: 0.9em; }
+footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
+.foot { display: flex; flex-wrap: wrap; gap: var(--space-lg); align-items: center; max-width: 1160px; margin: 0 auto; padding: 0 24px; font-size: var(--text-sm); }
+.foot a { color: var(--color-ink-soft); text-decoration: none; }
+.foot a:hover { color: var(--color-ink); }
+.foot .lic { width: 100%; font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-ink-faint); letter-spacing: 0.06em; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="index.html"><img src="assets/goel-icon-128.png" alt="">GOEL<span class="deg">°</span></a>
+    <a class="back" href="index.html">← Back to goel</a>
+  </div>
+</nav>
+
+<main class="wrap">
+  <span class="kicker">Legal</span>
+  <h1>Cookie Policy</h1>
+  <p class="updated">Last updated: 21 July 2026</p>
+
+  <div class="tldr"><strong>Short version:</strong> this site sets no cookies. There is nothing to accept, so there is no cookie banner.</div>
+
+  <h2>No cookies, no trackers</h2>
+  <p>This website is a static page. It sets no first-party cookies, no third-party cookies, no advertising or analytics identifiers, and it does not use <span class="mono">localStorage</span> or similar browser storage to track you.</p>
+
+  <h2>Third-party requests</h2>
+  <p>The site loads its typefaces from Google Fonts. That request delivers font files only — it does not set cookies in modern browsers — but Google's servers do see your IP address and user agent, governed by <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's privacy policy</a>.</p>
+  <p>Links to GitHub (source code, releases) take you to GitHub, which manages its own cookies under its own policy.</p>
+
+  <h2>The Goel° app</h2>
+  <p>The desktop app and Goel° Web are not websites you visit — they run on your own machine. Goel° Web uses a session token to keep you signed in to <em>your own</em> portal; that stays between your browser and your machine and is not shared with anyone.</p>
+
+  <h2>Changes</h2>
+  <p>If this ever changes — for example, if we add privacy-respecting analytics — this page will be updated first, with a new date.</p>
+</main>
+
+<footer>
+  <div class="foot">
+    <a href="index.html">Home</a>
+    <a href="privacy.html">Privacy</a>
+    <a href="terms.html">Terms</a>
+    <a href="cookies.html">Cookies</a>
+    <div class="lic">MIT · © 2026 Vinit Kumar Goel</div>
+  </div>
+</footer>
+
+</body>
+</html>

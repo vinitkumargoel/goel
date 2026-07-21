@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-terminal">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Goel° — One queue for everything you download</title>
+<meta name="description" content="A native macOS download manager with one queue for HTTP, FTP, SFTP, BitTorrent and HLS. Self-contained, MIT-licensed — and headless on Linux.">
+<meta name="theme-color" content="#16181d">
+<link rel="canonical" href="https://goel.vinitk.dev/">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta property="og:title" content="Goel° — One queue for everything you download">
+<meta property="og:description" content="HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Open source, MIT-licensed — and headless on Linux.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Goel°">
+<meta property="og:url" content="https://goel.vinitk.dev/">
+<meta property="og:image" content="https://goel.vinitk.dev/assets/og.jpg">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="720">
+<meta property="og:image:alt" content="Goel° running on macOS — one queue mixing HTTP, BitTorrent, SFTP and HLS downloads.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Goel° — One queue for everything you download">
+<meta name="twitter:description" content="HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Open source, MIT-licensed — and headless on Linux.">
+<meta name="twitter:image" content="https://goel.vinitk.dev/assets/og.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<style>
+/* Hallmark · macrostructure: Marquee Hero (living product) · tone: technical · anchor hue: sky-blue 240
+ * theme: studied-DNA (source: superset.sh screenshots, user-supplied) · "Terminal" — final (chosen from 3 variants)
+ * paper oklch(16% .008 260) · accent oklch(72% .135 240) · display IBM Plex Mono · body Inter
+ * nav: terminal minimal · footer: Ft1 minimal · gate 47 waived by explicit user brief (living product recreation IS the deliverable)
+ * post-audit: AA contrast (ink-faint 62%), tokens-only colour, keyboard-reachable
+ * demos, mobile nav + mobile queue view, off-screen/hidden-tab render gating
+ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { overflow-x: clip; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--color-accent); color: var(--color-paper); }
+a { color: inherit; }
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+/* anchor targets clear the sticky nav */
+section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
+
+.skip {
+  position: absolute; left: var(--space-md); top: -100px; z-index: 100;
+  font-family: var(--font-mono); font-size: var(--text-sm); text-decoration: none;
+  background: var(--color-accent); color: var(--color-on-accent);
+  border-radius: var(--radius-sm); padding: 10px 16px;
+  transition: top var(--dur-fast) var(--ease-out);
+}
+.skip:focus-visible { top: var(--space-md); }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 var(--space-lg); }
+.mono { font-family: var(--font-mono); }
+
+/* ---------- nav ---------- */
+.nav {
+  position: sticky; top: 0; z-index: 50;
+  background: color-mix(in oklab, var(--color-paper) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-line);
+}
+.nav-in { display: flex; align-items: center; gap: var(--space-lg); height: 64px; }
+.brand {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono); font-weight: 600; font-size: 1.05rem;
+  letter-spacing: 0.18em; text-decoration: none; white-space: nowrap;
+}
+.brand .logo { width: 24px; height: 24px; border-radius: 6px; display: block; }
+.brand .deg { color: var(--color-accent); margin-left: -0.34em; letter-spacing: 0; }
+.nav-links { display: flex; gap: var(--space-lg); margin-left: auto; }
+.nav-links a {
+  font-size: var(--text-sm); color: var(--color-ink-soft); text-decoration: none;
+  white-space: nowrap; transition: color var(--dur-fast) var(--ease-out);
+}
+.nav-links a:hover { color: var(--color-ink); }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 500;
+  padding: 10px 18px; border-radius: var(--radius-sm); text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.btn:active { transform: translateY(1px); }
+.btn-accent {
+  color: var(--color-accent); background: var(--color-accent-soft);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 35%, transparent);
+}
+.btn-accent:hover { background: color-mix(in oklab, var(--color-accent) 20%, transparent); }
+.btn-ghost { border: 1px solid var(--color-line-strong); color: var(--color-ink); }
+.btn-ghost:hover { border-color: var(--color-ink-faint); }
+.nav .btn { padding: 8px 14px; }
+
+/* ---------- hero ---------- */
+.hero { padding: clamp(2.5rem, 5.5vh, 4rem) 0 var(--space-xl); text-align: center; position: relative; }
+.hero h1 {
+  font-family: var(--font-display); font-weight: 600; font-style: normal;
+  font-size: clamp(2.1rem, 4.6vw, 3.6rem); line-height: 1.12; letter-spacing: -0.02em;
+  max-width: 26ch; margin: 0 auto; overflow-wrap: anywhere; min-width: 0;
+}
+.hero h1 .hl { color: var(--color-accent); }
+.hero p.sub {
+  margin: var(--space-md) auto 0; max-width: 56ch; color: var(--color-ink-soft);
+  font-size: var(--text-lg);
+}
+.hero-ctas { display: flex; gap: var(--space-md); justify-content: center; margin-top: var(--space-lg); flex-wrap: wrap; }
+.hero-note { margin-top: var(--space-md); font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-ink-faint); letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* fact strip */
+.facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 0; margin: var(--space-xl) auto 0; border: 1px solid var(--color-line); border-radius: var(--radius-md); overflow: hidden; max-width: 900px; }
+.fact { flex: 1 1 150px; padding: var(--space-md) var(--space-lg); border-right: 1px solid var(--color-line); }
+.fact:last-child { border-right: none; }
+.fact b { display: block; font-family: var(--font-mono); font-size: var(--text-xl); font-weight: 600; }
+.fact span { font-size: 0.72rem; font-family: var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-ink-faint); }
+
+/* ---------- the living app ---------- */
+/* full-bleed at load, shrinks into the column on scroll (see scroll choreography JS) */
+.app-stage { margin-top: var(--space-lg); position: relative; width: min(1400px, 96vw); margin-left: 50%; transform: translateX(-50%); }
+.app-stage::before {
+  content: ""; position: absolute; inset: -8% -4% -12%;
+  background: radial-gradient(55% 60% at 50% 40%, var(--color-accent-soft), transparent 70%);
+  pointer-events: none;
+}
+.app-shrink { transform-origin: 50% 0; will-change: transform; position: relative; }
+.app-scroll { overflow-x: auto; border-radius: var(--radius-lg); position: relative; }
+.app-hint {
+  display: none; margin-top: var(--space-sm); font-family: var(--font-mono);
+  font-size: 0.7rem; letter-spacing: 0.08em; color: var(--color-ink-faint);
+}
+.app {
+  min-width: 1280px; text-align: left; position: relative;
+  background: var(--color-app-bg); border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-lg); overflow: hidden;
+  box-shadow: var(--shadow-app);
+  font-size: 13px; line-height: 1.5;
+}
+.app, .app * { font-family: var(--font-body); }
+.app .m { font-family: var(--font-mono); }
+.tl { display: flex; gap: 7px; }
+.tl i { width: 11px; height: 11px; border-radius: 50%; background: var(--color-tl-off); }
+.tl i:nth-child(1) { background: var(--color-tl-red); }
+.tl i:nth-child(2) { background: var(--color-tl-amber); }
+.tl i:nth-child(3) { background: var(--color-tl-green); }
+.app-toolbar {
+  display: flex; align-items: center; gap: 12px; padding: 11px 14px;
+  border-bottom: 1px solid var(--color-line); background: var(--color-app-bar);
+}
+.chip-btn {
+  font-size: 11.5px; padding: 5px 11px; border-radius: 7px;
+  border: 1px solid var(--color-line); color: var(--color-ink-soft); background: var(--color-app-chip);
+}
+.add-btn {
+  background: var(--color-accent); color: var(--color-on-accent); font-weight: 600;
+  font-size: 12px; padding: 6px 13px; border-radius: 7px;
+}
+.app-search {
+  margin-left: auto; font-size: 11.5px; color: var(--color-ink-faint);
+  border: 1px solid var(--color-line); border-radius: 7px; padding: 5px 12px; min-width: 170px;
+}
+.app-body { display: grid; grid-template-columns: 196px minmax(0,1fr) 282px; }
+.app-side { border-right: 1px solid var(--color-line); padding: 12px 8px; background: var(--color-app-side); }
+.side-h { font-size: 9.5px; letter-spacing: 0.14em; color: var(--color-ink-faint); padding: 10px 10px 4px; font-family: var(--font-mono); }
+.side-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 6px 10px; border-radius: 7px; font-size: 12px; color: var(--color-ink-soft);
+}
+.side-item:hover { background: var(--color-app-hover-2); }
+.side-item.on { background: var(--color-accent); color: var(--color-on-accent); font-weight: 600; }
+.side-item .n { margin-left: auto; font-size: 10.5px; opacity: 0.75; font-family: var(--font-mono); }
+.srv { padding: 7px 10px; font-size: 11px; color: var(--color-ink-soft); display: flex; align-items: center; gap: 7px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-good); flex: none; }
+.os-chip { font-size: 9px; border: 1px solid var(--color-line); border-radius: 4px; padding: 1px 5px; color: var(--color-ink-faint); font-family: var(--font-mono); }
+
+.app-list { min-width: 0; }
+.list-head, .row { display: grid; grid-template-columns: 26px 30px minmax(160px,1fr) 64px 148px 96px 76px 76px; align-items: center; gap: 10px; padding: 0 14px; }
+.list-head {
+  height: 34px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-ink-faint); border-bottom: 1px solid var(--color-line); font-family: var(--font-mono);
+}
+.row { height: 57px; border-bottom: 1px solid var(--color-line); cursor: pointer; transition: background var(--dur-fast) var(--ease-out); }
+.row:hover { background: var(--color-app-hover); }
+.row.sel { background: color-mix(in oklab, var(--color-accent) 16%, var(--color-app-bar)); }
+.row:focus-visible, .frow:focus-visible, .wrow:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.row-empty { padding: 24px 14px; font-family: var(--font-mono); font-size: 11.5px; color: var(--color-ink-faint); }
+.row .idx { color: var(--color-ink-faint); font-size: 11px; font-family: var(--font-mono); }
+.pp {
+  width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--color-line-strong);
+  display: grid; place-items: center; font-size: 9px; color: var(--color-ink-soft);
+}
+.pp:hover { border-color: var(--color-ink-faint); }
+.fico { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; flex: none; }
+.name-cell { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.name-main { min-width: 0; flex: 1; }
+.nm { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; font-size: 13px; }
+.pbar { display: block; height: 3px; border-radius: 2px; background: var(--color-track-2); margin-top: 6px; overflow: hidden; }
+.pbar i { display: block; height: 100%; border-radius: 2px; background: var(--color-accent); transition: width 0.5s linear; }
+.pbar.seed i { background: var(--color-good); }
+.pbar.warn i { background: var(--color-warn); }
+.pbar.bad i { background: var(--color-bad); }
+.proto {
+  font-size: 8.5px; font-weight: 600; letter-spacing: 0.06em; padding: 2px 6px;
+  border-radius: 4px; border: 1px solid var(--color-line-strong); color: var(--color-ink-soft);
+  font-family: var(--font-mono); flex: none;
+}
+.cell { font-size: 11.5px; color: var(--color-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); }
+.cell.speed { color: var(--color-good); }
+.st { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); }
+.st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); flex: none; }
+.st.seed::before { background: var(--color-good); }
+.st.pause::before { background: var(--color-ink-faint); }
+.st.done::before { background: var(--color-good); }
+.st.fail::before { background: var(--color-bad); }
+.st.meta::before { background: var(--color-warn); }
+
+.app-detail { border-left: 1px solid var(--color-line); padding: 14px; background: var(--color-app-side); min-width: 0; }
+.d-name { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.d-chips { display: flex; gap: 6px; margin-top: 7px; align-items: center; }
+.d-tabs { display: flex; gap: 2px; margin: 12px 0; border-bottom: 1px solid var(--color-line); }
+.d-tab { font-size: 10.5px; padding: 5px 8px; color: var(--color-ink-faint); border-bottom: 2px solid transparent; }
+.d-tab.on { color: var(--color-ink); border-bottom-color: var(--color-accent); }
+.ring-wrap { display: grid; place-items: center; padding: 10px 0 14px; }
+.ring { position: relative; width: 118px; height: 118px; }
+.ring svg { transform: rotate(-90deg); }
+.ring .track { stroke: var(--color-track-2); }
+.ring .arc { stroke: var(--color-accent); stroke-linecap: round; transition: stroke-dashoffset 0.5s linear; }
+.ring-label { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+.ring-label b { font-size: 22px; font-family: var(--font-mono); font-weight: 600; display: block; }
+.ring-label span { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-ink-faint); font-family: var(--font-mono); }
+.updown { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ud { border: 1px solid var(--color-line); border-radius: 8px; padding: 8px 10px; }
+.ud span { font-size: 9px; letter-spacing: 0.12em; color: var(--color-ink-faint); font-family: var(--font-mono); }
+.ud b { display: block; font-size: 13px; font-family: var(--font-mono); color: var(--color-good); margin-top: 2px; }
+.d-sub { text-align: center; font-size: 11px; color: var(--color-ink-faint); margin-top: 10px; font-family: var(--font-mono); }
+.kv { display: flex; justify-content: space-between; gap: 10px; font-size: 11.5px; padding: 7px 0; border-bottom: 1px solid var(--color-line); }
+.kv span { color: var(--color-ink-faint); white-space: nowrap; }
+.kv b { flex: 1; min-width: 0; font-weight: 500; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.d-actions { display: flex; gap: 7px; margin-top: 13px; }
+.d-actions .chip-btn { flex: 1; text-align: center; }
+.d-actions .primary { background: var(--color-accent); color: var(--color-on-accent); border-color: transparent; font-weight: 600; }
+.app-status {
+  display: flex; align-items: center; gap: 14px; padding: 9px 14px;
+  border-top: 1px solid var(--color-line); background: var(--color-app-bar); font-size: 11.5px;
+}
+.app-status .m { color: var(--color-good); }
+.profile { margin-left: auto; display: flex; gap: 2px; border: 1px solid var(--color-line); border-radius: 7px; padding: 2px; }
+.profile button { font-size: 10.5px; padding: 3px 10px; border-radius: 5px; color: var(--color-ink-soft); }
+.profile button.on { background: var(--color-accent); color: var(--color-on-accent); font-weight: 600; }
+
+/* ---------- sections ---------- */
+.slice { padding: var(--space-3xl) 0; border-top: 1px solid var(--color-line); }
+.slice-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--space-2xl); align-items: center; }
+.slice-grid.flip > .slice-copy { order: 2; }
+.kicker {
+  font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--color-accent); display: block; margin-bottom: var(--space-md);
+}
+.slice h2 {
+  font-family: var(--font-display); font-style: normal; font-weight: 600;
+  font-size: var(--text-display-s); line-height: 1.15; letter-spacing: -0.015em;
+  overflow-wrap: anywhere; min-width: 0;
+}
+.slice p { margin-top: var(--space-md); color: var(--color-ink-soft); max-width: 46ch; }
+.slice ul.ticks { margin-top: var(--space-md); list-style: none; }
+.slice ul.ticks li { padding: 5px 0 5px 22px; position: relative; color: var(--color-ink-soft); font-size: var(--text-sm); }
+.slice ul.ticks li::before { content: "▸"; position: absolute; left: 0; color: var(--color-accent); font-family: var(--font-mono); }
+.panel-wrap { position: relative; min-width: 0; }
+.dither { position: absolute; inset: -10% -6%; pointer-events: none; opacity: 0.5;
+  background-image: radial-gradient(color-mix(in oklab, var(--color-accent) 30%, transparent) 1px, transparent 1.5px);
+  background-size: 7px 7px;
+  mask-image: radial-gradient(60% 55% at 30% 30%, #000, transparent 70%);
+}
+.dither.alt { mask-image: radial-gradient(55% 60% at 75% 65%, #000, transparent 70%); }
+.panel {
+  position: relative; background: var(--color-app-bg); border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-lg); overflow: hidden; font-size: 12.5px;
+  box-shadow: var(--shadow-panel);
+}
+.panel-title {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-bottom: 1px solid var(--color-line); background: var(--color-app-bar);
+  font-size: 11.5px; color: var(--color-ink-soft);
+}
+.panel-title .live { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--color-good); font-family: var(--font-mono); font-size: 10px; }
+.panel-title .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--color-good); }
+.panel-body { padding: 14px; }
+
+/* segments viz */
+.seg-track { display: flex; gap: 3px; margin-top: 6px; }
+.seg { flex: 1; height: 26px; border-radius: 4px; background: var(--color-track); overflow: hidden; position: relative; }
+.seg i { position: absolute; inset: 0; transform-origin: left; background: var(--color-accent); transform: scaleX(0); transition: transform 0.5s linear; }
+.adapters { margin-top: 14px; display: grid; gap: 4px; }
+.adapter {
+  display: grid; grid-template-columns: 128px minmax(0,1fr) 72px; gap: 10px; align-items: center;
+  font-size: 11.5px; text-align: left; padding: 6px 8px; border-radius: 8px; border: 1px solid transparent;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), opacity 0.35s var(--ease-out);
+}
+.adapter:hover { background: var(--color-paper-3); border-color: var(--color-line); }
+.adapter .nm2 { color: var(--color-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adapter .stx { font-family: var(--font-mono); font-size: 9.5px; color: var(--color-ink-faint); margin-left: 5px; }
+.meter { height: 6px; border-radius: 3px; background: var(--color-track); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--color-good); transition: width 0.5s linear; border-radius: 3px; }
+.adapter .sp { text-align: right; font-family: var(--font-mono); color: var(--color-good); font-size: 11px; white-space: nowrap; }
+.adapter.a1 .meter i { background: var(--color-accent); }
+.adapter.a1 .sp { color: var(--color-accent); }
+.adapter.a2 .meter i { background: var(--color-warn); }
+.adapter.a2 .sp { color: var(--color-warn); }
+.adapter.off { opacity: 0.4; }
+.adapter.off .sp { color: var(--color-ink-faint); }
+.agg-map { display: flex; gap: 2px; height: 14px; margin-top: 12px; border-radius: 5px; overflow: hidden; background: var(--color-map-bg); }
+.agg-map i { display: block; height: 100%; transition: width 0.5s linear; }
+.agg-map .a0 { background: color-mix(in oklab, var(--color-good) 80%, transparent); }
+.agg-map .a1 { background: color-mix(in oklab, var(--color-accent) 80%, transparent); }
+.agg-map .a2 { background: color-mix(in oklab, var(--color-warn) 80%, transparent); }
+.agg-hint { margin-top: 11px; font-family: var(--font-mono); font-size: 10.5px; color: var(--color-ink-faint); }
+
+/* piece map */
+.pieces { display: grid; grid-template-columns: repeat(28, minmax(0,1fr)); gap: 2px; }
+.pieces i { aspect-ratio: 1; border-radius: 2px; background: var(--color-track); }
+.pieces i.f { background: var(--color-accent); }
+.pieces i.n { background: color-mix(in oklab, var(--color-accent) 45%, var(--color-track)); }
+.prio-rows { margin-top: 14px; display: grid; gap: 6px; }
+.prio { display: flex; align-items: center; gap: 10px; border: 1px solid var(--color-line); border-radius: 8px; padding: 7px 10px; font-size: 11.5px; }
+.prio .fn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prio .sz { color: var(--color-ink-faint); font-family: var(--font-mono); font-size: 10.5px; }
+.prio button {
+  font-size: 10px; font-family: var(--font-mono); border: 1px solid var(--color-line-strong);
+  border-radius: 5px; padding: 3px 9px; color: var(--color-ink-soft); min-width: 64px;
+}
+.prio button.hi { color: var(--color-good); border-color: color-mix(in oklab, var(--color-good) 45%, transparent); }
+.prio button.skip { color: var(--color-ink-faint); text-decoration: line-through; }
+
+/* sftp */
+.crumbs { display: flex; gap: 2px; align-items: center; font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-soft); flex-wrap: wrap; }
+.crumbs button { padding: 3px 7px; border-radius: 5px; color: var(--color-ink-soft); font-family: var(--font-mono); font-size: 11px; }
+.crumbs button:hover { background: var(--color-app-chip-hover); color: var(--color-ink); }
+.crumbs .sep2 { color: var(--color-ink-faint); }
+.sftp-rows { margin-top: 10px; border-top: 1px solid var(--color-line); }
+.frow { display: grid; grid-template-columns: 26px minmax(0,1fr) 76px 92px; gap: 10px; align-items: center; padding: 7px 8px; border-bottom: 1px solid var(--color-line); cursor: pointer; font-size: 12px; }
+.frow:hover { background: var(--color-app-hover); }
+.frow.sel { background: color-mix(in oklab, var(--color-accent) 16%, var(--color-app-bar)); }
+.frow .fi { text-align: center; }
+.frow .fs, .frow .fd { color: var(--color-ink-faint); font-family: var(--font-mono); font-size: 10.5px; text-align: right; white-space: nowrap; }
+.sftp-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 11px; color: var(--color-ink-soft); min-height: 26px; flex-wrap: wrap; }
+.sftp-bar .chip-btn { font-size: 10.5px; padding: 4px 10px; }
+.ql {
+  margin-top: 10px; border: 1px solid var(--color-line-strong); border-radius: 8px;
+  padding: 10px 12px; font-family: var(--font-mono); font-size: 10.5px; color: var(--color-ink-soft);
+  display: none; white-space: pre-wrap;
+}
+.ql.on { display: block; }
+
+/* capture */
+.cap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.browsers { display: grid; gap: 7px; }
+.brow { display: flex; align-items: center; gap: 10px; border: 1px solid var(--color-line); border-radius: 8px; padding: 8px 11px; font-size: 12px; }
+.blogo { width: 23px; height: 23px; flex: none; display: block; }
+.blogo.s { width: 16px; height: 16px; }
+.brow button { margin-left: auto; white-space: nowrap; font-size: 9.5px; font-family: var(--font-mono); border: 1px solid var(--color-line-strong); border-radius: 5px; padding: 3px 9px; color: var(--color-ink-faint); }
+.brow button.on { color: var(--color-good); border-color: color-mix(in oklab, var(--color-good) 45%, transparent); }
+.sent { border: 1px solid var(--color-line); border-radius: 10px; padding: 11px 12px; align-self: start; }
+.sent h4 { font-size: 10px; letter-spacing: 0.14em; color: var(--color-ink-faint); font-family: var(--font-mono); font-weight: 500; }
+.sent .srow { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--color-line); font-size: 11.5px; }
+.sent .srow:last-of-type { border-bottom: none; }
+.sent .pcx { flex: 1; min-width: 0; }
+.grab { width: 100%; margin-top: 9px; background: var(--color-accent); color: var(--color-on-accent); font-weight: 600; font-size: 11.5px; border-radius: 7px; padding: 8px; }
+.grab:disabled { opacity: 0.55; cursor: default; }
+.toast {
+  margin-top: 12px; border: 1px solid color-mix(in oklab, var(--color-good) 40%, transparent);
+  background: color-mix(in oklab, var(--color-good) 10%, transparent);
+  border-radius: 8px; padding: 8px 12px; font-size: 11.5px; display: none; align-items: center; gap: 8px;
+}
+.toast.on { display: flex; }
+
+/* menubar popover */
+.pop { max-width: 360px; margin: 0 auto; }
+.pop-head { display: flex; align-items: center; padding: 11px 14px; border-bottom: 1px solid var(--color-line); font-weight: 600; font-size: 12.5px; }
+.pop-head .m { margin-left: auto; font-size: 11px; color: var(--color-good); }
+.pop-rows { padding: 4px 8px; }
+.prow { display: flex; gap: 10px; padding: 9px 6px; border-bottom: 1px solid var(--color-line); align-items: center; }
+.prow:last-child { border-bottom: none; }
+.prow .mid { flex: 1; min-width: 0; }
+.prow .mnm { display: block; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prow .msub { display: flex; justify-content: space-between; font-size: 10px; color: var(--color-ink-faint); margin-top: 4px; font-family: var(--font-mono); }
+.prow .msub .spd { color: var(--color-good); }
+.pop-add { margin: 8px 12px; display: block; width: calc(100% - 24px); background: var(--color-accent); color: var(--color-on-accent); border-radius: 8px; padding: 8px; font-weight: 600; font-size: 12px; text-align: center; }
+.pop-foot { display: flex; justify-content: space-between; padding: 9px 14px; border-top: 1px solid var(--color-line); font-size: 11.5px; color: var(--color-ink-soft); }
+
+/* network aggregator */
+.agg-sum {
+  display: grid; grid-template-columns: 128px minmax(0,1fr) 72px; gap: 10px; align-items: center;
+  font-size: 11.5px; margin-top: 12px; padding: 6px 8px 0; border-top: 1px dashed var(--color-line-strong);
+}
+.agg-sum .nm2 { color: var(--color-ink); font-weight: 600; white-space: nowrap; }
+.agg-sum .meter { height: 8px; border-radius: 4px; background: var(--color-track); overflow: hidden; }
+.agg-sum .meter i { display: block; height: 100%; background: var(--color-accent); transition: width 0.5s linear; border-radius: 4px; }
+.agg-sum .sp { text-align: right; font-family: var(--font-mono); color: var(--color-accent); font-size: 11.5px; font-weight: 600; }
+
+/* terminal + portal */
+/* pre-wrap: the daemon transcript is newline-separated — without it the whole
+   session collapses into one run-on line */
+.term { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.7; color: var(--color-ink-soft); min-height: 178px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.term .p1 { color: var(--color-accent); }
+.term .ok { color: var(--color-good); }
+.term .cur { display: inline-block; width: 7px; height: 13px; background: var(--color-accent); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.portal-mini { border-top: 1px solid var(--color-line); padding: 11px 14px; display: flex; align-items: center; gap: 12px; font-size: 11.5px; }
+.qr { width: 44px; height: 44px; flex: none; border-radius: 6px;
+  background:
+    repeating-linear-gradient(0deg, var(--color-ink) 0 3px, transparent 3px 6px),
+    repeating-linear-gradient(90deg, var(--color-ink) 0 3px, var(--color-qr) 3px 6px);
+  border: 3px solid var(--color-qr); opacity: 0.85;
+}
+
+/* everything grid */
+.all { padding: var(--space-3xl) 0; border-top: 1px solid var(--color-line); }
+.all-head { max-width: 62ch; }
+.grid {
+  margin-top: var(--space-2xl); display: grid; gap: 1px; background: var(--color-line);
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
+  border: 1px solid var(--color-line); border-radius: var(--radius-md); overflow: hidden;
+}
+.cellf { background: var(--color-paper); padding: var(--space-lg); transition: background var(--dur-fast) var(--ease-out); }
+.cellf:hover { background: var(--color-paper-2); }
+.cellf b { display: block; font-size: var(--text-sm); font-weight: 600; margin-bottom: 4px; }
+.cellf b .m { color: var(--color-accent); margin-right: 6px; font-size: 0.72rem; }
+.cellf span { font-size: var(--text-sm); color: var(--color-ink-soft); }
+
+/* faq */
+.faq { padding: var(--space-3xl) 0; border-top: 1px solid var(--color-line); }
+.faq-grid { display: grid; grid-template-columns: minmax(0,2fr) minmax(0,3fr); gap: var(--space-2xl); }
+.faq details { border-bottom: 1px solid var(--color-line); }
+.faq summary {
+  cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 12px;
+  padding: var(--space-lg) 0; font-weight: 600; font-size: var(--text-base);
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; font-family: var(--font-mono); color: var(--color-accent); }
+.faq details[open] summary::after { content: "–"; }
+.faq details p { padding: 0 0 var(--space-lg); color: var(--color-ink-soft); max-width: 60ch; }
+
+/* extension popup slice */
+.ext-toolbar {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-bottom: 1px solid var(--color-line); font-family: var(--font-mono); font-size: 12px;
+  color: var(--color-ink-faint);
+}
+.ext-url {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--color-paper); border: 1px solid var(--color-line); border-radius: 999px;
+  padding: 5px 12px; color: var(--color-ink-soft);
+}
+.ext-btn {
+  width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; flex: none;
+  border: 1px solid var(--color-accent); background: var(--color-accent-soft); overflow: hidden;
+}
+.ext-btn img { width: 16px; height: 16px; border-radius: 4px; display: block; }
+.ext-pop { padding: 12px 14px 14px; }
+.ext-pop-head {
+  display: flex; align-items: center; gap: 8px; padding-bottom: 10px;
+  font-weight: 600; font-size: 13px; font-family: var(--font-body);
+}
+.ext-pop-head img { width: 18px; height: 18px; border-radius: 5px; }
+.ext-tag {
+  margin-left: auto; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em;
+  color: var(--color-ink-faint); border: 1px solid var(--color-line-strong); border-radius: 999px; padding: 2px 8px;
+}
+.xrow {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px; margin-top: 6px;
+  background: var(--color-paper); border: 1px solid var(--color-line); border-radius: var(--radius-sm);
+  font-size: 12.5px;
+}
+.xrow .nm { flex: 1; min-width: 0; }
+.xrow .send {
+  flex: none; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+  color: var(--color-accent); border: 1px solid var(--color-line-strong); border-radius: 999px;
+  padding: 4px 11px; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.xrow .send:hover { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.xrow .send:disabled { color: var(--color-good); border-color: var(--color-line); cursor: default; background: none; }
+.ext-ctx {
+  margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--color-line-strong);
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--color-ink-faint); text-align: center;
+}
+.ext-ctx b { color: var(--color-ink-soft); font-weight: 500; }
+.bchips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: var(--space-md); }
+.bchips span {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--color-ink-soft);
+  border: 1px solid var(--color-line); border-radius: 999px; padding: 4px 12px 4px 8px;
+}
+
+/* Goel° Web — browser window with live portal */
+.web-head { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--space-xl); align-items: end; }
+.bw {
+  margin-top: var(--space-xl); border: 1px solid var(--color-line-strong); border-radius: var(--radius-lg);
+  background: var(--color-paper-2); overflow: hidden; box-shadow: var(--shadow-window);
+}
+.bw-bar {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  background: var(--color-paper-3); border-bottom: 1px solid var(--color-line);
+  font-family: var(--font-mono); font-size: 12px; color: var(--color-ink-faint);
+}
+.bw-nav { letter-spacing: 0.25em; flex: none; }
+.bw-url {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--color-paper); border: 1px solid var(--color-line); border-radius: 999px;
+  padding: 5px 14px; color: var(--color-ink-soft); text-align: center;
+}
+.bw-url .lock { color: var(--color-good); margin-right: 6px; }
+.wp-top {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  border-bottom: 1px solid var(--color-line); font-size: 12.5px;
+}
+.wp-top .wlogo { width: 20px; height: 20px; border-radius: 5px; display: block; }
+.wp-top .wbrand { font-weight: 600; font-family: var(--font-body); }
+.wp-tag { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.1em; color: var(--color-accent); border: 1px solid var(--color-accent); border-radius: 4px; padding: 1px 5px; }
+.wp-search {
+  flex: 1; min-width: 80px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  background: var(--color-paper); border: 1px solid var(--color-line); border-radius: var(--radius-sm);
+  padding: 5px 10px; color: var(--color-ink-faint); font-family: var(--font-mono); font-size: 11.5px;
+}
+.wp-tot { font-family: var(--font-mono); font-size: 11.5px; color: var(--color-accent); white-space: nowrap; }
+.wp-add { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; background: var(--color-accent); color: var(--color-paper); border-radius: var(--radius-sm); padding: 5px 12px; flex: none; }
+.wp-user { font-family: var(--font-mono); font-size: 11.5px; color: var(--color-ink-soft); white-space: nowrap; }
+.wp-main { display: grid; grid-template-columns: 176px minmax(0, 1fr) 250px; min-height: 340px; }
+.wp-side { border-right: 1px solid var(--color-line); padding: 12px 10px; }
+.wp-side .side-h { padding: 8px 8px 4px; }
+.wp-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border-radius: var(--radius-sm); font-size: 12px; color: var(--color-ink-soft);
+  text-align: left;
+}
+.wp-item.on { background: var(--color-accent-soft); color: var(--color-ink); }
+.wp-item .n { font-family: var(--font-mono); font-size: 10.5px; color: var(--color-ink-faint); }
+.wp-list { padding: 6px 0; overflow: hidden; }
+.wrow {
+  display: grid; grid-template-columns: 30px minmax(120px, 1fr) 64px 132px 78px; gap: 10px;
+  align-items: center; padding: 8px 14px; cursor: pointer; border-left: 2px solid transparent;
+  font-size: 12px;
+}
+.wrow:hover { background: var(--color-paper-3); }
+.wrow.sel { background: var(--color-accent-soft); border-left-color: var(--color-accent); }
+.wrow .nm { font-size: 12px; }
+.wrow .pbar { margin-top: 5px; }
+.wrow .wc { font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wrow .wc .st { font-size: 11px; }
+.wp-detail { border-left: 1px solid var(--color-line); padding: 14px; }
+.wd-name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; word-break: break-all; }
+.wd-big { display: flex; align-items: baseline; gap: 10px; margin-top: 12px; }
+.wd-big b { font-family: var(--font-display); font-size: 26px; font-weight: 600; }
+.wd-big span { font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-faint); }
+.wp-detail .pbar { display: block; margin-top: 8px; }
+.wd-kv { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--color-line); font-size: 11.5px; }
+.wd-kv span { color: var(--color-ink-faint); white-space: nowrap; }
+.wd-kv b { font-family: var(--font-mono); font-weight: 500; color: var(--color-ink-soft); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.wp-foot {
+  display: flex; justify-content: space-between; padding: 8px 14px; border-top: 1px solid var(--color-line);
+  font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-faint);
+}
+@media (max-width: 1000px) { .wp-main { grid-template-columns: 176px minmax(0,1fr); } .wp-detail { display: none; } }
+@media (max-width: 760px) {
+  .web-head { grid-template-columns: minmax(0,1fr); align-items: start; }
+  .wp-main { grid-template-columns: minmax(0,1fr); } .wp-side { display: none; }
+  .wrow { grid-template-columns: 30px minmax(100px,1fr) 110px; }
+  .wrow .wc:nth-child(3), .wrow .wc:nth-child(5) { display: none; }
+}
+
+/* cta + footer */
+.cta { padding: var(--space-3xl) 0; border-top: 1px solid var(--color-line); text-align: center; }
+.cta h2 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-display-s); letter-spacing: -0.015em; }
+.cta p { color: var(--color-ink-soft); margin-top: var(--space-md); }
+.cta .hero-ctas { margin-top: var(--space-lg); }
+footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
+.foot { display: flex; flex-wrap: wrap; gap: var(--space-lg); align-items: center; }
+.foot .links { margin-left: auto; display: flex; gap: var(--space-lg); flex-wrap: wrap; }
+.foot a { color: var(--color-ink-soft); text-decoration: none; font-size: var(--text-sm); }
+.foot a:hover { color: var(--color-ink); }
+.foot .lic { width: 100%; font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-ink-faint); letter-spacing: 0.06em; }
+
+/* ---------- motion ---------- */
+@keyframes rise { from { opacity: 0; transform: translateY(22px); } }
+.hero h1 { animation: rise 0.7s var(--ease-out) backwards; }
+.hero p.sub { animation: rise 0.7s var(--ease-out) 0.08s backwards; }
+.hero-ctas { animation: rise 0.7s var(--ease-out) 0.16s backwards; }
+.hero-note { animation: rise 0.7s var(--ease-out) 0.24s backwards; }
+.app-shrink { animation: rise 0.9s var(--ease-out) 0.3s backwards; }
+.facts { animation: rise 0.8s var(--ease-out) 0.5s backwards; }
+.nav { transition: box-shadow var(--dur-med) var(--ease-out); }
+.nav.scrolled { box-shadow: var(--shadow-nav); }
+@keyframes drift { to { background-position: 42px 28px; } }
+.dither { animation: drift 16s linear infinite alternate; }
+.pieces i { transition: background-color 0.45s var(--ease-out); }
+.cellf b .m { display: inline-block; transition: transform var(--dur-fast) var(--ease-out); }
+.cellf:hover b .m { transform: translateY(-2px); }
+.faq details[open] p { animation: rise 0.35s var(--ease-out); }
+
+/* reveal */
+.rv { opacity: 0; transform: translateY(18px); transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out); }
+.rv.in { opacity: 1; transform: none; }
+.slice-grid.rv, .grid.rv { opacity: 1; transform: none; transition: none; }
+.slice-grid.rv .slice-copy, .slice-grid.rv .panel-wrap { opacity: 0; transform: translateY(26px); transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out); }
+.slice-grid.rv .panel-wrap { transition-delay: 0.14s; }
+.slice-grid.rv.in .slice-copy, .slice-grid.rv.in .panel-wrap { opacity: 1; transform: none; }
+.slice-grid.rv .ticks li { opacity: 0; transform: translateX(-10px); transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out); }
+.slice-grid.rv.in .ticks li { opacity: 1; transform: none; }
+.slice-grid.rv.in .ticks li:nth-child(1) { transition-delay: 0.25s; }
+.slice-grid.rv.in .ticks li:nth-child(2) { transition-delay: 0.33s; }
+.slice-grid.rv.in .ticks li:nth-child(3) { transition-delay: 0.41s; }
+.slice-grid.rv.in .ticks li:nth-child(4) { transition-delay: 0.49s; }
+.grid.rv .cellf { opacity: 0; transform: translateY(14px); transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out); transition-delay: calc(var(--i, 0) * 35ms); }
+.grid.rv.in .cellf { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rv, .slice-grid.rv .slice-copy, .slice-grid.rv .panel-wrap, .slice-grid.rv .ticks li, .grid.rv .cellf { opacity: 1; transform: none; transition: none; }
+  .hero h1, .hero p.sub, .hero-ctas, .hero-note, .app-shrink, .facts, .dither, .faq details[open] p { animation: none; }
+  .term .cur { animation: none; }
+  html { scroll-behavior: auto; }
+}
+@media (max-width: 980px) {
+  .slice-grid, .faq-grid, .cap-grid { grid-template-columns: minmax(0,1fr); }
+  .slice-grid.flip > .slice-copy { order: 0; }
+  /* keep the whole IA reachable: links drop to a scrollable second row */
+  .nav-in { flex-wrap: wrap; height: auto; padding-top: 12px; padding-bottom: 8px; gap: var(--space-md); }
+  .nav .btn { margin-left: auto; }
+  .nav-links {
+    order: 3; width: 100%; margin-left: 0; gap: var(--space-lg);
+    overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+    padding-bottom: 2px; -webkit-overflow-scrolling: touch;
+  }
+  .nav-links::-webkit-scrollbar { display: none; }
+}
+@media (max-width: 760px) {
+  /* the hero simulation drops to the queue itself — sidebar and detail panel
+     would each need their own scroll on a phone, so they step aside */
+  .app { min-width: 560px; }
+  .app-side, .app-detail { display: none; }
+  .app-body { grid-template-columns: minmax(0,1fr); }
+  .list-head, .row { grid-template-columns: 26px 30px minmax(140px,1fr) 64px 124px; }
+  .list-head span:nth-child(n+6), .row .c-add, .row .c-d, .row .c-u { display: none; }
+  .app-scroll { scroll-snap-type: none; }
+  .app-hint { display: block; }
+  .app-shrink::after {
+    content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 46px;
+    background: linear-gradient(to right, transparent, var(--color-paper));
+    pointer-events: none; border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  }
+}
+@media (max-width: 640px) {
+  .fact { flex-basis: 50%; border-top: 1px solid var(--color-line); }
+  .hero { padding-top: var(--space-2xl); }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <clipPath id="lg-clip"><circle cx="24" cy="24" r="21"/></clipPath>
+    <linearGradient id="lg-safg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3FB6F5"/><stop offset="1" stop-color="#0B62D8"/>
+    </linearGradient>
+    <symbol id="lg-chrome" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="21" fill="#fff"/>
+      <path fill="#EA4335" d="M24 24 L5.81 13.5 A21 21 0 0 1 42.19 13.5 Z"/>
+      <path fill="#FBBC05" d="M24 24 L42.19 13.5 A21 21 0 0 1 24 45 Z"/>
+      <path fill="#34A853" d="M24 24 L24 45 A21 21 0 0 1 5.81 13.5 Z"/>
+      <circle cx="24" cy="24" r="9.5" fill="#fff"/>
+      <circle cx="24" cy="24" r="7" fill="#4285F4"/>
+    </symbol>
+    <symbol id="lg-edge" viewBox="0 0 48 48">
+      <g clip-path="url(#lg-clip)">
+        <circle cx="24" cy="24" r="21" fill="#0C59A4"/>
+        <circle cx="30" cy="17" r="18" fill="#2CC3D5"/>
+        <circle cx="34" cy="12" r="10" fill="#6DDDF2"/>
+      </g>
+    </symbol>
+    <symbol id="lg-brave" viewBox="0 0 48 48">
+      <path fill="#FB542B" d="M11.5 9.5 L36.5 9.5 L35 26 C34.3 32.5 30 37 24 41.5 C18 37 13.7 32.5 13 26 Z"/>
+      <path fill="#fff" opacity="0.9" d="M18 17 L24 21.5 L30 17 L27 25 L24 30 L21 25 Z"/>
+    </symbol>
+    <symbol id="lg-firefox" viewBox="0 0 48 48">
+      <g clip-path="url(#lg-clip)">
+        <circle cx="24" cy="24" r="21" fill="#FF9640"/>
+        <circle cx="31" cy="32" r="22" fill="#E1350F"/>
+        <circle cx="17" cy="17" r="10" fill="#FFCB00"/>
+      </g>
+    </symbol>
+    <symbol id="lg-safari" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="21" fill="#F2F5F7"/>
+      <circle cx="24" cy="24" r="19" fill="url(#lg-safg)"/>
+      <path fill="#FF3B30" d="M36 12 L26.12 26.12 L21.88 21.88 Z"/>
+      <path fill="#fff" d="M12 36 L21.88 21.88 L26.12 26.12 Z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<a class="skip" href="#engine">Skip the demo — go to the features</a>
+
+<nav class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#"><img class="logo" src="assets/goel-icon-128.png" alt="" width="24" height="24">GOEL<span class="deg">°</span></a>
+    <div class="nav-links">
+      <a href="#engine">Engine</a>
+      <a href="#torrents">Torrents</a>
+      <a href="#servers">Servers</a>
+      <a href="#web">Web</a>
+      <a href="#linux">Linux</a>
+      <a href="#faq">FAQ</a>
+      <a class="keep" href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Download for macOS ↓</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>One queue for <span class="hl">everything</span> you download.</h1>
+    <p class="sub">HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Self-contained, MIT-licensed, Homebrew-free — and headless on Linux.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Download for macOS ↓</a>
+      <a class="btn btn-ghost" href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+    <p class="hero-note">▼ live demo · real UI · mock data — click around</p>
+
+    <div class="app-stage">
+      <div class="app-shrink" id="appShrink" data-live="hero">
+        <div class="app-scroll">
+          <div class="app" id="app1" role="group" aria-label="Interactive demo of the Goel download manager"></div>
+        </div>
+      </div>
+      <p class="app-hint">↔ drag the demo sideways to see the rest of the queue</p>
+    </div>
+
+    <div class="facts">
+      <div class="fact"><b data-n="5">5</b><span>protocols</span></div>
+      <div class="fact"><b data-n="1">1</b><span>queue</span></div>
+      <div class="fact"><b>0</b><span>deps to install</span></div>
+      <div class="fact"><b data-n="2">2</b><span>platforms</span></div>
+      <div class="fact"><b>MIT</b><span>licensed</span></div>
+    </div>
+  </div>
+</header>
+
+<section class="slice" id="engine">
+  <div class="wrap slice-grid rv">
+    <div class="slice-copy">
+      <span class="kicker">Segmented engine</span>
+      <h2>Eight streams. One file.</h2>
+      <p>Adaptive multi-connection HTTP with resume. Segments spread across mirrors, fail over via Metalink, and retry with back-off — you just see the file arrive faster.</p>
+      <ul class="ticks">
+        <li>Mirror &amp; Metalink failover — segments spread across sources</li>
+        <li>1–8 streams per connection, with rate limiting</li>
+        <li>Auto-retry with back-off, live speed graphs</li>
+      </ul>
+    </div>
+    <div class="panel-wrap">
+      <div class="dither"></div>
+      <div class="panel" data-live="seg">
+        <div class="panel-title"><span class="tl"><i></i><i></i><i></i></span> ubuntu-24.04.1-desktop-amd64.iso <span class="live">live</span></div>
+        <div class="panel-body">
+          <div style="font-size:10px;letter-spacing:.12em;color:var(--color-ink-faint)" class="m">8 SEGMENTS</div>
+          <div class="seg-track" id="segs"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slice" id="torrents">
+  <div class="wrap slice-grid flip rv">
+    <div class="slice-copy">
+      <span class="kicker">Full BitTorrent</span>
+      <h2>A real torrent client, not a bolt-on.</h2>
+      <p>Torrents and magnets via libtorrent share the same list as your direct downloads. Watch pieces arrive, pick files, cap ratios, stream sequentially.</p>
+      <ul class="ticks">
+        <li>Per-file priority — Skip / Low / Normal / High (try it →)</li>
+        <li>Live piece map, tracker table, peer view</li>
+        <li>DHT, PeX, encryption, seed-ratio limits</li>
+      </ul>
+    </div>
+    <div class="panel-wrap">
+      <div class="dither alt"></div>
+      <div class="panel" data-live="pieces">
+        <div class="panel-title"><span class="tl"><i></i><i></i><i></i></span> Cosmos.S01E04.2160p.HDR.mkv <span class="live">live</span></div>
+        <div class="panel-body">
+          <div class="pieces" id="pieces"></div>
+          <div class="prio-rows" id="prios"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slice" id="servers">
+  <div class="wrap slice-grid rv">
+    <div class="slice-copy">
+      <span class="kicker">SFTP browser</span>
+      <h2>Your servers, one Space away.</h2>
+      <p>A full remote file manager in the sidebar: browse, upload, rename, move — and Quick Look a remote file without downloading it. Click folders and files on the right.</p>
+      <ul class="ticks">
+        <li>Breadcrumbs, sort, hidden files, multi-select</li>
+        <li>Live server status — reachability, latency, OS</li>
+        <li>Host-key pinning, drag &amp; drop to Finder</li>
+      </ul>
+    </div>
+    <div class="panel-wrap">
+      <div class="dither"></div>
+      <div class="panel">
+        <div class="panel-title"><span class="dot"></span> home-server <span class="m" style="color:var(--color-ink-faint);font-size:10px">· 2 ms</span> <span class="os-chip">Ubuntu 24.04</span> <span class="live">connected</span></div>
+        <div class="panel-body">
+          <div class="crumbs" id="crumbs"></div>
+          <div class="sftp-rows" id="sftp"></div>
+          <div class="sftp-bar" id="sftpbar"></div>
+          <div class="ql" id="ql"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slice" id="capture">
+  <div class="wrap slice-grid flip rv">
+    <div class="slice-copy">
+      <span class="kicker">Capture everywhere</span>
+      <h2>Copy a link. It's already here.</h2>
+      <p>Extensions for Chrome, Edge, Brave, Firefox and Safari send downloads straight to the queue. The clipboard watcher offers anything you copy; the floating Drop Basket catches drags from any app.</p>
+      <ul class="ticks">
+        <li>Link Grabber pulls every file from a page — try “Grab all” →</li>
+        <li>Batch add with <span class="mono">file[01-20].zip</span> pattern expansion</li>
+        <li>Import queues from aria2, JDownloader, IDM</li>
+      </ul>
+    </div>
+    <div class="panel-wrap">
+      <div class="dither alt"></div>
+      <div class="panel">
+        <div class="panel-title"><span class="tl"><i></i><i></i><i></i></span> Browser capture <span class="live">live</span></div>
+        <div class="panel-body cap-grid">
+          <div class="browsers" id="browsers"></div>
+          <div class="sent">
+            <h4>SENT TO GOEL°</h4>
+            <div class="srow"><span class="proto">MP4</span><span class="pcx nm">BigBuckBunny-1080p.mp4</span></div>
+            <div class="srow"><span class="proto">ZIP</span><span class="pcx nm">release-notes.zip</span></div>
+            <button class="grab" id="grab">+ Grab all links (12)</button>
+            <div class="toast" id="toast">✓ Added to the queue — check the hero above</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slice" id="extensions">
+  <div class="wrap slice-grid rv">
+    <div class="slice-copy">
+      <span class="kicker">Browser extensions</span>
+      <h2>Send to Goel°, right from the toolbar.</h2>
+      <p>Lightweight extensions for every major browser add a toolbar button, a right-click menu and a Link Grabber. The popup lists the downloadable files it sees on the page — one click sends them to the queue.</p>
+      <ul class="ticks">
+        <li>Click <span class="mono">Send ›</span> in the popup — it lands in the live queue above</li>
+        <li>Right-click any link → “Download with Goel°”</li>
+        <li>Pairs with the capture rules — intercept only what you want</li>
+      </ul>
+      <div class="bchips" aria-label="Supported browsers">
+        <span><svg class="blogo s" aria-hidden="true"><use href="#lg-chrome"/></svg>Chrome</span>
+        <span><svg class="blogo s" aria-hidden="true"><use href="#lg-edge"/></svg>Edge</span>
+        <span><svg class="blogo s" aria-hidden="true"><use href="#lg-brave"/></svg>Brave</span>
+        <span><svg class="blogo s" aria-hidden="true"><use href="#lg-firefox"/></svg>Firefox</span>
+        <span><svg class="blogo s" aria-hidden="true"><use href="#lg-safari"/></svg>Safari</span>
+      </div>
+    </div>
+    <div class="panel-wrap">
+      <div class="dither"></div>
+      <div class="panel">
+        <div class="ext-toolbar">
+          <span>‹ ›</span>
+          <span class="ext-url">example.com/downloads</span>
+          <span class="ext-btn"><img src="assets/goel-icon-128.png" alt="Goel° toolbar button" width="16" height="16"></span>
+        </div>
+        <div class="ext-pop">
+          <div class="ext-pop-head"><img src="assets/goel-icon-128.png" alt="" width="18" height="18">Goel°<span class="ext-tag">extension</span></div>
+          <div class="xrow"><span class="proto">MP4</span><span class="nm">lecture-04-recording.mp4</span><button class="send" data-send="0">Send ›</button></div>
+          <div class="xrow"><span class="proto">DMG</span><span class="nm">nightly-build-arm64.dmg</span><button class="send" data-send="1">Send ›</button></div>
+          <div class="xrow"><span class="proto">ZIP</span><span class="nm">sample-pack.zip</span><button class="send" data-send="2">Send ›</button></div>
+          <div class="ext-ctx">Right-click any link → <b>“Download with Goel°”</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slice" id="menubar">
+  <div class="wrap slice-grid flip rv">
+    <div class="slice-copy">
+      <span class="kicker">Menu bar · Dock · Shortcuts</span>
+      <h2>Glance, pause, add — without the window.</h2>
+      <p>The menu-bar extra mirrors the live queue below. Dock icon draws real progress. AppleScript, the Services menu, a URL scheme and system notifications round it out.</p>
+      <ul class="ticks">
+        <li><span class="mono">⌘N</span> add · <span class="mono">⇧⌘L</span> grab links · <span class="mono">⇧⌘B</span> drop basket</li>
+        <li>Quick Look finished files with Space</li>
+        <li>Four themes — Frost Light/Dark, Dracula, Nord</li>
+      </ul>
+    </div>
+    <div class="panel-wrap">
+      <div class="dither"></div>
+      <div class="panel pop" id="pop" data-live="pop" role="group" aria-label="Menu-bar popover — live demo"></div>
+    </div>
+  </div>
+</section>
+
+<section class="slice" id="aggregator">
+  <div class="wrap slice-grid rv">
+    <div class="slice-copy">
+      <span class="kicker">Network aggregator</span>
+      <h2>Wi-Fi + Ethernet + hotspot. One download.</h2>
+      <p>Something rare: Goel° splits a single download across every network adapter you have — by byte range — and merges the pieces on disk. Plug in a cable mid-download and watch the combined number climb.</p>
+      <ul class="ticks">
+        <li>1–8 streams per adapter, each with its own cap</li>
+        <li>VPN-safety guards keep traffic where it belongs</li>
+        <li>Try it: click an adapter to unplug it — the rest pick up the slack →</li>
+      </ul>
+    </div>
+    <div class="panel-wrap">
+      <div class="dither alt"></div>
+      <div class="panel" data-live="agg">
+        <div class="panel-title"><span class="tl"><i></i><i></i><i></i></span> ubuntu-24.04.1-desktop-amd64.iso <span class="live">live</span></div>
+        <div class="panel-body">
+          <div style="font-size:10px;letter-spacing:.12em;color:var(--color-ink-faint)" class="m">ONE FILE · SPLIT BY BYTE RANGE</div>
+          <div class="agg-map" id="aggmap" aria-hidden="true"><i class="a0"></i><i class="a1"></i><i class="a2"></i></div>
+          <div class="adapters" id="adapters"></div>
+          <div class="agg-sum"><span class="nm2">Combined</span><span class="meter"><i id="agg-bar"></i></span><b class="sp" id="agg-tot">—</b></div>
+          <div class="agg-hint">↑ click an adapter to unplug it — segments reassign, the total adapts</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slice" id="web">
+  <div class="wrap">
+    <div class="web-head rv">
+      <div class="slice-copy">
+        <span class="kicker">Goel° Web</span>
+        <h2>Same engine. Any browser. No Mac needed.</h2>
+      </div>
+      <div class="slice-copy">
+        <p>The optional web portal serves the whole queue from your own machine — token- or password-authenticated, with the same list, detail panel and four themes as the desktop app. Open it on your phone, a tablet, or any browser pointed at your Linux box.</p>
+        <ul class="ticks">
+          <li>Add, pause, retry, set priority, browse history — from anywhere</li>
+          <li>Read-only mode, session timeout; LAN access requires a password</li>
+          <li>This one is live too — it mirrors the queue above. Click a row.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="bw rv" data-live="web" role="group" aria-label="Goel° Web portal running in a browser — live demo">
+      <div class="bw-bar">
+        <span class="tl"><i></i><i></i><i></i></span>
+        <span class="bw-nav">‹ › ⟳</span>
+        <span class="bw-url"><span class="lock">●</span>http://home-server:8080 — Goel° Web</span>
+        <span>⋮</span>
+      </div>
+      <div class="wp-top">
+        <img class="wlogo" src="assets/goel-icon-128.png" alt="" width="20" height="20">
+        <span class="wbrand">Goel°</span><span class="wp-tag">WEB</span>
+        <span class="wp-search">⌕ Search downloads</span>
+        <span class="wp-tot" id="w-tot">↓ — ↑ —</span>
+        <span class="wp-add">+ Add</span>
+        <span class="wp-user">admin ▾</span>
+      </div>
+      <div class="wp-main">
+        <aside class="wp-side" id="wside"></aside>
+        <div class="wp-list" id="wrows"></div>
+        <aside class="wp-detail" id="wdetail"></aside>
+      </div>
+      <div class="wp-foot"><span id="w-count">— downloads</span><span>Signed in · admin</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="slice" id="linux">
+  <div class="wrap slice-grid flip rv">
+    <div class="slice-copy">
+      <span class="kicker">Linux daemon</span>
+      <h2>Headless on Linux. Identical engine.</h2>
+      <p>On Linux the same engine runs as <span class="mono">GoelDaemon</span> — no window, no display, just a service you drive entirely from Goel° Web. Pair your phone by scanning a QR code.</p>
+      <ul class="ticks">
+        <li>Prebuilt x86_64 tarball, Swift runtime bundled</li>
+        <li>Build from source for ARM64</li>
+        <li>Queue survives restarts — tasks resume where they left off</li>
+      </ul>
+    </div>
+    <div class="panel-wrap">
+      <div class="dither alt"></div>
+      <div class="panel">
+        <div class="panel-title"><span class="tl"><i></i><i></i><i></i></span> vinit@home-server <span class="live">running</span></div>
+        <div class="panel-body term" id="term"></div>
+        <div class="portal-mini">
+          <div class="qr" aria-hidden="true"></div>
+          <div>Scan to open Goel° Web on your phone —<br><span class="m" style="color:var(--color-ink-faint)">http://home-server:8080 · token-authenticated</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="all">
+  <div class="wrap">
+    <div class="all-head rv">
+      <span class="kicker">Everything else in the box</span>
+      <h2 class="slice-h2" style="font-family:var(--font-display);font-weight:600;font-size:var(--text-display-s);letter-spacing:-0.015em">No add-ons. No plug-ins. Just there.</h2>
+    </div>
+    <div class="grid rv" id="featgrid"></div>
+  </div>
+</section>
+
+<section class="faq" id="faq">
+  <div class="wrap faq-grid rv">
+    <div>
+      <span class="kicker">FAQ</span>
+      <h2 style="font-family:var(--font-display);font-weight:600;font-size:var(--text-display-s);letter-spacing:-0.015em">Quick answers.</h2>
+    </div>
+    <div>
+      <details><summary>Do I need Homebrew or any libraries?</summary><p>No. Every native library — libtorrent, libssh2, libcurl, OpenSSL — is bundled inside the app. Download the .dmg, drag to Applications, done.</p></details>
+      <details><summary>Which Macs does it run on?</summary><p>macOS 14 (Sonoma) or later, Apple Silicon and Intel. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time.</p></details>
+      <details><summary>Is it free?</summary><p>Yes — Goel° is open source under the MIT license.</p></details>
+      <details><summary>Can it download from video sites?</summary><p>Official releases bundle yt-dlp: the “Resolve Media” button turns a video-site page into a direct download. HLS streams save to a clean .mp4.</p></details>
+      <details><summary>Does it really run on Linux?</summary><p>Yes — the same engine ships as GoelDaemon, a headless service driven entirely from the built-in web portal. Prebuilt for x86_64; build from source for ARM64.</p></details>
+      <details><summary>Is remote access safe?</summary><p>The portal is off by default. When on, it's token- or password-authenticated, supports read-only mode and session timeouts, and refuses to expose over the LAN without a password.</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="wrap rv">
+    <h2>Stop juggling download apps.</h2>
+    <p>One queue. Five protocols. Zero dependencies.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Download for macOS ↓</a>
+      <a class="btn btn-ghost" href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="#"><img class="logo" src="assets/goel-icon-128.png" alt="" width="24" height="24">GOEL<span class="deg">°</span></a>
+    <div class="links">
+      <a href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/vinitkumargoel/goel/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+      <a href="https://github.com/vinitkumargoel/goel/blob/main/THIRD-PARTY-NOTICES.md" target="_blank" rel="noopener">Third-party notices</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
+      <a href="cookies.html">Cookies</a>
+    </div>
+    <div class="lic">MIT · © 2026 Vinit Kumar Goel · demo data on this page is illustrative</div>
+  </div>
+</footer>
+
+<script>
+/* ---------- shared mock state ---------- */
+const F = {
+  disc:  { bg: "var(--color-kind-disc)",  g: "◎" },
+  video: { bg: "var(--color-kind-video)", g: "▶" },
+  arch:  { bg: "var(--color-kind-arch)", g: "▤" },
+  mag:   { bg: "var(--color-kind-mag)",  g: "◍" },
+};
+let rows = [
+  { id:1, name:"ubuntu-24.04.1-desktop-amd64.iso", proto:"HTTP", kind:"disc", size:4.7*1024, pct:62, state:"down", d:12.0, u:0, added:"Today 21:04", conns:8, path:"~/Downloads/ubuntu-24.04.1…", src:"releases.ubuntu.com/24.04" },
+  { id:2, name:"debian-12.6.0-amd64-DVD-1.iso", proto:"BT", kind:"disc", size:3.7*1024, pct:100, state:"seed", d:0, u:1.8, added:"Today 18:20", conns:14, path:"~/Downloads/debian-12.6.0…", src:"magnet:?xt=urn:btih:…", ratio:2.1 },
+  { id:3, name:"Cosmos.S01E04.2160p.HDR.mkv", proto:"BT", kind:"video", size:17*1024, pct:41, state:"down", d:24.0, u:0.64, added:"Today 20:55", conns:37, path:"~/Downloads/Cosmos.S01E04…", src:"magnet:?xt=urn:btih:…" },
+  { id:4, name:"project-backup-2026-07.tar.zst", proto:"SFTP", kind:"arch", size:2.2*1024, pct:78, state:"down", d:7.7, u:0, added:"Today 22:31", conns:1, path:"~/Downloads/project-backup…", src:"sftp://home-server/backups" },
+  { id:5, name:"magnet:?xt=urn:btih:5c1a9d3e77…", proto:"BT", kind:"mag", size:0, pct:0, state:"meta", d:0, u:0, added:"Today 22:40", conns:3, path:"—", src:"magnet:?xt=urn:btih:5c1a9d…", peers:3 },
+  { id:6, name:"imagenet-mini-dataset.zip", proto:"HTTP", kind:"arch", size:1.1*1024, pct:34, state:"pause", d:0, u:0, added:"Yesterday 14:02", conns:0, path:"~/Downloads/imagenet-mini…", src:"image-net.org/mini" },
+  { id:7, name:"BigBuckBunny-1080p.mp4", proto:"HLS", kind:"video", size:340, pct:100, state:"done", d:0, u:0, added:"Yesterday 11:20", conns:0, path:"~/Downloads/BigBuckBunny…", src:"stream.example.org/master.m3u8" },
+  { id:8, name:"Fedora-Workstation-40.iso", proto:"FTP", kind:"disc", size:2.4*1024, pct:6, state:"fail", d:0, u:0, added:"Yesterday 09:15", conns:0, path:"~/Downloads/Fedora-Works…", src:"ftp://mirror.example.org/fedora" },
+];
+let selId = 1, filter = "all", profile = 1, profName = "High";
+const FILTER_LBL = { all: "All files", down: "Active", pause: "Paused", done: "Completed", seed: "Seeding" };
+const fmtMB = mb => mb >= 1024 ? (mb/1024).toFixed(1).replace(/\.0$/,"") + " GB" : Math.round(mb) + " MB";
+const fmtSp = s => s <= 0 ? "—" : (s >= 1 ? s.toFixed(1).replace(/\.0$/,"") + " MB/s" : Math.round(s*1024) + " KB/s");
+const eta = r => { if (r.state!=="down"||r.d<=0) return ""; const left=(r.size*(100-r.pct)/100)/r.d/60/ (SIM); return " · " + (left<1? "<1m":Math.ceil(left)+"m") + " left"; };
+const SIM = 14; // sim speed-up so progress is visible
+const stTxt = r => ({ down: r.pct.toFixed(0) + "%" + eta(r), seed: "Seeding · ratio " + (r.ratio||2.1).toFixed(1), pause: "Paused · " + r.pct.toFixed(0) + "%", done: "Completed", fail: "FTP server closed…", meta: "Requesting info…" })[r.state];
+const stCls = r => ({ down:"", seed:"seed", pause:"pause", done:"done", fail:"fail", meta:"meta" })[r.state];
+const barCls = r => ({ down:"", seed:"seed", pause:"", done:"seed", fail:"bad", meta:"warn" })[r.state];
+
+/* ---------- hero app ---------- */
+/* Controls that are part of the picture but do nothing: kept out of the tab
+   order and out of the accessibility tree, so the demo doesn't hand keyboard
+   users forty dead stops. Anything genuinely clickable stays focusable. */
+const DEAD = 'tabindex="-1" aria-hidden="true"';
+const app = document.getElementById("app1");
+function shell() {
+  app.innerHTML = `
+  <div class="app-toolbar">
+    <span class="tl"><i></i><i></i><i></i></span>
+    <button class="add-btn" ${DEAD}>+ Add download</button>
+    <button class="chip-btn" ${DEAD}>Select ▾</button><button class="chip-btn" ${DEAD}>Sort ▾</button><button class="chip-btn" ${DEAD}>Filter ▾</button>
+    <span class="app-search">⌕ Search downloads</span>
+  </div>
+  <div class="app-body">
+    <aside class="app-side">
+      <div class="side-h">LIBRARY</div>
+      <button class="side-item" data-f="all">▤ All files <span class="n" id="c-all"></span></button>
+      <div class="side-h">STATUS</div>
+      <button class="side-item" data-f="down">↓ Active <span class="n" id="c-down"></span></button>
+      <button class="side-item" data-f="pause">⏸ Paused <span class="n" id="c-pause"></span></button>
+      <button class="side-item" data-f="done">✓ Completed <span class="n" id="c-done"></span></button>
+      <button class="side-item" data-f="seed">↑ Seeding <span class="n" id="c-seed"></span></button>
+      <div class="side-h">TYPE</div>
+      <button class="side-item" ${DEAD}>▶ Video</button><button class="side-item" ${DEAD}>◎ Disc images</button>
+      <button class="side-item" ${DEAD}>▤ Archives</button><button class="side-item" ${DEAD}>▦ Apps</button>
+      <div class="side-h">SERVERS</div>
+      <div class="srv"><span class="dot"></span> home-server <span class="os-chip">2ms · Ubuntu</span></div>
+    </aside>
+    <div class="app-list">
+      <div class="list-head"><span>#</span><span></span><span>Name ↑</span><span>Size</span><span>Status</span><span>Added</span><span>↓ Speed</span><span>↑ Speed</span></div>
+      <div id="rows"></div>
+    </div>
+    <aside class="app-detail" id="detail"></aside>
+  </div>
+  <div class="app-status">
+    <span class="chip-btn">∞ Unlimited</span>
+    <span class="m" id="tot-d">↓ —</span><span class="m" id="tot-u">↑ —</span>
+    <div class="profile" id="prof" role="group" aria-label="Speed profile">
+      <button data-p="0.3">Low</button><button data-p="0.6">Medium</button><button data-p="1" class="on">High</button>
+    </div>
+  </div>`;
+  document.getElementById("prof").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    profile = parseFloat(b.dataset.p); profName = b.textContent;
+    document.querySelectorAll("#prof button").forEach(x => x.classList.toggle("on", x === b));
+  });
+  app.querySelector(".app-side").addEventListener("click", e => {
+    const b = e.target.closest("[data-f]"); if (!b) return;
+    filter = b.dataset.f; renderRows();
+  });
+}
+function renderRows() {
+  const host = document.getElementById("rows");
+  const vis = rows.filter(r => filter === "all" || r.state === filter);
+  document.querySelectorAll("[data-f]").forEach(b => b.classList.toggle("on", b.dataset.f === filter));
+  if (!vis.length) {
+    host.innerHTML = `<div class="row-empty">Nothing in “${FILTER_LBL[filter] || filter}” right now — pick another status.</div>`;
+    return;
+  }
+  host.innerHTML = vis.map((r, i) => `
+    <div class="row ${r.id===selId?"sel":""}" data-id="${r.id}" tabindex="0" aria-label="${r.name}" aria-current="${r.id===selId}">
+      <span class="idx">${i+1}</span>
+      <button class="pp" data-pp="${r.id}" aria-label="pause or resume">${r.state==="pause"?"▶":r.state==="fail"?"↻":"⏸"}</button>
+      <span class="name-cell">
+        <span class="fico" style="background:${F[r.kind].bg}">${F[r.kind].g}</span>
+        <span class="name-main"><span class="nm">${r.name}</span><span class="pbar ${barCls(r)}"><i style="width:${r.state==="meta"?18:r.pct}%"></i></span></span>
+        <span class="proto">${r.proto}</span>
+      </span>
+      <span class="cell c-size">${r.size?fmtMB(r.size):"—"}</span>
+      <span class="cell c-st"><span class="st ${stCls(r)}">${stTxt(r)}</span></span>
+      <span class="cell c-add" style="font-family:var(--font-body)">${r.added}</span>
+      <span class="cell speed c-d">${fmtSp(r.d*profile)}</span>
+      <span class="cell speed c-u">${fmtSp(r.u*profile)}</span>
+    </div>`).join("");
+}
+document.addEventListener("click", e => {
+  const pp = e.target.closest("[data-pp]");
+  if (pp) {
+    const r = rows.find(x => x.id == pp.dataset.pp);
+    if (r.state === "down") { r.state = "pause"; r._d = r.d; r.d = 0; }
+    else if (r.state === "pause") { r.state = "down"; r.d = r._d || 5; }
+    else if (r.state === "fail") { r.state = "down"; r.d = 6.2; }
+    renderRows(); renderDetail(); return;
+  }
+  const row = e.target.closest(".row[data-id]");
+  if (row) { selId = parseInt(row.dataset.id); renderRows(); renderDetail(); }
+});
+/* rows are divs (they contain their own buttons, so they can't be buttons):
+   Enter/Space drives them, and focus is restored after the re-render */
+document.addEventListener("keydown", e => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  if (!e.target.closest) return;
+  if (e.target.closest("button, a, input, select")) return; // let the pause button keep its own keys
+  const t = e.target.closest('.row[data-id], .frow[data-fn], .wrow[data-wid]');
+  if (!t) return;
+  e.preventDefault();
+  const sel = t.dataset.wid ? `.wrow[data-wid="${t.dataset.wid}"]`
+            : t.dataset.id  ? `.row[data-id="${t.dataset.id}"]`
+            : `.frow[data-fn="${CSS.escape(t.dataset.fn)}"]`;
+  t.click();
+  requestAnimationFrame(() => {
+    const next = document.querySelector(sel) || (t.dataset.fn ? document.querySelector("#sftp .frow") : null);
+    if (next) next.focus();
+  });
+});
+const RING_C = 2 * Math.PI * 52;
+function renderDetail() {
+  const r = rows.find(x => x.id === selId) || rows[0];
+  const done = r.size * r.pct / 100;
+  document.getElementById("detail").innerHTML = `
+    <div class="d-name">${r.name}</div>
+    <div class="d-chips"><span class="proto">${r.proto}</span><span class="cell"><span class="st ${stCls(r)}">${{down:"Downloading",seed:"Seeding",pause:"Paused",done:"Completed",fail:"Failed",meta:"Fetching metadata"}[r.state]}</span></span></div>
+    <div class="d-tabs"><span class="d-tab on">General</span><span class="d-tab">Details</span><span class="d-tab">Progress</span><span class="d-tab">Files</span><span class="d-tab">Connections</span></div>
+    <div class="ring-wrap"><div class="ring">
+      <svg width="118" height="118" viewBox="0 0 118 118">
+        <circle class="track" cx="59" cy="59" r="52" fill="none" stroke-width="9"/>
+        <circle class="arc" id="d-arc" cx="59" cy="59" r="52" fill="none" stroke-width="9" stroke-dasharray="${RING_C}" stroke-dashoffset="${RING_C*(1-r.pct/100)}"/>
+      </svg>
+      <div class="ring-label"><div><b id="d-pct">${Math.floor(r.pct)}%</b><span>complete</span></div></div>
+    </div></div>
+    <div class="updown">
+      <div class="ud"><span>↓ DOWN</span><b id="d-dn">${fmtSp(r.d*profile)}</b></div>
+      <div class="ud"><span>↑ UP</span><b id="d-up">${fmtSp(r.u*profile)}</b></div>
+    </div>
+    <div class="d-sub" id="d-sub">${r.size?`${fmtMB(done)} of ${fmtMB(r.size)}${eta(r).replace(" · "," · ~").replace(" left","")}`:"waiting for peers…"}</div>
+    <div class="kv"><span>Connections</span><b>${r.conns}</b></div>
+    <div class="kv"><span>Priority</span><b>Normal</b></div>
+    <div class="kv"><span>Added</span><b>${r.added}</b></div>
+    <div class="kv"><span>Save path</span><b>${r.path}</b></div>
+    <div class="kv"><span>Source</span><b>${r.src}</b></div>
+    <div class="d-actions">
+      <button class="chip-btn primary" ${DEAD}>${r.state==="pause"?"▶ Resume":"⏸ Pause"}</button>
+      <button class="chip-btn" ${DEAD}>Folder</button><button class="chip-btn" ${DEAD}>Copy</button>
+    </div>`;
+}
+
+/* ---------- menubar popover ---------- */
+function renderPop() {
+  const act = rows.filter(r => ["down","meta","seed"].includes(r.state)).slice(0, 4);
+  const td = rows.reduce((s,r)=>s+(r.state==="down"?r.d:0),0)*profile, tu = rows.reduce((s,r)=>s+r.u,0)*profile;
+  document.getElementById("pop").innerHTML = `
+    <div class="pop-head">Active · ${act.length}<span class="m" id="pop-tot">↓ ${fmtSp(td)} &nbsp;↑ ${fmtSp(tu)}</span></div>
+    <div class="pop-rows">${act.map(r=>`
+      <div class="prow" data-id="${r.id}">
+        <span class="fico" style="background:${F[r.kind].bg}">${F[r.kind].g}</span>
+        <span class="mid"><span class="mnm">${r.name}</span>
+        <span class="pbar ${barCls(r)}" style="margin-top:6px"><i style="width:${r.state==="meta"?18:r.pct}%"></i></span>
+        <span class="msub"><span class="m-st">${stTxt(r)}</span><span class="spd m-sp">${r.state==="seed"?fmtSp(r.u*profile):fmtSp(r.d*profile)}</span></span></span>
+        <button class="pp" data-pp="${r.id}" aria-label="Pause ${r.name}">⏸</button>
+      </div>`).join("")}
+    </div>
+    <button class="pop-add" ${DEAD}>+ Add download</button>
+    <div class="pop-foot"><span>⏸ Pause all</span><span>Open Goel° ›</span></div>`;
+}
+
+/* ---------- segments + adapters ---------- */
+const segsEl = document.getElementById("segs");
+segsEl.innerHTML = Array.from({length:8},()=>`<div class="seg"><i></i></div>`).join("");
+const segFill = Array.from({length:8},(_,i)=>0.3+0.6*((i*37%17)/17));
+const adapters = [
+  { n:"Wi-Fi", sp:5.2, st:3, on:true }, { n:"Ethernet", sp:5.8, st:4, on:true }, { n:"iPhone hotspot", sp:1.0, st:1, on:true },
+];
+document.getElementById("adapters").innerHTML = adapters.map((a,i)=>`
+  <button class="adapter a${i}" data-ad="${i}" aria-pressed="true"><span class="nm2">${a.n}<span class="stx">×${a.st}</span></span><span class="meter"><i data-am="${i}"></i></span><span class="sp" data-as="${i}">—</span></button>`).join("");
+document.getElementById("adapters").addEventListener("click", e => {
+  const b = e.target.closest("[data-ad]"); if (!b) return;
+  const a = adapters[b.dataset.ad]; a.on = !a.on;
+  b.classList.toggle("off", !a.on); b.setAttribute("aria-pressed", a.on);
+});
+
+/* ---------- piece map + priorities ---------- */
+const piecesEl = document.getElementById("pieces");
+const NP = 28*6; let pieceState = Array.from({length:NP},(_,i)=> (i*2654435761 % 100) < 41 ? 1 : 0);
+piecesEl.innerHTML = pieceState.map(s=>`<i class="${s?"f":""}"></i>`).join("");
+const prioFiles = [
+  { n:"Cosmos.S01E04.2160p.HDR.mkv", s:"16.2 GB", p:2 },
+  { n:"Cosmos.S01E04.1080p.mkv", s:"780 MB", p:0 },
+  { n:"subs/Cosmos.S01E04.en.srt", s:"88 KB", p:3 },
+  { n:"artwork/poster.jpg", s:"2.1 MB", p:1 },
+];
+const PLBL = ["Skip","Low","Normal","High"], PCLS=["skip","","","hi"];
+function renderPrios() {
+  document.getElementById("prios").innerHTML = prioFiles.map((f,i)=>`
+    <div class="prio"><span class="fn">${f.n}</span><span class="sz">${f.s}</span>
+    <button class="${PCLS[f.p]}" data-pr="${i}">${PLBL[f.p]}</button></div>`).join("");
+}
+renderPrios();
+document.getElementById("prios").addEventListener("click", e => {
+  const b = e.target.closest("[data-pr]"); if (!b) return;
+  const f = prioFiles[b.dataset.pr]; f.p = (f.p + 1) % 4; renderPrios();
+});
+
+/* ---------- sftp ---------- */
+const fs = {
+  "/": [["d","home"],["d","var"],["d","srv"],["f","README.md","2.1 KB","Jul 02"]],
+  "/home": [["d","vinit"]],
+  "/home/vinit": [["d","backups"],["d","media"],["f",".zshrc","4.8 KB","Jul 18"],["f","notes.txt","1.2 KB","Jul 20"]],
+  "/home/vinit/backups": [["f","project-backup-2026-07.tar.zst","2.2 GB","Jul 21"],["f","project-backup-2026-06.tar.zst","2.1 GB","Jun 21"],["f","db-dump.sql.gz","310 MB","Jul 19"]],
+  "/home/vinit/media": [["f","BigBuckBunny-1080p.mp4","340 MB","Jul 11"],["f","holiday-photos.zip","1.9 GB","Jun 30"]],
+  "/var": [["d","log"]], "/var/log": [["f","syslog","18 MB","today"]], "/srv": [["f","index.html","3 KB","May 12"]],
+};
+let cwd = "/home/vinit/backups", selFiles = new Set();
+function renderSftp() {
+  const parts = cwd === "/" ? [""] : cwd.split("/");
+  document.getElementById("crumbs").innerHTML = parts.map((p,i)=>{
+    const path = i===0 ? "/" : parts.slice(0,i+1).join("/");
+    return `${i>0?'<span class="sep2">/</span>':""}<button data-cd="${path}">${p||"home-server"}</button>`;
+  }).join("");
+  document.getElementById("sftp").innerHTML = (fs[cwd]||[]).map(([t,n,s,d],i)=>`
+    <div class="frow ${selFiles.has(n)?"sel":""}" data-fn="${n}" data-ft="${t}" tabindex="0" aria-label="${t==="d"?"Open folder":"Select file"} ${n}">
+      <span class="fi">${t==="d"?"▸":"·"}</span><span class="nm">${n}${t==="d"?"/":""}</span>
+      <span class="fs">${s||"—"}</span><span class="fd">${d||""}</span>
+    </div>`).join("");
+  const n = selFiles.size;
+  document.getElementById("sftpbar").innerHTML = n
+    ? `<span>${n} selected</span><button class="chip-btn" ${DEAD}>Download</button><button class="chip-btn" ${DEAD}>Rename</button><button class="chip-btn" ${DEAD}>Move to…</button><button class="chip-btn" data-ql="1">Quick Look (Space)</button>`
+    : `<span style="color:var(--color-ink-faint)">Click files to select · click a folder to open it</span>`;
+}
+renderSftp();
+document.getElementById("crumbs").addEventListener("click", e => {
+  const b = e.target.closest("[data-cd]"); if (!b) return;
+  cwd = b.dataset.cd; selFiles.clear(); document.getElementById("ql").classList.remove("on"); renderSftp();
+});
+document.getElementById("sftp").addEventListener("click", e => {
+  const row = e.target.closest("[data-fn]"); if (!row) return;
+  if (row.dataset.ft === "d") { cwd = (cwd==="/"?"":cwd) + "/" + row.dataset.fn; selFiles.clear(); }
+  else { selFiles.has(row.dataset.fn) ? selFiles.delete(row.dataset.fn) : selFiles.add(row.dataset.fn); }
+  document.getElementById("ql").classList.remove("on"); renderSftp();
+});
+document.getElementById("sftpbar").addEventListener("click", e => {
+  if (!e.target.closest("[data-ql]")) return;
+  const f = [...selFiles][0]; const ql = document.getElementById("ql");
+  ql.textContent = `⌕ Quick Look — ${f}\n\npreviewing remote file over SFTP · nothing downloaded\nhost: home-server · pinned ED25519 fingerprint ✓`;
+  ql.classList.add("on");
+});
+
+/* ---------- capture ---------- */
+const BR = [["chrome","Chrome"],["edge","Edge"],["brave","Brave"],["firefox","Firefox"],["safari","Safari"]];
+let capOn = [true,true,true,true,true];
+function renderBrowsers() {
+  document.getElementById("browsers").innerHTML = BR.map((b,i)=>`
+    <div class="brow"><svg class="blogo" aria-hidden="true"><use href="#lg-${b[0]}"/></svg>${b[1]}
+    <button data-cap="${i}" class="${capOn[i]?"on":""}">${capOn[i]?"intercept ✓":"off"}</button></div>`).join("");
+}
+renderBrowsers();
+document.getElementById("browsers").addEventListener("click", e => {
+  const b = e.target.closest("[data-cap]"); if (!b) return;
+  capOn[b.dataset.cap] = !capOn[b.dataset.cap]; renderBrowsers();
+});
+let grabbed = false;
+document.getElementById("grab").addEventListener("click", () => {
+  if (grabbed) return; grabbed = true;
+  rows.push({ id:9, name:"dataset-mirror-links.zip", proto:"HTTP", kind:"arch", size:640, pct:0, state:"down", d:9.4, u:0, added:"Just now", conns:6, path:"~/Downloads/dataset-mirror…", src:"example.com/downloads" });
+  document.getElementById("toast").classList.add("on");
+  document.getElementById("grab").disabled = true;
+  document.getElementById("grab").textContent = "✓ Sent to Goel°";
+  renderRows();
+});
+
+/* ---------- extension popup: Send › pushes into the live queue ---------- */
+const SENDS = [
+  { name:"lecture-04-recording.mp4", kind:"video", size:480, d:6.8 },
+  { name:"nightly-build-arm64.dmg",  kind:"arch",  size:210, d:5.4 },
+  { name:"sample-pack.zip",          kind:"arch",  size:96,  d:4.2 },
+];
+document.querySelectorAll("[data-send]").forEach(btn => btn.addEventListener("click", () => {
+  const s = SENDS[btn.dataset.send];
+  rows.push({ id: 10 + Number(btn.dataset.send), name: s.name, proto: "HTTP", kind: s.kind, size: s.size, pct: 0, state: "down", d: s.d, u: 0, added: "Just now", conns: 4, path: "~/Downloads/" + s.name, src: "example.com/downloads" });
+  btn.disabled = true; btn.textContent = "✓ Sent";
+  renderRows(); renderPortal();
+}, { once: true }));
+
+/* ---------- Goel° Web portal (live mirror of the queue) ---------- */
+let wSel = 1;
+const W_ST = { down:"Downloading", seed:"Seeding", pause:"Paused", done:"Completed", fail:"Failed", meta:"Fetching metadata" };
+function portalTotals() {
+  const t = document.getElementById("w-tot"); if (!t) return;
+  const td = rows.reduce((s,r)=>s+(r.state==="down"?r.d:0),0)*profile;
+  const tu = rows.reduce((s,r)=>s+(["seed","down"].includes(r.state)?r.u:0),0)*profile;
+  t.textContent = `↓ ${fmtSp(td)}  ↑ ${fmtSp(tu)}`;
+}
+function renderWDetail() {
+  const el = document.getElementById("wdetail"); if (!el) return;
+  const r = rows.find(x => x.id === wSel) || rows[0];
+  el.innerHTML = `
+    <div class="wd-name">${r.name}</div>
+    <div class="wd-big"><b id="wd-pct">${Math.floor(r.pct)}%</b><span id="wd-sub">${r.size?`${fmtMB(r.size*r.pct/100)} / ${fmtMB(r.size)}`:"waiting for peers…"}</span></div>
+    <span class="pbar ${barCls(r)}"><i id="wd-bar" style="width:${r.state==="meta"?18:r.pct}%"></i></span>
+    <div class="wd-kv"><span>Status</span><b class="st ${stCls(r)}">${W_ST[r.state]}</b></div>
+    <div class="wd-kv"><span>Speed</span><b id="wd-sp">↓ ${fmtSp(r.d*profile)}</b></div>
+    <div class="wd-kv"><span>Protocol</span><b>${r.proto}</b></div>
+    <div class="wd-kv"><span>Save path</span><b>${r.path}</b></div>
+    <div class="wd-kv"><span>Source</span><b>${r.src}</b></div>`;
+}
+function renderPortal() {
+  const host = document.getElementById("wrows"); if (!host) return;
+  const c = f => rows.filter(r => r.state === f).length;
+  document.getElementById("wside").innerHTML = `
+    <div class="side-h">LIBRARY</div>
+    <div class="wp-item on">▤ All downloads <span class="n">${rows.length}</span></div>
+    <div class="side-h">STATUS</div>
+    <div class="wp-item">↓ Active <span class="n">${c("down")}</span></div>
+    <div class="wp-item">⏸ Paused <span class="n">${c("pause")}</span></div>
+    <div class="wp-item">✓ Completed <span class="n">${c("done")}</span></div>
+    <div class="wp-item">↑ Seeding <span class="n">${c("seed")}</span></div>
+    <div class="wp-item">! Failed <span class="n">${c("fail")}</span></div>
+    <div class="side-h">TOOLS</div>
+    <div class="wp-item">◷ History</div>
+    <div class="wp-item">⚙ Settings</div>`;
+  host.innerHTML = rows.map(r => `
+    <div class="wrow ${r.id===wSel?"sel":""}" data-wid="${r.id}" tabindex="0" aria-label="${r.name}" aria-current="${r.id===wSel}">
+      <span class="fico" style="background:${F[r.kind].bg}">${F[r.kind].g}</span>
+      <span class="name-main"><span class="nm">${r.name}</span><span class="pbar ${barCls(r)}"><i style="width:${r.state==="meta"?18:r.pct}%"></i></span></span>
+      <span class="wc">${r.size?fmtMB(r.size):"—"}</span>
+      <span class="wc w-st"><span class="st ${stCls(r)}">${stTxt(r)}</span></span>
+      <span class="wc w-sp">${r.state==="seed"?fmtSp(r.u*profile):fmtSp(r.d*profile)}</span>
+    </div>`).join("");
+  const cnt = document.getElementById("w-count"); if (cnt) cnt.textContent = rows.length + " downloads";
+  renderWDetail(); portalTotals();
+}
+function patchPortal() {
+  portalTotals();
+  document.querySelectorAll("#wrows .wrow").forEach(el => {
+    const r = rows.find(x => x.id == el.dataset.wid); if (!r) return;
+    el.querySelector(".pbar i").style.width = (r.state==="meta"?18:r.pct) + "%";
+    el.querySelector(".w-st .st").textContent = stTxt(r);
+    el.querySelector(".w-sp").textContent = r.state==="seed"?fmtSp(r.u*profile):fmtSp(r.d*profile);
+  });
+  const r = rows.find(x => x.id === wSel), wp = document.getElementById("wd-pct");
+  if (r && wp) {
+    wp.textContent = Math.floor(r.pct) + "%";
+    document.getElementById("wd-sub").textContent = r.size?`${fmtMB(r.size*r.pct/100)} / ${fmtMB(r.size)}`:"waiting for peers…";
+    document.getElementById("wd-bar").style.width = (r.state==="meta"?18:r.pct) + "%";
+    document.getElementById("wd-sp").textContent = "↓ " + fmtSp(r.d*profile);
+  }
+}
+document.getElementById("wrows").addEventListener("click", e => {
+  const row = e.target.closest("[data-wid]"); if (!row) return;
+  wSel = parseInt(row.dataset.wid); renderPortal();
+});
+
+/* ---------- terminal ---------- */
+const termLines = [
+  ["p1","$ "],["t","GOEL_PORT=8080 GOEL_ALLOW_LAN=true \\\n  GOEL_USERNAME=admin GOEL_PASSWORD=•••••••• \\\n  GOEL_SAVE_DIR=~/Downloads ./run.sh\n"],
+  ["t","goel-daemon 1.0.1 · engine up (http ftp sftp bt hls)\n"],
+  ["ok","✓ portal listening on http://0.0.0.0:8080 — auth required\n"],
+  ["t","queue restored: 8 tasks · 2 active · seeding 1\n"],
+];
+const termEl = document.getElementById("term");
+let tIdx = 0, tChar = 0, tOut = "";
+function typeTerm() {
+  // reduced motion: print the session at once instead of typing it out
+  if (RM) { termEl.innerHTML = termLines.map(([c,t]) => `<span class="${c==="t"?"":c}">${t}</span>`).join(""); return; }
+  if (tIdx >= termLines.length) { termEl.innerHTML = tOut + '<span class="cur"></span>'; return; }
+  const [cls, txt] = termLines[tIdx];
+  tChar += 3;
+  const part = txt.slice(0, tChar);
+  termEl.innerHTML = tOut + `<span class="${cls==="t"?"":cls}">${part}</span>` + '<span class="cur"></span>';
+  if (tChar >= txt.length) { tOut += `<span class="${cls==="t"?"":cls}">${txt}</span>`; tIdx++; tChar = 0; }
+  setTimeout(typeTerm, 24);
+}
+
+/* ---------- feature grid ---------- */
+const feats = [
+  ["⌕","Quick Look","Space previews finished files — and remote SFTP files too."],
+  ["#","Checksums","MD5 / SHA-1 / SHA-256 / SHA-512, auto-detected from a pasted hash."],
+  ["≡","History + CSV","Every download archived, searchable, re-downloadable, exportable."],
+  ["▤","Watch folders","Drop a .torrent in a folder; it queues itself."],
+  ["◈","RSS auto-download","Watch feeds, match titles by pattern, queue automatically."],
+  ["◔","Scheduler","Give it a window — say 01:00–08:00 — and it pauses everything outside it."],
+  ["⚙","Post-download actions","Extract archives, run a script, scan with antivirus — automatically."],
+  ["▶","yt-dlp built in","Turn a video-site page into a direct download."],
+  ["♪","In-app player","Play finished video/audio without leaving the app."],
+  ["⇄","ffmpeg tools","Remux to another container, extract audio, grab subtitles."],
+  ["✱","AppleScript + Shortcuts","Scriptable via .sdef — add, pause, query from automations."],
+  ["⌘","URL scheme","goeldownloader:// links and the system Services menu."],
+  ["◉","Dock progress","A live progress bar on the Dock icon, plus an active-count badge."],
+  ["◐","Four themes","Frost Light, Frost Dark, Dracula, Nord — ⇧⌘T cycles."],
+  ["⇅","Proxies & auth","HTTP/SOCKS5 proxy, cookies, headers, Keychain site logins."],
+  ["⟳","Backup & restore","Full JSON export of settings + tasks, scheduled auto-backups."],
+  ["☾","Power aware","Pause below a battery threshold; never sleep mid-download."],
+  ["⚑","Duplicate detection","Warns before you add the same link twice."],
+  ["𝔄","English + German","Localized UI, more languages ready to slot in."],
+  ["↻","Sparkle updates","Silent in-app updates, plus a GitHub-Releases checker."],
+];
+document.getElementById("featgrid").innerHTML = feats.map((f,i)=>`
+  <div class="cellf" style="--i:${i}"><b><span class="m">${f[0]}</span>${f[1]}</b><span>${f[2]}</span></div>`).join("");
+
+/* ---------- flicker-free patch updates (full re-render only on state changes) ---------- */
+function patchRows() {
+  document.querySelectorAll("#rows .row").forEach(el => {
+    const r = rows.find(x => x.id == el.dataset.id); if (!r) return;
+    el.querySelector(".pbar i").style.width = (r.state==="meta"?18:r.pct) + "%";
+    el.querySelector(".c-st .st").textContent = stTxt(r);
+    el.querySelector(".c-d").textContent = fmtSp(r.d*profile);
+    el.querySelector(".c-u").textContent = fmtSp(r.u*profile);
+  });
+}
+function patchDetail() {
+  const r = rows.find(x => x.id === selId); if (!r) return;
+  const arc = document.getElementById("d-arc"); if (!arc) return;
+  arc.style.strokeDashoffset = RING_C * (1 - r.pct/100);
+  document.getElementById("d-pct").textContent = Math.floor(r.pct) + "%";
+  document.getElementById("d-dn").textContent = fmtSp(r.d*profile);
+  document.getElementById("d-up").textContent = fmtSp(r.u*profile);
+  document.getElementById("d-sub").textContent = r.size ? `${fmtMB(r.size*r.pct/100)} of ${fmtMB(r.size)}${eta(r).replace(" · "," · ~").replace(" left","")}` : "waiting for peers…";
+}
+function patchPop() {
+  const tot = document.getElementById("pop-tot"); if (!tot) return;
+  const td = rows.reduce((s,r)=>s+(r.state==="down"?r.d:0),0)*profile, tu = rows.reduce((s,r)=>s+r.u,0)*profile;
+  tot.innerHTML = `↓ ${fmtSp(td)} &nbsp;↑ ${fmtSp(tu)}`;
+  document.querySelectorAll("#pop .prow").forEach(el => {
+    const r = rows.find(x => x.id == el.dataset.id); if (!r) return;
+    el.querySelector(".pbar i").style.width = (r.state==="meta"?18:r.pct) + "%";
+    el.querySelector(".m-st").textContent = stTxt(r);
+    el.querySelector(".m-sp").textContent = r.state==="seed"?fmtSp(r.u*profile):fmtSp(r.d*profile);
+  });
+}
+const sig = () => rows.map(r=>r.id+":"+r.state).join(",")+"|"+filter+"|"+selId;
+let lastSig = "";
+
+/* ---------- only paint what's on screen ---------- */
+/* The simulation state keeps evolving, but no region writes to the DOM while
+   it's scrolled out of view — and the whole loop stops in a hidden tab. */
+const live = { hero: true, pop: true, agg: true, web: true, seg: true, pieces: true };
+const liveIO = new IntersectionObserver(es => es.forEach(e => {
+  live[e.target.dataset.live] = e.isIntersecting;
+  if (e.isIntersecting) lastSig = ""; // force a full render of whatever just arrived
+}), { rootMargin: "160px" });
+document.querySelectorAll("[data-live]").forEach(el => liveIO.observe(el));
+
+/* ---------- sim tick ---------- */
+function tick() {
+  rows.forEach(r => {
+    if (r.state === "down" && r.d > 0) {
+      r.pct += (r.d * profile * SIM / 60) / r.size * 100 * 0.6;
+      r.d = Math.max(0.3, r.d + (Math.sin(Date.now()/900 + r.id) * 0.4));
+      if (r.pct >= 100) { r.pct = 100; r.state = r.proto === "BT" ? "seed" : "done"; if(r.proto==="BT"){r.u=1.1;r.ratio=0.0;} r.d = 0; }
+    }
+    if (r.state === "seed") { r.ratio = (r.ratio || 2.1) + 0.001; r.u = Math.max(0.2, r.u + Math.sin(Date.now()/1100+r.id)*0.15); }
+    if (r.state === "meta") { r.peers += (Date.now()%3===0?1:0); if (r.peers > 14) { r.state = "down"; r.name = "Sintel.2010.4k.remaster.mkv"; r.size = 5.1*1024; r.d = 3.2; r.kind = "video"; } }
+  });
+  // counts + totals
+  const c = f => rows.filter(r => r.state === f).length;
+  const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+  if (live.hero) {
+    set("c-all", rows.length); set("c-down", c("down")); set("c-pause", c("pause")); set("c-done", c("done")); set("c-seed", c("seed"));
+    const td = rows.reduce((s,r)=>s+(r.state==="down"?r.d:0),0)*profile;
+    const tu = rows.reduce((s,r)=>s+(["seed","down"].includes(r.state)?r.u:0),0)*profile;
+    set("tot-d","↓ "+fmtSp(td)); set("tot-u","↑ "+fmtSp(tu));
+  }
+  // rebuild DOM only when a state/filter/selection changed; otherwise patch in place
+  const s2 = sig();
+  if (s2 !== lastSig) {
+    lastSig = s2;
+    if (live.hero) { renderRows(); renderDetail(); }
+    if (live.pop) renderPop();
+    if (live.web) renderPortal();
+  } else {
+    if (live.hero) { patchRows(); patchDetail(); }
+    if (live.pop) patchPop();
+    if (live.web) patchPortal();
+  }
+  // segments
+  if (live.seg) document.querySelectorAll(".seg i").forEach((el,i)=>{
+    segFill[i] = Math.min(1, segFill[i] + 0.004 + (i%3)*0.002);
+    if (segFill[i] >= 1) segFill[i] = 0.05;
+    el.style.transform = `scaleX(${segFill[i]})`;
+  });
+  if (live.agg) {
+    const offN = adapters.filter(a=>!a.on).length;
+    const effs = adapters.map((a,i)=>{
+      a.sp = Math.max(0.4, a.sp + Math.sin(Date.now()/800+i*2)*0.3);
+      return a.on ? a.sp * (1 + 0.35*offN) : 0;
+    });
+    adapters.forEach((a,i)=>{
+      const m = document.querySelector(`[data-am="${i}"]`), s = document.querySelector(`[data-as="${i}"]`);
+      if (m) m.style.width = Math.min(100, effs[i]/8*100) + "%";
+      if (s) s.textContent = a.on ? fmtSp(effs[i]) : "unplugged";
+    });
+    // combined throughput + byte-range ownership map
+    const aggT = document.getElementById("agg-tot"), aggB = document.getElementById("agg-bar"), aggM = document.getElementById("aggmap");
+    if (aggT) {
+      const sum = effs.reduce((x,y)=>x+y,0);
+      aggT.textContent = fmtSp(sum);
+      if (aggB) aggB.style.width = Math.min(100, sum/16*100) + "%";
+      if (aggM) [...aggM.children].forEach((el,i)=> el.style.width = (sum>0 ? effs[i]/sum*100 : 0) + "%");
+    }
+  }
+  // pieces follow cosmos pct
+  const cosmos = live.pieces && rows.find(r=>r.id===3);
+  if (cosmos) {
+    const target = Math.floor(NP * Math.min(cosmos.pct,100) / 100);
+    let have = pieceState.filter(Boolean).length, guard = 0;
+    while (have < target && guard++ < 200) {
+      const i = Math.floor((Date.now()*(have+7)) % NP);
+      if (!pieceState[i]) { pieceState[i] = 1; have++; piecesEl.children[i].className = "f"; }
+    }
+  }
+}
+shell(); renderRows(); renderDetail(); renderPop(); renderPortal(); lastSig = sig();
+let simTimer = setInterval(tick, 600);
+document.addEventListener("visibilitychange", () => {
+  clearInterval(simTimer); simTimer = null;
+  if (!document.hidden) { lastSig = ""; simTimer = setInterval(tick, 600); }
+});
+
+/* ---------- scroll choreography: full-bleed hero app shrinks into the column ---------- */
+const navEl = document.querySelector(".nav");
+const shrinkEl = document.getElementById("appShrink");
+const stageEl = shrinkEl.parentElement;
+const heroWrap = document.querySelector(".hero .wrap");
+const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let shH = 1, shTarget = 1, fxTicking = false;
+function measureShrink() {
+  shrinkEl.style.transform = ""; shrinkEl.style.marginBottom = "";
+  shH = shrinkEl.offsetHeight;
+  shTarget = Math.min(1, (heroWrap.clientWidth - 48) / stageEl.offsetWidth);
+  applyShrink();
+}
+function applyShrink() {
+  let s;
+  if (RM) { s = shTarget; }
+  else {
+    const p = Math.min(1, Math.max(0, window.scrollY / 420));
+    const e2 = 1 - (1 - p) * (1 - p); // ease-out
+    s = 1 - (1 - shTarget) * e2;
+  }
+  shrinkEl.style.transform = `scale(${s})`;
+  shrinkEl.style.marginBottom = `${-(1 - s) * shH}px`;
+}
+function onScrollFx() {
+  navEl.classList.toggle("scrolled", window.scrollY > 8);
+  if (!fxTicking) { fxTicking = true; requestAnimationFrame(() => { applyShrink(); fxTicking = false; }); }
+}
+window.addEventListener("scroll", onScrollFx, { passive: true });
+let rzTimer;
+window.addEventListener("resize", () => { clearTimeout(rzTimer); rzTimer = setTimeout(measureShrink, 120); });
+measureShrink();
+setTimeout(measureShrink, 600); // re-measure once fonts/layout settle
+
+/* facts count-up */
+document.querySelectorAll(".fact b[data-n]").forEach(el => {
+  const n = parseInt(el.dataset.n, 10);
+  if (RM) { el.textContent = n; return; }
+  const t0 = performance.now() + 500;
+  const step = t => {
+    const p = Math.min(1, Math.max(0, (t - t0) / 900));
+    el.textContent = Math.round(n * p);
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+});
+
+/* reveal on scroll + lazy terminal start */
+const io = new IntersectionObserver(es => es.forEach(e => {
+  if (!e.isIntersecting) return;
+  e.target.classList.add("in");
+  if (e.target.querySelector && e.target.querySelector("#term") && !typeTerm.started) { typeTerm.started = true; typeTerm(); }
+  io.unobserve(e.target);
+}), { threshold: 0.15 });
+document.querySelectorAll(".rv").forEach(el => io.observe(el));
+</script>
+</body>
+</html>
