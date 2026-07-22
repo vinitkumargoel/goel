@@ -44,10 +44,16 @@ extension AppViewModel {
 
     // MARK: Actions
 
+    /// Whether a download's payload is a shape that can be sent — a single file, not a folder of them.
+    func canSendToServer(_ task: DownloadTask) -> Bool {
+        isSendToServerEnabled && !task.isMultiFile
+    }
+
     /// Open the "Send to server" sheet for a finished download.
     func presentSendToServer(_ task: DownloadTask) {
         guard isSendToServerEnabled else { return }
         guard task.status == .completed else { return toastNow("Only finished downloads can be sent") }
+        guard !task.isMultiFile else { return toastNow(DownloadManager.multiFileRefusal) }
         guard !destinationServers.isEmpty else {
             return toastNow(servers.isEmpty ? "Add a server first" : "Browse the server once so its identity can be checked")
         }

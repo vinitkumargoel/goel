@@ -442,8 +442,8 @@ GSBResult gsb_upload_atomic(const GSBAuth *auth,
                                    temp_remote, (unsigned int)strlen(temp_remote),
                                    final_remote, (unsigned int)strlen(final_remote),
                                    flags) != 0) {
-            // Bytes are all there under the temporary name — a distinct error so the caller retries the rename, not the transfer.
-            gsb_set(&r, GSB_ERR_RENAME, "Uploaded, but could not rename the file into place");
+            // A distinct error so the caller can say *where* it broke; the cleanup below still removes the temporary, so a retry re-sends.
+            gsb_set(&r, GSB_ERR_RENAME, "Could not rename the uploaded file into place");
         }
     }
 

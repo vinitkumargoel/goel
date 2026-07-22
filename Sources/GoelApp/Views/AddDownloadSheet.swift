@@ -276,7 +276,7 @@ struct AddDownloadSheet: View {
                     }
                 }
 
-                serverDestinationSection
+                serverDestinationSection(preview)
                 if preview.kind != .torrent {
                     checksumField
                 }
@@ -417,9 +417,11 @@ struct AddDownloadSheet: View {
     }
 
     /// Optional forwarding to a saved server. The download still lands locally first — this only says where it goes afterwards.
+    ///
+    /// Hidden for torrents: a torrent's payload may turn out to be a folder of files, which the transfer cannot send, and that is not known until the metadata resolves. A finished single-file torrent can still be sent from its context menu.
     @ViewBuilder
-    private var serverDestinationSection: some View {
-        if vm.isSendToServerEnabled, !vm.destinationServers.isEmpty {
+    private func serverDestinationSection(_ preview: DownloadPreview) -> some View {
+        if vm.isSendToServerEnabled, preview.kind != .torrent, !vm.destinationServers.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Then send to (optional)")
                     .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)

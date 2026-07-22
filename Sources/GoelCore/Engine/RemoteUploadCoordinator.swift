@@ -23,6 +23,21 @@ public actor RemoteUploadCoordinator {
         }
     }
 
+    /// A failure that says something about the *server*, as opposed to about one file.
+    ///
+    /// Only these reach the breaker. A rejected path, a name collision, a cancelled transfer — those belong to the one download that hit them, and pausing every other upload to the same server because of one is how a single typo takes the whole destination offline.
+    public enum Fault: Sendable, Equatable {
+        /// Nothing will get through until a person fixes it: a changed host key, a rejected password.
+        case unusable(reason: String)
+        /// Reachable in principle — a refused connection, a dropped session. Backs off once the streak passes the threshold.
+        case transient(reason: String)
+    }
+
+    /// Thrown by ``acquire(server:remotePath:)`` when the server is held. A queued upload must not sit behind a hold that only a person can clear.
+    public struct ServerHeld: Error, Sendable {
+        public let hold: Hold
+    }
+
     private struct Breaker {
         var consecutiveFailures = 0
         var hold: Hold?
@@ -59,10 +74,16 @@ public actor RemoteUploadCoordinator {
 
     // MARK: Admission
 
-    /// Wait for a slot on `server` and exclusive claim of `remotePath`. Throws `CancellationError` if the caller is cancelled while queued, leaving nothing reserved.
+    /// Wait for a slot on `server` and exclusive claim of `remotePath`.
+    ///
+    /// Waits only for things that clear themselves — a busy slot, a claimed path. A hold throws ``ServerHeld`` instead, because a manual hold clears only when a person acts and polling for it would leave the upload queued in silence forever.
+    ///
+    /// Throws `CancellationError` if the caller is cancelled while queued. Either way nothing is reserved.
     public func acquire(server: UUID, remotePath: String) async throws {
         let key = Self.pathKey(server, remotePath)
-        while !canStart(server: server, pathKey: key) {
+        while true {
+            if let hold = currentHold(server) { throw ServerHeld(hold: hold) }
+            if canStart(server: server, pathKey: key) { break }
             try await Task.sleep(nanoseconds: Self.pollInterval)
         }
         globalInFlight += 1
@@ -80,7 +101,6 @@ public actor RemoteUploadCoordinator {
     }
 
     private func canStart(server: UUID, pathKey: String) -> Bool {
-        guard currentHold(server) == nil else { return false }
         guard globalInFlight < maxGlobal else { return false }
         guard perServerInFlight[server, default: 0] < maxPerServer else { return false }
         return !claimedPaths.contains(pathKey)
@@ -95,11 +115,11 @@ public actor RemoteUploadCoordinator {
         breakers[server] = nil
     }
 
-    /// Record a failed attempt. A failure retrying cannot fix holds the server until the user intervenes; anything else backs off exponentially once the streak passes the threshold.
-    public func recordFailure(server: UUID, retryable: Bool, reason: String) {
+    /// Record a server-level fault. Only ``Fault`` values reach here — a failure scoped to one download must never pause the server for every other one.
+    public func recordFailure(server: UUID, fault: Fault) {
         var breaker = breakers[server] ?? Breaker()
         breaker.consecutiveFailures += 1
-        if !retryable {
+        if case .unusable(let reason) = fault {
             breaker.hold = .manual(reason: reason)
         } else if breaker.consecutiveFailures >= failureThreshold {
             // Counted from the threshold so the first backoff is the base delay, not one already doubled several times.

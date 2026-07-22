@@ -121,6 +121,18 @@ public struct SFTPError: Error, Sendable, Equatable {
              .mkdir, .remove, .rename, .stat, .unknown: return true
         }
     }
+    /// Whether this failure describes the *server* rather than the one file being transferred.
+    ///
+    /// Only a server-scoped failure may pause every upload to a destination. A refused path, a name collision, a size mismatch or a cancelled transfer all belong to the single download that hit them — treating those as server faults is how one bad folder name takes a healthy server offline for everything else.
+    ///
+    /// `io` is deliberately *not* server-scoped: the upload path reports a local read failure as `io` too, so it cannot be told apart from a dropped session.
+    public var isServerScoped: Bool {
+        switch kind {
+        case .resolve, .connect, .handshake, .hostKey, .hostKeyMismatch, .auth, .sftp: return true
+        case .open, .io, .aborted, .exists, .verify, .mkdir, .remove, .rename, .stat, .unknown: return false
+        }
+    }
+
     public var kind: Kind
     public var message: String
 

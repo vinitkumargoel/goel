@@ -212,7 +212,7 @@ struct DownloadRow: View {
     /// Server-destination actions. Absent entirely when the feature is off, so nothing hints at a capability that won't run.
     @ViewBuilder
     private var remoteDestinationMenu: some View {
-        if vm.isSendToServerEnabled {
+        if vm.canSendToServer(task) {
             Divider()
             if let destination = task.remoteDestination {
                 switch destination.state {

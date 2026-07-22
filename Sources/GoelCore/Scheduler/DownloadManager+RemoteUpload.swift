@@ -39,7 +39,10 @@ extension DownloadManager {
             switch destination.state {
             case .uploading, .pending:
                 startRemoteUploadIfNeeded(task)
-            case .uploaded, .failed, .held:
+            // Held means "the server refused for now" — a relaunch or a flag flip is exactly when that is worth re-testing. Failed is not: it needs the user to decide.
+            case .held:
+                startRemoteUploadIfNeeded(task)
+            case .uploaded, .failed:
                 continue
             }
         }
@@ -54,6 +57,8 @@ extension DownloadManager {
     public func sendToServer(_ id: DownloadTask.ID, destination: RemoteDestination) async -> Bool {
         guard settings.sftpDestinationEnabled else { return false }
         guard let task = self.task(id), task.status == .completed else { return false }
+        // `savePath` is the containing folder for a multi-file payload, and the transfer sends one file. Refused here so the caller learns immediately, rather than the destination being attached and failing later.
+        guard !task.isMultiFile else { return false }
         guard FileManager.default.fileExists(atPath: task.savePath) else { return false }
         guard !task.isUploadingToRemote else { return false }
 
@@ -116,6 +121,12 @@ extension DownloadManager {
             return
         }
 
+        // `savePath` is a folder for a multi-file payload, and the transfer reads a single file. Refused here as well as in the UI so no entry point can queue one that is certain to fail.
+        guard !task.isMultiFile else {
+            markRemoteUpload(id, state: .failed, message: Self.multiFileRefusal)
+            return
+        }
+
         guard let connection = connectionStore.load().first(where: { $0.id == destination.connectionID }) else {
             markRemoteUpload(id, state: .held,
                              message: "The server \"\(destination.serverLabel)\" no longer exists. Choose another destination.")
@@ -129,8 +140,13 @@ extension DownloadManager {
             return
         }
 
-        if let hold = await uploadCoordinator.currentHold(destination.connectionID) {
-            markRemoteUpload(id, state: .failed, message: hold.message)
+        // A timed backoff is waited out in place so the transfer resumes by itself; a manual hold needs a person, so say so rather than sitting queued in silence.
+        if let hold = await awaitServerAvailability(destination.connectionID) {
+            markRemoteUpload(id, state: .held, message: hold.message)
+            return
+        }
+        guard !Task.isCancelled else {
+            markRemoteUpload(id, state: .pending, message: nil)
             return
         }
 
@@ -149,22 +165,24 @@ extension DownloadManager {
         }
         let client = SFTPClient(target: target, hostKeys: hostKeys)
 
-        // Preflight before claiming a slot: a bad destination should fail fast rather than sit behind the queue.
-        if let problem = await preflightRemoteDestination(client, plan: plan) {
-            await uploadCoordinator.recordFailure(server: destination.connectionID,
-                                                  retryable: problem.retryable, reason: problem.message)
-            markRemoteUpload(id, state: .failed, message: problem.message)
-            return
-        }
-
+        // The slot is claimed *before* the preflight, because the preflight is itself two full TCP + SSH + auth handshakes. Running it outside the cap would let twenty downloads finishing together open twenty sessions at once — precisely what the cap exists to prevent.
         do {
             try await uploadCoordinator.acquire(server: destination.connectionID, remotePath: plan.finalPath)
+        } catch let held as RemoteUploadCoordinator.ServerHeld {
+            markRemoteUpload(id, state: .held, message: held.hold.message)
+            return
         } catch {
             markRemoteUpload(id, state: .pending, message: nil)   // cancelled while queued; nothing was reserved
             return
         }
         defer {
             Task { await self.uploadCoordinator.release(server: destination.connectionID, remotePath: plan.finalPath) }
+        }
+
+        if let problem = await preflightRemoteDestination(client, plan: plan) {
+            await recordRemoteFault(destination.connectionID, problem.fault)
+            markRemoteUpload(id, state: .failed, message: problem.message)
+            return
         }
 
         // Persisted before the first byte, so a crash mid-transfer is recoverable as "was uploading" rather than as silence.
@@ -182,14 +200,16 @@ extension DownloadManager {
                 progress: { sent, _ in
                     Task { await manager.value.recordRemoteUploadProgress(id, bytes: sent) }
                 })
+        } catch let error as SFTPError where error.kind == .aborted {
+            // Cancellation is not a failure. Shutting down and switching the feature off both cancel in-flight transfers, and those must come back by themselves rather than waiting on a manual retry the user has no reason to expect. An explicit Stop overwrites this with `.failed` once it has awaited teardown.
+            markRemoteUpload(id, state: .pending, message: nil)
+            return
         } catch let error as SFTPError {
-            await uploadCoordinator.recordFailure(server: destination.connectionID,
-                                                  retryable: error.isRetryable, reason: error.message)
+            // Only a fault that describes the *server* reaches the breaker. A name collision or a size mismatch belongs to this download alone — pausing every other upload to the server because of one would be a far worse failure than the one being reported.
+            await recordRemoteFault(destination.connectionID, Self.fault(for: error))
             markRemoteUpload(id, state: .failed, message: Self.remoteUploadMessage(for: error, server: connection.label))
             return
         } catch {
-            await uploadCoordinator.recordFailure(server: destination.connectionID,
-                                                  retryable: true, reason: error.localizedDescription)
             markRemoteUpload(id, state: .failed, message: error.localizedDescription)
             return
         }
@@ -198,11 +218,45 @@ extension DownloadManager {
         completeRemoteUpload(id, remotePath: plan.finalPath)
     }
 
+    // MARK: Server availability
+
+    /// Refused when a payload is a folder rather than a single file.
+    public static let multiFileRefusal =
+        "This download is a folder of files. Only single files can be sent to a server."
+
+    /// Wait out a timed backoff so a transfer resumes on its own; return a manual hold, which no amount of waiting clears.
+    ///
+    /// The alternative — queueing behind every hold — is what makes a stalled server look like a stalled app: the upload sits `pending` with nothing to explain it and no point at which it gives up.
+    private func awaitServerAvailability(_ server: UUID) async -> RemoteUploadCoordinator.Hold? {
+        while let hold = await uploadCoordinator.currentHold(server) {
+            guard case .backoff(let until) = hold else { return hold }
+            let seconds = until.timeIntervalSinceNow
+            guard seconds > 0 else { continue }   // expired in the gap; the next read clears it
+            // Capped per sleep so a long backoff still notices cancellation promptly.
+            do { try await Task.sleep(nanoseconds: UInt64(min(seconds, 30) * 1_000_000_000)) }
+            catch { return nil }                  // cancelled; the caller checks for that itself
+        }
+        return nil
+    }
+
+    /// Record a server-level fault, or nothing at all when the failure was scoped to one download.
+    private func recordRemoteFault(_ server: UUID, _ fault: RemoteUploadCoordinator.Fault?) async {
+        guard let fault else { return }
+        await uploadCoordinator.recordFailure(server: server, fault: fault)
+    }
+
+    /// Which transfer failures say something about the server, and how badly.
+    static func fault(for error: SFTPError) -> RemoteUploadCoordinator.Fault? {
+        guard error.isServerScoped else { return nil }
+        return error.isRetryable ? .transient(reason: error.message) : .unusable(reason: error.message)
+    }
+
     // MARK: Preflight
 
     private struct RemoteProblem {
         var message: String
-        var retryable: Bool
+        /// nil when the problem is this destination's, not the server's — a missing folder must not pause every other upload.
+        var fault: RemoteUploadCoordinator.Fault?
     }
 
     /// Confirm the destination is a real, writable directory that is not a symlink pointing outside the tree the user picked, and that there is room for the payload.
@@ -213,34 +267,34 @@ extension DownloadManager {
             info = try await client.pathInfo(plan.directory)
         } catch let error as SFTPError {
             return RemoteProblem(message: Self.remoteUploadMessage(for: error, server: plan.serverLabel),
-                                 retryable: error.isRetryable)
+                                 fault: Self.fault(for: error))
         } catch {
-            return RemoteProblem(message: error.localizedDescription, retryable: true)
+            return RemoteProblem(message: error.localizedDescription, fault: nil)
         }
 
         guard info.exists else {
             return RemoteProblem(message: "\(plan.directory) does not exist on \(plan.serverLabel). Create it first, or pick another folder.",
-                                 retryable: false)
+                                 fault: nil)
         }
         guard info.isDirectory else {
-            return RemoteProblem(message: "\(plan.directory) is a file, not a folder.", retryable: false)
+            return RemoteProblem(message: "\(plan.directory) is a file, not a folder.", fault: nil)
         }
 
         // A symlinked destination is followed by the server, so `/srv/incoming -> /etc` would write outside the chosen tree. Allowed only when the server confirms where it lands and that answer is still the same path.
         if info.isSymlink {
             guard let resolved = info.resolvedPath else {
                 return RemoteProblem(message: "\(plan.directory) is a link and \(plan.serverLabel) will not say where it points. Pick the real folder instead.",
-                                     retryable: false)
+                                     fault: nil)
             }
             if !RemotePathSafety.isContained(resolved, within: plan.directory) {
                 return RemoteProblem(message: "\(plan.directory) is a link to \(resolved). Pick that folder directly if it is what you meant.",
-                                     retryable: false)
+                                     fault: nil)
             }
         }
 
         // Owner-write is the best signal available without writing a probe file; a wrong guess still fails cleanly at open time and keeps the local copy.
         if info.permissions != 0 && (info.permissions & 0o200) == 0 {
-            return RemoteProblem(message: "\(plan.directory) is not writable by \(plan.username).", retryable: false)
+            return RemoteProblem(message: "\(plan.directory) is not writable by \(plan.username).", fault: nil)
         }
 
         guard plan.expectedBytes >= Self.remoteSpaceCheckThreshold else { return nil }
@@ -248,8 +302,9 @@ extension DownloadManager {
             return nil   // the server doesn't answer statvfs — unknown, not full
         }
         if space.freeBytes < plan.expectedBytes {
+            // Out of space is the server's problem, not this file's — every other upload to it will fail the same way, so back off rather than marching through the queue.
             return RemoteProblem(message: "\(plan.serverLabel) has \(space.freeBytes.byteString) free but the file needs \(plan.expectedBytes.byteString).",
-                                 retryable: true)
+                                 fault: .transient(reason: "No free space on \(plan.serverLabel)"))
         }
         return nil
     }
@@ -424,7 +479,8 @@ extension DownloadManager {
         case .verify:
             return "The upload finished but \(server) reports a different size, so it was discarded. The local copy is untouched."
         case .rename:
-            return "The file reached \(server) but could not be renamed into place. Retrying will only redo the rename."
+            // The shim removes its temporary on any failure, rename included, rather than leaving an orphan eating the server's disk — so a retry re-sends the file rather than redoing just the rename.
+            return "The file reached \(server) but could not be renamed into place, so the partial copy was removed. Retrying will send it again."
         case .aborted:
             return "Upload cancelled. The local copy is untouched."
         default:
