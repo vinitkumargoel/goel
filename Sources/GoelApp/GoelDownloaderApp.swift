@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ImageIO
 import UniformTypeIdentifiers
 import GoelCore
 
@@ -142,17 +143,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Largest size the dock icon is ever drawn at. The Dock tops out around
+    /// 128 pt, so 512 px leaves 2x headroom for a Retina backing store while
+    /// keeping the decoded bitmap small — see `applyDockIcon`.
+    private static let dockIconPixelSize = 512
+
     /// Picks the icon variant matching the current effective appearance and sets
     /// it as the dock icon. Falls back silently to the bundled default if a
     /// resource is missing — a missing icon must never crash the app.
+    ///
+    /// Decoded through ImageIO at a bounded size rather than `NSImage(contentsOf:)`.
+    /// The source art is 1024x1024; letting AppKit decode it whole cost ~32 MB
+    /// resident for the lifetime of the process (2048x2048 backing at 16 bits per
+    /// channel on a wide-gamut display) to feed an icon that never draws above
+    /// 128 pt. Requesting a thumbnail means the full-size bitmap is never
+    /// materialised at all.
     private func applyDockIcon() {
         let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let preferred = isDark ? "AppIcon-Dark" : "AppIcon-Light"
         let fallback = isDark ? "AppIcon-Light" : "AppIcon-Dark"
         let name = Bundle.module.url(forResource: preferred, withExtension: "png") != nil ? preferred : fallback
-        guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
-              let image = NSImage(contentsOf: url) else { return }
-        NSApp.applicationIconImage = image
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png") else { return }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Self.dockIconPixelSize,
+        ]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        else {
+            // ImageIO could not read it — fall back to the plain load rather than
+            // leaving the app with no icon at all.
+            if let image = NSImage(contentsOf: url) { NSApp.applicationIconImage = image }
+            return
+        }
+        let side = CGFloat(thumbnail.width)
+        NSApp.applicationIconImage = NSImage(cgImage: thumbnail,
+                                             size: NSSize(width: side, height: side))
     }
 }
 
