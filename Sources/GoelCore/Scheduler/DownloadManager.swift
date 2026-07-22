@@ -110,6 +110,20 @@ public actor DownloadManager {
     /// whose payload the user has deleted or moved (see `+FileReconcile`).
     var fileReconcileTask: Task<Void, Never>?
 
+    // MARK: Remote destinations
+
+    /// Admission control for uploads to SFTP servers — concurrency caps and the per-server circuit breaker (see `+RemoteUpload`).
+    let uploadCoordinator = RemoteUploadCoordinator()
+
+    /// In-flight uploads by task id, so one can be cancelled and awaited before its local payload is deleted or moved.
+    var remoteUploadTasks: [UUID: Task<Void, Never>] = [:]
+
+    /// Saved servers and their Keychain secrets, resolved when an upload starts.
+    let connectionStore: SFTPConnectionStore
+
+    /// Pinned SSH host keys. An upload refuses to *learn* one, since it runs with nobody watching.
+    let hostKeys: HostKeyStore
+
     // MARK: Download-window scheduling state
 
     /// The minute-resolution loop evaluating the time-of-day download window.
@@ -197,7 +211,9 @@ public actor DownloadManager {
         store: PersistenceStore? = nil,
         power: any PowerControlling = SystemPowerControl(),
         folderWatch: any FolderWatching = SystemFolderWatch(),
-        scanner: any FileScanning = ProcessFileScan()
+        scanner: any FileScanning = ProcessFileScan(),
+        connectionStore: SFTPConnectionStore = .shared,
+        hostKeys: HostKeyStore = .shared
     ) {
         self.httpEngine = httpEngine
         self.torrentEngine = torrentEngine
@@ -209,6 +225,8 @@ public actor DownloadManager {
         self.power = power
         self.folderWatch = folderWatch
         self.scanner = scanner
+        self.connectionStore = connectionStore
+        self.hostKeys = hostKeys
         if let store {
             let handler = PersistenceErrorHandler()
             self.persistErrorHandler = handler
@@ -226,7 +244,9 @@ public actor DownloadManager {
         store: PersistenceStore? = nil,
         power: any PowerControlling = SystemPowerControl(),
         folderWatch: any FolderWatching = SystemFolderWatch(),
-        scanner: any FileScanning = ProcessFileScan()
+        scanner: any FileScanning = ProcessFileScan(),
+        connectionStore: SFTPConnectionStore = .shared,
+        hostKeys: HostKeyStore = .shared
     ) {
         self.httpEngine = HTTPEngine(profile: settings.effectiveProfile)
         self.torrentEngine = TorrentEngine(
@@ -246,6 +266,8 @@ public actor DownloadManager {
         self.power = power
         self.folderWatch = folderWatch
         self.scanner = scanner
+        self.connectionStore = connectionStore
+        self.hostKeys = hostKeys
         if let store {
             let handler = PersistenceErrorHandler()
             self.persistErrorHandler = handler
@@ -316,6 +338,11 @@ public actor DownloadManager {
         updateRedownloadSchedule()
         startFileReconcile()
         armScheduledStarts()
+        await uploadCoordinator.configure(maxGlobal: settings.sftpDestinationMaxConcurrentUploads,
+                                          maxPerServer: settings.sftpDestinationMaxPerServer,
+                                          failureThreshold: settings.sftpDestinationFailureThreshold)
+        // Pick up transfers a quit or a crash interrupted. Their intent was persisted before the first byte, so "was uploading" is always distinguishable from "never started".
+        resumeInterruptedRemoteUploads()
         updatePowerAssertion()
         publish()
     }
@@ -437,10 +464,20 @@ public actor DownloadManager {
         suggestedName: String? = nil,
         totalBytes: Int64? = nil,
         files: [TransferFile] = [],
-        deselectedFileIDs: [Int]? = nil
+        deselectedFileIDs: [Int]? = nil,
+        remoteDestination: RemoteDestination? = nil
     ) -> DownloadTask {
+        // The core-side gate. Dropping the field here rather than deeper down means no nested code is ever entered with a destination set, so an ungated caller cannot produce a task that silently never arrives.
+        let destination = settings.sftpDestinationEnabled ? remoteDestination : nil
+
         if let existingID = dedupIndex[source.dedupKey],
            let i = index(of: existingID) {
+            // The same URL added twice with different destinations used to return the first task and drop the second destination on the floor — the user asked for a server copy and got nothing, with no error. Attach it instead when the existing task has none.
+            if let destination, tasks[i].remoteDestination == nil, tasks[i].status != .completed {
+                tasks[i].remoteDestination = destination
+                persist(tasks[i])
+                publish()
+            }
             return tasks[i]
         }
         // A future start time implies "hold it until then" — same race-free
@@ -479,7 +516,8 @@ public actor DownloadManager {
             expectedChecksum: expectedChecksum,
             scheduledAt: scheduledAt,
             mirrors: Self.sanitizedMirrors(mirrors, primary: source),
-            initialSkipFileIDs: (deselectedFileIDs?.isEmpty ?? true) ? nil : deselectedFileIDs
+            initialSkipFileIDs: (deselectedFileIDs?.isEmpty ?? true) ? nil : deselectedFileIDs,
+            remoteDestination: destination
         )
         appendTask(task)
         persist(task)
@@ -650,7 +688,10 @@ public actor DownloadManager {
     }
 
     /// Remove a task entirely, optionally deleting its data from disk.
+    ///
+    /// An in-flight upload is cancelled and awaited *first*: it holds an open read handle on the payload, so deleting the bytes out from under it would truncate the file already landing on the server.
     public func remove(_ id: DownloadTask.ID, deleteData: Bool) async {
+        await cancelRemoteUpload(id)
         guard let task = task(id) else { return }
         if engineStarted.contains(id) {
             await engine(for: task.source).remove(id, deleteData: deleteData)
@@ -683,6 +724,8 @@ public actor DownloadManager {
         redownloadTask = nil
         fileReconcileTask?.cancel()
         fileReconcileTask = nil
+        // Before the persistence pipeline drains, so the state each upload writes on its way out is actually flushed.
+        await drainRemoteUploads()
         let folderWatch = self.folderWatch
         await folderWatch.stop()
         power.setPreventSleep(false)
@@ -753,8 +796,19 @@ public actor DownloadManager {
     /// scheduler. The default-folder rule needs no re-application here — it is read
     /// live by ``add(source:saveDirectory:priority:)`` for each new download.
     public func updateSettings(_ newSettings: AppSettings) async {
+        let wasSendingToServers = settings.sftpDestinationEnabled
         settings = newSettings
         persistSettings()
+        // Drain rather than abandon. A killed transfer would leave a temporary file eating space on the server that nothing would ever clean up, so in-flight uploads are cancelled and awaited; the C shim removes its own temporary on the way out and the local copy is always kept.
+        if wasSendingToServers && !newSettings.sftpDestinationEnabled {
+            await drainRemoteUploads()
+        }
+        await uploadCoordinator.configure(maxGlobal: newSettings.sftpDestinationMaxConcurrentUploads,
+                                          maxPerServer: newSettings.sftpDestinationMaxPerServer,
+                                          failureThreshold: newSettings.sftpDestinationFailureThreshold)
+        if !wasSendingToServers && newSettings.sftpDestinationEnabled {
+            resumeInterruptedRemoteUploads()
+        }
         await applyEngineConfigs()
         updatePowerAssertion()
         await updateWatchFolder()
@@ -900,6 +954,8 @@ public actor DownloadManager {
         let task = tasks[i]
         guard task.kind != .torrent else { return .unsupported }
         guard !task.status.isActive else { return .active }
+        // A completed task is normally free to rename, but not while its bytes are being read out to a server — the move would pull the source out from under the transfer.
+        guard !task.isUploadingToRemote else { return .active }
         let sanitized = PathSafety.sanitizedName(newName, fallback: task.name)
         guard sanitized != task.name else { return .unchanged }
         let fm = FileManager.default
@@ -998,7 +1054,13 @@ public actor DownloadManager {
         let envelope = try JSONDecoder().decode(AppExport.self, from: data)
         var added = 0
         for imported in envelope.tasks {
-            let task = PersistenceStore.sanitizedForImport(imported)
+            var task = PersistenceStore.sanitizedForImport(imported)
+            // The connection ids in a backup belong to whatever machine wrote it. Silently retargeting to a *different* server that happens to share a UUID would send files somewhere nobody chose, so an unresolvable destination is dropped rather than guessed at — and none is honoured while the feature is off.
+            if let destination = task.remoteDestination {
+                let known = settings.sftpDestinationEnabled
+                    && connectionStore.load().contains { $0.id == destination.connectionID }
+                if !known { task.remoteDestination = nil }
+            }
             guard dedupIndex[task.source.dedupKey] == nil else { continue }
             let t = Self.normalizeRestored(task)
             appendTask(t)
@@ -1035,6 +1097,8 @@ public actor DownloadManager {
         safe.btWatchFolderPath = current.btWatchFolderPath
         safe.btWatchStartWithoutConfirmation = current.btWatchStartWithoutConfirmation
         safe.updateFeedURL = current.updateFeedURL
+        // A backup file must never be able to switch on a feature that sends the user's files to another machine.
+        safe.sftpDestinationEnabled = current.sftpDestinationEnabled
         return safe
     }
 

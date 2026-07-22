@@ -342,7 +342,36 @@ struct SettingsView: View {
                    desc: "Hold downloads while the connection is constrained.") {
                 SettingSwitch(isOn: binding(\.pauseOnConstrainedNetwork))
             }
+            serverDestinationSection
             CredentialsSection()
+        }
+    }
+
+    /// The master switch for sending finished downloads to a saved SFTP server, plus its transfer caps.
+    @ViewBuilder
+    private var serverDestinationSection: some View {
+        SectionHeader("Send to server")
+        SetRow(name: "Send downloads to a saved server",
+               desc: "Offer your saved SFTP servers as a destination. Finished downloads are copied there; the local copy stays unless you ask for it to be removed.") {
+            SettingSwitch(isOn: binding(\.sftpDestinationEnabled))
+        }
+        if vm.settings.sftpDestinationEnabled {
+            SetRow(name: "Transfers at once",
+                   desc: "How many uploads run in parallel across all servers.") {
+                SettingInt(value: binding(\.sftpDestinationMaxConcurrentUploads))
+            }
+            SetRow(name: "Transfers per server",
+                   desc: "How many of those may target the same server.") {
+                SettingInt(value: binding(\.sftpDestinationMaxPerServer))
+            }
+            SetRow(name: "Waiting-to-send limit (GB)",
+                   desc: "Pause starting new downloads once this much is finished and still waiting to be sent.") {
+                SettingInt(value: binding(\.sftpDestinationStagingBudgetGB))
+            }
+            SetRow(name: "Failures before pausing a server",
+                   desc: "Consecutive failures after which Goel stops retrying that server for a while.") {
+                SettingInt(value: binding(\.sftpDestinationFailureThreshold))
+            }
         }
     }
 

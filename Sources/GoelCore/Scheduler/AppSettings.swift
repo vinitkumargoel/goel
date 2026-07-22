@@ -354,6 +354,23 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// How many timestamped backups to keep before pruning the oldest.
     public var backupKeepCount: Int
 
+    // MARK: Remote destinations
+
+    /// Allow a download's destination to be a saved SFTP server. Off by default — it moves user data to another host and can delete the local copy, so it must never switch itself on. Off means indistinguishable from the feature not existing: nothing sent, nothing deleted.
+    public var sftpDestinationEnabled: Bool
+
+    /// Global ceiling on concurrent uploads. Each costs a full SSH handshake on its own thread with no pooling, so an uncapped burst means FD exhaustion here and `MaxStartups` throttling (or a ban) there.
+    public var sftpDestinationMaxConcurrentUploads: Int
+
+    /// Per-server ceiling, applied on top of the global cap.
+    public var sftpDestinationMaxPerServer: Int
+
+    /// GB of downloaded-but-not-yet-uploaded payload tolerated before new server-bound downloads stop starting — what stops an unreachable server filling the boot disk.
+    public var sftpDestinationStagingBudgetGB: Int
+
+    /// Consecutive failures against one server before it is held, so a retry storm can't hammer a host that is down.
+    public var sftpDestinationFailureThreshold: Int
+
     // MARK: Updates
 
     /// Check for new releases periodically (manual check always available).
@@ -468,6 +485,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         rssPollIntervalMinutes: Int = 30,
         // Backup retention
         backupKeepCount: Int = 20,
+        // Remote destinations
+        sftpDestinationEnabled: Bool = false,
+        sftpDestinationMaxConcurrentUploads: Int = 4,
+        sftpDestinationMaxPerServer: Int = 2,
+        sftpDestinationStagingBudgetGB: Int = 50,
+        sftpDestinationFailureThreshold: Int = 3,
         // Updates
         autoCheckUpdates: Bool = false,
         updateFeedURL: String = ""
@@ -562,6 +585,11 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.rssFeeds = rssFeeds
         self.rssPollIntervalMinutes = rssPollIntervalMinutes
         self.backupKeepCount = backupKeepCount
+        self.sftpDestinationEnabled = sftpDestinationEnabled
+        self.sftpDestinationMaxConcurrentUploads = sftpDestinationMaxConcurrentUploads
+        self.sftpDestinationMaxPerServer = sftpDestinationMaxPerServer
+        self.sftpDestinationStagingBudgetGB = sftpDestinationStagingBudgetGB
+        self.sftpDestinationFailureThreshold = sftpDestinationFailureThreshold
         self.autoCheckUpdates = autoCheckUpdates
         self.updateFeedURL = updateFeedURL
     }
@@ -596,6 +624,9 @@ public struct AppSettings: Codable, Sendable, Hashable {
         case remoteSessionMinutes, remoteTheme
         case rssFeeds, rssPollIntervalMinutes
         case backupKeepCount
+        case sftpDestinationEnabled, sftpDestinationMaxConcurrentUploads
+        case sftpDestinationMaxPerServer, sftpDestinationStagingBudgetGB
+        case sftpDestinationFailureThreshold
         case autoCheckUpdates, updateFeedURL
     }
 
@@ -694,6 +725,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         rssFeeds = try c.decodeIfPresent([RSSFeed].self, forKey: .rssFeeds) ?? []
         rssPollIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .rssPollIntervalMinutes) ?? 30
         backupKeepCount = try c.decodeIfPresent(Int.self, forKey: .backupKeepCount) ?? 20
+        // Defaults to false for a blob written before the key existed — the point of decodeIfPresent throughout.
+        sftpDestinationEnabled = try c.decodeIfPresent(Bool.self, forKey: .sftpDestinationEnabled) ?? false
+        sftpDestinationMaxConcurrentUploads = try c.decodeIfPresent(Int.self, forKey: .sftpDestinationMaxConcurrentUploads) ?? 4
+        sftpDestinationMaxPerServer = try c.decodeIfPresent(Int.self, forKey: .sftpDestinationMaxPerServer) ?? 2
+        sftpDestinationStagingBudgetGB = try c.decodeIfPresent(Int.self, forKey: .sftpDestinationStagingBudgetGB) ?? 50
+        sftpDestinationFailureThreshold = try c.decodeIfPresent(Int.self, forKey: .sftpDestinationFailureThreshold) ?? 3
         autoCheckUpdates = try c.decodeIfPresent(Bool.self, forKey: .autoCheckUpdates) ?? false
         updateFeedURL = try c.decodeIfPresent(String.self, forKey: .updateFeedURL) ?? ""
     }

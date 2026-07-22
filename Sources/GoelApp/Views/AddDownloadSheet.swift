@@ -60,6 +60,15 @@ struct AddDownloadSheet: View {
         static let choose = "__choose__"
     }
 
+    /// The saved server this download is forwarded to once it finishes — `ServerOption.none` for the ordinary local-only case.
+    @State private var remoteSelection: String = ServerOption.none
+    @State private var remoteDirectory: String = "."
+    @State private var remoteRemoveLocal: Bool = false
+
+    private enum ServerOption {
+        static let none = "__local__"
+    }
+
     private var downloadsPath: String { ("~/Downloads" as NSString).expandingTildeInPath }
     private var moviesPath: String { ("~/Movies" as NSString).expandingTildeInPath }
 
@@ -77,6 +86,28 @@ struct AddDownloadSheet: View {
         options.append(.separator)
         options.append(.option(SaveOption.choose, "Choose folder…"))
         return options
+    }
+
+    /// The "Then send to" rows: stay local, plus every server whose identity is already pinned.
+    private var serverOptions: [Dropdown<String>.Item] {
+        [.option(ServerOption.none, "Keep it on this Mac")]
+            + vm.destinationServers.map { .option($0.id.uuidString, $0.label) }
+    }
+
+    private var selectedServer: SFTPConnection? {
+        vm.destinationServers.first { $0.id.uuidString == remoteSelection }
+    }
+
+    private var remoteFolderError: String? {
+        selectedServer == nil ? nil : vm.destinationFolderError(remoteDirectory)
+    }
+
+    /// The destination to attach, or nil when the download is staying local.
+    private var resolvedRemoteDestination: RemoteDestination? {
+        guard let selectedServer, remoteFolderError == nil else { return nil }
+        return vm.makeDestination(for: selectedServer,
+                                  directory: remoteDirectory,
+                                  removeLocalAfterUpload: remoteRemoveLocal)
     }
 
     var body: some View {
@@ -245,6 +276,7 @@ struct AddDownloadSheet: View {
                     }
                 }
 
+                serverDestinationSection(preview)
                 if preview.kind != .torrent {
                     checksumField
                 }
@@ -266,6 +298,7 @@ struct AddDownloadSheet: View {
                 Button("Start download") { start(preview) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
+                    .disabled(remoteFolderError != nil)
             }
             .padding(14)
         }
@@ -381,6 +414,37 @@ struct AddDownloadSheet: View {
         )
         .onDrop(of: [.url, .fileURL], isTargeted: $isDropTargeted) { handleDrop($0) }
         .animation(.easeInOut(duration: 0.08), value: isDropTargeted)
+    }
+
+    /// Optional forwarding to a saved server. The download still lands locally first — this only says where it goes afterwards.
+    ///
+    /// Hidden for torrents: a torrent's payload may turn out to be a folder of files, which the transfer cannot send, and that is not known until the metadata resolves. A finished single-file torrent can still be sent from its context menu.
+    @ViewBuilder
+    private func serverDestinationSection(_ preview: DownloadPreview) -> some View {
+        if vm.isSendToServerEnabled, preview.kind != .torrent, !vm.destinationServers.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Then send to (optional)")
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                Dropdown(selection: $remoteSelection, items: serverOptions) { newValue in
+                    remoteDirectory = vm.destinationServers
+                        .first { $0.id.uuidString == newValue }?.resolvedUploadPath ?? "."
+                }
+                .frame(maxWidth: .infinity)
+                if selectedServer != nil {
+                    TextField("Folder on the server", text: $remoteDirectory)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                    if let remoteFolderError {
+                        Text(remoteFolderError).font(.system(size: 11)).foregroundStyle(Theme.red)
+                    }
+                    Toggle("Remove the local copy once it lands", isOn: $remoteRemoveLocal)
+                        .font(.system(size: 12))
+                    Text("It downloads here first, then transfers. Nothing local is deleted until the server confirms the full size.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 
     private var checksumField: some View {
@@ -559,7 +623,8 @@ struct AddDownloadSheet: View {
         vm.confirm(preview, saveDirectory: resolvedSaveDirectory, priority: priority,
                    checksum: Checksum.parse(checksumText), startAt: startAt,
                    mirrors: mirrors.isEmpty ? nil : mirrors,
-                   deselectedFileIDs: skip.isEmpty ? nil : skip)
+                   deselectedFileIDs: skip.isEmpty ? nil : skip,
+                   remoteDestination: resolvedRemoteDestination)
         dismiss()
     }
 

@@ -139,10 +139,12 @@ struct DownloadRow: View {
 
             HStack(spacing: 6) {
                 Circle().fill(task.statusColor).frame(width: 7, height: 7)
-                Text(task.statusDetailText)
+                // The transfer leg is what's actually happening, so it wins the status column while it runs.
+                Text(vm.remoteStatusText(task) ?? task.statusDetailText)
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .help(vm.remoteStatusText(task) ?? task.statusDetailText)
             }
             .frame(width: 130, alignment: .leading)
             .padding(.horizontal, 6)
@@ -183,7 +185,7 @@ struct DownloadRow: View {
         .contextMenu { contextMenu }
         // A finished download can be dragged straight out to Finder/other apps.
         .onDrag {
-            guard task.status.hasData else { return NSItemProvider() }
+            guard task.status.hasData, !task.isRemoteOnly else { return NSItemProvider() }
             return NSItemProvider(object: URL(fileURLWithPath: task.savePath) as NSURL)
         }
     }
@@ -199,9 +201,36 @@ struct DownloadRow: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     KindBadge(task: task)
+                    RemoteBadge(destination: task.remoteDestination)
                 }
                 MiniProgressBar(task: task)
                     .frame(maxWidth: 340)
+            }
+        }
+    }
+
+    /// Server-destination actions. Absent entirely when the feature is off, so nothing hints at a capability that won't run.
+    @ViewBuilder
+    private var remoteDestinationMenu: some View {
+        if vm.canSendToServer(task) {
+            Divider()
+            if let destination = task.remoteDestination {
+                switch destination.state {
+                case .uploading:
+                    Button("Stop sending to server") { vm.stopRemoteUpload(task) }
+                case .failed, .held:
+                    Button("Retry sending to server") { vm.retryRemoteUpload(task) }
+                    Button("Send to a different server…") { vm.presentSendToServer(task) }
+                    Button("Forget the server destination") { vm.clearRemoteDestination(task) }
+                case .uploaded:
+                    Button("Show on server") { vm.openOnServer(task) }
+                    Button("Send again…") { vm.presentSendToServer(task) }
+                case .pending:
+                    Button("Change server destination…") { vm.presentSendToServer(task) }
+                    Button("Forget the server destination") { vm.clearRemoteDestination(task) }
+                }
+            } else if task.status == .completed {
+                Button("Send to server…") { vm.presentSendToServer(task) }
             }
         }
     }
@@ -221,7 +250,7 @@ struct DownloadRow: View {
         if task.isMediaFile, task.status.hasData {
             Button("Play in Goel°") { vm.playInApp(task) }
         }
-        if task.status.hasData {
+        if task.status.hasData, !task.isRemoteOnly {
             Button("Quick Look") { quickLook(URL(fileURLWithPath: task.savePath)) }
         }
         if task.status == .completed, task.isMediaFile, vm.ffmpegAvailable {
@@ -243,6 +272,7 @@ struct DownloadRow: View {
                 vm.copyToPasteboard("http://127.0.0.1:\(vm.settings.remotePort)/stream?id=\(task.id.uuidString)&token=\(vm.settings.remoteToken)")
             }
         }
+        remoteDestinationMenu
         Divider()
         Menu("Speed Limit") {
             Button(limitLabel(nil)) { vm.setTaskSpeedLimit(nil, task: task.id) }

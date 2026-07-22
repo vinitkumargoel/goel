@@ -71,7 +71,14 @@ struct SFTPBrowserView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .task(id: model.connection.id) {
-            await model.refresh()
+            // A caller may have asked for a specific folder ("Show on server"); consume it so a later plain open lands where the user left off.
+            let requested = vm.pendingBrowserPath
+            vm.pendingBrowserPath = nil
+            if let requested, requested != model.path {
+                await model.go(toPath: requested)
+            } else {
+                await model.refresh()
+            }
             // Piggy-back OS detection on this already-authenticated session, so it
             // never opens a connection of its own to an un-browsed server.
             vm.detectServerOSIfNeeded(connection, client: client)
@@ -83,6 +90,12 @@ struct SFTPBrowserView: View {
         .onChange(of: connection) {
             model.update(connection: connection, client: client)
             Task { await model.refresh() }
+        }
+        // The same request arriving while this browser is already open — `.task` won't re-fire, so honour it here.
+        .onChange(of: vm.pendingBrowserPath) {
+            guard let requested = vm.pendingBrowserPath else { return }
+            vm.pendingBrowserPath = nil
+            Task { await model.go(toPath: requested) }
         }
         // Re-list when a transfer changes the current server's contents (e.g. an
         // upload finishes) — the transfer center bumps this on completion.

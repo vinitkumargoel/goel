@@ -124,6 +124,31 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertEqual(backend.added.first?.locator, "https://e/x.bin")
     }
 
+    /// The highest-severity finding in the design review. A local `folder` is merely constrained to the downloads root; a *server* destination has no equivalent containment, because it would have to hold on someone else's filesystem. An authenticated portal client choosing it would be picking an arbitrary write path on the SFTP host — `~/.ssh/authorized_keys`, `/etc/cron.d` — turning a download manager into remote code execution on a third machine.
+    ///
+    /// A refusal, not a warning, and refused regardless of whether the feature is switched on: portal clients are headless and cannot answer a host-key prompt anyway.
+    func testAddRouteRefusesAClientSuppliedServerDestination() async {
+        for field in ["server", "serverID", "remoteDestination"] {
+            let backend = FakeRemoteBackend()
+            let router = RemoteRouter(backend: backend, token: "secret")
+            let body = "{\"url\":\"https://e/x.bin\",\"\(field)\":\"media-box\"}"
+            let out = str(await router.handle(request(
+                "POST /api/add?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n\r\n\(body)")))
+            XCTAssertTrue(out.hasPrefix("HTTP/1.1 400"), "\(field) should be refused, got: \(out.prefix(40))")
+            XCTAssertTrue(backend.added.isEmpty, "\(field): nothing should be queued")
+        }
+    }
+
+    /// The refusal must not become a denial of service for ordinary adds that merely carry an empty field.
+    func testAddRouteStillAcceptsAnEmptyServerField() async {
+        let backend = FakeRemoteBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let out = str(await router.handle(request(
+            "POST /api/add?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{\"url\":\"https://e/x.bin\",\"server\":\"\"}")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
+        XCTAssertEqual(backend.added.first?.locator, "https://e/x.bin")
+    }
+
     func testUnknownRouteIs404() async {
         let router = RemoteRouter(backend: FakeRemoteBackend(), token: "secret")
         let out = str(await router.handle(request("GET /nope?token=secret HTTP/1.1\r\n\r\n")))

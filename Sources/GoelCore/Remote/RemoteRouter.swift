@@ -136,6 +136,11 @@ public struct RemoteRouter: Sendable {
         case ("POST", "/api/add"):
             guard let payload = try? JSONDecoder().decode(AddPayload.self, from: request.body)
             else { return Self.badRequest() }
+            if Self.rejectsRemoteDestination(payload) {
+                FileHandle.standardError.write(Data(
+                    "[GoelDownloader] remote add: refusing a client-supplied SFTP destination\n".utf8))
+                return Self.badRequest()
+            }
             let folder = payload.folder?.trimmingCharacters(in: .whitespaces)
             let priority = Self.priority(payload.priority)
             let paused = payload.paused ?? false
@@ -265,12 +270,27 @@ public struct RemoteRouter: Sendable {
 
     // MARK: Wire models
 
-    private struct AddPayload: Decodable {
+    fileprivate struct AddPayload: Decodable {
         var url: String
         var folder: String?
         var priority: String?
         var paused: Bool?
+        /// Decoded only so a client asking for an SFTP destination is refused out loud rather than silently ignored. Never forwarded. See ``RemoteRouter/rejectsRemoteDestination(_:)``.
+        var server: String?
+        var serverID: String?
+        var remoteDestination: String?
     }
+    /// Whether an add request tried to pick an SFTP destination — always a refusal, never a warning, and refused **even when the feature is switched on**.
+    ///
+    /// The local `folder` field is merely constrained to the downloads root (see ``DownloadManager/remoteSaveDirectory(_:)``); a remote destination has no equivalent containment, because the containment would have to hold on someone else's filesystem. An authenticated portal client picking the folder would be choosing an arbitrary write path on the SFTP server — `~/.ssh/authorized_keys`, `/etc/cron.d` — which turns a download manager into remote code execution on a third machine.
+    ///
+    /// Portal clients are also headless by definition: they cannot answer a host-key prompt or a conflict dialog. Destinations are picked in the macOS UI, or not at all.
+    fileprivate static func rejectsRemoteDestination(_ payload: AddPayload) -> Bool {
+        [payload.server, payload.serverID, payload.remoteDestination]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .contains { !$0.isEmpty }
+    }
+
     private struct CountRow: Encodable { var added: Int }
     private struct ConfigRow: Encodable {
         var username: String
@@ -575,6 +595,7 @@ extension DownloadManager: RemoteBackend {
     /// already match the actor's own methods (an actor's isolated method witnesses
     /// an `async` requirement), so only the two below need adapting.
     public func taskSnapshot() async -> [DownloadTask] { snapshot }
+    /// Both forms omit `remoteDestination` deliberately, and must keep omitting it: the portal is network-facing and headless, so a destination chosen here would be an arbitrary write path on another machine with nobody present to vet it. See ``RemoteRouter/rejectsRemoteDestination(_:)``.
     public func remoteAdd(source: DownloadSource) async { _ = add(source: source, saveDirectory: nil) }
     public func remoteAdd(source: DownloadSource, saveDirectory: String?,
                           priority: FilePriority, startPaused: Bool) async {

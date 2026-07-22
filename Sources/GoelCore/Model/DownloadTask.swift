@@ -125,6 +125,9 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// later resume/relaunch re-applying a stale add-time skip.
     public var initialSkipFileIDs: [Int]?
 
+    /// A saved SFTP server the finished payload is sent to. nil = a plain local download. Only ever set while ``AppSettings/sftpDestinationEnabled`` is on, but never cleared when it goes off, so re-enabling restores the intent.
+    public var remoteDestination: RemoteDestination?
+
     public init(
         id: UUID = UUID(),
         source: DownloadSource,
@@ -162,7 +165,8 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         referer: String? = nil,
         requestHeaders: [String: String]? = nil,
         retryAttempt: Int? = nil,
-        initialSkipFileIDs: [Int]? = nil
+        initialSkipFileIDs: [Int]? = nil,
+        remoteDestination: RemoteDestination? = nil
     ) {
         self.id = id
         self.source = source
@@ -201,6 +205,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         self.requestHeaders = requestHeaders
         self.retryAttempt = retryAttempt
         self.initialSkipFileIDs = initialSkipFileIDs
+        self.remoteDestination = remoteDestination
     }
 
     /// The union of ``tags`` and any legacy ``label``, de-duplicated, order-stable.
@@ -264,6 +269,21 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
 
     public var wantedFiles: [TransferFile] {
         files.filter(\.isWanted)
+    }
+
+    // MARK: Remote destination
+
+    /// Whether this download is bound for a server rather than staying local.
+    public var hasRemoteDestination: Bool { remoteDestination != nil }
+
+    /// Bytes are moving to the server — blocks rename, and makes removal cancel-then-delete, since the uploader is reading the very file those would move.
+    public var isUploadingToRemote: Bool {
+        remoteDestination?.state.isInFlight ?? false
+    }
+
+    /// The payload lives *only* on the server — the one case where "completed but no local file" is expected, so Open/Reveal must offer the server instead.
+    public var isRemoteOnly: Bool {
+        status == .completed && (remoteDestination?.localCopyIntentionallyRemoved ?? false)
     }
 
     // MARK: Path safety
