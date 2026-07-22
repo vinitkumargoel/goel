@@ -1,0 +1,1920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Goel° — Download straight to SFTP · Feasibility & UI study</title>
+<style>
+  :root {
+    --bg: #0f1218; --bg2: #161b24; --bg3: #1c2330; --bg4: #222b3a; --border: #2a3344;
+    --text: #e8ecf4; --muted: #8b96ab; --dim: #5c677a;
+    --accent: #8aa2ff; --accent-dim: rgba(138,162,255,.12);
+    --green: #4ade80; --green-dim: rgba(74,222,128,.12);
+    --amber: #fbbf6b; --amber-dim: rgba(251,191,107,.12);
+    --red: #f87171; --red-dim: rgba(248,113,113,.12);
+    --violet: #c0a2fb; --violet-dim: rgba(192,162,251,.12);
+    --teal: #7fdbe8; --teal-dim: rgba(127,219,232,.12);
+    --radius: 12px;
+    font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--text); line-height: 1.55; font-size: 15px;
+    background: radial-gradient(1200px 600px at 10% -10%, #1a2740 0%, transparent 55%),
+                radial-gradient(900px 500px at 100% 0%, #1a2430 0%, transparent 50%), var(--bg);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 48px 24px 120px; }
+
+  /* ---------- document chrome ---------- */
+  .hero {
+    border: 1px solid var(--border); border-radius: 18px; padding: 36px 40px; margin-bottom: 24px;
+    background: linear-gradient(180deg, var(--bg3), var(--bg2));
+    box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 12px 40px rgba(0,0,0,.35);
+  }
+  .eyebrow {
+    display: inline-flex; font-size: 12px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--accent); background: var(--accent-dim);
+    padding: 5px 10px; border-radius: 999px; margin-bottom: 14px;
+  }
+  h1 { font-size: 31px; line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .subtitle { color: var(--muted); font-size: 16px; max-width: 74ch; margin: 0 0 18px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pill { font-size: 12.5px; color: var(--muted); border: 1px solid var(--border);
+    background: var(--bg); padding: 5px 11px; border-radius: 999px; }
+  .pill strong { color: var(--text); }
+  .verdict {
+    margin-top: 22px; padding: 16px 18px; border-radius: 12px;
+    border: 1px solid rgba(74,222,128,.4); background: var(--green-dim);
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .verdict .mark { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(74,222,128,.2); color: var(--green); display: grid; place-items: center; font-weight: 700; }
+  .verdict h2 { margin: 0 0 4px; font-size: 15px; color: var(--green); border: 0; padding: 0; }
+  .verdict p { margin: 0; color: var(--text); font-size: 14px; }
+
+  nav.toc {
+    position: sticky; top: 0; z-index: 40; backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px); background: rgba(15,18,24,.92);
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px;
+    margin-bottom: 34px; display: flex; flex-wrap: wrap; gap: 4px 12px;
+  }
+  nav.toc a { color: var(--muted); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+  nav.toc a:hover { color: var(--accent); text-decoration: none; }
+
+  section { margin-bottom: 52px; scroll-margin-top: 70px; }
+  h2 { font-size: 21px; letter-spacing: -0.015em; margin: 0 0 14px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  h4 { font-size: 13.5px; margin: 14px 0 6px; color: var(--text); }
+  p { color: var(--muted); margin: 0 0 10px; }
+  p strong, li strong, td strong { color: var(--text); }
+  ul, ol { color: var(--muted); margin: 0 0 12px; padding-left: 1.25em; }
+  li { margin-bottom: 6px; }
+  code { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+    background: var(--bg3); border: 1px solid var(--border); padding: 1px 5px; border-radius: 5px; color: var(--teal); }
+  .card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg2);
+    padding: 18px 20px; margin: 0 0 14px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+  @media (max-width: 900px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 16px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--muted); }
+  th { color: var(--text); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+       background: var(--bg3); }
+  tr:last-child td { border-bottom: 0; }
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px;
+    letter-spacing: .02em; white-space: nowrap; }
+  .t-yes { background: var(--green-dim); color: var(--green); }
+  .t-no  { background: var(--red-dim); color: var(--red); }
+  .t-part{ background: var(--amber-dim); color: var(--amber); }
+  .t-info{ background: var(--accent-dim); color: var(--accent); }
+
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-dim);
+    padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 14px 0; }
+  .callout.warn { border-color: var(--amber); background: var(--amber-dim); }
+  .callout.bad { border-color: var(--red); background: var(--red-dim); }
+  .callout.good { border-color: var(--green); background: var(--green-dim); }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout strong { color: var(--text); }
+
+  .screen-label { display: flex; align-items: baseline; gap: 10px; margin: 32px 0 10px; flex-wrap: wrap; }
+  .screen-label .num { font-family: "SF Mono", ui-monospace, monospace; font-size: 11px; font-weight: 700;
+    color: var(--accent); background: var(--accent-dim); padding: 3px 8px; border-radius: 6px; }
+  .screen-label h3 { margin: 0; font-size: 15.5px; }
+  .screen-label .kind { font-size: 11.5px; color: var(--dim); }
+  .screen-note { font-size: 13px; color: var(--muted); margin: 0 0 12px; max-width: 88ch; }
+
+  /* ---------- app mockup chrome (Frost Dark) ---------- */
+  .app {
+    --a-bg: #1b1f2b; --a-bg2: #232838; --a-bg3: #2b3145; --a-line: rgba(255,255,255,.10);
+    --a-text: #e9ecf5; --a-muted: #939db4; --a-dim: #6c768d;
+    border-radius: 12px; overflow: hidden; border: 1px solid #333a4d;
+    background: var(--a-bg); box-shadow: 0 18px 50px rgba(0,0,0,.5);
+    font-size: 12.5px; color: var(--a-text); margin-bottom: 8px;
+  }
+  .titlebar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #191d27;
+    border-bottom: 1px solid var(--a-line); }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .dots i:nth-child(1){ background:#ff5f57 } .dots i:nth-child(2){ background:#febc2e } .dots i:nth-child(3){ background:#28c840 }
+  .tb-title { font-size: 12px; color: var(--a-muted); margin-left: 6px; }
+
+  /* sheet */
+  .sheet { width: 100%; }
+  .sheet-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--a-line); }
+  .sheet-head .ic { width: 26px; height: 26px; border-radius: 7px; background: var(--accent-dim); color: var(--accent);
+    display: grid; place-items: center; font-size: 13px; }
+  .sheet-head h4 { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--a-text); }
+  .sheet-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+  .sheet-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--a-line);
+    background: #191d27; }
+  .sheet-foot .sp { flex: 1; }
+
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field > label { font-size: 11.5px; font-weight: 600; color: var(--a-muted); }
+  .hint { font-size: 11px; color: var(--a-dim); }
+
+  .btn { font-size: 12px; padding: 5px 12px; border-radius: 7px; border: 1px solid var(--a-line);
+    background: var(--a-bg3); color: var(--a-text); cursor: default; white-space: nowrap; }
+  .btn.primary { background: var(--accent); color: #10131c; border-color: transparent; font-weight: 600; }
+  .btn.ghost { background: transparent; }
+  .btn.danger { background: var(--red-dim); color: var(--red); border-color: rgba(248,113,113,.35); }
+  .btn.sm { font-size: 11px; padding: 3px 9px; }
+  .btn[disabled] { opacity: .4; }
+
+  .select { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: var(--a-bg3); border: 1px solid var(--a-line); border-radius: 7px; padding: 6px 10px; font-size: 12px; }
+  .select .chev { color: var(--a-dim); font-size: 9px; }
+  .select.focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(138,162,255,.16); }
+  .input { background: rgba(255,255,255,.05); border: 1px solid var(--a-line); border-radius: 7px;
+    padding: 6px 10px; font-size: 12px; font-family: "SF Mono", ui-monospace, monospace; color: var(--a-text); }
+  .input.mono { letter-spacing: .01em; }
+
+  /* dropdown menu */
+  .menu { background: #262c3c; border: 1px solid rgba(255,255,255,.14); border-radius: 9px; padding: 5px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.55); }
+  .menu .mi { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: 6px; font-size: 12px; }
+  .menu .mi.sel { background: var(--accent); color: #10131c; font-weight: 600; }
+  .menu .mi .tick { width: 12px; color: var(--accent); font-size: 10px; }
+  .menu .mi.sel .tick { color: #10131c; }
+  .menu .mi .sub { margin-left: auto; font-size: 10.5px; color: var(--a-dim); font-family: "SF Mono", ui-monospace, monospace; }
+  .menu .mi.sel .sub { color: rgba(16,19,28,.7); }
+  .menu .sep { height: 1px; background: var(--a-line); margin: 5px 4px; }
+  .menu .grp { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--a-dim); padding: 7px 9px 4px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+  .dot.on { background: var(--green); } .dot.off { background: var(--red); } .dot.unk { background: var(--a-dim); }
+
+  /* destination card */
+  .destcard { border: 1px solid var(--a-line); border-radius: 9px; background: rgba(255,255,255,.03); padding: 11px 12px;
+    display: flex; flex-direction: column; gap: 9px; }
+  .destcard.accent { border-color: rgba(138,162,255,.4); background: rgba(138,162,255,.06); }
+  .destcard.warn { border-color: rgba(251,191,107,.45); background: rgba(251,191,107,.07); }
+  .destcard.bad { border-color: rgba(248,113,113,.5); background: rgba(248,113,113,.08); }
+  .drow { display: flex; align-items: center; gap: 9px; }
+  .drow .lbl { font-size: 11px; color: var(--a-muted); min-width: 74px; }
+  .drow .val { font-family: "SF Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--a-text); }
+  .srv { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
+  .srv .glyph { width: 22px; height: 22px; border-radius: 6px; background: rgba(138,162,255,.18); color: var(--accent);
+    display: grid; place-items: center; font-size: 11px; }
+
+  .chipbar { display: inline-flex; background: rgba(255,255,255,.05); border: 1px solid var(--a-line);
+    border-radius: 8px; padding: 2px; gap: 2px; }
+  .chipbar .chip { font-size: 11px; padding: 4px 10px; border-radius: 6px; color: var(--a-muted); }
+  .chipbar .chip.on { background: var(--accent); color: #10131c; font-weight: 600; }
+  .chipbar .chip.dis { opacity: .35; }
+
+  .note { display: flex; gap: 7px; align-items: flex-start; font-size: 11px; line-height: 1.45; }
+  .note .ic { flex: 0 0 auto; font-size: 10.5px; margin-top: 1px; }
+  .note.info .ic { color: var(--accent); } .note.info { color: var(--a-muted); }
+  .note.warn .ic { color: var(--amber); } .note.warn { color: #e6cfa4; }
+  .note.bad .ic  { color: var(--red); }   .note.bad  { color: #f0b9b9; }
+  .note.good .ic { color: var(--green); } .note.good { color: #b6e6c6; }
+
+  /* meters */
+  .meter { height: 5px; border-radius: 3px; background: rgba(255,255,255,.10); overflow: hidden; }
+  .meter i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+  .meter i.g { background: var(--green); } .meter i.a { background: var(--amber); } .meter i.r { background: var(--red); }
+
+  /* main window layout */
+  .win { display: grid; grid-template-columns: 176px 1fr 268px; min-height: 300px; }
+  .side { background: #171b25; border-right: 1px solid var(--a-line); padding: 12px 8px; }
+  .side .grp { font-size: 9.5px; font-weight: 700; letter-spacing: .09em; color: var(--a-dim);
+    padding: 9px 8px 5px; display: flex; align-items: center; }
+  .side .grp .plus { margin-left: auto; color: var(--a-dim); }
+  .side .it { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 6px; font-size: 11.5px; color: var(--a-muted); }
+  .side .it.on { background: rgba(138,162,255,.16); color: var(--a-text); font-weight: 600; }
+  .side .it .n { margin-left: auto; font-size: 10.5px; color: var(--a-dim); }
+  .side .it.srv-it .n { font-family: "SF Mono", ui-monospace, monospace; }
+
+  .list { background: var(--a-bg); }
+  .lhead { display: grid; grid-template-columns: 26px 1fr 62px 128px 84px; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--a-line); font-size: 10px; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--a-dim); }
+  .lrow { display: grid; grid-template-columns: 26px 1fr 62px 128px 84px; gap: 8px; padding: 9px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.05); align-items: center; font-size: 11.5px; }
+  .lrow.on { background: rgba(138,162,255,.10); }
+  .lrow .nm { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .lrow .nm .t { display: flex; align-items: center; gap: 6px; }
+  .lrow .nm .t span.f { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lrow .idx { color: var(--a-dim); font-size: 10.5px; }
+  .lrow .sz, .lrow .sp { font-family: "SF Mono", ui-monospace, monospace; font-size: 10.5px; color: var(--a-muted); }
+  .badge { font-size: 8.5px; font-weight: 800; padding: 1.5px 5px; border-radius: 4px; letter-spacing: .03em;
+    white-space: nowrap; flex: 0 0 auto; }
+  .b-http { background: rgba(138,162,255,.18); color: var(--accent); }
+  .b-bt   { background: rgba(74,222,128,.18); color: var(--green); }
+  .b-hls  { background: rgba(251,191,107,.18); color: var(--amber); }
+  .b-sftp { background: rgba(165,184,255,.18); color: #a5b8ff; }
+  .b-ftp  { background: rgba(127,219,232,.18); color: var(--teal); }
+  .b-rem  { background: rgba(192,162,251,.2); color: var(--violet); }
+  .st { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--a-muted); }
+
+  .detail { background: #1a1e29; border-left: 1px solid var(--a-line); padding: 13px; display: flex;
+    flex-direction: column; gap: 11px; }
+  .dhead { display: flex; gap: 9px; }
+  .dhead .ico { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-size: 14px;
+    background: linear-gradient(160deg,#ff9f0a,#ff6a00); color: #fff; flex: 0 0 auto; }
+  .dhead .ico.v { background: linear-gradient(160deg,#bf5af2,#8a3ffc); }
+  .dhead .ico.a { background: linear-gradient(160deg,#64d2ff,#0a84ff); }
+  .dhead h5 { margin: 0; font-size: 12px; font-weight: 600; line-height: 1.3; word-break: break-word; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.06);
+    font-size: 11px; }
+  .kv .k { color: var(--a-muted); flex: 0 0 auto; }
+  .kv .v { color: var(--a-text); text-align: right; font-family: "SF Mono", ui-monospace, monospace; font-size: 10.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kv:last-of-type { border-bottom: 0; }
+
+  .stage { display: flex; align-items: center; gap: 0; margin: 2px 0 4px; }
+  .stage .s { flex: 1; display: flex; flex-direction: column; gap: 5px; align-items: center; }
+  .stage .s .b { width: 100%; height: 4px; border-radius: 2px; background: rgba(255,255,255,.10); overflow: hidden; }
+  .stage .s .b i { display: block; height: 100%; background: var(--accent); }
+  .stage .s .b i.g { background: var(--green); }
+  .stage .s .l { font-size: 9.5px; color: var(--a-dim); letter-spacing: .03em; }
+  .stage .s.act .l { color: var(--accent); font-weight: 700; }
+  .stage .s.done .l { color: var(--green); }
+  .stage .gap { width: 6px; }
+
+  /* remote browser */
+  .rb { display: grid; grid-template-columns: 150px 1fr; min-height: 232px; }
+  .rb .rbside { background: #171b25; border-right: 1px solid var(--a-line); padding: 10px 7px; }
+  .rb .rbmain { display: flex; flex-direction: column; }
+  .crumbs { display: flex; align-items: center; gap: 5px; padding: 8px 12px; border-bottom: 1px solid var(--a-line);
+    font-size: 11px; font-family: "SF Mono", ui-monospace, monospace; color: var(--a-muted); flex-wrap: wrap; }
+  .crumbs b { color: var(--a-text); font-weight: 600; }
+  .crumbs .sepc { color: var(--a-dim); }
+  .fr { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 11.5px;
+    border-bottom: 1px solid rgba(255,255,255,.045); }
+  .fr.on { background: rgba(138,162,255,.14); }
+  .fr .fi { color: var(--accent); font-size: 11px; width: 13px; }
+  .fr .fi.file { color: var(--a-dim); }
+  .fr .meta { margin-left: auto; font-family: "SF Mono", ui-monospace, monospace; font-size: 10px; color: var(--a-dim); }
+  .fr.dim { opacity: .45; }
+
+  /* toast */
+  .toast { display: inline-flex; align-items: center; gap: 9px; background: #262c3c;
+    border: 1px solid rgba(255,255,255,.14); border-radius: 10px; padding: 9px 14px; font-size: 12px;
+    box-shadow: 0 14px 36px rgba(0,0,0,.5); }
+  .toast .ic { font-size: 13px; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+  .flow { font-family: "SF Mono", ui-monospace, monospace; font-size: 12px; color: var(--muted);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+    overflow-x: auto; white-space: pre; line-height: 1.7; margin: 12px 0; }
+  .flow b { color: var(--accent); font-weight: 600; }
+  .flow em { color: var(--green); font-style: normal; }
+  .flow s { color: var(--red); text-decoration: none; }
+
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border);
+    color: var(--dim); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ============================================ HERO -->
+<div class="hero">
+  <div class="eyebrow">Feasibility &amp; UI study</div>
+  <h1>Download straight to an SFTP server</h1>
+  <p class="subtitle">
+    You start a download, and instead of picking a folder on your Mac you pick a <strong>saved SFTP
+    server</strong> and a remote directory. The file lands there. Your Mac stays clean.
+  </p>
+  <div class="meta-row">
+    <span class="pill">Repo <strong>goel-downloader</strong></span>
+    <span class="pill">Branch <strong>main</strong></span>
+    <span class="pill">Status <strong>Design proposal — nothing implemented</strong></span>
+    <span class="pill">Screens <strong>21</strong></span>
+  </div>
+  <div class="verdict">
+    <div class="mark">✓</div>
+    <div>
+      <h2>Feasible — and most of the machinery already exists</h2>
+      <p>
+        You already ship a full SFTP client, saved servers with Keychain credentials and host-key pinning,
+        a remote file browser, and a transfer engine with progress/cancel/retry. The honest answer is that
+        <strong>“never touches my disk” is only achievable for some download types</strong>. The design below
+        ships the useful 100% via a staged relay, and adds true zero-disk streaming for the subset where it
+        actually works — without ever lying to the user about which one they’re getting.
+      </p>
+    </div>
+  </div>
+</div>
+
+<nav class="toc">
+  <a href="#idea">1 · The idea</a>
+  <a href="#arch">2 · Three architectures</a>
+  <a href="#constraints">3 · What the code allows</a>
+  <a href="#recommend">4 · Recommended design</a>
+  <a href="#model">5 · Data model &amp; blast radius</a>
+  <a href="#ui">6 · UI — all screens</a>
+  <a href="#risks">7 · Risks</a>
+  <a href="#phasing">8 · Phasing &amp; effort</a>
+  <a href="#open">9 · Open questions</a>
+</nav>
+
+<!-- ============================================ 1 -->
+<section id="idea">
+  <h2>1 · The idea, restated</h2>
+  <p>
+    Today the Add-download sheet’s <strong>“Save to”</strong> dropdown offers <code>~/Downloads</code>,
+    <code>~/Movies</code>, “Automatic (by type)” and “Choose folder…”. Every one of those is a path on
+    this Mac. You want a fourth kind of answer: <em>a server</em>.
+  </p>
+  <p>The motivating use cases, in rough order of how well this design serves them:</p>
+  <ul>
+    <li><strong>Home server / NAS as the real destination.</strong> Grab a 40 GB Linux ISO or a video and have it end up on the box that actually stores things, not on a laptop SSD you then have to clean up.</li>
+    <li><strong>Small local disk.</strong> The Mac physically cannot hold what you’re fetching.</li>
+    <li><strong>Skip the round trip.</strong> Downloading to the Mac and then uploading is two transfers and two waits — you want one action.</li>
+  </ul>
+  <div class="callout">
+    <p>
+      Those three want different things, and the difference matters. Case 3 is satisfied by any design that
+      automates the two hops. Case 1 mostly is too. <strong>Only case 2 genuinely requires that the bytes
+      never land locally</strong> — and that is the expensive one. The design below is built so cases 1 and 3
+      work everywhere and case 2 works where it physically can.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================ 2 -->
+<section id="arch">
+  <h2>2 · Three ways to build it</h2>
+
+  <div class="grid3">
+    <div class="card">
+      <h4 style="color:var(--accent)">A · Stream-through</h4>
+      <p style="font-size:13px">
+        Bytes go from the HTTP socket into a small bounded buffer and straight out over
+        <code>libssh2_sftp_write</code>. Nothing is written to local disk, ever.
+      </p>
+      <p style="font-size:13px"><span class="tag t-yes">True zero-disk</span> <span class="tag t-no">No resume</span> <span class="tag t-no">No segmentation</span></p>
+    </div>
+    <div class="card">
+      <h4 style="color:var(--green)">B · Stage &amp; forward</h4>
+      <p style="font-size:13px">
+        Download normally into a staging folder at full segmented speed, then upload to the server as a
+        post-completion step, then delete the local copy.
+      </p>
+      <p style="font-size:13px"><span class="tag t-yes">Works for everything</span> <span class="tag t-yes">Full resume</span> <span class="tag t-part">Needs transient disk</span></p>
+    </div>
+    <div class="card">
+      <h4 style="color:var(--dim)">C · Remote-side fetch</h4>
+      <p style="font-size:13px">
+        Open an SSH exec channel and run <code>curl</code> on the server itself. The Mac only supervises;
+        the bytes never cross your network at all.
+      </p>
+      <p style="font-size:13px"><span class="tag t-yes">Fastest by far</span> <span class="tag t-no">Needs shell + curl</span> <span class="tag t-no">Out of scope</span></p>
+    </div>
+  </div>
+
+  <h3>How each fares per download type</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr>
+      <th style="width:20%">Download type</th><th>A · Stream-through</th><th>B · Stage &amp; forward</th><th style="width:34%">Why</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>HTTP, single connection</strong></td>
+        <td><span class="tag t-yes">Works</span></td>
+        <td><span class="tag t-yes">Works</span></td>
+        <td>A sequential byte stream is exactly what the SFTP write loop wants.</td>
+      </tr>
+      <tr>
+        <td><strong>HTTP, segmented</strong><br><span style="font-size:11.5px">(the default, and the fast path)</span></td>
+        <td><span class="tag t-no">Blocked</span></td>
+        <td><span class="tag t-yes">Works</span></td>
+        <td>Segments <code>seek()</code> to their own offset in a pre-sized file. The SFTP shim opens with
+            <code>FXF_TRUNC</code> and only appends — there is no seek, and no second write handle.</td>
+      </tr>
+      <tr>
+        <td><strong>FTP</strong></td>
+        <td><span class="tag t-yes">Works</span></td>
+        <td><span class="tag t-yes">Works</span></td>
+        <td>Sequential stream, same as single-connection HTTP.</td>
+      </tr>
+      <tr>
+        <td><strong>SFTP → SFTP</strong></td>
+        <td><span class="tag t-yes">Works</span></td>
+        <td><span class="tag t-yes">Works</span></td>
+        <td>Two sessions, one pumping the other. Genuinely useful: server-to-server copy through your Mac.</td>
+      </tr>
+      <tr>
+        <td><strong>HLS video</strong></td>
+        <td><span class="tag t-no">Blocked</span></td>
+        <td><span class="tag t-yes">Works</span></td>
+        <td>Segments download concurrently into a work dir, then concatenate and remux to <code>.mp4</code>
+            through AVFoundation. The muxer needs a real local file.</td>
+      </tr>
+      <tr>
+        <td><strong>BitTorrent</strong></td>
+        <td><span class="tag t-no">Impossible</span></td>
+        <td><span class="tag t-yes">Works</span></td>
+        <td>libtorrent owns its own storage and writes pieces in random order as they arrive. There is no
+            byte stream to intercept.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>What you give up with each</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th style="width:26%">Capability</th><th>A · Stream-through</th><th>B · Stage &amp; forward</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Pause / resume</strong></td>
+        <td><span class="tag t-no">Lost</span> — the shim truncates on open, so any interruption restarts from byte 0. On a 40 GB file over a flaky link that is close to unusable.</td>
+        <td><span class="tag t-yes">Kept</span> — normal download resume; a failed upload retries from a local file that still exists.</td></tr>
+      <tr><td><strong>Speed</strong></td>
+        <td><span class="tag t-part">Capped</span> at the slower of the two links, single-connection, no acceleration. Typically <strong>2–5× slower</strong> than segmented on a fast source.</td>
+        <td><span class="tag t-yes">Full</span> download speed, then upload at LAN speed. Two phases, but each at maximum.</td></tr>
+      <tr><td><strong>Checksum verification</strong></td>
+        <td><span class="tag t-part">Rolling hash only</span> — computable in-flight, but a mismatch is discovered <em>after</em> a bad file already sits on the server.</td>
+        <td><span class="tag t-yes">Kept</span> — verify locally, refuse to upload on mismatch. Nothing bad ever reaches the server.</td></tr>
+      <tr><td><strong>Antivirus / auto-extract / post-download script</strong></td>
+        <td><span class="tag t-no">Lost</span> — all three take a local file path.</td>
+        <td><span class="tag t-yes">Kept</span> — they run on the staged file before it is sent.</td></tr>
+      <tr><td><strong>Local disk needed</strong></td>
+        <td><span class="tag t-yes">A few MB</span> of buffer.</td>
+        <td><span class="tag t-no">Full file size</span>, transiently.</td></tr>
+      <tr><td><strong>Implementation cost</strong></td>
+        <td>Producer/consumer bridge with backpressure across a C thread boundary. Fiddly, and easy to deadlock.</td>
+        <td>A new stage bolted onto the existing post-completion pipeline. Largely assembling parts you already have.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout warn">
+    <p>
+      <strong>The uncomfortable finding.</strong> Mode A — the one that literally matches “it will not come to
+      my machine” — is the <em>weaker</em> feature. It only covers the download types you use least, it forfeits
+      resume, it is slower, and it can put a corrupt file on your server. It is worth building, but as a
+      deliberate opt-in for the small-disk case, not as the headline.
+    </p>
+  </div>
+
+  <h3>Why C is out of scope (for now)</h3>
+  <p>
+    Running <code>curl</code> on the server is the fastest possible answer and the one a home-server owner
+    would eventually want. But the C shim exposes the <strong>SFTP subsystem only</strong> — there is no exec
+    channel — and adding one means shipping remote command execution, inheriting whatever <code>curl</code>
+    is or isn’t installed, losing per-segment progress, and taking on a materially larger security surface.
+    Worth revisiting once A and B are in and you know whether you actually reach for it.
+  </p>
+</section>
+
+<!-- ============================================ 3 -->
+<section id="constraints">
+  <h2>3 · What the code actually allows</h2>
+  <p>Everything below was read out of the repo, not assumed. These are the facts the design has to bend around.</p>
+
+  <h3>The blockers</h3>
+
+  <div class="card">
+    <h4><span class="tag t-no">Blocker</span> &nbsp;The SFTP upload path truncates and cannot seek</h4>
+    <p style="font-size:13.5px">
+      <code>gsb_upload</code> opens the remote file with
+      <code>LIBSSH2_FXF_WRITE | LIBSSH2_FXF_CREAT | LIBSSH2_FXF_TRUNC</code> and then runs a single sequential
+      pull loop. There is no offset parameter, no <code>libssh2_sftp_seek64</code>, and one write handle.
+    </p>
+    <p style="font-size:13.5px"><strong>Consequences:</strong> segmented download can’t stream out; upload resume
+      is impossible; a retry always restarts at zero.
+      <br><span style="color:var(--dim)">Source: <code>Sources/SSHBridge/ssh_bridge.c:317–371</code>, <code>Sources/SSHBridge/include/ssh_bridge.h:93</code></span></p>
+  </div>
+
+  <div class="card">
+    <h4><span class="tag t-no">Blocker</span> &nbsp;Segmented HTTP writes at offsets into a pre-sized file</h4>
+    <p style="font-size:13.5px">
+      The transfer pre-sizes the destination, then each segment opens a handle and
+      <code>seek(toOffset:)</code>s to its own start before writing — precisely so segments don’t race to grow
+      the file. That model has no remote equivalent through the current shim.
+      <br><span style="color:var(--dim)">Source: <code>Sources/GoelCore/Engine/SegmentedTransfer.swift:185, 264, 766–773</code></span>
+    </p>
+  </div>
+
+  <div class="card">
+    <h4><span class="tag t-no">Blocker</span> &nbsp;Torrent and HLS own their local storage</h4>
+    <p style="font-size:13.5px">
+      libtorrent is handed <code>task.saveDirectory</code> and writes pieces itself in arrival order. HLS pulls
+      segments concurrently into a work dir, concatenates them, and remuxes MPEG-TS to <code>.mp4</code> via
+      AVFoundation. Neither exposes an interceptable sequential stream.
+      <br><span style="color:var(--dim)">Source: <code>TorrentEngine.swift:243–246</code>, <code>HLSEngine.swift:14–20, 189–222</code></span>
+    </p>
+  </div>
+
+  <div class="card">
+    <h4><span class="tag t-no">Blocker</span> &nbsp;A background sweep would silently delete these tasks</h4>
+    <p style="font-size:13.5px">
+      Every 5 seconds, the file-reconcile pass prunes any <code>.completed</code> task whose
+      <code>saveDirectory</code> exists but whose <code>savePath</code> does not — the “user deleted the file in
+      Finder” cleanup. A task whose payload now lives only on a server matches that condition exactly and
+      <strong>would vanish from the list within five seconds of finishing</strong>.
+      <br><span style="color:var(--dim)">Source: <code>Sources/GoelCore/Scheduler/DownloadManager+FileReconcile.swift:19–66</code></span>
+    </p>
+    <p style="font-size:13.5px">
+      The same local-path assumption sits in <code>FileProgressPublisher</code> (skips tasks with no local
+      file), rename (<code>moveItem</code> within <code>saveDirectory</code>), open/reveal/play, and the
+      remote-control server’s file streaming. Each needs a remote-destination branch — this is the quiet,
+      unglamorous half of the work.
+    </p>
+  </div>
+
+  <div class="card">
+    <h4><span class="tag t-part">Friction</span> &nbsp;<code>saveDirectory</code> is a bare local <code>String</code>, used in 16 files</h4>
+    <p style="font-size:13.5px">
+      <code>DownloadTask.saveDirectory: String</code> feeds <code>savePath</code>, <code>primaryFilePath</code>,
+      the <code>PathSafety</code> containment guard, persistence, the remote-control router and every engine —
+      61 references across 16 files. Turning it into an enum would touch all of them.
+      <br><span style="color:var(--dim)">Source: <code>Sources/GoelCore/Model/DownloadTask.swift:12, 261–293</code></span>
+    </p>
+    <p style="font-size:13.5px">
+      <strong>The way through:</strong> don’t. Leave <code>saveDirectory</code> meaning “where the bytes live
+      locally” and add a separate optional <code>remoteDestination</code>. During staging every existing
+      path-based behaviour keeps working untouched. See §5.
+    </p>
+  </div>
+
+  <h3>The gifts</h3>
+
+  <div class="grid2">
+    <div class="card">
+      <h4><span class="tag t-yes">Have</span> &nbsp;Saved servers, fully modelled</h4>
+      <p style="font-size:13px">
+        <code>SFTPConnection</code> with host/port/user/initial path, passwords in the Keychain keyed by
+        <code>user@host:port</code>, trust-on-first-use host-key pinning via <code>HostKeyStore</code>, and a
+        sidebar <strong>SERVERS</strong> section that already exists.
+      </p>
+    </div>
+    <div class="card">
+      <h4><span class="tag t-yes">Have</span> &nbsp;Live reachability, without spending credentials</h4>
+      <p style="font-size:13px">
+        <code>ServerReachability</code> probes with a plain TCP connect and DNS resolve — deliberately
+        unauthenticated — and carries latency, IP and detected OS. A destination picker can show
+        online/offline dots for free.
+      </p>
+    </div>
+    <div class="card">
+      <h4><span class="tag t-part">Have — but in the wrong layer</span> &nbsp;A working upload engine</h4>
+      <p style="font-size:13px">
+        <code>SFTPTransfer</code> has progress, cancel, retry, folder recursion, a progress coalescer and a
+        conflict sheet. But it lives on <code>AppViewModel</code> in <strong>GoelApp</strong>, is ad-hoc,
+        unqueued and unpersisted — while the upload stage needs to run in <strong>GoelCore</strong> beside the
+        scheduler. The logic transfers; the code has to move down a layer first. See §5.
+      </p>
+    </div>
+    <div class="card">
+      <h4><span class="tag t-yes">Have</span> &nbsp;A post-completion pipeline with a seam</h4>
+      <p style="font-size:13px">
+        Completion already chains checksum verify → antivirus scan → extract/script, each gated on the
+        previous. “Upload, then delete local” is one more link on the end of a chain that already exists.
+      </p>
+    </div>
+    <div class="card">
+      <h4><span class="tag t-yes">Have</span> &nbsp;A remote file browser</h4>
+      <p style="font-size:13px">
+        <code>SFTPBrowserView</code> lists, navigates, creates directories and renames. A “pick a folder”
+        mode is a presentation variant, not a new feature.
+      </p>
+    </div>
+    <div class="card">
+      <h4><span class="tag t-yes">Have</span> &nbsp;A pull-based upload loop</h4>
+      <p style="font-size:13px">
+        <code>gsb_upload</code> takes a <code>read_cb</code> rather than a file descriptor. Mode A can feed it
+        from a memory ring buffer with <em>no C changes at all</em> — the streaming door is already open.
+      </p>
+    </div>
+  </div>
+
+  <h3>Two small C additions worth making</h3>
+  <ul>
+    <li><strong><code>gsb_statvfs</code></strong> — <code>libssh2_sftp_statvfs()</code> exists and is not yet wrapped. Wrapping it gives a real remote free-space preflight instead of a guess.</li>
+    <li><strong>An append/offset flag on <code>gsb_upload</code></strong> — swapping <code>FXF_TRUNC</code> for <code>FXF_APPEND</code> plus a <code>seek64</code> would restore upload resume. Not needed for v1; it is what unlocks resumable remote uploads later.</li>
+  </ul>
+</section>
+
+<!-- ============================================ 4 -->
+<section id="recommend">
+  <h2>4 · The recommended design</h2>
+
+  <div class="callout good">
+    <p>
+      <strong>Ship Mode B as the default and the headline. Offer Mode A as an explicit per-task opt-in,
+      only when it is actually eligible.</strong> One destination picker, two delivery modes, and copy that
+      never overstates which one you’re getting.
+    </p>
+  </div>
+
+  <h3>Mode B — “Relay via this Mac” (default)</h3>
+  <div class="flow">source ──▶ <b>staging folder on this Mac</b> ──▶ verify ─▶ scan ──▶ <b>SFTP upload</b> ──▶ <em>remote server</em>
+                                                              │
+                                                              └─▶ local copy deleted (or kept, if you ask)</div>
+  <ul>
+    <li>Downloads at full segmented speed with resume, into an app-owned staging directory.</li>
+    <li>Checksum and antivirus run <em>before</em> the upload, so a bad file never reaches the server.</li>
+    <li>Uploads to <code>name.part</code>, then <code>rename()</code>s into place — a killed upload leaves an obviously-partial file, never a plausible-looking truncated one.</li>
+    <li>Local copy is removed on a verified upload. A “keep a local copy too” toggle turns it into a mirror.</li>
+    <li>Works for every download type, including torrents.</li>
+  </ul>
+
+  <h3>Mode A — “Stream directly (no local copy)”</h3>
+  <div class="flow">source ──▶ <b>bounded ring buffer (~8 MB)</b> ──▶ <em>remote server</em>
+              <s>no local file · no resume · no antivirus · single connection</s></div>
+  <ul>
+    <li>Offered only for single-file HTTP, FTP and SFTP→SFTP sources.</li>
+    <li>Forces single-connection transfer; the segmented path is disabled for the task.</li>
+    <li>Pause is not offered — only cancel, which discards everything. The UI must say so up front.</li>
+    <li>Checksum, if given, is computed rolling and reported after the fact; a mismatch marks the task failed and offers to delete the remote file.</li>
+  </ul>
+
+  <h3>The rule that keeps it honest</h3>
+  <p>
+    The mode selector is <strong>never silently downgraded</strong>. If you pick “Stream directly” and then
+    change the source to a magnet link, the chip becomes disabled with a visible reason
+    (screen&nbsp;<strong>08</strong>) rather than quietly falling back to relay. Anything else and the one
+    property you cared about — bytes not touching your disk — becomes something you can’t trust.
+  </p>
+</section>
+
+<!-- ============================================ 5 -->
+<section id="model">
+  <h2>5 · Data model &amp; blast radius</h2>
+
+  <h3>The additive change</h3>
+  <div class="flow">struct RemoteDestination: Codable, Sendable, Hashable {
+    var connectionID: UUID       <span style="color:var(--dim)">// → SFTPConnection in the store</span>
+    var remoteDirectory: String  <span style="color:var(--dim)">// server-absolute, or "." for home</span>
+    var mode: DeliveryMode       <span style="color:var(--dim)">// .relay | .stream</span>
+    var keepLocalCopy: Bool
+    var onConflict: ConflictPolicy   <span style="color:var(--dim)">// .ask | .overwrite | .rename | .skip</span>
+}
+
+<b>// DownloadTask gains exactly one optional field:</b>
+var remoteDestination: RemoteDestination?   <span style="color:var(--dim)">// nil = today's behaviour, unchanged</span></div>
+
+  <p>
+    <code>saveDirectory</code> keeps its current meaning and its 61 call sites keep working. When a remote
+    destination is set it points at the staging directory instead of <code>~/Downloads</code>. Every engine,
+    the <code>PathSafety</code> guard, <code>primaryFilePath</code>, the remote-control router and the detail
+    panel all carry on operating on a real local path for the whole download phase. The remote destination
+    only becomes relevant once the bytes are complete.
+  </p>
+  <div class="callout">
+    <p>
+      Because the field is optional, existing persisted blobs decode unchanged — the same pattern already
+      used for <code>tags</code>, <code>mirrors</code> and <code>seedRatioLimit</code>. No migration.
+    </p>
+  </div>
+
+  <h3>New status states</h3>
+  <p>
+    <code>DownloadStatus</code> gains <code>.uploading</code> alongside the existing
+    <code>.verifying</code>, and <code>DownloadError</code> gains a few remote-specific cases so failures
+    read as something you can act on rather than “Unknown error”:
+  </p>
+  <div class="flow">case uploading                    <span style="color:var(--dim)">// bytes complete locally, sending to the server</span>
+
+case remoteAuthFailed(String)     <span style="color:var(--dim)">// password rejected / agent had no identity</span>
+case remoteHostKeyMismatch        <span style="color:var(--dim)">// pinned fingerprint changed — hard stop</span>
+case remoteDiskFull(needed:available:)
+case remotePermissionDenied(String)
+case remoteUnreachable(String)</div>
+
+  <h3>What has to be built</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th style="width:30%">Area</th><th style="width:14%">Size</th><th>What</th></tr></thead>
+    <tbody>
+      <tr><td><code>RemoteDestination</code> model + persistence</td><td><span class="tag t-yes">Small</span></td><td>New struct, one optional field, no migration.</td></tr>
+      <tr><td>Staging directory management</td><td><span class="tag t-yes">Small</span></td><td>App-owned dir, per-task subfolder, cleanup on success, reclaim orphans at launch.</td></tr>
+      <tr><td>Upload stage in the completion pipeline</td><td><span class="tag t-part">Medium</span></td><td>New link after antivirus, in <code>GoelCore</code>. Uses <code>SFTPClient.upload</code> directly; the retry/cancel/coalescing logic has to be lifted down out of <code>AppViewModel</code> so both the queue and the browser share one implementation.</td></tr>
+      <tr><td>Teaching the local-path assumptions about remote tasks</td><td><span class="tag t-no">Large</span></td><td>The unglamorous half. <code>FileReconcile</code> (which would otherwise delete these tasks every 5s), <code>FileProgressPublisher</code>, rename, open/reveal/play, delete-with-data, and the remote-control file server each need a remote branch.</td></tr>
+      <tr><td>Preflight (local space, remote space, reachability)</td><td><span class="tag t-part">Medium</span></td><td>Needs the new <code>gsb_statvfs</code> wrapper for the remote half.</td></tr>
+      <tr><td>Add-sheet destination picker + remote folder picker</td><td><span class="tag t-part">Medium</span></td><td>Extends the existing <code>Dropdown</code>; browser gets a picker presentation mode.</td></tr>
+      <tr><td>List / detail / settings surfaces</td><td><span class="tag t-part">Medium</span></td><td>Two-phase progress, destination rows, defaults pane.</td></tr>
+      <tr><td>Mode A streaming sink</td><td><span class="tag t-no">Large</span></td><td>Ring buffer with backpressure bridging a Swift async producer to a C pull loop on its own thread. The one genuinely hard piece.</td></tr>
+      <tr><td>Remote-control / web-portal parity</td><td><span class="tag t-part">Medium</span></td><td>The Linux daemon and web portal need the same destination concept or must reject it cleanly.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============================================ 6 · SCREENS -->
+<section id="ui">
+  <h2>6 · The UI — every screen and state</h2>
+  <p>
+    Rendered in Frost Dark to match the shipping app. Nine happy-path screens, eight failure and edge states,
+    and four supporting surfaces.
+  </p>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--accent)"></span> selected / active</span>
+    <span><span class="sw" style="background:var(--green)"></span> success · online</span>
+    <span><span class="sw" style="background:var(--amber)"></span> warning — proceeds anyway</span>
+    <span><span class="sw" style="background:var(--red)"></span> blocking error</span>
+  </div>
+
+  <!-- ---------- 01 ---------- -->
+  <div class="screen-label">
+    <span class="num">01</span><h3>Save to — the dropdown, opened</h3>
+    <span class="kind">Add download → Review &amp; start</span>
+  </div>
+  <p class="screen-note">
+    The whole feature enters through the control you already use. Local presets stay exactly where they are
+    and keep their order — nothing moves. Saved servers appear below a separator under a
+    <strong>SERVERS</strong> group header, each with its live reachability dot and its default remote path,
+    then “Choose folder…” and a new “Choose remote folder…”.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Add download</span></div>
+    <div class="sheet">
+      <div class="sheet-head"><div class="ic">✓</div><h4>Review &amp; start</h4></div>
+      <div class="sheet-body">
+        <div class="dhead">
+          <div class="ico">◉</div>
+          <div>
+            <h5>ubuntu-24.04.1-desktop-amd64.iso</h5>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+              <span class="badge b-http">HTTP</span>
+              <span style="font-size:11px;color:var(--a-muted)">4.7 GB</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div class="field" style="flex:1">
+            <label>Save to</label>
+            <div class="select focus"><span>~/Downloads</span><span class="chev">▾</span></div>
+            <div class="menu" style="margin-top:5px">
+              <div class="mi sel"><span class="tick">✓</span><span>~/Downloads</span></div>
+              <div class="mi"><span class="tick"></span><span>~/Movies</span></div>
+              <div class="mi"><span class="tick"></span><span>Automatic (by type)</span></div>
+              <div class="sep"></div>
+              <div class="grp">Servers</div>
+              <div class="mi"><span class="tick"></span><span class="dot on"></span><span>prod-box</span><span class="sub">/srv/media</span></div>
+              <div class="mi"><span class="tick"></span><span class="dot on"></span><span>nas</span><span class="sub">/volume1/downloads</span></div>
+              <div class="mi"><span class="tick"></span><span class="dot off"></span><span style="color:var(--a-dim)">old-vps</span><span class="sub">/home/vinit</span></div>
+              <div class="sep"></div>
+              <div class="mi"><span class="tick"></span><span>Choose folder…</span></div>
+              <div class="mi"><span class="tick"></span><span>Choose remote folder…</span></div>
+            </div>
+          </div>
+          <div class="field" style="width:110px">
+            <label>Priority</label>
+            <div class="select"><span>Normal</span><span class="chev">▾</span></div>
+          </div>
+          <div class="field" style="width:130px">
+            <label>Start</label>
+            <div class="select"><span>Now</span><span class="chev">▾</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="sheet-foot"><button class="btn ghost">Back</button><span class="sp"></span>
+        <button class="btn">Cancel</button><button class="btn primary">Start download</button></div>
+    </div>
+  </div>
+  <div class="callout">
+    <p>
+      <strong>Design note.</strong> An offline server stays selectable, just dimmed. Downloads are queued
+      things — the server being down right now says nothing about whether it will be up in forty minutes when
+      the bytes are ready. Blocking selection on a live TCP probe would be a false negative dressed as
+      protection.
+    </p>
+  </div>
+
+  <!-- ---------- 02 ---------- -->
+  <div class="screen-label">
+    <span class="num">02</span><h3>Server selected — the destination card</h3>
+    <span class="kind">happy path · the core screen</span>
+  </div>
+  <p class="screen-note">
+    Choosing a server expands an inline card beneath the dropdown. This is the screen that carries the whole
+    feature, so it answers every question at once: <em>which server, which folder, what the final path will
+    be, how it gets there, and what it costs on both ends</em>. The delivery-mode chip is the honest bit —
+    “Relay via Mac” is selected and its transient disk cost is stated plainly.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Add download</span></div>
+    <div class="sheet">
+      <div class="sheet-head"><div class="ic">✓</div><h4>Review &amp; start</h4></div>
+      <div class="sheet-body">
+        <div class="dhead">
+          <div class="ico">◉</div>
+          <div><h5>ubuntu-24.04.1-desktop-amd64.iso</h5>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+              <span class="badge b-http">HTTP</span><span style="font-size:11px;color:var(--a-muted)">4.7 GB</span></div></div>
+        </div>
+
+        <div class="field">
+          <label>Save to</label>
+          <div class="select"><span style="display:flex;align-items:center;gap:7px"><span class="dot on"></span>prod-box — /srv/media</span><span class="chev">▾</span></div>
+        </div>
+
+        <div class="destcard accent">
+          <div class="drow">
+            <div class="srv"><span class="glyph">▤</span>prod-box</div>
+            <span style="font-size:10.5px;color:var(--a-dim);font-family:'SF Mono',monospace">vinit@192.168.0.234:22</span>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--green)"><span class="dot on"></span>Online · 3 ms</span>
+          </div>
+          <div class="drow">
+            <span class="lbl">Remote folder</span>
+            <span class="input mono" style="flex:1;padding:4px 8px">/srv/media/isos</span>
+            <button class="btn sm">Browse…</button>
+          </div>
+          <div class="drow">
+            <span class="lbl">Will become</span>
+            <span class="val" style="color:var(--accent)">/srv/media/isos/ubuntu-24.04.1-desktop-amd64.iso</span>
+          </div>
+          <div style="height:1px;background:var(--a-line);margin:1px 0"></div>
+          <div class="drow">
+            <span class="lbl">Delivery</span>
+            <div class="chipbar">
+              <span class="chip on">Relay via Mac</span>
+              <span class="chip">Stream directly</span>
+            </div>
+            <label style="margin-left:auto;font-size:11px;color:var(--a-muted);display:flex;align-items:center;gap:5px">
+              <span style="width:12px;height:12px;border:1px solid var(--a-line);border-radius:3px;display:inline-block"></span>
+              Keep a local copy too
+            </label>
+          </div>
+          <div class="note info"><span class="ic">ⓘ</span>
+            <span>Downloads at full speed to a staging folder, verifies it, then sends it to the server and removes the
+            local copy. Needs <strong>4.7 GB</strong> free here temporarily — you have 218 GB.</span></div>
+          <div class="note good"><span class="ic">✓</span>
+            <span><strong>/srv/media</strong> has 1.8 TB free.</span></div>
+        </div>
+
+        <div class="field">
+          <label>Checksum (optional)</label>
+          <div class="input mono" style="color:var(--a-dim)">MD5, SHA-1, or SHA-256 hex</div>
+        </div>
+      </div>
+      <div class="sheet-foot"><button class="btn ghost">Back</button><span class="sp"></span>
+        <button class="btn">Cancel</button><button class="btn primary">Start download</button></div>
+    </div>
+  </div>
+
+  <!-- ---------- 03 ---------- -->
+  <div class="screen-label">
+    <span class="num">03</span><h3>Stream-directly selected</h3>
+    <span class="kind">happy path · Mode A</span>
+  </div>
+  <p class="screen-note">
+    Flipping the chip changes the explanation, not just a flag. Every cost of Mode A is stated in the place
+    the decision is made — no resume, single connection, no virus scan — because discovering “you can’t pause
+    this” four hours in is the kind of surprise that makes people distrust a feature permanently. Note the
+    local-disk line disappears and the “keep a local copy” checkbox is gone: it is meaningless here.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Add download</span></div>
+    <div class="sheet">
+      <div class="sheet-head"><div class="ic">✓</div><h4>Review &amp; start</h4></div>
+      <div class="sheet-body">
+        <div class="field">
+          <label>Save to</label>
+          <div class="select"><span style="display:flex;align-items:center;gap:7px"><span class="dot on"></span>prod-box — /srv/media</span><span class="chev">▾</span></div>
+        </div>
+        <div class="destcard accent">
+          <div class="drow">
+            <div class="srv"><span class="glyph">▤</span>prod-box</div>
+            <span style="font-size:10.5px;color:var(--a-dim);font-family:'SF Mono',monospace">vinit@192.168.0.234:22</span>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--green)"><span class="dot on"></span>Online · 3 ms</span>
+          </div>
+          <div class="drow">
+            <span class="lbl">Remote folder</span>
+            <span class="input mono" style="flex:1;padding:4px 8px">/srv/media/isos</span>
+            <button class="btn sm">Browse…</button>
+          </div>
+          <div class="drow">
+            <span class="lbl">Delivery</span>
+            <div class="chipbar"><span class="chip">Relay via Mac</span><span class="chip on">Stream directly</span></div>
+          </div>
+          <div class="note good"><span class="ic">✓</span>
+            <span><strong>Nothing is written to this Mac.</strong> Bytes pass straight through to the server.</span></div>
+          <div class="note warn"><span class="ic">⚠</span>
+            <span><strong>This download can’t be paused or resumed.</strong> Cancelling or losing the connection means
+            starting over from the beginning.</span></div>
+          <div class="note warn"><span class="ic">⚠</span>
+            <span>Single connection only — no multi-connection speed-up. Virus scanning and auto-extract are skipped.</span></div>
+        </div>
+      </div>
+      <div class="sheet-foot"><button class="btn ghost">Back</button><span class="sp"></span>
+        <button class="btn">Cancel</button><button class="btn primary">Start download</button></div>
+    </div>
+  </div>
+
+  <!-- ---------- 04 ---------- -->
+  <div class="screen-label">
+    <span class="num">04</span><h3>Remote folder browser — picker mode</h3>
+    <span class="kind">“Browse…” / “Choose remote folder…”</span>
+  </div>
+  <p class="screen-note">
+    The existing SFTP browser in a picker presentation: directories navigable, files shown but dimmed and
+    unselectable, a “New folder” action, and a footer that states the exact path being chosen. Free space for
+    the selected volume sits in the footer so the answer to “will it fit” is visible at the moment of choosing.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Choose a folder on prod-box</span></div>
+    <div class="rb">
+      <div class="rbside">
+        <div class="side"><div class="grp" style="padding-left:4px">Servers</div>
+          <div class="it on"><span class="dot on"></span>prod-box</div>
+          <div class="it"><span class="dot on"></span>nas</div>
+          <div class="it"><span class="dot off"></span>old-vps</div>
+        </div>
+      </div>
+      <div class="rbmain">
+        <div class="crumbs"><span>/</span><span class="sepc">›</span><span>srv</span><span class="sepc">›</span><span>media</span><span class="sepc">›</span><b>isos</b>
+          <span style="margin-left:auto"><button class="btn sm">＋ New folder</button></span></div>
+        <div>
+          <div class="fr"><span class="fi">▸</span><span>..</span></div>
+          <div class="fr"><span class="fi">▤</span><span>archive</span><span class="meta">12 items</span></div>
+          <div class="fr on"><span class="fi">▤</span><span>isos</span><span class="meta">7 items</span></div>
+          <div class="fr"><span class="fi">▤</span><span>video</span><span class="meta">340 items</span></div>
+          <div class="fr dim"><span class="fi file">▪</span><span>debian-12.6.0-amd64.iso</span><span class="meta">3.7 GB</span></div>
+          <div class="fr dim"><span class="fi file">▪</span><span>fedora-40-workstation.iso</span><span class="meta">2.4 GB</span></div>
+        </div>
+        <div class="sheet-foot" style="margin-top:auto">
+          <div style="font-size:11px;color:var(--a-muted)">Choosing <span style="font-family:'SF Mono',monospace;color:var(--a-text)">/srv/media/isos</span>
+            <span style="color:var(--a-dim)"> · 1.8 TB free</span></div>
+          <span class="sp"></span><button class="btn">Cancel</button><button class="btn primary">Choose</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 05 ---------- -->
+  <div class="screen-label">
+    <span class="num">05</span><h3>Downloading — staging phase</h3>
+    <span class="kind">happy path · Mode B, phase 1 of 2</span>
+  </div>
+  <p class="screen-note">
+    A remote-destination task is a <strong>two-phase</strong> transfer, so the detail panel shows two bars
+    rather than one ring. Guessing a single blended percentage would be worse than useless — it would report
+    “95%” at a moment when the file hasn’t started moving to where you actually want it. The list row carries
+    a small <span class="badge b-rem" style="font-size:8.5px">→ prod-box</span> badge so a remote-bound task
+    is identifiable without opening the panel.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Goel°</span></div>
+    <div class="win">
+      <div class="side">
+        <div class="grp">Library</div>
+        <div class="it on">▤ All files<span class="n">8</span></div>
+        <div class="grp">Status</div>
+        <div class="it">◉ Active<span class="n">4</span></div>
+        <div class="it">◉ Uploading<span class="n">1</span></div>
+        <div class="it">◉ Completed<span class="n">1</span></div>
+        <div class="grp">Servers<span class="plus">＋</span></div>
+        <div class="it srv-it"><span class="dot on"></span>prod-box<span class="n">2</span></div>
+        <div class="it srv-it"><span class="dot on"></span>nas</div>
+      </div>
+      <div class="list">
+        <div class="lhead"><span>#</span><span>Name</span><span>Size</span><span>Status</span><span>↓ Speed</span></div>
+        <div class="lrow on">
+          <span class="idx">1</span>
+          <div class="nm"><div class="t"><span class="f">ubuntu-24.04.1-desktop-amd64.iso</span>
+            <span class="badge b-http">HTTP</span><span class="badge b-rem">→ prod-box</span></div>
+            <div class="meter"><i style="width:62%"></i></div></div>
+          <span class="sz">4.7 GB</span>
+          <span class="st"><span class="dot" style="background:var(--accent)"></span>Downloading 62%</span>
+          <span class="sp" style="color:var(--green)">12 MB/s</span>
+        </div>
+        <div class="lrow">
+          <span class="idx">2</span>
+          <div class="nm"><div class="t"><span class="f">Cosmos.S01E04.2160p.mkv</span><span class="badge b-bt">BT</span></div>
+            <div class="meter"><i style="width:41%"></i></div></div>
+          <span class="sz">17 GB</span><span class="st"><span class="dot" style="background:var(--accent)"></span>41% · 7m left</span>
+          <span class="sp" style="color:var(--green)">24 MB/s</span>
+        </div>
+      </div>
+      <div class="detail">
+        <div class="dhead"><div class="ico">◉</div><div><h5>ubuntu-24.04.1-desktop-amd64.iso</h5>
+          <div style="margin-top:4px;display:flex;gap:6px"><span class="badge b-http">HTTP</span><span class="badge b-rem">→ prod-box</span></div></div></div>
+
+        <div class="stage">
+          <div class="s act"><div class="b"><i style="width:62%"></i></div><div class="l">DOWNLOAD 62%</div></div>
+          <div class="gap"></div>
+          <div class="s"><div class="b"><i style="width:0"></i></div><div class="l">UPLOAD</div></div>
+        </div>
+        <div style="font-size:10.5px;color:var(--a-dim);text-align:center;font-family:'SF Mono',monospace">2.90 GB of 4.69 GB · ~3m</div>
+
+        <div style="margin-top:2px">
+          <div class="kv"><span class="k">Destination</span><span class="v" style="color:var(--accent)">prod-box</span></div>
+          <div class="kv"><span class="k">Remote path</span><span class="v">/srv/media/isos/ubuntu…iso</span></div>
+          <div class="kv"><span class="k">Delivery</span><span class="v">Relay via Mac</span></div>
+          <div class="kv"><span class="k">Staging</span><span class="v" style="color:var(--a-dim)">~/Library/…/Staging/</span></div>
+          <div class="kv"><span class="k">Connections</span><span class="v">8</span></div>
+        </div>
+
+        <div class="note info" style="margin-top:2px"><span class="ic">ⓘ</span>
+          <span>The local copy is removed once the server confirms the file.</span></div>
+        <div style="display:flex;gap:6px;margin-top:auto"><button class="btn" style="flex:1">‖ Pause</button><button class="btn" style="flex:1">Folder</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 06 ---------- -->
+  <div class="screen-label">
+    <span class="num">06</span><h3>Uploading — phase 2</h3>
+    <span class="kind">happy path · Mode B, phase 2 of 2</span>
+  </div>
+  <p class="screen-note">
+    Download complete, checksum verified, now sending. The first bar goes green and locks; the second becomes
+    active. The status column reads <strong>“Uploading → prod-box 38%”</strong> — the destination is in the
+    status text, because at this point “what percent” and “to where” are the same question. The
+    <code>.part</code> suffix on the remote path is deliberately visible so a partial file on the server is
+    never mistaken for a finished one.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Goel°</span></div>
+    <div class="win">
+      <div class="side">
+        <div class="grp">Library</div><div class="it on">▤ All files<span class="n">8</span></div>
+        <div class="grp">Status</div>
+        <div class="it">◉ Active<span class="n">3</span></div>
+        <div class="it on">◉ Uploading<span class="n">1</span></div>
+        <div class="it">◉ Completed<span class="n">2</span></div>
+        <div class="grp">Servers<span class="plus">＋</span></div>
+        <div class="it srv-it"><span class="dot on"></span>prod-box<span class="n">2</span></div>
+      </div>
+      <div class="list">
+        <div class="lhead"><span>#</span><span>Name</span><span>Size</span><span>Status</span><span>↑ Speed</span></div>
+        <div class="lrow on">
+          <span class="idx">1</span>
+          <div class="nm"><div class="t"><span class="f">ubuntu-24.04.1-desktop-amd64.iso</span>
+            <span class="badge b-http">HTTP</span><span class="badge b-rem">→ prod-box</span></div>
+            <div class="meter"><i class="g" style="width:38%"></i></div></div>
+          <span class="sz">4.7 GB</span>
+          <span class="st"><span class="dot" style="background:var(--green)"></span>Uploading → prod-box 38%</span>
+          <span class="sp" style="color:var(--green)">88 MB/s</span>
+        </div>
+      </div>
+      <div class="detail">
+        <div class="dhead"><div class="ico">◉</div><div><h5>ubuntu-24.04.1-desktop-amd64.iso</h5>
+          <div style="margin-top:4px;display:flex;gap:6px"><span class="badge b-http">HTTP</span><span class="badge b-rem">→ prod-box</span></div></div></div>
+        <div class="stage">
+          <div class="s done"><div class="b"><i class="g" style="width:100%"></i></div><div class="l">DOWNLOADED ✓</div></div>
+          <div class="gap"></div>
+          <div class="s act"><div class="b"><i style="width:38%"></i></div><div class="l">UPLOAD 38%</div></div>
+        </div>
+        <div style="font-size:10.5px;color:var(--a-dim);text-align:center;font-family:'SF Mono',monospace">1.78 GB of 4.69 GB · ~34s</div>
+        <div style="margin-top:2px">
+          <div class="kv"><span class="k">Destination</span><span class="v" style="color:var(--accent)">prod-box</span></div>
+          <div class="kv"><span class="k">Writing to</span><span class="v">…/ubuntu…iso<span style="color:var(--amber)">.part</span></span></div>
+          <div class="kv"><span class="k">Checksum</span><span class="v" style="color:var(--green)">SHA-256 verified ✓</span></div>
+          <div class="kv"><span class="k">Antivirus</span><span class="v" style="color:var(--green)">Clean ✓</span></div>
+        </div>
+        <div class="note good"><span class="ic">✓</span><span>Verified locally before sending — nothing unchecked reaches the server.</span></div>
+        <div style="display:flex;gap:6px;margin-top:auto"><button class="btn" style="flex:1">‖ Pause upload</button><button class="btn danger" style="flex:1">Cancel</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 07 ---------- -->
+  <div class="screen-label">
+    <span class="num">07</span><h3>Completed — the file lives on the server</h3>
+    <span class="kind">happy path · terminal state</span>
+  </div>
+  <p class="screen-note">
+    Both bars green. The panel’s primary action becomes <strong>“Open on server”</strong> (jumps into the SFTP
+    browser at the containing folder) instead of the usual “Folder”, and the local-copy line explicitly
+    confirms the cleanup rather than leaving you to wonder whether 4.7 GB is still sitting somewhere.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Goel°</span></div>
+    <div class="win">
+      <div class="side">
+        <div class="grp">Library</div><div class="it on">▤ All files<span class="n">8</span></div>
+        <div class="grp">Status</div><div class="it">◉ Active<span class="n">3</span></div><div class="it">◉ Completed<span class="n">3</span></div>
+        <div class="grp">Servers<span class="plus">＋</span></div><div class="it srv-it"><span class="dot on"></span>prod-box<span class="n">3</span></div>
+      </div>
+      <div class="list">
+        <div class="lhead"><span>#</span><span>Name</span><span>Size</span><span>Status</span><span>↓ Speed</span></div>
+        <div class="lrow on">
+          <span class="idx">1</span>
+          <div class="nm"><div class="t"><span class="f">ubuntu-24.04.1-desktop-amd64.iso</span>
+            <span class="badge b-http">HTTP</span><span class="badge b-rem">→ prod-box</span></div>
+            <div class="meter"><i class="g" style="width:100%"></i></div></div>
+          <span class="sz">4.7 GB</span>
+          <span class="st"><span class="dot" style="background:var(--green)"></span>On prod-box</span><span class="sp">—</span>
+        </div>
+      </div>
+      <div class="detail">
+        <div class="dhead"><div class="ico">◉</div><div><h5>ubuntu-24.04.1-desktop-amd64.iso</h5>
+          <div style="margin-top:4px;display:flex;gap:6px"><span class="badge b-http">HTTP</span><span class="badge b-rem">→ prod-box</span></div></div></div>
+        <div class="stage">
+          <div class="s done"><div class="b"><i class="g" style="width:100%"></i></div><div class="l">DOWNLOADED ✓</div></div>
+          <div class="gap"></div>
+          <div class="s done"><div class="b"><i class="g" style="width:100%"></i></div><div class="l">UPLOADED ✓</div></div>
+        </div>
+        <div style="margin-top:2px">
+          <div class="kv"><span class="k">Location</span><span class="v" style="color:var(--green)">prod-box</span></div>
+          <div class="kv"><span class="k">Remote path</span><span class="v">/srv/media/isos/ubuntu…iso</span></div>
+          <div class="kv"><span class="k">Remote size</span><span class="v" style="color:var(--green)">4.69 GB ✓ matches</span></div>
+          <div class="kv"><span class="k">Local copy</span><span class="v" style="color:var(--a-dim)">Removed</span></div>
+          <div class="kv"><span class="k">Total time</span><span class="v">6m 41s</span></div>
+        </div>
+        <div class="note good"><span class="ic">✓</span><span>Size confirmed on the server after upload.</span></div>
+        <div style="display:flex;gap:6px;margin-top:auto"><button class="btn primary" style="flex:1">Open on server</button><button class="btn">Copy path</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 08 ---------- -->
+  <div class="screen-label">
+    <span class="num">08</span><h3>Stream-directly unavailable</h3>
+    <span class="kind">edge state · eligibility</span>
+  </div>
+  <p class="screen-note">
+    A magnet link with a server destination. Relay works fine; direct streaming cannot, because libtorrent
+    writes pieces in random order and there is no stream to intercept. The chip is <em>disabled and visibly
+    explained</em> rather than hidden — a control that vanishes reads as a bug, and one that silently
+    downgrades destroys the guarantee it was there to make.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Add download</span></div>
+    <div class="sheet">
+      <div class="sheet-head"><div class="ic">✓</div><h4>Review &amp; start</h4></div>
+      <div class="sheet-body">
+        <div class="dhead">
+          <div class="ico v">▦</div>
+          <div><h5>Cosmos.S01E04.2160p.WEB-DL</h5>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+              <span class="badge b-bt">BT</span><span style="font-size:11px;color:var(--a-muted)">17 GB · 4 files</span></div></div>
+        </div>
+        <div class="field">
+          <label>Save to</label>
+          <div class="select"><span style="display:flex;align-items:center;gap:7px"><span class="dot on"></span>nas — /volume1/downloads</span><span class="chev">▾</span></div>
+        </div>
+        <div class="destcard accent">
+          <div class="drow">
+            <div class="srv"><span class="glyph">▤</span>nas</div>
+            <span style="font-size:10.5px;color:var(--a-dim);font-family:'SF Mono',monospace">vinit@192.168.0.218:22</span>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--green)"><span class="dot on"></span>Online · 1 ms</span>
+          </div>
+          <div class="drow"><span class="lbl">Remote folder</span>
+            <span class="input mono" style="flex:1;padding:4px 8px">/volume1/downloads/tv</span><button class="btn sm">Browse…</button></div>
+          <div class="drow">
+            <span class="lbl">Delivery</span>
+            <div class="chipbar"><span class="chip on">Relay via Mac</span><span class="chip dis">Stream directly</span></div>
+            <span style="font-size:10.5px;color:var(--a-dim);margin-left:6px">unavailable</span>
+          </div>
+          <div class="note warn"><span class="ic">⚠</span>
+            <span><strong>Torrents can’t stream directly.</strong> Pieces arrive out of order, so the file has to be
+            assembled here first. It will be relayed through this Mac and then sent to <strong>nas</strong>.</span></div>
+          <div class="note info"><span class="ic">ⓘ</span>
+            <span>Needs <strong>17 GB</strong> free here temporarily — you have 218 GB. Seeding continues from the local
+            copy until you stop it, then the local copy is removed.</span></div>
+        </div>
+      </div>
+      <div class="sheet-foot"><button class="btn ghost">Back</button><span class="sp"></span>
+        <button class="btn">Cancel</button><button class="btn primary">Start download</button></div>
+    </div>
+  </div>
+  <div class="callout warn">
+    <p>
+      <strong>Torrents need one extra decision.</strong> Deleting the local copy stops you seeding. The design
+      here is to keep seeding from the staged copy and only clean up when seeding ends — but this deserves its
+      own setting, and it is listed as an open question in §9.
+    </p>
+  </div>
+
+  <!-- ---------- 09 ---------- -->
+  <div class="screen-label">
+    <span class="num">09</span><h3>No servers configured</h3>
+    <span class="kind">empty state</span>
+  </div>
+  <p class="screen-note">
+    First run, or a user who has never added a server. The SERVERS group is still present — discoverability
+    matters more than tidiness here — with a single inline action. The dropdown is where people will look for
+    this feature after hearing it exists, so it must acknowledge itself even when unusable.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Add download</span></div>
+    <div class="sheet">
+      <div class="sheet-head"><div class="ic">✓</div><h4>Review &amp; start</h4></div>
+      <div class="sheet-body">
+        <div class="field" style="max-width:330px">
+          <label>Save to</label>
+          <div class="select focus"><span>~/Downloads</span><span class="chev">▾</span></div>
+          <div class="menu" style="margin-top:5px">
+            <div class="mi sel"><span class="tick">✓</span><span>~/Downloads</span></div>
+            <div class="mi"><span class="tick"></span><span>~/Movies</span></div>
+            <div class="mi"><span class="tick"></span><span>Automatic (by type)</span></div>
+            <div class="sep"></div>
+            <div class="grp">Servers</div>
+            <div style="padding:4px 10px 8px;font-size:11px;color:var(--a-dim);line-height:1.5">
+              No servers yet. Add an SFTP server to send downloads straight to it.
+            </div>
+            <div class="mi" style="color:var(--accent)"><span class="tick">＋</span><span>Add a server…</span></div>
+            <div class="sep"></div>
+            <div class="mi"><span class="tick"></span><span>Choose folder…</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="sheet-foot"><button class="btn ghost">Back</button><span class="sp"></span>
+        <button class="btn">Cancel</button><button class="btn primary">Start download</button></div>
+    </div>
+  </div>
+
+  <!-- ---------- 10 ---------- -->
+  <div class="screen-label">
+    <span class="num">10</span><h3>Server offline at queue time</h3>
+    <span class="kind">warning · non-blocking</span>
+  </div>
+  <p class="screen-note">
+    The TCP probe says the server is down. This is a <strong>warning, not a block</strong>. The download is
+    going to take forty minutes; the server’s state right now is nearly irrelevant. The button keeps its
+    normal label and the amber note explains what happens if it is still down when the bytes are ready —
+    the file waits locally rather than being lost.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Add download</span></div>
+    <div class="sheet">
+      <div class="sheet-head"><div class="ic">✓</div><h4>Review &amp; start</h4></div>
+      <div class="sheet-body">
+        <div class="field">
+          <label>Save to</label>
+          <div class="select"><span style="display:flex;align-items:center;gap:7px"><span class="dot off"></span>old-vps — /home/vinit</span><span class="chev">▾</span></div>
+        </div>
+        <div class="destcard warn">
+          <div class="drow">
+            <div class="srv"><span class="glyph" style="background:rgba(251,191,107,.18);color:var(--amber)">▤</span>old-vps</div>
+            <span style="font-size:10.5px;color:var(--a-dim);font-family:'SF Mono',monospace">vinit@57.129.47.195:22</span>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--red)"><span class="dot off"></span>Offline</span>
+          </div>
+          <div class="drow"><span class="lbl">Remote folder</span>
+            <span class="input mono" style="flex:1;padding:4px 8px">/home/vinit/incoming</span><button class="btn sm">Browse…</button></div>
+          <div class="note warn"><span class="ic">⚠</span>
+            <span><strong>old-vps isn’t responding right now</strong> — connection refused on port 22. Remote free space
+            couldn’t be checked.</span></div>
+          <div class="note info"><span class="ic">ⓘ</span>
+            <span>You can still queue this. The download runs normally; if the server is still unreachable when it
+            finishes, the file <strong>waits in staging</strong> and the upload retries automatically. Nothing is lost.</span></div>
+        </div>
+      </div>
+      <div class="sheet-foot"><button class="btn ghost">Back</button><span class="sp"></span>
+        <button class="btn">Cancel</button><button class="btn primary">Start download</button></div>
+    </div>
+  </div>
+
+  <!-- ---------- 11 ---------- -->
+  <div class="screen-label">
+    <span class="num">11</span><h3>Not enough local staging space</h3>
+    <span class="kind">blocking error · with a way out</span>
+  </div>
+  <p class="screen-note">
+    The one case where relay genuinely cannot proceed. Rather than a dead end, the sheet offers the two real
+    escapes: switch to direct streaming (which needs no local space and is <em>eligible</em> here, since this is
+    a single-file HTTP source), or point staging at another volume. This is exactly the small-disk scenario
+    that justifies Mode A existing at all.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Add download</span></div>
+    <div class="sheet">
+      <div class="sheet-head"><div class="ic" style="background:var(--red-dim);color:var(--red)">!</div><h4>Review &amp; start</h4></div>
+      <div class="sheet-body">
+        <div class="dhead">
+          <div class="ico a">▪</div>
+          <div><h5>dataset-imagenet-full.tar</h5>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+              <span class="badge b-http">HTTP</span><span style="font-size:11px;color:var(--a-muted)">154 GB</span></div></div>
+        </div>
+        <div class="field">
+          <label>Save to</label>
+          <div class="select"><span style="display:flex;align-items:center;gap:7px"><span class="dot on"></span>nas — /volume1/downloads</span><span class="chev">▾</span></div>
+        </div>
+        <div class="destcard bad">
+          <div class="drow">
+            <div class="srv"><span class="glyph" style="background:rgba(248,113,113,.18);color:var(--red)">▤</span>nas</div>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--green)"><span class="dot on"></span>Online · 1 ms</span>
+          </div>
+          <div class="drow"><span class="lbl">Remote folder</span>
+            <span class="input mono" style="flex:1;padding:4px 8px">/volume1/downloads/data</span><button class="btn sm">Browse…</button></div>
+          <div class="drow">
+            <span class="lbl">Delivery</span>
+            <div class="chipbar"><span class="chip on">Relay via Mac</span><span class="chip">Stream directly</span></div>
+          </div>
+          <div class="note bad"><span class="ic">✕</span>
+            <span><strong>Not enough space to stage this file.</strong> Relaying needs <strong>154 GB</strong> free on this
+            Mac; only <strong>38 GB</strong> is available.</span></div>
+          <div style="margin-left:17px"><div class="meter"><i class="r" style="width:100%"></i></div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--a-dim);margin-top:3px;font-family:'SF Mono',monospace">
+              <span>needs 154 GB</span><span>38 GB free</span></div></div>
+          <div class="note good"><span class="ic">✓</span>
+            <span><strong>nas</strong> has 6.2 TB free — the destination itself is fine.</span></div>
+          <div style="display:flex;gap:7px;margin-left:17px;margin-top:2px">
+            <button class="btn primary sm">Stream directly instead</button>
+            <button class="btn sm">Stage on another volume…</button>
+          </div>
+          <div class="note info" style="margin-left:0"><span class="ic">ⓘ</span>
+            <span>Streaming directly needs no local space, but can’t be paused or resumed.</span></div>
+        </div>
+      </div>
+      <div class="sheet-foot"><button class="btn ghost">Back</button><span class="sp"></span>
+        <button class="btn">Cancel</button><button class="btn primary" disabled>Start download</button></div>
+    </div>
+  </div>
+
+  <!-- ---------- 12 ---------- -->
+  <div class="screen-label">
+    <span class="num">12</span><h3>Remote volume nearly full</h3>
+    <span class="kind">warning · non-blocking</span>
+  </div>
+  <p class="screen-note">
+    Preflight via the proposed <code>gsb_statvfs</code> wrapper. It would fit, barely. Warn but don’t block —
+    the user may well be about to free space, and 4 GB of headroom is a judgement call, not a fact. Blocking
+    on a soft threshold is how a helpful check becomes an obstacle.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Add download</span></div>
+    <div class="sheet">
+      <div class="sheet-head"><div class="ic">✓</div><h4>Review &amp; start</h4></div>
+      <div class="sheet-body">
+        <div class="destcard warn">
+          <div class="drow">
+            <div class="srv"><span class="glyph" style="background:rgba(251,191,107,.18);color:var(--amber)">▤</span>prod-box</div>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--green)"><span class="dot on"></span>Online · 3 ms</span>
+          </div>
+          <div class="drow"><span class="lbl">Remote folder</span>
+            <span class="input mono" style="flex:1;padding:4px 8px">/srv/media/isos</span><button class="btn sm">Browse…</button></div>
+          <div class="note warn"><span class="ic">⚠</span>
+            <span><strong>/srv/media is almost full.</strong> This file needs 17 GB and only <strong>21 GB</strong> is free —
+            about 4 GB would be left.</span></div>
+          <div style="margin-left:17px"><div class="meter"><i class="a" style="width:81%"></i></div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--a-dim);margin-top:3px;font-family:'SF Mono',monospace">
+              <span>17 GB needed of 21 GB free</span><span>81%</span></div></div>
+          <div style="display:flex;gap:7px;margin-left:17px"><button class="btn sm">Choose another folder…</button></div>
+        </div>
+      </div>
+      <div class="sheet-foot"><button class="btn ghost">Back</button><span class="sp"></span>
+        <button class="btn">Cancel</button><button class="btn primary">Start anyway</button></div>
+    </div>
+  </div>
+
+  <!-- ---------- 13 ---------- -->
+  <div class="screen-label">
+    <span class="num">13</span><h3>Remote file already exists</h3>
+    <span class="kind">conflict · reuses the existing sheet</span>
+  </div>
+  <p class="screen-note">
+    The existing <code>SFTPUploadConflictSheet</code> and <code>SFTPBrowserPaths.uniqueName</code> already do
+    this for manual uploads; the download path reuses them unchanged. The remembered-choice checkbox keeps a
+    batch of twenty from becoming twenty prompts, and the existing file’s size and date are shown because
+    “overwrite?” is unanswerable without them.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">File already exists</span></div>
+    <div class="sheet">
+      <div class="sheet-head"><div class="ic" style="background:var(--amber-dim);color:var(--amber)">⚠</div><h4>A file with this name already exists on prod-box</h4></div>
+      <div class="sheet-body">
+        <div class="destcard">
+          <div class="drow"><span class="lbl">Remote path</span><span class="val">/srv/media/isos/ubuntu-24.04.1-desktop-amd64.iso</span></div>
+          <div style="height:1px;background:var(--a-line)"></div>
+          <div class="drow"><span class="lbl">On server</span><span class="val">4.61 GB · 12 Mar 2026 08:14</span></div>
+          <div class="drow"><span class="lbl">Downloaded</span><span class="val" style="color:var(--accent)">4.69 GB · today 21:04</span></div>
+        </div>
+        <div class="note info"><span class="ic">ⓘ</span><span>They differ in size — the remote copy may be an older or truncated version.</span></div>
+        <label style="font-size:11px;color:var(--a-muted);display:flex;align-items:center;gap:6px">
+          <span style="width:12px;height:12px;border:1px solid var(--a-line);border-radius:3px;display:inline-block"></span>
+          Do this for the remaining 3 files in this batch
+        </label>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn">Skip</button><span class="sp"></span>
+        <button class="btn">Keep both<span style="color:var(--a-dim)"> — “ubuntu… (1).iso”</span></button>
+        <button class="btn danger">Replace</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 14 ---------- -->
+  <div class="screen-label">
+    <span class="num">14</span><h3>Upload failed — authentication rejected</h3>
+    <span class="kind">recoverable failure · data is safe</span>
+  </div>
+  <p class="screen-note">
+    Password changed, or the agent identity expired. The single most important message on this screen is
+    <strong>the download is not lost</strong> — 4.69 GB sits verified in staging and the retry is a
+    reconnection, not a re-download. Stating that immediately is the difference between a shrug and a
+    support ticket.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Goel°</span></div>
+    <div class="win">
+      <div class="side">
+        <div class="grp">Library</div><div class="it on">▤ All files<span class="n">8</span></div>
+        <div class="grp">Status</div><div class="it">◉ Active<span class="n">3</span></div>
+        <div class="it" style="color:var(--red)">◉ Failed<span class="n">1</span></div>
+        <div class="grp">Servers<span class="plus">＋</span></div><div class="it srv-it"><span class="dot on"></span>prod-box</div>
+      </div>
+      <div class="list">
+        <div class="lhead"><span>#</span><span>Name</span><span>Size</span><span>Status</span><span>↓ Speed</span></div>
+        <div class="lrow on">
+          <span class="idx">1</span>
+          <div class="nm"><div class="t"><span class="f">ubuntu-24.04.1-desktop-amd64.iso</span>
+            <span class="badge b-http">HTTP</span><span class="badge b-rem">→ prod-box</span></div>
+            <div class="meter"><i class="r" style="width:100%"></i></div></div>
+          <span class="sz">4.7 GB</span>
+          <span class="st" style="color:var(--red)"><span class="dot off"></span>Upload failed — auth</span><span class="sp">—</span>
+        </div>
+      </div>
+      <div class="detail">
+        <div class="dhead"><div class="ico">◉</div><div><h5>ubuntu-24.04.1-desktop-amd64.iso</h5>
+          <div style="margin-top:4px;display:flex;gap:6px"><span class="badge b-http">HTTP</span><span class="badge b-rem">→ prod-box</span></div></div></div>
+        <div class="stage">
+          <div class="s done"><div class="b"><i class="g" style="width:100%"></i></div><div class="l">DOWNLOADED ✓</div></div>
+          <div class="gap"></div>
+          <div class="s"><div class="b"><i style="width:12%;background:var(--red)"></i></div><div class="l" style="color:var(--red)">UPLOAD FAILED</div></div>
+        </div>
+        <div class="destcard bad" style="border-radius:8px">
+          <div class="note bad"><span class="ic">✕</span>
+            <span><strong>prod-box rejected the password.</strong><br>
+            <span style="font-family:'SF Mono',monospace;font-size:10px;color:var(--a-dim)">Authentication failed for vinit@192.168.0.234:22</span></span></div>
+          <div class="note good"><span class="ic">✓</span>
+            <span><strong>Your download is safe.</strong> All 4.69 GB is verified and waiting in staging — retrying
+            sends it, it won’t download again.</span></div>
+        </div>
+        <div style="margin-top:2px">
+          <div class="kv"><span class="k">Staged at</span><span class="v">~/Library/…/Staging/ubuntu…iso</span></div>
+          <div class="kv"><span class="k">Checksum</span><span class="v" style="color:var(--green)">SHA-256 verified ✓</span></div>
+          <div class="kv"><span class="k">Attempts</span><span class="v">2 · next in 4m</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto">
+          <button class="btn primary">Update password &amp; retry</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn" style="flex:1">Retry now</button>
+            <button class="btn" style="flex:1">Save locally instead</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 15 ---------- -->
+  <div class="screen-label">
+    <span class="num">15</span><h3>Host key mismatch — hard stop</h3>
+    <span class="kind">security · deliberately obstructive</span>
+  </div>
+  <p class="screen-note">
+    The one place in this feature where the UI should be uncooperative. <code>HostKeyStore</code> pins on first
+    connect; a changed fingerprint means either a legitimate rebuild or an active interception, and the app
+    cannot tell which. There is <strong>no “continue anyway” button</strong> — resolving it requires going to
+    the server’s settings and explicitly re-trusting, which is enough friction to force a moment of thought.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Upload blocked</span></div>
+    <div class="sheet">
+      <div class="sheet-head"><div class="ic" style="background:var(--red-dim);color:var(--red)">⚠</div>
+        <h4 style="color:var(--red)">The server’s identity has changed</h4></div>
+      <div class="sheet-body">
+        <div class="note bad"><span class="ic">✕</span>
+          <span>The host key for <strong>prod-box</strong> (192.168.0.234:22) does not match the one recorded when you
+          first connected. <strong>The upload was stopped before any credentials were sent.</strong></span></div>
+        <div class="destcard bad">
+          <div class="drow"><span class="lbl">Expected</span>
+            <span class="val" style="font-size:10.5px;color:var(--green)">SHA256:9Yk2fQ…tW1c8Zr4Nn</span></div>
+          <div class="drow"><span class="lbl">Received</span>
+            <span class="val" style="font-size:10.5px;color:var(--red)">SHA256:pL7bXm…4Ke9Qd0Vs</span></div>
+        </div>
+        <div class="note warn"><span class="ic">⚠</span>
+          <span>This happens if the server was rebuilt or its SSH keys were regenerated — <strong>or if something is
+          intercepting the connection.</strong> Only continue if you know why it changed.</span></div>
+        <div class="note info"><span class="ic">ⓘ</span>
+          <span>Your download is untouched and still in staging. Nothing was sent.</span></div>
+      </div>
+      <div class="sheet-foot">
+        <span class="sp"></span>
+        <button class="btn">Keep the file locally</button>
+        <button class="btn">Open server settings…</button>
+      </div>
+    </div>
+  </div>
+  <div class="callout bad">
+    <p>
+      <strong>Deliberate omission.</strong> No “Trust this key and continue” in the failure dialog. Re-trusting
+      is possible, but only from the server’s own settings, away from the pressure of a stalled 4.7 GB upload.
+      A one-click trust button here would be clicked reflexively every single time.
+    </p>
+  </div>
+
+  <!-- ---------- 16 ---------- -->
+  <div class="screen-label">
+    <span class="num">16</span><h3>Remote disk filled mid-upload</h3>
+    <span class="kind">failure · partial remote state</span>
+  </div>
+  <p class="screen-note">
+    Preflight passed, then something else on the server ate the space. The partial <code>.part</code> file is
+    named explicitly along with how much it is holding, and removing it is offered as a one-click action —
+    otherwise the failure quietly leaves 12 GB of garbage on a disk that is already full.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Goel°</span></div>
+    <div class="win">
+      <div class="side">
+        <div class="grp">Library</div><div class="it on">▤ All files<span class="n">8</span></div>
+        <div class="grp">Status</div><div class="it" style="color:var(--red)">◉ Failed<span class="n">1</span></div>
+        <div class="grp">Servers<span class="plus">＋</span></div><div class="it srv-it"><span class="dot on"></span>prod-box</div>
+      </div>
+      <div class="list">
+        <div class="lhead"><span>#</span><span>Name</span><span>Size</span><span>Status</span><span>↑ Speed</span></div>
+        <div class="lrow on">
+          <span class="idx">1</span>
+          <div class="nm"><div class="t"><span class="f">Cosmos.S01E04.2160p.mkv</span>
+            <span class="badge b-bt">BT</span><span class="badge b-rem">→ prod-box</span></div>
+            <div class="meter"><i class="r" style="width:71%"></i></div></div>
+          <span class="sz">17 GB</span>
+          <span class="st" style="color:var(--red)"><span class="dot off"></span>Server disk full</span><span class="sp">—</span>
+        </div>
+      </div>
+      <div class="detail">
+        <div class="dhead"><div class="ico v">▦</div><div><h5>Cosmos.S01E04.2160p.mkv</h5>
+          <div style="margin-top:4px;display:flex;gap:6px"><span class="badge b-bt">BT</span><span class="badge b-rem">→ prod-box</span></div></div></div>
+        <div class="stage">
+          <div class="s done"><div class="b"><i class="g" style="width:100%"></i></div><div class="l">DOWNLOADED ✓</div></div>
+          <div class="gap"></div>
+          <div class="s"><div class="b"><i class="r" style="width:71%"></i></div><div class="l" style="color:var(--red)">UPLOAD 71% — FAILED</div></div>
+        </div>
+        <div class="destcard bad" style="border-radius:8px">
+          <div class="note bad"><span class="ic">✕</span>
+            <span><strong>prod-box ran out of space at 71%.</strong><br>
+            <span style="font-family:'SF Mono',monospace;font-size:10px;color:var(--a-dim)">SFTP write failed: no space left on device</span></span></div>
+          <div class="note warn"><span class="ic">⚠</span>
+            <span>A partial file is still on the server holding <strong>12.1 GB</strong>:<br>
+            <span style="font-family:'SF Mono',monospace;font-size:10px">/srv/media/tv/Cosmos.S01E04.2160p.mkv.part</span></span></div>
+          <div class="note good"><span class="ic">✓</span><span>Your local copy is complete and untouched.</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto">
+          <button class="btn primary">Remove partial file &amp; retry</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn" style="flex:1">Choose another folder…</button>
+            <button class="btn" style="flex:1">Keep locally</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 17 ---------- -->
+  <div class="screen-label">
+    <span class="num">17</span><h3>Direct stream interrupted</h3>
+    <span class="kind">failure · Mode A’s real cost</span>
+  </div>
+  <p class="screen-note">
+    The consequence screen for Mode A, and the reason screen&nbsp;03 warns so loudly. The connection dropped at
+    54% and — because <code>gsb_upload</code> truncates on open and cannot seek — there is no resuming. The
+    UI’s job here is to be straight about it and offer the trade the user can now make with better information:
+    switch to relay, which <em>can</em> resume.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Goel°</span></div>
+    <div class="win">
+      <div class="side">
+        <div class="grp">Library</div><div class="it on">▤ All files<span class="n">8</span></div>
+        <div class="grp">Status</div><div class="it" style="color:var(--red)">◉ Failed<span class="n">1</span></div>
+        <div class="grp">Servers<span class="plus">＋</span></div><div class="it srv-it"><span class="dot on"></span>nas</div>
+      </div>
+      <div class="list">
+        <div class="lhead"><span>#</span><span>Name</span><span>Size</span><span>Status</span><span>↓ Speed</span></div>
+        <div class="lrow on">
+          <span class="idx">1</span>
+          <div class="nm"><div class="t"><span class="f">dataset-imagenet-full.tar</span>
+            <span class="badge b-http">HTTP</span><span class="badge b-rem">⇢ nas direct</span></div>
+            <div class="meter"><i class="r" style="width:54%"></i></div></div>
+          <span class="sz">154 GB</span>
+          <span class="st" style="color:var(--red)"><span class="dot off"></span>Stream interrupted</span><span class="sp">—</span>
+        </div>
+      </div>
+      <div class="detail">
+        <div class="dhead"><div class="ico a">▪</div><div><h5>dataset-imagenet-full.tar</h5>
+          <div style="margin-top:4px;display:flex;gap:6px"><span class="badge b-http">HTTP</span><span class="badge b-rem">⇢ nas direct</span></div></div></div>
+        <div class="stage">
+          <div class="s"><div class="b"><i class="r" style="width:54%"></i></div><div class="l" style="color:var(--red)">DIRECT STREAM 54% — LOST</div></div>
+        </div>
+        <div class="destcard bad" style="border-radius:8px">
+          <div class="note bad"><span class="ic">✕</span>
+            <span><strong>The connection dropped at 54%</strong> (83.2 GB of 154 GB).<br>
+            <span style="font-family:'SF Mono',monospace;font-size:10px;color:var(--a-dim)">Network error: connection reset by peer</span></span></div>
+          <div class="note warn"><span class="ic">⚠</span>
+            <span><strong>A direct stream can’t resume.</strong> Retrying starts again from the beginning. The partial
+            file on <strong>nas</strong> will be removed first.</span></div>
+        </div>
+        <div style="margin-top:2px">
+          <div class="kv"><span class="k">Delivery</span><span class="v" style="color:var(--amber)">Stream directly</span></div>
+          <div class="kv"><span class="k">Lost</span><span class="v" style="color:var(--red)">83.2 GB · 1h 12m</span></div>
+        </div>
+        <div class="note info"><span class="ic">ⓘ</span>
+          <span>Relaying via this Mac can resume after a drop — but needs 154 GB free (you have 38 GB).</span></div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto">
+          <button class="btn primary">Restart the stream</button>
+          <button class="btn">Switch to relay…</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 18 ---------- -->
+  <div class="screen-label">
+    <span class="num">18</span><h3>Paused during upload</h3>
+    <span class="kind">edge state · honest labelling</span>
+  </div>
+  <p class="screen-note">
+    A subtle one worth getting right. Pausing during the upload phase cannot be a true pause — the shim
+    truncates on reopen, so resuming means re-sending from zero. The control is therefore labelled
+    <strong>“Hold upload”</strong> and the note says what resuming will actually do. Calling it “Pause” and
+    then silently restarting a 4 GB transfer is the sort of small lie that erodes trust in the whole app.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Goel°</span></div>
+    <div class="win">
+      <div class="side">
+        <div class="grp">Library</div><div class="it on">▤ All files<span class="n">8</span></div>
+        <div class="grp">Status</div><div class="it">◉ Paused<span class="n">1</span></div>
+        <div class="grp">Servers<span class="plus">＋</span></div><div class="it srv-it"><span class="dot on"></span>prod-box</div>
+      </div>
+      <div class="list">
+        <div class="lhead"><span>#</span><span>Name</span><span>Size</span><span>Status</span><span>↑ Speed</span></div>
+        <div class="lrow on">
+          <span class="idx">1</span>
+          <div class="nm"><div class="t"><span class="f">ubuntu-24.04.1-desktop-amd64.iso</span>
+            <span class="badge b-http">HTTP</span><span class="badge b-rem">→ prod-box</span></div>
+            <div class="meter"><i class="a" style="width:38%"></i></div></div>
+          <span class="sz">4.7 GB</span>
+          <span class="st" style="color:var(--amber)"><span class="dot" style="background:var(--amber)"></span>Upload held</span><span class="sp">—</span>
+        </div>
+      </div>
+      <div class="detail">
+        <div class="dhead"><div class="ico">◉</div><div><h5>ubuntu-24.04.1-desktop-amd64.iso</h5>
+          <div style="margin-top:4px;display:flex;gap:6px"><span class="badge b-http">HTTP</span><span class="badge b-rem">→ prod-box</span></div></div></div>
+        <div class="stage">
+          <div class="s done"><div class="b"><i class="g" style="width:100%"></i></div><div class="l">DOWNLOADED ✓</div></div>
+          <div class="gap"></div>
+          <div class="s"><div class="b"><i class="a" style="width:38%"></i></div><div class="l" style="color:var(--amber)">UPLOAD HELD</div></div>
+        </div>
+        <div class="note warn"><span class="ic">⚠</span>
+          <span><strong>Resuming will restart the upload from the beginning.</strong> SFTP uploads can’t continue from a
+          partial file, so the 1.78 GB already sent will be re-sent.</span></div>
+        <div class="note good"><span class="ic">✓</span>
+          <span>The downloaded file is complete and verified — it won’t be downloaded again.</span></div>
+        <div style="margin-top:2px">
+          <div class="kv"><span class="k">Sent before hold</span><span class="v">1.78 GB of 4.69 GB</span></div>
+          <div class="kv"><span class="k">Local copy</span><span class="v" style="color:var(--green)">Intact</span></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:auto">
+          <button class="btn primary" style="flex:1">▶ Resume upload</button>
+          <button class="btn" style="flex:1">Keep locally</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 19 ---------- -->
+  <div class="screen-label">
+    <span class="num">19</span><h3>Settings — Destinations pane</h3>
+    <span class="kind">supporting surface</span>
+  </div>
+  <p class="screen-note">
+    Where a per-download choice becomes a habit. A default destination that can be a server, staging location
+    and cleanup policy, retry behaviour when a server is unreachable, and a per-server default folder so the
+    picker pre-fills something sensible instead of dumping into the login home.
+  </p>
+  <div class="app">
+    <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><span class="tb-title">Settings — Destinations</span></div>
+    <div class="sheet">
+      <div class="sheet-body" style="gap:16px">
+        <div class="field">
+          <label>Default destination for new downloads</label>
+          <div class="select" style="max-width:330px"><span style="display:flex;align-items:center;gap:7px"><span class="dot on"></span>prod-box — /srv/media</span><span class="chev">▾</span></div>
+          <span class="hint">Used when a download doesn’t specify one. Per-download choices always win.</span>
+        </div>
+
+        <div style="height:1px;background:var(--a-line)"></div>
+
+        <div class="field">
+          <label>Staging folder</label>
+          <div style="display:flex;gap:7px;align-items:center;max-width:430px">
+            <span class="input mono" style="flex:1">~/Library/Application Support/Goel/Staging</span>
+            <button class="btn sm">Change…</button>
+          </div>
+          <span class="hint">Where files are held while downloading before they’re sent to a server. 218 GB free.</span>
+        </div>
+
+        <div class="field">
+          <label>After a successful upload</label>
+          <div class="chipbar"><span class="chip on">Delete local copy</span><span class="chip">Keep local copy</span></div>
+        </div>
+
+        <div class="field">
+          <label>When a server is unreachable</label>
+          <div class="chipbar"><span class="chip on">Retry automatically</span><span class="chip">Ask me</span><span class="chip">Keep locally</span></div>
+          <span class="hint">Retries back off up to 30 minutes. The file stays in staging until it succeeds or you intervene.</span>
+        </div>
+
+        <div style="height:1px;background:var(--a-line)"></div>
+
+        <div class="field">
+          <label>Per-server default folder</label>
+          <div class="destcard" style="max-width:520px;gap:6px">
+            <div class="drow"><span class="dot on"></span><span style="width:88px;font-size:11.5px;font-weight:600">prod-box</span>
+              <span class="input mono" style="flex:1;padding:3px 8px">/srv/media</span><button class="btn sm">Browse…</button></div>
+            <div class="drow"><span class="dot on"></span><span style="width:88px;font-size:11.5px;font-weight:600">nas</span>
+              <span class="input mono" style="flex:1;padding:3px 8px">/volume1/downloads</span><button class="btn sm">Browse…</button></div>
+            <div class="drow"><span class="dot off"></span><span style="width:88px;font-size:11.5px;font-weight:600;color:var(--a-dim)">old-vps</span>
+              <span class="input mono" style="flex:1;padding:3px 8px;color:var(--a-dim)">/home/vinit</span><button class="btn sm" disabled>Browse…</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 20 ---------- -->
+  <div class="screen-label">
+    <span class="num">20</span><h3>Menu-bar extra</h3>
+    <span class="kind">supporting surface</span>
+  </div>
+  <p class="screen-note">
+    The two-phase model has to survive the smallest surface too. An uploading task shows the destination
+    inline and a green bar, so “is it on the server yet” is answerable without opening the app.
+  </p>
+  <div class="app" style="max-width:340px">
+    <div class="titlebar"><span class="tb-title" style="margin-left:0">Goel° · Active 3</span>
+      <span style="margin-left:auto;font-size:10.5px;color:var(--green);font-family:'SF Mono',monospace">↓ 43 MB/s</span></div>
+    <div style="padding:9px">
+      <div style="padding:7px 6px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+          <span style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">ubuntu-24.04.1-desktop…iso</span>
+          <span class="badge b-rem" style="margin-left:auto">→ prod-box</span></div>
+        <div class="meter"><i class="g" style="width:38%"></i></div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--a-dim);margin-top:4px;font-family:'SF Mono',monospace">
+          <span>Uploading 38%</span><span>88 MB/s</span></div>
+      </div>
+      <div style="padding:7px 6px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+          <span style="font-size:11.5px">Cosmos.S01E04.2160p.mkv</span>
+          <span class="badge b-bt" style="margin-left:auto">BT</span></div>
+        <div class="meter"><i style="width:41%"></i></div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--a-dim);margin-top:4px;font-family:'SF Mono',monospace">
+          <span>41% · 7m left</span><span>24 MB/s</span></div>
+      </div>
+      <div style="display:flex;gap:6px;padding-top:9px">
+        <button class="btn sm" style="flex:1">＋ Add</button><button class="btn sm" style="flex:1">‖ Pause all</button><button class="btn sm" style="flex:1">Open</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 21 ---------- -->
+  <div class="screen-label">
+    <span class="num">21</span><h3>Notifications &amp; toasts</h3>
+    <span class="kind">supporting surface · every terminal state</span>
+  </div>
+  <p class="screen-note">
+    Completion copy names the server, because “Download complete” is now ambiguous — complete <em>where?</em>
+  </p>
+  <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start;margin-bottom:8px">
+    <div class="toast"><span class="ic" style="color:var(--green)">✓</span>
+      <span><strong>ubuntu-24.04.1-desktop-amd64.iso</strong> is on <strong>prod-box</strong><br>
+      <span style="color:var(--dim);font-size:11px">/srv/media/isos · local copy removed</span></span></div>
+    <div class="toast"><span class="ic" style="color:var(--accent)">↑</span>
+      <span>Download finished — sending to <strong>prod-box</strong>…</span></div>
+    <div class="toast"><span class="ic" style="color:var(--amber)">⚠</span>
+      <span><strong>prod-box</strong> is unreachable — <strong>2 files</strong> waiting in staging<br>
+      <span style="color:var(--dim);font-size:11px">Retrying in 4m · 21.3 GB held</span></span></div>
+    <div class="toast"><span class="ic" style="color:var(--red)">✕</span>
+      <span>Upload to <strong>prod-box</strong> failed — authentication rejected<br>
+      <span style="color:var(--dim);font-size:11px">Your download is safe in staging</span></span></div>
+    <div class="toast"><span class="ic" style="color:var(--red)">⚠</span>
+      <span><strong>prod-box</strong>’s host key changed — upload blocked<br>
+      <span style="color:var(--dim);font-size:11px">No credentials were sent</span></span></div>
+  </div>
+</section>
+
+<!-- ============================================ 7 -->
+<section id="risks">
+  <h2>7 · Risks worth naming</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th style="width:24%">Risk</th><th style="width:11%">Severity</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Staging fills the boot disk</strong></td><td><span class="tag t-no">High</span></td>
+        <td>Preflight before queueing (screen 11); a running total of staged bytes across all pending uploads, not just this one; a configurable staging cap that pauses new remote-destination downloads when hit.</td></tr>
+      <tr><td><strong>Orphaned staged files</strong></td><td><span class="tag t-part">Medium</span></td>
+        <td>A crash mid-upload leaves a full-size file in staging. Reconcile at launch against persisted tasks and surface anything unclaimed as reclaimable space rather than deleting silently.</td></tr>
+      <tr><td><strong>Long uploads outlive the SSH session</strong></td><td><span class="tag t-part">Medium</span></td>
+        <td>A multi-hour upload can hit the server’s <code>ClientAliveInterval</code>. Needs libssh2 keepalive enabled on the session — currently not configured anywhere in the shim.</td></tr>
+      <tr><td><strong>No connection pooling</strong></td><td><span class="tag t-part">Medium</span></td>
+        <td>Every operation opens a fresh TCP + SSH handshake + auth and tears it down. A destination card that checks reachability, lists a folder and reads free space is <em>three</em> full handshakes. Batch them into one session, and never trigger them from hover.</td></tr>
+      <tr><td><strong>Staging claims full size immediately</strong></td><td><span class="tag t-part">Medium</span></td>
+        <td>Segmented HTTP preallocates the destination to its full length up front, so a 154 GB download occupies 154 GB from second one — not gradually. The preflight in screen 11 is therefore a hard gate, not a courtesy.</td></tr>
+      <tr><td><strong>Partial <code>.part</code> files accumulate</strong></td><td><span class="tag t-part">Medium</span></td>
+        <td>Upload to <code>.part</code> + <code>rename()</code>; on any failure offer explicit removal (screen 16); sweep known-stale <code>.part</code> files on reconnect.</td></tr>
+      <tr><td><strong>Credential spend on hover</strong></td><td><span class="tag t-part">Medium</span></td>
+        <td>The dropdown must use the existing unauthenticated TCP probe only. Remote free space and folder listing need a real session, so they happen on <em>explicit</em> selection or Browse — never on hover or menu open.</td></tr>
+      <tr><td><strong>Mode A deadlock</strong></td><td><span class="tag t-no">High</span></td>
+        <td>A ring buffer bridging an async Swift producer to a blocking C consumer on another thread is the classic place to hang forever. Needs a hard timeout on both sides and a bounded buffer with explicit backpressure, plus a test that kills each side mid-transfer.</td></tr>
+      <tr><td><strong>Torrent seeding vs. cleanup</strong></td><td><span class="tag t-part">Medium</span></td>
+        <td>Deleting the staged copy stops seeding. Default to keeping it until seeding ends; make it a visible setting (see §9).</td></tr>
+      <tr><td><strong>Remote-control / web-portal drift</strong></td><td><span class="tag t-part">Medium</span></td>
+        <td><code>RemoteRouter</code> and the Linux daemon read <code>saveDirectory</code>. They must either understand remote destinations or reject them with a clear error — silently writing to a local path would be the worst outcome.</td></tr>
+      <tr><td><strong>Scope creep into “remote download manager”</strong></td><td><span class="tag t-part">Medium</span></td>
+        <td>Once downloads can target a server, “start it from my phone” and “run it on the server” follow naturally. Worth deciding deliberately rather than drifting there.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============================================ 8 -->
+<section id="phasing">
+  <h2>8 · Phasing</h2>
+  <p>Each phase is independently shippable and independently useful.</p>
+
+  <div class="card">
+    <h4><span class="tag t-info">Phase 1</span> &nbsp;Relay to a saved server &nbsp;<span style="color:var(--dim);font-weight:400;font-size:12.5px">— the whole feature for most people</span></h4>
+    <p style="font-size:13.5px">
+      <code>RemoteDestination</code> model · staging management · upload stage on the completion pipeline ·
+      teaching <code>FileReconcile</code> and the other local-path assumptions about remote tasks · the
+      Save-to dropdown and destination card · the remote folder picker · two-phase progress in list and
+      detail · conflict handling reusing the existing sheet · the failure states.
+      <br><strong>Screens:</strong> 01, 02, 04, 05, 06, 07, 09, 10, 13, 14, 16, 18, 20, 21.
+    </p>
+  </div>
+
+  <div class="card">
+    <h4><span class="tag t-info">Phase 2</span> &nbsp;Preflight &amp; defaults</h4>
+    <p style="font-size:13.5px">
+      The <code>gsb_statvfs</code> wrapper for real remote free space · local staging preflight · the
+      Destinations settings pane · per-server default folders · unreachable-server retry policy.
+      <br><strong>Screens:</strong> 11 (relay half), 12, 19.
+    </p>
+  </div>
+
+  <div class="card">
+    <h4><span class="tag t-info">Phase 3</span> &nbsp;True direct streaming</h4>
+    <p style="font-size:13.5px">
+      The bounded ring-buffer sink · forcing single-connection transfer · eligibility rules and the mode chip ·
+      rolling checksum · the “can’t resume” consequences throughout.
+      <br><strong>Screens:</strong> 03, 08, 11 (stream half), 17.
+      <br><span style="color:var(--amber)">The hardest phase and the least broadly useful. Worth doing only if
+      Phase 1 lands and the small-disk case turns out to be real for you.</span>
+    </p>
+  </div>
+
+  <div class="card">
+    <h4><span class="tag t-info">Later</span> &nbsp;Resumable remote uploads · remote-side fetch</h4>
+    <p style="font-size:13.5px">
+      Adding <code>FXF_APPEND</code> + <code>seek64</code> to the shim removes the biggest wart in both modes
+      and would let screen 18 become a real pause. Architecture C (running <code>curl</code> on the server)
+      only makes sense once you know you want it.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================ 9 -->
+<section id="open">
+  <h2>9 · Open questions for you</h2>
+  <ol>
+    <li><strong>Which case is actually yours?</strong> Home-server-as-destination (Phase 1 is enough), or a Mac that genuinely can’t hold the file (you need Phase 3)? This single answer changes the whole plan’s shape.</li>
+    <li><strong>Torrents and seeding.</strong> Keep seeding from the staged copy until the ratio target is met, or upload and stop seeding immediately? The first is friendlier, the second is what “don’t keep it on my machine” literally asks for.</li>
+    <li><strong>Multi-file torrents.</strong> Upload the whole folder tree preserving structure, or flatten? The existing folder-upload code recurses, so preserving structure is nearly free.</li>
+    <li><strong>Should a destination be settable after the fact?</strong> Right-click a completed local download → “Send to prod-box” is a small addition on the same plumbing and might be more useful day to day than the add-time picker.</li>
+    <li><strong>Linux daemon parity.</strong> Does <code>GoelDaemon</code> need this too, or is it macOS-only for now? The web portal would need the same picker.</li>
+    <li><strong>Watch folders and RSS.</strong> Should automation rules be able to target a server destination, or is this add-sheet-only in v1?</li>
+  </ol>
+</section>
+
+<footer>
+  Goel° — feasibility and UI study for SFTP download destinations.<br>
+  Design proposal only; no code has been changed. Every technical constraint cited was read from the repository
+  at <code>main</code>. All server names, paths and figures shown in the mockups are illustrative.
+</footer>
+
+</div>
+</body>
+</html>

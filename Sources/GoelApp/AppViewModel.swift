@@ -134,6 +134,12 @@ final class AppViewModel: ObservableObject {
     @Published var editingServer: SFTPConnection?
     @Published var isServerEditorPresented: Bool = false
 
+    /// A folder the browser should open at instead of the server's `initialPath` — set when jumping to where an uploaded payload landed. Consumed on first use.
+    @Published var pendingBrowserPath: String?
+
+    /// The completed task waiting for a destination in the "Send to server" sheet.
+    @Published var sendToServerTask: DownloadTask?
+
     /// Live reachability + host/IP/OS metadata for each saved server, keyed by id
     /// and shown in the sidebar. Refreshed by the unauthenticated probe loop and
     /// the lazy OS detection (see `AppViewModel+SFTPStatus`).
@@ -324,7 +330,8 @@ final class AppViewModel: ObservableObject {
 
     // MARK: Core
 
-    private let manager: DownloadManager
+    /// `internal` so the split-out `AppViewModel+…` extensions in this module can reach the scheduler, same as the state above.
+    let manager: DownloadManager
     private var updatesTask: Task<Void, Never>?
 
     /// Watches the pasteboard for copied download links (Tier-1 convenience).
@@ -594,7 +601,7 @@ final class AppViewModel: ObservableObject {
     // MARK: Actions — all bridge to the actor
 
     func add(rawLines: String, saveDirectory: String?, priority: FilePriority,
-             expectedChecksum: Checksum? = nil) {
+             expectedChecksum: Checksum? = nil, remoteDestination: RemoteDestination? = nil) {
         var sources = Self.expandedLines(rawLines).compactMap(Self.parseSource)
         // A metalink URL describes downloads (mirrors + checksums) — fetch and
         // expand it rather than downloading the XML itself.
@@ -625,8 +632,12 @@ final class AppViewModel: ObservableObject {
         let checksum = fresh.count == 1 ? expectedChecksum : nil
         Task {
             for source in fresh {
+                // A fresh token per source, or a batch sharing one struct would stage every upload under the same temp name.
+                var destination = remoteDestination
+                destination?.token = RemoteDestination.newToken()
                 await manager.add(source: source, saveDirectory: saveDirectory,
-                                  priority: priority, expectedChecksum: checksum)
+                                  priority: priority, expectedChecksum: checksum,
+                                  remoteDestination: destination)
             }
         }
         if skipped > 0 {
@@ -715,7 +726,8 @@ final class AppViewModel: ObservableObject {
     /// user chose on the confirmation screen.
     func confirm(_ preview: DownloadPreview, saveDirectory: String?,
                  priority: FilePriority, checksum: Checksum?, startAt: Date? = nil,
-                 mirrors: [String]? = nil, deselectedFileIDs: [Int]? = nil) {
+                 mirrors: [String]? = nil, deselectedFileIDs: [Int]? = nil,
+                 remoteDestination: RemoteDestination? = nil) {
         // The manager dedups by source identity — starting an exact duplicate is
         // a no-op, so say that instead of a misleading "Added".
         guard existingDuplicate(of: preview.source) == nil else {
@@ -742,7 +754,8 @@ final class AppViewModel: ObservableObject {
                               scheduledAt: startAt, mirrors: mirrors,
                               suggestedName: preview.suggestedName,
                               totalBytes: seededBytes, files: seededFiles,
-                              deselectedFileIDs: skipFiles)
+                              deselectedFileIDs: skipFiles,
+                              remoteDestination: remoteDestination)
         }
         if let startAt {
             let formatter = RelativeDateTimeFormatter()
@@ -1052,16 +1065,31 @@ final class AppViewModel: ObservableObject {
     /// video). Multi-file torrents open their largest wanted file — the movie,
     /// not the .nfo (libtorrent file paths are relative to the save directory).
     func openFile(_ task: DownloadTask) {
+        // A payload sent to a server and cleaned up locally has no file to open; pointing NSWorkspace at the deleted path just fails silently.
+        guard !task.isRemoteOnly else { return openOnServer(task) }
         NSWorkspace.shared.open(URL(fileURLWithPath: task.primaryFilePath))
+    }
+
+    /// Show a remote-only payload where it actually lives — the SFTP browser, opened at its folder.
+    func openOnServer(_ task: DownloadTask) {
+        guard let destination = task.remoteDestination else { return }
+        guard let server = servers.first(where: { $0.id == destination.connectionID }) else {
+            return toastNow("\(destination.serverLabel) is no longer in your servers")
+        }
+        openSFTPBrowser(server, at: destination.directory)
     }
 
     /// Open a finished media file in the built-in AVKit player. Multi-file
     /// torrents play their largest wanted file, mirroring ``openFile(_:)``.
     func playInApp(_ task: DownloadTask) {
+        guard !task.isRemoteOnly else {
+            return toastNow("This file is on \(task.remoteDestination?.serverLabel ?? "the server")")
+        }
         playerItem = PlayerItem(url: URL(fileURLWithPath: task.primaryFilePath), title: task.name)
     }
 
     func revealInFinder(_ task: DownloadTask) {
+        guard !task.isRemoteOnly else { return openOnServer(task) }
         let url = URL(fileURLWithPath: task.savePath)
         #if canImport(AppKit)
         NSWorkspace.shared.activateFileViewerSelecting([url])

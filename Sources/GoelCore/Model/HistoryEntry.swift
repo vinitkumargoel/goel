@@ -17,8 +17,12 @@ public struct HistoryEntry: Codable, Sendable, Identifiable, Hashable {
     public var savePath: String
     public var completedAt: Date
 
+    /// The server and folder the payload was sent to, e.g. `"media-box:/srv/media"`. nil for an ordinary local download. Without this, the row for a file that now lives on a server would point at a local path that was deliberately deleted.
+    public var remoteLocation: String?
+
     public init(id: UUID, name: String, locator: String, kind: DownloadKind,
-                totalBytes: Int64?, savePath: String, completedAt: Date) {
+                totalBytes: Int64?, savePath: String, completedAt: Date,
+                remoteLocation: String? = nil) {
         self.id = id
         self.name = name
         self.locator = locator
@@ -26,6 +30,7 @@ public struct HistoryEntry: Codable, Sendable, Identifiable, Hashable {
         self.totalBytes = totalBytes
         self.savePath = savePath
         self.completedAt = completedAt
+        self.remoteLocation = remoteLocation
     }
 
     /// Build the archive row for a task that just completed.
@@ -33,6 +38,7 @@ public struct HistoryEntry: Codable, Sendable, Identifiable, Hashable {
         self.init(id: task.id, name: task.name, locator: task.source.locator,
                   kind: task.kind, totalBytes: task.totalBytes,
                   savePath: task.savePath,
-                  completedAt: task.completedAt ?? completedAt)
+                  completedAt: task.completedAt ?? completedAt,
+                  remoteLocation: task.remoteDestination?.displayLocation)
     }
 }

@@ -197,6 +197,49 @@ struct KindBadge: View {
     }
 }
 
+/// Marks a download bound for — or already sitting on — a saved server. Absent when there is no destination.
+struct RemoteBadge: View {
+    let destination: RemoteDestination?
+
+    var body: some View {
+        if let destination {
+            Image(systemName: symbol(destination.state))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(tint(destination.state))
+                .help(help(destination))
+        }
+    }
+
+    private func symbol(_ state: RemoteUploadState) -> String {
+        switch state {
+        case .pending:   return "clock.arrow.up.trianglehead.clockwise"
+        case .uploading: return "arrow.up.circle"
+        case .uploaded:  return "externaldrive.badge.checkmark"
+        case .failed:    return "exclamationmark.triangle.fill"
+        case .held:      return "pause.circle"
+        }
+    }
+
+    private func tint(_ state: RemoteUploadState) -> Color {
+        switch state {
+        case .pending, .held: return .secondary
+        case .uploading:      return Theme.teal
+        case .uploaded:       return Theme.green
+        case .failed:         return Theme.red
+        }
+    }
+
+    private func help(_ destination: RemoteDestination) -> String {
+        switch destination.state {
+        case .pending:   return "Waiting to send to \(destination.serverLabel)"
+        case .uploading: return "Sending to \(destination.serverLabel)"
+        case .uploaded:  return "On \(destination.displayLocation)"
+        case .failed:    return destination.failureMessage ?? "Could not send to \(destination.serverLabel)"
+        case .held:      return destination.failureMessage ?? "Paused"
+        }
+    }
+}
+
 /// A thin progress bar tinted by the task's state. Shimmers while resolving
 /// metadata (indeterminate).
 struct MiniProgressBar: View {

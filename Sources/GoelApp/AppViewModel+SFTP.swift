@@ -76,4 +76,10 @@ extension AppViewModel {
         add(rawLines: sftpLocator(for: connection, remotePath: remotePath),
             saveDirectory: nil, priority: .normal)
     }
+
+    /// Open the browser on a server, at a folder if one is given.
+    func openSFTPBrowser(_ connection: SFTPConnection, at path: String? = nil) {
+        pendingBrowserPath = (path == "." || path?.isEmpty == true) ? nil : path
+        selectedServer = connection.id
+    }
 }

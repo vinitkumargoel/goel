@@ -119,6 +119,8 @@ static LIBSSH2_SESSION *gsb_open(const GSBAuth *a, int *sock_out, GSBResult *r) 
     // thread forever (the abort flag is only observed on progress ticks, which
     // stop arriving if no data moves). 60s of zero progress = failure.
     libssh2_session_set_timeout(session, 60000);
+    // Survive a server-side ClientAliveInterval on long transfers; want_reply=0 because a keepalive is a liveness hint, not a health check.
+    libssh2_keepalive_config(session, 0, 30);
 
     if (libssh2_session_handshake(session, sock) != 0) {
         char *err = NULL; libssh2_session_last_error(session, &err, NULL, 0);
@@ -314,6 +316,41 @@ GSBResult gsb_download(const GSBAuth *auth, const char *remote,
     return r;
 }
 
+// Drains `read_cb` into an open handle; reports the byte count so the caller can check it against what the server says landed.
+static void gsb_pump_upload(LIBSSH2_SFTP_HANDLE *h, long long total, long long max_bps,
+                            gsb_read_cb read_cb, gsb_progress_cb progress_cb,
+                            void *userdata, long long *sofar_out, GSBResult *r) {
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    char buf[GSB_XFER_BUF_SIZE];
+    long long sofar = 0;
+    for (;;) {
+        long got = read_cb ? read_cb(buf, (long)sizeof(buf), userdata) : 0;
+        if (got == 0) break;                 // EOF
+        if (got < 0) { gsb_set(r, GSB_ERR_ABORTED, "Aborted"); break; }
+
+        // sftp_write can accept a partial buffer; loop until the chunk is flushed.
+        char *p = buf;
+        long remaining = got;
+        int failed = 0;
+        while (remaining > 0) {
+            ssize_t wrote = libssh2_sftp_write(h, p, (size_t)remaining);
+            if (wrote < 0) { gsb_set(r, GSB_ERR_IO, "Remote write failed"); failed = 1; break; }
+            p += wrote;
+            remaining -= wrote;
+        }
+        if (failed) break;
+        sofar += got;
+        if (progress_cb && progress_cb(userdata, total, sofar) != 0) {
+            gsb_set(r, GSB_ERR_ABORTED, "Aborted");
+            break;
+        }
+        gsb_throttle(max_bps, sofar, &start);
+    }
+    *sofar_out = sofar;
+}
+
 GSBResult gsb_upload(const GSBAuth *auth, const char *remote, long long total,
                      long long max_bps,
                      gsb_read_cb read_cb, gsb_progress_cb progress_cb,
@@ -335,36 +372,156 @@ GSBResult gsb_upload(const GSBAuth *auth, const char *remote, long long total,
         libssh2_sftp_shutdown(sftp); gsb_teardown(s, sock); return r;
     }
 
-    struct timespec start;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
-    char buf[GSB_XFER_BUF_SIZE];
     long long sofar = 0;
-    for (;;) {
-        long got = read_cb ? read_cb(buf, (long)sizeof(buf), userdata) : 0;
-        if (got == 0) break;                 // EOF
-        if (got < 0) { gsb_set(&r, GSB_ERR_ABORTED, "Aborted"); break; }
-
-        // sftp_write can accept a partial buffer; loop until the chunk is flushed.
-        char *p = buf;
-        long remaining = got;
-        int failed = 0;
-        while (remaining > 0) {
-            ssize_t wrote = libssh2_sftp_write(h, p, (size_t)remaining);
-            if (wrote < 0) { gsb_set(&r, GSB_ERR_IO, "Remote write failed"); failed = 1; break; }
-            p += wrote;
-            remaining -= wrote;
-        }
-        if (failed) break;
-        sofar += got;
-        if (progress_cb && progress_cb(userdata, total, sofar) != 0) {
-            gsb_set(&r, GSB_ERR_ABORTED, "Aborted");
-            break;
-        }
-        gsb_throttle(max_bps, sofar, &start);
-    }
+    gsb_pump_upload(h, total, max_bps, read_cb, progress_cb, userdata, &sofar, &r);
+    r.value = sofar;
 
     libssh2_sftp_close(h);
+    libssh2_sftp_shutdown(sftp);
+    gsb_teardown(s, sock);
+    return r;
+}
+
+GSBResult gsb_upload_atomic(const GSBAuth *auth,
+                            const char *temp_remote, const char *final_remote,
+                            long long total, long long max_bps, int overwrite,
+                            gsb_read_cb read_cb, gsb_progress_cb progress_cb,
+                            void *userdata) {
+    GSBResult r = { GSB_OK, 0, {0}, {0} };
+    int sock = -1;
+    LIBSSH2_SESSION *s = gsb_open(auth, &sock, &r);
+    if (!s) return r;
+
+    LIBSSH2_SFTP *sftp = libssh2_sftp_init(s);
+    if (!sftp) { gsb_set(&r, GSB_ERR_SFTP, "SFTP subsystem unavailable"); gsb_teardown(s, sock); return r; }
+
+    LIBSSH2_SFTP_ATTRIBUTES attrs;
+
+    // Checked in the same session as the rename below — as close to atomic as SFTP allows.
+    if (!overwrite && libssh2_sftp_stat(sftp, final_remote, &attrs) == 0) {
+        gsb_set(&r, GSB_ERR_EXISTS, "A file with that name already exists on the server");
+        libssh2_sftp_shutdown(sftp); gsb_teardown(s, sock); return r;
+    }
+
+    // Clear a stale temporary from an interrupted attempt so this one's leftovers are unambiguous.
+    libssh2_sftp_unlink(sftp, temp_remote);
+
+    LIBSSH2_SFTP_HANDLE *h = libssh2_sftp_open(sftp, temp_remote,
+        LIBSSH2_FXF_WRITE | LIBSSH2_FXF_CREAT | LIBSSH2_FXF_TRUNC,
+        LIBSSH2_SFTP_S_IRUSR | LIBSSH2_SFTP_S_IWUSR |
+        LIBSSH2_SFTP_S_IRGRP | LIBSSH2_SFTP_S_IROTH);
+    if (!h) {
+        gsb_set(&r, GSB_ERR_OPEN, "Could not create the file on the server");
+        libssh2_sftp_shutdown(sftp); gsb_teardown(s, sock); return r;
+    }
+
+    long long sofar = 0;
+    gsb_pump_upload(h, total, max_bps, read_cb, progress_cb, userdata, &sofar, &r);
+    libssh2_sftp_close(h);
+    r.value = sofar;
+
+    // `total` is advisory (0 for an unknown-length stream), so compare against what this call actually sent.
+    if (r.code == GSB_OK) {
+        if (libssh2_sftp_stat(sftp, temp_remote, &attrs) != 0) {
+            gsb_set(&r, GSB_ERR_VERIFY, "Could not confirm the uploaded file on the server");
+        } else if ((attrs.flags & LIBSSH2_SFTP_ATTR_SIZE) &&
+                   (long long)attrs.filesize != sofar) {
+            char msg[160];
+            snprintf(msg, sizeof(msg),
+                     "Size mismatch after upload: sent %lld bytes, server holds %lld",
+                     sofar, (long long)attrs.filesize);
+            gsb_set(&r, GSB_ERR_VERIFY, msg);
+        }
+    }
+
+    if (r.code == GSB_OK) {
+        // Explicit flags: SFTP v3 servers differ on whether a plain rename clobbers.
+        long flags = LIBSSH2_SFTP_RENAME_ATOMIC | LIBSSH2_SFTP_RENAME_NATIVE;
+        if (overwrite) flags |= LIBSSH2_SFTP_RENAME_OVERWRITE;
+        if (libssh2_sftp_rename_ex(sftp,
+                                   temp_remote, (unsigned int)strlen(temp_remote),
+                                   final_remote, (unsigned int)strlen(final_remote),
+                                   flags) != 0) {
+            // Bytes are all there under the temporary name — a distinct error so the caller retries the rename, not the transfer.
+            gsb_set(&r, GSB_ERR_RENAME, "Uploaded, but could not rename the file into place");
+        }
+    }
+
+    // Leave nothing behind: no orphan eating the server's disk, no truncated file under the final name.
+    if (r.code != GSB_OK) libssh2_sftp_unlink(sftp, temp_remote);
+
+    libssh2_sftp_shutdown(sftp);
+    gsb_teardown(s, sock);
+    return r;
+}
+
+GSBResult gsb_stat(const GSBAuth *auth, const char *path, GSBStat *out) {
+    GSBResult r = { GSB_OK, 0, {0}, {0} };
+    if (out) memset(out, 0, sizeof(*out));
+    int sock = -1;
+    LIBSSH2_SESSION *s = gsb_open(auth, &sock, &r);
+    if (!s) return r;
+
+    LIBSSH2_SFTP *sftp = libssh2_sftp_init(s);
+    if (!sftp) { gsb_set(&r, GSB_ERR_SFTP, "SFTP subsystem unavailable"); gsb_teardown(s, sock); return r; }
+
+    LIBSSH2_SFTP_ATTRIBUTES attrs;
+    if (out && libssh2_sftp_stat(sftp, path, &attrs) == 0) {
+        out->exists = 1;
+        out->is_dir = (attrs.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) &&
+                      LIBSSH2_SFTP_S_ISDIR(attrs.permissions);
+        out->perms  = (attrs.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) ? attrs.permissions : 0;
+        out->size   = (attrs.flags & LIBSSH2_SFTP_ATTR_SIZE) ? (long long)attrs.filesize : 0;
+        out->mtime  = (attrs.flags & LIBSSH2_SFTP_ATTR_ACMODTIME) ? (long long)attrs.mtime : 0;
+    }
+
+    // `stat` follows symlinks, so lstat is the only way to learn the picked destination is a link elsewhere.
+    LIBSSH2_SFTP_ATTRIBUTES lattrs;
+    if (out && libssh2_sftp_lstat(sftp, path, &lattrs) == 0) {
+        out->exists = 1;
+        if ((lattrs.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) &&
+            LIBSSH2_SFTP_S_ISLNK(lattrs.permissions)) {
+            out->is_link = 1;
+        }
+    }
+
+    // Where it really lands; an empty `resolved` means "couldn't verify", which the caller treats as a reason to refuse.
+    if (out && out->exists) {
+        char resolved[1024];
+        int n = libssh2_sftp_realpath(sftp, path, resolved, (unsigned int)sizeof(resolved) - 1);
+        if (n > 0) {
+            if (n > (int)sizeof(out->resolved) - 1) n = (int)sizeof(out->resolved) - 1;
+            memcpy(out->resolved, resolved, (size_t)n);
+            out->resolved[n] = '\0';
+        }
+    }
+
+    libssh2_sftp_shutdown(sftp);
+    gsb_teardown(s, sock);
+    return r;
+}
+
+GSBResult gsb_statvfs(const GSBAuth *auth, const char *path, GSBSpace *out) {
+    GSBResult r = { GSB_OK, 0, {0}, {0} };
+    if (out) memset(out, 0, sizeof(*out));
+    int sock = -1;
+    LIBSSH2_SESSION *s = gsb_open(auth, &sock, &r);
+    if (!s) return r;
+
+    LIBSSH2_SFTP *sftp = libssh2_sftp_init(s);
+    if (!sftp) { gsb_set(&r, GSB_ERR_SFTP, "SFTP subsystem unavailable"); gsb_teardown(s, sock); return r; }
+
+    // An extension plenty of servers don't answer — reported as unsupported, not as an error, so a legitimate upload isn't blocked.
+    LIBSSH2_SFTP_STATVFS st;
+    memset(&st, 0, sizeof(st));
+    if (out && libssh2_sftp_statvfs(sftp, path, strlen(path), &st) == 0) {
+        out->supported = 1;
+        // f_bavail is what a non-root user can actually use; f_frsize is the block size for both fields.
+        long long unit = (long long)(st.f_frsize ? st.f_frsize : st.f_bsize);
+        out->free_bytes  = (long long)st.f_bavail * unit;
+        out->total_bytes = (long long)st.f_blocks * unit;
+    }
+
     libssh2_sftp_shutdown(sftp);
     gsb_teardown(s, sock);
     return r;

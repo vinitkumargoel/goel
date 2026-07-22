@@ -175,6 +175,8 @@ extension DownloadManager {
             runPostDownloadActions(task)
         }
         deleteSourceTorrentIfRequested(task)
+        // Last, and only when the payload is settled: the upload reads the very file the actions above may still be rewriting.
+        startRemoteUploadIfNeeded(task)
     }
 
     /// Fold the antivirus result back into the task so the verdict survives

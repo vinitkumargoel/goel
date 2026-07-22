@@ -160,6 +160,70 @@ public struct SFTPClient: Sendable {
         }
     }
 
+    // MARK: Upload-destination preflight
+
+    /// stat + lstat + realpath in one session. A path that simply isn't there comes back `exists == false`, not as an error.
+    public func pathInfo(_ path: String) async throws -> SFTPPathInfo {
+        let box = StatBox()
+        _ = try await run { auth in
+            withUnsafeMutablePointer(to: &box.raw) { gsb_stat(auth, path, $0) }
+        }
+        return SFTPPathInfo(box.raw)
+    }
+
+    /// Free space on the filesystem holding `path`; `isSupported == false` means the server doesn't answer, which is a warning rather than a refusal.
+    public func freeSpace(at path: String) async throws -> SFTPFreeSpace {
+        let box = SpaceBox()
+        _ = try await run { auth in
+            withUnsafeMutablePointer(to: &box.raw) { gsb_statvfs(auth, path, $0) }
+        }
+        return SFTPFreeSpace(box.raw)
+    }
+
+    /// Upload, verify the landed size, and rename into place — one session, so nothing slips between the check and the rename. Any failure removes the temporary and leaves the final name untouched.
+    public func uploadAtomic(localURL: URL, temporaryRemote: String, finalRemote: String,
+                             overwrite: Bool,
+                             maxBytesPerSecond: Int64 = 0,
+                             shouldContinue: (@Sendable () -> Bool)? = nil,
+                             progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
+        guard let handle = try? FileHandle(forReadingFrom: localURL) else {
+            throw SFTPError(kind: .io, message: "Could not open the local file for reading")
+        }
+        let total = (try? FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
+        let readError = ReadErrorBox()
+        let ctx = TransferContext(
+            onWrite: { _ in true },
+            onProgress: { total, sofar in progress(sofar, total); return shouldContinue?() ?? true },
+            onRead: { buf in
+                do {
+                    guard let chunk = try handle.read(upToCount: buf.count), !chunk.isEmpty else { return 0 }
+                    _ = chunk.copyBytes(to: buf.bindMemory(to: UInt8.self))
+                    return chunk.count
+                } catch {
+                    readError.set(error)
+                    return -1
+                }
+            })
+        defer { try? handle.close() }
+        do {
+            _ = try await runTransfer(ctx) { auth, box in
+                temporaryRemote.withCString { temp in
+                    finalRemote.withCString { final in
+                        gsb_upload_atomic(auth, temp, final, total, maxBytesPerSecond,
+                                          overwrite ? 1 : 0, sftpReadThunk, sftpProgressThunk, box)
+                    }
+                }
+            }
+        } catch let e as SFTPError where e.kind == .aborted {
+            // A local read failure reaches the C shim as an abort, same as a user cancel.
+            if let underlying = readError.value {
+                throw SFTPError(kind: .io,
+                                message: "Could not read the local file: \(underlying.localizedDescription)")
+            }
+            throw e
+        }
+    }
+
     // MARK: Streaming download (for the queued-download engine)
 
     /// Low-level resumable download. The caller's `write` returns false to fail,
@@ -264,6 +328,52 @@ public struct SFTPClient: Sendable {
     }
 }
 
+/// What a remote path turned out to be. `resolvedPath` is the server's realpath, so a destination that is a symlink elsewhere can be caught before anything is written.
+public struct SFTPPathInfo: Sendable, Hashable {
+    public var exists: Bool
+    public var isDirectory: Bool
+    public var isSymlink: Bool
+    public var permissions: UInt32
+    public var size: Int64
+    public var modified: Date?
+    public var resolvedPath: String?
+
+    init(_ raw: GSBStat) {
+        exists = raw.exists != 0
+        isDirectory = raw.is_dir != 0
+        isSymlink = raw.is_link != 0
+        permissions = UInt32(truncatingIfNeeded: raw.perms)
+        size = raw.size
+        modified = raw.mtime > 0 ? Date(timeIntervalSince1970: TimeInterval(raw.mtime)) : nil
+        let path = withUnsafeBytes(of: raw.resolved) {
+            String(cString: $0.baseAddress!.assumingMemoryBound(to: CChar.self))
+        }
+        resolvedPath = path.isEmpty ? nil : path
+    }
+}
+
+/// Remote free space. `isSupported == false` means the server doesn't implement the statvfs extension — unknown, not full.
+public struct SFTPFreeSpace: Sendable, Hashable {
+    public var isSupported: Bool
+    public var freeBytes: Int64
+    public var totalBytes: Int64
+
+    init(_ raw: GSBSpace) {
+        isSupported = raw.supported != 0
+        freeBytes = raw.free_bytes
+        totalBytes = raw.total_bytes
+    }
+}
+
+/// Carries a C out-param across the dedicated op thread and back to the awaiting task, which reads it only after that thread has joined.
+final class StatBox: @unchecked Sendable {
+    var raw = GSBStat()
+}
+
+final class SpaceBox: @unchecked Sendable {
+    var raw = GSBSpace()
+}
+
 /// A Swift view of a `GSBResult`.
 public struct SFTPResult: Sendable {
     public let code: Int32
@@ -302,6 +412,8 @@ public struct SFTPResult: Sendable {
         case Int(GSB_ERR_REMOVE): kind = .remove
         case Int(GSB_ERR_RENAME): kind = .rename
         case Int(GSB_ERR_STAT): kind = .stat
+        case Int(GSB_ERR_VERIFY): kind = .verify
+        case Int(GSB_ERR_EXISTS): kind = .exists
         default: kind = .unknown
         }
         return SFTPError(kind: kind, message: message.isEmpty ? "SFTP error \(code)" : message)

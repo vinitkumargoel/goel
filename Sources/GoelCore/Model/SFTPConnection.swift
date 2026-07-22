@@ -14,8 +14,12 @@ public struct SFTPConnection: Codable, Sendable, Identifiable, Hashable {
     /// Try the running ssh-agent in addition to the stored password.
     public var useAgent: Bool
 
+    /// Where downloads sent here land by default; nil falls back to ``initialPath``. Separate from it on purpose — someone may browse from `/` while filing downloads under `/srv/media`, and one field meaning both would make each setting move the other.
+    public var defaultUploadPath: String?
+
     public init(id: UUID = UUID(), name: String, host: String, port: Int = 22,
-                username: String, initialPath: String = ".", useAgent: Bool = false) {
+                username: String, initialPath: String = ".", useAgent: Bool = false,
+                defaultUploadPath: String? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -23,6 +27,17 @@ public struct SFTPConnection: Codable, Sendable, Identifiable, Hashable {
         self.username = username
         self.initialPath = initialPath
         self.useAgent = useAgent
+        self.defaultUploadPath = defaultUploadPath
+    }
+
+    /// Resolves `defaultUploadPath → initialPath → "."`. Always overridable per download.
+    public var resolvedUploadPath: String {
+        for candidate in [defaultUploadPath, initialPath] {
+            guard let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else { continue }
+            return value
+        }
+        return "."
     }
 
     /// The Keychain lookup key for this server's password. Scoped by
@@ -92,6 +107,19 @@ public struct SFTPError: Error, Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
         case resolve, connect, handshake, hostKey, hostKeyMismatch
         case auth, sftp, open, io, aborted, mkdir, remove, rename, stat, unknown
+        /// Bytes landed but the server reports a different size — never treated as success.
+        case verify
+        /// Refusing to overwrite an existing remote entry.
+        case exists
+    }
+
+    /// Whether retrying could plausibly help. A mismatched host key or a bad path never fixes itself by trying again, and retrying an auth failure just earns a ban.
+    public var isRetryable: Bool {
+        switch kind {
+        case .hostKeyMismatch, .hostKey, .auth, .exists, .aborted: return false
+        case .resolve, .connect, .handshake, .sftp, .open, .io, .verify,
+             .mkdir, .remove, .rename, .stat, .unknown: return true
+        }
     }
     public var kind: Kind
     public var message: String

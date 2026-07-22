@@ -33,6 +33,8 @@ enum {
     GSB_ERR_REMOVE       = -13,
     GSB_ERR_STAT         = -14,
     GSB_ERR_RENAME       = -15,
+    GSB_ERR_VERIFY       = -16,  // bytes landed, but the remote size disagrees
+    GSB_ERR_EXISTS       = -17,  // refusing to clobber an existing remote entry
 };
 
 typedef struct GSBResult {
@@ -94,6 +96,38 @@ GSBResult gsb_upload(const GSBAuth *auth, const char *remote, long long total,
                      long long max_bps,
                      gsb_read_cb read_cb, gsb_progress_cb progress_cb,
                      void *userdata);
+
+// ---- upload-destination preflight ----------------------------------------
+
+// What a destination path actually is; `resolved` carries the realpath so a symlinked destination can be re-checked against the intended tree rather than followed blindly.
+typedef struct GSBStat {
+    int exists;
+    int is_dir;
+    int is_link;              // the path itself is a symlink (lstat)
+    unsigned long perms;      // 0 when the server didn't report permissions
+    long long size;
+    long long mtime;
+    char resolved[1024];      // realpath, "" if unavailable
+} GSBStat;
+
+// stat + lstat + realpath in ONE session. `exists == 0` with GSB_OK is a legitimate answer, not an error.
+GSBResult gsb_stat(const GSBAuth *auth, const char *path, GSBStat *out);
+
+// Free space on the filesystem holding `path`; `supported == 0` means the server lacks the statvfs@openssh.com extension, so warn rather than refuse.
+typedef struct GSBSpace {
+    int supported;
+    long long free_bytes;
+    long long total_bytes;
+} GSBSpace;
+
+GSBResult gsb_statvfs(const GSBAuth *auth, const char *path, GSBSpace *out);
+
+// Upload to `temp_remote`, verify the landed size, rename onto `final_remote` — one session, so nothing can slip between the check and the rename. `overwrite == 0` refuses an existing target (GSB_ERR_EXISTS). Any failure removes the temporary.
+GSBResult gsb_upload_atomic(const GSBAuth *auth,
+                            const char *temp_remote, const char *final_remote,
+                            long long total, long long max_bps, int overwrite,
+                            gsb_read_cb read_cb, gsb_progress_cb progress_cb,
+                            void *userdata);
 
 GSBResult gsb_mkdir(const GSBAuth *auth, const char *path);
 GSBResult gsb_remove(const GSBAuth *auth, const char *path, int is_dir);

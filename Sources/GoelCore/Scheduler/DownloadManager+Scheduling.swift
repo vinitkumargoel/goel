@@ -14,13 +14,14 @@ extension DownloadManager {
     /// cap decision stays atomic) and fires the async engine calls after.
     func schedule() {
         let profile = settings.selectedProfile
-        let promoted = SchedulingPolicy.promotions(
+        // Gated at queue time, not at completion: segmented HTTP claims the whole file size the moment it starts, so once a download is running the space is already gone.
+        let promoted = withinStagingBudget(SchedulingPolicy.promotions(
             tasks: tasks,
             runningSlots: runningSlots,
             maxSimultaneousDownloads: profile.maxSimultaneousDownloads,
             maxMetadataResolutions: profile.maxMetadataResolutions,
             windowOpen: scheduleWindowOpen
-        )
+        ))
         guard !promoted.isEmpty else { return }
 
         var launches: [(id: UUID, resume: Bool)] = []

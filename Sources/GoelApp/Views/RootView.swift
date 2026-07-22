@@ -111,6 +111,10 @@ struct RootView: View {
                 onResolve: { vm.resolveUploadConflicts(request, decisions: $0) },
                 onCancel: { vm.sftpUploadConflicts = nil })
         }
+        .sheet(item: $vm.sendToServerTask) { task in
+            SendToServerSheet(task: task)
+                .environmentObject(vm)
+        }
         .sheet(item: $vm.playerItem) { item in
             InAppPlayerView(item: item) { vm.playerItem = nil }
         }

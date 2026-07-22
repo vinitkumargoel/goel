@@ -60,6 +60,12 @@ extension DownloadManager {
     /// us. Conservative on purpose: an absent *containing directory* is treated
     /// as "unknown" (unmounted volume, moved download folder), not "deleted".
     static func completedPayloadIsMissing(_ task: DownloadTask, fileManager fm: FileManager) -> Bool {
+        // A payload sent to a server and then cleaned up locally is *supposed* to be gone. Without this the sweep would read it as a Finder delete and drop the row within five seconds of the upload succeeding.
+        if let destination = task.remoteDestination {
+            if destination.localCopyIntentionallyRemoved { return false }
+            // An upload in flight is reading the file right now; a task waiting to be sent still needs it. Neither is evidence the user deleted anything.
+            if destination.state == .uploading || destination.state == .pending { return false }
+        }
         guard fm.fileExists(atPath: task.saveDirectory) else { return false }
         return !fm.fileExists(atPath: task.savePath)
     }

@@ -176,6 +176,13 @@ struct DetailPanelView: View {
             KVRow(key: "Priority", value: task.priority.displayName)
             KVRow(key: "Added", value: task.addedString)
             KVRow(key: "Save path", value: task.savePath, copyable: true)
+            if let destination = task.remoteDestination {
+                KVRow(key: "Server", value: destination.displayLocation, copyable: true)
+                if let status = vm.remoteStatusText(task) { KVRow(key: "Transfer", value: status) }
+                if let remotePath = destination.remotePath {
+                    KVRow(key: "Server path", value: remotePath, copyable: true)
+                }
+            }
             KVRow(key: "Source", value: task.sourceLocator, copyable: true)
         }
         .padding(.horizontal, 16)
