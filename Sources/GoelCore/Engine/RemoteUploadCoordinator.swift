@@ -54,15 +54,20 @@ public actor RemoteUploadCoordinator {
     private var breakers: [UUID: Breaker] = [:]
 
     /// How often a queued upload re-checks whether it may start. Uploads run for seconds to minutes, so a quarter-second of admission latency is invisible — and polling keeps cancellation correct for free, where hand-rolled continuation bookkeeping would not.
-    static let pollInterval: UInt64 = 250_000_000
+    public static let defaultPollInterval: UInt64 = 250_000_000
+
+    /// Overridable so tests can assert on admission without sleeping a real quarter-second per case.
+    private let pollInterval: UInt64
 
     /// Longest backoff between attempts against one server.
     static let maxBackoff: TimeInterval = 30 * 60
 
-    public init(maxGlobal: Int = 4, maxPerServer: Int = 2, failureThreshold: Int = 3) {
+    public init(maxGlobal: Int = 4, maxPerServer: Int = 2, failureThreshold: Int = 3,
+                pollInterval: UInt64 = RemoteUploadCoordinator.defaultPollInterval) {
         self.maxGlobal = max(1, maxGlobal)
         self.maxPerServer = max(1, maxPerServer)
         self.failureThreshold = max(1, failureThreshold)
+        self.pollInterval = max(1, pollInterval)
     }
 
     /// Apply changed settings. In-flight uploads keep their slots; a lowered cap takes effect as they drain.
@@ -84,7 +89,7 @@ public actor RemoteUploadCoordinator {
         while true {
             if let hold = currentHold(server) { throw ServerHeld(hold: hold) }
             if canStart(server: server, pathKey: key) { break }
-            try await Task.sleep(nanoseconds: Self.pollInterval)
+            try await Task.sleep(nanoseconds: pollInterval)
         }
         globalInFlight += 1
         perServerInFlight[server, default: 0] += 1

@@ -255,8 +255,24 @@ final class RemoteDestinationTests: XCTestCase {
 
     // MARK: Admission control
 
+    /// Admission is a polling loop, so a test that asserts "still blocked" has to let it spin.
+    /// A short interval keeps that honest without spending a real quarter-second per case.
+    private static let testPollInterval: UInt64 = 2_000_000   // 2ms
+
+    private func coordinator(maxGlobal: Int = 4, maxPerServer: Int = 2,
+                             failureThreshold: Int = 3) -> RemoteUploadCoordinator {
+        RemoteUploadCoordinator(maxGlobal: maxGlobal, maxPerServer: maxPerServer,
+                                failureThreshold: failureThreshold,
+                                pollInterval: Self.testPollInterval)
+    }
+
+    /// Give a queued `acquire` many poll cycles to wrongly admit, so "still blocked" means blocked rather than "not yet awake".
+    private func letAdmissionSpin() async {
+        try? await Task.sleep(nanoseconds: Self.testPollInterval * 25)
+    }
+
     func testGlobalAndPerServerCapsHold() async {
-        let coordinator = RemoteUploadCoordinator(maxGlobal: 3, maxPerServer: 2)
+        let coordinator = self.coordinator(maxGlobal: 3, maxPerServer: 2)
         let server = UUID()
         try? await coordinator.acquire(server: server, remotePath: "/a")
         try? await coordinator.acquire(server: server, remotePath: "/b")
@@ -265,7 +281,7 @@ final class RemoteDestinationTests: XCTestCase {
 
         // A third on the same server must wait, while another server proceeds.
         let blocked = Task { try await coordinator.acquire(server: server, remotePath: "/c") }
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        await letAdmissionSpin()
         count = await coordinator.inFlightCount()
         XCTAssertEqual(count, 2, "per-server cap must hold")
 
@@ -279,12 +295,12 @@ final class RemoteDestinationTests: XCTestCase {
 
     /// Two tasks writing one remote path would interleave truncating writes and corrupt the file.
     func testSamePathIsNotClaimedTwice() async {
-        let coordinator = RemoteUploadCoordinator(maxGlobal: 4, maxPerServer: 4)
+        let coordinator = self.coordinator(maxGlobal: 4, maxPerServer: 4)
         let server = UUID()
         try? await coordinator.acquire(server: server, remotePath: "/srv/film.mkv")
 
         let blocked = Task { try await coordinator.acquire(server: server, remotePath: "/srv/film.mkv") }
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        await letAdmissionSpin()
         var count = await coordinator.inFlightCount()
         XCTAssertEqual(count, 1)
 
@@ -296,12 +312,12 @@ final class RemoteDestinationTests: XCTestCase {
 
     /// Cancelling while queued must leave nothing reserved, or the cap leaks a slot per cancellation.
     func testCancellingWhileQueuedReservesNothing() async {
-        let coordinator = RemoteUploadCoordinator(maxGlobal: 1, maxPerServer: 1)
+        let coordinator = self.coordinator(maxGlobal: 1, maxPerServer: 1)
         let server = UUID()
         try? await coordinator.acquire(server: server, remotePath: "/a")
 
         let blocked = Task { try await coordinator.acquire(server: server, remotePath: "/b") }
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        await letAdmissionSpin()
         blocked.cancel()
         _ = try? await blocked.value
 
@@ -310,10 +326,27 @@ final class RemoteDestinationTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
+    /// A freed slot must actually be taken, not merely be takeable — the poll loop is the only thing that hands it over.
+    func testAFreedSlotIsHandedToTheWaiter() async {
+        let coordinator = self.coordinator(maxGlobal: 1, maxPerServer: 1)
+        let server = UUID()
+        try? await coordinator.acquire(server: server, remotePath: "/a")
+
+        let waiter = Task { try await coordinator.acquire(server: server, remotePath: "/b") }
+        await letAdmissionSpin()
+        var count = await coordinator.inFlightCount()
+        XCTAssertEqual(count, 1, "the cap must hold while the slot is busy")
+
+        await coordinator.release(server: server, remotePath: "/a")
+        _ = try? await waiter.value
+        count = await coordinator.inFlightCount()
+        XCTAssertEqual(count, 1, "the waiter should have taken the freed slot")
+    }
+
     // MARK: Circuit breaker
 
     func testBreakerOpensOnlyAfterTheThreshold() async {
-        let coordinator = RemoteUploadCoordinator(failureThreshold: 3)
+        let coordinator = self.coordinator(failureThreshold: 3)
         let server = UUID()
         for _ in 0..<2 {
             await coordinator.recordFailure(server: server, fault: .transient(reason: "timeout"))
@@ -329,7 +362,7 @@ final class RemoteDestinationTests: XCTestCase {
 
     /// A changed host key or a rejected password holds the server until the user acts — no timer should quietly resume it.
     func testUnfixableFailureHoldsImmediatelyAndIndefinitely() async {
-        let coordinator = RemoteUploadCoordinator(failureThreshold: 3)
+        let coordinator = self.coordinator(failureThreshold: 3)
         let server = UUID()
         await coordinator.recordFailure(server: server, fault: .unusable(reason: "Host key changed"))
         let hold = await coordinator.currentHold(server)
@@ -340,7 +373,7 @@ final class RemoteDestinationTests: XCTestCase {
     }
 
     func testSuccessAndManualResetBothClearTheBreaker() async {
-        let coordinator = RemoteUploadCoordinator(failureThreshold: 1)
+        let coordinator = self.coordinator(failureThreshold: 1)
         let server = UUID()
         await coordinator.recordFailure(server: server, fault: .unusable(reason: "bad password"))
         var hold = await coordinator.currentHold(server)
@@ -360,7 +393,7 @@ final class RemoteDestinationTests: XCTestCase {
     ///
     /// And it must *refuse*, not queue: a manual hold clears only when a person acts, so an upload that waited on one would sit `pending` in silence for as long as the app ran.
     func testAHeldServerRefusesAdmissionRatherThanQueueing() async {
-        let coordinator = RemoteUploadCoordinator(maxGlobal: 4, maxPerServer: 4, failureThreshold: 1)
+        let coordinator = self.coordinator(maxGlobal: 4, maxPerServer: 4, failureThreshold: 1)
         let server = UUID()
         await coordinator.recordFailure(server: server, fault: .unusable(reason: "held"))
 
@@ -423,7 +456,7 @@ final class RemoteDestinationTests: XCTestCase {
 
     /// A timed backoff still queues — it clears on its own, so refusing would give up on a server that is about to come back.
     func testATimedBackoffStillAdmitsOnceItExpires() async {
-        let coordinator = RemoteUploadCoordinator(maxGlobal: 2, maxPerServer: 2, failureThreshold: 1)
+        let coordinator = self.coordinator(maxGlobal: 2, maxPerServer: 2, failureThreshold: 1)
         let server = UUID()
         await coordinator.recordFailure(server: server, fault: .transient(reason: "dropped"))
         guard case .backoff = await coordinator.currentHold(server) else {

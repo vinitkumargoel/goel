@@ -137,8 +137,36 @@ final class AutomationCoreTests: XCTestCase {
         // Both claimed by the window; network claims nothing (single attribution).
         XCTAssertEqual(Set(d.actions), [.pause(a, .window), .pause(b, .window)])
         XCTAssertEqual(d.memory.windowPausedIDs, [a, b])
-        XCTAssertTrue(d.memory.networkPaused)
+        // Unlatched, because it paused nothing. Latching an empty set would consume
+        // the policy: the tasks would resume when the window reopens and this branch
+        // would then be skipped, leaving them running on the expensive network.
+        XCTAssertFalse(d.memory.networkPaused)
         XCTAssertTrue(d.memory.networkPausedIDs.isEmpty)
+    }
+
+    /// The reason the branch above stays unlatched: once the window releases the
+    /// tasks, the still-expensive network must be able to claim them on a later
+    /// tick. A latched-but-empty policy would let them run unthrottled forever.
+    func testNetworkStillClaimsTasksTheWindowLetsGoOf() {
+        let a = UUID()
+        var s = windowSettings()
+        s.pauseOnExpensiveNetwork = true
+
+        // Tick 1: window closing, so the window claims the task and network latches nothing.
+        let closing = AutomationCore.decide(
+            snapshot(now: date(weekday: 3, hour: 18), settings: s,
+                     tasks: [phase(a, downloading: true)], expensive: true))
+        XCTAssertFalse(closing.memory.networkPaused)
+
+        // Tick 2: window open again and the task running, network still expensive.
+        let reopened = AutomationCore.decide(
+            snapshot(now: date(weekday: 3, hour: 12), settings: s,
+                     tasks: [phase(a, downloading: true)], expensive: true,
+                     memory: closing.memory))
+        XCTAssertTrue(reopened.actions.contains(.pause(a, .network)),
+                      "the network policy must still be able to claim a task the window released")
+        XCTAssertTrue(reopened.memory.networkPaused)
+        XCTAssertEqual(reopened.memory.networkPausedIDs, [a])
     }
 
     // MARK: Scheduled starts
