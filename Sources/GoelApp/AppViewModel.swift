@@ -437,7 +437,7 @@ final class AppViewModel: ObservableObject {
             Task {
                 await core.applyNetworkPolicy(expensive: expensive, constrained: constrained)
                 await core.setVPNDefaultRouteActive(vpnActive)
-                await MainActor.run { self?.refreshAggregationState() }
+                await MainActor.run { [weak self] in self?.refreshAggregationState() }
             }
         }
         netMonitor.start(queue: DispatchQueue(label: "goel.network-path"))
@@ -449,9 +449,11 @@ final class AppViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshAggregationState()
+            // Delivered on `queue: .main`, so we are already on the main actor —
+            // the closure type just isn't isolated. Assert it rather than hopping.
+            MainActor.assumeIsolated { self?.refreshAggregationState() }
         }
-        await refreshAggregationState()
+        refreshAggregationState()
         startSpeedSampler()
         // Returning to the app promptly reconciles the list with the filesystem:
         // a download the user deleted or moved in Finder disappears without
@@ -470,8 +472,8 @@ final class AppViewModel: ObservableObject {
         appTerminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            self.persistSpeedHistory()
+            // Delivered on `queue: .main` — already the main actor, see above.
+            MainActor.assumeIsolated { self?.persistSpeedHistory() }
         }
         applyRemoteAccess()
         SparkleUpdaterService.shared.startIfConfigured()

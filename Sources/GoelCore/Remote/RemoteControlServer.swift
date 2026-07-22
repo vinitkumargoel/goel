@@ -294,7 +294,7 @@ public actor RemoteControlServer {
                 connection.cancel()
             })
         }
-        await connectionClosed(connection)
+        connectionClosed(connection)
     }
 
     /// Send one buffer, reporting whether the stack accepted it. A torn-down

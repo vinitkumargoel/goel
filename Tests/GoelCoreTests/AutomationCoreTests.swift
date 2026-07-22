@@ -137,7 +137,11 @@ final class AutomationCoreTests: XCTestCase {
         // Both claimed by the window; network claims nothing (single attribution).
         XCTAssertEqual(Set(d.actions), [.pause(a, .window), .pause(b, .window)])
         XCTAssertEqual(d.memory.windowPausedIDs, [a, b])
-        XCTAssertTrue(d.memory.networkPaused)
+        // ...and because it claimed nothing, the network policy stays UNLATCHED.
+        // Latching on an empty set would consume the policy: when these tasks later
+        // resume over a still-expensive network, the pause branch would be skipped
+        // (`networkPaused` already true) and they would never be re-paused.
+        XCTAssertFalse(d.memory.networkPaused)
         XCTAssertTrue(d.memory.networkPausedIDs.isEmpty)
     }
 

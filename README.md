@@ -59,7 +59,7 @@ On **Linux**, the same engine runs headless as **`GoelDaemon`**, driven from the
 - **Full BitTorrent** — `.torrent` files and magnets via libtorrent, per-file priority, and complete seeding controls.
 - **SFTP browser** — browse, upload, and download on remote servers with host-key pinning.
 - **HLS video** — download streaming video to a clean `.mp4`.
-- **Easy adding** — clipboard auto-paste, batch add, drag & drop, a floating Drop Basket, a web-page Link Grabber, and an optional bundled `yt-dlp` resolver.
+- **Easy adding** — clipboard auto-paste, batch add, drag & drop, a floating Drop Basket, and a web-page Link Grabber.
 - **Queue management** — sortable/filterable list, a detail panel with live speed graphs, and Low/Medium/High traffic profiles.
 - **Browser integration** — capture downloads from Chrome/Edge/Brave/Firefox and Safari extensions.
 - **macOS native** — menu-bar extra, Dock progress, Services menu, URL scheme, AppleScript, and notifications.
@@ -89,9 +89,6 @@ beta), right-click the app → **Open** → **Open**, or run once:
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Goel°.app"
 ```
-
-**Video-site downloads (yt-dlp):** the “Resolve Media with yt-dlp” button turns a video-site page into
-a direct download. Official releases bundle `yt-dlp`; otherwise install it yourself (`brew install yt-dlp`).
 
 ---
 
@@ -186,10 +183,6 @@ Scripts/build_app.sh
 ```
 This signs with hardened runtime + the entitlements in `Scripts/Goel.entitlements`, submits to Apple's
 notary service, and staples the ticket — which is what lets a downloaded app open without warnings.
-
-**Bundling toggle:** `BUNDLE_YTDLP=0 Scripts/build_app.sh` builds without the ~35 MB yt-dlp binary.
-
----
 
 ## Updating
 

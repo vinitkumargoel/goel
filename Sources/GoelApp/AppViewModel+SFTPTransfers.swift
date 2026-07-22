@@ -285,17 +285,23 @@ extension AppViewModel {
                 let remoteFile = file.rel.reduce(remoteRoot, SFTPBrowserPaths.join)
                 group.addTask { [weak self] in
                     if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
+                    // `[weak self]` binds a *var* (it can go nil at any time), and the
+                    // nested progress/completion closures below run concurrently — so
+                    // capturing it directly races. Snapshot it once into a `let` that
+                    // those closures can capture safely; it lives only as long as this
+                    // one file's upload.
+                    let vm = self
                     let coalescer = ProgressCoalescer()
                     try await client.upload(localURL: file.url, remote: remoteFile,
                                             maxBytesPerSecond: perStreamCap,
                                             shouldContinue: { !cancel.isCancelled }) { sofar, total in
                         guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
-                        Task { @MainActor in self?.setFolderFileBytes(id, index: index, bytes: sofar) }
+                        Task { @MainActor in vm?.setFolderFileBytes(id, index: index, bytes: sofar) }
                     }
                     // Pin this file's contribution to its full size on completion so
                     // the aggregate lands exactly on the total even if the final
                     // progress tick arrived just before EOF.
-                    await MainActor.run { self?.setFolderFileBytes(id, index: index, bytes: file.size) }
+                    await MainActor.run { vm?.setFolderFileBytes(id, index: index, bytes: file.size) }
                 }
             }
             while next < parallel { submit(next); next += 1 }
