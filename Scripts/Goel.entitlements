@@ -8,24 +8,19 @@
   entitlement here. What hardened runtime DOES require:
 
   * disable-library-validation — the app loads its OWN vendored dylibs
-    (libtorrent/OpenSSL/libssh2) and spawns the bundled yt-dlp, which is
-    PyInstaller-frozen and dlopen's its own unsigned Python .so files at runtime.
-    Without this, those loads are rejected under hardened runtime.
-  * allow-jit / allow-unsigned-executable-memory — Python (inside yt-dlp) can
-    require executable memory that isn't code-signed.
+    (libtorrent/OpenSSL/libssh2) from Contents/Frameworks. Without this, those
+    loads are rejected under hardened runtime.
 
-  These are all accepted by Apple's notary service (they are not App-Sandbox keys).
-  If you ship WITHOUT bundling yt-dlp and sign the vendored dylibs with the same
-  Developer ID (build_app.sh does), you can likely drop allow-jit /
-  allow-unsigned-executable-memory and keep only disable-library-validation.
+  This is accepted by Apple's notary service (it is not an App-Sandbox key).
+
+  allow-jit and allow-unsigned-executable-memory used to be here for the bundled
+  yt-dlp, which was PyInstaller-frozen and needed executable memory that was not
+  code-signed. That feature is gone, and nothing else in the app JITs, so both
+  keys were dropped — the remaining surface is the smaller for it.
 -->
 <plist version="1.0">
 <dict>
     <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
 </dict>
 </plist>

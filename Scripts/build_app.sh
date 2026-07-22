@@ -183,20 +183,6 @@ swiftc -parse-as-library \
   -Xlinker -e -Xlinker _NSExtensionMain
 codesign --force -s - "$APPEX"
 
-# Optional: bundle a self-contained yt-dlp (video-site → direct-stream resolver).
-# OFF by default. The binary is ~35 MB — two thirds of the installed app and
-# ~80% of the download, since its PyInstaller payload is already compressed and
-# so survives zipping intact. Without it the "Resolve with yt-dlp" button stays
-# hidden unless the user has their own copy (Homebrew/pipx are probed), which is
-# a far better default than making every user pay 35 MB for an optional feature.
-# Set BUNDLE_YTDLP=1 to ship the self-contained build.
-# Signed ad-hoc now so bundle_dylibs can seal the app wrapper; the Developer ID
-# block below re-signs it with hardened runtime + entitlements.
-if [ "${BUNDLE_YTDLP:-0}" = "1" ]; then
-  Scripts/fetch_ytdlp.sh "$APP/Contents/Resources/yt-dlp"
-  codesign --force -s - "$APP/Contents/Resources/yt-dlp"
-fi
-
 # Vendor native dylibs, rewrite install names, and sign.
 Scripts/bundle_dylibs.sh "$APP"
 
@@ -205,9 +191,9 @@ Scripts/bundle_dylibs.sh "$APP"
 #   CODESIGN_IDENTITY="Developer ID Application: Name (TEAMID)" — sign with
 #     hardened runtime, INSIDE-OUT (leaves first, app wrapper last)
 #   NOTARY_PROFILE="<notarytool keychain profile>" — submit + staple
-# The entitlements (disable-library-validation, allow-jit, …) let the hardened
-# app load its vendored dylibs and run the PyInstaller-based yt-dlp. See
-# Scripts/Goel.entitlements. Editing load commands invalidates signatures, so the
+# The entitlements (disable-library-validation) let the hardened app load its own
+# vendored dylibs. See Scripts/Goel.entitlements.
+# Editing load commands invalidates signatures, so the
 # ORDER matters: every nested Mach-O must be signed before the thing that contains it.
 ENTITLEMENTS="Scripts/Goel.entitlements"
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then
@@ -226,14 +212,11 @@ if [ -n "${CODESIGN_IDENTITY:-}" ]; then
     sign "$SPK"
   fi
 
-  # 3. Bundled yt-dlp — needs the hardened-runtime entitlements to run its Python.
-  [ -e "$APP/Contents/Resources/yt-dlp" ] && sign --entitlements "$ENTITLEMENTS" "$APP/Contents/Resources/yt-dlp"
-
-  # 4. SwiftPM resource bundles, 5. Safari extension.
+  # 3. SwiftPM resource bundles, 4. Safari extension.
   for b in "$APP/Contents/MacOS/"*.bundle; do [ -e "$b" ] && sign "$b"; done
   for x in "$APP/Contents/PlugIns/"*.appex; do [ -e "$x" ] && sign "$x"; done
 
-  # 6. Main executable, then 7. the app wrapper — both carry the app entitlements.
+  # 5. Main executable, then 6. the app wrapper — both carry the app entitlements.
   sign --entitlements "$ENTITLEMENTS" "$APP/Contents/MacOS/$APP_NAME"
   sign --entitlements "$ENTITLEMENTS" "$APP"
 

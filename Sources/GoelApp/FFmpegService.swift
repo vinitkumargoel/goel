@@ -2,10 +2,10 @@ import Foundation
 import GoelCore
 
 /// Optional hand-off to a user-installed `ffmpeg` for post-download media work:
-/// remuxing/converting a finished video and extracting its audio track. Like the
-/// yt-dlp integration, nothing here runs unless ffmpeg is actually present — the
-/// app neither bundles nor downloads it, so the ~22 MB binary never bloats the
-/// release. Menu actions that need it stay hidden when it is missing.
+/// remuxing/converting a finished video and extracting its audio track. Nothing
+/// here runs unless ffmpeg is actually present — the app neither bundles nor
+/// downloads it, so the ~22 MB binary never bloats the release. Menu actions
+/// that need it stay hidden when it is missing.
 enum FFmpegService {
 
     /// Locate the ffmpeg binary. Honours an explicit override path first, then a
