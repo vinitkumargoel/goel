@@ -29,6 +29,9 @@ public struct RootView: View {
         }
         .tint(Theme.Color.ember)
         .onOpenURL { app.handle(url: $0) }
+        .fullScreenCover(item: $app.playerID) { id in
+            PlayerView(downloadID: id)
+        }
     }
 }
 
@@ -49,4 +52,11 @@ struct RemoteView: View {
             .navigationTitle("Remote")
         }
     }
+}
+
+/// `fullScreenCover(item:)` needs an `Identifiable`, and a bare `UUID` is not one. Rather than
+/// weaken `AppModel.playerID` to a bool plus a separate id, conform it here — the identity of a
+/// `UUID` is itself.
+extension UUID: @retroactive Identifiable {
+    public var id: UUID { self }
 }

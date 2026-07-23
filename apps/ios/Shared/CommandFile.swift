@@ -52,7 +52,12 @@ public struct DownloadCommand: Codable, Sendable, Equatable {
     public init(id: String, action: DownloadCommandAction, issuedAt: Date = Date(), payload: String? = nil) {
         self.id = id
         self.action = action
-        self.issuedAt = issuedAt
+        // Quantise to whole microseconds — the same resolution `key` uses. A `Date` written to
+        // JSON as a Double and read back is not bit-identical, so without this a command is not
+        // `==` its own round-trip, and two records that differ only by sub-microsecond noise
+        // would look like distinct commands to the idempotency ledger.
+        let micros = (issuedAt.timeIntervalSince1970 * 1_000_000).rounded()
+        self.issuedAt = Date(timeIntervalSince1970: micros / 1_000_000)
         self.payload = payload
     }
 
