@@ -398,7 +398,6 @@ public struct WidgetSurface: View {
 
 /// Pause / Resume and Cancel, as drawn in `visual.html` frames 5 and 6.
 ///
-/// **These are inert on purpose, for exactly one task.** iOS 17+ backs Live Activity buttons with
 /// App Intents, and `Shared/DownloadIntents.swift` (T15) has not been written yet — inventing the
 /// intent types here would mean the next agent has to delete them. The layout, the metrics and
 /// the red Cancel are final; only the action is a stub.

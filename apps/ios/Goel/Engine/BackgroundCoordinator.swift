@@ -130,7 +130,14 @@ public final class BackgroundCoordinator: NSObject, URLSessionDownloadDelegate, 
         }
         BackgroundEventsRegistry.store(identifier: identifier, handler: completionHandler)
         BackgroundCoordinator.shared.warmUp()
+        // The app may have been relaunched straight into the background, so `scenePhase` never
+        // becomes `.active` and the two drain sites in `AppModel` never fire. Without this, a
+        // Pause tapped in the Dynamic Island shows as paused while the transfer keeps running.
+        onBackgroundWake?()
     }
+
+    /// Set by `AppModel` at construction. Runs on every background-session wake.
+    @MainActor public static var onBackgroundWake: (@MainActor () -> Void)?
 
     private func backgroundSession() -> URLSession {
         state.withLock { state in

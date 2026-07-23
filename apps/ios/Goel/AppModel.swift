@@ -169,6 +169,15 @@ public final class AppModel {
         let t = model.tuning
         Task { await engine.applyTuning(t) }
         model.resumeInterruptedDownloads()
+        // Anything the widget extension queued while we were not running (a Pause tapped from
+        // the Dynamic Island) is in the App Group command file, not in memory.
+        CommandDrain.drain(into: model)
+        BackgroundCoordinator.onBackgroundWake = { [weak model] in
+            guard let model else { return }
+            CommandDrain.drain(into: model)
+            ActivityController.shared.backgroundWake(model.store.downloads)
+            model.store.persistNow()
+        }
         return model
     }
 
@@ -289,6 +298,7 @@ public final class AppModel {
             ActivityController.shared.backgroundWake(store.downloads)
             Task { [engine] in await engine.enterBackground() }
         case .active:
+            CommandDrain.drain(into: self)
             ActivityController.shared.sync(store.downloads)
             Task { [engine] in await engine.enterForeground() }
         case .inactive:
