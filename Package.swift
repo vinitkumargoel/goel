@@ -173,12 +173,22 @@ var targets: [Target] = [
         name: "GoelRemoteServer",
         dependencies: remoteServerDeps
     ),
+    // The non-async boundary: a synchronous / callback wrapper over the async
+    // actors, for the JNI (Android) or any C-ABI consumer. A leaf on
+    // GoelContracts + GoelCore only — no torrent/remote/NIO deps — so it ships in
+    // the iOS build and an Android build alike. Its JSON in/out matches the
+    // golden-conformance fixtures.
+    .target(
+        name: "GoelFacade",
+        dependencies: ["GoelContracts", "GoelCore"]
+    ),
 ]
 var products: [Product] = [
     .library(name: "GoelContracts", targets: ["GoelContracts"]),
     .library(name: "GoelCore", targets: ["GoelCore"]),
     .library(name: "GoelTorrent", targets: ["GoelTorrent"]),
     .library(name: "GoelRemoteServer", targets: ["GoelRemoteServer"]),
+    .library(name: "GoelFacade", targets: ["GoelFacade"]),
 ]
 
 #if os(Linux)
@@ -207,7 +217,7 @@ targets += [
             .process("Resources"),
         ]
     ),
-    .testTarget(name: "GoelCoreTests", dependencies: ["GoelCore", "GoelTorrent", "GoelRemoteServer"]),
+    .testTarget(name: "GoelCoreTests", dependencies: ["GoelCore", "GoelTorrent", "GoelRemoteServer", "GoelFacade"]),
 ]
 products += [
     .executable(name: "GoelDownloader", targets: ["GoelApp"]),

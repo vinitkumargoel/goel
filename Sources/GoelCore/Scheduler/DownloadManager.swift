@@ -395,8 +395,19 @@ public actor DownloadManager {
 
     /// A live stream of task-list snapshots. The current list is delivered
     /// immediately on subscription, then again after every change.
-    public func updates() -> AsyncStream<[DownloadTask]> {
-        let (stream, continuation) = AsyncStream<[DownloadTask]>.makeStream(bufferingPolicy: .unbounded)
+    ///
+    /// Each element is a *complete snapshot of the world*, so a consumer that
+    /// can't keep up loses nothing of value by dropping intermediate frames —
+    /// pass `.bufferingNewest(1)`. That matters for a slow consumer behind a
+    /// foreign-language boundary (`GoelFacade`'s callback path): the default
+    /// `.unbounded` would grow without limit behind a publisher that ticks
+    /// several times a second and then deliver a backlog of stale snapshots.
+    /// The default stays `.unbounded` so existing in-process subscribers
+    /// (the SwiftUI app, the portal) are unaffected.
+    public func updates(
+        bufferingPolicy: AsyncStream<[DownloadTask]>.Continuation.BufferingPolicy = .unbounded
+    ) -> AsyncStream<[DownloadTask]> {
+        let (stream, continuation) = AsyncStream<[DownloadTask]>.makeStream(bufferingPolicy: bufferingPolicy)
         let key = UUID()
         observers[key] = continuation
         continuation.yield(tasks)
