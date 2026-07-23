@@ -108,13 +108,24 @@ dependencies += [
 var coreDeps: [Target.Dependency] = [
     "GoelContracts",
     .product(name: "GRDB", package: "GRDB.swift"),
-    "TorrentBridge",
     "CurlBridge",
     "SSHBridge",
 ]
 #if os(Linux)
 coreDeps += [
     "CryptoBridge",
+    .product(name: "Crypto", package: "swift-crypto"),
+]
+#endif
+
+// ---- GoelRemoteServer dependencies (the remote-control HTTP portal) --------
+// Split out of GoelCore so the iOS build can drop it. macOS uses Network.framework
+// (a system framework, no package dep); Linux uses SwiftNIO for the socket server
+// and swift-crypto for the password hash. The NIO products moved here from
+// `coreDeps` — GoelCore itself no longer speaks NIO.
+var remoteServerDeps: [Target.Dependency] = ["GoelContracts", "GoelCore"]
+#if os(Linux)
+remoteServerDeps += [
     .product(name: "Crypto", package: "swift-crypto"),
     .product(name: "NIOCore", package: "swift-nio"),
     .product(name: "NIOPosix", package: "swift-nio"),
@@ -142,17 +153,39 @@ var targets: [Target] = [
         ],
         linkerSettings: linuxCoreLink
     ),
+    // Optional desktop-only engine: the real libtorrent-backed BitTorrent engine.
+    // Depends on GoelCore (for the shared EventHub) but GoelCore does NOT depend
+    // back on it — the scheduler receives it through `DownloadManager`'s
+    // `makeTorrentEngine` seam — so an iOS build simply drops this product (and
+    // libtorrent with it). `TorrentBridge` carries the libtorrent compile/link
+    // flags, so listing it as a dependency is all the wiring this target needs.
+    .target(
+        name: "GoelTorrent",
+        dependencies: ["GoelContracts", "GoelCore", "TorrentBridge"]
+    ),
+    // Optional desktop-only feature: the browser remote-control HTTP portal.
+    // A leaf consumer of GoelCore — it drives ``DownloadManager`` and, from
+    // outside GoelCore, extends it to satisfy this module's own `RemoteBackend`
+    // protocol; GoelCore never calls back into the portal (only doc comments
+    // mention it), so the iOS build simply drops this product. Its NIO/crypto
+    // deps live in `remoteServerDeps`.
+    .target(
+        name: "GoelRemoteServer",
+        dependencies: remoteServerDeps
+    ),
 ]
 var products: [Product] = [
     .library(name: "GoelContracts", targets: ["GoelContracts"]),
     .library(name: "GoelCore", targets: ["GoelCore"]),
+    .library(name: "GoelTorrent", targets: ["GoelTorrent"]),
+    .library(name: "GoelRemoteServer", targets: ["GoelRemoteServer"]),
 ]
 
 #if os(Linux)
 targets += [
     // Tiny OpenSSL shim for AES-128-CBC (HLS), reusing the already-linked libcrypto.
     .target(name: "CryptoBridge", linkerSettings: [.linkedLibrary("crypto")]),
-    .executableTarget(name: "GoelDaemon", dependencies: ["GoelCore"]),
+    .executableTarget(name: "GoelDaemon", dependencies: ["GoelCore", "GoelTorrent", "GoelRemoteServer"]),
 ]
 products += [
     .executable(name: "GoelDaemon", targets: ["GoelDaemon"]),
@@ -163,6 +196,8 @@ targets += [
         name: "GoelApp",
         dependencies: [
             "GoelCore",
+            "GoelTorrent",
+            "GoelRemoteServer",
             .product(name: "Sparkle", package: "Sparkle"),
         ],
         resources: [
@@ -172,7 +207,7 @@ targets += [
             .process("Resources"),
         ]
     ),
-    .testTarget(name: "GoelCoreTests", dependencies: ["GoelCore"]),
+    .testTarget(name: "GoelCoreTests", dependencies: ["GoelCore", "GoelTorrent", "GoelRemoteServer"]),
 ]
 products += [
     .executable(name: "GoelDownloader", targets: ["GoelApp"]),

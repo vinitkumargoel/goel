@@ -1,5 +1,6 @@
 import XCTest
 @testable import GoelCore
+@testable import GoelRemoteServer
 
 /// Unit coverage for the request-accumulation primitives that let a server shell
 /// read a COMPLETE HTTP request before dispatching. These are the fix for the

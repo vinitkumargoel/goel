@@ -1,5 +1,7 @@
 import Foundation
 import GoelCore
+import GoelTorrent
+import GoelRemoteServer
 #if canImport(Glibc)
 import Glibc   // umask, so the token file is created private from birth
 #endif
@@ -63,7 +65,7 @@ let retainer = Retainer()
 Task {
     do {
         let store = try PersistenceStore(path: dbPath)
-        let manager = DownloadManager(store: store)
+        let manager = DownloadManager(store: store) { makeTorrentEngine(settings: $0) }
         retainer.manager = manager   // keep alive for the process lifetime
         await manager.restore()
 

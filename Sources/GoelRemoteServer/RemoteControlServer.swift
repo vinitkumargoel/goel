@@ -1,5 +1,7 @@
 #if !os(Linux)
 import Foundation
+import GoelContracts
+import GoelCore
 import Network
 
 /// The remote-access server: a minimal embedded HTTP endpoint exposing the queue

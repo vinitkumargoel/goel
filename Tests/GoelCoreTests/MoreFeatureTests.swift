@@ -1,6 +1,7 @@
 import XCTest
 import Foundation
 @testable import GoelCore
+@testable import GoelRemoteServer
 
 /// Tests for the second feature batch: batch patterns, published-checksum
 /// discovery, and (as later waves land) history, scheduling, mirrors, metalink.

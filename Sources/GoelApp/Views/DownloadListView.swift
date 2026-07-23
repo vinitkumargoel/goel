@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import QuickLook
 import GoelCore
+import GoelRemoteServer
 
 /// The center list: a sortable header and selectable rows with inline progress,
 /// type badge, and per-row state button. Columns: #, Name, Size, Status, Added,

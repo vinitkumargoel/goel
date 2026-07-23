@@ -34,4 +34,11 @@ public protocol DownloadQueue: AnyObject, Sendable {
     func resumeAll() async
 }
 
-extension DownloadManager: DownloadQueue {}
+extension DownloadManager: DownloadQueue {
+    /// Point-in-time task list. Lives here (rather than on the actor body) because
+    /// its witness is the synchronous `snapshot` property; the `async` requirement
+    /// is met by the actor hop. `public` so the out-of-module `RemoteBackend`
+    /// conformance in `GoelRemoteServer` witnesses the very same method instead of
+    /// redeclaring it (it used to, before the portal was split out).
+    public func taskSnapshot() async -> [DownloadTask] { snapshot }
+}

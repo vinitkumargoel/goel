@@ -1,5 +1,6 @@
 import XCTest
 @testable import GoelCore
+@testable import GoelRemoteServer
 
 /// Regression tests for the security-audit hardening pass: credential stripping,
 /// path containment, cross-host header stripping, the PBKDF2 KDF upgrade, SSRF

@@ -1,5 +1,7 @@
 import Foundation
 import TorrentBridge
+import GoelContracts
+import GoelCore
 
 /// A real BitTorrent engine backed by libtorrent (via the `TorrentBridge` C shim).
 ///

@@ -1,4 +1,6 @@
 import Foundation
+import GoelContracts
+import GoelCore
 
 /// Pure stream planning shared by the macOS and Linux remote-control servers.
 /// Keeps `streamPlan` / byte-range parse / MIME in one place so the two I/O

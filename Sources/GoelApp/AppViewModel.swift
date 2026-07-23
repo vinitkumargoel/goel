@@ -3,6 +3,8 @@ import SwiftUI
 import AppKit
 import Network
 import GoelCore
+import GoelTorrent
+import GoelRemoteServer
 
 /// Which sidebar entry is selected. Drives the list filter and the live counts.
 enum SidebarFilter: Hashable {
@@ -388,7 +390,7 @@ final class AppViewModel: ObservableObject {
         // ephemeral in-memory store if the directory can't be created — and
         // surfacing a warning when it does, rather than silently losing state.
         let (store, warning) = Self.makeStore()
-        self.manager = DownloadManager(store: store)
+        self.manager = DownloadManager(store: store) { makeTorrentEngine(settings: $0) }
         self.persistenceWarning = warning
         self.servers = SFTPConnectionStore.shared.load()
         self.system = system

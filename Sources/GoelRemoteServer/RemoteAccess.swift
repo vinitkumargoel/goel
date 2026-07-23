@@ -1,4 +1,6 @@
 import Foundation
+import GoelContracts
+import GoelCore
 
 /// Pure restart / run decisions for the remote portal, lifted out of the
 /// lifecycle actor so they can be unit-tested with plain `AppSettings` values.

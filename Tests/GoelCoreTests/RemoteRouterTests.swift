@@ -1,5 +1,6 @@
 import XCTest
 @testable import GoelCore
+@testable import GoelRemoteServer
 
 /// In-memory ``RemoteBackend`` so the router's routing/auth/API can be exercised
 /// with no socket and no live scheduler.

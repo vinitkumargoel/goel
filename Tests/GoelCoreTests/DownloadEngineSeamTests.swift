@@ -1,5 +1,6 @@
 import XCTest
 @testable import GoelCore
+@testable import GoelTorrent
 
 // MARK: - Capability-introspecting probe engine
 

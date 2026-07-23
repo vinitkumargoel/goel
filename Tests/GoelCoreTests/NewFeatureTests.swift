@@ -1,5 +1,6 @@
 import XCTest
 @testable import GoelCore
+@testable import GoelRemoteServer
 
 /// Tests for the feature batch: time-of-day scheduling, transfer statistics,
 /// backup pruning, RSS parsing, the export envelope, and model decode

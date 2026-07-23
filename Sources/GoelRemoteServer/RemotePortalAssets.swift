@@ -1,4 +1,6 @@
 import Foundation
+import GoelContracts
+import GoelCore
 
 /// The portal's component CSS and behavior JS, split out so ``RemotePortalPage``
 /// stays readable. Both are static, theme-agnostic (they consume the CSS

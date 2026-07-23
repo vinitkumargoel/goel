@@ -230,8 +230,15 @@ public actor DownloadManager {
         }
     }
 
-    /// Convenience initialiser wiring the production ``HTTPEngine`` and the
-    /// ``MockTorrentEngine``.
+    /// Convenience initialiser that wires the production ``HTTPEngine`` and the
+    /// non-torrent engines from `settings`.
+    ///
+    /// The torrent engine is supplied by `makeTorrentEngine` rather than
+    /// hard-constructed, so a build that excludes the `GoelTorrent` product (the
+    /// iOS App Store build) never references libtorrent. The default is a graceful
+    /// ``UnavailableEngine`` that fails torrent adds with a clear message; the
+    /// desktop/daemon composition root injects the real engine (its `GoelTorrent`
+    /// factory) as this closure.
     public init(
         settings: AppSettings = AppSettings(),
         store: PersistenceStore? = nil,
@@ -239,18 +246,13 @@ public actor DownloadManager {
         folderWatch: any FolderWatching = SystemFolderWatch(),
         scanner: any FileScanning = ProcessFileScan(),
         archive: any ArchiveExtracting = DittoArchiveExtractor(),
-        fileStore: any FileStoring = LocalFileStore()
+        fileStore: any FileStoring = LocalFileStore(),
+        makeTorrentEngine: (AppSettings) -> any DownloadEngine = { _ in
+            UnavailableEngine(kind: .torrent, reason: "BitTorrent isn’t available in this build.")
+        }
     ) {
         self.httpEngine = HTTPEngine(profile: settings.effectiveProfile, fileStore: fileStore)
-        self.torrentEngine = TorrentEngine(
-            profile: settings.effectiveProfile,
-            config: TorrentEngine.SessionConfig(
-                enableDHT: settings.btEnableDHT,
-                enableLSD: settings.btEnableLPD,
-                enableUTP: settings.btEnableUTP,
-                encryptionMode: settings.btEncryptionMode
-            )
-        )
+        self.torrentEngine = makeTorrentEngine(settings)
         self.hlsEngine = HLSEngine(profile: settings.effectiveProfile, fileStore: fileStore)
         self.ftpEngine = FTPEngine(profile: settings.effectiveProfile, fileStore: fileStore)
         self.sftpEngine = SFTPEngine(profile: settings.effectiveProfile, fileStore: fileStore)

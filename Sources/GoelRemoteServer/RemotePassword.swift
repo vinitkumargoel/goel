@@ -1,4 +1,6 @@
 import Foundation
+import GoelContracts
+import GoelCore
 #if canImport(CryptoKit)
 import CryptoKit
 #else

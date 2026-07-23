@@ -1,6 +1,7 @@
 import XCTest
 import Network
 @testable import GoelCore
+@testable import GoelRemoteServer
 
 /// Integration regression for the embedded server's restart path.
 ///

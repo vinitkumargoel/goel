@@ -1,4 +1,6 @@
 import Foundation
+import GoelContracts
+import GoelCore
 
 // Domain object → wire DTO mapping. Lives in GoelCore (not GoelContracts) on purpose:
 // building a `Wire.TaskRow` needs engine-side services — `RemoteStreamService`'s

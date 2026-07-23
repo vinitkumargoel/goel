@@ -1,4 +1,6 @@
 import Foundation
+import GoelContracts
+import GoelCore
 
 /// The embedded web portal — the full control app served at `/`, plus the login
 /// page served at `/login`. Kept apart from the router's logic because it is one

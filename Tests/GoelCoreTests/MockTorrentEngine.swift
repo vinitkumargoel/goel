@@ -1,7 +1,11 @@
 import Foundation
+import GoelCore
 
-/// A **simulated** BitTorrent engine that backs every `.torrent` source
-/// (`.magnet` and `.torrentFile`).
+/// A **simulated** BitTorrent engine — a ``TorrentControlling`` test double for
+/// `.torrent` sources (`.magnet` and `.torrentFile`). It lives in the test
+/// target (the real libtorrent engine ships in `GoelTorrent`); the scheduler
+/// tests inject it via the primary ``DownloadManager`` init to exercise the
+/// torrent lifecycle without a network or libtorrent.
 ///
 /// It performs no real networking. Instead it drives a deterministic, time-based
 /// simulation that exercises every part of the unified `DownloadTask` model that
@@ -23,7 +27,7 @@ import Foundation
 /// The simulation is fully driven by an injectable ``Simulation`` (tick interval,
 /// bytes-per-tick, metadata delay, peer range). Tests inject a fast tick so the
 /// whole lifecycle runs in milliseconds without real sleeps dominating; the
-/// `.demo` defaults give a pleasant live demo in the app.
+/// `.demo` defaults model a realistic pace (~32 MB/s, ~1.5 s to resolve a magnet).
 ///
 /// Like `HTTPEngine` it is an `actor` (so all mutable bookkeeping is serialized
 /// and it is `Sendable` for free); the synchronous `kind` requirement is met by a

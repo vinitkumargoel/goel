@@ -1,4 +1,6 @@
 import Foundation
+import GoelContracts
+import GoelCore
 
 /// Pure portal response / credential helpers shared by both remote-control shells.
 public enum RemoteAuthService {

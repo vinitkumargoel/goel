@@ -1,4 +1,6 @@
 import Foundation
+import GoelContracts
+import GoelCore
 
 /// The pure decision core of the remote-access server: it maps a parsed
 /// ``RemoteRequest`` to a fully-formed HTTP response, with **no socket and no
@@ -405,12 +407,13 @@ public protocol RemoteBackend: AnyObject, Sendable {
 }
 
 extension DownloadManager: RemoteBackend {
-    /// `snapshot` is a property and the rich `add(source:…)` returns a task — the
-    /// port needs plain methods. `pause`/`resume`/`retry`/`remove`/`forceRecheck`/
-    /// `setSequential`/`setFilePriority`/`history`/`removeHistoryEntry`/`clearHistory`
-    /// already match the actor's own methods (an actor's isolated method witnesses
-    /// an `async` requirement), so only the two below need adapting.
-    public func taskSnapshot() async -> [DownloadTask] { snapshot }
+    /// The rich `add(source:…)` returns a task — the port needs plain methods.
+    /// `pause`/`resume`/`retry`/`remove`/`forceRecheck`/`setSequential`/
+    /// `setFilePriority`/`history`/`removeHistoryEntry`/`clearHistory` already
+    /// match the actor's own methods (an actor's isolated method witnesses an
+    /// `async` requirement), and `taskSnapshot()` is provided publicly by GoelCore
+    /// (its ``DownloadQueue`` conformance), so only the `remoteAdd` overloads need
+    /// adapting here.
     public func remoteAdd(source: DownloadSource) async { _ = add(source: source, saveDirectory: nil) }
     public func remoteAdd(source: DownloadSource, saveDirectory: String?,
                           priority: FilePriority, startPaused: Bool) async {
@@ -427,7 +430,7 @@ extension DownloadManager: RemoteBackend {
     func remoteSaveDirectory(_ folder: String?) -> String? {
         guard let folder = folder?.trimmingCharacters(in: .whitespacesAndNewlines),
               !folder.isEmpty else { return nil }
-        let root = settings.defaultSaveDirectory
+        let root = currentSettings.defaultSaveDirectory
         if PathSafety.isContained(folder, within: root) { return folder }
         FileHandle.standardError.write(Data(
             "[GoelDownloader] remote add: rejecting out-of-root save folder; using default\n".utf8))

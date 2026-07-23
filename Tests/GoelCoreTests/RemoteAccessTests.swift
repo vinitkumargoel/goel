@@ -1,5 +1,6 @@
 import XCTest
 @testable import GoelCore
+@testable import GoelRemoteServer
 
 /// Pure policy for when the remote portal should run / reconfigure.
 final class RemoteAccessTests: XCTestCase {

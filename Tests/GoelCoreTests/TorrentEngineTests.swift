@@ -1,5 +1,6 @@
 import XCTest
 @testable import GoelCore
+@testable import GoelTorrent
 
 /// Real BitTorrent engine: hermetic priority mapping + a gated live swarm test.
 final class TorrentEngineTests: XCTestCase {

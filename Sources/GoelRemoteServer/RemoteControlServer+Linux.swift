@@ -1,5 +1,7 @@
 #if os(Linux)
 import Foundation
+import GoelContracts
+import GoelCore
 import NIOCore
 import NIOPosix
 #if canImport(FoundationNetworking)

@@ -4,12 +4,16 @@ import Foundation
 ///
 /// Held by an engine as a `nonisolated let` so both the synchronous
 /// `events(for:)` and the actor-internal `emit` can reach it without crossing
-/// isolation boundaries. Shared by the HTTP and HLS engines.
-final class EventHub: @unchecked Sendable {
+/// isolation boundaries. Shared by every engine — including the out-of-module
+/// `GoelTorrent` engine, which is why it (and the small surface it uses) is
+/// `public`.
+public final class EventHub: @unchecked Sendable {
     private let lock = NSLock()
     private var subscribers: [UUID: [UUID: AsyncStream<EngineEvent>.Continuation]] = [:]
 
-    func subscribe(_ id: UUID) -> AsyncStream<EngineEvent> {
+    public init() {}
+
+    public func subscribe(_ id: UUID) -> AsyncStream<EngineEvent> {
         // Unbounded is required: this stream also carries NON-idempotent lifecycle
         // events (statusChanged / metadataResolved / finished / failed) that must
         // never be dropped — a dropped `.downloading` after a resume would strand
@@ -29,7 +33,7 @@ final class EventHub: @unchecked Sendable {
         return stream
     }
 
-    func emit(_ id: UUID, _ event: EngineEvent) {
+    public func emit(_ id: UUID, _ event: EngineEvent) {
         lock.lock()
         let continuations = subscribers[id]?.values.map { $0 } ?? []
         lock.unlock()
@@ -39,19 +43,19 @@ final class EventHub: @unchecked Sendable {
     /// Emit the failure doublet an engine sends on error: the `.failed` event
     /// plus the `.statusChanged(.failed)` that drives the task to its terminal
     /// failed state. Kept in one call so the two can never drift apart.
-    func fail(_ id: UUID, _ error: DownloadError) {
+    public func fail(_ id: UUID, _ error: DownloadError) {
         emit(id, .failed(error))
         emit(id, .statusChanged(.failed(error)))
     }
 
     /// Emit the success completion doublet: `.finished` then `.statusChanged(.completed)`.
     /// Kept in one call so the two can never drift apart (mirrors ``fail``).
-    func complete(_ id: UUID) {
+    public func complete(_ id: UUID) {
         emit(id, .finished)
         emit(id, .statusChanged(.completed))
     }
 
-    func finishAll(_ id: UUID) {
+    public func finishAll(_ id: UUID) {
         lock.lock()
         let continuations = subscribers[id]
         subscribers[id] = nil
