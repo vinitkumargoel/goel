@@ -1,0 +1,104 @@
+name: Goel
+options:
+  bundleIdPrefix: dev.goel
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+  minimumXcodeGenVersion: "2.40.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_UPCOMING_FEATURE_CONCISE_MAGIC_FILE: YES
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    GCC_WARN_INHIBIT_ALL_WARNINGS: NO
+    CLANG_WARN_STRICT_PROTOTYPES: NO
+    ALWAYS_SEARCH_USER_PATHS: NO
+    ENABLE_TESTING_SEARCH_PATHS: YES
+
+targets:
+  Goel:
+    type: application
+    platform: iOS
+    sources:
+      - path: Goel
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.goel.ios
+        PRODUCT_NAME: Goel
+        INFOPLIST_FILE: Goel/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Goel/Goel.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_PREVIEWS: YES
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.1.0"
+    dependencies:
+      - target: GoelWidgets
+        embed: true
+        codeSign: false
+
+  GoelWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: GoelWidgets
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.goel.ios.widgets
+        PRODUCT_NAME: GoelWidgets
+        INFOPLIST_FILE: GoelWidgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: GoelWidgets/GoelWidgets.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.1.0"
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+
+  GoelTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: GoelTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: dev.goel.ios.tests
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Goel.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Goel"
+    dependencies:
+      - target: Goel
+
+schemes:
+  Goel:
+    build:
+      targets:
+        Goel: all
+        GoelWidgets: all
+        GoelTests: [test]
+    run:
+      config: Debug
+      commandLineArguments:
+        "-uiTestingPreviewEngine": false
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - GoelTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
