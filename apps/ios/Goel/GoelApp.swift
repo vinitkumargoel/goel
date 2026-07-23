@@ -4,8 +4,10 @@ import SwiftUI
 struct GoelApp: App {
     var body: some Scene {
         WindowGroup {
-            BootstrapView()
-                .preferredColorScheme(.dark)
+            // T02 gate: the swatch screen is the app root until RootView lands in T07.
+            // No .preferredColorScheme here — the light/dark screenshots must follow the
+            // simulator's appearance setting.
+            SwatchView()
         }
     }
 }
