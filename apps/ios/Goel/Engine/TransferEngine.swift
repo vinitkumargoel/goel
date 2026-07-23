@@ -239,3 +239,11 @@ public extension TransferEngine {
     /// The app is foreground again: adopt whatever the background task wrote and re-segment.
     func enterForeground() async {}
 }
+
+public extension TransferEngine {
+    /// Whether the finished file's SHA-256 matched a sidecar digest. This is a query rather
+    /// than a field on `TransferEvent`, because the event enum is the value-only contract
+    /// `GoelCore` must satisfy later and must not grow implementation-specific state.
+    /// Engines that do not verify inherit `false` — never claim verification you did not do.
+    func checksumWasVerified(_ id: UUID) async -> Bool { false }
+}
