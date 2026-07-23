@@ -222,3 +222,20 @@ public protocol TransferEngine: Actor {
     ///   consumer is ever needed, fan out from the pump, do not iterate this twice.
     nonisolated var events: AsyncStream<TransferEvent> { get }
 }
+
+// MARK: - Tuning
+
+public extension TransferEngine {
+    /// Settings (T12) pushes engine behaviour across the seam here: connection count, chunk
+    /// size, speed cap, cellular policy. Engines that have nothing to tune (the preview
+    /// engine) inherit this no-op rather than being forced to implement it.
+    func applyTuning(_ tuning: EngineTuning) async {}
+
+    /// The app is going to the background. Engines that segment in the foreground checkpoint
+    /// here and hand the remainder to a single background `URLSession` task (T06, PRD §4.1).
+    /// Engines with nothing to hand off inherit this no-op.
+    func enterBackground() async {}
+
+    /// The app is foreground again: adopt whatever the background task wrote and re-segment.
+    func enterForeground() async {}
+}

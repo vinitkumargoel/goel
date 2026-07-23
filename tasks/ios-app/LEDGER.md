@@ -7,20 +7,20 @@ Status values: `TODO` · `WIP` · `DONE` · `PARTIAL` · `BLOCKED`
 | # | Task | Status | Commit | Screenshot | Notes |
 |---|---|---|---|---|---|
 | T01 | Xcode project scaffold | DONE | `36c9d07` | `shots/T01-hello.png` | App + widget ext build & launch; App Group resolves on sim |
-| T02 | Design system | WIP | | | |
-| T03 | Model + store | WIP | | | |
-| T04 | TransferEngine seam | WIP | | | |
-| T05 | URLSession engine | WIP | | | harness (`range-server.py`) started first |
-| T06 | Background handoff | TODO | | | |
-| T07 | Queue screen | TODO | | | |
-| T08 | Detail screen | TODO | | | |
-| T09 | Add sheet | TODO | | | |
-| T10 | Player | TODO | | | |
-| T11 | Library + Files | TODO | | | |
-| T12 | Settings | TODO | | | |
-| T13 | Live Activity | TODO | | | |
-| T14 | Widgets | TODO | | | |
-| T15 | App Intents | TODO | | | |
+| T02 | Design system | DONE | `64e8d8e` | `T02-swatches-{dark,light}.png` | ember samples at exactly #FF6B2C / #E85D18 |
+| T03 | Model + store | DONE | `9390bdd` | — | 77 tests green |
+| T04 | TransferEngine seam | DONE | `bb57513` | — | fixtures reproduce visual.html to 3dp |
+| T05 | URLSession engine | WIP | | | harness verified: 6-way concurrent reassembly matches sidecar sha256 |
+| T06 | Background handoff | WIP | | | |
+| T07 | Queue screen | WIP | | | |
+| T08 | Detail screen | WIP | | | |
+| T09 | Add sheet | WIP | | | |
+| T10 | Player | TODO | | | fixture `sample-video.mp4` ready (faststart verified) |
+| T11 | Library + Files | WIP | | | |
+| T12 | Settings | WIP | | | |
+| T13 | Live Activity | WIP | | | |
+| T14 | Widgets | WIP | | | |
+| T15 | App Intents | TODO | | | sequenced after T13/T14 (shares widget files) |
 | T16 | Final sweep | TODO | | | |
 
 ## Mockup reference images
@@ -71,6 +71,27 @@ Regenerate with the recipe in `Scripts/ios/mockup-frames.sh`.
 - **`.build` and the generated `.xcodeproj` are gitignored.** xcodegen regenerates the
   project from `project.yml`, which is the committed source of truth.
 
+- **`contiguousPrefix` semantics corrected against the task spec.** `T06-background-handoff.md`
+  says the contiguous prefix with segments at 100/78/64/57/41/22 % "ends where segment 1 ends".
+  That is wrong. Each segment streams forward from its own `lowerBound`, so once segment 0 is
+  complete, segment 1's partial bytes begin exactly at segment 0's end and ARE contiguous with
+  it. For 6×1000-byte segments the correct prefix is **1780**, not 1000 (and certainly not the
+  3620 sum, which is the corruption bug the rule exists to prevent). Taking the spec literally
+  would also make a single sequential segment at 50 % report 0, breaking T10's playable
+  watermark. Implemented the correct definition; T06's tests assert it.
+- **Mockup arithmetic does not close in two places.** (a) Six *equal* segments at
+  100/78/64/57/41/22 % average 60.3 %, but the same frame prints 63 %; the fixtures use
+  deliberately unequal segment sizes so both numbers are exact at once — which is also what a
+  real dynamic segmenter produces. (b) The home-screen widget prints `4 active · 21.4 GB left`
+  at 47 %, but the five queue rows sum to ~29.0 GB at ~24 %. The queue rows are authoritative;
+  the widget computes from `SharedSnapshot` and uses the mockup's numbers only for the
+  placeholder/snapshot previews.
+
 ## Dead ends — do not retry
 
-_(none yet)_
+- **`#expect` cannot wrap a call that takes a trailing closure** (`allSatisfy { }`,
+  `contains { }`) — the macro expansion fails to compile. Hoist the expression into a `let`
+  and `#expect` the resulting `Bool`.
+- **Static members of an `actor` cannot be referenced from a default argument or a
+  stored-property initialiser inside that same actor** ("covariant 'Self'"). Hoist them to
+  file scope (and make them `public` if a `public` default argument uses them).
