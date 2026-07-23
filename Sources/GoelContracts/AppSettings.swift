@@ -15,7 +15,8 @@ import Foundation
 ///
 /// Enum-like fields (theme, proxy mode, folder rule, encryption mode, …) are
 /// stored as plain `String` rather than typed enums because this type lives in
-/// `GoelCore` and must not depend on the app layer's `AppTheme`/picker types.
+/// the platform-free `GoelContracts` and must not depend on the app layer's
+/// `AppTheme`/picker types.
 public struct AppSettings: Codable, Sendable, Hashable {
 
     // MARK: Traffic
@@ -389,7 +390,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         retryInterval: Double = 5,
         autoRetryEnabled: Bool = false,
         autoRetryMaxAttempts: Int = 5,
-        userAgent: String = "GoelDownloader/1.0 (macOS)",
+        userAgent: String = "GoelDownloader/1.0",
         cookieAuthEnabled: Bool = true,
         // Network aggregation
         aggregationEnabled: Bool = false,
@@ -628,7 +629,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         retryInterval = try c.decodeIfPresent(Double.self, forKey: .retryInterval) ?? 5
         autoRetryEnabled = try c.decodeIfPresent(Bool.self, forKey: .autoRetryEnabled) ?? false
         autoRetryMaxAttempts = try c.decodeIfPresent(Int.self, forKey: .autoRetryMaxAttempts) ?? 5
-        userAgent = try c.decodeIfPresent(String.self, forKey: .userAgent) ?? "GoelDownloader/1.0 (macOS)"
+        userAgent = try c.decodeIfPresent(String.self, forKey: .userAgent) ?? "GoelDownloader/1.0"
         cookieAuthEnabled = try c.decodeIfPresent(Bool.self, forKey: .cookieAuthEnabled) ?? true
         aggregationEnabled = try c.decodeIfPresent(Bool.self, forKey: .aggregationEnabled) ?? false
         aggregationAdapterIds = try c.decodeIfPresent([String].self, forKey: .aggregationAdapterIds) ?? []

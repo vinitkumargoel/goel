@@ -83,21 +83,21 @@ public struct RemoteRouter: Sendable {
                                  body: Data(Self.page(config: config).utf8))
 
         case ("GET", "/api/config"):
-            return Self.json(ConfigRow(username: config.username, readOnly: config.readOnly,
+            return Self.json(Wire.ConfigRow(username: config.username, readOnly: config.readOnly,
                                        requireAuth: config.requireAuth, theme: config.theme))
 
         // MARK: Reads
         case ("GET", "/api/tasks"):
-            let rows = await backend.taskSnapshot().map(TaskRow.init)
+            let rows = await backend.taskSnapshot().map(Wire.TaskRow.init)
             return Self.json(rows)
 
         case ("GET", "/api/task"):
             guard let id = queryID(request) else { return Self.badRequest() }
             guard let task = await backend.task(id) else { return Self.notFound() }
-            return Self.json(TaskDetail(task))
+            return Self.json(Wire.TaskDetail(task))
 
         case ("GET", "/api/history"):
-            let rows = await backend.history(limit: 500).map(HistoryRow.init)
+            let rows = await backend.history(limit: 500).map(Wire.HistoryRow.init)
             return Self.json(rows)
 
         // MARK: Queue mutations
@@ -134,7 +134,7 @@ public struct RemoteRouter: Sendable {
             return Self.ok()
 
         case ("POST", "/api/add"):
-            guard let payload = try? JSONDecoder().decode(AddPayload.self, from: request.body)
+            guard let payload = try? JSONDecoder().decode(Wire.AddPayload.self, from: request.body)
             else { return Self.badRequest() }
             let folder = payload.folder?.trimmingCharacters(in: .whitespaces)
             let priority = Self.priority(payload.priority)
@@ -148,7 +148,7 @@ public struct RemoteRouter: Sendable {
                                         saveDirectory: (folder?.isEmpty == false) ? folder : nil,
                                         priority: priority, startPaused: paused)
             }
-            return Self.json(CountRow(added: sources.count))
+            return Self.json(Wire.CountRow(added: sources.count))
 
         // MARK: History mutations
         case ("POST", "/api/history-remove"):
@@ -176,7 +176,7 @@ public struct RemoteRouter: Sendable {
 
     /// One SSE frame (`data: <json>\n\n`) for the live event stream.
     public func eventFrame(for tasks: [DownloadTask]) -> Data {
-        let rows = tasks.map(TaskRow.init)
+        let rows = tasks.map(Wire.TaskRow.init)
         let json = (try? JSONEncoder().encode(rows)) ?? Data("[]".utf8)
         var frame = Data("data: ".utf8)
         frame.append(json)
@@ -263,174 +263,10 @@ public struct RemoteRouter: Sendable {
         return Data(head.utf8) + body
     }
 
-    // MARK: Wire models
-
-    private struct AddPayload: Decodable {
-        var url: String
-        var folder: String?
-        var priority: String?
-        var paused: Bool?
-    }
-    private struct CountRow: Encodable { var added: Int }
-    private struct ConfigRow: Encodable {
-        var username: String
-        var readOnly: Bool
-        var requireAuth: Bool
-        var theme: String
-        var appName = "Goel°"
-    }
-
-    /// Compact per-task row for the live list.
-    struct TaskRow: Encodable {
-        var id: String
-        var name: String
-        var status: String        // display name ("Downloading")
-        var statusToken: String   // stable token ("downloading")
-        var kind: String          // "http" | "torrent" | "hls" | "ftp" | "sftp"
-        var progress: Double
-        var downSpeed: Double
-        var upSpeed: Double
-        var totalBytes: Int64?
-        var doneBytes: Int64
-        var upBytes: Int64
-        var ratio: Double
-        var seeds: Int?
-        var conns: Int
-        var addedAt: Double
-        var etaSeconds: Double?
-        var error: String?
-        var source: String
-        var multiFile: Bool
-        var fileCount: Int
-        var streamable: Bool
-
-        init(_ task: DownloadTask) {
-            id = task.id.uuidString
-            name = task.name
-            status = task.status.displayName
-            statusToken = RemoteRouter.statusToken(task.status)
-            kind = task.kind.rawValue
-            progress = task.fractionCompleted
-            downSpeed = task.downloadSpeed
-            upSpeed = task.uploadSpeed
-            totalBytes = task.totalBytes
-            doneBytes = task.bytesDownloaded
-            upBytes = task.bytesUploaded
-            ratio = task.shareRatio
-            seeds = task.seedCount
-            conns = task.connectionCount
-            addedAt = task.addedAt.timeIntervalSince1970
-            etaSeconds = task.estimatedTimeRemaining
-            error = RemoteRouter.errorMessage(task.status)
-            source = task.source.locator
-            multiFile = task.isMultiFile
-            fileCount = task.files.count
-            streamable = RemoteStreamService.streamPlan(for: task) != nil
-        }
-    }
-
-    /// The full detail for the selected task (files, trackers, peers, pieces).
-    struct TaskDetail: Encodable {
-        var row: TaskRow
-        var savePath: String
-        var sequential: Bool
-        var infoHash: String?
-        var files: [FileRow]
-        var trackers: [TrackerRow]
-        var connections: [ConnRow]
-        var pieces: [Double]
-        var server: String?
-        var mimeType: String?
-
-        init(_ task: DownloadTask) {
-            row = TaskRow(task)
-            savePath = task.savePath
-            sequential = task.sequentialDownload ?? false
-            infoHash = task.infoHash
-            files = task.files.map(FileRow.init)
-            trackers = (task.trackers ?? []).map(TrackerRow.init)
-            connections = (task.connections ?? []).map(ConnRow.init)
-            pieces = task.pieceAvailability ?? []
-            server = task.remoteInfo?.server
-            mimeType = task.remoteInfo?.mimeType
-        }
-    }
-
-    struct FileRow: Encodable {
-        var id: Int
-        var name: String
-        var size: Int64
-        var done: Int64
-        var progress: Double
-        var priority: String
-        init(_ f: TransferFile) {
-            id = f.id
-            name = f.path
-            size = f.length
-            done = f.bytesCompleted
-            progress = f.fractionCompleted
-            priority = RemoteRouter.priorityToken(f.priority)
-        }
-    }
-
-    struct TrackerRow: Encodable {
-        var url: String
-        var host: String
-        var tier: Int
-        var status: String
-        var seeds: Int?
-        var leeches: Int?
-        var message: String
-        init(_ t: TorrentTracker) {
-            url = t.url
-            host = t.host
-            tier = t.tier
-            status = t.statusLabel
-            seeds = t.seeds
-            leeches = t.leeches
-            message = t.message
-        }
-    }
-
-    struct ConnRow: Encodable {
-        var id: String
-        var label: String
-        var detail: String
-        var down: Double
-        var up: Double
-        var progress: Double
-        var adapterId: String?
-        var adapterLabel: String?
-        init(_ c: TaskConnection) {
-            id = c.id
-            label = c.label
-            detail = c.detail
-            down = c.downloadSpeed
-            up = c.uploadSpeed
-            progress = c.progress
-            adapterId = c.adapterId
-            adapterLabel = c.adapterLabel
-        }
-    }
-
-    struct HistoryRow: Encodable {
-        var id: String
-        var name: String
-        var kind: String
-        var totalBytes: Int64?
-        var savePath: String
-        var completedAt: Double
-        var source: String
-        init(_ h: HistoryEntry) {
-            id = h.id.uuidString
-            name = h.name
-            kind = h.kind.rawValue
-            totalBytes = h.totalBytes
-            savePath = h.savePath
-            completedAt = h.completedAt.timeIntervalSince1970
-            source = h.locator
-        }
-    }
+    // The wire DTOs (`Wire.TaskRow`, `Wire.TaskDetail`, …) now live in the
+    // platform-free `GoelContracts` (`Wire.swift`); the domain→DTO mapping is in
+    // `Remote/RemoteWireMapping.swift`. The enum→token helpers below stay here
+    // because the mapping delegates to them.
 
     // MARK: Enum → token helpers
 

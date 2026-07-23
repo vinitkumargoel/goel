@@ -8,18 +8,9 @@ import Foundation
 /// this; these side-channels historically used `URLSession.shared`, which does not.
 public enum NetworkGuard {
 
-    /// A `Sendable` snapshot of the user's proxy choice, so it can cross actor
-    /// boundaries (the raw CFNetwork `[String: Any]` dictionary is not Sendable).
-    public struct ProxySpec: Sendable, Equatable {
-        public var mode: String   // "system" | "manual" | "none"
-        public var type: String   // "http" | "socks5"
-        public var host: String
-        public var port: Int
-        public init(mode: String = "system", type: String = "http",
-                    host: String = "", port: Int = 0) {
-            self.mode = mode; self.type = type; self.host = host; self.port = port
-        }
-    }
+    // ``ProxySpec`` moved to `Model/ProxySpec.swift` (a top-level value type) so the
+    // shared engine config can name it without depending on this Port. `NetworkGuard`
+    // still owns the translation below.
 
     /// Translate a ``ProxySpec`` into a `connectionProxyDictionary`: nil ⇒ follow
     /// the OS proxy ("system"), `[:]` ⇒ force direct ("none"), populated ⇒ the

@@ -67,7 +67,7 @@ public protocol FilePrioritizing: DownloadEngine {
 
 /// Torrent engines: piece-order control plus the libtorrent session knobs. Refines
 /// ``FilePrioritizing`` because a torrent engine also honours per-file priority.
-protocol TorrentControlling: FilePrioritizing {
+public protocol TorrentControlling: FilePrioritizing {
     /// Switch a task between sequential (in-order, streamable) and rarest-first.
     func setSequential(_ sequential: Bool, task: DownloadTask.ID) async
     /// Apply the session-level BitTorrent settings (DHT / PeX / LPD / uTP / encryption).
@@ -85,18 +85,18 @@ protocol TorrentControlling: FilePrioritizing {
 /// The HTTP engine's network-configuration seam (timeout / proxy / UA / cookies /
 /// retry). Refines ``FilePrioritizing`` — the HTTP engine also carries per-file
 /// selection for multi-file (metalink) transfers.
-protocol HTTPConfigurable: FilePrioritizing {
+public protocol HTTPConfigurable: FilePrioritizing {
     func configure(_ net: HTTPNetworkConfig) async
     /// Multi-path adapter set for network aggregation. Default no-op for mocks.
     func configureAggregation(_ config: AggregationEngineConfig) async
 }
 
-extension HTTPConfigurable {
+public extension HTTPConfigurable {
     func configureAggregation(_ config: AggregationEngineConfig) async {}
 }
 
 /// The HLS engine's preferred-rendition-height seam.
-protocol HLSConfigurable: DownloadEngine {
+public protocol HLSConfigurable: DownloadEngine {
     func configure(maxHeight: Int) async
 }
 
@@ -119,7 +119,7 @@ public struct TorrentSessionConfig: Sendable, Equatable {
     /// The user's proxy choice, applied to the HTTP fetch of a remote `.torrent`
     /// file body so it follows the same proxy policy as real downloads (the
     /// torrent swarm itself is separate). Defaults to "follow the OS proxy".
-    public var proxy: NetworkGuard.ProxySpec
+    public var proxy: ProxySpec
 
     public init(
         encryptionMode: String = "prefer",
@@ -127,7 +127,7 @@ public struct TorrentSessionConfig: Sendable, Equatable {
         enablePeX: Bool = true,
         enableLPD: Bool = true,
         enableUTP: Bool = true,
-        proxy: NetworkGuard.ProxySpec = NetworkGuard.ProxySpec()
+        proxy: ProxySpec = ProxySpec()
     ) {
         self.encryptionMode = encryptionMode
         self.enableDHT = enableDHT

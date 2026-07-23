@@ -106,6 +106,7 @@ dependencies += [
 
 // ---- GoelCore dependencies ------------------------------------------------
 var coreDeps: [Target.Dependency] = [
+    "GoelContracts",
     .product(name: "GRDB", package: "GRDB.swift"),
     "TorrentBridge",
     "CurlBridge",
@@ -123,6 +124,11 @@ coreDeps += [
 
 // ---- Targets & products ---------------------------------------------------
 var targets: [Target] = [
+    // Platform-free contract layer: pure value types, the engine-seam protocols,
+    // and the wire DTOs. Deliberately has NO dependency on any C bridge, GRDB, or
+    // Apple-only networking — this is what iOS/Android reuse and what a Kotlin twin
+    // (or golden tests) must match. Keep it dependency-free.
+    .target(name: "GoelContracts"),
     .target(name: "TorrentBridge", cxxSettings: torrentCxx, linkerSettings: torrentLink),
     .target(name: "CurlBridge", linkerSettings: curlLink),
     .target(name: "SSHBridge", cSettings: sshC, linkerSettings: sshLink),
@@ -138,6 +144,7 @@ var targets: [Target] = [
     ),
 ]
 var products: [Product] = [
+    .library(name: "GoelContracts", targets: ["GoelContracts"]),
     .library(name: "GoelCore", targets: ["GoelCore"]),
 ]
 

@@ -131,9 +131,9 @@ extension DownloadManager {
 
     /// A `Sendable` snapshot of the user's proxy settings, for handing across
     /// actor boundaries (e.g. into the torrent engine's `.torrent`-file fetch).
-    static func proxySpec(from settings: AppSettings) -> NetworkGuard.ProxySpec {
-        NetworkGuard.ProxySpec(mode: settings.proxyMode, type: settings.proxyType,
-                               host: settings.proxyHost, port: settings.proxyPort)
+    static func proxySpec(from settings: AppSettings) -> ProxySpec {
+        ProxySpec(mode: settings.proxyMode, type: settings.proxyType,
+                  host: settings.proxyHost, port: settings.proxyPort)
     }
 
     /// Translate the user's proxy settings into a `connectionProxyDictionary`:

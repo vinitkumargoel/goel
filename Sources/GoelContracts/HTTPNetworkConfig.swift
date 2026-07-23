@@ -22,7 +22,7 @@ public struct HTTPNetworkConfig: Sendable, Equatable {
         timeout: Double = 30,
         retryCount: Int = 3,
         retryInterval: Double = 5,
-        userAgent: String = "GoelDownloader/1.0 (macOS)",
+        userAgent: String = "GoelDownloader/1.0",
         proxyMode: String = "none",
         proxyType: String = "http",
         proxyHost: String = "",

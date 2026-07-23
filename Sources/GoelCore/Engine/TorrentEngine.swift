@@ -37,7 +37,7 @@ actor TorrentEngine: TorrentControlling {
     private var profile: TrafficProfile
     private var config: SessionConfig
     /// Proxy policy for the remote `.torrent`-file body fetch (see `configure`).
-    private var httpProxy = NetworkGuard.ProxySpec()
+    private var httpProxy = ProxySpec()
 
     init(profile: TrafficProfile, config: SessionConfig = SessionConfig()) {
         self.profile = profile
