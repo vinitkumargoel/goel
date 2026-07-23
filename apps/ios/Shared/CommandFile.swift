@@ -77,7 +77,11 @@ public struct DownloadCommand: Codable, Sendable, Equatable {
     /// Commands older than ``CommandFile/maxAge`` are not worth applying — pausing a transfer
     /// because of a tap from two hours ago is a bug, not a feature.
     public func isStale(at now: Date, maxAge: TimeInterval = CommandFile.maxAge) -> Bool {
-        now.timeIntervalSince(issuedAt) > maxAge
+        // `issuedAt` is quantised to whole microseconds by `init`, so an age computed against a
+        // raw `now` carries up to half a microsecond of rounding slop. Comparing at finer
+        // resolution than the timestamps themselves hold would make a command issued *exactly*
+        // `maxAge` ago stale or fresh at random, so the boundary is widened by one microsecond.
+        now.timeIntervalSince(issuedAt) > maxAge + 1e-6
     }
 }
 
