@@ -167,6 +167,24 @@ public enum Fmt {
         return date.formatted(.dateTime.day().month(.abbreviated))
     }
 
+    /// The compact form the queue and Library rows use — `2m ago`, `3h ago`, `2d ago`.
+    /// `visual.html` shows `412.3 MB · SHA-256 verified · 2m ago`, and a row subtitle is too
+    /// tight for `2 min ago` once the byte count and the verification badge are in front of it.
+    public static func relativeShort(_ date: Date, now: Date = Date()) -> String {
+        let elapsed = now.timeIntervalSince(date)
+        guard elapsed.isFinite else { return placeholder }
+        if elapsed < 60 { return "now" }
+        if elapsed < 3600 { return "\(Int(elapsed / 60))m ago" }
+        if elapsed < 86_400 { return "\(Int(elapsed / 3600))h ago" }
+
+        let calendar = Calendar.current
+        let from = calendar.startOfDay(for: date)
+        let to = calendar.startOfDay(for: now)
+        let days = max(1, calendar.dateComponents([.day], from: from, to: to).day ?? 1)
+        if days < 7 { return "\(days)d ago" }
+        return date.formatted(.dateTime.day().month(.abbreviated))
+    }
+
     // MARK: - Magnitude scaling
 
     /// A byte count reduced to a mantissa plus an index into ``unitNames`` / ``rateUnitNames``.

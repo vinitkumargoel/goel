@@ -130,6 +130,8 @@ public final class AppModel {
 
     private let log = Logger(subsystem: GoelIdentifiers.logSubsystem, category: "app")
     private var pump: Task<Void, Never>?
+    /// Last time a speed sample was recorded per download, so the sparkline window stays 60 s.
+    private var lastSpeedSample: [UUID: Date] = [:]
 
     public init(engine: any TransferEngine, store: DownloadStore) {
         self.engine = engine
@@ -150,7 +152,11 @@ public final class AppModel {
                 .appendingPathComponent("goel-preview-queue.json")
             try? FileManager.default.removeItem(at: tmp)
             let store = DownloadStore(persistenceURL: tmp)
-            store.replaceAll(PreviewTransferEngine.fixtures())
+            // Date the fixtures against launch, not against their frozen epoch. Every byte
+            // count in `fixtures` is derived from the size and percentage, so `now` only
+            // moves `addedAt`/`completedAt` — which is exactly what has to be relative for
+            // the queue's "2m ago" to read the way the mockup shows it.
+            store.replaceAll(PreviewTransferEngine.fixtures(now: Date()))
             let model = AppModel(engine: engine, store: store)
             model.startEventPump()
             return model
@@ -179,13 +185,20 @@ public final class AppModel {
     }
 
     private func apply(_ event: TransferEvent) {
+        defer { ActivityController.shared.sync(store.downloads) }
         switch event {
         case let .progress(id, received, total, speed, segments):
+            let now = Date()
+            let shouldSample = now.timeIntervalSince(lastSpeedSample[id] ?? .distantPast) >= 1
+            if shouldSample { lastSpeedSample[id] = now }
             store.apply(id) { d in
                 d.receivedBytes = received
                 if let total { d.totalBytes = total }
                 d.segments = segments
-                d.recordSpeedSample(speed)
+                // One sample per second. The engine emits progress at 10 Hz; sampling every
+                // event would make the 60-slot ring buffer span 6 s, and the detail sparkline
+                // is drawn as a 60-second window.
+                if shouldSample { d.recordSpeedSample(speed) }
                 if d.status == .queued || d.status == .probing { d.status = .downloading }
             }
         case let .statusChanged(id, status):
@@ -194,6 +207,12 @@ public final class AppModel {
                 if status == .completed { d.completedAt = Date() }
             }
         case let .completed(id, fileURL):
+            // `TransferEvent` carries no verification flag by design (it is a value-only
+            // contract GoelCore must be able to satisfy later), so ask the engine directly.
+            Task { [engine] in
+                let verified = await engine.checksumWasVerified(id)
+                await MainActor.run { self.store.apply(id) { $0.checksumVerified = verified } }
+            }
             store.apply(id) { d in
                 d.status = .completed
                 d.completedAt = Date()
@@ -213,6 +232,7 @@ public final class AppModel {
 
     public func start(_ download: Download) {
         store.add(download)
+        ActivityController.shared.sync(store.downloads)
         Task { [engine] in
             do { try await engine.start(download) } catch {
                 await MainActor.run {
@@ -266,8 +286,10 @@ public final class AppModel {
         switch phase {
         case .background:
             store.persistNow()
+            ActivityController.shared.backgroundWake(store.downloads)
             Task { [engine] in await engine.enterBackground() }
         case .active:
+            ActivityController.shared.sync(store.downloads)
             Task { [engine] in await engine.enterForeground() }
         case .inactive:
             store.persistNow()
