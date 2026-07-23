@@ -18,6 +18,8 @@ actor FTPEngine: DownloadEngine {
     private nonisolated let hub = EventHub()
     /// Username/password lookup for hosts the user stored logins for.
     private nonisolated let credentialLookup: @Sendable (String) -> (username: String, password: String)?
+    /// Save-area filesystem seam (mkdir/create); see ``FileStoring``.
+    private nonisolated let fileStore: any FileStoring
 
     private var tasks: [UUID: DownloadTask] = [:]
     private var jobs: [UUID: Task<Void, Never>] = [:]
@@ -26,8 +28,10 @@ actor FTPEngine: DownloadEngine {
     private var profile: TrafficProfile
 
     init(profile: TrafficProfile,
-                credentialLookup: (@Sendable (String) -> (username: String, password: String)?)? = nil) {
+                credentialLookup: (@Sendable (String) -> (username: String, password: String)?)? = nil,
+                fileStore: any FileStoring = LocalFileStore()) {
         self.profile = profile
+        self.fileStore = fileStore
         if let credentialLookup {
             self.credentialLookup = credentialLookup
         } else {
@@ -70,7 +74,7 @@ actor FTPEngine: DownloadEngine {
         // path could receive the old transfer's bytes.
         await job?.value
         if deleteData, let task, task.isSavePathContained {
-            try? FileManager.default.removeItem(atPath: task.savePath)
+            fileStore.removeItem(atPath: task.savePath)
         }
         hub.finishAll(id)
     }
@@ -132,7 +136,7 @@ actor FTPEngine: DownloadEngine {
         do {
             opened = try RemoteTransferPrep.openForResume(
                 saveDirectory: task.saveDirectory, savePath: task.savePath,
-                remoteSize: probe.size >= 0 ? probe.size : nil)
+                remoteSize: probe.size >= 0 ? probe.size : nil, fileStore: fileStore)
         } catch {
             if let de = error as? DownloadError {
                 hub.fail(id, de)

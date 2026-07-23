@@ -13,11 +13,15 @@ import Foundation
 /// The engine is an `actor`, so all of its mutable bookkeeping is serialized and
 /// it is `Sendable` for free. The synchronous `kind` requirement is satisfied by
 /// a `nonisolated let`.
-actor HTTPEngine: HTTPConfigurable {
+actor HTTPEngine: HTTPConfigurable, BackgroundTransferStrategy {
 
     // MARK: Identity
 
     public nonisolated let kind: DownloadKind = .http
+
+    /// Foreground-only: an in-process `URLSession` paused on app suspension (see
+    /// ``BackgroundTransferStrategy``). iOS's background engine is a later task.
+    public nonisolated let executionMode: TransferExecutionMode = .foreground
 
     /// The HTTP engine probes servers for the add-confirmation preview and emits
     /// resume data, but has no per-file priority (a URL download is one file).
@@ -126,30 +130,39 @@ actor HTTPEngine: HTTPConfigurable {
     /// `nonisolated` so the request builders off the actor can consult it.
     nonisolated let credentials: any CredentialProviding
 
+    /// Save-area filesystem seam threaded into each ``TransferPlan`` (see
+    /// ``FileStoring``); `nonisolated` so the off-actor transfer can read it.
+    nonisolated let fileStore: any FileStoring
+
     // MARK: Init
 
     /// Inject a fully-configured `URLSession` (used by tests with a stub
     /// `URLProtocol`).
     public init(session: URLSession, profile: TrafficProfile = .high,
-                credentials: any CredentialProviding = KeychainCredentialStore()) {
+                credentials: any CredentialProviding = KeychainCredentialStore(),
+                fileStore: any FileStoring = LocalFileStore()) {
         self.session = session
         self.profile = profile
         self.credentials = credentials
+        self.fileStore = fileStore
     }
 
     /// Build a session from a configuration.
     init(configuration: URLSessionConfiguration, profile: TrafficProfile = .high,
-                credentials: any CredentialProviding = KeychainCredentialStore()) {
+                credentials: any CredentialProviding = KeychainCredentialStore(),
+                fileStore: any FileStoring = LocalFileStore()) {
         configuration.httpMaximumConnectionsPerHost = Self.maxConnectionsPerHost
         self.session = URLSession(configuration: configuration,
                                   delegate: RedirectSanitizer.shared, delegateQueue: nil)
         self.profile = profile
         self.credentials = credentials
+        self.fileStore = fileStore
     }
 
     /// Default real-world session.
     init(profile: TrafficProfile = .high,
-                credentials: any CredentialProviding = KeychainCredentialStore()) {
+                credentials: any CredentialProviding = KeychainCredentialStore(),
+                fileStore: any FileStoring = LocalFileStore()) {
         let config = URLSessionConfiguration.default
         #if !os(Linux)
         // `waitsForConnectivity` is get-only in swift-corelibs-foundation.
@@ -160,6 +173,7 @@ actor HTTPEngine: HTTPConfigurable {
                                   delegate: RedirectSanitizer.shared, delegateQueue: nil)
         self.profile = profile
         self.credentials = credentials
+        self.fileStore = fileStore
     }
 
     // MARK: DownloadEngine
@@ -212,7 +226,7 @@ actor HTTPEngine: HTTPConfigurable {
         // segment writer can't flush bytes to a path we've just unlinked.
         await job?.value
         if deleteData, let task, task.isSavePathContained {
-            try? FileManager.default.removeItem(atPath: task.savePath)
+            fileStore.removeItem(atPath: task.savePath)
         }
         hub.finishAll(id)
         streamedResume[id] = nil
@@ -487,7 +501,8 @@ actor HTTPEngine: HTTPConfigurable {
                 flushSize: Self.flushSize,
                 mirrors: mirrors,
                 boundAdapters: boundAdapters,
-                connectTimeout: networkConfig.timeout
+                connectTimeout: networkConfig.timeout,
+                fileStore: fileStore
             )
             let planned = PlannedTransfer(plan: plan)
 

@@ -111,7 +111,7 @@ final class SegmentedTransfer: Sendable {
         // `init` so the caller could reserve the matching connection count; here
         // we just realise the file and move bytes.
         let ranges = plannedRanges
-        try Self.preallocate(plan.destination, size: total)
+        try Self.preallocate(plan.destination, size: total, using: plan.fileStore)
 
         let initialBytes = restoredBytes.isEmpty
             ? Dictionary(uniqueKeysWithValues: ranges.indices.map { ($0, Int64(0)) })
@@ -475,8 +475,8 @@ final class SegmentedTransfer: Sendable {
     private func runSingle() async throws -> TransferOutcome {
         // SF8: truncate to zero on (re)create — `createFile` is a no-op when the
         // file already exists, which would leave stale trailing bytes if the new
-        // download is shorter. `Data().write` both creates and truncates.
-        try Data().write(to: plan.destination)
+        // download is shorter. Writing empty data both creates and truncates.
+        try plan.fileStore.write(Data(), toPath: plan.destination.path)
 
         let ledger = Ledger(continuation: continuation, meta: nil,
                             initialSegmentBytes: [0: 0], connectionCount: 1,
@@ -765,10 +765,9 @@ final class SegmentedTransfer: Sendable {
 
     /// Size the destination file before segments seek into it, so each segment can
     /// write at its own offset without racing to grow the file.
-    static func preallocate(_ url: URL, size: Int64) throws {
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: url.path) {
-            fm.createFile(atPath: url.path, contents: nil)
+    static func preallocate(_ url: URL, size: Int64, using fileStore: any FileStoring) throws {
+        if !fileStore.fileExists(atPath: url.path) {
+            fileStore.createFile(atPath: url.path)
         }
         let handle = try FileHandle(forWritingTo: url)
         defer { try? handle.close() }
@@ -1025,6 +1024,10 @@ struct TransferPlan: Sendable {
     var boundAdapters: [BoundAdapter] = []
     /// Connect timeout forwarded to bound HTTP (seconds).
     var connectTimeout: Double = 30
+    /// Save-area filesystem seam for creating/truncating the destination file (see
+    /// ``FileStoring``). Defaulted so the memberwise init and tests are unaffected;
+    /// `HTTPEngine` fills in the scheduler-injected store.
+    var fileStore: any FileStoring = LocalFileStore()
 }
 
 /// Per-request knobs threaded into the byte pumps (which read no actor state).

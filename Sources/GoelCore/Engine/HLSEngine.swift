@@ -19,8 +19,11 @@ import CryptoBridge  // OpenSSL-backed AES-128-CBC on Linux
 /// Segment files are written under a per-task work directory, so a paused stream
 /// resumes by skipping segments already on disk. Conforms to ``DownloadEngine``
 /// so the scheduler and UI treat it like any other download.
-actor HLSEngine: HLSConfigurable {
+actor HLSEngine: HLSConfigurable, BackgroundTransferStrategy {
     public nonisolated let kind: DownloadKind = .hls
+
+    /// Foreground-only, like the HTTP engine (see ``BackgroundTransferStrategy``).
+    public nonisolated let executionMode: TransferExecutionMode = .foreground
 
     /// HLS has no cheap up-front probe (size needs a full playlist walk) and no
     /// per-file selection, so it advertises no optional capabilities.
@@ -29,6 +32,9 @@ actor HLSEngine: HLSConfigurable {
     private nonisolated let hub = EventHub()
     private nonisolated let session: URLSession
     private nonisolated let userAgent: String
+    /// Save-area filesystem seam for the final output file (see ``FileStoring``);
+    /// the scratch work directory stays on `FileManager` as container-local cache.
+    private nonisolated let fileStore: any FileStoring
 
     private var tasks: [UUID: DownloadTask] = [:]
     private var jobs: [UUID: Task<Void, Never>] = [:]
@@ -36,9 +42,11 @@ actor HLSEngine: HLSConfigurable {
     /// Preferred maximum video height (0 = best available).
     private var maxHeight: Int = 0
 
-    init(profile: TrafficProfile, userAgent: String = "GoelDownloader/1.0 (macOS)") {
+    init(profile: TrafficProfile, userAgent: String = "GoelDownloader/1.0 (macOS)",
+         fileStore: any FileStoring = LocalFileStore()) {
         self.profile = profile
         self.userAgent = userAgent
+        self.fileStore = fileStore
         let config = URLSessionConfiguration.default
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.timeoutIntervalForRequest = 60
@@ -80,7 +88,7 @@ actor HLSEngine: HLSConfigurable {
         await job?.value
         try? FileManager.default.removeItem(at: Self.workDir(for: id))
         if deleteData, let task, task.isSavePathContained {
-            try? FileManager.default.removeItem(atPath: task.savePath)
+            fileStore.removeItem(atPath: task.savePath)
         }
         hub.finishAll(id)
     }
@@ -238,13 +246,17 @@ actor HLSEngine: HLSConfigurable {
         }
 
         let destURL = URL(fileURLWithPath: task.savePath)
-        try? FileManager.default.removeItem(at: destURL)
+        fileStore.removeItem(atPath: destURL.path)
         if plan.mapURL != nil {
             // fMP4: init + media fragments are already a valid (fragmented) MP4.
+            // The final file lands in the save area, so it goes through the port.
+            fileStore.createFile(atPath: destURL.path)
             try Self.concatenate(parts, to: destURL)
         } else {
-            // MPEG-TS: concatenate, then remux to MP4 via AVFoundation passthrough.
+            // MPEG-TS: concatenate into a scratch file (container-local cache, so it
+            // stays on `FileManager`), then remux to MP4 via AVFoundation passthrough.
             let tsURL = workDir.appendingPathComponent("combined.ts")
+            FileManager.default.createFile(atPath: tsURL.path, contents: nil)
             try Self.concatenate(parts, to: tsURL)
             try await Self.remuxToMP4(from: tsURL, to: destURL)
         }
@@ -340,10 +352,11 @@ actor HLSEngine: HLSConfigurable {
         return size
     }
 
-    /// Concatenate `parts` (in order) into `dest`, streaming part-by-part without
-    /// loading whole segments into RAM (large VOD can be multi-100MB).
+    /// Concatenate `parts` (in order) into `dest`, which the caller must already
+    /// have created (via the save-area ``FileStoring`` for the final file, or plain
+    /// `FileManager` for a scratch file). Streams part-by-part without loading whole
+    /// segments into RAM (large VOD can be multi-100MB).
     private static func concatenate(_ parts: [URL], to dest: URL) throws {
-        FileManager.default.createFile(atPath: dest.path, contents: nil)
         let out = try FileHandle(forWritingTo: dest)
         defer { try? out.close() }
         for part in parts {

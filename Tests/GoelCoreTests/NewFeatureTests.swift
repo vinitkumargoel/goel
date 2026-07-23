@@ -109,7 +109,7 @@ final class NewFeatureTests: XCTestCase {
         FileManager.default.createFile(
             atPath: (dir as NSString).appendingPathComponent("notes.txt"), contents: Data())
 
-        DownloadManager.pruneBackups(in: dir, keep: 2)
+        DownloadManager.pruneBackups(in: dir, keep: 2, using: LocalFileStore())
 
         let remaining = try FileManager.default.contentsOfDirectory(atPath: dir).sorted()
         XCTAssertEqual(remaining, ["backup-2026-01-04-000000.json",

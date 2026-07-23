@@ -102,15 +102,16 @@ extension DownloadManager {
         let snapshot = tasks
         let baseDir = settings.defaultSaveDirectory
         let keep = max(1, settings.backupKeepCount)
+        let fileStore = self.fileStore
         Task.detached { [weak self] in
             do {
                 let data = try store.exportTasks(snapshot)
                 let dir = (baseDir as NSString).appendingPathComponent("GoelDownloader Backups")
-                try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+                try fileStore.createDirectory(atPath: dir)
                 let stamp = Self.backupStampFormatter.string(from: Date())
                 let file = (dir as NSString).appendingPathComponent("backup-\(stamp).json")
-                try data.write(to: URL(fileURLWithPath: file))
-                Self.pruneBackups(in: dir, keep: keep)
+                try fileStore.write(data, toPath: file)
+                Self.pruneBackups(in: dir, keep: keep, using: fileStore)
             } catch {
                 await self?.notePersistenceError(error)
             }
@@ -120,7 +121,7 @@ extension DownloadManager {
     /// Delete the oldest `backup-*.json` files beyond `keep`. The timestamp
     /// format sorts lexicographically, so name order is age order. Best-effort:
     /// a prune failure never surfaces (the new backup itself was written).
-    static func pruneBackups(in dir: String, keep: Int) {
+    static func pruneBackups(in dir: String, keep: Int, using fileStore: any FileStoring) {
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: dir) else { return }
         let backups = names
@@ -128,7 +129,7 @@ extension DownloadManager {
             .sorted()
         guard backups.count > keep else { return }
         for name in backups.prefix(backups.count - keep) {
-            try? fm.removeItem(atPath: (dir as NSString).appendingPathComponent(name))
+            fileStore.removeItem(atPath: (dir as NSString).appendingPathComponent(name))
         }
     }
 
@@ -193,15 +194,13 @@ extension DownloadManager {
         let path = task.savePath
         if settings.postDownloadExtractArchives, path.lowercased().hasSuffix(".zip") {
             let directory = task.saveDirectory
+            let archive = self.archive
+            let fileStore = self.fileStore
             Task.detached {
-                let unzip = Process()
-                unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
                 let target = (directory as NSString)
                     .appendingPathComponent((path as NSString).lastPathComponent + " extracted")
-                unzip.arguments = ["-x", "-k", path, target]
-                try? unzip.run()
-                unzip.waitUntilExit()
-                Self.quarantineExtractedEscapees(under: target)
+                await archive.extract(archivePath: path, into: target)
+                Self.quarantineExtractedEscapees(under: target, using: fileStore)
             }
         }
         if settings.postDownloadScriptEnabled, !settings.postDownloadScriptPath.isEmpty {
@@ -220,7 +219,7 @@ extension DownloadManager {
     /// outside the target folder (e.g. a symlink to `/private/tmp`), remove it so a
     /// later "open extracted folder" action can't be redirected out of the download
     /// area. A no-op on a well-behaved archive.
-    static func quarantineExtractedEscapees(under target: String) {
+    static func quarantineExtractedEscapees(under target: String, using fileStore: any FileStoring) {
         let fm = FileManager.default
         // Walk the whole tree, not just the top level, so a symlink nested inside an
         // extracted subdirectory (`sub/evil -> /etc`) is also caught. The enumerator
@@ -230,7 +229,7 @@ extension DownloadManager {
         for case let rel as String in en {
             let full = (target as NSString).appendingPathComponent(rel)
             if !PathSafety.isContained(full, within: target) {
-                try? fm.removeItem(atPath: full)
+                fileStore.removeItem(atPath: full)
                 en.skipDescendants()
                 FileHandle.standardError.write(Data(
                     "[GoelDownloader] removed extracted entry escaping the folder: \(rel)\n".utf8))

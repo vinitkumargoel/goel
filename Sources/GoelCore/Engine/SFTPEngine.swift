@@ -14,14 +14,17 @@ actor SFTPEngine: DownloadEngine {
     nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata] }
 
     private nonisolated let hub = EventHub()
+    /// Save-area filesystem seam (mkdir/create); see ``FileStoring``.
+    private nonisolated let fileStore: any FileStoring
 
     private var tasks: [UUID: DownloadTask] = [:]
     private var jobs: [UUID: Task<Void, Never>] = [:]
     private var states: [UUID: SFTPDownloadState] = [:]
     private var profile: TrafficProfile
 
-    init(profile: TrafficProfile) {
+    init(profile: TrafficProfile, fileStore: any FileStoring = LocalFileStore()) {
         self.profile = profile
+        self.fileStore = fileStore
     }
 
     // MARK: DownloadEngine
@@ -52,7 +55,7 @@ actor SFTPEngine: DownloadEngine {
         tasks[id] = nil
         await job?.value
         if deleteData, let task, task.isSavePathContained {
-            try? FileManager.default.removeItem(atPath: task.savePath)
+            fileStore.removeItem(atPath: task.savePath)
         }
         hub.finishAll(id)
     }
@@ -102,7 +105,7 @@ actor SFTPEngine: DownloadEngine {
         do {
             opened = try RemoteTransferPrep.openForResume(
                 saveDirectory: task.saveDirectory, savePath: task.savePath,
-                remoteSize: remoteSize)
+                remoteSize: remoteSize, fileStore: fileStore)
         } catch {
             if let de = error as? DownloadError {
                 hub.fail(id, de)

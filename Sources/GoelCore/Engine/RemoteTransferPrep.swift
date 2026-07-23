@@ -16,15 +16,17 @@ enum RemoteTransferPrep {
     static func openForResume(
         saveDirectory: String,
         savePath: String,
-        remoteSize: Int64?
+        remoteSize: Int64?,
+        fileStore: any FileStoring
     ) throws -> Opened {
-        let fm = FileManager.default
-        try fm.createDirectory(atPath: saveDirectory, withIntermediateDirectories: true)
+        try fileStore.createDirectory(atPath: saveDirectory)
         let fileURL = URL(fileURLWithPath: savePath)
-        if !fm.fileExists(atPath: fileURL.path) {
-            fm.createFile(atPath: fileURL.path, contents: nil)
+        if !fileStore.fileExists(atPath: fileURL.path) {
+            fileStore.createFile(atPath: fileURL.path)
         }
-        let attributes = try? fm.attributesOfItem(atPath: fileURL.path)
+        // A metadata read of the existing file's size, not a write — left on
+        // `FileManager` directly (the `FileStore` seam abstracts mutations).
+        let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
         let localSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
         var resumeFrom = localSize
         if let remoteSize, remoteSize >= 0, localSize > remoteSize {

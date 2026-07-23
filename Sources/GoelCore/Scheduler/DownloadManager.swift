@@ -103,6 +103,13 @@ public actor DownloadManager {
     /// Screens completed files with the configured external antivirus.
     let scanner: any FileScanning
 
+    /// Extracts a completed archive when auto-extract is enabled.
+    let archive: any ArchiveExtracting
+
+    /// Creates/removes files and directories under the save area. The seam mobile
+    /// builds use to keep writes inside the sandbox container (see ``FileStoring``).
+    let fileStore: any FileStoring
+
     /// The periodic backup loop, when ``AppSettings/backupEnabled`` is on.
     var backupTask: Task<Void, Never>?
 
@@ -197,18 +204,22 @@ public actor DownloadManager {
         store: PersistenceStore? = nil,
         power: any PowerControlling = SystemPowerControl(),
         folderWatch: any FolderWatching = SystemFolderWatch(),
-        scanner: any FileScanning = ProcessFileScan()
+        scanner: any FileScanning = ProcessFileScan(),
+        archive: any ArchiveExtracting = DittoArchiveExtractor(),
+        fileStore: any FileStoring = LocalFileStore()
     ) {
         self.httpEngine = httpEngine
         self.torrentEngine = torrentEngine
-        self.hlsEngine = hlsEngine ?? HLSEngine(profile: settings.effectiveProfile)
-        self.ftpEngine = ftpEngine ?? FTPEngine(profile: settings.effectiveProfile)
-        self.sftpEngine = sftpEngine ?? SFTPEngine(profile: settings.effectiveProfile)
+        self.hlsEngine = hlsEngine ?? HLSEngine(profile: settings.effectiveProfile, fileStore: fileStore)
+        self.ftpEngine = ftpEngine ?? FTPEngine(profile: settings.effectiveProfile, fileStore: fileStore)
+        self.sftpEngine = sftpEngine ?? SFTPEngine(profile: settings.effectiveProfile, fileStore: fileStore)
         self.settings = settings
         self.store = store
         self.power = power
         self.folderWatch = folderWatch
         self.scanner = scanner
+        self.archive = archive
+        self.fileStore = fileStore
         if let store {
             let handler = PersistenceErrorHandler()
             self.persistErrorHandler = handler
@@ -226,9 +237,11 @@ public actor DownloadManager {
         store: PersistenceStore? = nil,
         power: any PowerControlling = SystemPowerControl(),
         folderWatch: any FolderWatching = SystemFolderWatch(),
-        scanner: any FileScanning = ProcessFileScan()
+        scanner: any FileScanning = ProcessFileScan(),
+        archive: any ArchiveExtracting = DittoArchiveExtractor(),
+        fileStore: any FileStoring = LocalFileStore()
     ) {
-        self.httpEngine = HTTPEngine(profile: settings.effectiveProfile)
+        self.httpEngine = HTTPEngine(profile: settings.effectiveProfile, fileStore: fileStore)
         self.torrentEngine = TorrentEngine(
             profile: settings.effectiveProfile,
             config: TorrentEngine.SessionConfig(
@@ -238,14 +251,16 @@ public actor DownloadManager {
                 encryptionMode: settings.btEncryptionMode
             )
         )
-        self.hlsEngine = HLSEngine(profile: settings.effectiveProfile)
-        self.ftpEngine = FTPEngine(profile: settings.effectiveProfile)
-        self.sftpEngine = SFTPEngine(profile: settings.effectiveProfile)
+        self.hlsEngine = HLSEngine(profile: settings.effectiveProfile, fileStore: fileStore)
+        self.ftpEngine = FTPEngine(profile: settings.effectiveProfile, fileStore: fileStore)
+        self.sftpEngine = SFTPEngine(profile: settings.effectiveProfile, fileStore: fileStore)
         self.settings = settings
         self.store = store
         self.power = power
         self.folderWatch = folderWatch
         self.scanner = scanner
+        self.archive = archive
+        self.fileStore = fileStore
         if let store {
             let handler = PersistenceErrorHandler()
             self.persistErrorHandler = handler
@@ -902,13 +917,12 @@ public actor DownloadManager {
         guard !task.status.isActive else { return .active }
         let sanitized = PathSafety.sanitizedName(newName, fallback: task.name)
         guard sanitized != task.name else { return .unchanged }
-        let fm = FileManager.default
         let dir = task.saveDirectory
         let finalName = PathSafety.uniqueName(base: sanitized, in: dir)
         let oldPath = (dir as NSString).appendingPathComponent(task.name)
         let newPath = (dir as NSString).appendingPathComponent(finalName)
-        if fm.fileExists(atPath: oldPath) {
-            do { try fm.moveItem(atPath: oldPath, toPath: newPath) }
+        if fileStore.fileExists(atPath: oldPath) {
+            do { try fileStore.moveItem(atPath: oldPath, toPath: newPath) }
             catch { return .ioError(error.localizedDescription) }
         }
         tasks[i].name = finalName

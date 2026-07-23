@@ -8,7 +8,7 @@ import Foundation
 extension HTTPEngine {
 
     func ensureDirectory(_ path: String) throws {
-        try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        try fileStore.createDirectory(atPath: path)
     }
 
     func checkDiskSpace(_ directory: String, needed: Int64) throws {
