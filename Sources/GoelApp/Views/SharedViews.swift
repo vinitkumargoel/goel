@@ -9,11 +9,18 @@ struct SheetHeader: View {
     var body: some View {
         HStack(spacing: 11) {
             Image(systemName: systemImage)
-                .foregroundStyle(.white)
+                // Not `.white`: the accent is a light colour in three of the four
+                // themes, where a white glyph on it measured 2.00–2.42:1.
+                .foregroundStyle(Theme.onAccent)
                 .frame(width: 30, height: 30)
                 .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
+                // The tile restates the sheet's subject; the title beside it
+                // already says it in words.
+                .a11yDecorative()
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .scaledFont(size: 15, weight: .semibold)
+                // Sheets are announced by their heading, so mark it as one.
+                .accessibilityAddTraits(.isHeader)
             Spacer()
         }
         .padding(18)
@@ -33,16 +40,20 @@ struct EmptyStateView: View {
             Image(systemName: systemImage)
                 .font(.system(size: symbolSize))
                 .foregroundStyle(symbolStyle)
+                .a11yDecorative()
             Text(title)
-                .font(.system(size: 14))
+                .scaledFont(size: 14)
                 .foregroundStyle(.secondary)
             if let subtitle {
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
             }
         }
+        // Title and subtitle are one message ("No downloads match / Try a
+        // different filter"), so read them as one rather than two stray strings.
+        .a11yGroup(label: A11y.sentence(title, subtitle))
     }
 }
 
@@ -54,16 +65,28 @@ struct SpeedStat: View {
     let color: Color
     var size: CGFloat = 12.5
     var minWidth: CGFloat? = nil
+    /// Which direction the arrow means, spoken. Defaults are derived from the
+    /// symbol so existing call sites need no change; pass explicitly when the
+    /// glyph is something other than a plain up/down arrow.
+    var directionName: String? = nil
 
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: symbol).font(.system(size: size - 1.5, weight: .bold))
             Text(speed > 0 ? speed.speedString : "—")
-                .font(.system(size: size, weight: .semibold))
-                .monospacedDigit()
+                .scaledFont(size: size, weight: .semibold, monospacedDigit: true)
                 .frame(minWidth: minWidth, alignment: .trailing)
         }
         .foregroundStyle(speed > 0 ? color : Color.secondary)
+        // An arrow glyph plus "14.2 MB/s" is meaningless read aloud: VoiceOver
+        // names the arrow, not what it measures, and "—" is silent. Speak the
+        // direction and the rate in words instead.
+        .a11yGroup(label: spokenDirection, value: A11y.speed(speed))
+    }
+
+    private var spokenDirection: String {
+        if let directionName { return directionName }
+        return symbol.contains("up") ? "Upload speed" : "Download speed"
     }
 }
 
@@ -82,14 +105,22 @@ struct SFTPTransferRow: View {
             HStack(spacing: 8) {
                 Image(systemName: transfer.iconName(filledWhenFinished: density == .full))
                     .foregroundStyle(transfer.tint)
+                    // The glyph encodes direction + state, both of which the
+                    // grouped label below already says in words.
+                    .a11yDecorative()
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(transfer.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                    Text(transfer.name).scaledFont(size: 12).lineLimit(1).truncationMode(.middle)
                     if let serverLabel {
                         Text(serverLabel)
-                            .font(.system(size: density == .compact ? 10 : 10.5))
+                            .scaledFont(size: density == .compact ? 10 : 10.5)
                             .foregroundStyle(.tertiary).lineLimit(1)
                     }
                 }
+                // The name and server together identify the transfer; the live
+                // numbers travel as the element's *value* so VoiceOver can
+                // re-read just those as they change.
+                .a11yGroup(label: A11y.sentence(spokenDirection, transfer.name, serverLabel),
+                           value: spokenProgress)
                 Spacer(minLength: density == .full ? 8 : 6)
                 trailingControls
             }
@@ -97,24 +128,50 @@ struct SFTPTransferRow: View {
                 HStack(spacing: 10) {
                     ProgressView(value: transfer.fraction).frame(maxWidth: 160)
                     Text(transfer.sizeLabel)
-                        .font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.secondary)
+                        .scaledFont(size: 10.5, monospacedDigit: true).foregroundStyle(.secondary)
                     if !transfer.speedLabel.isEmpty {
                         Label(transfer.speedLabel,
                               systemImage: transfer.direction == .upload ? "arrow.up" : "arrow.down")
                             .labelStyle(.titleAndIcon)
-                            .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
+                            .scaledFont(size: 10.5, weight: .semibold, monospacedDigit: true)
                             .foregroundStyle(transfer.direction == .upload ? Theme.teal : Theme.green)
                     }
                     if let eta = transfer.etaLabel {
-                        Text(eta).font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.tertiary)
+                        Text(eta).scaledFont(size: 10.5, monospacedDigit: true).foregroundStyle(.tertiary)
                     }
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, 22)
+                // Bar + size + rate + ETA are four readings of one thing. Fold
+                // them into a single progress element rather than four.
+                .a11yGroup(label: "Transfer progress", value: spokenProgress)
             }
         }
         .padding(.horizontal, density == .full ? 14 : 12)
         .padding(.vertical, density == .full ? 5 : 6)
+    }
+
+    /// "Uploading" / "Downloading" — the arrow glyph and tint, in words.
+    private var spokenDirection: String {
+        transfer.direction == .upload ? "Uploading" : "Downloading"
+    }
+
+    /// The transfer's live numbers as one spoken value, ending in its state so a
+    /// finished or failed transfer says so rather than reporting a stale percent.
+    private var spokenProgress: String {
+        switch transfer.state {
+        case .running:
+            return A11y.sentence(
+                A11y.percent(transfer.fraction),
+                "\(A11y.bytes(transfer.bytes)) of \(A11y.bytes(transfer.total))",
+                transfer.displaySpeed > 0 ? A11y.speed(transfer.displaySpeed) : nil)
+        case .finished:
+            return A11y.sentence("Finished", transfer.total > 0 ? A11y.bytes(transfer.total) : nil)
+        case .cancelled:
+            return "Cancelled"
+        case .failed(let message):
+            return "Failed, \(message)"
+        }
     }
 
     @ViewBuilder
@@ -139,6 +196,9 @@ struct SFTPTransferRow: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12))
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")
+                // Name the target: a popover of transfers otherwise reads as a
+                // column of identical "Cancel" buttons.
+                .a11yButton("Cancel transfer of \(transfer.name)")
             }
         case .finished:
             if density == .full {
@@ -149,19 +209,21 @@ struct SFTPTransferRow: View {
             }
         case .cancelled:
             if density == .full {
-                Text("Cancelled").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("Cancelled").scaledFont(size: 11).foregroundStyle(.secondary)
             }
             if let onRetry {
                 Button("Retry", action: onRetry)
-                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
+                    .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
+                    .accessibilityLabel("Retry transfer of \(transfer.name)")
             }
         case .failed(let message):
             if density == .full {
-                Text(message).font(.system(size: 11)).foregroundStyle(Theme.red).lineLimit(1)
+                Text(message).scaledFont(size: 11).foregroundStyle(Theme.red).lineLimit(1)
             }
             if let onRetry {
                 Button("Retry", action: onRetry)
-                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
+                    .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
+                    .accessibilityLabel("Retry transfer of \(transfer.name)")
             }
         }
     }
@@ -181,6 +243,10 @@ struct FileTypeIcon: View {
                     .font(.system(size: size * 0.5, weight: .semibold))
                     .foregroundStyle(.white)
             )
+            // Colour-coded restatement of the file's kind. Every row that shows
+            // this tile also names the file, whose extension carries the same
+            // information — so hiding it removes noise, not meaning.
+            .a11yDecorative()
     }
 }
 
@@ -192,8 +258,16 @@ struct KindBadge: View {
             .font(.system(size: 9, weight: .bold))
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .background(task.kindBadgeColor.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+            .background(task.kindBadgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
             .foregroundStyle(task.kindBadgeColor)
+            // The chip's own tint sits under its text, so the fill eats contrast
+            // the palette had already spent: at the mockup's 20% the badge
+            // measured 2.94–4.20:1 across the four themes. 12% is the highest
+            // opacity at which the chip still reads as tinted while giving the
+            // text back most of its headroom (3.83–7.95:1). It does not clear
+            // 4.5:1 everywhere — see docs/vpat.md, SC 1.4.3.
+            // "BT" and "HLS" are read as letter soup; say the protocol.
+            .accessibilityLabel(task.accessibilityKindName)
     }
 }
 
@@ -219,6 +293,15 @@ struct MiniProgressBar: View {
             }
         }
         .frame(height: height)
+        // A bar that announces nothing is useless to a screen-reader user. Give
+        // it the progress trait and a spoken value; an indeterminate metadata
+        // fetch says so rather than reporting a misleading 0 percent.
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.updatesFrequently)
+        .accessibilityLabel("Progress")
+        .accessibilityValue(task.status == .requestingMetadata
+                            ? "Requesting information"
+                            : task.accessibilityProgressValue)
     }
 }
 
@@ -239,6 +322,9 @@ struct StateButton: View {
         }
         .buttonStyle(.plain)
         .help(helpText)
+        // One glyph, four meanings, repeated once per row. Without the file name
+        // the whole list reads as "button, button, button".
+        .a11yButton("\(task.accessibilityStateActionName) \(task.name)")
     }
 
     private var symbol: String {

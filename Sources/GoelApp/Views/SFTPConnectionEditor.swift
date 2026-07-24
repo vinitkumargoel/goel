@@ -157,6 +157,7 @@ struct SFTPConnectionEditor: View {
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
                         .help("Remove the private key")
+                        .a11yButton("Remove the private key")
                     }
                 }
             }
@@ -218,13 +219,13 @@ struct SFTPConnectionEditor: View {
                 }
             } label: {
                 Label("Reset pinned host key", systemImage: "key.slash")
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
             }
             .buttonStyle(.link)
             .help("Forget the saved SSH host-key fingerprint. Use this only after a legitimate server rekey, then re-verify with Test.")
             if hostKeyReset {
                 Text("Pinned key cleared — it will be re-learned on the next connection.")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .scaledFont(size: 10).foregroundStyle(.secondary)
             }
         }
     }
@@ -235,21 +236,34 @@ struct SFTPConnectionEditor: View {
         case .success(let fp):
             VStack(alignment: .leading, spacing: 3) {
                 Label("Connected successfully", systemImage: "checkmark.seal.fill")
-                    .foregroundStyle(Theme.green).font(.system(size: 12, weight: .semibold))
-                Text("Host key SHA-256:").font(.system(size: 10)).foregroundStyle(.secondary)
-                Text(fp).font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Theme.green).scaledFont(size: 12, weight: .semibold)
+                Text("Host key SHA-256:").scaledFont(size: 10).foregroundStyle(.secondary)
+                    .a11yDecorative()
+                Text(fp).scaledFont(size: 10, design: .monospaced)
                     .foregroundStyle(.secondary).textSelection(.enabled).lineLimit(2)
+                    // Base64 read as words is unverifiable; spell it out, which
+                    // is the only way to compare it against the server's own
+                    // `ssh-keygen -lf` output by ear.
+                    .accessibilityLabel("Host key SHA-256 fingerprint")
+                    .accessibilityValue(fp.map { "\($0) " }.joined())
             }
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            // The panel appears after an async test without taking focus, so
+            // group it as one readable result rather than four loose strings.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Connection test succeeded")
         case .failure(let message, let detail, let retry):
             // Lead with what the user can act on; keep libssh2's own wording
             // available but subordinate, since it names a cause ("Unable to
             // exchange encryption keys") that is usually not the actual fault.
             VStack(alignment: .leading, spacing: 6) {
                 Label(message, systemImage: "xmark.octagon.fill")
-                    .foregroundStyle(Theme.red).font(.system(size: 12))
+                    .foregroundStyle(Theme.red).scaledFont(size: 12)
                     .fixedSize(horizontal: false, vertical: true)
+                    // The octagon glyph and the red tint are the only marks of
+                    // failure; neither survives to a screen reader.
+                    .accessibilityLabel("Connection test failed. \(message)")
                 if let retry {
                     Button {
                         switch retry {
@@ -258,7 +272,7 @@ struct SFTPConnectionEditor: View {
                         }
                     } label: {
                         Label("Try again", systemImage: "arrow.clockwise")
-                            .font(.system(size: 11))
+                            .scaledFont(size: 11)
                     }
                     .disabled(testing)
                 }

@@ -70,9 +70,11 @@ struct CookieSourcePicker: View {
             Image(systemName: "person.badge.key")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.accent)
+                .a11yDecorative()
             Text("Sign-in cookies")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
         }
     }
@@ -89,6 +91,8 @@ struct CookieSourcePicker: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+        // `labelsHidden()` also strips the name from assistive technology.
+        .accessibilityLabel("Cookie source")
     }
 
     /// `SecureField` rather than a text field: a Cookie header pasted into a
@@ -100,6 +104,8 @@ struct CookieSourcePicker: View {
             SecureField("sid=…; csrf=…", text: $pastedCookies)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12, design: .monospaced))
+                .accessibilityLabel("Cookie header")
+                .accessibilityHint("Paste the Cookie request header from your browser's developer tools.")
             Text("In your browser: DevTools ▸ Network ▸ the download request ▸ copy the Cookie request header.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
@@ -121,6 +127,10 @@ struct CookieSourcePicker: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
+            // Whether cookies were actually picked up is signalled by a swapped
+            // glyph and an orange-vs-green tint — both colour-alone cues. Say it.
+            .a11yGroup(label: names.isEmpty ? "Warning" : "Cookies attached",
+                       value: summaryText(names: names))
         }
     }
 

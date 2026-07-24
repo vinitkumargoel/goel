@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import GoelCore
 
 /// The Preferences window, mirroring the brief's panels. General / Network /
@@ -24,6 +25,7 @@ struct SettingsView: View {
         case browser = "Browser"
         case remote = "Web Access"
         case audit = "Audit Log"
+        case license = "Licence"
         var id: String { rawValue }
 
         var symbol: String {
@@ -40,6 +42,7 @@ struct SettingsView: View {
             case .browser: return "safari"
             case .remote: return "display"
             case .audit: return "doc.text.magnifyingglass"
+            case .license: return "checkmark.seal"
             }
         }
 
@@ -51,6 +54,10 @@ struct SettingsView: View {
 
     @State private var selection: Pane = .general
 
+    /// Lets the command palette (and the empty state's shortcuts) open Settings
+    /// directly on a named pane instead of wherever it was last left.
+    @ObservedObject private var route = SettingsRoute.shared
+
     var body: some View {
         HStack(spacing: 0) {
             List(Pane.allCases, selection: $selection) { pane in
@@ -60,7 +67,7 @@ struct SettingsView: View {
                         if pane.comingSoon {
                             Spacer()
                             Text("soon")
-                                .font(.system(size: 9))
+                                .scaledFont(size: 9)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
                                 .background(Color.primary.opacity(0.08), in: Capsule())
@@ -86,10 +93,29 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        // A pane requested from elsewhere (⌘K, the empty state) wins over the
+        // remembered selection. The request is cleared once consumed so asking
+        // for the same pane twice still navigates the second time.
+        .onChange(of: route.requestedPane) { _, requested in
+            guard let requested else { return }
+            selection = requested
+            route.requestedPane = nil
+        }
+        .onAppear {
+            if let requested = route.requestedPane {
+                selection = requested
+                route.requestedPane = nil
+            }
+        }
         // Settings is its own window and doesn't carry the main window's toast /
         // confirm overlays — so surface settings feedback here: errors and
         // confirmations as a modal alert, and success toasts as a bottom banner.
         .overlay(alignment: .bottom) { settingsToast }
+        // The banner never takes focus, so without an announcement a
+        // screen-reader user gets no confirmation that a setting took effect.
+        .onChange(of: vm.toast) { _, message in
+            if let message { A11yAnnouncer.announce(message) }
+        }
         .alert(vm.settingsAlert?.title ?? "",
                isPresented: Binding(get: { vm.settingsAlert != nil },
                                     set: { if !$0 { vm.settingsAlert = nil } }),
@@ -114,8 +140,10 @@ struct SettingsView: View {
         if let toast = vm.toast {
             HStack(spacing: 9) {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.green)
-                Text(toast).font(.system(size: 12.5))
+                    .a11yDecorative()
+                Text(toast).scaledFont(size: 12.5)
             }
+            .a11yGroup(label: toast)
             .padding(.horizontal, 15)
             .padding(.vertical, 9)
             .background(.regularMaterial, in: Capsule())
@@ -141,6 +169,7 @@ struct SettingsView: View {
         case .browser: BrowserIntegrationPane()
         case .remote: RemoteAccessPane()
         case .audit: AuditLogPane()
+        case .license: LicensePane()
         }
     }
 
@@ -194,6 +223,9 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .frame(width: 200)
+                // `labelsHidden()` hides the name from VoiceOver too; the
+                // `SetRow` environment only reaches the `Setting*` wrappers.
+                .accessibilityLabel("Theme")
             }
             SetRow(name: "Language", desc: "English to start; structured for localization.") {
                 Dropdown(selection: binding(\.language), items: [
@@ -227,6 +259,7 @@ struct SettingsView: View {
             if vm.settings.defaultFolderRule == "fixed" {
                 SetRow(name: "Fixed folder", desc: vm.settings.defaultSaveDirectory) {
                     Button("Choose…") { chooseDefaultFolder() }
+                        .accessibilityLabel("Choose fixed download folder")
                 }
             }
             SetRow(name: "When a file exists",
@@ -238,6 +271,7 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 200)
+                .accessibilityLabel("When a file exists")
             }
             SetRow(name: "Clipboard capture",
                    desc: "Offer to download http(s)/magnet links you copy.") {
@@ -276,7 +310,7 @@ struct SettingsView: View {
             // typo'd path or a missing bundle is visible where it is configured
             // rather than only at the moment a conversion fails.
             Text(vm.ffmpegResolutionSummary)
-                .font(.system(size: 10))
+                .scaledFont(size: 10)
                 .foregroundStyle(vm.ffmpegUnavailableReason == nil ? Color.secondary : Theme.orange)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -549,6 +583,59 @@ struct SettingsView: View {
             SetRow(name: "", desc: "") {
                 Button("Check Now") { vm.checkForUpdates() }
             }
+            diagnosticsSection
+        }
+    }
+
+    // MARK: Diagnostics
+
+    /// The support report, in the only shape the "no telemetry" guarantee
+    /// permits: assembled in memory when the user presses a button, handed
+    /// straight to them, and forgotten.
+    ///
+    /// Nothing here writes a file, schedules anything, or opens a socket. The
+    /// save panel is a deliberate friction point — the user picks the location,
+    /// so a report can never leave the machine without a conscious act.
+    @ViewBuilder
+    private var diagnosticsSection: some View {
+        SectionHeader("Diagnostics")
+        SetRow(name: "Support report",
+               desc: "Versions, engine states, task counts, and a redacted settings dump — "
+                   + "no URLs, file names, paths, or credentials. Nothing is ever sent automatically.") {
+            HStack(spacing: 8) {
+                Button("Copy") { copyDiagnostics() }
+                Button("Export…") { exportDiagnostics() }
+            }
+        }
+        Text("Withheld from every report: \(DiagnosticsRedaction.withheldSettingsKeys.sorted().joined(separator: ", ")).")
+            .scaledFont(size: 10)
+            .foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func makeDiagnostics() -> DiagnosticsBundle {
+        // `DiagnosticsBundle` cannot see the engines — they are owned above
+        // GoelCore — so the caller has to say. The view model reports its actual
+        // live engine set rather than inferring it from the queue, so an idle
+        // engine stays distinguishable from one that never came up.
+        DiagnosticsBundle.make(settings: vm.settings,
+                               tasks: vm.tasks,
+                               runningEngineKinds: vm.runningEngineKinds)
+    }
+
+    private func copyDiagnostics() {
+        vm.copyToPasteboard(makeDiagnostics().plainText)
+        vm.toastNow("Diagnostics copied — paste it into your bug report")
+    }
+
+    private func exportDiagnostics() {
+        guard let url = FilePicker.save(name: "Goel-diagnostics.json", type: .json) else { return }
+        do {
+            try makeDiagnostics().jsonData().write(to: url, options: .atomic)
+            vm.toastNow("Diagnostics saved")
+        } catch {
+            vm.settingsMessage("Export Failed",
+                               "Couldn’t write the diagnostics report to that location.")
         }
     }
 

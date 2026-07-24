@@ -41,9 +41,11 @@ struct AggregationSettingsPane: View {
                     .foregroundStyle(Theme.accent)
                     .frame(width: 36, height: 36)
                     .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .a11yDecorative()
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Aggregation")
                         .font(.system(size: 16, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
                     Text("Multi-path HTTP downloads across network adapters")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -173,6 +175,7 @@ struct AggregationSettingsPane: View {
             Image(systemName: "network.slash")
                 .font(.system(size: 20))
                 .foregroundStyle(.secondary)
+                .a11yDecorative()
             VStack(alignment: .leading, spacing: 3) {
                 Text("No adapters found")
                     .font(.system(size: 13, weight: .medium))
@@ -221,9 +224,16 @@ struct AggregationSettingsPane: View {
                         }
                     ), in: 1...8)
                     .labelsHidden()
+                    // `labelsHidden()` strips the name from VoiceOver too, and a
+                    // `Stepper`'s value lives in a separate `Text` beside it —
+                    // so unlabelled it is an anonymous pair of arrows with no
+                    // readable value at all.
+                    .accessibilityLabel("Streams per adapter")
+                    .accessibilityValue("\(vm.settings.aggregationStreamsPerAdapter)")
                     Text("\(vm.settings.aggregationStreamsPerAdapter)")
-                        .font(.system(size: 13, weight: .medium).monospacedDigit())
+                        .scaledFont(size: 13, weight: .medium, monospacedDigit: true)
                         .frame(width: 22, alignment: .trailing)
+                        .a11yDecorative()
                 }
             }
             SetRow(name: "Check path diversity",
@@ -263,6 +273,8 @@ struct AggregationSettingsPane: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        // A bullet glyph in front of a sentence. The sentence is the content.
+        .a11yGroup(label: text)
     }
 }
 
@@ -350,6 +362,18 @@ private struct AdapterRow: View {
         .help(disabled
               ? "Enable “Include expensive networks” to use this adapter"
               : "Click to include or exclude from multi-path")
+        // A hand-drawn checkbox: participation shows as a filled circle glyph
+        // plus an accent wash and border, none of which is spoken. Collapse the
+        // row and carry inclusion as an explicit value.
+        .a11yGroup(
+            label: A11y.sentence("Network adapter",
+                                 adapter.displayName.isEmpty ? adapter.bsdName : adapter.displayName,
+                                 adapter.isExpensive ? "expensive" : nil),
+            value: A11y.sentence(participating ? "Included" : "Not included", subtitle),
+            hint: disabled
+                ? "Turn on Include expensive networks to use this adapter."
+                : "Activate to include or exclude it from multi-path downloads.")
+        .accessibilityAddTraits(participating ? [.isButton, .isSelected] : .isButton)
     }
 
     private var typeIcon: String {

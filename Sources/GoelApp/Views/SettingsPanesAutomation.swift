@@ -140,6 +140,9 @@ struct RSSPane: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .help("Remove feed")
+                        // Name the feed: a list of these is otherwise a column
+                        // of identical unlabelled destructive buttons.
+                        .a11yButton("Remove feed \(feed.url)")
                     }
                 }
             }
@@ -223,11 +226,16 @@ struct RemoteAccessPane: View {
                             SecureField("", text: $newPassword)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 150)
+                                // `SetRow`'s environment name only reaches the
+                                // four `Setting*` wrappers; a raw `SecureField`
+                                // with an empty prompt is an anonymous field.
+                                .accessibilityLabel("New portal password")
                             Button("Set") {
                                 vm.setRemotePassword(newPassword)
                                 newPassword = ""
                             }
                             .disabled(newPassword.isEmpty)
+                            .accessibilityLabel("Set portal password")
                         }
                     }
                 }
@@ -253,6 +261,7 @@ struct RemoteAccessPane: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                     .frame(width: 150)
+                    .accessibilityLabel("Web portal theme")
                 }
 
                 SetRow(name: "API token",
@@ -263,6 +272,12 @@ struct RemoteAccessPane: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .frame(maxWidth: 150)
+                            // Visually truncated in the middle, so the *visible*
+                            // string isn't the token. Give the element the whole
+                            // value, spelled character by character — a 32-hex
+                            // token read as words is unusable.
+                            .accessibilityLabel("API token")
+                            .accessibilityValue(vm.settings.remoteToken.map { "\($0) " }.joined())
                         Button("Regenerate") {
                             vm.settingsConfirm(
                                 title: "Regenerate the API token?",
@@ -274,16 +289,19 @@ struct RemoteAccessPane: View {
                                 vm.toastNow("New API token generated")
                             }
                         }
+                        .accessibilityLabel("Regenerate API token")
                     }
                 }
                 SetRow(name: "Open portal", desc: "Open it here, or from another device on your LAN.") {
                     HStack(spacing: 8) {
                         Button("Open") { if let url = controlURL { NSWorkspace.shared.open(url) } }
                             .disabled(controlURL == nil)
+                            .accessibilityLabel("Open web portal in browser")
                         Button("Copy Link") {
                             if let url = controlURL { vm.copyToPasteboard(url.absoluteString) }
                         }
                         .disabled(controlURL == nil)
+                        .accessibilityLabel("Copy web portal link")
                     }
                 }
                 SectionHeader("Hardening")
@@ -466,7 +484,10 @@ struct BrowserIntegrationPane: View {
             }
             SetRow(name: "Drop basket",
                    desc: "A small always-on-top target for dragging links out of the browser (⌘⇧B).") {
+                // "Show" alone names nothing; there are three other buttons in
+                // this pane and a screen reader lists them out of context.
                 Button("Show") { DropBasketController.shared.toggle() }
+                    .accessibilityLabel("Show drop basket")
             }
         }
     }
@@ -501,7 +522,7 @@ struct CredentialsSection: View {
     var body: some View {
         SectionHeader("Site logins")
         Text("Stored in your Keychain. Sent as HTTP Basic auth when a download matches the host.")
-            .font(.system(size: 11.5))
+            .scaledFont(size: 11.5)
             .foregroundStyle(.tertiary)
             .padding(.bottom, 4)
 
@@ -524,6 +545,7 @@ struct CredentialsSection: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help("Remove login")
+                .a11yButton("Remove saved login for \(entry.host)")
             }
         }
 
@@ -537,6 +559,7 @@ struct CredentialsSection: View {
             SecureField("", text: $newPassword)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 180)
+                .accessibilityLabel("Password for the new site login")
         }
         SetRow(name: "", desc: "") {
             Button("Add Login") {

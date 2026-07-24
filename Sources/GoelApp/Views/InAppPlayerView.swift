@@ -21,16 +21,20 @@ struct InAppPlayerView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "play.rectangle.fill").foregroundStyle(Theme.accent)
+                    .a11yDecorative()
                 Text(item.title)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .accessibilityLabel("Now playing, \(item.title)")
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("Done") {
                     player.pause()
                     onClose()
                 }
                 .keyboardShortcut(.cancelAction)
+                .accessibilityLabel("Close player")
             }
             .padding(10)
             VideoPlayer(player: player)

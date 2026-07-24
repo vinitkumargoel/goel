@@ -12,16 +12,20 @@ struct StatusBarView: View {
             snail
             // The sampled window average, not the live raw sums — the readout
             // updates ~2×/sec and stays steady (see AppViewModel.takeSpeedSample).
-            stat(symbol: "arrow.down", value: vm.displayedCombinedSpeed.down.speedString, color: Theme.green)
-            stat(symbol: "arrow.up", value: vm.displayedCombinedSpeed.up.speedString, color: Theme.teal)
+            stat(symbol: "arrow.down", speed: vm.displayedCombinedSpeed.down, color: Theme.green)
+            stat(symbol: "arrow.up", speed: vm.displayedCombinedSpeed.up, color: Theme.teal)
             if !activeTransfers.isEmpty { transfersIndicator }
             Spacer()
-            Text("Profile").font(.system(size: 11)).foregroundStyle(.tertiary)
+            Text("Profile").scaledFont(size: 11).foregroundStyle(.tertiary)
+                // Names the segmented control beside it; already read as part of
+                // each segment's label, so don't announce it twice.
+                .a11yDecorative()
             profilePicker
         }
         .padding(.horizontal, 14)
         .frame(height: 38)
         .background(.bar)
+        .accessibilityLabel("Status bar")
     }
 
     // MARK: SFTP transfers indicator
@@ -34,7 +38,7 @@ struct StatusBarView: View {
         Button { showTransfers.toggle() } label: {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.up.arrow.down.circle").font(.system(size: 12))
-                Text("\(activeTransfers.count)").font(.system(size: 12, weight: .semibold)).monospacedDigit()
+                Text("\(activeTransfers.count)").scaledFont(size: 12, weight: .semibold, monospacedDigit: true)
             }
             .padding(.horizontal, 9)
             .frame(height: 26)
@@ -44,17 +48,24 @@ struct StatusBarView: View {
         }
         .buttonStyle(.plain)
         .help("SFTP transfers")
+        // A glyph and a bare number. Say what the number counts.
+        .a11yButton("SFTP transfers", hint: "Activate to list transfers in progress.")
+        .accessibilityValue("\(activeTransfers.count) in progress")
         .popover(isPresented: $showTransfers, arrowEdge: .bottom) { transfersPopover }
     }
 
     private var transfersPopover: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("SFTP Transfers").font(.system(size: 12, weight: .bold))
+                Text("SFTP Transfers").scaledFont(size: 12, weight: .bold)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if vm.sftpTransfers.contains(where: { !$0.isActive }) {
                     Button("Clear") { vm.clearFinishedSFTPTransfers() }
-                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
+                        .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
+                        // "Clear" alone doesn't say what it clears, or that it
+                        // spares the transfers still running.
+                        .accessibilityLabel("Clear finished transfers")
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -83,7 +94,7 @@ struct StatusBarView: View {
                     .stroke(style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
                     .frame(width: 15, height: 15)
                 Text(vm.settings.speedLimitEnabled ? vm.settings.selectedProfileName : "Unlimited")
-                    .font(.system(size: 11.5, weight: .medium))
+                    .scaledFont(size: 11.5, weight: .medium)
             }
             .padding(.horizontal, 10)
             .frame(height: 26)
@@ -96,17 +107,29 @@ struct StatusBarView: View {
         }
         .buttonStyle(.plain)
         .help("Toggle global speed limit")
+        // The control is a hand-drawn snail path — literally an unnamed `Shape`
+        // to VoiceOver — and its on/off state shows only as an orange fill.
+        .a11yButton("Global speed limit", hint: "Activate to turn the speed limit on or off.")
+        .accessibilityValue(vm.settings.speedLimitEnabled
+                            ? "On, \(vm.settings.selectedProfileName) profile"
+                            : "Off, unlimited")
     }
 
-    private func stat(symbol: String, value: String, color: Color) -> some View {
+    /// One aggregate rate readout. `speed` is the raw bytes/sec the label was
+    /// formatted from — kept alongside so the spoken value can be built in words
+    /// rather than reverse-engineered out of the abbreviated string.
+    private func stat(symbol: String, speed: Double, color: Color) -> some View {
         HStack(spacing: 5) {
             Image(systemName: symbol).font(.system(size: 11))
             // Fixed width so the neighbouring stats / transfers pill don't shuffle
             // sideways as the speed number grows and shrinks.
-            Text(value).font(.system(size: 12, weight: .semibold)).monospacedDigit()
+            Text(speed.speedString).scaledFont(size: 12, weight: .semibold, monospacedDigit: true)
                 .frame(width: 72, alignment: .leading)
         }
         .foregroundStyle(color)
+        // Arrow glyph + abbreviated rate. Both need words — see `SpeedStat`.
+        .a11yGroup(label: symbol == "arrow.up" ? "Total upload speed" : "Total download speed",
+                   value: A11y.speed(speed))
     }
 
     private var profilePicker: some View {
@@ -117,21 +140,29 @@ struct StatusBarView: View {
                     vm.setProfile(profile.name)
                 } label: {
                     Text(profile.name)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .scaledFont(size: 11.5, weight: .medium)
                         .padding(.horizontal, 13)
                         .padding(.vertical, 4)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(selected ? Theme.accent : Color.clear)
                         )
-                        .foregroundStyle(selected ? Color.white : Color.secondary)
+                        // Derived ink: the accent fill is light in three of the
+                        // four themes, where white measured 2.00–2.42:1.
+                        .foregroundStyle(selected ? Theme.onAccent : Color.secondary)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // Which profile is active is signalled only by the accent fill
+                // behind the label — carry it as a selection trait too.
+                .accessibilityLabel("\(profile.name) speed profile")
+                .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(2)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Speed profile")
     }
 }
 

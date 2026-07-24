@@ -29,6 +29,44 @@ enum Theme {
     /// `nil` for the Frost themes, which sit on the plain system canvas.
     static var windowTint: Color? { ThemePalette.current.windowTint }
 
+    // MARK: Legible ink on filled chips
+
+    /// The text colour to use *on top of* a solid ``accent`` fill — a selected
+    /// sidebar row, the active speed-profile pill.
+    ///
+    /// These call sites used to hard-code `Color.white`, which is only correct
+    /// when the fill is dark. Three of the four themes are dark themes, and a
+    /// dark theme's accent is a *light* colour by construction, so white text
+    /// landed on pale blue or lilac: measured 2.42:1 in Frost Dark, 2.41:1 in
+    /// Dracula, 2.00:1 in Nord, against the 4.5:1 WCAG AA needs. The sidebar's
+    /// selected row is the app's primary navigation control, so this was the
+    /// single worst contrast defect in the interface.
+    ///
+    /// Picking per fill rather than per theme takes all four to 5.9:1 or better
+    /// without touching a single palette value.
+    static var onAccent: Color { ThemePalette.ink(on: \.accent) }
+
+    /// As ``onAccent``, for the ``indigo`` fill used by selected server rows.
+    static var onIndigo: Color { ThemePalette.ink(on: \.indigo) }
+
+    /// As ``onAccent``, for the ``red`` fill behind a destructive confirm button.
+    /// White on the dark themes' red measured 2.63–2.77:1 — the one button in the
+    /// app whose label you least want to misread.
+    static var onRed: Color { ThemePalette.ink(on: \.red) }
+
+    /// The de-emphasised ink for the *second* line of a filled row — a server's
+    /// host name under its nickname, a folder's item count.
+    ///
+    /// These call sites used `Color.white.opacity(0.6…0.75)`, which measured as
+    /// low as 3.75:1 even once the ink itself was correct. 0.85 is the lowest
+    /// opacity at which all four themes clear 4.5:1 (worst case 4.73:1 on Frost
+    /// Light's accent). The row's hierarchy still reads, because it is carried by
+    /// size and weight as much as by tint.
+    static var onAccentSecondary: Color { onAccent.opacity(0.85) }
+
+    /// As ``onAccentSecondary``, over the ``indigo`` fill.
+    static var onIndigoSecondary: Color { onIndigo.opacity(0.85) }
+
     /// Subtle alternating-row tint.
     static let rowAlt = Color.primary.opacity(0.03)
     static let hairline = Color.primary.opacity(0.10)
@@ -58,6 +96,58 @@ enum ThemePalette {
 
     static func color(_ key: KeyPath<ThemeColors, ThemeColors.Pair>) -> Color {
         current.resolvedColor(key)
+    }
+
+    /// The ink — white or near-black — that contrasts better against one semantic
+    /// colour used as a *solid fill*.
+    ///
+    /// Resolved per appearance for the same reason ``color(_:)`` is: the fill is a
+    /// dynamic `NSColor`, so its ink has to flip in lockstep or a window
+    /// composited under the opposite appearance ends up with pale-on-pale text.
+    static func ink(on key: KeyPath<ThemeColors, ThemeColors.Pair>) -> Color {
+        let pair = current.colors[keyPath: key]
+        return Color.adaptive(light: WCAG.ink(on: pair.light),
+                              dark: WCAG.ink(on: pair.dark))
+    }
+}
+
+/// Contrast arithmetic from WCAG 2.1 §1.4.3, used to *choose* colours at runtime
+/// rather than to measure them after the fact.
+///
+/// This exists because the app has four independent themes, three of them dark,
+/// and a fill that is dark in one is light in another. Hard-coding an ink colour
+/// per call site guarantees at least one theme gets it wrong; deriving it means
+/// a future theme is legible the day it is added.
+///
+/// Pure arithmetic over values already on screen — nothing here reads settings,
+/// touches disk, or leaves the process.
+enum WCAG {
+
+    /// The two inks the app picks between. Pure black is avoided: it reads as a
+    /// hole punched in a coloured chip, and #0E1116 is within 0.05:1 of it.
+    private static let lightInk: UInt32 = 0xFFFFFF
+    private static let darkInk:  UInt32 = 0x0E1116
+
+    /// Relative luminance of an `0xRRGGBB` value, per WCAG 2.1.
+    static func relativeLuminance(_ hex: UInt32) -> Double {
+        func channel(_ raw: UInt32) -> Double {
+            let c = Double(raw) / 255
+            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel((hex >> 16) & 0xFF)
+             + 0.7152 * channel((hex >> 8) & 0xFF)
+             + 0.0722 * channel(hex & 0xFF)
+    }
+
+    /// The WCAG contrast ratio between two `0xRRGGBB` values, 1…21.
+    static func contrastRatio(_ a: UInt32, _ b: UInt32) -> Double {
+        let la = relativeLuminance(a), lb = relativeLuminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    /// Whichever of the two inks contrasts better against `fill`.
+    static func ink(on fill: UInt32) -> UInt32 {
+        contrastRatio(lightInk, fill) >= contrastRatio(darkInk, fill) ? lightInk : darkInk
     }
 }
 
@@ -164,13 +254,18 @@ enum AppTheme: String, CaseIterable, Identifiable {
     var colors: ThemeColors {
         switch self {
         case .frostLight:
+            // Green, orange and yellow are each a shade darker than the mockup's
+            // values. As drawn they measured 3.76:1, 4.38:1 and 4.16:1 against
+            // the light canvas — under the 4.5:1 WCAG AA needs for the 10–12pt
+            // status text they are used on. Hue and saturation are unchanged, so
+            // the palette still reads as the same three colours.
             return ThemeColors(
                 accent:      .init(light: 0x3F58D6, dark: 0x5B7CFA),
                 accentPress: .init(light: 0x2E45B8, dark: 0x4F6EF0),
-                green:       .init(light: 0x158A3C, dark: 0x2FBF5B),
-                orange:      .init(light: 0xA85800, dark: 0xE08A1E),
+                green:       .init(light: 0x137B36, dark: 0x2FBF5B),
+                orange:      .init(light: 0xA55600, dark: 0xE08A1E),
                 red:         .init(light: 0xCE0E0E, dark: 0xE24B4B),
-                yellow:      .init(light: 0x8A6D00, dark: 0xD1A93A),
+                yellow:      .init(light: 0x836800, dark: 0xD1A93A),
                 purple:      .init(light: 0x7A3FD0, dark: 0x9B6FE8),
                 teal:        .init(light: 0x0E7490, dark: 0x27AEC7),
                 indigo:      .init(light: 0x3F58D6, dark: 0x8AA2FF))
@@ -199,15 +294,19 @@ enum AppTheme: String, CaseIterable, Identifiable {
                 teal:        .init(light: 0x2AB7CE, dark: 0x8BE9FD),
                 indigo:      .init(light: 0x8B5CF6, dark: 0xBD93F9))
         case .nord:
-            // Official Nord palette on the #2e3440 polar-night canvas.
+            // Official Nord palette on the #2e3440 polar-night canvas, with two
+            // exceptions: Aurora orange (#D08770) and purple (#B48EAD) measure
+            // 4.39:1 and 4.41:1 there, just under AA. Both are lifted by roughly
+            // one step in value — small enough that they still read as Nord,
+            // large enough to clear 4.5:1 (4.61:1 and 4.63:1).
             return ThemeColors(
                 accent:      .init(light: 0x5E81AC, dark: 0x88C0D0),
                 accentPress: .init(light: 0x4C6E96, dark: 0x81A1C1),
                 green:       .init(light: 0x6E9A5A, dark: 0xA3BE8C),
-                orange:      .init(light: 0xC1794A, dark: 0xD08770),
+                orange:      .init(light: 0xC1794A, dark: 0xD48B74),
                 red:         .init(light: 0xBF616A, dark: 0xE08691),
                 yellow:      .init(light: 0xA88A3E, dark: 0xEBCB8B),
-                purple:      .init(light: 0x8A6BB0, dark: 0xB48EAD),
+                purple:      .init(light: 0x8A6BB0, dark: 0xB892B1),
                 teal:        .init(light: 0x3B8A93, dark: 0x8FBCBB),
                 indigo:      .init(light: 0x5E81AC, dark: 0x81A1C1))
         }

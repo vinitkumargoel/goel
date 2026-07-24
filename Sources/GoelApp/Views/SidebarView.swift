@@ -30,6 +30,7 @@ struct SidebarView: View {
             .padding(10)
         }
         .background(.regularMaterial)
+        .accessibilityLabel("Library sidebar")
         // Keep the sidebar's live server dots fresh: probe on appear and every
         // ~20s while the app is open (unauthenticated TCP + DNS — no credentials).
         .task {
@@ -50,8 +51,10 @@ struct SidebarView: View {
     private var serversGroup: some View {
         HStack {
             Text("SERVERS")
-                .font(.system(size: 10.5, weight: .bold))
+                .scaledFont(size: 10.5, weight: .bold)
                 .foregroundStyle(.tertiary)
+                .accessibilityLabel("Servers")
+                .accessibilityAddTraits(.isHeader)
             Spacer()
             Button { vm.presentNewServer() } label: {
                 Image(systemName: "plus").font(.system(size: 10, weight: .bold))
@@ -59,6 +62,8 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .help("Add SFTP server")
+            // A bare "+" next to a heading. Say which list it adds to.
+            .a11yButton("Add SFTP server")
         }
         .padding(.horizontal, 8)
         .padding(.top, 12)
@@ -66,7 +71,7 @@ struct SidebarView: View {
 
         if vm.servers.isEmpty {
             Text("Add an SFTP server to browse and transfer files.")
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
@@ -89,7 +94,7 @@ struct SidebarView: View {
                     .font(.system(size: 15)).frame(width: 16)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(server.label).font(.system(size: 13)).lineLimit(1)
+                        Text(server.label).scaledFont(size: 13).lineLimit(1)
                         Spacer(minLength: 4)
                         // A live spinner while this server has an in-flight
                         // upload/download; otherwise the reachability dot, so a
@@ -98,8 +103,10 @@ struct SidebarView: View {
                         if transferring {
                             ProgressView()
                                 .controlSize(.small)
-                                .tint(selected ? Color.white : Theme.accent)
+                                .tint(selected ? Theme.onIndigo : Theme.accent)
                                 .help("Transferring…")
+                                // Folded into the row's own label below.
+                                .a11yDecorative()
                         } else {
                             liveDot(meta?.reachability ?? .unknown,
                                     detail: meta?.offlineDetail, selected: selected)
@@ -115,10 +122,27 @@ struct SidebarView: View {
                 RoundedRectangle(cornerRadius: 7)
                     .fill(selected ? Theme.indigo : Color.clear)
             )
-            .foregroundStyle(selected ? Color.white : Color.primary)
+            // Ink derived from the fill, not hard-coded white: `indigo` is a
+            // *light* colour in three of the four themes, where white measured
+            // as low as 1.93:1.
+            .foregroundStyle(selected ? Theme.onIndigo : Color.primary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // A server row is a lock glyph, a name, a 7pt coloured dot, a monospaced
+        // host line, a latency figure and an OS chip. Read as one thing, with
+        // the reachability the dot encodes said out loud — that dot is the only
+        // online/offline signal in the entire sidebar.
+        .a11yGroup(
+            label: A11y.sentence("Server", server.label, server.host),
+            value: A11y.sentence(
+                transferring ? "Transferring" : (meta?.reachability ?? .unknown).accessibilityName,
+                meta?.reachability == .offline ? meta?.offlineDetail : nil,
+                meta?.latencyMS.map { "\($0) milliseconds" },
+                meta?.os?.pretty),
+            hint: "Activate to browse this server's files.")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction(named: Text("Edit server")) { vm.presentEditServer(server) }
         .contextMenu {
             Button("Edit…") { vm.presentEditServer(server) }
             Button("Remove", role: .destructive) {
@@ -135,7 +159,7 @@ struct SidebarView: View {
     /// The live-status dot: green online / red offline / grey unknown, with a
     /// soft glow when online so it reads as "live".
     private func liveDot(_ reachability: ServerReachability, detail: String?, selected: Bool) -> some View {
-        let color = selected && reachability == .unknown ? Color.white.opacity(0.7) : reachability.tint
+        let color = selected && reachability == .unknown ? Theme.onIndigoSecondary : reachability.tint
         // When offline, prefer the specific reason (refused / unreachable / DNS)
         // over the generic "Offline" so the tooltip actually helps troubleshoot.
         let help = reachability == .offline
@@ -152,7 +176,7 @@ struct SidebarView: View {
     /// online, and an OS chip once detected.
     @ViewBuilder
     private func serverSubtitle(_ server: SFTPConnection, meta: ServerMeta?, selected: Bool) -> some View {
-        let secondary = selected ? Color.white.opacity(0.75) : Color.secondary
+        let secondary = selected ? Theme.onIndigoSecondary : Color.secondary
         // Don't repeat the address when the saved host is already an IP literal —
         // "192.168.1.5 · 192.168.1.5" just truncates to a meaningless "192…5".
         let hostLine: String = {
@@ -162,13 +186,13 @@ struct SidebarView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 Text(hostLine)
-                    .font(.system(size: 10.5, design: .monospaced))
+                    .scaledFont(size: 10.5, design: .monospaced)
                     .foregroundStyle(secondary)
                     .lineLimit(1).truncationMode(.middle)
                 if let ms = meta?.latencyMS, meta?.reachability == .online {
                     Text("\(ms)ms")
-                        .font(.system(size: 9.5, weight: .medium)).monospacedDigit()
-                        .foregroundStyle(selected ? Color.white.opacity(0.6) : Color(nsColor: .tertiaryLabelColor))
+                        .scaledFont(size: 9.5, weight: .medium, monospacedDigit: true)
+                        .foregroundStyle(selected ? Theme.onIndigoSecondary : Color(nsColor: .tertiaryLabelColor))
                 }
                 Spacer(minLength: 0)
             }
@@ -184,12 +208,12 @@ struct SidebarView: View {
     private func osChip(_ os: ServerOS, selected: Bool) -> some View {
         HStack(spacing: 3) {
             Image(systemName: os.symbol).font(.system(size: 8.5))
-            Text(os.label).font(.system(size: 9.5, weight: .semibold)).lineLimit(1)
+            Text(os.label).scaledFont(size: 9.5, weight: .semibold).lineLimit(1)
         }
-        .foregroundStyle(selected ? Color.white : os.tint)
+        .foregroundStyle(selected ? Theme.onIndigo : os.tint)
         .padding(.horizontal, 5).padding(.vertical, 1.5)
         .background(
-            Capsule().fill(selected ? Color.white.opacity(0.18) : os.tint.opacity(0.14))
+            Capsule().fill(selected ? Theme.onIndigo.opacity(0.18) : os.tint.opacity(0.14))
         )
         .help(os.pretty)
     }
@@ -197,11 +221,15 @@ struct SidebarView: View {
     @ViewBuilder
     private func group(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
         Text(title.uppercased())
-            .font(.system(size: 10.5, weight: .bold))
+            .scaledFont(size: 10.5, weight: .bold)
             .foregroundStyle(.tertiary)
             .padding(.horizontal, 8)
             .padding(.top, 12)
             .padding(.bottom, 4)
+            // Uppercased for the eye only — spell it normally, and mark it as
+            // the heading it is so the rotor can jump between sidebar sections.
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(.isHeader)
         content()
     }
 
@@ -216,16 +244,15 @@ struct SidebarView: View {
                     .font(.system(size: 13))
                     .frame(width: 16)
                 Text(label)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 Text("\(vm.count(for: filter))")
-                    .font(.system(size: 11, weight: .semibold))
-                    .monospacedDigit()
+                    .scaledFont(size: 11, weight: .semibold, monospacedDigit: true)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(
-                        Capsule().fill(selected ? Color.white.opacity(0.25) : Color.primary.opacity(0.08))
+                        Capsule().fill(selected ? Theme.onAccent.opacity(0.25) : Color.primary.opacity(0.08))
                     )
             }
             .padding(.horizontal, 8)
@@ -235,9 +262,14 @@ struct SidebarView: View {
                 RoundedRectangle(cornerRadius: 7)
                     .fill(selected ? Theme.accent : Color.clear)
             )
-            .foregroundStyle(selected ? Color.white : Color.primary)
+            .foregroundStyle(selected ? Theme.onAccent : Color.primary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Symbol + label + count pill read as three elements, one of them an SF
+        // Symbol name. It is one filter, whose value is how many downloads match.
+        .a11yGroup(label: label, value: "\(vm.count(for: filter)) downloads",
+                   hint: "Activate to filter the list.")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }

@@ -19,6 +19,10 @@ struct DownloadListView: View {
             if vm.visibleTasks.isEmpty {
                 emptyState
             } else {
+                // `ScrollViewReader` so keyboard navigation can bring the newly
+                // selected row into view — arrow keys that move an invisible
+                // selection are worse than no arrow keys at all.
+                ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(vm.visibleTasks.enumerated()), id: \.element.id) { index, task in
@@ -29,6 +33,7 @@ struct DownloadListView: View {
                                 vm: vm,
                                 quickLook: { quickLookItem = $0 }
                             )
+                            .id(task.id)
                             Divider()
                         }
                         // Clicking the empty area below the rows clears the
@@ -37,7 +42,15 @@ struct DownloadListView: View {
                             .frame(maxWidth: .infinity, minHeight: 60)
                             .contentShape(Rectangle())
                             .onTapGesture { vm.selectNone() }
+                            // A deselect target with no visible content; there is
+                            // a keyboard/menu route to the same result.
+                            .a11yDecorative()
                     }
+                }
+                .onChange(of: vm.selectedTask?.id) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id, anchor: .center) }
+                }
                 }
             }
         }
@@ -54,6 +67,35 @@ struct DownloadListView: View {
             quickLookItem = URL(fileURLWithPath: task.savePath)
             return .handled
         }
+        // Keyboard navigation of the queue. Previously the list could only be
+        // driven by the mouse: it took focus and handled the spacebar, but the
+        // arrow keys did nothing, so a keyboard-only user could never *reach* a
+        // row to preview it. Selection is the app's primary interaction — it
+        // drives the detail panel — so it has to be reachable without a pointer.
+        .onKeyPress(.downArrow) { moveSelection(by: 1) }
+        .onKeyPress(.upArrow) { moveSelection(by: -1) }
+        // Return performs the row's primary action, matching a double-click.
+        .onKeyPress(.return) {
+            guard let task = vm.selectedTask else { return .ignored }
+            if task.status == .completed { vm.openFile(task) } else { vm.revealInFinder(task) }
+            return .handled
+        }
+        .accessibilityLabel("Download queue")
+        .accessibilityHint("Use the up and down arrow keys to move through downloads, space to preview, return to open.")
+    }
+
+    /// Move the selection `offset` rows through the *visible* (filtered, sorted)
+    /// order, starting at the top when nothing is selected yet. Clamped rather
+    /// than wrapping, so holding an arrow key parks at an end instead of cycling.
+    private func moveSelection(by offset: Int) -> KeyPress.Result {
+        let tasks = vm.visibleTasks
+        guard !tasks.isEmpty else { return .ignored }
+        let current = vm.selectedTask.flatMap { sel in tasks.firstIndex { $0.id == sel.id } }
+        let next = current.map { min(max(0, $0 + offset), tasks.count - 1) }
+                   ?? (offset > 0 ? 0 : tasks.count - 1)
+        vm.selectOnly(tasks[next].id)
+        if !vm.detailPanelVisible { vm.detailPanelVisible = true }
+        return .handled
     }
 
     // MARK: Header
@@ -70,19 +112,20 @@ struct DownloadListView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 28)
-        .font(.system(size: 11, weight: .semibold))
+        .scaledFont(size: 11, weight: .semibold)
         .foregroundStyle(.secondary)
     }
 
     @ViewBuilder
     private func headerCol(_ title: String, _ key: SortKey, width: CGFloat?, alignment: Alignment) -> some View {
+        let isSortKey = vm.sortKey == key
         Button {
             vm.toggleSort(key)
         } label: {
             HStack(spacing: 3) {
                 if alignment == .trailing { Spacer(minLength: 0) }
                 Text(title)
-                if vm.sortKey == key {
+                if isSortKey {
                     Image(systemName: vm.sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(Theme.accent)
@@ -95,8 +138,34 @@ struct DownloadListView: View {
         .frame(width: width, alignment: alignment)
         .frame(maxWidth: width == nil ? .infinity : nil)
         .padding(.horizontal, 6)
+        // Sort direction is signalled only by a 8pt chevron and its accent tint —
+        // both invisible to a screen reader and to anyone who can't distinguish
+        // the tint. State it, and spell out the arrow-glyph headings ("↓ Speed").
+        .a11yButton(spokenHeader(title),
+                    hint: isSortKey
+                        ? "Currently sorting \(vm.sortAscending ? "ascending" : "descending"). Activate to reverse."
+                        : "Activate to sort by this column.")
+        .accessibilityValue(isSortKey ? (vm.sortAscending ? "Sorted ascending" : "Sorted descending") : "Not sorted")
     }
 
+    /// Column headings as words. The visible strings lean on typography the ear
+    /// can't hear: "#" is a symbol, "↓ Speed" / "↑ Speed" are arrows.
+    private func spokenHeader(_ title: String) -> String {
+        switch title {
+        case "#": return "Row number"
+        case "↓ Speed": return "Download speed"
+        case "↑ Speed": return "Upload speed"
+        default: return title
+        }
+    }
+
+    /// Shown when the filter/search matched nothing — *not* on first run.
+    ///
+    /// `RootView` renders `DownloadsEmptyState` whenever the queue itself is
+    /// empty, so this no longer has to double as the welcome screen and can stay
+    /// specific to "you filtered everything away". Keep the copy narrow: widening
+    /// it back to a generic "no downloads" would make the first-run affordances
+    /// unreachable behind a filter.
     private var emptyState: some View {
         EmptyStateView(systemImage: "tray", title: "No downloads match",
                        subtitle: "Try a different filter or search term.")
@@ -121,8 +190,7 @@ struct DownloadRow: View {
     var body: some View {
         HStack(spacing: 0) {
             Text("\(displayIndex)")
-                .font(.system(size: 11.5))
-                .monospacedDigit()
+                .scaledFont(size: 11.5, monospacedDigit: true)
                 .foregroundStyle(.tertiary)
                 .frame(width: 30)
                 .padding(.horizontal, 6)
@@ -132,15 +200,19 @@ struct DownloadRow: View {
                 .padding(.horizontal, 6)
 
             Text(task.totalBytes?.byteString ?? "—")
+                .scaledFont(size: 12.5, monospacedDigit: true)
                 .frame(width: 84, alignment: .trailing)
                 .padding(.horizontal, 6)
                 .foregroundStyle(.secondary)
-                .monospacedDigit()
 
             HStack(spacing: 6) {
+                // The dot repeats the status word beside it in colour form —
+                // which is exactly the colour-alone signal WCAG 1.4.1 warns
+                // about, and the text is the accessible equivalent.
                 Circle().fill(task.statusColor).frame(width: 7, height: 7)
+                    .a11yDecorative()
                 Text(task.statusDetailText)
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -148,7 +220,7 @@ struct DownloadRow: View {
             .padding(.horizontal, 6)
 
             Text(task.addedString)
-                .font(.system(size: 11.5))
+                .scaledFont(size: 11.5)
                 .foregroundStyle(.secondary)
                 .frame(width: 104, alignment: .leading)
                 .padding(.horizontal, 6)
@@ -156,20 +228,40 @@ struct DownloadRow: View {
             Text(vm.displaySpeed(for: task).down.speedString)
                 .frame(width: 84, alignment: .trailing)
                 .padding(.horizontal, 6)
-                .font(.system(size: 12.5, weight: .medium))
+                .scaledFont(size: 12.5, weight: .medium, monospacedDigit: true)
                 .foregroundStyle(vm.displaySpeed(for: task).down > 0 ? Theme.green : Color.secondary)
-                .monospacedDigit()
 
             Text(vm.displaySpeed(for: task).up.speedString)
                 .frame(width: 84, alignment: .trailing)
                 .padding(.horizontal, 6)
-                .font(.system(size: 12.5))
+                .scaledFont(size: 12.5, monospacedDigit: true)
                 .foregroundStyle(vm.displaySpeed(for: task).up > 0 ? Theme.teal : Color.secondary)
-                .monospacedDigit()
         }
         .padding(.horizontal, 12)
         .frame(minHeight: 50)
         .background(isSelected ? Theme.accent.opacity(0.22) : (displayIndex.isMultiple(of: 2) ? Theme.rowAlt : Color.clear))
+        // ── One row, one element ────────────────────────────────────────────
+        // Left alone, this row exposes eight separate elements — index, name,
+        // kind badge, progress bar, size, status dot, date, and two speeds — so
+        // reading a single download costs nine swipes and arrives as fragments
+        // with no stated relationship. Collapsing to one element with a spoken
+        // label and a separately-refreshable value makes it read the way it
+        // looks: as one download.
+        //
+        // The inline state button is folded in as an accessibility *action*
+        // rather than left as a child. Keeping it as a child would re-split the
+        // row, and the same command is also on the context menu — which is where
+        // the rest of these actions come from, so the action rotor ends up a
+        // faithful subset of what a right-click offers.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(task.accessibilityRowLabel)
+        .accessibilityValue(task.accessibilityProgressValue)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityHint("Select to show details.")
+        .accessibilityAction(named: Text(task.accessibilityStateActionName), primaryStateAction)
+        .accessibilityAction(named: Text("Show in Finder")) { vm.revealInFinder(task) }
+        .accessibilityAction(named: Text("Copy source link")) { vm.copyToPasteboard(task.sourceLocator) }
+        .accessibilityAction(named: Text("Remove from list")) { vm.remove(task.id, deleteData: false) }
         .contentShape(Rectangle())
         .onTapGesture {
             // ⌘-click extends the selection; a plain click replaces it.
@@ -188,6 +280,17 @@ struct DownloadRow: View {
         }
     }
 
+    /// The same branch ``StateButton`` takes, reused so the row's rotor action
+    /// and the visible button can never disagree about what the state means.
+    private func primaryStateAction() {
+        switch task.status {
+        case .completed: vm.revealInFinder(task)
+        case .failed: vm.retry(task.id)
+        case .paused, .queued: vm.resume(task.id)
+        default: vm.pause(task.id)
+        }
+    }
+
     private var nameCell: some View {
         HStack(spacing: 10) {
             StateButton(task: task, vm: vm)
@@ -195,7 +298,7 @@ struct DownloadRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 7) {
                     Text(task.name)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .scaledFont(size: 12.5, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     KindBadge(task: task)

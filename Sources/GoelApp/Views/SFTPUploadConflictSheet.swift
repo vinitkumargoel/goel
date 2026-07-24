@@ -39,11 +39,13 @@ struct SFTPUploadConflictSheet: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 22)).foregroundStyle(Theme.orange)
+                .a11yDecorative()
             VStack(alignment: .leading, spacing: 3) {
                 Text(request.colliding.count == 1
                      ? "An item already exists"
                      : "\(request.colliding.count) items already exist")
                     .font(.system(size: 14, weight: .semibold))
+                    .accessibilityAddTraits(.isHeader)
                 Text("These already exist in \(displayDir). Choose what to do with each.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
@@ -61,6 +63,10 @@ struct SFTPUploadConflictSheet: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.accent)
+                    // Out of context these read as three bare verbs; say what
+                    // they apply to, since the "Apply to all" caption beside
+                    // them is a separate element.
+                    .accessibilityLabel("Apply \(policy.rawValue) to all items")
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
@@ -74,7 +80,10 @@ struct SFTPUploadConflictSheet: View {
                         Image(systemName: item.isDirectory ? "folder.fill" : "doc")
                             .foregroundStyle(item.isDirectory ? Theme.accent : .secondary)
                             .frame(width: 18)
+                            // Kind is folded into the name's label below.
+                            .a11yDecorative()
                         Text(item.name).font(.system(size: 13)).lineLimit(1).truncationMode(.middle)
+                            .accessibilityLabel("\(item.isDirectory ? "Folder" : "File"), \(item.name)")
                         Spacer(minLength: 12)
                         Picker("", selection: binding(for: item.id)) {
                             ForEach(Policy.allCases) { Text($0.rawValue).tag($0) }
@@ -82,6 +91,9 @@ struct SFTPUploadConflictSheet: View {
                         .labelsHidden()
                         .pickerStyle(.segmented)
                         .frame(width: 210)
+                        // Without a name this is one of N identical anonymous
+                        // segmented controls; the choice is destructive.
+                        .accessibilityLabel("What to do with \(item.name)")
                     }
                     .padding(.horizontal, 16).padding(.vertical, 7)
                     Divider().opacity(0.3)

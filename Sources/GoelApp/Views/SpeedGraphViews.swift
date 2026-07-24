@@ -23,6 +23,9 @@ struct SparklineView: View {
                 }
             }
         }
+        // A stroked `Path` has no name and no value; overlaid twice it would read
+        // as two anonymous images. The enclosing view states the rates in words.
+        .a11yDecorative()
     }
 
     private static func points(values: [Double], peak: Double, in size: CGSize) -> [CGPoint] {
@@ -67,6 +70,17 @@ struct TaskSpeedGraph: View {
                 }
                 .frame(height: 44)
             }
+            // Two overlaid sparklines distinguished only by tint. Read the pair
+            // as one chart whose value is the newest sample plus the window's
+            // peak — the two figures a sighted user actually takes from the
+            // shape. `.updatesFrequently` stops VoiceOver caching a stale value.
+            .a11yGroup(
+                label: "Speed graph, last \(history.count) seconds",
+                value: A11y.sentence(
+                    "Download \(A11y.speed(history.last?.down ?? 0))",
+                    "upload \(A11y.speed(history.last?.up ?? 0))",
+                    "peak download \(A11y.speed(history.map(\.down).max() ?? 0))"))
+            .accessibilityAddTraits(.updatesFrequently)
         }
     }
 }
@@ -82,7 +96,8 @@ struct StatsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Statistics").font(.system(size: 16, weight: .bold))
+                Text("Statistics").scaledFont(size: 16, weight: .bold)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("Done") { vm.isStatsPresented = false }
                     .keyboardShortcut(.defaultAction)
@@ -90,21 +105,29 @@ struct StatsView: View {
 
             if let stats {
                 HStack(spacing: 12) {
-                    statCard("Downloaded", stats.totalDownloadedBytes.byteString, Theme.accent)
-                    statCard("Uploaded", stats.totalUploadedBytes.byteString, Theme.teal)
-                    statCard("Completed", "\(stats.completedCount)", Theme.green)
+                    statCard("Downloaded", stats.totalDownloadedBytes.byteString, Theme.accent,
+                             spoken: A11y.bytes(stats.totalDownloadedBytes))
+                    statCard("Uploaded", stats.totalUploadedBytes.byteString, Theme.teal,
+                             spoken: A11y.bytes(stats.totalUploadedBytes))
+                    statCard("Completed", "\(stats.completedCount)", Theme.green,
+                             spoken: "\(stats.completedCount) downloads")
                 }
 
                 let today = stats.today()
                 HStack(spacing: 12) {
-                    statCard("Today ↓", today.down.byteString, Theme.accent)
-                    statCard("Today ↑", today.up.byteString, Theme.teal)
+                    // "Today ↓" reads as "Today" — the arrow is silent — so both
+                    // cards would announce the same name. Spell the direction.
+                    statCard("Today ↓", today.down.byteString, Theme.accent,
+                             spokenLabel: "Downloaded today", spoken: A11y.bytes(today.down))
+                    statCard("Today ↑", today.up.byteString, Theme.teal,
+                             spokenLabel: "Uploaded today", spoken: A11y.bytes(today.up))
                 }
 
                 SectionLabel(text: "Last 14 days")
                 dailyBars(stats.lastDays(14))
             } else {
                 ProgressView().frame(maxWidth: .infinity, alignment: .center)
+                    .accessibilityLabel("Loading statistics")
             }
             Spacer(minLength: 0)
         }
@@ -113,16 +136,22 @@ struct StatsView: View {
         .task { stats = await vm.fetchStats() }
     }
 
-    private func statCard(_ label: String, _ value: String, _ tint: Color) -> some View {
+    /// One figure card. `spokenLabel` / `spoken` carry the VoiceOver wording when
+    /// the visible text uses symbols or abbreviations the ear can't parse; both
+    /// default to the visible strings.
+    private func statCard(_ label: String, _ value: String, _ tint: Color,
+                          spokenLabel: String? = nil, spoken: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.system(size: 10.5, weight: .semibold))
+            Text(label).scaledFont(size: 10.5, weight: .semibold)
                 .foregroundStyle(.secondary)
-            Text(value).font(.system(size: 15, weight: .bold)).monospacedDigit()
+            Text(value).scaledFont(size: 15, weight: .bold, monospacedDigit: true)
                 .foregroundStyle(tint)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
+        // Caption and figure are one reading, not two.
+        .a11yGroup(label: spokenLabel ?? label, value: spoken ?? value)
     }
 
     private func dailyBars(_ days: [(day: String, totals: TransferStats.DayTotals)]) -> some View {
@@ -136,12 +165,22 @@ struct StatsView: View {
                         .frame(height: max(3, CGFloat(Double(total) / Double(peak)) * 80))
                         .help("\(entry.day): ↓ \(entry.totals.down.byteString) · ↑ \(entry.totals.up.byteString)")
                     Text(String(entry.day.suffix(2)))
-                        .font(.system(size: 8.5))
+                        .scaledFont(size: 8.5)
                         .foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity)
+                // The bar's height *is* the datum, and the "·" separated tooltip
+                // is pointer-only. Give each column the figures its height encodes.
+                .a11yGroup(
+                    label: entry.day,
+                    value: A11y.sentence("downloaded \(A11y.bytes(entry.totals.down))",
+                                         "uploaded \(A11y.bytes(entry.totals.up))"))
             }
         }
         .frame(height: 100, alignment: .bottom)
+        // Let the rotor treat the fourteen columns as one chart the user steps
+        // through, rather than fourteen loose elements in the sheet.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Daily transfer totals, last 14 days")
     }
 }

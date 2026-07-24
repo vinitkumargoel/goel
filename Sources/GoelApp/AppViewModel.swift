@@ -327,6 +327,23 @@ final class AppViewModel: ObservableObject {
     private let manager: DownloadManager
     private var updatesTask: Task<Void, Never>?
 
+    /// Which download engines are live, for the diagnostics report.
+    ///
+    /// `DownloadManager` builds all five engines eagerly in its initialiser, so
+    /// once ``start()`` has wired up the snapshot pump every kind is backed by a
+    /// running engine; before that the app is not observing anything yet and no
+    /// engine has been started. `updatesTask` is set last in `start()`, which
+    /// makes it the honest "we are live" edge.
+    ///
+    /// Deliberately *not* derived from the queue: an engine with no active task
+    /// is idle, not absent, and `DiagnosticsBundle` already reports the
+    /// active/total task counts per kind alongside this flag. Conflating the two
+    /// would make an idle engine indistinguishable from one that failed to come
+    /// up — exactly the distinction a support report needs to preserve.
+    var runningEngineKinds: Set<DownloadKind> {
+        updatesTask == nil ? [] : Set(DownloadKind.allCases)
+    }
+
     /// Watches the pasteboard for copied download links (Tier-1 convenience).
     private var clipboardMonitor: ClipboardMonitor?
 

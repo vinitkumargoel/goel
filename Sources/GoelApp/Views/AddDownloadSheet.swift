@@ -65,9 +65,6 @@ struct AddDownloadSheet: View {
     /// available", where the resolver omits `-f` rather than guessing an id.
     @State private var chosenFormat: MediaFormat?
 
-    /// The playlist the pasted link expands to, once the user asks to expand it.
-    @State private var playlistURL: URL?
-
     @State private var startSelection: String = "now"
 
     /// The chosen "Save to" preset, shown on the confirm screen. Defaults to
@@ -149,6 +146,10 @@ struct AddDownloadSheet: View {
                         .foregroundStyle(.secondary)
                     TextEditor(text: $text)
                         .font(.system(size: 12, design: .monospaced))
+                        // A `TextEditor` has no placeholder and no label of its
+                        // own; the caption above it is a separate `Text`.
+                        .accessibilityLabel("URL, magnet, or m3u8 stream")
+                        .accessibilityHint("Paste one link per line to add several at once.")
                         .frame(height: 90)
                         .padding(6)
                         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
@@ -158,6 +159,10 @@ struct AddDownloadSheet: View {
                         Label(inputError, systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.orange)
+                            // The triangle and the orange tint are the only
+                            // marks that this replaced the help text with an
+                            // error, and neither is spoken.
+                            .accessibilityLabel("Error. \(inputError)")
                     } else {
                         Text("Paste several lines to add them all at once (batch). Patterns expand too: file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts.")
                             .font(.system(size: 11))
@@ -187,8 +192,10 @@ struct AddDownloadSheet: View {
         VStack(spacing: 14) {
             ProgressView()
                 .controlSize(.large)
+                .accessibilityLabel("Fetching details")
             Text("Fetching details…")
                 .font(.system(size: 13, weight: .medium))
+                .accessibilityAddTraits(.isHeader)
             Text("Reading the file name and size. Magnet links ask peers for the file list, which can take a few seconds.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -317,11 +324,14 @@ struct AddDownloadSheet: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 34, height: 34)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                // The kind badge beside the name states this in words.
+                .a11yDecorative()
             VStack(alignment: .leading, spacing: 4) {
                 Text(preview.suggestedName)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(2)
                     .textSelection(.enabled)
+                    .accessibilityAddTraits(.isHeader)
                 HStack(spacing: 8) {
                     kindBadge(preview.kind)
                     Text(sizeText(preview))
@@ -368,8 +378,15 @@ struct AddDownloadSheet: View {
                                         .foregroundStyle(wanted ? Theme.accent : Color.secondary)
                                 }
                                 .buttonStyle(.plain)
+                                // A checkbox drawn as a button: nothing states
+                                // what it selects or whether it is ticked.
+                                .a11yButton(wanted
+                                    ? "Skip \((file.path as NSString).lastPathComponent)"
+                                    : "Download \((file.path as NSString).lastPathComponent)")
+                                .accessibilityValue(wanted ? "Included" : "Skipped")
                             } else {
                                 Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(.tertiary)
+                                    .a11yDecorative()
                             }
                             Text((file.path as NSString).lastPathComponent)
                                 .font(.system(size: 11))
@@ -380,6 +397,7 @@ struct AddDownloadSheet: View {
                             Text(file.length.byteString)
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(.secondary)
+                                .accessibilityLabel(A11y.bytes(file.length))
                         }
                         .padding(.vertical, 4)
                         .padding(.horizontal, 8)
@@ -402,6 +420,7 @@ struct AddDownloadSheet: View {
             Image(systemName: "arrow.down.to.line")
                 .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(isDropTargeted ? Theme.accent : .secondary)
+                .a11yDecorative()
             (Text("Drag a URL or ") + Text(".torrent").bold() + Text(" file here"))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -427,6 +446,7 @@ struct AddDownloadSheet: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
             TextField("MD5, SHA-1, or SHA-256 hex", text: $checksumText)
+                .accessibilityLabel("Expected checksum")
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12, design: .monospaced))
                 .disableAutocorrection(true)
@@ -452,6 +472,7 @@ struct AddDownloadSheet: View {
         HStack(spacing: 8) {
             if isResolvingMedia {
                 ProgressView().controlSize(.small)
+                    .accessibilityLabel("Resolving media formats")
                 Text("Asking yt-dlp…")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)

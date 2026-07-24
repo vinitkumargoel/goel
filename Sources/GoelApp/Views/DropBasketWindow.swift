@@ -55,10 +55,16 @@ private struct DropBasketView: View {
             Image(systemName: "arrow.down.to.line.circle")
                 .font(.system(size: 26, weight: .light))
                 .foregroundStyle(isTargeted ? Color.accentColor : .secondary)
+                .a11yDecorative()
             Text("Drop links here")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
+        // The basket only accepts pointer drags, so it cannot be operated
+        // without a pointer at all — but it should at least identify itself
+        // rather than appearing as an unnamed region in an unnamed panel.
+        .a11yGroup(label: "Drop basket",
+                   hint: "Drag links or torrent files here to queue them.")
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 10)

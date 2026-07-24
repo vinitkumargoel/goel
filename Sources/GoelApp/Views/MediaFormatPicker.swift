@@ -63,7 +63,7 @@ struct MediaFormatPicker: View {
                 if !separateTrackFormats.isEmpty {
                     Toggle("Show video-only and audio-only tracks", isOn: $showSeparateTracks)
                         .toggleStyle(.checkbox)
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -77,17 +77,19 @@ struct MediaFormatPicker: View {
     private var header: some View {
         HStack(spacing: 8) {
             Label("Quality", systemImage: "square.stack.3d.up")
-                .font(.system(size: 12, weight: .semibold))
+                .scaledFont(size: 12, weight: .semibold)
+                .accessibilityAddTraits(.isHeader)
             Spacer()
             if phase == .loaded {
                 Text("\(visibleFormats.count) option\(visibleFormats.count == 1 ? "" : "s")")
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
                     .foregroundStyle(.tertiary)
             }
             if case .failed = phase {
                 Button("Retry") { Task { await load(force: true) } }
                     .buttonStyle(.link)
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
+                    .accessibilityLabel("Retry loading quality options")
             }
         }
     }
@@ -95,18 +97,25 @@ struct MediaFormatPicker: View {
     private var loadingRow: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
+                .a11yDecorative()
             Text("Asking yt-dlp what’s available…")
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+        // An indeterminate spinner plus a sentence is one status, and it replaces
+        // the list — say it, since nothing else announces the wait.
+        .a11yGroup(label: "Asking yt-dlp what’s available")
     }
 
     private func failureRow(_ message: String) -> some View {
         Label(message, systemImage: "exclamationmark.triangle.fill")
-            .font(.system(size: 11))
+            .scaledFont(size: 11)
             .foregroundStyle(Theme.orange)
             .fixedSize(horizontal: false, vertical: true)
+            // The warning triangle is the only thing marking this as a failure
+            // rather than a note; say so in words too.
+            .accessibilityLabel("Couldn’t load quality options. \(message)")
     }
 
     // MARK: List
@@ -163,6 +172,11 @@ struct MediaFormatPicker: View {
             .background(isSelected ? Theme.accent.opacity(0.10) : .clear)
         }
         .buttonStyle(.plain)
+        // A hand-drawn radio button: the filled-vs-empty circle and the accent
+        // wash are the whole selection signal. Collapse the row and carry the
+        // choice as a trait so it is announced rather than merely tinted.
+        .a11yGroup(label: quality, value: A11y.sentence(detail, trailing))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     // MARK: Row content
@@ -287,15 +301,18 @@ struct PlaylistChecklistView: View {
             case .loading:
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
+                        .a11yDecorative()
                     Text("Listing what’s in this playlist…")
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(.secondary)
                 }
+                .a11yGroup(label: "Listing what’s in this playlist")
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundStyle(Theme.orange)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Couldn’t list the playlist. \(message)")
             case .loaded:
                 itemList
                 footer
@@ -309,12 +326,13 @@ struct PlaylistChecklistView: View {
         HStack(spacing: 8) {
             Label(phase == .loaded && !expansion.title.isEmpty ? expansion.title : "Playlist",
                   systemImage: "list.bullet.rectangle")
-                .font(.system(size: 12, weight: .semibold))
+                .scaledFont(size: 12, weight: .semibold)
                 .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
             Spacer()
             if phase == .loaded {
                 Text("\(expansion.items.count) item\(expansion.items.count == 1 ? "" : "s")")
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -333,19 +351,26 @@ struct PlaylistChecklistView: View {
                         ))
                         .labelsHidden()
                         .toggleStyle(.checkbox)
+                        // `labelsHidden()` leaves a column of anonymous
+                        // checkboxes; the title beside each one is what it
+                        // actually ticks, so make it the checkbox's own name.
+                        .accessibilityLabel("\(item.index). \(item.title)")
                         Text("\(item.index).")
-                            .font(.system(size: 10, design: .monospaced))
+                            .scaledFont(size: 10, design: .monospaced)
                             .foregroundStyle(.tertiary)
+                            .a11yDecorative()
                         Text(item.title)
-                            .font(.system(size: 11.5))
+                            .scaledFont(size: 11.5)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .help(item.url)
+                            .a11yDecorative()
                         Spacer(minLength: 8)
                         if let duration = item.durationText {
                             Text(duration)
-                                .font(.system(size: 10, design: .monospaced))
+                                .scaledFont(size: 10, design: .monospaced)
                                 .foregroundStyle(.tertiary)
+                                .accessibilityLabel("Duration \(duration)")
                         }
                     }
                     .padding(.vertical, 4)
@@ -365,7 +390,7 @@ struct PlaylistChecklistView: View {
             // out about later.
             if expansion.truncated {
                 Text("Only the first \(PlaylistExpander.cap) items are shown.")
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
                     .foregroundStyle(Theme.orange)
             }
             HStack {
@@ -374,8 +399,11 @@ struct PlaylistChecklistView: View {
                 }
                 Spacer()
                 Text("\(selected.count) selected")
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundStyle(.secondary)
+                    // A bare count next to two buttons. Say what it counts, and
+                    // mark it live so ticking a box is confirmed out loud.
+                    .accessibilityLabel("\(selected.count) of \(expansion.items.count) items selected")
                 Button("Add Selected") {
                     onConfirm(expansion.items.filter { selected.contains($0.id) })
                 }

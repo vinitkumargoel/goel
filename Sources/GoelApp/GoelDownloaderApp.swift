@@ -164,9 +164,7 @@ struct GoelCommands: Commands {
     var body: some Commands {
         // App menu — a real "About" panel in place of the default about item.
         CommandGroup(replacing: .appInfo) {
-            Button("About Goel°") {
-                NSApplication.shared.orderFrontStandardAboutPanel(nil)
-            }
+            Button("About Goel°") { showAboutPanel() }
             Button("Check for Updates…") { viewModel.checkForUpdates() }
         }
         // File menu — add, the two batch-paste flows, and list export/import.
@@ -211,7 +209,33 @@ struct GoelCommands: Commands {
                 .keyboardShortcut("t", modifiers: [.command, .shift])
             Button("Toggle Drop Basket") { DropBasketController.shared.toggle() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
+            Divider()
+            // The palette lives in `RootView`'s state, which a `Commands` body
+            // can't reach — hence the notification hop through the bus.
+            Button("Command Palette…") { CommandPaletteBus.toggle() }
+                .keyboardShortcut("k", modifiers: .command)
         }
+    }
+
+    /// The About box, with the licence stated in it.
+    ///
+    /// The packaged app carries the same wording in `NSHumanReadableCopyright`,
+    /// but a source build has no such key, and this is the one place a user is
+    /// likely to look for the terms. Supplying the credits explicitly means the
+    /// panel says the same thing either way. Informational text only — nothing
+    /// here checks or enforces anything.
+    private func showAboutPanel() {
+        let credits = NSAttributedString(
+            string: "Free for personal use. Commercial and business use requires a paid licence.\n"
+                + "Licensed under PolyForm Noncommercial 1.0.0 — see Settings ▸ Licence.",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ])
+        NSApplication.shared.orderFrontStandardAboutPanel(options: [
+            .credits: credits,
+            .applicationName: "Goel°",
+        ])
     }
 
     // MARK: Command actions
