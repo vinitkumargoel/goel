@@ -21,10 +21,20 @@
 
 # Fonts are versioned by filename (family-weight-subset) — a different cut means
 # a different name — so they can be cached hard.
+#
+# These rules must not overlap. Cloudflare applies EVERY matching rule and joins
+# the values with commas, so a broad /assets/* alongside /assets/fonts/* emits
+# "Cache-Control: public, max-age=86400, public, max-age=31536000, immutable" —
+# malformed, and browsers honour the first max-age, so the fonts would quietly
+# get one day instead of a year. _headers has no negation, so the non-font
+# assets are matched by extension instead.
 /assets/fonts/*
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/*
+/assets/*.png
+  Cache-Control: public, max-age=86400
+
+/assets/*.jpg
   Cache-Control: public, max-age=86400
 
 # HTML must revalidate, or a release ships to browsers that never ask again.
