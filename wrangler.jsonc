@@ -1,16 +1,62 @@
 {
-  // Static-assets Worker serving the marketing site at goel.vinitk.dev.
+  // Worker serving the marketing site at goel.vinitk.dev.
+  //
+  // The site is static files in ./website. The one dynamic route is the commercial
+  // licensing form: POST /api/enquiry, handled by ./website/_worker/enquiry.js.
+  //
   // Deploy with:  wrangler deploy
   "name": "goel-site",
   "compatibility_date": "2024-11-01",
+
+  // Entry point for the enquiry endpoint. It sits inside the assets directory so the
+  // whole site lives in one folder; ./website/.assetsignore keeps it from being
+  // uploaded and served as a downloadable file.
+  //
+  // If a future wrangler refuses an entry point nested inside `assets.directory`, move
+  // the file to ./worker/enquiry.js and change this one line — nothing else depends on
+  // its location.
+  "main": "./website/_worker/enquiry.js",
+
   "assets": {
     "directory": "./website",
     // serves website/404.html for unknown paths
-    "not_found_handling": "404-page"
+    "not_found_handling": "404-page",
+    // lets the Worker fall through to the static files for anything it doesn't handle
+    "binding": "ASSETS",
+    // Static files are served directly and never touch the Worker. Only /api/* is
+    // routed to the script first, so the marketing pages keep edge-cache performance
+    // and the Worker stays a single-purpose form handler.
+    "run_worker_first": ["/api/*"]
   },
+
   // custom_domain: true creates the goel.vinitk.dev DNS record and the
   // certificate, provided vinitk.dev is a zone on the same account
   "routes": [
     { "pattern": "goel.vinitk.dev", "custom_domain": true }
-  ]
+  ],
+
+  // `wrangler tail` is how you see an enquiry that failed to deliver.
+  "observability": {
+    "enabled": true
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────────
+  // OWNER ACTION REQUIRED — where enquiries are delivered.
+  //
+  // The endpoint validates and accepts enquiries out of the box, but sends them
+  // nowhere until a destination exists. Set it as a secret (NOT as a plaintext var
+  // here — this file is committed):
+  //
+  //     wrangler secret put ENQUIRY_WEBHOOK_URL
+  //
+  // Any endpoint that accepts a JSON POST works: a Slack/Discord incoming webhook,
+  // Zapier, n8n, or your own mail relay. For direct email instead, add the provider
+  // call inside deliver() in ./website/_worker/enquiry.js and put its API key in a
+  // secret the same way.
+  //
+  // Verify after deploying:
+  //     curl -X POST https://goel.vinitk.dev/api/enquiry \
+  //       -H 'content-type: application/json' \
+  //       -d '{"company":"Test","email":"a@b.co","seats":"5","country":"UK","useCase":"other"}'
+  // ──────────────────────────────────────────────────────────────────────────────
 }

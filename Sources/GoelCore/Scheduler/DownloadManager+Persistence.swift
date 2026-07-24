@@ -12,7 +12,9 @@ extension DownloadManager {
     /// Record (and log) a persistence failure so it can be surfaced.
     func notePersistenceError(_ error: Error) {
         persistenceWarning = "Couldn’t save to disk: \(error.localizedDescription)"
-        FileHandle.standardError.write(Data("[GoelDownloader] persistence error: \(error)\n".utf8))
+        // The description can name the store's path, so it travels as a private
+        // field rather than being written straight to stderr.
+        GoelLog.persistence.error("Persistence failed", .detail(String(describing: error)))
     }
 
     /// Persist a single task. Enqueued on the serial pipeline so it can never be

@@ -1,5 +1,6 @@
 import Foundation
 import ServiceManagement
+import GoelCore
 
 /// Registers (or removes) GoelDownloader as a macOS login item so the
 /// Settings › General "Launch at login" toggle actually takes effect.
@@ -21,9 +22,9 @@ enum LoginItemService {
                     try SMAppService.mainApp.unregister()
                 }
             } catch {
-                FileHandle.standardError.write(
-                    Data("LoginItemService: failed to \(enabled ? "register" : "unregister") login item: \(error)\n".utf8)
-                )
+                GoelLog.app.error("Login item update failed",
+                                  .flag(enabled, label: "enabling"),
+                                  .detail(String(describing: error)))
             }
         }
         // macOS 12 and earlier: SMAppService is unavailable, so this is a no-op.

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Goel° — One queue for everything you download</title>
-<meta name="description" content="A native macOS download manager with one queue for HTTP, FTP, SFTP, BitTorrent and HLS. Self-contained, MIT-licensed — and headless on Linux.">
+<meta name="description" content="A native macOS download manager with one queue for HTTP, FTP, SFTP, BitTorrent and HLS. Self-contained, source-available, free for personal use — and headless on Linux.">
 <meta name="theme-color" content="#16181d">
 <link rel="canonical" href="https://goel.vinitk.dev/">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="manifest" href="site.webmanifest">
 <meta property="og:title" content="Goel° — One queue for everything you download">
-<meta property="og:description" content="HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Open source, MIT-licensed — and headless on Linux.">
+<meta property="og:description" content="HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Source-available, free for personal use — and headless on Linux.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Goel°">
 <meta property="og:url" content="https://goel.vinitk.dev/">
@@ -22,7 +22,7 @@
 <meta property="og:image:alt" content="Goel° running on macOS — one queue mixing HTTP, BitTorrent, SFTP and HLS downloads.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Goel° — One queue for everything you download">
-<meta name="twitter:description" content="HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Open source, MIT-licensed — and headless on Linux.">
+<meta name="twitter:description" content="HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Source-available, free for personal use — and headless on Linux.">
 <meta name="twitter:image" content="https://goel.vinitk.dev/assets/og.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -737,6 +737,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <a href="#web">Web</a>
       <a href="#linux">Linux</a>
       <a href="#faq">FAQ</a>
+      <a class="keep" href="commercial.html">Commercial</a>
       <a class="keep" href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">GitHub</a>
     </div>
     <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener"><span class="t-full">Download for macOS</span><span class="t-short">Download</span> ↓</a>
@@ -746,7 +747,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
 <header class="hero">
   <div class="wrap">
     <h1>One queue for <span class="hl">everything</span> you download.</h1>
-    <p class="sub">HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Self-contained, MIT-licensed, Homebrew-free — and headless on Linux.</p>
+    <p class="sub">HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Self-contained, source-available, Homebrew-free — and headless on Linux.</p>
     <div class="hero-ctas">
       <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Download for macOS ↓</a>
       <a class="btn btn-ghost" href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">View on GitHub</a>
@@ -767,7 +768,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <div class="fact"><b data-n="1">1</b><span>queue</span></div>
       <div class="fact"><b>0</b><span>deps to install</span></div>
       <div class="fact"><b data-n="2">2</b><span>platforms</span></div>
-      <div class="fact"><b>MIT</b><span>licensed</span></div>
+      <div class="fact"><b>FREE</b><span>for personal use</span></div>
     </div>
   </div>
 </header>
@@ -1052,7 +1053,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
     <div>
       <details><summary>Do I need Homebrew or any libraries?</summary><p>No. Every native library — libtorrent, libssh2, libcurl, OpenSSL — is bundled inside the app. Download the .dmg, drag to Applications, done.</p></details>
       <details><summary>Which Macs does it run on?</summary><p>macOS 14 (Sonoma) or later, Apple Silicon and Intel. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time.</p></details>
-      <details><summary>Is it free?</summary><p>Yes — Goel° is open source under the MIT license.</p></details>
+      <details><summary>Is it free?</summary><p>Free for personal use — individuals, students, hobby projects and home labs, with every feature and no time limit. Using it at a company, a government body, a school as an institution, or on any MDM-managed fleet needs a paid licence. The licence is <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial 1.0.0</a>; see <a href="commercial.html">commercial licensing</a> for the eligibility table and pricing.</p></details>
       <details><summary>Can it download from video sites?</summary><p>Official releases bundle yt-dlp: the “Resolve Media” button turns a video-site page into a direct download. HLS streams save to a clean .mp4.</p></details>
       <details><summary>Does it really run on Linux?</summary><p>Yes — the same engine ships as GoelDaemon, a headless service driven entirely from the built-in web portal. Prebuilt for x86_64; build from source for ARM64.</p></details>
       <details><summary>Is remote access safe?</summary><p>The portal is off by default. When on, it's token- or password-authenticated, supports read-only mode and session timeouts, and refuses to expose over the LAN without a password.</p></details>
@@ -1077,13 +1078,15 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
     <div class="links">
       <a href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="commercial.html">Commercial</a>
+      <a href="https://github.com/vinitkumargoel/goel/tree/main/docs" target="_blank" rel="noopener">Docs</a>
       <a href="https://github.com/vinitkumargoel/goel/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
       <a href="https://github.com/vinitkumargoel/goel/blob/main/THIRD-PARTY-NOTICES.md" target="_blank" rel="noopener">Third-party notices</a>
       <a href="privacy.html">Privacy</a>
       <a href="terms.html">Terms</a>
       <a href="cookies.html">Cookies</a>
     </div>
-    <div class="lic">MIT · © 2026 Vinit Kumar Goel · demo data on this page is illustrative</div>
+    <div class="lic">PolyForm Noncommercial 1.0.0 · free for personal use · © 2026 Vinit Kumar Goel · demo data on this page is illustrative</div>
   </div>
 </footer>
 

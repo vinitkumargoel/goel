@@ -127,8 +127,8 @@ public final class PersistenceStore: @unchecked Sendable {
                 return nil
             }
             if skipped > 0 {
-                FileHandle.standardError.write(
-                    Data("[GoelDownloader] skipped \(skipped) corrupt task row(s) on load\n".utf8))
+                GoelLog.persistence.error("Skipped corrupt task rows on load",
+                                          .count(skipped, label: "rows"))
             }
             return tasks
         }

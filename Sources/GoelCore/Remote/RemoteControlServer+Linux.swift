@@ -75,8 +75,9 @@ public actor RemoteControlServer {
         // bearer token, so a passwordless config must stay loopback-only.
         let exposeLAN = allowLAN && config.requireAuth && !passwordHash.isEmpty
         if allowLAN && !exposeLAN {
-            let why = config.requireAuth ? "no portal password is set" : "sign-in is disabled"
-            FileHandle.standardError.write(Data("[GoelDownloader] LAN access refused — \(why); binding 127.0.0.1 only\n".utf8))
+            let why = config.requireAuth ? "no-portal-password" : "sign-in-disabled"
+            GoelLog.remote.notice("LAN access refused; binding 127.0.0.1 only",
+                                  .state(why, label: "reason"))
         }
 
         if channel != nil, boundPort == port, boundExposeLAN == exposeLAN { return }
@@ -101,7 +102,9 @@ public actor RemoteControlServer {
             self.boundPort = port
             self.boundExposeLAN = exposeLAN
         } catch {
-            FileHandle.standardError.write(Data("[GoelDownloader] remote server failed to bind port \(port): \(error)\n".utf8))
+            GoelLog.remote.error("Remote server failed to bind",
+                                 .count(Int(port), label: "port"),
+                                 .detail(String(describing: error)))
             try? await group.shutdownGracefully()
         }
     }

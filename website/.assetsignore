@@ -1,0 +1,8 @@
+# Files under the assets directory that must NOT be uploaded as public static assets.
+# gitignore syntax; see https://developers.cloudflare.com/workers/static-assets/binding/#ignoring-assets
+#
+# _worker/ holds the Worker source for POST /api/enquiry. It is bundled by wrangler via
+# the `main` field in wrangler.jsonc and must never be reachable as a downloadable file.
+_worker
+_worker/**
+**/.DS_Store

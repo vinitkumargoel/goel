@@ -2,15 +2,14 @@ import Foundation
 import Network
 import SwiftUI
 import GoelCore
-import os
 
-/// Lightweight diagnostics for the sidebar's server-status probes. A failure here
-/// is intentionally non-fatal (a server just reads as offline / carries no OS
-/// chip), so the "why" goes to the unified log rather than to the UI.
-enum ServerStatusLog {
-    static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Goel",
-                               category: "server-status")
-}
+// Diagnostics for the sidebar's server-status probes go through ``GoelLog/app``.
+// A failure here is intentionally non-fatal (a server just reads as offline /
+// carries no OS chip), so the "why" goes to the unified log rather than to the
+// UI. This used to be a second `os.Logger` with its own `server-status`
+// category; it now shares GoelLog's subsystem/category taxonomy so there is one
+// place to point a user at, and — more importantly — so the hostname travels as
+// a `.private` field instead of being interpolated in the clear.
 
 /// Live reachability + lightweight metadata for a saved SFTP server, surfaced in
 /// the sidebar so a server reads as "live" at a glance and carries its host / IP /
@@ -155,8 +154,8 @@ enum SFTPReachability {
                 guard once.claim() else { return }
                 let ms = ok ? Int((Date().timeIntervalSince(start) * 1000).rounded()) : nil
                 if let detail {
-                    ServerStatusLog.logger.debug(
-                        "probe \(host, privacy: .public):\(port) offline — \(detail, privacy: .public)")
+                    GoelLog.app.debug("Server probe offline",
+                                      .host(host), .count(port, label: "port"), .detail(detail))
                 }
                 conn.cancel()
                 cont.resume(returning: (ok, ms, detail))
@@ -225,8 +224,8 @@ enum SFTPReachability {
         var result: UnsafeMutablePointer<addrinfo>?
         let status = getaddrinfo(host, nil, &hints, &result)
         guard status == 0, let head = result else {
-            ServerStatusLog.logger.debug(
-                "resolveIP \(host, privacy: .public) failed: \(String(cString: gai_strerror(status)), privacy: .public)")
+            GoelLog.app.debug("Host resolution failed",
+                              .host(host), .detail(String(cString: gai_strerror(status))))
             return nil
         }
         defer { freeaddrinfo(head) }

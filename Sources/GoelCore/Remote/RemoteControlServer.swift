@@ -116,13 +116,14 @@ public actor RemoteControlServer {
         // password before ever binding to the network.
         let exposeLAN = allowLAN && config.requireAuth && !passwordHash.isEmpty
         if allowLAN && !exposeLAN {
-            let why = config.requireAuth ? "no portal password is set" : "sign-in is disabled"
-            FileHandle.standardError.write(Data("[GoelDownloader] LAN access refused — \(why); binding 127.0.0.1 only\n".utf8))
+            let why = config.requireAuth ? "no-portal-password" : "sign-in-disabled"
+            GoelLog.remote.notice("LAN access refused; binding 127.0.0.1 only",
+                                  .state(why, label: "reason"))
         } else if exposeLAN, boundExposeLAN != true {
             // Exposing on the LAN over plain HTTP: the login/cookie/token cross the
             // network unencrypted. Warn explicitly (once per bind) so the operator
             // uses a trusted network or terminates TLS at a reverse proxy.
-            FileHandle.standardError.write(Data("[GoelDownloader] portal exposed on the LAN over plain HTTP — use only on a trusted network, or put it behind a TLS reverse proxy\n".utf8))
+            GoelLog.remote.notice("Portal exposed on the LAN over plain HTTP — use only on a trusted network, or put it behind a TLS reverse proxy")
         }
 
         // Already listening on the same endpoint? The live config above is all that
@@ -150,7 +151,7 @@ public actor RemoteControlServer {
             newListener = try? NWListener(using: parameters)
         }
         guard let newListener else {
-            FileHandle.standardError.write(Data("[GoelDownloader] remote server failed to bind port \(port)\n".utf8))
+            GoelLog.remote.error("Remote server failed to bind", .count(Int(port), label: "port"))
             return
         }
         // Advertise over Bonjour only when actually exposed to the network — a
@@ -165,11 +166,13 @@ public actor RemoteControlServer {
         newListener.stateUpdateHandler = { state in
             switch state {
             case .failed(let error):
-                FileHandle.standardError.write(Data(
-                    "[GoelDownloader] remote server listener failed on port \(portForLog): \(error)\n".utf8))
+                GoelLog.remote.error("Remote server listener failed",
+                                     .count(Int(portForLog), label: "port"),
+                                     .detail(String(describing: error)))
             case .waiting(let error):
-                FileHandle.standardError.write(Data(
-                    "[GoelDownloader] remote server waiting on port \(portForLog): \(error)\n".utf8))
+                GoelLog.remote.notice("Remote server waiting",
+                                      .count(Int(portForLog), label: "port"),
+                                      .detail(String(describing: error)))
             default:
                 break
             }

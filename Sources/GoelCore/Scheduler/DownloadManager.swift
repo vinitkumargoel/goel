@@ -293,7 +293,7 @@ public actor DownloadManager {
             // Surface the failure instead of silently presenting an empty queue
             // (which is indistinguishable from a fresh install).
             persistenceWarning = "Couldn’t restore your downloads — the saved database may be unreadable."
-            FileHandle.standardError.write(Data("[GoelDownloader] restore failed: \(error)\n".utf8))
+            GoelLog.persistence.error("Restore failed", .detail(String(describing: error)))
             publish()
             return
         }

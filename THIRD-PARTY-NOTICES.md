@@ -11,12 +11,64 @@ This file must accompany any redistribution of the application.
 | [Boost](https://www.boost.org/) | 1.9x | BSL-1.0 | statically linked inside libtorrent |
 | [OpenSSL](https://www.openssl.org/) | 3.x | Apache-2.0 | `Frameworks/libssl.3.dylib`, `libcrypto.3.dylib` |
 | [libssh2](https://www.libssh2.org/) | 1.11.x | BSD-3-Clause | `Frameworks/libssh2.1.dylib` |
-| [GRDB.swift](https://github.com/groue/GRDB.swift) | 6.x | MIT | statically linked into the executable |
-| [Sparkle](https://sparkle-project.org/) | 2.x | MIT | `Frameworks/Sparkle.framework` |
+| [GRDB.swift](https://github.com/groue/GRDB.swift) | 6.29.3 | MIT | statically linked into the executable |
+| [Sparkle](https://sparkle-project.org/) | 2.9.3 | MIT | `Frameworks/Sparkle.framework` |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | pinned | The Unlicense | `Resources/yt-dlp` (only if bundled) |
 
 System libraries linked from macOS (libcurl, libsqlite3, the Swift runtime, and
 Apple frameworks) are provided by the operating system and are not redistributed here.
+
+**Determining exact versions for a given build.** GRDB and Sparkle are pinned in
+`Package.resolved` and the versions above are exact. The C libraries are sourced from
+Homebrew at build time, so their precise version is a property of the build machine rather
+than of this repository — the exact set is recorded in the per-release SBOM, which is
+available on request and supplied to commercial licensees. To inspect a build you already
+have, run `otool -L "/Applications/Goel°.app/Contents/MacOS/GoelDownloader"` and check the
+compatibility versions of the vendored dylibs in `Contents/Frameworks/`.
+
+**Patching.** These components are frozen at build time and there is no independent update
+path — a CVE in any of them requires a new Goel° release. The review cadence and patch
+window are committed to in [SECURITY.md](SECURITY.md#vendored-dependency-cve-policy).
+
+---
+
+## Licence compatibility
+
+Every bundled component is under a **permissive** licence. None is copyleft
+(GPL/LGPL/AGPL/MPL), and none carries a field-of-use restriction:
+
+| Component | Licence | Copyleft? | Attribution required? | Compatible with relicensing Goel°? |
+|---|---|---|---|---|
+| libtorrent-rasterbar | BSD-3-Clause | No | Yes — notice + disclaimer | Yes |
+| Boost | BSL-1.0 | No | Yes — but not for binary-only distribution | Yes |
+| OpenSSL | Apache-2.0 | No | Yes — notice + NOTICE file | Yes |
+| libssh2 | BSD-3-Clause | No | Yes — notice + disclaimer | Yes |
+| GRDB.swift | MIT | No | Yes — notice | Yes |
+| Sparkle | MIT | No | Yes — notice | Yes |
+| yt-dlp | The Unlicense | No | No (public domain dedication) | Yes |
+
+This matters because Goel° itself moved from MIT to the
+[PolyForm Noncommercial License 1.0.0](LICENSE), and is additionally offered under a
+[paid commercial licence](LICENSE-COMMERCIAL.md). Permissive dependencies impose no
+restriction on the licence of the larger work, so:
+
+- Goel° could be relicensed from MIT to PolyForm without any dependency's permission.
+- Goel° can be distributed to commercial licensees under negotiated proprietary terms.
+- The only obligation any of these licences imposes is **attribution** — which is what
+  this file is for. It must accompany any redistribution of the application.
+
+Two clauses are worth calling out explicitly, because reviewers ask about them:
+
+- **BSD-3-Clause (libtorrent, libssh2)** carries a no-endorsement clause. The names of
+  those projects and their authors are not used to endorse or promote Goel°, and must not
+  be by anyone redistributing it.
+- **Apache-2.0 (OpenSSL)** carries a patent grant with a defensive-termination clause, and
+  requires that modifications be marked. OpenSSL is bundled unmodified.
+
+**Adding a copyleft dependency would break this.** Any future dependency under GPL, LGPL
+or a similar licence would either constrain the licence of the whole application or force
+it to be kept at arm's length in a separate process. This is a hard constraint on
+contributions — see [CONTRIBUTING.md](CONTRIBUTING.md#before-you-write-code).
 
 ---
 

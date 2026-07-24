@@ -11,7 +11,9 @@ Rebuilt from scratch in Swift, self-contained, and Homebrew-free. Native SwiftUI
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20Linux-blue)
 ![Arch](https://img.shields.io/badge/arch-arm64%20%7C%20x86__64-black)
 ![Swift](https://img.shields.io/badge/Swift-5.10-orange)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)
+![Personal use](https://img.shields.io/badge/personal%20use-free-green)
+![Commercial use](https://img.shields.io/badge/commercial%20use-licence%20required-orange)
 
 <br>
 
@@ -31,6 +33,62 @@ or seeding a torrent. It ships as a **single self-contained app**: every native 
 inside, so there is nothing for your users to install.
 
 On **Linux**, the same engine runs headless as **`GoelDaemon`**, driven from the built-in web portal — see [Linux (headless daemon)](#linux-headless-daemon).
+
+---
+
+## Licensing
+
+**Goel° is open source code, free for personal use.** The full source is here and always
+will be. Use it for your own downloads, hobby projects, study or home media at no cost,
+with nothing to sign and nothing to expire.
+
+**Commercial use requires a paid licence.** If Goel° is used in the course of a business,
+by a contractor billing a client, or deployed to a managed fleet, you need a commercial
+licence — see **[LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md)** for who needs one, who
+does not, and how to request one.
+
+| Your situation | What you need |
+|---|---|
+| Personal use, hobby, private study, home media | **Free.** Nothing to do. |
+| Charity, school, university, public research, public safety/health, environmental body | **Free** — permitted by the licence itself, however you are funded. |
+| Evaluating Goel° before buying | **Free.** Evaluation is welcome and is not metered. |
+| Any company, sole trader, or for-profit entity | **[Commercial licence](LICENSE-COMMERCIAL.md)** |
+| Contractor or consultant, in billable work | **[Commercial licence](LICENSE-COMMERCIAL.md)** |
+| Managed fleet, MDM deployment, `GoelDaemon` on company infrastructure | **[Commercial licence](LICENSE-COMMERCIAL.md)** |
+| Bundling, reselling, or hosting Goel° for others | **[Commercial licence](LICENSE-COMMERCIAL.md)** — ask, this is quoted separately. |
+
+Pricing, the full entitlement matrix and an enquiry form live on the
+**[commercial licensing page](https://goel.vinitk.dev/commercial)**. Procurement and
+security review packs — SBOM, security questionnaire, support SLA — are in
+**[`docs/compliance/`](docs/compliance/)**.
+
+**The app is identical either way.** There is no licence key, no activation, no trial
+clock, no feature gating, no nag screen, and no phone-home. Every user runs the same
+binary with the same capabilities, and nothing in Goel° can ever lock you out of your own
+downloads. Compliance is honour-based on purpose.
+
+<details>
+<summary><b>A precise note on wording, and on the older releases</b></summary>
+
+<br>
+
+Goel° is licensed under **[PolyForm Noncommercial 1.0.0](LICENSE)**. That is a
+**source-available** licence, not an OSI-approved open source licence — a licence with a
+field-of-use restriction does not meet the Open Source Definition, and calling it "open
+source" without qualification would be inaccurate. The phrasing used here is *open source
+code, free for personal use*, which is exactly what it is.
+
+The earlier git tags **`v1.0.0` and `v1.0.1` were released under the MIT License and
+remain MIT-licensed forever.** An MIT grant already made cannot be retroactively revoked,
+and this project will not pretend otherwise: anyone who obtained those releases keeps
+their MIT rights to *those releases* in perpetuity, including for commercial use. The
+PolyForm licence applies from the next release onward.
+
+The **"Goel°" name, the g° mark and the app icon are reserved separately** from the code
+licence — see **[TRADEMARK.md](TRADEMARK.md)**. Forks are welcome under PolyForm's terms,
+but must pick their own name, icon and bundle identifier.
+
+</details>
 
 ---
 
@@ -189,6 +247,9 @@ notary service, and staples the ticket — which is what lets a downloaded app o
 
 **Bundling toggle:** `BUNDLE_YTDLP=0 Scripts/build_app.sh` builds without the ~35 MB yt-dlp binary.
 
+**Cutting a release:** follow **[RELEASE.md](RELEASE.md)** step by step — it replaces CI
+and covers signing, notarisation, the DMG, Sparkle appcast signing, and rollback.
+
 ---
 
 ## Updating
@@ -202,6 +263,36 @@ library updater by design.
 
 ---
 
+## Documentation
+
+- **[docs/getting-started.md](docs/getting-started.md)** — install, first download, the basics.
+- **[docs/faq.md](docs/faq.md)** — the questions that actually get asked.
+- **[docs/troubleshooting.md](docs/troubleshooting.md)** — when something goes wrong.
+- **[docs/remote-api.md](docs/remote-api.md)** — the JSON routes the remote/web UI speaks.
+- **[docs/compliance/](docs/compliance/)** — SBOM, security questionnaire, support SLA.
+
+---
+
+## Contributing
+
+Bug reports, fixes and ideas are welcome. Read **[CONTRIBUTING.md](CONTRIBUTING.md)**
+first — every commit needs a DCO `Signed-off-by:` trailer (`git commit -s`), and that
+file explains why in plain terms. Security issues go to **[SECURITY.md](SECURITY.md)**,
+not to a public issue.
+
+---
+
 ## License
 
-Goel° is released under the **MIT License** — © 2026 Vinit Kumar Goel; see **[LICENSE](LICENSE)**.
+Goel° is released under the **[PolyForm Noncommercial License 1.0.0](LICENSE)** —
+© 2026 Vinit Kumar Goel. Free for personal use; **commercial use requires a paid
+licence**, see **[LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md)** and the
+[Licensing](#licensing) section above.
+
+The `v1.0.0` and `v1.0.1` tags remain MIT-licensed forever and that grant is irrevocable;
+PolyForm applies from the next release onward.
+
+The Goel° name and the g° mark are reserved — see **[TRADEMARK.md](TRADEMARK.md)**.
+Bundled third-party components and their licences are listed in
+**[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)**.
+Release history is in **[CHANGELOG.md](CHANGELOG.md)**.

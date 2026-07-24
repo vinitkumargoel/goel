@@ -593,8 +593,8 @@ extension DownloadManager: RemoteBackend {
               !folder.isEmpty else { return nil }
         let root = settings.defaultSaveDirectory
         if PathSafety.isContained(folder, within: root) { return folder }
-        FileHandle.standardError.write(Data(
-            "[GoelDownloader] remote add: rejecting out-of-root save folder; using default\n".utf8))
+        GoelLog.remote.error("Remote add: rejecting out-of-root save folder; using default",
+                             .path(folder))
         return nil
     }
 }
