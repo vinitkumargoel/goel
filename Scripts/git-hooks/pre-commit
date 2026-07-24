@@ -1,0 +1,94 @@
+#!/bin/bash
+# Pre-commit gate: the package must build and the whole test suite must pass.
+#
+# Lives in the repo (not .git/hooks, which git never versions) and is activated
+# by pointing git at this directory:
+#
+#     git config core.hooksPath Scripts/git-hooks
+#
+# Scripts/install_hooks.sh does that for you. Bypass a single commit with
+# `git commit --no-verify`, or a run with `SKIP_TESTS=1 git commit`.
+
+set -u
+
+if [ "${SKIP_TESTS:-0}" = "1" ]; then
+    echo "pre-commit: SKIP_TESTS=1 — skipping build and tests."
+    exit 0
+fi
+
+ROOT=$(git rev-parse --show-toplevel) || exit 1
+cd "$ROOT" || exit 1
+
+# Only gate commits that can actually change behaviour. A docs/asset-only commit
+# shouldn't pay for a full test run.
+if ! git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '\.(swift|c|h|cpp|hpp)$|^Package\.swift$|^Package\.resolved$'; then
+    echo "pre-commit: no Swift/C sources staged — skipping build and tests."
+    exit 0
+fi
+
+if ! command -v swift >/dev/null 2>&1; then
+    echo "pre-commit: 'swift' not found on PATH — cannot verify. Commit blocked."
+    echo "            Install the Swift toolchain, or use: git commit --no-verify"
+    exit 1
+fi
+
+# Re-align SDKROOT with the active toolchain.
+#
+# git runs its hooks with SDKROOT already exported — on macOS git is launched
+# through `xcrun`, which puts its own SDK choice in the child environment. On a
+# machine with both Xcode and standalone Command Line Tools installed, that
+# inherited value is the *CLT* SDK, which can be newer than the Swift compiler
+# `swift` resolves to. SwiftPM honours SDKROOT when it compiles Package.swift,
+# so the hook would fail with
+#
+#     error: failed to build module 'Swift'; this SDK is not supported by the
+#     compiler ... Please select a toolchain which matches the SDK.
+#
+# and block a commit whose code builds perfectly from a terminal, where SDKROOT
+# is unset. `xcrun --show-sdk-path` reports the SDK for the *active* developer
+# directory and ignores the inherited SDKROOT, so it is the value to trust.
+if command -v xcrun >/dev/null 2>&1; then
+    ACTIVE_SDK=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null)
+    if [ -n "$ACTIVE_SDK" ]; then
+        export SDKROOT="$ACTIVE_SDK"
+    else
+        unset SDKROOT   # no answer beats git's wrong answer
+    fi
+fi
+
+LOG=$(mktemp -t goel-precommit)
+trap 'rm -f "$LOG"' EXIT
+
+# The hook tests the working tree, which is what you are about to commit only if
+# nothing is left unstaged. Warn rather than block: stashing here risks losing
+# work if the hook is interrupted mid-commit.
+if ! git diff --quiet; then
+    echo "pre-commit: note — you have unstaged changes; testing the working tree as-is."
+fi
+
+echo "pre-commit: building…"
+if ! swift build >"$LOG" 2>&1; then
+    echo "pre-commit: BUILD FAILED — commit blocked."
+    echo
+    grep -E 'error:' "$LOG" | head -20
+    echo
+    echo "  full log: swift build"
+    exit 1
+fi
+
+echo "pre-commit: running tests…"
+if ! swift test >"$LOG" 2>&1; then
+    echo "pre-commit: TESTS FAILED — commit blocked."
+    echo
+    grep -E 'error:|failed \(' "$LOG" | grep -v 'passed (' | head -20
+    echo
+    tail -3 "$LOG"
+    echo
+    echo "  reproduce with: swift test"
+    echo "  bypass with:    git commit --no-verify"
+    exit 1
+fi
+
+echo "pre-commit: $(grep -oE 'Executed [0-9]+ tests[^.]*' "$LOG" | tail -1) — OK."
+exit 0

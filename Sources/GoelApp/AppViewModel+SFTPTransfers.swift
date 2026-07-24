@@ -24,9 +24,9 @@ extension AppViewModel {
     /// until it's resolved, otherwise starts them immediately.
     func startUpload(items: [URL], toRemoteDir remoteDir: String, on connection: SFTPConnection) {
         guard !items.isEmpty else { return }
-        guard sftpClient(for: connection) != nil else {
-            toastNow("This server is misconfigured."); return
-        }
+        // No client pre-check here: `prepareUpload` resolves one itself and
+        // reports the failure, and resolving twice would prompt for Keychain
+        // access twice for a single drop.
         Task { await self.prepareUpload(items: items, remoteDir: remoteDir, connection: connection) }
     }
 
@@ -55,13 +55,23 @@ extension AppViewModel {
                 plan.append(PlannedUpload(url: item.url, isDirectory: item.isDirectory, name: unique))
             }
         }
-        launchUploads(connection: request.connection, remoteDir: request.remoteDir, plan: plan)
+        // Every colliding item skipped and nothing free = nothing to do; don't
+        // resolve (and therefore don't prompt for Keychain access) for no work.
+        guard !plan.isEmpty else { return }
+        guard let client = sftpClientReportingFailure(for: request.connection) else { return }
+        launchUploads(connection: request.connection, remoteDir: request.remoteDir,
+                      plan: plan, client: client)
     }
 
     /// Download a single remote file to a local folder (browser "Download to…").
     func startDownload(_ entry: SFTPEntry, from connection: SFTPConnection,
                        remoteDir: String, toLocalDir localDir: URL) {
-        guard !entry.isDirectory, sftpClient(for: connection) != nil else { return }
+        // User-initiated, so report why nothing happened rather than returning
+        // mute — a refused Keychain prompt otherwise looks like a dead menu item.
+        guard !entry.isDirectory else { return }
+        // Resolved here and handed to `runDownload`, so one download = one
+        // Keychain read rather than one to check and another to transfer.
+        guard let client = sftpClientReportingFailure(for: connection) else { return }
         // The entry name is server-supplied; sanitize to one safe component so it
         // can't steer the *local* path (../ traversal / absolute paths), then
         // confirm the join stays inside the chosen folder.
@@ -86,7 +96,7 @@ extension AppViewModel {
         let id = transfer.id
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.runDownload(id: id, connection: connection,
+            await self.runDownload(id: id, client: client,
                                    remoteSource: remoteSource, destination: destination, cancel: cancel)
         }
         sftpTransferTasks[id] = (task, cancel)
@@ -133,6 +143,10 @@ extension AppViewModel {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }), !sftpTransfers[i].isActive else { return }
         let t = sftpTransfers[i]
         guard let connection = server(t.connectionID) else { toastNow("That server no longer exists."); return }
+        // Resolve before flipping the row to .running: if the Keychain read is
+        // refused, the row must stay failed with the reason toasted, not sit
+        // "running" against a client that was never built.
+        guard let client = sftpClientReportingFailure(for: connection) else { return }
         sftpTransfers[i].state = .running
         sftpTransfers[i].resetProgress()
         let cancel = CancelFlag()
@@ -141,13 +155,13 @@ extension AppViewModel {
         case .upload:
             task = Task { [weak self] in
                 guard let self else { return }
-                await self.runUpload(id: id, connection: connection, localURL: t.localURL,
+                await self.runUpload(id: id, client: client, localURL: t.localURL,
                                      isDir: t.isDirectory, remoteTarget: t.remotePath, cancel: cancel)
             }
         case .download:
             task = Task { [weak self] in
                 guard let self else { return }
-                await self.runDownload(id: id, connection: connection,
+                await self.runDownload(id: id, client: client,
                                        remoteSource: t.remotePath, destination: t.localURL, cancel: cancel)
             }
         }
@@ -169,7 +183,7 @@ extension AppViewModel {
     // MARK: Preparation
 
     private func prepareUpload(items: [URL], remoteDir: String, connection: SFTPConnection) async {
-        guard let client = sftpClient(for: connection) else { return }
+        guard let client = sftpClientReportingFailure(for: connection) else { return }
         let existing = Set(((try? await client.list(remoteDir)) ?? []).map(\.name))
         var free: [SFTPUploadConflictRequest.Item] = []
         var colliding: [SFTPUploadConflictRequest.Item] = []
@@ -191,14 +205,16 @@ extension AppViewModel {
         if colliding.isEmpty {
             launchUploads(connection: connection, remoteDir: remoteDir,
                           plan: free.map { PlannedUpload(url: $0.url, isDirectory: $0.isDirectory,
-                                                         name: $0.url.lastPathComponent) })
+                                                         name: $0.url.lastPathComponent) },
+                          client: client)
         } else {
             sftpUploadConflicts = SFTPUploadConflictRequest(connection: connection, remoteDir: remoteDir,
                                                             existing: existing, free: free, colliding: colliding)
         }
     }
 
-    private func launchUploads(connection: SFTPConnection, remoteDir: String, plan: [PlannedUpload]) {
+    private func launchUploads(connection: SFTPConnection, remoteDir: String,
+                               plan: [PlannedUpload], client: SFTPClient) {
         for item in plan {
             let remoteTarget = SFTPBrowserPaths.join(remoteDir, item.name)
             let cancel = CancelFlag()
@@ -209,7 +225,7 @@ extension AppViewModel {
             let url = item.url, isDir = item.isDirectory
             let task = Task { [weak self] in
                 guard let self else { return }
-                await self.runUpload(id: id, connection: connection, localURL: url,
+                await self.runUpload(id: id, client: client, localURL: url,
                                      isDir: isDir, remoteTarget: remoteTarget, cancel: cancel)
             }
             sftpTransferTasks[id] = (task, cancel)
@@ -218,11 +234,11 @@ extension AppViewModel {
 
     // MARK: Transfer execution
 
-    private func runUpload(id: UUID, connection: SFTPConnection, localURL: URL, isDir: Bool,
+    /// Takes an already-resolved `client` rather than resolving its own: the
+    /// Keychain can prompt on every read, so a 20-file drop would otherwise
+    /// raise 20 prompts. One resolution per user action, reused for the batch.
+    private func runUpload(id: UUID, client: SFTPClient, localURL: URL, isDir: Bool,
                            remoteTarget: String, cancel: CancelFlag) async {
-        guard let client = sftpClient(for: connection) else {
-            settleTransfer(id, .failed("This server is misconfigured.")); return
-        }
         let cap = settings.effectiveProfile.maxUploadBytesPerSec
         do {
             if isDir {
@@ -306,11 +322,9 @@ extension AppViewModel {
         }
     }
 
-    private func runDownload(id: UUID, connection: SFTPConnection, remoteSource: String,
+    /// Takes an already-resolved `client` — see ``runUpload(id:client:localURL:isDir:remoteTarget:cancel:)``.
+    private func runDownload(id: UUID, client: SFTPClient, remoteSource: String,
                              destination: URL, cancel: CancelFlag) async {
-        guard let client = sftpClient(for: connection) else {
-            settleTransfer(id, .failed("This server is misconfigured.")); return
-        }
         let cap = settings.effectiveProfile.maxDownloadBytesPerSec
         // `downloadToFile` truncate-creates the destination up front, so any
         // non-success outcome (cancel, network stall, disk-full, remote gone)

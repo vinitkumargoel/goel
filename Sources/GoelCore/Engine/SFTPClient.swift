@@ -9,9 +9,14 @@ public struct SFTPTarget: Sendable, Hashable {
     public var username: String
     public var password: String?
     public var useAgent: Bool
+    /// Path to an SSH private key, or nil to skip key auth.
+    public var privateKeyPath: String?
+    /// Passphrase for `privateKeyPath`, or nil when the key is unencrypted.
+    public var keyPassphrase: String?
 
     public init(host: String, port: Int = 22, username: String,
-                password: String?, useAgent: Bool = false) {
+                password: String?, useAgent: Bool = false,
+                privateKeyPath: String? = nil, keyPassphrase: String? = nil) {
         self.host = host
         // Clamp to a valid TCP port so the C marshaling (`Int32(port)` in
         // `withAuth`) can never trap on out-of-range input from the editor's
@@ -20,13 +25,18 @@ public struct SFTPTarget: Sendable, Hashable {
         self.username = username
         self.password = password
         self.useAgent = useAgent
+        self.privateKeyPath = privateKeyPath
+        self.keyPassphrase = keyPassphrase
     }
 
-    public init?(connection: SFTPConnection, password: String?) {
+    public init?(connection: SFTPConnection, password: String?,
+                 keyPassphrase: String? = nil) {
         guard !connection.host.isEmpty else { return nil }
         self.init(host: connection.host, port: connection.port,
                   username: connection.username, password: password,
-                  useAgent: connection.useAgent)
+                  useAgent: connection.useAgent,
+                  privateKeyPath: connection.privateKeyPath,
+                  keyPassphrase: keyPassphrase)
     }
 
     /// Build a target from an `sftp://[user[:pass]@]host[:port]/…` URL, filling a
@@ -204,7 +214,10 @@ public struct SFTPClient: Sendable {
             thread.start()
         }
         learnIfNeeded(expected: expected, result: result)
-        guard result.code == GSB_OK else { throw SFTPResult(result).asError }
+        guard result.code == GSB_OK else {
+            throw SFTPResult(result).asError(host: target.host, port: target.port,
+                                             username: target.username)
+        }
         return result
     }
 
@@ -225,7 +238,10 @@ public struct SFTPClient: Sendable {
             thread.start()
         }
         learnIfNeeded(expected: expected, result: result)
-        guard result.code == GSB_OK else { throw SFTPResult(result).asError }
+        guard result.code == GSB_OK else {
+            throw SFTPResult(result).asError(host: target.host, port: target.port,
+                                             username: target.username)
+        }
         return result
     }
 
@@ -253,10 +269,17 @@ public struct SFTPClient: Sendable {
             t.username.withCString { user in
                 withOptCString(t.password) { pass in
                     withOptCString(expected) { fp in
-                        var auth = GSBAuth(host: host, port: Int32(t.port), username: user,
-                                           password: pass, use_agent: t.useAgent ? 1 : 0,
-                                           expected_fp: fp)
-                        return withUnsafePointer(to: &auth) { body($0) }
+                        withOptCString(t.privateKeyPath) { keyPath in
+                            withOptCString(t.keyPassphrase) { keyPhrase in
+                                var auth = GSBAuth(host: host, port: Int32(t.port), username: user,
+                                                   password: pass, use_agent: t.useAgent ? 1 : 0,
+                                                   expected_fp: fp,
+                                                   private_key_path: keyPath,
+                                                   public_key_path: nil,
+                                                   key_passphrase: keyPhrase)
+                                return withUnsafePointer(to: &auth) { body($0) }
+                            }
+                        }
                     }
                 }
             }
@@ -305,6 +328,38 @@ public struct SFTPResult: Sendable {
         default: kind = .unknown
         }
         return SFTPError(kind: kind, message: message.isEmpty ? "SFTP error \(code)" : message)
+    }
+
+    /// The failure phrased for the person using the app, with the raw libssh2 /
+    /// OS text demoted to ``SFTPError/detail``.
+    ///
+    /// This exists because libssh2's own strings mislead: it reports nearly every
+    /// handshake fault as "Unable to exchange encryption keys", which reads as a
+    /// crypto-incompatibility even when the real cause is the connection being
+    /// blocked or dropped. Surfacing that verbatim sends people to change server
+    /// ciphers when nothing is wrong with the server.
+    public func asError(host: String, port: Int, username: String) -> SFTPError {
+        let raw = asError
+        let endpoint = port == 22 ? host : "\(host):\(port)"
+        let friendly: String
+        switch raw.kind {
+        case .resolve:
+            friendly = "Can't find “\(host)”. Check the address, and that you're on the right network or VPN."
+        case .connect:
+            friendly = "Can't reach \(endpoint). Check the server is switched on and reachable — and if it's on your local network, that Goel is allowed to use it under System Settings ▸ Privacy & Security ▸ Local Network."
+        case .handshake:
+            friendly = "\(endpoint) accepted the connection but the secure handshake didn't finish. Check that it's an SSH/SFTP server on that port and that nothing is dropping the connection."
+        case .hostKey:
+            friendly = "\(endpoint) didn't present a host key, so its identity can't be verified."
+        case .hostKeyMismatch:
+            friendly = "The identity of \(endpoint) has changed since you last connected. If the server was genuinely rebuilt or rekeyed, use “Reset pinned host key” and reconnect — otherwise stop and check why."
+        case .auth:
+            friendly = "\(endpoint) refused the sign-in for “\(username)”. Check the password, or the private key and its passphrase."
+        default:
+            return raw
+        }
+        return SFTPError(kind: raw.kind, message: friendly,
+                         detail: raw.message.isEmpty ? nil : raw.message)
     }
 }
 

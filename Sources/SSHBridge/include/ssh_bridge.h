@@ -47,6 +47,13 @@ typedef struct GSBResult {
 //   use_agent   nonzero to also try the running ssh-agent
 //   expected_fp hex SHA-256 to REQUIRE (mismatch -> GSB_ERR_HOSTKEY_MISMATCH);
 //               "" / NULL learns the key (trust-on-first-use) and returns it.
+//   private_key_path  "" / NULL to skip key auth; else a PEM/OpenSSH private key.
+//   public_key_path   "" / NULL derives the public half from the private key
+//                     (libssh2 does this for the OpenSSL backend).
+//   key_passphrase    "" / NULL for an unencrypted key.
+//
+// Methods are tried in order: password, private key, ssh-agent — each only if
+// configured. The first that succeeds wins.
 typedef struct GSBAuth {
     const char *host;
     int port;
@@ -54,6 +61,9 @@ typedef struct GSBAuth {
     const char *password;
     int use_agent;
     const char *expected_fp;
+    const char *private_key_path;
+    const char *public_key_path;
+    const char *key_passphrase;
 } GSBAuth;
 
 // Write callback: receive `len` bytes; return `len` to continue, anything else

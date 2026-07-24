@@ -137,8 +137,38 @@ final class AutomationCoreTests: XCTestCase {
         // Both claimed by the window; network claims nothing (single attribution).
         XCTAssertEqual(Set(d.actions), [.pause(a, .window), .pause(b, .window)])
         XCTAssertEqual(d.memory.windowPausedIDs, [a, b])
-        XCTAssertTrue(d.memory.networkPaused)
+        // The network policy stays UNLATCHED because it paused nothing this tick.
+        // Latching on an empty set would consume the policy: when these tasks later
+        // resume over a still-expensive network, the pause branch would be skipped
+        // and they would never be re-paused. See `testNetworkClaimsTaskFreedByWindow`.
+        XCTAssertFalse(d.memory.networkPaused)
         XCTAssertTrue(d.memory.networkPausedIDs.isEmpty)
+    }
+
+    /// The reason the network policy must not latch on an empty set: once a task
+    /// the window had claimed is downloading again while the network is still
+    /// expensive, the network ledger has to be able to claim it.
+    func testNetworkClaimsTaskFreedByWindow() {
+        let a = UUID()
+        var s = windowSettings()
+        s.pauseOnExpensiveNetwork = true
+
+        // Tick 1 — window closing: the window claims `a`, network latches nothing.
+        let closing = AutomationCore.decide(
+            snapshot(now: date(weekday: 3, hour: 18), settings: s,
+                     tasks: [phase(a, downloading: true)], expensive: true))
+        XCTAssertEqual(closing.actions, [.pause(a, .window)])
+        XCTAssertFalse(closing.memory.networkPaused)
+
+        // Tick 2 — inside the window again and `a` is downloading, but the network
+        // is still expensive: it must now be paused for `.network`.
+        let reopened = AutomationCore.decide(
+            snapshot(now: date(weekday: 3, hour: 12), settings: s,
+                     tasks: [phase(a, downloading: true)], expensive: true,
+                     memory: closing.memory))
+        XCTAssertTrue(reopened.actions.contains(.pause(a, .network)))
+        XCTAssertTrue(reopened.memory.networkPaused)
+        XCTAssertEqual(reopened.memory.networkPausedIDs, [a])
     }
 
     // MARK: Scheduled starts

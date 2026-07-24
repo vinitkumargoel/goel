@@ -31,6 +31,87 @@ public protocol CredentialManaging: Sendable {
     @discardableResult func removeCredential(host: String) -> Bool
     /// Every host with a stored credential (no secrets), for the management UI.
     func allCredentials() -> [HostCredential]
+
+    /// Read `host`'s credential, distinguishing "nothing stored" from "we were
+    /// not allowed to look". See ``CredentialLookup``.
+    func lookupCredential(forHost host: String) -> CredentialLookup
+    /// Write `host`'s credential, reporting refusal separately from failure.
+    @discardableResult
+    func storeCredential(username: String, password: String, host: String) -> CredentialWrite
+}
+
+/// The result of reading a stored secret.
+///
+/// This exists because collapsing every failure to `nil` is actively harmful:
+/// a denied Keychain prompt then looks identical to "no password saved", so the
+/// connection proceeds with no credential and the server's rejection is reported
+/// as a wrong password. The user is sent to re-type a password that was never
+/// the problem. ``denied`` is retryable — the prompt can be presented again.
+public enum CredentialLookup: Sendable, Equatable {
+    case found(username: String, password: String)
+    /// Definitively no entry for this host.
+    case notFound
+    /// The keychain refused: user cancelled the prompt, or it is locked.
+    case denied(status: Int32)
+    /// Something else went wrong (malformed item, unexpected status).
+    case failed(status: Int32)
+
+    /// The secret when one was actually read, else nil. For call sites that
+    /// genuinely cannot act on the distinction.
+    public var password: String? {
+        if case .found(_, let password) = self { return password }
+        return nil
+    }
+    /// Whether presenting the prompt again could succeed.
+    public var isRetryable: Bool {
+        if case .denied = self { return true }
+        return false
+    }
+
+    /// The raw status, for the "Technical detail" disclosure.
+    public var statusDetail: String? {
+        switch self {
+        case .found, .notFound: return nil
+        case .denied(let s): return "Keychain denied access (OSStatus \(s))"
+        case .failed(let s): return "Keychain read failed (OSStatus \(s))"
+        }
+    }
+}
+
+/// The result of writing a stored secret. ``denied`` is retryable.
+public enum CredentialWrite: Sendable, Equatable {
+    case stored
+    case denied(status: Int32)
+    case failed(status: Int32)
+
+    public var didStore: Bool { self == .stored }
+    public var isRetryable: Bool {
+        if case .denied = self { return true }
+        return false
+    }
+
+    public var statusDetail: String? {
+        switch self {
+        case .stored: return nil
+        case .denied(let s): return "Keychain denied access (OSStatus \(s))"
+        case .failed(let s): return "Keychain write failed (OSStatus \(s))"
+        }
+    }
+}
+
+public extension CredentialManaging {
+    /// Default bridge for stores with no richer notion of refusal (the Linux
+    /// file backend, in-memory fakes): absence is simply `notFound`.
+    func lookupCredential(forHost host: String) -> CredentialLookup {
+        guard let c = credential(forHost: host) else { return .notFound }
+        return .found(username: c.username, password: c.password)
+    }
+
+    @discardableResult
+    func storeCredential(username: String, password: String, host: String) -> CredentialWrite {
+        setCredential(username: username, password: password, host: host)
+            ? .stored : .failed(status: 0)
+    }
 }
 
 /// A stored entry, minus the secret (for the management UI's list).
@@ -70,34 +151,109 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
 
     // MARK: Management (macOS / Keychain)
 
-    /// The username + password stored for `host`, or nil.
+    /// Statuses worth retrying automatically: the keychain is momentarily locked
+    /// or unavailable (right after wake, or mid-unlock) and the same call a
+    /// moment later usually succeeds.
+    ///
+    /// A user *cancelling* the prompt is deliberately excluded — re-issuing the
+    /// request would re-prompt in a loop and harass them. That surfaces as
+    /// ``CredentialLookup/denied`` so the UI can offer one explicit Retry.
+    private static func isTransient(_ status: OSStatus) -> Bool {
+        status == errSecNotAvailable || status == errSecInteractionNotAllowed
+    }
+
+    /// Statuses that mean "refused, but asking again could work".
+    private static func isDenial(_ status: OSStatus) -> Bool {
+        status == errSecUserCanceled || status == errSecAuthFailed
+            || status == errSecInteractionNotAllowed || status == errSecNotAvailable
+    }
+
+    /// Run a keychain call, retrying transient refusals with a short backoff.
+    /// Bounded at 3 attempts / ~120 ms so a caller on the main thread can't stall
+    /// perceptibly.
+    private func withRetry(attempts: Int = 3, _ operation: () -> OSStatus) -> OSStatus {
+        var status = operation()
+        var delay = 0.04
+        var remaining = attempts - 1
+        while remaining > 0, Self.isTransient(status) {
+            Thread.sleep(forTimeInterval: delay)
+            delay *= 2
+            status = operation()
+            remaining -= 1
+        }
+        return status
+    }
+
+    /// The username + password stored for `host`, or nil. Prefer
+    /// ``lookupCredential(forHost:)`` where a refusal must be distinguished
+    /// from an absent entry.
     public func credential(forHost host: String) -> (username: String, password: String)? {
+        guard case .found(let user, let password) = lookupCredential(forHost: host) else { return nil }
+        return (user, password)
+    }
+
+    public func lookupCredential(forHost host: String) -> CredentialLookup {
         var query = baseQuery(host: host)
         query[kSecReturnAttributes as String] = true
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let dict = item as? [String: Any],
-              let account = dict[kSecAttrAccount as String] as? String,
-              let data = dict[kSecValueData as String] as? Data,
-              let password = String(data: data, encoding: .utf8) else { return nil }
-        return (account, password)
+        let status = withRetry { SecItemCopyMatching(query as CFDictionary, &item) }
+        switch status {
+        case errSecSuccess:
+            guard let dict = item as? [String: Any],
+                  let account = dict[kSecAttrAccount as String] as? String,
+                  let data = dict[kSecValueData as String] as? Data,
+                  let password = String(data: data, encoding: .utf8) else {
+                return .failed(status: Int32(status))
+            }
+            return .found(username: account, password: password)
+        case errSecItemNotFound:
+            return .notFound
+        default:
+            return Self.isDenial(status) ? .denied(status: Int32(status))
+                                         : .failed(status: Int32(status))
+        }
     }
 
     /// Insert or replace the credential for `host`.
     @discardableResult
     public func setCredential(username: String, password: String, host: String) -> Bool {
-        removeCredential(host: host)
-        var attributes = baseQuery(host: host)
-        attributes[kSecAttrAccount as String] = username
-        attributes[kSecValueData as String] = Data(password.utf8)
-        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+        storeCredential(username: username, password: password, host: host).didStore
+    }
+
+    @discardableResult
+    public func storeCredential(username: String, password: String, host: String) -> CredentialWrite {
+        // Update-then-add, never delete-then-add. The old form deleted the
+        // existing item first, so a refused or failed `SecItemAdd` destroyed the
+        // stored password outright — a denied Keychain prompt silently wiped a
+        // working credential.
+        let base = baseQuery(host: host)
+        let changes: [String: Any] = [
+            kSecAttrAccount as String: username,
+            kSecValueData as String: Data(password.utf8),
+        ]
+        var status = withRetry { SecItemUpdate(base as CFDictionary, changes as CFDictionary) }
+        if status == errSecItemNotFound {
+            var attributes = base
+            attributes[kSecAttrAccount as String] = username
+            attributes[kSecValueData as String] = Data(password.utf8)
+            status = withRetry { SecItemAdd(attributes as CFDictionary, nil) }
+        }
+        switch status {
+        case errSecSuccess: return .stored
+        default:
+            return Self.isDenial(status) ? .denied(status: Int32(status))
+                                         : .failed(status: Int32(status))
+        }
     }
 
     @discardableResult
     public func removeCredential(host: String) -> Bool {
-        SecItemDelete(baseQuery(host: host) as CFDictionary) == errSecSuccess
+        // Keeps the documented "existed and was removed" semantics (so
+        // `errSecItemNotFound` is false, matching the Linux backend); the retry
+        // only covers a momentarily locked keychain.
+        withRetry { SecItemDelete(baseQuery(host: host) as CFDictionary) } == errSecSuccess
     }
 
     /// Every host we hold a credential for (no secrets), for the settings list.
@@ -195,6 +351,29 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
         Self.fileLock.lock(); defer { Self.fileLock.unlock() }
         guard case .ok(let dict) = loadState(), let e = dict[host] else { return nil }
         return (e.username, e.password)
+    }
+
+    /// Explicit override so a *present but unreadable* store reports `.failed`
+    /// rather than the default bridge's `.notFound` — otherwise a corrupt or
+    /// permission-denied file looks exactly like "no password saved", which is
+    /// the same misdiagnosis the macOS path guards against.
+    public func lookupCredential(forHost host: String) -> CredentialLookup {
+        Self.fileLock.lock(); defer { Self.fileLock.unlock() }
+        switch loadState() {
+        case .ok(let dict):
+            guard let e = dict[host] else { return .notFound }
+            return .found(username: e.username, password: e.password)
+        case .missing:
+            return .notFound
+        case .unreadable:
+            return .failed(status: -1)
+        }
+    }
+
+    @discardableResult
+    public func storeCredential(username: String, password: String, host: String) -> CredentialWrite {
+        setCredential(username: username, password: password, host: host)
+            ? .stored : .failed(status: -1)
     }
 
     @discardableResult

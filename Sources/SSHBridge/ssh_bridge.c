@@ -62,14 +62,17 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     if (getaddrinfo(host, portstr, &hints, &res) != 0 || !res) {
-        gsb_set(r, GSB_ERR_RESOLVE, "Could not resolve host");
+        char m[192];
+        snprintf(m, sizeof(m), "Could not resolve \"%s\"", host);
+        gsb_set(r, GSB_ERR_RESOLVE, m);
         return -1;
     }
 
     int sock = -1;
+    int last_errno = 0;   // why the final candidate address failed, for the message
     for (ai = res; ai; ai = ai->ai_next) {
         sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-        if (sock < 0) continue;
+        if (sock < 0) { last_errno = errno; continue; }
 
         int flags = fcntl(sock, F_GETFL, 0);
         fcntl(sock, F_SETFL, flags | O_NONBLOCK);
@@ -79,6 +82,7 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
             fcntl(sock, F_SETFL, flags);
             break;  // immediate connect
         }
+        last_errno = errno;
         if (errno == EINPROGRESS) {
             fd_set wset;
             FD_ZERO(&wset);
@@ -93,13 +97,31 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
                     fcntl(sock, F_SETFL, flags);
                     break;  // connected
                 }
+                last_errno = soerr;
+            } else {
+                last_errno = (rc == 0) ? ETIMEDOUT : errno;
             }
         }
         close(sock);
         sock = -1;
     }
     freeaddrinfo(res);
-    if (sock < 0) gsb_set(r, GSB_ERR_CONNECT, "Could not connect to host");
+    if (sock < 0) {
+        // Carry the OS reason through: "no route to host" on a LAN address is
+        // how macOS reports a missing Local Network permission, and it is
+        // otherwise indistinguishable from the server being down.
+        //
+        // strerror_r, not strerror: every operation runs on its own transfer
+        // thread, and strerror returns a shared static buffer.
+        char reason[96] = {0};
+        if (last_errno && strerror_r(last_errno, reason, sizeof(reason)) != 0) {
+            snprintf(reason, sizeof(reason), "errno %d", last_errno);
+        }
+        char m[192];
+        snprintf(m, sizeof(m), "Could not connect to %s:%s%s%s", host, portstr,
+                 reason[0] ? " — " : "", reason);
+        gsb_set(r, GSB_ERR_CONNECT, m);
+    }
     return sock;
 }
 
@@ -121,8 +143,16 @@ static LIBSSH2_SESSION *gsb_open(const GSBAuth *a, int *sock_out, GSBResult *r) 
     libssh2_session_set_timeout(session, 60000);
 
     if (libssh2_session_handshake(session, sock) != 0) {
+        // libssh2 reports most handshake faults as KEY_EXCHANGE_FAILURE ("Unable
+        // to exchange encryption keys") including the peer going away mid-
+        // handshake, so its text alone names a cause that usually isn't the real
+        // one. Keep it, but anchor it to the endpoint we were talking to.
         char *err = NULL; libssh2_session_last_error(session, &err, NULL, 0);
-        gsb_set(r, GSB_ERR_HANDSHAKE, err ? err : "SSH handshake failed");
+        char msg[256];
+        snprintf(msg, sizeof(msg), "SSH handshake with %s:%d failed%s%s",
+                 a->host, a->port > 0 ? a->port : 22,
+                 (err && *err) ? " — " : "", (err && *err) ? err : "");
+        gsb_set(r, GSB_ERR_HANDSHAKE, msg);
         libssh2_session_free(session); close(sock); return NULL;
     }
 
@@ -142,12 +172,39 @@ static LIBSSH2_SESSION *gsb_open(const GSBAuth *a, int *sock_out, GSBResult *r) 
         libssh2_session_free(session); close(sock); return NULL;
     }
 
-    // Auth: password first (if given), then optionally ssh-agent.
+    // Auth: password first (if given), then a private key file, then optionally
+    // ssh-agent. `tried` records what was actually attempted so a failure can say
+    // which credential the server refused instead of a bare "auth failed".
     int authed = 0;
+    char tried[128] = {0};
+    char detail[160] = {0};
+    #define GSB_NOTE_TRIED(what) do { \
+        if (tried[0]) strncat(tried, ", ", sizeof(tried) - strlen(tried) - 1); \
+        strncat(tried, (what), sizeof(tried) - strlen(tried) - 1); \
+    } while (0)
+
     if (a->password && a->password[0]) {
+        GSB_NOTE_TRIED("password");
         if (libssh2_userauth_password(session, a->username, a->password) == 0) authed = 1;
     }
+    if (!authed && a->private_key_path && a->private_key_path[0]) {
+        GSB_NOTE_TRIED("key");
+        // NULL public key => libssh2 derives it from the private key.
+        const char *pub  = (a->public_key_path && a->public_key_path[0]) ? a->public_key_path : NULL;
+        const char *pass = (a->key_passphrase  && a->key_passphrase[0])  ? a->key_passphrase  : NULL;
+        if (libssh2_userauth_publickey_fromfile_ex(session, a->username,
+                                                   (unsigned int)strlen(a->username),
+                                                   pub, a->private_key_path, pass) == 0) {
+            authed = 1;
+        } else {
+            // Distinguishes "wrong passphrase / unreadable key" from "server
+            // rejected this key", which are very different fixes for the user.
+            char *e = NULL; libssh2_session_last_error(session, &e, NULL, 0);
+            if (e && *e) snprintf(detail, sizeof(detail), "%s", e);
+        }
+    }
     if (!authed && a->use_agent) {
+        GSB_NOTE_TRIED("ssh-agent");
         LIBSSH2_AGENT *agent = libssh2_agent_init(session);
         if (agent && libssh2_agent_connect(agent) == 0 &&
             libssh2_agent_list_identities(agent) == 0) {
@@ -159,8 +216,19 @@ static LIBSSH2_SESSION *gsb_open(const GSBAuth *a, int *sock_out, GSBResult *r) 
         }
         if (agent) { libssh2_agent_disconnect(agent); libssh2_agent_free(agent); }
     }
+    #undef GSB_NOTE_TRIED
     if (!authed) {
-        gsb_set(r, GSB_ERR_AUTH, "Authentication failed");
+        char msg[256];
+        if (!tried[0]) {
+            snprintf(msg, sizeof(msg),
+                     "No credentials to try for \"%s\" — set a password, choose a "
+                     "private key, or enable the SSH agent", a->username);
+        } else {
+            snprintf(msg, sizeof(msg), "Server rejected the %s for \"%s\"%s%s",
+                     tried, a->username,
+                     detail[0] ? " — " : "", detail[0] ? detail : "");
+        }
+        gsb_set(r, GSB_ERR_AUTH, msg);
         libssh2_session_disconnect(session, "bye");
         libssh2_session_free(session); close(sock); return NULL;
     }

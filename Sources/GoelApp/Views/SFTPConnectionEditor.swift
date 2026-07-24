@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import GoelCore
 
 /// Add / edit an SFTP server. Passwords go straight to the Keychain; leaving
@@ -17,12 +18,27 @@ struct SFTPConnectionEditor: View {
     @State private var password: String
     @State private var initialPath: String
     @State private var useAgent: Bool
+    @State private var privateKeyPath: String
+    @State private var keyPassphrase: String
+    /// True once the user edits the passphrase field, so an untouched field means
+    /// "keep the stored passphrase" rather than "clear it".
+    @State private var keyPassphraseEdited = false
 
     @State private var testing = false
     @State private var testResult: TestResult?
     @State private var hostKeyReset = false
 
-    private enum TestResult { case success(String), failure(String) }
+    private enum TestResult {
+        case success(String)
+        /// `retry` is set when the failure is worth simply trying again — a
+        /// refused Keychain prompt, chiefly, where nothing about the entered
+        /// details is wrong and re-asking can succeed.
+        case failure(String, detail: String?, retry: RetryAction? = nil)
+    }
+
+    /// What a Retry button should re-run. Identified so SwiftUI can tell two
+    /// otherwise-identical failures apart.
+    private enum RetryAction { case test, save }
 
     init(existing: SFTPConnection?) {
         self.existing = existing
@@ -33,6 +49,8 @@ struct SFTPConnectionEditor: View {
         _password = State(initialValue: "")
         _initialPath = State(initialValue: existing?.initialPath ?? ".")
         _useAgent = State(initialValue: existing?.useAgent ?? false)
+        _privateKeyPath = State(initialValue: existing?.privateKeyPath ?? "")
+        _keyPassphrase = State(initialValue: "")
     }
 
     private var portNumber: Int {
@@ -70,6 +88,7 @@ struct SFTPConnectionEditor: View {
                         SecureField(existing == nil ? "password" : "•••••• (unchanged)", text: $password)
                             .textFieldStyle(.roundedBorder)
                     }
+                    privateKeyControls
                     field("Start folder", ".", $initialPath)
                     Toggle("Also try the SSH agent", isOn: $useAgent)
                         .font(.system(size: 12))
@@ -110,6 +129,73 @@ struct SFTPConnectionEditor: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
             content()
+        }
+    }
+
+    /// Private-key auth: pick a key file, and (only once one is chosen) supply
+    /// its passphrase. Auth order at connect time is password, then key, then
+    /// agent — each tried only when configured, so any combination works.
+    @ViewBuilder
+    private var privateKeyControls: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            labeled("Private key") {
+                HStack(spacing: 8) {
+                    TextField("None — password or agent only", text: $privateKeyPath)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        .font(.system(size: 11, design: .monospaced))
+                        .help("Path to an SSH private key, e.g. ~/.ssh/id_ed25519")
+                    Button("Choose…") { chooseKey() }
+                    if !privateKeyPath.isEmpty {
+                        Button {
+                            privateKeyPath = ""
+                            keyPassphrase = ""
+                            keyPassphraseEdited = true
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .help("Remove the private key")
+                    }
+                }
+            }
+            if !privateKeyPath.isEmpty {
+                labeled("Key passphrase") {
+                    SecureField(existing?.privateKeyPath == nil ? "leave blank if the key has none"
+                                                               : "•••••• (unchanged)",
+                                text: $keyPassphrase)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: keyPassphrase) { _, _ in keyPassphraseEdited = true }
+                }
+                if !FileManager.default.isReadableFile(atPath: expandedKeyPath) {
+                    Text("Goel can't read that file — check the path and its permissions.")
+                        .font(.system(size: 10)).foregroundStyle(Theme.red)
+                }
+            }
+        }
+    }
+
+    /// The key path with a leading `~` resolved, which is what the C bridge and
+    /// the readability check both need — libssh2 does no tilde expansion.
+    private var expandedKeyPath: String {
+        (privateKeyPath as NSString).expandingTildeInPath
+    }
+
+    private func chooseKey() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        // Keys live in ~/.ssh, which is hidden and full of extensionless files.
+        panel.showsHiddenFiles = true
+        panel.treatsFilePackagesAsDirectories = true
+        panel.message = "Choose an SSH private key (for example id_ed25519 — not the .pub file)."
+        panel.prompt = "Choose"
+        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".ssh")
+        if panel.runModal() == .OK, let url = panel.url {
+            privateKeyPath = url.path
+            testResult = nil
         }
     }
 
@@ -156,29 +242,74 @@ struct SFTPConnectionEditor: View {
             }
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-        case .failure(let message):
-            Label(message, systemImage: "xmark.octagon.fill")
-                .foregroundStyle(Theme.red).font(.system(size: 12))
-                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        case .failure(let message, let detail, let retry):
+            // Lead with what the user can act on; keep libssh2's own wording
+            // available but subordinate, since it names a cause ("Unable to
+            // exchange encryption keys") that is usually not the actual fault.
+            VStack(alignment: .leading, spacing: 6) {
+                Label(message, systemImage: "xmark.octagon.fill")
+                    .foregroundStyle(Theme.red).font(.system(size: 12))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let retry {
+                    Button {
+                        switch retry {
+                        case .test: runTest()
+                        case .save: save()
+                        }
+                    } label: {
+                        Label("Try again", systemImage: "arrow.clockwise")
+                            .font(.system(size: 11))
+                    }
+                    .disabled(testing)
+                }
+                if let detail {
+                    DisclosureGroup("Technical detail") {
+                        Text(detail)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
     // MARK: Actions
 
     private func draftConnection() -> SFTPConnection {
-        SFTPConnection(id: existing?.id ?? UUID(),
-                       name: name, host: host, port: portNumber,
-                       username: username,
-                       initialPath: initialPath.isEmpty ? "." : initialPath,
-                       useAgent: useAgent)
+        // Store the tilde-expanded path: libssh2 opens it with plain fopen(), so
+        // a literal "~/.ssh/id_ed25519" would never resolve.
+        let key = privateKeyPath.trimmingCharacters(in: .whitespaces)
+        return SFTPConnection(id: existing?.id ?? UUID(),
+                              name: name, host: host, port: portNumber,
+                              username: username,
+                              initialPath: initialPath.isEmpty ? "." : initialPath,
+                              useAgent: useAgent,
+                              privateKeyPath: key.isEmpty ? nil : (key as NSString).expandingTildeInPath)
     }
 
-    /// Password to test with: the just-typed one, or the stored one when editing.
+    /// Password to test with: the just-typed one, or nil to let
+    /// ``SFTPSession/resolve(for:password:keyPassphrase:credentialIdentity:store:hostKeys:)``
+    /// read the stored one.
+    ///
+    /// Deliberately does NOT pre-fetch from the Keychain: `resolve` already falls
+    /// back to the store, so fetching here too meant two Keychain reads — and
+    /// therefore two authorization prompts — for a single Test, with the first
+    /// one's refusal silently swallowed.
     private func testPassword() -> String? {
-        if !password.isEmpty { return password }
-        if let existing { return SFTPConnectionStore.shared.password(for: existing) }
-        return nil
+        password.isEmpty ? nil : password
+    }
+
+    /// Passphrase to test with: the just-typed one, else nil to fall back to the
+    /// store. Mirrors `testPassword()` so Test exercises what Save would persist.
+    private func testKeyPassphrase() -> String? {
+        keyPassphraseEdited ? keyPassphrase : nil
     }
 
     private func runTest() {
@@ -186,12 +317,31 @@ struct SFTPConnectionEditor: View {
         testResult = nil
         let connection = draftConnection()
         let pw = testPassword()
+        let phrase = testKeyPassphrase()
         Task {
             // Explicit `password:` so an empty field + agent-only auth doesn't
             // re-pull a stale Keychain secret mid-edit of the password field.
-            guard let client = SFTPSession.client(for: connection, password: pw) else {
+            //
+            // `credentialIdentity: existing` because secrets are keyed by
+            // user@host:port: if the user edited the host and didn't retype the
+            // password, the draft's key points at nothing and Test would fail
+            // authentication against a server whose password is on file.
+            let client: SFTPClient
+            switch SFTPSession.resolve(for: connection, password: pw, keyPassphrase: phrase,
+                                       credentialIdentity: existing) {
+            case .ready(let c):
+                client = c
+            case .incomplete:
                 testing = false
-                testResult = .failure("Enter a host and username first.")
+                testResult = .failure("Enter a host and username first.", detail: nil)
+                return
+            case .credentialsUnavailable(let lookup):
+                // Nothing reached the server, so this is not a bad password —
+                // offer the retry that can actually fix it.
+                let e = SFTPError.credentialsUnavailable(lookup, host: connection.host)
+                testing = false
+                testResult = .failure(e.message, detail: e.detail,
+                                      retry: lookup.isRetryable ? .test : nil)
                 return
             }
             do {
@@ -200,18 +350,34 @@ struct SFTPConnectionEditor: View {
                 testResult = .success(fingerprint)
             } catch let e as SFTPError {
                 testing = false
-                testResult = .failure(e.message)
+                testResult = .failure(e.message, detail: e.detail,
+                                      retry: e.kind == .credentialsUnavailable ? .test : nil)
             } catch {
                 testing = false
-                testResult = .failure(error.localizedDescription)
+                testResult = .failure(error.localizedDescription, detail: nil)
             }
         }
     }
 
     private func save() {
-        // nil password = keep the existing secret; a typed one replaces it.
+        // nil password / passphrase = keep the existing secret; a typed one replaces it.
         let isNew = existing == nil
-        vm.saveServer(draftConnection(), password: password.isEmpty ? nil : password)
+        let outcome = vm.saveServer(draftConnection(),
+                                    password: password.isEmpty ? nil : password,
+                                    keyPassphrase: keyPassphraseEdited ? keyPassphrase : nil)
+        // The server list itself always persists; only the Keychain half can be
+        // refused. Staying open with a Retry beats dismissing on a "save" that
+        // didn't store the secret — the next connection would fail for no
+        // visible reason.
+        guard outcome.didStore else {
+            testResult = .failure(
+                outcome.isRetryable
+                    ? "The server was saved, but Goel wasn't allowed to store the secret in your Keychain. Choose Allow when macOS asks, then try again."
+                    : "The server was saved, but its secret couldn't be written to your Keychain.",
+                detail: outcome.statusDetail,
+                retry: outcome.isRetryable ? .save : nil)
+            return
+        }
         vm.toastNow(isNew ? "Server added" : "Server saved")
         dismiss()
     }

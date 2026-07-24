@@ -30,9 +30,15 @@ extension AppViewModel {
     }
 
     /// Persist a server (password nil = keep the stored one) and refresh the list.
-    func saveServer(_ connection: SFTPConnection, password: String?) {
-        SFTPConnectionStore.shared.save(connection, password: password)
+    /// Returns what happened to the secrets so the editor can report a Keychain
+    /// refusal instead of dismissing on a save the user cannot rely on.
+    @discardableResult
+    func saveServer(_ connection: SFTPConnection, password: String?,
+                    keyPassphrase: String? = nil) -> CredentialWrite {
+        let outcome = SFTPConnectionStore.shared.save(connection, password: password,
+                                                      keyPassphrase: keyPassphrase)
         reloadServers()
+        return outcome
     }
 
     /// Delete a server and its stored password.
@@ -54,9 +60,41 @@ extension AppViewModel {
     }
 
     /// Build a usable client for a connection, resolving the Keychain password.
-    /// Returns nil only if the connection is malformed (no host).
+    /// Returns nil if the connection is malformed (no host) *or* the stored
+    /// secret couldn't be read. Silent by design — it is called during view
+    /// construction, where a toast would fire on every render. User-initiated
+    /// actions should use ``sftpClientReportingFailure(for:)`` instead.
     func sftpClient(for connection: SFTPConnection) -> SFTPClient? {
         SFTPSession.client(for: connection)
+    }
+
+    /// Resolve a client **once**, returning either it or the reason it failed.
+    ///
+    /// A single entry point on purpose: each resolution can raise its own
+    /// Keychain authorization prompt, so a "get the client, then ask why it
+    /// failed" pair would prompt the user twice for one action. Callers must not
+    /// combine `sftpClient(for:)` with a separate message lookup.
+    ///
+    /// A refused Keychain prompt previously surfaced as "This server is
+    /// misconfigured", sending the user to re-check settings that were fine.
+    func sftpClientOrFailure(for connection: SFTPConnection) -> (client: SFTPClient?, failure: String?) {
+        switch SFTPSession.resolve(for: connection) {
+        case .ready(let client):
+            return (client, nil)
+        case .incomplete:
+            return (nil, "This server is misconfigured.")
+        case .credentialsUnavailable(let lookup):
+            return (nil, lookup.isRetryable
+                ? "Goel wasn't allowed to read this server's saved secret from your Keychain. Try again and choose Allow."
+                : "This server's saved secret couldn't be read from your Keychain.")
+        }
+    }
+
+    /// Client for a user-initiated action, toasting the real reason on failure.
+    func sftpClientReportingFailure(for connection: SFTPConnection) -> SFTPClient? {
+        let (client, failure) = sftpClientOrFailure(for: connection)
+        if let failure { toastNow(failure) }
+        return client
     }
 
     /// The `sftp://user@host:port/path` locator for a remote file on a server,
