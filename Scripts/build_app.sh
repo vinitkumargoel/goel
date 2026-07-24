@@ -204,9 +204,53 @@ Scripts/bundle_dylibs.sh "$APP"
 # Scripts/Goel.entitlements. Editing load commands invalidates signatures, so the
 # ORDER matters: every nested Mach-O must be signed before the thing that contains it.
 ENTITLEMENTS="Scripts/Goel.entitlements"
+
+# Prefer a *stable* signing identity even for local builds.
+#
+# Ad-hoc signing (`codesign -s -`) yields a designated requirement made of
+# nothing but the code hash:
+#
+#     designated => cdhash H"9c4e1e6f…"
+#
+# That hash changes on every rebuild, and macOS keys its privacy grants to the
+# designated requirement — so each rebuild is a brand-new app to TCC and
+# silently loses whatever the user already approved. The one that bites here is
+# Local Network: without it, connecting to a LAN server fails at the socket with
+# EHOSTUNREACH, which surfaces as a connection error against a server that is
+# switched on and perfectly reachable. Re-approving after every build is not a
+# thing anyone should have to know to do.
+#
+# Signing with a real certificate anchors the requirement to that certificate
+# instead, so approvals persist across rebuilds. Any identity works for local
+# use; an "Apple Development" one is what most Macs with Xcode already have.
+# Set CODESIGN_IDENTITY=- to force the old ad-hoc behaviour.
+if [ -z "${CODESIGN_IDENTITY:-}" ]; then
+  AUTO_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+                  | sed -n 's/^[[:space:]]*[0-9]*)[[:space:]]*[0-9A-F]*[[:space:]]*"\(.*\)"$/\1/p' \
+                  | head -1)
+  if [ -n "$AUTO_IDENTITY" ]; then
+    CODESIGN_IDENTITY="$AUTO_IDENTITY"
+    echo "==> Auto-selected signing identity (keeps macOS privacy approvals across rebuilds):"
+    echo "    $CODESIGN_IDENTITY"
+    echo "    Override with CODESIGN_IDENTITY=…, or CODESIGN_IDENTITY=- for ad-hoc."
+  else
+    echo "==> No code-signing identity found — falling back to ad-hoc."
+    echo "    macOS will treat each rebuild as a new app and drop its Local"
+    echo "    Network / privacy approvals. Create a signing certificate to fix."
+  fi
+fi
+[ "${CODESIGN_IDENTITY:-}" = "-" ] && CODESIGN_IDENTITY=""
+
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then
   echo "==> Codesigning with '$CODESIGN_IDENTITY' (hardened runtime, inside-out)"
-  sign() { codesign --force --options runtime --timestamp -s "$CODESIGN_IDENTITY" "$@"; }
+  # A secure timestamp is required for notarized distribution but needs to reach
+  # Apple's timestamp server; a local development build neither needs it nor
+  # should fail when offline.
+  case "$CODESIGN_IDENTITY" in
+    "Developer ID"*) TIMESTAMP_FLAG="--timestamp" ;;
+    *)               TIMESTAMP_FLAG="--timestamp=none" ;;
+  esac
+  sign() { codesign --force --options runtime "$TIMESTAMP_FLAG" -s "$CODESIGN_IDENTITY" "$@"; }
 
   # 1. Vendored native dylibs (leaves — no entitlements needed).
   for f in "$APP/Contents/Frameworks/"*.dylib; do [ -e "$f" ] && sign "$f"; done
