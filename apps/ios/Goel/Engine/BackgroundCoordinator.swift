@@ -227,8 +227,13 @@ public final class BackgroundCoordinator: NSObject, URLSessionDownloadDelegate, 
             for task in tasks where task.taskDescription == key {
                 task.cancel()
             }
+            // Remove the manifest on the delegate queue, after any already-queued
+            // `didFinishDownloadingTo` for this id has run (the queue is serial,
+            // `maxConcurrentOperationCount == 1`). Removing it synchronously on the caller's
+            // thread raced an in-flight completion, which then found no manifest and silently
+            // dropped a finished background transfer.
+            store.removeManifest(for: downloadID)
         }
-        store.removeManifest(for: downloadID)
     }
 
     // MARK: - URLSessionDownloadDelegate

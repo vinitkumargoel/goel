@@ -249,13 +249,18 @@ final class HTTPChunkFeed: NSObject, URLSessionDataDelegate, Sendable {
     /// Called by the engine once bytes have actually reached the file, releasing backpressure.
     func consumed(_ count: Int) {
         guard count > 0 else { return }
-        let shouldResume = state.withLock { pressure -> Bool in
+        // The `suspend()`/`resume()` call happens INSIDE the lock, alongside the flag it mirrors.
+        // `didReceive` runs on the delegate queue and `consumed` on the engine's actor executor;
+        // deciding under the lock but calling outside it let a `resume()` (a no-op on a not-yet-
+        // suspended task) overtake the `suspend()` it was meant to undo, stranding the connection
+        // suspended until the 60 s timeout. `suspend`/`resume` never re-enter this lock, so this is
+        // safe.
+        state.withLock { pressure in
             pressure.unwritten = max(0, pressure.unwritten - count)
-            guard pressure.isSuspended, pressure.unwritten <= highWater / 2 else { return false }
+            guard pressure.isSuspended, pressure.unwritten <= highWater / 2 else { return }
             pressure.isSuspended = false
-            return true
+            task.resume()
         }
-        if shouldResume { task.resume() }
     }
 
     func cancel() {
@@ -279,13 +284,13 @@ final class HTTPChunkFeed: NSObject, URLSessionDataDelegate, Sendable {
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         continuation.yield(.chunk(data))
-        let shouldSuspend = state.withLock { pressure -> Bool in
+        // Suspend inside the lock — see `consumed`. `dataTask` is the same task as `self.task`.
+        state.withLock { pressure in
             pressure.unwritten += data.count
-            guard !pressure.isSuspended, pressure.unwritten >= highWater else { return false }
+            guard !pressure.isSuspended, pressure.unwritten >= highWater else { return }
             pressure.isSuspended = true
-            return true
+            dataTask.suspend()
         }
-        if shouldSuspend { dataTask.suspend() }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
@@ -389,6 +394,10 @@ public actor URLSessionTransferEngine: TransferEngine {
         var isCancelled = false
         var failure: TransferError?
         var handedToBackground = false
+        /// Display-only high-water mark reported by the background `URLSession` task. Those bytes
+        /// live in the task's private temp file, not our `.part`, so they must never reach
+        /// `completed`; `emitProgress` shows this while `handedToBackground` and ignores it after.
+        var backgroundReceived: Int64?
         var lastEmit: ContinuousClock.Instant
         var lastCheckpoint: ContinuousClock.Instant
         var bytesSinceEmit: Int64 = 0
@@ -499,11 +508,18 @@ public actor URLSessionTransferEngine: TransferEngine {
     private func park(_ id: UUID, status: Download.Status) {
         guard var job = jobs[id] else { return }
         let runner = job.runner
+        let wasHandedOff = job.handedToBackground
         job.runner = nil
         job.isPaused = true
+        // A parked job is no longer running anywhere; if it had been handed to the background
+        // session, stop that too. Otherwise a Wi-Fi-only park keeps the background task pulling
+        // bytes over cellular, and the next `enterForeground` re-adopts and un-pauses it.
+        job.handedToBackground = false
+        job.backgroundReceived = nil
         job.download.status = status
         jobs[id] = job
         runner?.cancel()
+        if wasHandedOff { coordinator?.cancelBackgroundTransfer(id) }
         writeCheckpoint(id)
         continuation.yield(.statusChanged(id: id, status: status))
     }
@@ -774,6 +790,10 @@ public actor URLSessionTransferEngine: TransferEngine {
         let runner = job.runner
         job.runner = nil
         job.isPaused = true
+        // Clear the handoff flag, or the next `enterForeground` re-adopts and silently resumes a
+        // download the user paused from the Live Activity while backgrounded.
+        job.handedToBackground = false
+        job.backgroundReceived = nil
         job.download.status = .paused
         jobs[id] = job
         runner?.cancel()
@@ -1217,7 +1237,12 @@ public actor URLSessionTransferEngine: TransferEngine {
         job.lastEmit = now
         job.bytesSinceEmit = 0
         job.download.segments = segments
-        job.download.receivedBytes = Self.totalReceived(job.completed, job.active)
+        let onDisk = Self.totalReceived(job.completed, job.active)
+        // While handed off, the background task's optimistic watermark is the only live figure; it
+        // is display-only and deliberately not part of `completed`.
+        job.download.receivedBytes = job.handedToBackground
+            ? max(onDisk, job.backgroundReceived ?? 0)
+            : onDisk
         jobs[id] = job
 
         continuation.yield(
@@ -1493,10 +1518,10 @@ public actor URLSessionTransferEngine: TransferEngine {
     /// Re-reads the checkpoint (which the coordinator extends on the background task's behalf,
     /// possibly in a different process launch), re-validates, and restarts segmentation.
     private func adoptFromDisk(_ id: UUID) async {
-        guard var job = jobs[id] else { return }
+        guard let url = jobs[id]?.download.url else { return }
         let fresh: ProbeResult?
         do {
-            fresh = try await probe(job.download.url)
+            fresh = try await probe(url)
         } catch {
             // A failed re-probe is not evidence the file changed — it is evidence the network is
             // down. Keep the bytes, keep the job, and let the ordinary retry path deal with it.
@@ -1504,6 +1529,11 @@ public actor URLSessionTransferEngine: TransferEngine {
             fresh = nil
         }
 
+        // `probe` suspended this actor. A background `.finished` may have run `finishJob` in the
+        // meantime — renaming the file, emitting `.completed`, and clearing `jobs[id]`. Re-read
+        // rather than write back the pre-await snapshot, which would resurrect an already-finalized
+        // download and reopen its file handle against the moved inode.
+        guard var job = jobs[id] else { return }
         if let fresh {
             guard HandoffState.canAdoptBackgroundResult(job.download, validator: fresh.validator) else {
                 failJob(id, error: .remoteFileChanged)
@@ -1528,8 +1558,14 @@ public actor URLSessionTransferEngine: TransferEngine {
         switch event {
         case let .progress(id, contiguousBytes):
             guard var job = jobs[id] else { return }
-            guard let total = job.download.totalBytes, contiguousBytes > 0 else { return }
-            job.completed = HandoffState.merged(job.completed + [0...min(contiguousBytes, total) - 1])
+            guard contiguousBytes > 0 else { return }
+            // These bytes are in the background task's private temp file, not our `.part` yet (see
+            // `BackgroundCoordinator.didWriteData`, which says so and reports them "never persisted
+            // as progress"). Folding them into `completed` — the field `writeCheckpoint` banks and
+            // resume's gap math trusts — would let a later resume skip a hole the background attempt
+            // never filled, finalizing a right-length / wrong-bytes file. Hold them as a display-only
+            // watermark instead.
+            job.backgroundReceived = job.download.totalBytes.map { min(contiguousBytes, $0) } ?? contiguousBytes
             jobs[id] = job
             emitProgress(id, force: true)
 

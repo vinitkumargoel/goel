@@ -57,6 +57,10 @@ public final class ActivityController {
     public static let maxActivityLifetime: TimeInterval = 8 * 60 * 60
     /// How long a finished activity lingers on the Lock Screen before the system clears it.
     public static let dismissalDelay: TimeInterval = 8
+    /// After `Activity.request()` is rejected (system activity cap, per-app toggle off), how long
+    /// to wait before trying again. Without it a rejected request would be re-issued on every
+    /// progress tick (~10 Hz), spamming ActivityKit and the log for the life of the download.
+    public static let requestRetryCooldown: TimeInterval = 30
 
     // MARK: - State
 
@@ -65,13 +69,18 @@ public final class ActivityController {
     private var lastState: DownloadActivityAttributes.ContentState?
     private var startedAt: Date?
     private var lastPublish: Date = .distantPast
+    /// When the last `Activity.request()` was rejected, or nil if the last attempt succeeded.
+    /// Gates ``restart(attributes:state:)`` so a failing request backs off instead of storming.
+    private var lastRequestFailure: Date?
     private var trailingUpdate: Task<Void, Never>?
     private var stateObserver: Task<Void, Never>?
 
-    /// Set once the activity has been ended because it hit ``maxActivityLifetime``. From then on
-    /// this run of the queue finishes with a local notification rather than a new activity —
-    /// restarting would just burn another eight hours and confuse the Lock Screen.
-    private var didExpire = false
+    /// The downloads whose activity was ended because it hit ``maxActivityLifetime``. Each of
+    /// these finishes with a local notification rather than a new activity — restarting would just
+    /// burn another eight hours and confuse the Lock Screen. Tracked per-download, not as a single
+    /// latch, so a genuinely new transfer added after an expiry still gets its own activity instead
+    /// of being suppressed until the whole queue drains.
+    private var expiredIDs: Set<UUID> = []
 
     private let log = Logger(subsystem: GoelIdentifiers.logSubsystem, category: "LiveActivity")
 
@@ -140,16 +149,20 @@ public final class ActivityController {
             return
         }
 
-        // Expired for this run: no activity, no restart, notification on completion instead.
-        guard !didExpire else { return }
+        // A download that already hit the lifetime ceiling is handed off to a notification and must
+        // not spawn a fresh activity (that would just burn another eight hours). Suppress only
+        // *those* downloads — a genuinely new transfer added afterward still deserves its own
+        // activity, so we publish for whatever is left once the expired ones are removed.
+        let fresh = tracked.filter { !expiredIDs.contains($0.id) }
+        guard !fresh.isEmpty else { return }
 
         if let startedAt, Date().timeIntervalSince(startedAt) >= Self.maxActivityLifetime {
-            expire()
+            expire(fresh)
             return
         }
 
-        let attributes = makeAttributes(for: tracked)
-        let state = makeState(for: tracked)
+        let attributes = makeAttributes(for: fresh)
+        let state = makeState(for: fresh)
 
         // Attributes are immutable for the life of an activity, so crossing the
         // single ⇄ aggregate boundary (or switching which file is the only one left) means
@@ -160,6 +173,13 @@ public final class ActivityController {
               currentAttributes?.downloadID == attributes.downloadID,
               currentAttributes?.kindToken == attributes.kindToken
         else {
+            // Back off after a rejected request (`lastRequestFailure` is cleared on success, so
+            // this only bites while there is no activity and requests keep failing). Otherwise a
+            // request the system refuses would be retried on every progress tick.
+            if let lastRequestFailure,
+               Date().timeIntervalSince(lastRequestFailure) < Self.requestRetryCooldown {
+                return
+            }
             restart(attributes: attributes, state: state)
             return
         }
@@ -219,11 +239,14 @@ public final class ActivityController {
             lastState = state
             startedAt = Date()
             lastPublish = Date()
+            lastRequestFailure = nil
             observe(started)
             log.info("Live Activity started for \(attributes.downloadID, privacy: .public)")
         } catch {
             // Almost always `NSSupportsLiveActivities` missing, the per-app toggle being off, or
-            // the system activity cap. None of them are worth interrupting a download over.
+            // the system activity cap. None of them are worth interrupting a download over — and
+            // the timestamp makes the next attempt wait out `requestRetryCooldown`.
+            lastRequestFailure = Date()
             log.warning("Live Activity request failed: \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -250,11 +273,11 @@ public final class ActivityController {
         stateObserver?.cancel()
         stateObserver = nil
 
-        if didExpire {
-            // The activity is long gone; the notification is the only thing left that can tell
-            // the user their four-hour download finished.
+        if !expiredIDs.isEmpty {
+            // Those activities are long gone; the notification is the only thing left that can tell
+            // the user their multi-hour downloads finished.
             postCompletionNotification(for: downloads)
-            didExpire = false
+            expiredIDs.removeAll()
         }
 
         guard let activity else {
@@ -273,9 +296,11 @@ public final class ActivityController {
     }
 
     /// Hit the ActivityKit lifetime ceiling. End cleanly rather than being frozen by the system.
-    private func expire() {
+    /// The downloads on the expiring activity are remembered so they hand off to a notification
+    /// instead of restarting; anything not in that set can still open a fresh activity.
+    private func expire(_ expiring: [Download]) {
         log.notice("Live Activity reached its \(Int(Self.maxActivityLifetime / 3600)) h ceiling; ending and falling back to a notification.")
-        didExpire = true
+        expiredIDs.formUnion(expiring.map(\.id))
         if let activity, let lastState {
             endActivity(activity, ActivityContent(state: lastState, staleDate: nil), .immediate)
         }
@@ -353,6 +378,28 @@ public final class ActivityController {
 
     private func completedState(for downloads: [Download]) -> DownloadActivityAttributes.ContentState {
         let finished = downloads.filter { $0.status == .completed }
+
+        // Nothing in this finishing batch actually completed — it drained by failing. Painting a
+        // full/100% "0 downloads" bar would be a lie for up to `dismissalDelay`, so show the real
+        // (partial) progress of what failed: an unfinished bar reads as "did not finish", not done.
+        guard !finished.isEmpty else {
+            let failed = downloads.filter { $0.status == .failed }
+            let received = failed.reduce(Int64(0)) { $0 + $1.receivedBytes }
+            let total = failed.reduce(Int64(0)) { $0 + ($1.totalBytes ?? $1.receivedBytes) }
+            return DownloadActivityAttributes.ContentState(
+                filename: failed.count == 1 ? (failed.first?.filename ?? "") : "",
+                receivedBytes: received,
+                totalBytes: total > 0 ? total : nil,
+                fraction: total > 0 ? Double(received) / Double(total) : 0,
+                speed: 0,
+                eta: nil,
+                isAggregate: failed.count != 1,
+                activeCount: failed.count,
+                isPaused: false,
+                updatedAt: Date()
+            )
+        }
+
         let bytes = finished.reduce(Int64(0)) { $0 + $1.receivedBytes }
         return DownloadActivityAttributes.ContentState(
             filename: finished.count == 1 ? (finished.first?.filename ?? "") : "",

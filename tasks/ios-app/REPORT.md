@@ -88,6 +88,9 @@ kill %1
 | Live Activity | `final/16-live-activity.png` | yes, frame4 | Lock Screen live, aggregate, and stale. |
 | Home widgets | `final/17-home-widgets.png` | yes, frame6 | `4 active · 21.4 GB left`, FASTEST, and the three-row queue. |
 | Files app | `final/18-files-app.png` | no | Files opens on an empty "Recents". Browsing to `On My iPhone › Goel°` needs taps. |
+| Appearance picker | `final/19-settings-appearance.png` | n/a (added) | Not in the dark-only mockup. Segmented `System / Light / Dark` in Settings; `System` selected by default. |
+| Light override — Queue | `final/20-queue-light-override.png` | n/a (added) | App pinned to Light while the **device is Dark** — the in-app choice wins. Ember, sftp-blue and the verified-green chip all hold on the light ground. |
+| Light override — Settings | `final/21-settings-appearance-light.png` | n/a (added) | Same override, showing the picker on `Light` with the whole screen rendered light over a dark device. |
 
 ## Works
 
@@ -103,6 +106,7 @@ kill %1
 | Command-file IPC for widget-process intents | `CommandFileTests` (24-thread concurrent append, idempotency ledger, staleness) |
 | Cellular byte accounting | `SettingsPolicyTests` for the ledger; producer wired into `URLSessionTransferEngine.emitProgress` |
 | Dark and light, Dynamic Type XXL | `final/09`–`final/13` |
+| Light theme + in-app appearance override | `final/{19,20,21}` — every token was already appearance-adaptive; this adds a `System/Light/Dark` picker and applies it at the root over the device setting |
 | Whole test suite | `215 tests in 14 suites passed` |
 
 ## Stubbed
@@ -137,6 +141,10 @@ kill %1
   and throughput chart are why anyone opens it.
 - **`Maximum connections` is a stepper.** The mockup prints `6`. A number you cannot change is not
   a setting.
+- **Settings has an Appearance picker the mockup does not.** The design reference is dark-only, but
+  every colour token carried a light value from the start (`SharedTheme`), so this exposes the
+  choice rather than inventing one: a `System / Light / Dark` segmented control that applies at the
+  root via `preferredColorScheme`. `System` defers to the device; Light/Dark pin the app regardless.
 - **Settings' Desktop row is honest.** `Paired with · Nothing yet` + `Coming in 1.2`, not the
   mockup's `vinit's Mac · Linked`. There is no pairing to show.
 - **The Library subtitle is coarser than the queue's.** `412.3 MB · Verified · Today` on the shelf,

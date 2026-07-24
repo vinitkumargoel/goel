@@ -166,6 +166,9 @@ public final class DownloadStore {
         return SharedSnapshot(
             activeCount: downloads.filter { $0.status.isActive }.count,
             totalRemainingBytes: live.reduce(0) { $0 + $1.remainingBytes },
+            // Full-queue throughput, so the widget's ETA denominator matches its full-queue
+            // remaining-bytes numerator rather than only the top-3 rows the snapshot carries.
+            totalSpeed: live.reduce(0) { $0 + max(0, $1.currentSpeed) },
             aggregateFraction: aggregate.isFinite ? min(max(aggregate, 0), 1) : 0,
             updatedAt: Date(),
             top: Array(top)

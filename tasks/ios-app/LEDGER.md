@@ -70,6 +70,33 @@ Regenerate with the recipe in `Scripts/ios/mockup-frames.sh`.
         off `.caption2`. Default size is byte-identical; re-shot to confirm.
 [06:00] Final state: `** BUILD SUCCEEDED **`, 215 tests in 14 suites passed,
         `02/03/05/13` re-shot on the fixed build. REPORT.md written.
+[--:--] User asked for a light theme. The tokens were already appearance-adaptive, so this is a
+        user-facing choice, not a repaint: added an `Appearance` (System/Light/Dark) preference
+        on `AppModel`, applied it at the root with `.preferredColorScheme`, and added a segmented
+        picker to Settings. A `goel://settings?at=` scroll anchor + a `-uiTestingAppearance`
+        launch arg (ephemeral, never persisted) made the picker and the override screenshot-able.
+        Proven with `final/{19,20,21}`: app pinned Light while the device is Dark, override wins.
+        Build green, 215 tests still pass.
+[--:--] Ran an adversarial multi-agent review of the whole branch (find → refute-by-default verify).
+        15 findings survived: 2 HIGH, 7 MEDIUM, 6 LOW. Fixed ALL 15. Highlights:
+        · HIGH resume-corruption: background progress was folded into the on-disk checkpoint, so a
+          paused/failed handoff could later "complete" a file with a hole of zeros. Split a
+          `backgroundReceived` high-water mark out of `job.completed`; `adoptFromDisk` now re-reads
+          `jobs[id]` AFTER its await so it can't resurrect an already-finalized download.
+        · MED handoff: pausing/parking a handed-off job now clears `handedToBackground` (+ cancels
+          the bg task), so a later foreground pass can't silently un-pause it; manifest deletion moved
+          inside the serial delegate completion so a same-instant `didFinishDownloadingTo` isn't dropped.
+        · MED IPC: the widget Resume button now works for `.waitingForWiFi` (was a dead no-op).
+        · MED Live Activity: per-download expiry (not a global latch), so a new download after an 8h
+          expiry still gets its own activity.
+        · MED: `retry()` surfaces engine errors; Add-sheet no longer freezes the filename when the
+          probe fills Name while the field merely has focus; backpressure suspend/resume moved inside
+          the lock (was strandable on a race).
+        · LOW: Activity.request() backoff; failed-only activity no longer shows 100%/"0 downloads";
+          widget ETA uses full-queue speed; thumbnail cache is real LRU; Active-tab grace expires on a
+          TimelineView clock; save-picker file walk moved off the main actor.
+        Build green (`** BUILD SUCCEEDED **`), `** TEST SUCCEEDED **` — 215 tests in 14 suites pass.
+        All uncommitted (commit only when asked).
 ```
 
 ## Decisions I made without asking

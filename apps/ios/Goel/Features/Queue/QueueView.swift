@@ -19,6 +19,9 @@ public struct QueueView: View {
         static let filterTopInset: CGFloat = 4
         /// `.seg { margin-bottom: 14px }`.
         static let filterBottomInset: CGFloat = 14
+        /// How often the Active tab re-evaluates its wall-clock grace filter. The grace is ten
+        /// minutes, so a coarse tick is plenty; `TimelineView` pauses it while the tab is hidden.
+        static let gracePollInterval: TimeInterval = 30
     }
 
     /// The mockup's three-way segmented control.
@@ -144,13 +147,23 @@ public struct QueueView: View {
 
     // MARK: - List
 
-    private var visible: [Download] {
-        app.store.downloads.filter { filter.matches($0) }
+    private func visible(now: Date) -> [Download] {
+        app.store.downloads.filter { filter.matches($0, now: now) }
     }
 
     @ViewBuilder
     private var queue: some View {
-        let rows = visible
+        // The Active filter ages a completed download out on a ten-minute wall-clock grace, but
+        // nothing mutates the store when that timer merely elapses — so without a clock the row
+        // would linger in Active until an unrelated change forced a re-render. TimelineView
+        // re-evaluates the filter on a periodic tick (and pauses while this tab is off-screen).
+        TimelineView(.periodic(from: .now, by: Local.gracePollInterval)) { context in
+            queueList(rows: visible(now: context.date))
+        }
+    }
+
+    @ViewBuilder
+    private func queueList(rows: [Download]) -> some View {
         if rows.isEmpty {
             emptyState
         } else {

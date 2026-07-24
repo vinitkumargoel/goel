@@ -26,6 +26,11 @@ public struct AddSheet: View {
     @State private var name = ""
     /// Once the user touches Name, a late probe result must not overwrite their typing.
     @State private var nameWasEdited = false
+    /// True while the code itself is writing `name` (probe result, provisional URL-derived name).
+    /// The `name` change observer consumes and clears it so a programmatic write is not mistaken
+    /// for a user keystroke — `focus == .name` alone can't tell them apart, because the Link
+    /// field's `.onSubmit` parks focus on Name before the user types anything.
+    @State private var isSettingNameProgrammatically = false
     @State private var saveDirectory = AddSheet.rootFolder
     @State private var wifiOnly = true
     @State private var startPaused = false
@@ -152,6 +157,12 @@ public struct AddSheet: View {
                 .focused($focus, equals: .name)
                 .onSubmit { focus = nil }
                 .onChange(of: name) { _, _ in
+                    // A write the code made (probe result / provisional name) is not an edit,
+                    // even though it can land while focus is already on this field.
+                    if isSettingNameProgrammatically {
+                        isSettingNameProgrammatically = false
+                        return
+                    }
                     // Only a deliberate edit counts; the probe filling it in does not.
                     if focus == .name { nameWasEdited = true }
                 }
@@ -159,7 +170,8 @@ public struct AddSheet: View {
         }
         // A probe that arrives after the user started typing must lose.
         .onChange(of: probeFilename) { _, resolved in
-            guard let resolved, !resolved.isEmpty, !nameWasEdited else { return }
+            guard let resolved, !resolved.isEmpty, !nameWasEdited, resolved != name else { return }
+            isSettingNameProgrammatically = true
             name = resolved
         }
     }
@@ -383,7 +395,10 @@ public struct AddSheet: View {
         guard !nameWasEdited else { return }
         // A provisional name from the URL, so the row is never blank while the probe runs. The
         // server's `Content-Disposition` filename replaces it if one arrives.
-        name = LinkValidation.check(new).url.map(Self.filename(from:)) ?? ""
+        let provisional = LinkValidation.check(new).url.map(Self.filename(from:)) ?? ""
+        guard provisional != name else { return }
+        isSettingNameProgrammatically = true
+        name = provisional
     }
 
     private func add() {
@@ -511,7 +526,7 @@ struct SaveDestinationPicker: View {
         }
         .navigationTitle("Save to")
         .navigationBarTitleDisplayMode(.inline)
-        .task { reload() }
+        .task { await reload() }
         .alert("New Folder", isPresented: $isNaming) {
             TextField("Name", text: $newFolderName)
                 .textInputAutocapitalization(.words)
@@ -528,24 +543,31 @@ struct SaveDestinationPicker: View {
         URL.documentsDirectory.appending(path: AddSheet.rootFolder, directoryHint: .isDirectory)
     }
 
-    private func reload() {
-        let manager = FileManager.default
+    /// Off the main actor: this is the same `Goel°` root every non-foldered download lands in, so
+    /// with many files a synchronous `contentsOfDirectory` + per-child `resourceValues` walk drops
+    /// frames the moment the picker opens — the same reason `FolderEntry.listing` is detached.
+    private func reload() async {
         let root = Self.root
-        // A first launch has no container yet; making it here is what lets the Files app show it.
-        try? manager.createDirectory(at: root, withIntermediateDirectories: true)
+        let rootFolder = AddSheet.rootFolder
+        let found = await Task.detached(priority: .userInitiated) { () -> [String] in
+            let manager = FileManager.default
+            // A first launch has no container yet; making it here is what lets the Files app show it.
+            try? manager.createDirectory(at: root, withIntermediateDirectories: true)
 
-        var found = [AddSheet.rootFolder]
-        if let children = try? manager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) {
-            let names = children
-                .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-                .map(\.lastPathComponent)
-                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-            found.append(contentsOf: names.map { "\(AddSheet.rootFolder)/\($0)" })
-        }
+            var found = [rootFolder]
+            if let children = try? manager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) {
+                let names = children
+                    .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+                    .map(\.lastPathComponent)
+                    .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+                found.append(contentsOf: names.map { "\(rootFolder)/\($0)" })
+            }
+            return found
+        }.value
         folders = found
     }
 
@@ -556,13 +578,17 @@ struct SaveDestinationPicker: View {
         guard !name.isEmpty else { return }
 
         let url = Self.root.appending(path: name, directoryHint: .isDirectory)
-        do {
-            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            failure = nil
-            reload()
-            selection = "\(AddSheet.rootFolder)/\(name)"
-        } catch {
-            failure = "That folder could not be created: \(error.localizedDescription)"
+        Task {
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                }.value
+                failure = nil
+                await reload()
+                selection = "\(AddSheet.rootFolder)/\(name)"
+            } catch {
+                failure = "That folder could not be created: \(error.localizedDescription)"
+            }
         }
     }
 }

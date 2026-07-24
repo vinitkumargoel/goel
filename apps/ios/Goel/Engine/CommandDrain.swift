@@ -68,8 +68,19 @@ public enum CommandDrain {
 
         case .resume:
             guard let id = UUID(uuidString: command.id), let d = app.store[id] else { return }
-            guard d.status == .paused || d.status == .failed else { return }
-            app.togglePause(id)
+            switch d.status {
+            case .paused, .failed:
+                app.togglePause(id)
+            case .waitingForWiFi:
+                // The widget and Live Activity present `.waitingForWiFi` as paused (`isPaused`,
+                // DownloadStore.snapshot/ActivityController) and offer a Resume button, but
+                // `togglePause` has no resume-from-waiting path — it treats the state as active and
+                // would re-pause it. Mirror the in-app queue, which routes this state through
+                // `retry`, so the button is not a silent no-op.
+                app.retry(id)
+            default:
+                return
+            }
 
         case .cancel:
             guard let id = UUID(uuidString: command.id), app.store[id] != nil else { return }

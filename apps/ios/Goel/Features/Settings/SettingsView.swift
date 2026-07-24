@@ -186,16 +186,28 @@ public struct SettingsView: View {
 
     @ScaledMetric(relativeTo: .caption2) private var pillSize: CGFloat = Theme.Typo.Size.sectionLabel
 
-    public init() {}
+    /// A section id to scroll to on appear — set only by `goel://settings?at=…`. `simctl` cannot
+    /// scroll, so this is how a screenshot reaches a section below the fold.
+    private let scrollTo: String?
+
+    public init(scrollTo: String? = nil) { self.scrollTo = scrollTo }
 
     public var body: some View {
         NavigationStack {
-            Form {
-                transfersSection
-                cellularSection
-                filesSection
-                desktopSection
-                aboutSection
+            ScrollViewReader { proxy in
+                Form {
+                    transfersSection
+                    cellularSection
+                    filesSection
+                    appearanceSection
+                    desktopSection
+                    aboutSection
+                }
+                .onAppear {
+                    guard let scrollTo else { return }
+                    // Form finishes laying its rows a beat after appear; hop one runloop tick.
+                    Task { @MainActor in proxy.scrollTo(scrollTo, anchor: .top) }
+                }
             }
             .navigationTitle("Settings")
             .confirmationDialog(
@@ -301,6 +313,27 @@ public struct SettingsView: View {
         }
     }
 
+    // MARK: - Appearance
+
+    /// Not in the mockup — the design reference is dark-only — but the colour tokens have carried
+    /// light values all along (`SharedTheme`), so this exposes the choice rather than adding one.
+    /// A segmented control is what iOS's own Settings › Display uses for exactly this.
+    private var appearanceSection: some View {
+        Section {
+            Picker("Theme", selection: appearance) {
+                ForEach(Appearance.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+        } header: {
+            Text("Appearance").textCase(.uppercase)
+        } footer: {
+            Text("System follows your iPhone's Light or Dark setting. Pick Light or Dark to hold Goel° there whatever the device does.")
+        }
+        .id("appearance")
+    }
+
     // MARK: - Desktop
 
     /// T12 is explicit that this is a placeholder for the V1.2 continuity feature. It keeps the
@@ -399,6 +432,10 @@ public struct SettingsView: View {
 
     private var verifyChecksums: Binding<Bool> {
         Binding(get: { app.tuning.verifyChecksums }, set: { app.tuning.verifyChecksums = $0 })
+    }
+
+    private var appearance: Binding<Appearance> {
+        Binding(get: { app.appearance }, set: { app.appearance = $0 })
     }
 
     // MARK: - Storage

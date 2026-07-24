@@ -23,11 +23,15 @@ public struct RootView: View {
                 .tabItem { Label("Remote", systemImage: "desktopcomputer") }
                 .tag(AppModel.Tab.remote)
 
-            SettingsView()
+            SettingsView(scrollTo: app.settingsAnchor)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(AppModel.Tab.settings)
         }
         .tint(Theme.Color.ember)
+        // The whole window, sheets and the player cover included: a preference set this high
+        // becomes the window's `overrideUserInterfaceStyle`. `system` resolves to nil, which
+        // hands appearance back to the device.
+        .preferredColorScheme(app.appearance.colorScheme)
         .onOpenURL { app.handle(url: $0) }
         .fullScreenCover(item: $app.playerID) { id in
             PlayerView(downloadID: id)

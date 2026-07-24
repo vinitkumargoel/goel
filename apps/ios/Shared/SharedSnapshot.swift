@@ -32,6 +32,10 @@ public struct SharedSnapshot: Codable, Sendable, Equatable {
 
     public var activeCount: Int
     public var totalRemainingBytes: Int64
+    /// Throughput across the **entire** live queue, not just ``top``. The widget's ETA divides
+    /// ``totalRemainingBytes`` (full queue) by this, so summing only the top-3 rows' speeds would
+    /// systematically inflate the estimate whenever more than three downloads run at once.
+    public var totalSpeed: Double
     public var aggregateFraction: Double
     public var updatedAt: Date
     /// At most three. The initializer truncates, so no caller can hand a widget ten rows.
@@ -40,12 +44,32 @@ public struct SharedSnapshot: Codable, Sendable, Equatable {
     /// How many rows a snapshot may carry.
     public static let topLimit = 3
 
-    public init(activeCount: Int, totalRemainingBytes: Int64, aggregateFraction: Double, updatedAt: Date, top: [Item]) {
+    public init(activeCount: Int, totalRemainingBytes: Int64, totalSpeed: Double = 0, aggregateFraction: Double, updatedAt: Date, top: [Item]) {
         self.activeCount = activeCount
         self.totalRemainingBytes = totalRemainingBytes
+        self.totalSpeed = totalSpeed.isFinite && totalSpeed > 0 ? totalSpeed : 0
         self.aggregateFraction = aggregateFraction.isFinite ? min(max(aggregateFraction, 0), 1) : 0
         self.updatedAt = updatedAt
         self.top = Array(top.prefix(Self.topLimit))
+    }
+
+    // Custom decode so a snapshot written before `totalSpeed` existed still reads (the key is
+    // simply absent → 0) instead of failing to decode and flashing the widget back to `.empty`.
+    // Encoding stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case activeCount, totalRemainingBytes, totalSpeed, aggregateFraction, updatedAt, top
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        activeCount = try c.decode(Int.self, forKey: .activeCount)
+        totalRemainingBytes = try c.decode(Int64.self, forKey: .totalRemainingBytes)
+        let rawSpeed = try c.decodeIfPresent(Double.self, forKey: .totalSpeed) ?? 0
+        totalSpeed = rawSpeed.isFinite && rawSpeed > 0 ? rawSpeed : 0
+        let rawFraction = try c.decode(Double.self, forKey: .aggregateFraction)
+        aggregateFraction = rawFraction.isFinite ? min(max(rawFraction, 0), 1) : 0
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        top = try c.decode([Item].self, forKey: .top)
     }
 
     /// A fixed, deterministic empty value — `updatedAt` is the epoch rather than "now" so two

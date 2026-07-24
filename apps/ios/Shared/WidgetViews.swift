@@ -699,7 +699,10 @@ public struct WidgetSummary: Equatable, Sendable {
         activeCount = snapshot.activeCount
         fraction = snapshot.aggregateFraction
         remainingBytes = snapshot.totalRemainingBytes
-        totalSpeed = snapshot.top.reduce(0) { $0 + max(0, $1.speed) }
+        // Full-queue speed, to match the full-queue `remainingBytes` numerator. Summing only the
+        // top-3 rows' speeds here dropped the excluded (least-complete, often fastest) downloads
+        // from the denominator and inflated the ETA whenever more than three ran at once.
+        totalSpeed = snapshot.totalSpeed
         topName = snapshot.top.first?.filename
         topKindToken = snapshot.top.first?.kindToken ?? WidgetGlyph.aggregateToken
         isIdle = snapshot.activeCount == 0 && snapshot.top.isEmpty

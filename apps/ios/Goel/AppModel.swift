@@ -85,6 +85,48 @@ public enum TrafficProfile: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// The app's appearance override — a display preference, not an engine tuning.
+///
+/// Every colour token already resolves per `userInterfaceStyle` (see `SharedTheme`), so the app
+/// tracks the device's Light/Dark setting on its own. This preference lets someone pin one or the
+/// other from inside the app; ``system`` defers back to the device. It is kept apart from
+/// ``EngineTuning`` on purpose — nothing here crosses the seam to the engine.
+public enum Appearance: String, CaseIterable, Identifiable, Sendable {
+    case system, light, dark
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    /// What `preferredColorScheme` reads: `nil` is "no override — follow the device".
+    public var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    private static let defaultsKey = "dev.goel.ios.appearance"
+
+    public static func load(from defaults: UserDefaults = .standard) -> Appearance {
+        guard let raw = defaults.string(forKey: defaultsKey),
+              let value = Appearance(rawValue: raw)
+        else { return .system }
+        return value
+    }
+
+    public func save(to defaults: UserDefaults = .standard) {
+        defaults.set(rawValue, forKey: Self.defaultsKey)
+    }
+}
+
 /// The composition root. Owns the store and the engine, pumps engine events into the store,
 /// and holds the navigation state the tabs share.
 @MainActor
@@ -107,6 +149,9 @@ public final class AppModel {
     /// Which section of a debug screen to scroll to — `goel://debug/widgets?at=island`. The
     /// gallery is four screens tall and `simctl` cannot scroll it.
     public var debugAnchor: String?
+    /// Which Settings section to scroll to — `goel://settings?at=appearance`. Lets a shortcut (or
+    /// the screenshot harness, which cannot scroll) land directly on a subsection.
+    public var settingsAnchor: String?
 
     public enum DebugScreen: String, Identifiable, Hashable, Sendable {
         case widgets, swatches
@@ -121,6 +166,22 @@ public final class AppModel {
             Task { await engine.applyTuning(t) }
         }
     }
+
+    /// Light/Dark/System override, applied at the root by `RootView`. UI-only — persisted here,
+    /// never pushed to the engine.
+    public var appearance: Appearance {
+        didSet {
+            // A launch-arg override is a UI-testing hook and must not mutate the saved preference,
+            // so it sets this flag for exactly one assignment. Reset it unconditionally, before the
+            // change-guard, so an unchanged assignment never leaves it dangling.
+            let suppressed = suppressNextAppearanceSave
+            suppressNextAppearanceSave = false
+            guard appearance != oldValue, !suppressed else { return }
+            appearance.save()
+        }
+    }
+
+    @ObservationIgnored private var suppressNextAppearanceSave = false
 
     public enum Tab: String, Hashable, CaseIterable {
         case downloads, library, remote, settings
@@ -151,6 +212,7 @@ public final class AppModel {
         self.engine = engine
         self.store = store
         self.tuning = EngineTuning.load()
+        self.appearance = Appearance.load()
     }
 
     /// The real app wiring. `-uiTestingPreviewEngine` selects the frozen fixture engine so
@@ -174,6 +236,7 @@ public final class AppModel {
             let model = AppModel(engine: engine, store: store)
             model.startEventPump()
             model.applyLaunchRoute(arguments)
+            model.applyLaunchAppearance(arguments)
             return model
         }
 
@@ -182,6 +245,7 @@ public final class AppModel {
         let model = AppModel(engine: engine, store: store)
         model.startEventPump()
         model.applyLaunchRoute(arguments)
+        model.applyLaunchAppearance(arguments)
         let t = model.tuning
         Task { await engine.applyTuning(t) }
         model.resumeInterruptedDownloads()
@@ -292,7 +356,16 @@ public final class AppModel {
     public func retry(_ id: UUID) {
         guard let d = store[id] else { return }
         store.apply(id) { $0.status = .queued; $0.errorMessage = nil }
-        Task { [engine] in try? await engine.start(d) }
+        Task { [engine] in
+            do { try await engine.start(d) } catch {
+                await MainActor.run {
+                    self.store.apply(d.id) { row in
+                        row.status = .failed
+                        row.errorMessage = (error as? TransferError)?.userMessage ?? error.localizedDescription
+                    }
+                }
+            }
+        }
     }
 
     /// After a cold launch, anything the store thinks was mid-flight is not actually running.
@@ -338,6 +411,19 @@ public final class AppModel {
         handle(url: url)
     }
 
+    /// `-uiTestingAppearance light|dark` — pins the appearance override at launch. `simctl` cannot
+    /// tap the Settings picker, and writing the preference through `defaults` does not reach the
+    /// app's sandboxed `UserDefaults`, so this is the only scriptable way to screenshot the
+    /// override winning over the device setting.
+    private func applyLaunchAppearance(_ arguments: [String]) {
+        guard let flag = arguments.firstIndex(of: "-uiTestingAppearance"),
+              arguments.index(after: flag) < arguments.endIndex,
+              let value = Appearance(rawValue: arguments[arguments.index(after: flag)])
+        else { return }
+        suppressNextAppearanceSave = true
+        appearance = value
+    }
+
     /// `goel://download/<uuid>` — from a widget tap (T14) or a Live Activity (T13).
     public func handle(url: URL) {
         guard url.scheme == GoelIdentifiers.urlScheme else { return }
@@ -360,6 +446,8 @@ public final class AppModel {
         case "library":
             selectedTab = .library
         case "settings":
+            settingsAnchor = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "at" }?.value
             selectedTab = .settings
         case "player":
             let raw = url.pathComponents.last ?? ""

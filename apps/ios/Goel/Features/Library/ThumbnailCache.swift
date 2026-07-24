@@ -178,6 +178,10 @@ public actor ThumbnailCache {
     private func readFromDisk(_ key: String) -> UIImage? {
         let url = fileURL(for: key)
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+        // Touch the modification date on every hit so `prune()`'s mtime ordering is genuine
+        // LRU-by-access, not FIFO-by-first-write. Without this a thumbnail written once and never
+        // viewed outlives one that is opened daily, purely because it was generated later.
+        try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
         return UIImage(data: data)
     }
 
