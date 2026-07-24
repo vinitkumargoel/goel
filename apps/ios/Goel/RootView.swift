@@ -32,6 +32,14 @@ public struct RootView: View {
         .fullScreenCover(item: $app.playerID) { id in
             PlayerView(downloadID: id)
         }
+        .sheet(item: $app.debugScreen) { screen in
+            NavigationStack {
+                switch screen {
+                case .widgets: WidgetGalleryView(scrollTo: app.debugAnchor)
+                case .swatches: SwatchView()
+                }
+            }
+        }
     }
 }
 

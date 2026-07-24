@@ -325,6 +325,9 @@ public actor URLSessionTransferEngine: TransferEngine {
     /// The cursor sidecar is rewritten at most this often, plus at every state transition. Losing
     /// one interval of cursor costs a second of re-downloaded bytes, never a corrupt file.
     static let checkpointInterval: Duration = .seconds(1)
+    /// Batching thresholds for the cellular byte counter — see `noteCellularBytes`.
+    static let cellularFlushBytes: Int64 = 8 * 1024 * 1024
+    static let cellularFlushInterval: Duration = .seconds(10)
     /// Attempts on one range by one connection before the range is handed to another connection.
     static let maxAttemptsPerRange = 3
 
@@ -346,6 +349,9 @@ public actor URLSessionTransferEngine: TransferEngine {
     private var isCellular = false
     private var isExpensive = false
     private var didAttach = false
+    /// Cellular bytes seen since the last write-through to ``CellularDataLedger``.
+    private var cellularBytesPending: Int64 = 0
+    private var lastCellularFlush = ContinuousClock.now
 
     // MARK: - Job
 
@@ -1204,6 +1210,10 @@ public actor URLSessionTransferEngine: TransferEngine {
         let speed = elapsed > 0 ? Double(job.bytesSinceEmit) / elapsed : 0
         let segments = segmentsSnapshot(job)
 
+        // The engine is the only thing that knows a byte crossed a cellular interface, so it is
+        // the only thing that can feed Settings' "Data used this month".
+        if isCellular || isExpensive { noteCellularBytes(job.bytesSinceEmit) }
+
         job.lastEmit = now
         job.bytesSinceEmit = 0
         job.download.segments = segments
@@ -1219,6 +1229,28 @@ public actor URLSessionTransferEngine: TransferEngine {
                 segments: segments
             )
         )
+    }
+
+    /// Accumulates cellular bytes and writes them through in batches.
+    ///
+    /// `emitProgress` runs at 10 Hz per transfer; a `UserDefaults` write per tick would be a few
+    /// hundred writes a minute for a number nobody reads more than once a month. Flush on 8 MB or
+    /// ten seconds, whichever comes first, and on the way to the background.
+    private func noteCellularBytes(_ bytes: Int64) {
+        guard bytes > 0 else { return }
+        cellularBytesPending += bytes
+        let now = ContinuousClock.now
+        guard cellularBytesPending >= Self.cellularFlushBytes
+                || lastCellularFlush.duration(to: now) >= Self.cellularFlushInterval
+        else { return }
+        flushCellularLedger()
+    }
+
+    private func flushCellularLedger() {
+        guard cellularBytesPending > 0 else { return }
+        _ = CellularDataLedger.record(cellularBytesPending)
+        cellularBytesPending = 0
+        lastCellularFlush = ContinuousClock.now
     }
 
     private static func seconds(_ duration: Duration) -> Double {
@@ -1412,6 +1444,8 @@ public actor URLSessionTransferEngine: TransferEngine {
     /// `.active → .background`: checkpoint, cancel the segments, and re-issue the remainder as
     /// **one** background `URLSession` task anchored on the contiguous prefix.
     public func enterBackground() async {
+        // Nothing else will run before suspension; an unflushed counter would be lost.
+        flushCellularLedger()
         guard let coordinator else { return }
         for (id, job) in jobs {
             var snapshot = job.download

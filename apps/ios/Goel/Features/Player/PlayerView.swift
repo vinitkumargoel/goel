@@ -236,6 +236,10 @@ final class PlaybackModel {
         // this `true` the playhead never leaves 0:00; with it `false` it advances immediately.
         player.automaticallyWaitsToMinimizeStalling = false
         self.player = player
+        // The only way in is the queue row's ▶ or a Library tap — both already mean "play this".
+        // Opening paused would make that a two-tap gesture for no gain.
+        player.play()
+        isPlaying = true
 
         observe(player)
         loadDuration(of: asset)

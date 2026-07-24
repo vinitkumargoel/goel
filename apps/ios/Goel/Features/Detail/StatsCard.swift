@@ -10,6 +10,13 @@ struct StatsCard: View {
 
     let download: Download
 
+    // The key is a 10.5 pt tracked uppercase label — `.caption`. The value is the fact the cell
+    // exists to state, so it takes `.title3` rather than `.body`: on `.body` a two-word value
+    // like `Not supported` outgrows its half of the grid and `minimumScaleFactor` quietly shrinks
+    // it back, which is Dynamic Type being honoured and then undone.
+    @ScaledMetric(relativeTo: .caption) private var labelSize = Theme.Typo.Size.statLabel
+    @ScaledMetric(relativeTo: .title3) private var valueSize = Theme.Typo.Size.statValue
+
     var body: some View {
         DetailCard {
             Grid(
@@ -56,11 +63,11 @@ struct StatsCard: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: DetailMetric.statLabelSpacing) {
             Text(label.uppercased())
-                .font(Theme.Typo.statLabel)
+                .font(.system(size: labelSize))
                 .tracking(Theme.Typo.statTracking)
                 .foregroundStyle(Theme.Color.label3)
             Text(value)
-                .font(Theme.Typo.statValue)
+                .font(.system(size: valueSize, weight: .semibold).monospacedDigit())
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)

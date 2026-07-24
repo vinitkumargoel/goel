@@ -14,15 +14,20 @@ struct SegmentBars: View {
     /// to go when the user has asked the system for less movement.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @ScaledMetric(relativeTo: .caption) private var captionSize = Theme.Typo.Size.caption
+    /// The gap between bars is set by the labels either side of them, so it grows with the same
+    /// style they do — otherwise the stack tightens into a block as the type gets bigger.
+    @ScaledMetric(relativeTo: .caption2) private var rowSpacing = DetailMetric.segmentRowSpacing
+
     var body: some View {
         DetailCard(title: headline) {
             if segments.isEmpty {
                 Text("This transfer runs on a single connection.")
-                    .font(Theme.Typo.caption)
+                    .font(.system(size: captionSize))
                     .foregroundStyle(Theme.Color.label3)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                VStack(spacing: DetailMetric.segmentRowSpacing) {
+                VStack(spacing: rowSpacing) {
                     ForEach(segments) { segment in
                         SegmentRow(
                             segment: segment,
@@ -59,25 +64,38 @@ struct SegmentBars: View {
 
 // MARK: - One connection
 
-/// `26 pt id · 7 pt bar · 42 pt percentage`, matching `.segrow`'s three-column grid.
+/// `26 pt id · 7 pt bar · 42 pt percentage` at the default content size, matching `.segrow`'s
+/// three-column grid. Every one of those figures is a base for `@ScaledMetric`, not a constant.
 private struct SegmentRow: View {
 
     let segment: Download.Segment
     let showsSheen: Bool
 
+    // Both figures are 9.5–10 pt monospace, which is `.caption2`'s job — the smallest style, and
+    // the one whose growth curve suits a micro-label. The two columns are scaled off the same
+    // style as the text they hold, so a wider `01` or `100%` takes its gutter with it instead of
+    // wrapping inside a 26 pt box and shoving the bar around.
+    @ScaledMetric(relativeTo: .caption2) private var idSize = DetailTypo.Size.segmentID
+    @ScaledMetric(relativeTo: .caption2) private var percentSize = DetailTypo.Size.segmentPercent
+    @ScaledMetric(relativeTo: .caption2) private var idWidth = DetailMetric.segmentIDWidth
+    @ScaledMetric(relativeTo: .caption2) private var percentWidth = DetailMetric.segmentPercentWidth
+
     var body: some View {
+        // The column gap is deliberately *not* scaled: the frames above already keep the labels
+        // off the bar, and widening the gaps as well would leave the bar — the thing the card
+        // exists to show — with nothing to occupy at the largest sizes.
         HStack(spacing: DetailMetric.segmentColumnSpacing) {
             Text(String(format: "%02d", segment.id + 1))
-                .font(DetailTypo.segmentID)
+                .font(DetailTypo.segmentID(idSize))
                 .foregroundStyle(Theme.Color.label3)
-                .frame(width: DetailMetric.segmentIDWidth, alignment: .leading)
+                .frame(width: idWidth, alignment: .leading)
 
             SegmentTrack(fraction: segment.fraction, style: fillStyle, showsSheen: showsSheen)
 
             Text(Fmt.percent(segment.fraction))
-                .font(DetailTypo.segmentPercent)
+                .font(DetailTypo.segmentPercent(percentSize))
                 .foregroundStyle(Theme.Color.label2)
-                .frame(width: DetailMetric.segmentPercentWidth, alignment: .trailing)
+                .frame(width: percentWidth, alignment: .trailing)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Connection \(segment.id + 1)")
@@ -96,15 +114,24 @@ private struct SegmentRow: View {
 
 // MARK: - The bar
 
-/// A 7 pt track with a rounded fill that glides to new values and, when live, carries the sheen.
+/// A track — 7 pt at the default content size — with a rounded fill that glides to new values
+/// and, when live, carries the sheen.
 private struct SegmentTrack: View {
 
     let fraction: Double
     let style: AnyShapeStyle
     let showsSheen: Bool
 
+    // The bar is the row's only fixed vertical dimension, so it is what pins the row's height.
+    // Left at 7 pt beside 29 pt labels it reads as a hairline rule rather than as the transfer,
+    // so it takes the same style the labels do. The radius travels with it — `segmentRadius` is
+    // defined as exactly half the track, and a track that outgrows its radius stops being a
+    // capsule and starts looking like a clipped rectangle.
+    @ScaledMetric(relativeTo: .caption2) private var height = Theme.Metric.segmentBar
+    @ScaledMetric(relativeTo: .caption2) private var radius = Theme.Metric.segmentRadius
+
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: Theme.Metric.segmentRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
     }
 
     var body: some View {
@@ -127,7 +154,7 @@ private struct SegmentTrack: View {
             }
             .animation(.easeOut(duration: DetailMetric.barGrowth), value: fraction)
         }
-        .frame(height: Theme.Metric.segmentBar)
+        .frame(height: height)
     }
 }
 

@@ -185,6 +185,24 @@ public enum Fmt {
         return date.formatted(.dateTime.day().month(.abbreviated))
     }
 
+    /// Calendar-day granularity: `Today` · `Yesterday` · `3 days ago` · `14 Jun`.
+    ///
+    /// The Library lists *files*, not transfers, and a file that landed six minutes ago is not
+    /// meaningfully newer than one that landed an hour ago — `2m ago` is transfer-desk precision
+    /// on a shelf. `relativeShort` stays for the queue, where the minute is the point.
+    public static func relativeDay(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let from = calendar.startOfDay(for: date)
+        let to = calendar.startOfDay(for: now)
+        let days = calendar.dateComponents([.day], from: from, to: to).day ?? 0
+        switch days {
+        case ..<0: return "Today"
+        case 0: return "Today"
+        case 1: return "Yesterday"
+        case 2..<7: return "\(days) days ago"
+        default: return date.formatted(.dateTime.day().month(.abbreviated))
+        }
+    }
+
     // MARK: - Magnitude scaling
 
     /// A byte count reduced to a mantissa plus an index into ``unitNames`` / ``rateUnitNames``.

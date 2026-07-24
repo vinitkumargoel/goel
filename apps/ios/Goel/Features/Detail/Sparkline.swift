@@ -32,9 +32,13 @@ struct Sparkline: View {
         guard let last = points.last else { return }
 
         if points.count > 1 {
+            // Built one segment at a time on purpose: `addLines` begins its own subpath with a
+            // `move`, which orphans the floor point and leaves `closeSubpath` drawing a diagonal
+            // from the right-hand floor straight back to the first sample — a wedge under the
+            // curve instead of a fill.
             var area = Path()
             area.move(to: CGPoint(x: points[0].x, y: size.height))
-            area.addLines(points)
+            for point in points { area.addLine(to: point) }
             area.addLine(to: CGPoint(x: last.x, y: size.height))
             area.closeSubpath()
 

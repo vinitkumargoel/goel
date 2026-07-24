@@ -65,16 +65,45 @@ enum DetailMetric {
 
 /// Type the detail screen needs that is not in the shared scale, expressed in terms of
 /// `Theme.Typo.Size` wherever a shared size already exists.
+///
+/// Split into a base ``Size`` and a face, for the same reason `Theme.Typo` is: a `Font` built
+/// from a fixed point size cannot answer Dynamic Type. The call site owns the `@ScaledMetric`
+/// over the base and asks here for the weight, design and numeric style that go with it, so the
+/// mockup's spec still lives in exactly one place.
 enum DetailTypo {
-    /// .d-hero .rate { font-size: 14px; font-weight: 600 }
-    static let rate = Font.system(size: 14, weight: .semibold).monospacedDigit()
-    /// .segrow .sid { font-family: mono; font-size: 9.5px }
-    static let segmentID = Font.system(size: 9.5, weight: .regular, design: .monospaced)
-    /// .segrow .spct { font-family: mono; font-size: 10px; tabular }
-    static let segmentPercent = Font.system(size: 10, weight: .regular, design: .monospaced)
-        .monospacedDigit()
-    /// .btn { font-size: 16px; font-weight: 620 }
-    static let button = Font.system(size: Theme.Typo.Size.statValue, weight: .semibold)
+
+    /// Base point sizes, for `@ScaledMetric` call sites.
+    enum Size {
+        /// .d-hero .rate { font-size: 14px }
+        static let rate: CGFloat = 14
+        /// .segrow .sid { font-size: 9.5px }
+        static let segmentID: CGFloat = 9.5
+        /// .segrow .spct { font-size: 10px }
+        static let segmentPercent: CGFloat = 10
+        /// .btn { font-size: 16px } — the same 16 pt the stat values use.
+        static let button = Theme.Typo.Size.statValue
+    }
+
+    /// .d-hero .rate { font-weight: 600 }
+    static func rate(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .semibold).monospacedDigit()
+    }
+
+    /// .segrow .sid { font-family: mono }
+    static func segmentID(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .regular, design: .monospaced)
+    }
+
+    /// .segrow .spct { font-family: mono; tabular }
+    static func segmentPercent(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .regular, design: .monospaced).monospacedDigit()
+    }
+
+    /// .btn { font-weight: 620 }
+    static func button(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .semibold)
+    }
+
     /// letter-spacing: -.02em at 19 pt.
     static let titleTracking: CGFloat = -0.38
     /// letter-spacing: -.03em at 52 pt.
@@ -88,11 +117,16 @@ struct DetailCard<Content: View>: View {
     var title: String?
     @ViewBuilder var content: Content
 
+    /// The heading is the only type the card chrome owns, so it carries the scale for every
+    /// screen that reuses this card. `.caption` because that is what an 11 pt tracked uppercase
+    /// label is — one step below body, and it must never grow into the content it introduces.
+    @ScaledMetric(relativeTo: .caption) private var titleSize = Theme.Typo.Size.sectionLabel
+
     var body: some View {
         VStack(alignment: .leading, spacing: DetailMetric.cardTitleSpacing) {
             if let title {
                 Text(title.uppercased())
-                    .font(Theme.Typo.sectionLabel)
+                    .font(.system(size: titleSize, weight: .semibold))
                     .tracking(Theme.Typo.sectionTracking)
                     .foregroundStyle(Theme.Color.label2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -126,6 +160,18 @@ public struct DetailView: View {
     /// on every engine tick; this is recomputed only when the transfer's status changes.
     @State private var sharableURL: URL?
 
+    // The mockup's type scale is fixed-point so a screenshot lines up with `visual.html`;
+    // `Theme.swift` prescribes pairing it with `@ScaledMetric` at the call site, which is the
+    // only thing that makes the hero answer Dynamic Type. Each role gets the text style it
+    // actually is, because the system deliberately grows body copy faster than display type —
+    // putting the 52 pt percentage on `.body` would send it off the screen at Accessibility XXL.
+    @ScaledMetric(relativeTo: .largeTitle) private var bigNumberSize = Theme.Typo.Size.bigNumber
+    @ScaledMetric(relativeTo: .largeTitle) private var bigNumberUnitSize = Theme.Typo.Size.bigNumberUnit
+    @ScaledMetric(relativeTo: .title3) private var titleSize = Theme.Typo.Size.detailTitle
+    @ScaledMetric(relativeTo: .caption) private var sourceSize = Theme.Typo.Size.mono
+    @ScaledMetric(relativeTo: .subheadline) private var rateSize = DetailTypo.Size.rate
+    @ScaledMetric(relativeTo: .caption) private var captionSize = Theme.Typo.Size.caption
+
     public init(downloadID: UUID) {
         self.downloadID = downloadID
     }
@@ -145,6 +191,9 @@ public struct DetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .tint(Theme.Color.ember)
         .toolbar { toolbar }
+        // The mockup gives this screen the whole display. The segment bars and the throughput
+        // chart are the reason anyone opens it, and a tab bar eats the room they need.
+        .toolbar(.hidden, for: .tabBar)
     }
 
     // MARK: Body
@@ -183,7 +232,7 @@ public struct DetailView: View {
     private func hero(for download: Download) -> some View {
         VStack(spacing: 0) {
             Text(download.filename)
-                .font(Theme.Typo.detailTitle)
+                .font(.system(size: titleSize, weight: .semibold))
                 .tracking(DetailTypo.titleTracking)
                 .foregroundStyle(Theme.Color.label1)
                 .multilineTextAlignment(.center)
@@ -191,7 +240,7 @@ public struct DetailView: View {
                 .padding(.bottom, DetailMetric.heroTitleSpacing)
 
             Text(Self.sourceLine(for: download))
-                .font(Theme.Typo.mono)
+                .font(.system(size: sourceSize, weight: .regular, design: .monospaced))
                 .foregroundStyle(Theme.Color.label3)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -199,11 +248,13 @@ public struct DetailView: View {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 // `verbatim` so the numeral is never locale-formatted away from the mockup.
                 Text(verbatim: String(Fmt.percentValue(download.fractionComplete)))
-                    .font(Theme.Typo.bigNumber)
+                    .font(.system(size: bigNumberSize, weight: .bold).monospacedDigit())
                     .tracking(DetailTypo.bigNumberTracking)
                     .foregroundStyle(Theme.Color.label1)
+                // The unit rides the same style as the numeral, so the two keep their ratio and
+                // their shared baseline instead of drifting apart at one content size.
                 Text("%")
-                    .font(Theme.Typo.bigNumberUnit)
+                    .font(.system(size: bigNumberUnitSize, weight: .semibold))
                     .foregroundStyle(Theme.Color.label2)
             }
             .padding(.top, DetailMetric.bigNumberTopSpacing)
@@ -213,7 +264,7 @@ public struct DetailView: View {
             .accessibilityValue("\(Fmt.percentValue(download.fractionComplete)) percent")
 
             Text(Self.rateLine(for: download))
-                .font(DetailTypo.rate)
+                .font(DetailTypo.rate(rateSize))
                 .foregroundStyle(
                     download.status.isActive ? Theme.Color.ember : Theme.Color.label2
                 )
@@ -247,7 +298,7 @@ public struct DetailView: View {
 
             if let reason = shareUnavailableReason(for: download) {
                 Text(reason)
-                    .font(Theme.Typo.caption)
+                    .font(.system(size: captionSize))
                     .foregroundStyle(Theme.Color.label3)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -376,12 +427,28 @@ public struct DetailView: View {
 
 private extension View {
     /// `.btn` — 13 pt padding, radius 12, 16 pt semibold, full width.
-    ///
+    func filledDetailButton(background: AnyShapeStyle, foreground: Color) -> some View {
+        modifier(FilledDetailButton(background: background, foreground: foreground))
+    }
+}
+
+/// A `ViewModifier` rather than a plain `View` extension purely so it can hold an
+/// `@ScaledMetric`: a free function has no place to install a dynamic property, and the label
+/// would go on ignoring Dynamic Type.
+private struct FilledDetailButton: ViewModifier {
+
+    let background: AnyShapeStyle
+    let foreground: Color
+
+    /// A control label is body copy that happens to sit in a button, so it takes `.body` — the
+    /// pairing `AddSheet` already gives its Add button at the same 16 pt.
+    @ScaledMetric(relativeTo: .body) private var titleSize = DetailTypo.Size.button
+
     /// The padding is applied *before* the frame so `minHitTarget` acts as a floor on the
     /// finished control rather than adding 26 pt on top of an already 44 pt box.
-    func filledDetailButton(background: AnyShapeStyle, foreground: Color) -> some View {
-        self
-            .font(DetailTypo.button)
+    func body(content: Content) -> some View {
+        content
+            .font(DetailTypo.button(titleSize))
             .foregroundStyle(foreground)
             .padding(.vertical, DetailMetric.buttonVerticalPadding)
             .frame(maxWidth: .infinity, minHeight: Theme.Metric.minHitTarget)
@@ -413,6 +480,16 @@ private func detailPreviewModel() -> AppModel {
         DetailView(downloadID: PreviewTransferEngine.ubuntuID)
     }
     .environment(model)
+    .preferredColorScheme(.dark)
+}
+
+#Preview("Detail — Accessibility XXL") {
+    let model = detailPreviewModel()
+    return NavigationStack {
+        DetailView(downloadID: PreviewTransferEngine.ubuntuID)
+    }
+    .environment(model)
+    .environment(\.dynamicTypeSize, .accessibility3)
     .preferredColorScheme(.dark)
 }
 

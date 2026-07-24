@@ -17,14 +17,19 @@ public struct WidgetGalleryView: View {
 
     @State private var vibrantAccessories = true
 
-    public init() {}
+    /// A section title (or its lowercased first word) to scroll to on appear. Only the
+    /// screenshot harness passes this — there is no way to scroll a simulator from a script.
+    private let scrollTo: String?
+
+    public init(scrollTo: String? = nil) { self.scrollTo = scrollTo }
 
     public var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
                 intro
 
-                group("Lock Screen accessories") {
+                group("Lock Screen accessories", id: "lock") {
                     Toggle("Vibrant rendering (as the Lock Screen draws them)", isOn: $vibrantAccessories)
                         .font(Theme.Typo.rowSubtitle)
                         .foregroundStyle(Theme.Color.label2)
@@ -40,7 +45,10 @@ public struct WidgetGalleryView: View {
                         AccessoryRectangularView(summary: lockSummary)
                     }
                     tile("accessoryInline", width: 200, height: 24, ground: .plain) {
-                        AccessoryInlineView(summary: lockSummary)
+                        // The aggregate fixture, not the featured-transfer one: inline is a
+                        // whole-queue line (`4 active · 21.4 GB`), so previewing it against a
+                        // fixture whose remaining count is one download's reads as a bug.
+                        AccessoryInlineView(summary: homeSummary)
                     }
                 }
                 // Accessories never render in full colour on a real Lock Screen — they are drawn
@@ -49,7 +57,7 @@ public struct WidgetGalleryView: View {
                 // the Lock Screen will actually do without a Lock Screen.
                 .environment(\.widgetRenderingMode, vibrantAccessories ? .vibrant : .fullColor)
 
-                group("Home Screen") {
+                group("Home Screen", id: "home") {
                     tile("systemSmall · summary", width: 158, height: 158, ground: .card) {
                         HomeSummaryView(summary: homeSummary)
                     }
@@ -67,7 +75,7 @@ public struct WidgetGalleryView: View {
                     }
                 }
 
-                group("Live Activity") {
+                group("Live Activity", id: "activity") {
                     tile("Lock Screen · live", width: 365, height: nil, ground: .card) {
                         LiveActivityLockScreenView(
                             state: WidgetSample.liveState,
@@ -94,7 +102,7 @@ public struct WidgetGalleryView: View {
                     }
                 }
 
-                group("Dynamic Island") {
+                group("Dynamic Island", id: "island") {
                     tile("Compact — while using another app", width: 172, height: 37, ground: .island(22)) {
                         HStack {
                             Image(systemName: WidgetGlyph.arrow)
@@ -132,6 +140,11 @@ public struct WidgetGalleryView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
+        }
+        .onAppear {
+            guard let scrollTo else { return }
+            proxy.scrollTo(scrollTo, anchor: .top)
+        }
         }
         .background(ground)
         .environment(\.colorScheme, .dark)
@@ -206,11 +219,16 @@ public struct WidgetGalleryView: View {
     }
 
     @ViewBuilder
-    private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func group<Content: View>(
+        _ title: String,
+        id: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             label(title)
             content()
         }
+        .id(id)
     }
 
     private func label(_ text: String) -> some View {

@@ -10,18 +10,18 @@ Status values: `TODO` · `WIP` · `DONE` · `PARTIAL` · `BLOCKED`
 | T02 | Design system | DONE | `64e8d8e` | `T02-swatches-{dark,light}.png` | ember samples at exactly #FF6B2C / #E85D18 |
 | T03 | Model + store | DONE | `9390bdd` | — | 77 tests green |
 | T04 | TransferEngine seam | DONE | `bb57513` | — | fixtures reproduce visual.html to 3dp |
-| T05 | URLSession engine | WIP | | | harness verified: 6-way concurrent reassembly matches sidecar sha256 |
-| T06 | Background handoff | WIP | | | |
-| T07 | Queue screen | WIP | | | |
-| T08 | Detail screen | WIP | | | |
-| T09 | Add sheet | WIP | | | |
-| T10 | Player | TODO | | | fixture `sample-video.mp4` ready (faststart verified) |
-| T11 | Library + Files | WIP | | | |
-| T12 | Settings | WIP | | | |
-| T13 | Live Activity | WIP | | | |
-| T14 | Widgets | WIP | | | |
-| T15 | App Intents | TODO | | | sequenced after T13/T14 (shares widget files) |
-| T16 | Final sweep | TODO | | | |
+| T05 | URLSession engine | DONE | `2b5b3ad` | `final/08-soak-running.png` | 3 concurrent real downloads in the simulator (734 MB) — all three sha256 match |
+| T06 | Background handoff | DONE | `f05c1cd` | — | unit-tested only; no real process suspension (needs a device) |
+| T07 | Queue screen | DONE | `a622333` | `final/01-queue.png` | matches frame0; Active now keeps a 10-min completed grace so the verified row shows |
+| T08 | Detail screen | DONE | `1ce815f` | `final/02-detail.png` | matches frame1; sparkline area-fill bug fixed; tab bar hidden on push |
+| T09 | Add sheet | DONE | `255552f` | `final/03-add.png` | matches frame2; detent raised to .fraction(0.66) so "Start paused" is not cut off |
+| T10 | Player | DONE | `09b49de` | `final/07-player.png` | plays a 63 %-downloaded file in the simulator, buffer +28 s |
+| T11 | Library + Files | DONE | `6ac0fce` | `final/{04-library,11-library-light}.png` | matches frame7; 1 Recent row, not 3 — see REPORT |
+| T12 | Settings | DONE | `9daf809` | `final/05-settings.png` | matches frame8; cellular byte counter now has a producer |
+| T13 | Live Activity | DONE | `f8c2062` | `final/{14-island-compact,15-island-presentations,16-live-activity}.png` | compact Island verified live over the Home Screen |
+| T14 | Widgets | DONE | `2e78982` | `final/17-home-widgets.png` | matches frame6; Lock Screen itself is not screenshot-able — gallery is the proof |
+| T15 | App Intents | DONE | `c2fef16` | — | command-file IPC unit-tested; buttons never tapped |
+| T16 | Final sweep | DONE | | `final/` | this file + REPORT.md |
 
 ## Mockup reference images
 
@@ -53,6 +53,23 @@ Regenerate with the recipe in `Scripts/ios/mockup-frames.sh`.
 [03:24] Rendered all 9 visual.html frames to PNG via headless Chrome so that
         screenshot comparison is a real image-vs-image check, not from memory.
 [03:25] T02/T03/T04 + the T05 range-server harness launched in parallel.
+[04:40] Whole project green: 215 tests in 14 suites.
+[05:05] Deep-link + launch-route harness added — `simctl` cannot tap, and iOS 26 puts an
+        "Open in …?" confirmation in front of `simctl openurl`, so every screen below a tab
+        root is reached with `-uiTestingRoute goel://…` at launch instead.
+[05:15] First real transfers inside the simulator: 500 MB + 200 MB + 2.1 MB concurrently
+        against `range-server.py`. All three sha256 match their sidecars.
+[05:20] Play-while-downloading verified on device-like conditions: 120 KB/s throttle,
+        player opened at 63 %, playhead advancing, buffer +28 s.
+[05:35] Full visual sweep into `shots/final/` — every screen shot and read against its
+        mockup frame. Findings in REPORT.md.
+[05:50] The XXL sweep caught the detail screen ignoring Dynamic Type completely — its
+        type was fixed-point with no `@ScaledMetric` anywhere. `DetailTypo` split into
+        `Size` bases + font factories, `filledDetailButton` promoted to a `ViewModifier`
+        so its label has somewhere to hang a dynamic property, segment geometry scaled
+        off `.caption2`. Default size is byte-identical; re-shot to confirm.
+[06:00] Final state: `** BUILD SUCCEEDED **`, 215 tests in 14 suites passed,
+        `02/03/05/13` re-shot on the fixed build. REPORT.md written.
 ```
 
 ## Decisions I made without asking

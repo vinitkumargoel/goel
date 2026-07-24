@@ -38,11 +38,20 @@ public struct QueueView: View {
             }
         }
 
-        func matches(_ download: Download) -> Bool {
+        /// How long a finished transfer lingers in Active. The mockup shows a verified download
+        /// sitting under the four in-flight ones, and it is right to: a file that landed thirty
+        /// seconds ago vanishing the instant it completes reads as "where did it go?", not as
+        /// tidiness. After the grace period it lives in Done.
+        static let completedGrace: TimeInterval = 10 * 60
+
+        func matches(_ download: Download, now: Date = Date()) -> Bool {
             switch self {
-            case .active: download.status != .completed
-            case .all: true
-            case .done: download.status == .completed
+            case .active:
+                guard download.status == .completed else { return true }
+                guard let at = download.completedAt else { return false }
+                return now.timeIntervalSince(at) <= Self.completedGrace
+            case .all: return true
+            case .done: return download.status == .completed
             }
         }
 
@@ -136,7 +145,7 @@ public struct QueueView: View {
     // MARK: - List
 
     private var visible: [Download] {
-        app.store.downloads.filter(filter.matches)
+        app.store.downloads.filter { filter.matches($0) }
     }
 
     @ViewBuilder

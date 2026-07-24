@@ -94,7 +94,9 @@ public struct AddSheet: View {
             }
         }
         .tint(Theme.Color.ember)
-        .presentationDetents([.medium, .large])
+        // `.medium` is a hair too short for the eight rows: "Start paused" lands underneath the
+        // bottom button and reads as missing. The mockup's sheet is a shade under two thirds.
+        .presentationDetents([.fraction(0.66), .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.Color.elev1)
         .task { prepare() }
@@ -361,6 +363,13 @@ public struct AddSheet: View {
         // "Wi-Fi only" is the phone-facing name for the engine's cellular policy, which is a
         // single global rule — `Download` has no per-transfer cellular field to write to.
         wifiOnly = !app.tuning.allowCellular
+
+        if link.isEmpty, let handed = app.pendingAddLink {
+            app.pendingAddLink = nil
+            link = handed
+            linkChanged(link)
+            return
+        }
 
         guard link.isEmpty, let pasted = Self.pasteboardLink() else { return }
         // Prefill only. Never auto-add: silently queueing whatever someone copied is hostile.

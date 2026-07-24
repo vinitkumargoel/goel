@@ -231,8 +231,17 @@ public struct DownloadRow: View {
         // `Blender-4.2-macOS-arm64.dmg` → "412.3 MB · SHA-256 verified · 2m ago"
         case .completed:
             var parts = [Segment(Fmt.bytes(download.totalBytes ?? download.receivedBytes))]
-            if download.checksumVerified { parts.append(Segment("SHA-256 verified")) }
-            if let finished = download.completedAt { parts.append(Segment(Fmt.relativeShort(finished))) }
+            // The Library says `Verified · Today`, the queue says `SHA-256 verified · 2m ago`:
+            // the shelf cares that the file is sound, the transfer desk cares which algorithm
+            // said so and how long ago it finished.
+            if download.checksumVerified {
+                parts.append(Segment(style == .library ? "Verified" : "SHA-256 verified"))
+            }
+            if let finished = download.completedAt {
+                parts.append(Segment(style == .library
+                                     ? Fmt.relativeDay(finished)
+                                     : Fmt.relativeShort(finished)))
+            }
             return parts
 
         case .failed:

@@ -97,7 +97,21 @@ public final class AppModel {
     public var queuePath: [UUID] = []
     public var libraryPath: [UUID] = []
     public var isAddSheetPresented = false
+    /// A link the Add sheet should open with, if it was handed one rather than found on the
+    /// pasteboard. Consumed once.
+    public var pendingAddLink: String?
     public var playerID: UUID?
+    /// Set only by the `goel://debug/...` links, which exist because `simctl` cannot tap. Reaching
+    /// the widget gallery any other way needs four taps no script can perform.
+    public var debugScreen: DebugScreen?
+    /// Which section of a debug screen to scroll to — `goel://debug/widgets?at=island`. The
+    /// gallery is four screens tall and `simctl` cannot scroll it.
+    public var debugAnchor: String?
+
+    public enum DebugScreen: String, Identifiable, Hashable, Sendable {
+        case widgets, swatches
+        public var id: String { rawValue }
+    }
     /// Set by T12 so the engine picks up changes without a restart.
     public var tuning: EngineTuning {
         didSet {
@@ -159,6 +173,7 @@ public final class AppModel {
             store.replaceAll(PreviewTransferEngine.fixtures(now: Date()))
             let model = AppModel(engine: engine, store: store)
             model.startEventPump()
+            model.applyLaunchRoute(arguments)
             return model
         }
 
@@ -166,6 +181,7 @@ public final class AppModel {
         let engine = URLSessionTransferEngine()
         let model = AppModel(engine: engine, store: store)
         model.startEventPump()
+        model.applyLaunchRoute(arguments)
         let t = model.tuning
         Task { await engine.applyTuning(t) }
         model.resumeInterruptedDownloads()
@@ -310,6 +326,18 @@ public final class AppModel {
 
     // MARK: - Deep links
 
+    /// `-uiTestingRoute goel://…` — the same deep link, but taken at launch instead of through
+    /// `openurl`. iOS 26 puts a system "Open in …?" confirmation in front of a scheme opened from
+    /// outside the app, and `simctl` cannot tap it, so a scripted screenshot of any screen below
+    /// the tab root is otherwise unreachable.
+    private func applyLaunchRoute(_ arguments: [String]) {
+        guard let flag = arguments.firstIndex(of: "-uiTestingRoute"),
+              arguments.index(after: flag) < arguments.endIndex,
+              let url = URL(string: arguments[arguments.index(after: flag)])
+        else { return }
+        handle(url: url)
+    }
+
     /// `goel://download/<uuid>` — from a widget tap (T14) or a Live Activity (T13).
     public func handle(url: URL) {
         guard url.scheme == GoelIdentifiers.urlScheme else { return }
@@ -323,10 +351,55 @@ public final class AppModel {
                 selectedTab = .downloads
             }
         case "add":
+            // `goel://add?url=…` — a link handed over by another app (or by the screenshot
+            // harness). Still a prefill, never an auto-queue.
+            pendingAddLink = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "url" }?.value
             selectedTab = .downloads
             isAddSheetPresented = true
         case "library":
             selectedTab = .library
+        case "settings":
+            selectedTab = .settings
+        case "player":
+            let raw = url.pathComponents.last ?? ""
+            if let id = UUID(uuidString: raw), store[id] != nil { playerID = id }
+        case "debug":
+            debugAnchor = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "at" }?.value
+            debugScreen = DebugScreen(rawValue: url.pathComponents.last ?? "")
+        #if DEBUG
+        case "start":
+            // `goel://start?url=…&url=…` — probe and queue, no taps. The screenshot harness has no
+            // way to press "Add Download", and a build that has never actually moved a byte in the
+            // simulator has not been tested. Debug-only: it queues without asking.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let links = items.filter { $0.name == "url" }.compactMap(\.value)
+            // `&play=1` opens the player the moment the transfer starts, which is the only
+            // scriptable way to reach play-while-downloading: the id does not exist until now.
+            let wantsPlayer = items.contains { $0.name == "play" }
+            for link in links {
+                guard let target = URL(string: link) else { continue }
+                Task { [engine] in
+                    let result = try? await engine.probe(target)
+                    let download = Download(
+                        url: target,
+                        filename: result?.filename ?? target.lastPathComponent,
+                        saveDirectory: AddSheet.rootFolder,
+                        kind: .infer(from: target),
+                        status: .queued,
+                        totalBytes: result?.totalBytes,
+                        isSequential: result?.isStreamable ?? false,
+                        supportsResume: result?.supportsResume ?? false,
+                        validator: result?.validator
+                    )
+                    await MainActor.run {
+                        self.start(download)
+                        if wantsPlayer { self.playerID = download.id }
+                    }
+                }
+            }
+        #endif
         default:
             log.warning("Unhandled deep link host: \(url.host ?? "nil", privacy: .public)")
         }
