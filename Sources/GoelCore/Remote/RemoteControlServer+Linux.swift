@@ -26,6 +26,8 @@ public actor RemoteControlServer {
     private var routerConfig = RemoteRouter.Config(token: "")
     private var passwordHash = ""
     private let sessionStore = RemoteSessionStore()
+    /// Login throttling and header SSO. TLS is declined here — see `start`.
+    private var security = RemotePortalSecurity()
     /// Bumped on every start/stop so long-lived SSE / streaming loops wind down.
     private var generation = 0
 
@@ -51,7 +53,8 @@ public actor RemoteControlServer {
     // MARK: Lifecycle
 
     public func start(port: UInt16, allowLAN: Bool, config: RemoteRouter.Config,
-                      passwordHash: String, sessionMinutes: Int) async {
+                      passwordHash: String, sessionMinutes: Int,
+                      security: RemotePortalSecurity = RemotePortalSecurity()) async {
         let credentialsChanged = config.username != routerConfig.username
             || config.requireAuth != routerConfig.requireAuth
             || config.token != routerConfig.token
@@ -63,11 +66,27 @@ public actor RemoteControlServer {
         }
         self.routerConfig = config
         self.passwordHash = passwordHash
+        self.security = security
         // Single hop: rotate credentials and drop sessions together, so no login
         // can slip through this actor's suspension holding stale credentials.
         await sessionStore.configure(username: config.username, passwordHash: passwordHash,
                                      sessionMinutes: sessionMinutes,
                                      invalidatingSessions: credentialsChanged)
+        await sessionStore.configure(throttle: security.throttle)
+        if security.sso.isEnabled && !security.sso.isEffective {
+            GoelLog.remote.error("Header SSO is enabled but no trusted proxies are configured — the header will be ignored")
+        }
+
+        // The daemon links SwiftNIO but not NIOSSL, so it cannot terminate TLS
+        // itself. Refuse to start rather than serve cleartext on a portal the
+        // operator asked to encrypt — on Linux the answer is a TLS-terminating
+        // reverse proxy (nginx / Caddy / Traefik) in front of the loopback bind,
+        // which is how these boxes are deployed anyway.
+        if security.tlsEnabled {
+            GoelLog.remote.error("Portal TLS is not supported by the Linux daemon — terminate TLS at a reverse proxy; refusing to serve cleartext")
+            await stop()
+            return
+        }
 
         // Never expose the portal to the network unless sign-in is required AND a
         // password actually exists. `requireAuth` alone is just the policy toggle;
@@ -140,16 +159,16 @@ public actor RemoteControlServer {
 
     // MARK: Dispatch (called by the per-connection handler once a request is whole)
 
-    func dispatch(requestData: Data, sink: ChannelSink) async {
+    func dispatch(requestData: Data, sink: ChannelSink, client: String) async {
         // Admission is capped at accept time by `ConnectionGate`; here we just route.
         let request = RemoteRequest(raw: requestData)
         switch (request.method, request.path) {
         case ("GET", "/api/events"):
-            await serveEvents(sink, request)
+            await serveEvents(sink, request, client: client)
         case ("GET", "/stream"):
-            await serveStream(sink, request)
+            await serveStream(sink, request, client: client)
         default:
-            let response = await respond(to: request)
+            let response = await respond(to: request, client: client)
             _ = await sink.send(response)
             sink.close()
         }
@@ -157,9 +176,9 @@ public actor RemoteControlServer {
 
     // MARK: Server-sent events
 
-    private func serveEvents(_ sink: ChannelSink, _ request: RemoteRequest) async {
+    private func serveEvents(_ sink: ChannelSink, _ request: RemoteRequest, client: String) async {
         let router = self.router
-        guard router.authorize(request, sessionAuthed: await validSession(request)) else {
+        guard router.authorize(request, sessionAuthed: await portalAuthed(request, client: client)) else {
             _ = await sink.send(RemoteRouter.response(status: "401 Unauthorized", type: "text/plain",
                                                       body: Data("Invalid token\n".utf8)))
             sink.close(); return
@@ -189,15 +208,15 @@ public actor RemoteControlServer {
 
     // MARK: Auth, sessions & login
 
-    private func respond(to request: RemoteRequest) async -> Data {
-        let authed = await validSession(request)
+    private func respond(to request: RemoteRequest, client: String) async -> Data {
+        let authed = await portalAuthed(request, client: client)
         let cfg = routerConfig
         switch (request.method, request.path) {
         case ("GET", "/login"):
             if authed || !cfg.requireAuth { return Self.redirect(to: "/") }
             return Self.htmlResponse(RemoteRouter.loginPage(theme: cfg.theme, error: nil))
         case ("POST", "/login"):
-            return await handleLogin(request)
+            return await handleLogin(request, client: client)
         case ("GET", "/logout"), ("POST", "/logout"):
             return await handleLogout(request)
         default:
@@ -213,12 +232,20 @@ public actor RemoteControlServer {
         await sessionStore.validSession(request)
     }
 
+    /// Session cookie, or an identity vouched for by a trusted upstream proxy.
+    /// Mirrors the macOS shell exactly so auth cannot drift between transports.
+    private func portalAuthed(_ request: RemoteRequest, client: String) async -> Bool {
+        if await sessionStore.validSession(request) { return true }
+        return RemoteAuthService.trustedIdentity(request, client: client,
+                                                 policy: security.sso) != nil
+    }
+
     private func tokenAuthed(_ request: RemoteRequest) -> Bool {
         RemoteAuthService.tokenAuthed(request, token: routerConfig.token)
     }
 
-    private func handleLogin(_ request: RemoteRequest) async -> Data {
-        await sessionStore.handleLogin(request)
+    private func handleLogin(_ request: RemoteRequest, client: String) async -> Data {
+        await sessionStore.handleLogin(request, client: client)
     }
 
     private func handleLogout(_ request: RemoteRequest) async -> Data {
@@ -236,13 +263,13 @@ public actor RemoteControlServer {
 
     // MARK: File streaming (Range support)
 
-    private func serveStream(_ sink: ChannelSink, _ request: RemoteRequest) async {
+    private func serveStream(_ sink: ChannelSink, _ request: RemoteRequest, client: String) async {
         func reject(_ status: String, _ message: String) async {
             _ = await sink.send(RemoteRouter.response(status: status, type: "text/plain",
                                                       body: Data("\(message)\n".utf8)))
             sink.close()
         }
-        guard router.authorize(request, sessionAuthed: await validSession(request)) else {
+        guard router.authorize(request, sessionAuthed: await portalAuthed(request, client: client)) else {
             return await reject("401 Unauthorized", "Not signed in")
         }
         guard let manager,
@@ -426,7 +453,10 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
         buffer = Data()   // free the accumulated request; the Task holds its own copy
         let sink = ChannelSink(context.channel)
         let server = self.server
-        Task { await server.dispatch(requestData: requestData, sink: sink) }
+        // The peer address from the kernel, not from a header: this is what the
+        // login throttle and the trusted-proxy check key off.
+        let client = context.channel.remoteAddress?.ipAddress ?? ""
+        Task { await server.dispatch(requestData: requestData, sink: sink, client: client) }
     }
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {

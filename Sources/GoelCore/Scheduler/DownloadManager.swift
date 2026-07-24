@@ -53,7 +53,27 @@ public actor DownloadManager {
     /// User configuration (active profile, snail flag, default folder, plus the
     /// General/Network/BitTorrent/Notification/Power/Backup/Antivirus panes).
     /// `internal` so the cross-cutting extensions can read it.
+    ///
+    /// This is the **effective** configuration: ``storedSettings`` with the
+    /// managed (MDM) overlay applied. Everything in the engine/scheduler reads
+    /// it, so a forced key cannot be bypassed by a code path that forgot to ask.
     var settings: AppSettings
+
+    /// The settings the *user* chose, exactly as edited — and the only thing
+    /// ever persisted. Keeping the user's own copy separate is what makes a
+    /// configuration profile reversible: remove the profile and their choice
+    /// comes back, instead of the last forced value being frozen in as if they
+    /// had picked it.
+    var storedSettings: AppSettings
+
+    /// The managed-preferences overlay in force. Re-read on app re-activation
+    /// (see ``refreshManagedPolicy()``), because a profile can be installed
+    /// while the app is running.
+    var managedPolicy: ManagedPolicy
+
+    /// Append-only compliance log. A no-op while `auditLogEnabled` is false,
+    /// which is the default — see the file header on ``AuditLog``.
+    let auditLog = AuditLog()
 
     /// Optional on-disk store. When present, the queue and settings survive quit
     /// & relaunch. Writes are dispatched off the actor so disk I/O never blocks
@@ -204,7 +224,12 @@ public actor DownloadManager {
         self.hlsEngine = hlsEngine ?? HLSEngine(profile: settings.effectiveProfile)
         self.ftpEngine = ftpEngine ?? FTPEngine(profile: settings.effectiveProfile)
         self.sftpEngine = sftpEngine ?? SFTPEngine(profile: settings.effectiveProfile)
-        self.settings = settings
+        // The managed overlay is resolved once here so the very first read of
+        // `settings` — before any restore — already reflects MDM policy.
+        let policy = ManagedPolicy.current()
+        self.managedPolicy = policy
+        self.storedSettings = settings
+        self.settings = policy.apply(to: settings)
         self.store = store
         self.power = power
         self.folderWatch = folderWatch
@@ -241,7 +266,12 @@ public actor DownloadManager {
         self.hlsEngine = HLSEngine(profile: settings.effectiveProfile)
         self.ftpEngine = FTPEngine(profile: settings.effectiveProfile)
         self.sftpEngine = SFTPEngine(profile: settings.effectiveProfile)
-        self.settings = settings
+        // The managed overlay is resolved once here so the very first read of
+        // `settings` — before any restore — already reflects MDM policy.
+        let policy = ManagedPolicy.current()
+        self.managedPolicy = policy
+        self.storedSettings = settings
+        self.settings = policy.apply(to: settings)
         self.store = store
         self.power = power
         self.folderWatch = folderWatch
@@ -275,7 +305,7 @@ public actor DownloadManager {
         installPersistErrorBridge()
 
         do {
-            if let saved = try store.loadSettings() { settings = saved }
+            if let saved = try store.loadSettings() { adoptStoredSettings(saved) }
         } catch {
             notePersistenceError(error)
         }
@@ -437,7 +467,15 @@ public actor DownloadManager {
         suggestedName: String? = nil,
         totalBytes: Int64? = nil,
         files: [TransferFile] = [],
-        deselectedFileIDs: [Int]? = nil
+        deselectedFileIDs: [Int]? = nil,
+        // A browser capture arrives with its session already in hand; letting it
+        // ride along on the create avoids a second hop where the first request
+        // could go out signed-out. The value is sanitised below and, like every
+        // cookie in this app, never reaches the store — see the storage
+        // rationale on ``DownloadTask/cookieHeader``.
+        cookieHeader: String? = nil,
+        cookieSource: CookieSource? = nil,
+        cookieHost: String? = nil
     ) -> DownloadTask {
         if let existingID = dedupIndex[source.dedupKey],
            let i = index(of: existingID) {
@@ -464,6 +502,9 @@ public actor DownloadManager {
         } else {
             name = baseName
         }
+        // Sanitised once here so a malformed capture becomes "no cookies" rather
+        // than a header that could split the request.
+        let cleanedCookie = cookieHeader.flatMap(CookieHeader.sanitized)
         let task = DownloadTask(
             source: source,
             name: name,
@@ -479,10 +520,17 @@ public actor DownloadManager {
             expectedChecksum: expectedChecksum,
             scheduledAt: scheduledAt,
             mirrors: Self.sanitizedMirrors(mirrors, primary: source),
+            cookieHeader: cleanedCookie,
+            cookieSource: cleanedCookie == nil ? CookieSource.none : (cookieSource ?? .browser),
+            // nil scope is not "no scope" — ``DownloadTask/sendsCookies(to:)``
+            // falls back to the task's own origin, which is what a capture for
+            // this exact URL means.
+            cookieHost: cleanedCookie == nil ? nil : cookieHost,
             initialSkipFileIDs: (deselectedFileIDs?.isEmpty ?? true) ? nil : deselectedFileIDs
         )
         appendTask(task)
         persist(task)
+        recordAudit(.added, task: task)
         publish()
         if !holdPaused { schedule() }
         if scheduledAt != nil { armScheduledStarts() }
@@ -741,11 +789,68 @@ public actor DownloadManager {
     /// directory-only change).
     @discardableResult
     public func setDefaultSaveDirectory(_ path: String) async -> AppSettings {
-        settings.defaultSaveDirectory = path
+        var updated = storedSettings
+        updated.defaultSaveDirectory = path
+        adoptStoredSettings(updated)
         persistSettings()
         publish()
         return settings
     }
+
+    // MARK: Audit
+
+    /// Append one task transition to the compliance log, off the actor's own
+    /// critical path.
+    ///
+    /// Fire-and-forget on purpose: the log is a record *of* the queue, never a
+    /// gate *on* it, so a slow or unwritable audit directory must not stall a
+    /// download. ``AuditLog`` returns immediately when logging is disabled, which
+    /// is the default, and the ``AuditEvent`` initialiser — not any caller here —
+    /// is what applies the redaction rules.
+    func recordAudit(_ action: AuditEvent.Action, task: DownloadTask) {
+        guard settings.auditLogEnabled else { return }
+        Task { [auditLog] in await auditLog.record(action, task: task) }
+    }
+
+    /// The directory the audit log is writing to, or nil when logging is off.
+    public func auditLogDirectory() async -> URL? {
+        await auditLog.currentDirectory()
+    }
+
+    // MARK: Managed policy
+
+    /// Record the user's settings and recompute the effective ones through the
+    /// managed overlay. Every write to ``storedSettings`` goes through here, so
+    /// the two can never drift.
+    ///
+    /// The audit log is re-configured on the same beat because its policy lives
+    /// in the same settings object, and a managed profile is exactly the kind of
+    /// thing that turns it on.
+    func adoptStoredSettings(_ newSettings: AppSettings) {
+        storedSettings = newSettings
+        settings = managedPolicy.apply(to: newSettings)
+        let auditConfiguration = AuditLog.Configuration(settings: settings)
+        Task { [auditLog] in await auditLog.configure(auditConfiguration) }
+    }
+
+    /// Re-read the managed-preferences overlay and re-apply it.
+    ///
+    /// Call on app re-activation: an administrator can install or remove a
+    /// configuration profile while the app is running, and a policy that only
+    /// took effect at launch would be a policy the user could dodge by never
+    /// quitting.
+    public func refreshManagedPolicy() async {
+        let policy = ManagedPolicy.current()
+        guard policy != managedPolicy else { return }
+        managedPolicy = policy
+        // Re-run the full cascade: a forced bandwidth cap or folder rule has to
+        // reach the engines, not just the struct.
+        await updateSettings(storedSettings)
+    }
+
+    /// The managed overlay currently in force, for UI that needs to disable and
+    /// annotate the controls an administrator has locked.
+    public func currentManagedPolicy() -> ManagedPolicy { managedPolicy }
 
     /// Replace the entire settings object and re-apply every dependent subsystem:
     /// engine bandwidth/connection limits, HTTP network config, torrent session
@@ -753,7 +858,7 @@ public actor DownloadManager {
     /// scheduler. The default-folder rule needs no re-application here — it is read
     /// live by ``add(source:saveDirectory:priority:)`` for each new download.
     public func updateSettings(_ newSettings: AppSettings) async {
-        settings = newSettings
+        adoptStoredSettings(newSettings)
         persistSettings()
         await applyEngineConfigs()
         updatePowerAssertion()
@@ -879,6 +984,22 @@ public actor DownloadManager {
             .sorted()
     }
 
+    /// Attach (or clear, with nil) the browser session cookies for a task.
+    /// The value is sanitised through ``CookieHeader`` and lives in memory only —
+    /// it is excluded from ``DownloadTask``'s `Codable` representation by design.
+    /// The non-secret provenance (`cookieSource`/`cookieHost`) *is* persisted, so
+    /// the row still needs a write.
+    public func setCookies(_ raw: String?, host: String?, source: CookieSource,
+                           task id: DownloadTask.ID) async {
+        guard let i = index(of: id) else { return }
+        let cleaned = raw.flatMap(CookieHeader.sanitized)
+        tasks[i].cookieHeader = cleaned
+        tasks[i].cookieSource = cleaned == nil ? CookieSource.none : source
+        tasks[i].cookieHost = cleaned == nil ? nil : (host ?? tasks[i].sourceHost)
+        persist(tasks[i])
+        publish()
+    }
+
     /// The outcome of a ``rename(_:to:)``, distinguishing each rejection cause so
     /// the UI can show an accurate message instead of one catch-all string.
     public enum RenameResult: Sendable, Equatable {
@@ -933,7 +1054,14 @@ public actor DownloadManager {
     static let reservedHeaderNames: Set<String> = [
         "host", "content-length", "connection", "transfer-encoding", "keep-alive",
         "upgrade", "te", "trailer", "referer", "authorization", "proxy-authorization",
-        "proxy-connection"
+        "proxy-connection",
+        // `cookie` is reserved not because the transport manages it, but because
+        // the plaintext headers editor persists into SQLite and into the
+        // shareable JSON export — a session cookie must never travel that way.
+        // ``setCookies(_:host:source:task:)`` is the supported path; it keeps the
+        // value in memory only. `setRequestOptions` reports reserved names back
+        // to the UI, so the user is told rather than silently ignored.
+        "cookie"
     ]
 
     /// Trim names/values, and drop reserved, empty, or control-char-bearing

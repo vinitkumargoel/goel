@@ -376,6 +376,14 @@ public enum DiagnosticsRedaction {
         // Remote access (the switches, never the credentials)
         "remoteAccessEnabled", "remotePort", "remoteAllowLAN", "remoteRequireAuth",
         "remoteReadOnly", "remoteSessionMinutes", "remoteTheme",
+        // Portal hardening: booleans, numeric limits, a header name, and one
+        // path that scrub() already rewrites. None of them name a person.
+        "remoteTLSEnabled", "remoteTLSIdentityPath",
+        "remoteLoginMaxAttempts", "remoteLoginBackoffSeconds",
+        "remoteTrustedHeaderAuthEnabled", "remoteTrustedHeaderName",
+        // Audit log: switches, retention limits, and a path scrub() rewrites.
+        "auditLogEnabled", "auditLogDirectory", "auditLogRetentionDays",
+        "auditLogKeepFiles", "auditLogMaxFileMegabytes",
         // RSS
         "rssPollIntervalMinutes",
         // Updates
@@ -406,6 +414,9 @@ public enum DiagnosticsRedaction {
         "remoteToken", "remoteUsername", "remotePasswordHash",
         "rssFeeds",
         "updateFeedURL",
+        // A list of internal IPs/CIDRs is a network location, withheld for the
+        // same reason as `proxyHost`: it identifies the user's employer.
+        "remoteTrustedProxies",
     ]
 
     /// Every `AppSettings` key that has been consciously classified. The

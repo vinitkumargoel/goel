@@ -286,6 +286,46 @@ struct RemoteAccessPane: View {
                         .disabled(controlURL == nil)
                     }
                 }
+                SectionHeader("Hardening")
+                SetRow(name: "Serve over HTTPS",
+                       desc: "Encrypt the portal with a PKCS#12 identity. If the identity can’t be loaded the server refuses to start rather than falling back to cleartext.") {
+                    SettingSwitch(isOn: setting(vm, \.remoteTLSEnabled))
+                        .managed(.remoteTLSEnabled, vm.managedPolicy)
+                }
+                if vm.settings.remoteTLSEnabled {
+                    SetRow(name: "Identity (.p12) path",
+                           desc: "Its passphrase is read from the GOEL_PORTAL_TLS_PASSPHRASE environment variable — Goel° never stores it.") {
+                        SettingText(text: setting(vm, \.remoteTLSIdentityPath), width: 200)
+                            .managed(.remoteTLSIdentityPath, vm.managedPolicy)
+                    }
+                }
+                SetRow(name: "Failed sign-ins before backoff",
+                       desc: "Wrong passwords from one address are slowed exponentially. The delay is per-address, so one attacker can’t lock everybody else out.") {
+                    SettingInt(value: setting(vm, \.remoteLoginMaxAttempts), width: 70)
+                }
+                SetRow(name: "Backoff (seconds)",
+                       desc: "The first delay after the limit is hit; it doubles from there.") {
+                    SettingInt(value: backoffSecondsBinding, width: 70)
+                }
+
+                SectionHeader("Single sign-on (advanced)")
+                SetRow(name: "Trust a proxy’s identity header",
+                       desc: "For an SSO reverse proxy that authenticates users itself. Only enable it behind such a proxy — otherwise anyone can set the header.") {
+                    SettingSwitch(isOn: setting(vm, \.remoteTrustedHeaderAuthEnabled))
+                        .managed(.remoteTrustedHeaderAuthEnabled, vm.managedPolicy)
+                }
+                if vm.settings.remoteTrustedHeaderAuthEnabled {
+                    SetRow(name: "Header name", desc: "e.g. X-Forwarded-User.") {
+                        SettingText(text: setting(vm, \.remoteTrustedHeaderName), width: 180)
+                            .managed(.remoteTrustedHeaderName, vm.managedPolicy)
+                    }
+                    SetRow(name: "Trusted proxies",
+                           desc: "Comma-separated IPs/CIDRs. Checked against the kernel-supplied peer address. EMPTY MEANS TRUST NOBODY — the header is ignored until you list one.") {
+                        SettingText(text: trustedProxiesBinding, width: 200)
+                            .managed(.remoteTrustedProxies, vm.managedPolicy)
+                    }
+                }
+
                 if vm.settings.remoteAllowLAN {
                     SetRow(name: "Scan from your phone",
                            desc: lanURL == nil
@@ -298,6 +338,32 @@ struct RemoteAccessPane: View {
                 }
             }
         }
+    }
+
+    /// Whole seconds onto the stored `Double`. The backoff is configured in
+    /// seconds by an operator; sub-second precision would be noise.
+    private var backoffSecondsBinding: Binding<Int> {
+        Binding(
+            get: { Int(vm.settings.remoteLoginBackoffSeconds.rounded()) },
+            set: { seconds in
+                vm.update { $0.remoteLoginBackoffSeconds = Double(max(0, seconds)) }
+            }
+        )
+    }
+
+    /// A comma-separated view onto the stored list. Blank entries are dropped so
+    /// a trailing comma can't become an empty — and therefore never-matching —
+    /// entry that looks like a configured proxy.
+    private var trustedProxiesBinding: Binding<String> {
+        Binding(
+            get: { vm.settings.remoteTrustedProxies.joined(separator: ", ") },
+            set: { raw in
+                let parsed = raw.split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                vm.update { $0.remoteTrustedProxies = parsed }
+            }
+        )
     }
 
     /// The LAN-reachable control URL, when a LAN address exists.
@@ -487,5 +553,61 @@ struct CredentialsSection: View {
 
     private func refresh() {
         entries = store.allCredentials()
+    }
+}
+
+// MARK: - Audit log
+
+/// The compliance-log pane.
+///
+/// Deliberately blunt about what this is and is not: the log is strictly local,
+/// off by default, and nothing here ever transmits anything. "No telemetry" is a
+/// product guarantee, and an *audit* feature is exactly where a user would
+/// reasonably fear it had been quietly walked back — so the pane says so.
+struct AuditLogPane: View {
+    @EnvironmentObject private var vm: AppViewModel
+
+    private static let managedKeys: [ManagedPolicy.Key] = [
+        .auditLogEnabled, .auditLogDirectory, .auditLogRetentionDays,
+        .auditLogKeepFiles, .auditLogMaxFileMegabytes,
+    ]
+
+    var body: some View {
+        PaneScaffold(title: "Audit Log",
+                     subtitle: "An append-only record of downloads added, completed, and failed — written to a file on this Mac and nowhere else.") {
+            ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.managedKeys)
+
+            SetRow(name: "Keep an audit log",
+                   desc: "Off by default. Nothing is recorded, and nothing is ever sent anywhere — Goel° has no telemetry.") {
+                SettingSwitch(isOn: setting(vm, \.auditLogEnabled))
+                    .managed(.auditLogEnabled, vm.managedPolicy)
+            }
+            if vm.settings.auditLogEnabled {
+                SetRow(name: "Folder",
+                       desc: "Leave empty for Application Support/GoelDownloader/Audit. File names and hosts are recorded; URLs are reduced to their host.") {
+                    SettingText(text: setting(vm, \.auditLogDirectory), width: 200)
+                        .managed(.auditLogDirectory, vm.managedPolicy)
+                }
+                SetRow(name: "Rotate at (MB)",
+                       desc: "The live file is rotated once it passes this size.") {
+                    SettingInt(value: setting(vm, \.auditLogMaxFileMegabytes), width: 70)
+                        .managed(.auditLogMaxFileMegabytes, vm.managedPolicy)
+                }
+                SetRow(name: "Rotated files to keep",
+                       desc: "Older ones are deleted.") {
+                    SettingInt(value: setting(vm, \.auditLogKeepFiles), width: 70)
+                        .managed(.auditLogKeepFiles, vm.managedPolicy)
+                }
+                SetRow(name: "Keep for (days)",
+                       desc: "Rotated files older than this are deleted. 0 keeps them forever.") {
+                    SettingInt(value: setting(vm, \.auditLogRetentionDays), width: 70)
+                        .managed(.auditLogRetentionDays, vm.managedPolicy)
+                }
+                SetRow(name: "Reveal in Finder",
+                       desc: "Turning the log off never deletes what is already written — that record is not Goel°’s to discard.") {
+                    Button("Show Audit Folder") { vm.revealAuditLogFolder() }
+                }
+            }
+        }
     }
 }

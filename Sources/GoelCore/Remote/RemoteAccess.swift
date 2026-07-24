@@ -23,6 +23,15 @@ public enum RemoteAccessPolicy {
             || previous.remoteReadOnly != next.remoteReadOnly
             || previous.remoteTheme != next.remoteTheme
             || previous.remoteSessionMinutes != next.remoteSessionMinutes
+            // Portal hardening is applied once at `start`, so any change to it
+            // has to re-bind or the new policy stays inert.
+            || previous.remoteTLSEnabled != next.remoteTLSEnabled
+            || previous.remoteTLSIdentityPath != next.remoteTLSIdentityPath
+            || previous.remoteLoginMaxAttempts != next.remoteLoginMaxAttempts
+            || previous.remoteLoginBackoffSeconds != next.remoteLoginBackoffSeconds
+            || previous.remoteTrustedHeaderAuthEnabled != next.remoteTrustedHeaderAuthEnabled
+            || previous.remoteTrustedHeaderName != next.remoteTrustedHeaderName
+            || previous.remoteTrustedProxies != next.remoteTrustedProxies
     }
 }
 
@@ -66,7 +75,8 @@ public actor RemoteAccess {
             allowLAN: settings.remoteAllowLAN,
             config: config,
             passwordHash: settings.remotePasswordHash,
-            sessionMinutes: settings.remoteSessionMinutes)
+            sessionMinutes: settings.remoteSessionMinutes,
+            security: RemotePortalSecurity(settings: settings))
         if await server.boundState() != nil {
             self.applied = settings
             self.running = true

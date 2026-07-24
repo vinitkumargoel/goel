@@ -258,3 +258,31 @@ OTHER DEALINGS IN THE SOFTWARE.
 The bundled `yt-dlp_macos` binary also embeds a Python runtime (PSF License) and
 other permissively-licensed components; see the yt-dlp project for the complete
 dependency license list.
+
+---
+
+## FFmpeg — LGPL-2.1-or-later
+
+- Upstream: https://ffmpeg.org/
+- Licence: GNU Lesser General Public License v2.1 or later (LGPL-2.1-or-later)
+- Used for: converting finished downloads between containers and extracting audio
+  tracks; HLS remux on the Linux daemon.
+- Configuration: built with `--disable-gpl --disable-nonfree`. No GPL-only
+  components (x264, x265, libfdk_aac, …) are included.
+- LGPL relinking: FFmpeg is bundled as a SEPARATE executable at
+  `Goel°.app/Contents/Resources/ffmpeg`, not statically linked into the app. Any
+  user may replace it, or point Goel° at their own build via
+  Settings → Media tools → "ffmpeg path".
+- Full licence text: https://www.ffmpeg.org/legal.html and the `COPYING.LGPLv2.1`
+  file in the FFmpeg source distribution.
+
+FFmpeg is dual-configurable — LGPL-2.1+ by default, or GPL-2.0+/GPL-3.0+ with
+`--enable-gpl` (and non-redistributable with `--enable-nonfree`). Goel° ships
+under PolyForm Noncommercial 1.0.0, which is **not** GPL-compatible, so
+redistributing a GPL-configured ffmpeg inside the .app would be a licence
+violation. `Scripts/fetch_ffmpeg.sh` therefore enforces the LGPL configuration by
+parsing the binary's own `ffmpeg -version` configure banner and refusing any
+build containing `--enable-gpl` or `--enable-nonfree`.
+
+If a GPL build is ever knowingly shipped (`FFMPEG_ALLOW_GPL=1`), this entry must
+be changed to GPL-2.0-or-later AND the project licence re-examined first.

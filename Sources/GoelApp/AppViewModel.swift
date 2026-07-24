@@ -462,6 +462,10 @@ final class AppViewModel: ObservableObject {
             guard let self else { return }
             let manager = self.manager
             Task { await manager.reconcileCompletedFiles() }
+            // An administrator can install or remove a configuration profile
+            // while the app is running; a policy that only took effect at launch
+            // would be one the user could dodge by never quitting.
+            self.refreshManagedPolicy()
         }
         // Best-effort flush of the speed-chart samples on quit. AppKit does not
         // await fire-and-forget Tasks on willTerminate, so do not half-wire
@@ -715,7 +719,9 @@ final class AppViewModel: ObservableObject {
     /// user chose on the confirmation screen.
     func confirm(_ preview: DownloadPreview, saveDirectory: String?,
                  priority: FilePriority, checksum: Checksum?, startAt: Date? = nil,
-                 mirrors: [String]? = nil, deselectedFileIDs: [Int]? = nil) {
+                 mirrors: [String]? = nil, deselectedFileIDs: [Int]? = nil,
+                 cookieHeader: String? = nil, cookieSource: CookieSource? = nil,
+                 cookieHost: String? = nil) {
         // The manager dedups by source identity — starting an exact duplicate is
         // a no-op, so say that instead of a misleading "Added".
         guard existingDuplicate(of: preview.source) == nil else {
@@ -742,7 +748,10 @@ final class AppViewModel: ObservableObject {
                               scheduledAt: startAt, mirrors: mirrors,
                               suggestedName: preview.suggestedName,
                               totalBytes: seededBytes, files: seededFiles,
-                              deselectedFileIDs: skipFiles)
+                              deselectedFileIDs: skipFiles,
+                              cookieHeader: cookieHeader,
+                              cookieSource: cookieSource,
+                              cookieHost: cookieHost)
         }
         if let startAt {
             let formatter = RelativeDateTimeFormatter()
@@ -832,11 +841,26 @@ final class AppViewModel: ObservableObject {
         // Re-validate the scheme allowlist here too: the spool file is
         // user-only, but auto-adding without confirmation must never initiate an
         // authenticated `sftp:`/`ftp:` connection on a web page's behalf.
-        let locators = BrowserSpool.drain().filter {
-            DownloadSource.parse($0)?.isBrowserCaptureSafe == true
+        let captures = BrowserSpool.drainCaptures().filter {
+            DownloadSource.parse($0.locator)?.isBrowserCaptureSafe == true
         }
-        guard !locators.isEmpty else { return }
-        add(rawLines: locators.joined(separator: "\n"), saveDirectory: nil, priority: .normal)
+        guard !captures.isEmpty else { return }
+        // One add per capture rather than one batched add: each capture carries
+        // its own cookie scope and referrer, and a batch would have to flatten
+        // them into a single set — which is exactly the leak the host-exact
+        // scoping exists to prevent.
+        for capture in captures {
+            guard let source = DownloadSource.parse(capture.locator) else { continue }
+            Task {
+                let task = await manager.add(source: source, priority: .normal,
+                                             cookieHeader: capture.cookieHeader,
+                                             cookieSource: capture.cookieHeader == nil ? CookieSource.none : .browser,
+                                             cookieHost: capture.cookieHost)
+                if let referer = capture.referer {
+                    await manager.setRequestOptions(referer: referer, headers: nil, task: task.id)
+                }
+            }
+        }
     }
 
     /// Delegates to the core parser, which enforces the scheme allowlist
@@ -1532,6 +1556,58 @@ final class AppViewModel: ObservableObject {
 
     /// Whether an ffmpeg binary is reachable (honouring the settings override).
     var ffmpegAvailable: Bool { FFmpegService.isAvailable(override: settings.ffmpegPath) }
+
+    // MARK: Managed (MDM) policy
+
+    /// The managed-preferences overlay an administrator has deployed, for UI that
+    /// needs to disable and annotate the controls they have locked.
+    ///
+    /// Read here as well as in ``DownloadManager`` on purpose: the manager needs
+    /// it to *enforce* policy, the UI needs it to *explain* policy, and a forced
+    /// control that silently ignores the user's click is worse than one that says
+    /// who is in charge of it.
+    @Published private(set) var managedPolicy: ManagedPolicy = ManagedPolicy.current()
+
+    /// Re-read the overlay and push it through the manager's settings cascade.
+    func refreshManagedPolicy() {
+        managedPolicy = ManagedPolicy.current()
+        let manager = self.manager
+        Task { await manager.refreshManagedPolicy() }
+    }
+
+    /// The footnote shown under a control an administrator has locked.
+    static let managedFootnote = "Managed by your organisation."
+
+    /// Reveal the audit log's directory in Finder, creating nothing.
+    ///
+    /// Asks the ``AuditLog`` itself rather than recomputing the default path
+    /// here — the resolution rule (explicit directory, else Application Support)
+    /// lives in one place, and a second copy of it would eventually disagree.
+    func revealAuditLogFolder() {
+        let manager = self.manager
+        Task {
+            guard let url = await manager.auditLogDirectory() else {
+                await MainActor.run { self.toastNow("Audit log is off — nothing written yet") }
+                return
+            }
+            await MainActor.run { NSWorkspace.shared.open(url) }
+        }
+    }
+
+    /// The plain-language reason ffmpeg can't be used, or nil when it can.
+    ///
+    /// The companion to ``ffmpegAvailable``: views use this to keep the Convert /
+    /// Extract-audio actions *visible* and explain why they won't run, instead of
+    /// silently omitting them — a missing menu item is indistinguishable from a
+    /// feature that never existed.
+    var ffmpegUnavailableReason: String? {
+        FFmpegService.unavailableReason(override: settings.ffmpegPath)
+    }
+
+    /// One line describing which ffmpeg is in effect, for the Settings pane.
+    var ffmpegResolutionSummary: String {
+        FFmpegService.resolutionSummary(override: settings.ffmpegPath)
+    }
 
     /// Convert a finished media file into another container next to the original.
     func convertFile(task: DownloadTask, toExtension ext: String) {

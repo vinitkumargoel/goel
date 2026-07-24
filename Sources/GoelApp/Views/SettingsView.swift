@@ -23,6 +23,7 @@ struct SettingsView: View {
         case antivirus = "Antivirus"
         case browser = "Browser"
         case remote = "Web Access"
+        case audit = "Audit Log"
         var id: String { rawValue }
 
         var symbol: String {
@@ -38,6 +39,7 @@ struct SettingsView: View {
             case .antivirus: return "shield"
             case .browser: return "safari"
             case .remote: return "display"
+            case .audit: return "doc.text.magnifyingglass"
             }
         }
 
@@ -138,6 +140,7 @@ struct SettingsView: View {
         case .antivirus: antivirusPane
         case .browser: BrowserIntegrationPane()
         case .remote: RemoteAccessPane()
+        case .audit: AuditLogPane()
         }
     }
 
@@ -266,9 +269,16 @@ struct SettingsView: View {
                 }
             }
             SetRow(name: "ffmpeg path",
-                   desc: "Optional. Leave empty to auto-detect. Enables Convert / Extract-audio on finished media.") {
+                   desc: "Optional. Leave empty to use the copy included with Goel°. Enables Convert / Extract-audio on finished media.") {
                 SettingText(text: binding(\.ffmpegPath), width: 200)
             }
+            // Show which binary actually won (override → bundled → system), so a
+            // typo'd path or a missing bundle is visible where it is configured
+            // rather than only at the moment a conversion fails.
+            Text(vm.ffmpegResolutionSummary)
+                .font(.system(size: 10))
+                .foregroundStyle(vm.ffmpegUnavailableReason == nil ? Color.secondary : Theme.orange)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -299,9 +309,11 @@ struct SettingsView: View {
                 }
                 SetRow(name: "Proxy host", desc: "Hostname or IP of the proxy server.") {
                     SettingText(text: binding(\.proxyHost), width: 160)
+                        .managed(.proxyHost, vm.managedPolicy)
                 }
                 SetRow(name: "Proxy port", desc: "Port the proxy listens on.") {
                     SettingInt(value: binding(\.proxyPort))
+                        .managed(.proxyPort, vm.managedPolicy)
                 }
             }
             SetRow(name: "Connection timeout", desc: "Seconds before a stalled connection drops.") {
@@ -528,6 +540,7 @@ struct SettingsView: View {
             SectionHeader("Updates")
             SetRow(name: "Check for updates automatically", desc: "Once at launch.") {
                 SettingSwitch(isOn: binding(\.autoCheckUpdates))
+                    .managed(.autoCheckUpdates, vm.managedPolicy)
             }
             SetRow(name: "Release feed URL",
                    desc: "A GitHub releases API URL (or compatible JSON feed).") {

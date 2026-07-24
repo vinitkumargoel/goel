@@ -224,15 +224,23 @@ struct DownloadRow: View {
         if task.status.hasData {
             Button("Quick Look") { quickLook(URL(fileURLWithPath: task.savePath)) }
         }
-        if task.status == .completed, task.isMediaFile, vm.ffmpegAvailable {
-            Menu("Convert To") {
-                ForEach(["mp4", "mkv", "webm", "mov"], id: \.self) { ext in
-                    Button(ext.uppercased()) { vm.convertFile(task: task, toExtension: ext) }
+        // The capability stays VISIBLE when ffmpeg is missing and says why.
+        // Hiding it made "Convert" indistinguishable from a feature Goel° does
+        // not have, which is the user-visible half of the missing-ffmpeg bug.
+        if task.status == .completed, task.isMediaFile {
+            if let reason = vm.ffmpegUnavailableReason {
+                Button("Convert To…") { vm.toastNow(reason) }
+                Button("Extract Audio…") { vm.toastNow(reason) }
+            } else {
+                Menu("Convert To") {
+                    ForEach(["mp4", "mkv", "webm", "mov"], id: \.self) { ext in
+                        Button(ext.uppercased()) { vm.convertFile(task: task, toExtension: ext) }
+                    }
                 }
-            }
-            Menu("Extract Audio") {
-                ForEach(FFmpegService.AudioFormat.allCases, id: \.self) { fmt in
-                    Button(fmt.rawValue.uppercased()) { vm.extractAudio(task: task, format: fmt) }
+                Menu("Extract Audio") {
+                    ForEach(FFmpegService.AudioFormat.allCases, id: \.self) { fmt in
+                        Button(fmt.rawValue.uppercased()) { vm.extractAudio(task: task, format: fmt) }
+                    }
                 }
             }
         }

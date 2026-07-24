@@ -255,6 +255,23 @@ if [ "${BUNDLE_YTDLP:-1}" = "1" ]; then
   codesign --force -s - "$APP/Contents/Resources/yt-dlp"
 fi
 
+# Optional: bundle a static LGPL ffmpeg (Convert / Extract Audio on finished
+# media). Adds ~40-80 MB. Set BUNDLE_FFMPEG=0 to ship without it — the actions
+# then TELL the user it is missing rather than silently disappearing.
+# FFMPEG_OPTIONAL=1 (the default here) downgrades "no source configured" from a
+# build failure to a warning; flip it to 0 once a checksummed LGPL asset is
+# pinned in Scripts/fetch_ffmpeg.sh. Signed ad-hoc now so bundle_dylibs.sh can
+# seal the app wrapper; the Developer ID block below re-signs it.
+if [ "${BUNDLE_FFMPEG:-1}" = "1" ]; then
+  FFMPEG_ARCH="$ARCH_ENV" FFMPEG_OPTIONAL="${FFMPEG_OPTIONAL:-1}" \
+    Scripts/fetch_ffmpeg.sh "$APP/Contents/Resources/ffmpeg"
+  # NOT collapsed into `[ -e ... ] && codesign ...`: under `set -e` a false test
+  # as the last statement of the outer if-body aborts the build.
+  if [ -e "$APP/Contents/Resources/ffmpeg" ]; then
+    codesign --force -s - "$APP/Contents/Resources/ffmpeg"
+  fi
+fi
+
 # Vendor native dylibs, rewrite install names, and sign.
 Scripts/bundle_dylibs.sh "$APP"
 
@@ -330,6 +347,9 @@ if [ -n "${CODESIGN_IDENTITY:-}" ]; then
 
   # 3. Bundled yt-dlp — needs the hardened-runtime entitlements to run its Python.
   [ -e "$APP/Contents/Resources/yt-dlp" ] && sign --entitlements "$ENTITLEMENTS" "$APP/Contents/Resources/yt-dlp"
+
+  # 3b. Bundled ffmpeg — a plain static Mach-O; no entitlements needed.
+  [ -e "$APP/Contents/Resources/ffmpeg" ] && sign "$APP/Contents/Resources/ffmpeg"
 
   # 4. SwiftPM resource bundles, 5. Safari extension.
   for b in "$APP/Contents/MacOS/"*.bundle; do [ -e "$b" ] && sign "$b"; done

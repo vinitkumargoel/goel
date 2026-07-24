@@ -22,6 +22,9 @@ struct AddDownloadSheet: View {
         case input
         case resolving
         case confirm(DownloadPreview)
+        /// The pasted link is a playlist/channel: let the user tick which items
+        /// to queue instead of silently taking the first video (or all of them).
+        case playlist(URL)
     }
     @State private var phase: Phase = .input
     /// Torrent file indices the user unticked on the confirm screen (skip these).
@@ -45,6 +48,26 @@ struct AddDownloadSheet: View {
     @State private var subtitleTask: Task<Void, Never>?
 
     /// When to start: "now", or a ``ScheduledStartOption`` preset id.
+    /// Where this download's session cookies come from. Never persisted — see
+    /// ``pastedCookies``.
+    @State private var cookieSource: CookieSource = .none
+
+    /// The raw `Cookie` header the user pasted. Deliberately plain `@State` and
+    /// never `@AppStorage`/`UserDefaults`: this is a live bearer credential, and
+    /// the whole cookie design keeps it out of every store.
+    @State private var pastedCookies: String = ""
+
+    /// Non-nil only when the sheet was opened from a browser capture; presence
+    /// is what makes the picker's `.browser` option meaningful.
+    var capturedCookies: String? = nil
+
+    /// The rendition the user picked in ``MediaFormatPicker``. nil means "best
+    /// available", where the resolver omits `-f` rather than guessing an id.
+    @State private var chosenFormat: MediaFormat?
+
+    /// The playlist the pasted link expands to, once the user asks to expand it.
+    @State private var playlistURL: URL?
+
     @State private var startSelection: String = "now"
 
     /// The chosen "Save to" preset, shown on the confirm screen. Defaults to
@@ -88,6 +111,12 @@ struct AddDownloadSheet: View {
             case .input:        inputContent
             case .resolving:    resolvingContent
             case .confirm(let preview): confirmContent(preview)
+            case .playlist(let url):
+                PlaylistChecklistView(playlistURL: url) { items in
+                    vm.add(rawLines: items.map(\.url).joined(separator: "\n"),
+                           saveDirectory: resolvedSaveDirectory, priority: priority)
+                    dismiss()
+                }
             }
         }
         .frame(width: 560)
@@ -251,8 +280,17 @@ struct AddDownloadSheet: View {
                 if preview.kind == .http {
                     mirrorsField
                 }
+                // Renders nothing when the source has no origin (a magnet), so
+                // it needs no `kind` guard of its own.
+                CookieSourcePicker(host: previewHost(preview),
+                                   source: $cookieSource,
+                                   pastedCookies: $pastedCookies,
+                                   capturedCookies: capturedCookies)
                 if preview.kind == .http, YtDlpResolver.isAvailable {
                     ytDlpRow(preview)
+                    if case .url(let pageURL) = preview.source {
+                        MediaFormatPicker(pageURL: pageURL) { chosenFormat = $0 }
+                    }
                 }
             }
             .padding(20)
@@ -432,7 +470,7 @@ struct AddDownloadSheet: View {
         isResolvingMedia = true
         resolveTask = Task { @MainActor in
             defer { isResolvingMedia = false }
-            if let resolved = await YtDlpResolver.resolve(pageURL),
+            if let resolved = await YtDlpResolver.resolve(pageURL, formatSelector: chosenFormat?.id),
                let mediaPreview = YtDlpResolver.preview(for: resolved) {
                 phase = .confirm(mediaPreview)
                 // Optionally fetch subtitles for the original page into the same
@@ -517,6 +555,15 @@ struct AddDownloadSheet: View {
         // never silently apply to this one.
         checksumText = ""
         mirrorsText = ""
+        // A playlist/channel link resolves to one video otherwise, which silently
+        // drops everything the user actually pasted. Offer the checklist instead
+        // — only when yt-dlp is present to expand it.
+        if YtDlpResolver.isAvailable,
+           PlaylistExpander.looksLikePlaylist(line),
+           let url = URL(string: line) {
+            phase = .playlist(url)
+            return
+        }
         phase = .resolving
         resolveTask = Task { @MainActor in
             let preview = await vm.resolveMetadata(for: line, saveDirectory: nil)
@@ -559,8 +606,31 @@ struct AddDownloadSheet: View {
         vm.confirm(preview, saveDirectory: resolvedSaveDirectory, priority: priority,
                    checksum: Checksum.parse(checksumText), startAt: startAt,
                    mirrors: mirrors.isEmpty ? nil : mirrors,
-                   deselectedFileIDs: skip.isEmpty ? nil : skip)
+                   deselectedFileIDs: skip.isEmpty ? nil : skip,
+                   cookieHeader: cookieHeaderToAttach,
+                   cookieSource: cookieSource,
+                   cookieHost: previewHost(preview))
         dismiss()
+    }
+
+    /// The sanitised `Cookie` value to attach, or nil for an anonymous request.
+    /// Mirrors ``CookieSourcePicker/sanitizedCookieHeader`` — callers must never
+    /// read ``pastedCookies`` directly.
+    private var cookieHeaderToAttach: String? {
+        switch cookieSource {
+        case .none:    return nil
+        case .browser: return capturedCookies.flatMap(CookieHeader.sanitized)
+        case .manual:  return CookieHeader.sanitized(pastedCookies)
+        }
+    }
+
+    /// The host a preview's request will hit — the cookie scope. nil for magnets
+    /// and `.torrent` files, which have no HTTP origin.
+    private func previewHost(_ preview: DownloadPreview) -> String? {
+        switch preview.source {
+        case .url(let url), .hlsStream(let url): return url.host
+        case .magnet, .torrentFile: return nil
+        }
     }
 
     private func firstParseableLine() -> String? {

@@ -118,7 +118,9 @@ extension DownloadManager {
     /// schedule/network/backup timers and recurse). Awaited so the profile is in
     /// effect before any subsequent resume promotes a task.
     func setActiveProfile(_ name: String) async {
-        settings.selectedProfileName = name
+        var updated = storedSettings
+        updated.selectedProfileName = name
+        adoptStoredSettings(updated)
         persistSettings()
         await applyEngineConfigs()
     }

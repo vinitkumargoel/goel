@@ -25,7 +25,10 @@ extension DownloadManager {
 
     /// Persist the current settings on the serial pipeline.
     func persistSettings() {
-        pipeline?.enqueue(.saveSettings(settings))
+        // The user's own choice, never the managed overlay — writing the forced
+        // values back would make an administrator's policy survive the removal
+        // of the profile that imposed it.
+        pipeline?.enqueue(.saveSettings(storedSettings))
     }
 
     /// Remove a persisted task on the serial pipeline.

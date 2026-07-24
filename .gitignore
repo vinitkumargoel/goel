@@ -68,3 +68,8 @@ build/
 Vendor/linux/sqlite/*.so
 Vendor/linux/sqlite/sqlite3.c
 Vendor/linux/sqlite/sqlite3.h
+
+# ---- Vendored ffmpeg (maintainer-staged, ~70 MB Mach-O) ----
+# Scripts/fetch_ffmpeg.sh reads an optional local binary from
+# Vendor/ffmpeg/<arch>/ffmpeg. Never commit one.
+Vendor/ffmpeg/

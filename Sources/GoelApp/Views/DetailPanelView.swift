@@ -173,6 +173,14 @@ struct DetailPanelView: View {
             if let headers = task.requestHeaders, !headers.isEmpty {
                 KVRow(key: "Headers", value: "\(headers.count) custom")
             }
+            // Cookie STATE only — never the value, and deliberately not
+            // `copyable`. After a relaunch the value is gone by design, so this
+            // row's job is to make that absence explainable and fixable.
+            if let cookieSource = task.cookieSource, cookieSource != .none {
+                KVRow(key: "Cookies",
+                      value: task.cookieHeader.map { "\(CookieHeader.count(in: $0)) attached · \(cookieSource.displayName)" }
+                          ?? "Not loaded — re-import from \(cookieSource.displayName)")
+            }
             KVRow(key: "Priority", value: task.priority.displayName)
             KVRow(key: "Added", value: task.addedString)
             KVRow(key: "Save path", value: task.savePath, copyable: true)
