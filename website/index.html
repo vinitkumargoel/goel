@@ -6,6 +6,10 @@
 <title>Goel° — One queue for everything you download</title>
 <meta name="description" content="A native macOS download manager with one queue for HTTP, FTP, SFTP, BitTorrent and HLS. Self-contained, MIT-licensed — and headless on Linux.">
 <meta name="theme-color" content="#16181d">
+<meta name="color-scheme" content="dark">
+<meta name="author" content="Vinit Kumar Goel">
+<!-- max-image-preview:large opts the OG image into full-size rich results and Discover -->
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 <link rel="canonical" href="https://goel.vinitk.dev/">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
@@ -14,6 +18,7 @@
 <meta property="og:title" content="Goel° — One queue for everything you download">
 <meta property="og:description" content="HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Open source, MIT-licensed — and headless on Linux.">
 <meta property="og:type" content="website">
+<meta property="og:locale" content="en_US">
 <meta property="og:site_name" content="Goel°">
 <meta property="og:url" content="https://goel.vinitk.dev/">
 <meta property="og:image" content="https://goel.vinitk.dev/assets/og.jpg">
@@ -24,10 +29,77 @@
 <meta name="twitter:title" content="Goel° — One queue for everything you download">
 <meta name="twitter:description" content="HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Open source, MIT-licensed — and headless on Linux.">
 <meta name="twitter:image" content="https://goel.vinitk.dev/assets/og.jpg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="alternate" type="text/plain" title="llms.txt — plain-text site summary for language models" href="/llms.txt">
 <link rel="stylesheet" href="tokens.css">
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/inter-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/ibm-plex-mono-600-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/ibm-plex-mono-400-latin.woff2" crossorigin>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://goel.vinitk.dev/#app",
+      "name": "Goel°",
+      "applicationCategory": "UtilitiesApplication",
+      "applicationSubCategory": "Download manager",
+      "operatingSystem": "macOS 14 or later, Linux",
+      "processorRequirements": "Apple Silicon or Intel (macOS); x86_64 (Linux)",
+      "url": "https://goel.vinitk.dev/",
+      "downloadUrl": "https://github.com/vinitkumargoel/goel/releases",
+      "softwareVersion": "1.0.1",
+      "license": "https://opensource.org/licenses/MIT",
+      "isAccessibleForFree": true,
+      "description": "A native macOS download manager with one queue for HTTP, FTP, SFTP, BitTorrent and HLS. Self-contained, MIT-licensed, and headless on Linux.",
+      "featureList": [
+        "One unified queue for HTTP, FTP, SFTP, BitTorrent and HLS",
+        "Segmented multi-connection HTTP with mirror and Metalink failover",
+        "Full BitTorrent client with per-file priority and seeding controls",
+        "SFTP file browser with host-key pinning",
+        "Browser extensions for Chrome, Edge, Brave, Firefox and Safari",
+        "Network aggregation across multiple adapters",
+        "Optional authenticated web portal",
+        "Headless Linux daemon"
+      ],
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@id": "https://goel.vinitk.dev/#author" }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://goel.vinitk.dev/#author",
+      "name": "Vinit Kumar Goel",
+      "url": "https://github.com/vinitkumargoel"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://goel.vinitk.dev/#site",
+      "url": "https://goel.vinitk.dev/",
+      "name": "Goel°",
+      "inLanguage": "en",
+      "publisher": { "@id": "https://goel.vinitk.dev/#author" }
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://goel.vinitk.dev/#faq",
+      "mainEntity": [
+        { "@type": "Question", "name": "Do I need Homebrew or any libraries?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Every native library — libtorrent, libssh2, libcurl, OpenSSL — is bundled inside the app. Download the .dmg, drag to Applications, done." } },
+        { "@type": "Question", "name": "Which Macs does it run on?",
+          "acceptedAnswer": { "@type": "Answer", "text": "macOS 14 (Sonoma) or later, Apple Silicon and Intel. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time." } },
+        { "@type": "Question", "name": "Is it free?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes — Goel° is open source under the MIT license." } },
+        { "@type": "Question", "name": "Can it download from video sites?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Official releases bundle yt-dlp: the “Resolve Media” button turns a video-site page into a direct download. HLS streams save to a clean .mp4." } },
+        { "@type": "Question", "name": "Does it really run on Linux?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes — the same engine ships as GoelDaemon, a headless service driven entirely from the built-in web portal. Prebuilt for x86_64; build from source for ARM64. The tarball bundles the Swift runtime, but unlike the Mac app it expects a handful of system libraries from your package manager — libtorrent, libssh2, libcurl, OpenSSL, Boost and ffmpeg. One apt line, in the README." } },
+        { "@type": "Question", "name": "Is remote access safe?",
+          "acceptedAnswer": { "@type": "Answer", "text": "The portal is off by default. When on, it's token- or password-authenticated, supports read-only mode and session timeouts, and refuses to expose over the LAN without a password." } }
+      ]
+    }
+  ]
+}
+</script>
 <style>
 /* Hallmark · macrostructure: Marquee Hero (living product) · tone: technical · anchor hue: sky-blue 240
  * theme: studied-DNA (source: superset.sh screenshots, user-supplied) · "Terminal" — final (chosen from 3 variants)
@@ -65,6 +137,9 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
 
 .wrap { max-width: 1180px; margin: 0 auto; padding: 0 var(--space-lg); }
 .mono { font-family: var(--font-mono); }
+/* a hyphenated word is a legal break point, and "plug-/ins." at display size
+   reads like a typo */
+.nb { white-space: nowrap; }
 
 /* ---------- nav ---------- */
 .nav {
@@ -109,7 +184,9 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
 .hero h1 {
   font-family: var(--font-display); font-weight: 600; font-style: normal;
   font-size: clamp(2.1rem, 4.6vw, 3.6rem); line-height: 1.12; letter-spacing: -0.02em;
-  max-width: 26ch; margin: 0 auto; overflow-wrap: anywhere; min-width: 0;
+  /* break-word, not anywhere: the headline may wrap between words at 320px, but
+     it must never split "everything" down the middle */
+  max-width: 26ch; margin: 0 auto; overflow-wrap: break-word; min-width: 0;
 }
 .hero h1 .hl { color: var(--color-accent); }
 .hero p.sub {
@@ -117,7 +194,19 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
   font-size: var(--text-lg);
 }
 .hero-ctas { display: flex; gap: var(--space-md); justify-content: center; margin-top: var(--space-lg); flex-wrap: wrap; }
-.hero-note { margin-top: var(--space-md); font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-ink-faint); letter-spacing: 0.08em; text-transform: uppercase; }
+.hero-note {
+  margin-top: var(--space-md); font-family: var(--font-mono); font-size: 0.72rem;
+  color: var(--color-ink-faint); letter-spacing: 0.08em; text-transform: uppercase;
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+}
+/* WCAG 2.2.2 — the simulation updates itself forever, so it needs a stop. */
+.demo-toggle {
+  font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-ink-soft); border: 1px solid var(--color-line-strong);
+  border-radius: 999px; padding: 3px 11px;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.demo-toggle:hover { color: var(--color-ink); border-color: var(--color-ink-faint); }
 
 /* fact strip */
 .facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 0; margin: var(--space-xl) auto 0; border: 1px solid var(--color-line); border-radius: var(--radius-md); overflow: hidden; max-width: 900px; }
@@ -143,6 +232,14 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
   font-size: 0.7rem; letter-spacing: 0.08em; color: var(--color-ink-faint);
 }
 .app-stage.scrolls .app-hint { display: block; }
+/* Also the copy a non-JS crawler reads in place of the simulation. */
+.noscript-note {
+  max-width: 70ch; margin: var(--space-lg) auto 0; text-align: left;
+  border: 1px solid var(--color-line-strong); border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-sm); padding: var(--space-md) var(--space-lg);
+  color: var(--color-ink-soft); font-size: var(--text-sm);
+}
+.noscript-note p + p { margin-top: var(--space-sm); }
 .app-stage.scrolls .app-shrink::after {
   content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 46px;
   background: linear-gradient(to right, transparent, var(--color-paper));
@@ -237,7 +334,9 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
 .d-name { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
 .d-chips { display: flex; gap: 6px; margin-top: 7px; align-items: center; }
 .d-tabs { display: flex; gap: 2px; margin: 12px 0; border-bottom: 1px solid var(--color-line); }
-.d-tab { font-size: 10.5px; padding: 5px 8px; color: var(--color-ink-faint); border-bottom: 2px solid transparent; }
+/* 8px of side padding pushed the five real tab names to 290px inside a 253px
+   panel, so "Connections" was sliced down the middle */
+.d-tab { font-size: 10.5px; padding: 5px 4px; color: var(--color-ink-faint); border-bottom: 2px solid transparent; white-space: nowrap; }
 .d-tab.on { color: var(--color-ink); border-bottom-color: var(--color-accent); }
 .ring-wrap { display: grid; place-items: center; padding: 10px 0 14px; }
 .ring { position: relative; width: 118px; height: 118px; }
@@ -275,10 +374,12 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
   font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.22em;
   text-transform: uppercase; color: var(--color-accent); display: block; margin-bottom: var(--space-md);
 }
-.slice h2 {
+/* .h2-display carries the same treatment outside .slice — the .all and .faq
+   headings used to repeat all four declarations as inline style attributes */
+.slice h2, .h2-display {
   font-family: var(--font-display); font-style: normal; font-weight: 600;
   font-size: var(--text-display-s); line-height: 1.15; letter-spacing: -0.015em;
-  overflow-wrap: anywhere; min-width: 0;
+  overflow-wrap: break-word; min-width: 0;
 }
 .slice p { margin-top: var(--space-md); color: var(--color-ink-soft); max-width: 46ch; }
 .slice ul.ticks { margin-top: var(--space-md); list-style: none; }
@@ -325,7 +426,10 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
 .adapter.a1 .sp { color: var(--color-accent); }
 .adapter.a2 .meter i { background: var(--color-warn); }
 .adapter.a2 .sp { color: var(--color-warn); }
-.adapter.off { opacity: 0.4; }
+/* muted, not faded: opacity 0.4 dropped the "unplugged" label under AA, and an
+   unplugged adapter is exactly the state a visitor is meant to read */
+.adapter.off .nm2, .adapter.off .stx { color: var(--color-ink-faint); }
+.adapter.off .meter { opacity: 0.45; }
 .adapter.off .sp { color: var(--color-ink-faint); }
 .agg-map { display: flex; gap: 2px; height: 14px; margin-top: 12px; border-radius: 5px; overflow: hidden; background: var(--color-map-bg); }
 .agg-map i { display: block; height: 100%; transition: width 0.5s linear; }
@@ -379,7 +483,7 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
 .brow button { margin-left: auto; white-space: nowrap; font-size: 9.5px; font-family: var(--font-mono); border: 1px solid var(--color-line-strong); border-radius: 5px; padding: 3px 9px; color: var(--color-ink-faint); }
 .brow button.on { color: var(--color-good); border-color: color-mix(in oklab, var(--color-good) 45%, transparent); }
 .sent { border: 1px solid var(--color-line); border-radius: 10px; padding: 11px 12px; align-self: start; }
-.sent h4 { font-size: 10px; letter-spacing: 0.14em; color: var(--color-ink-faint); font-family: var(--font-mono); font-weight: 500; }
+.sent h3 { font-size: 10px; letter-spacing: 0.14em; color: var(--color-ink-faint); font-family: var(--font-mono); font-weight: 500; }
 .sent .srow { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--color-line); font-size: 11.5px; }
 .sent .srow:last-of-type { border-bottom: none; }
 .sent .pcx { flex: 1; min-width: 0; }
@@ -422,6 +526,7 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
 .term { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.7; color: var(--color-ink-soft); min-height: 178px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .term .p1 { color: var(--color-accent); }
 .term .ok { color: var(--color-good); }
+.term .wn { color: var(--color-warn); }
 .term .cur { display: inline-block; width: 7px; height: 13px; background: var(--color-accent); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 .portal-mini { border-top: 1px solid var(--color-line); padding: 11px 14px; display: flex; align-items: center; gap: 12px; font-size: 11.5px; }
@@ -541,7 +646,7 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
   padding: 5px 10px; color: var(--color-ink-faint); font-family: var(--font-mono); font-size: 11.5px;
 }
 .wp-tot { font-family: var(--font-mono); font-size: 11.5px; color: var(--color-accent); white-space: nowrap; }
-.wp-add { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; background: var(--color-accent); color: var(--color-paper); border-radius: var(--radius-sm); padding: 5px 12px; flex: none; }
+.wp-add { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; background: var(--color-accent); color: var(--color-on-accent); border-radius: var(--radius-sm); padding: 5px 12px; flex: none; }
 .wp-user { font-family: var(--font-mono); font-size: 11.5px; color: var(--color-ink-soft); white-space: nowrap; }
 .wp-main { display: grid; grid-template-columns: 176px minmax(0, 1fr) 250px; min-height: 340px; }
 .wp-side { border-right: 1px solid var(--color-line); padding: 12px 10px; }
@@ -636,6 +741,9 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
   .rv, .slice-grid.rv .slice-copy, .slice-grid.rv .panel-wrap, .slice-grid.rv .ticks li, .grid.rv .cellf { opacity: 1; transform: none; transition: none; }
   .hero h1, .hero p.sub, .hero-ctas, .hero-note, .app-shrink, .facts, .dither, .faq details[open] p { animation: none; }
   .term .cur { animation: none; }
+  /* the simulation itself starts paused (see startSim) — kill the tweens too, so
+     a resumed demo steps rather than glides */
+  .pbar i, .seg i, .meter i, .ring .arc, .pieces i, .agg-map i, .agg-sum .meter i { transition: none; }
   html { scroll-behavior: auto; }
 }
 @media (max-width: 980px) {
@@ -751,7 +859,9 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Download for macOS ↓</a>
       <a class="btn btn-ghost" href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">View on GitHub</a>
     </div>
-    <p class="hero-note">▼ live demo · real UI · mock data — click around</p>
+    <p class="hero-note">▼ live demo · real UI · mock data — click around
+      <button class="demo-toggle" id="demoToggle" type="button">⏸ Pause demo</button>
+    </p>
 
     <div class="app-stage">
       <div class="app-shrink" id="appShrink" data-live="hero">
@@ -760,12 +870,18 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
         </div>
       </div>
       <p class="app-hint">↔ drag the demo sideways to see the rest of the queue</p>
+      <noscript>
+        <div class="noscript-note">
+          <p><strong>The simulated app window on this page needs JavaScript.</strong> Goel° itself does not — it's a native macOS app.</p>
+          <p>What the demo shows: a single queue holding an Ubuntu ISO over HTTP, a Debian ISO seeding over BitTorrent, a 4K video pulling from 37 peers, a server backup arriving over SFTP, a magnet link resolving its metadata, a paused archive, a finished HLS stream and a failed FTP transfer — every protocol in one list, with a Library/Status/Type sidebar, live down/up speeds and a detail panel carrying a progress ring, connection count, save path and source. The written sections below describe each capability in full.</p>
+        </div>
+      </noscript>
     </div>
 
     <div class="facts">
       <div class="fact"><b data-n="5">5</b><span>protocols</span></div>
       <div class="fact"><b data-n="1">1</b><span>queue</span></div>
-      <div class="fact"><b>0</b><span>deps to install</span></div>
+      <div class="fact"><b>0</b><span>deps on macOS</span></div>
       <div class="fact"><b data-n="2">2</b><span>platforms</span></div>
       <div class="fact"><b>MIT</b><span>licensed</span></div>
     </div>
@@ -780,7 +896,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <p>Adaptive multi-connection HTTP with resume. Segments spread across mirrors, fail over via Metalink, and retry with back-off — you just see the file arrive faster.</p>
       <ul class="ticks">
         <li>Mirror &amp; Metalink failover — segments spread across sources</li>
-        <li>1–8 streams per connection, with rate limiting</li>
+        <li>4, 8 or 16 segments per server — Low, Medium and High profiles</li>
         <li>Auto-retry with back-off, live speed graphs</li>
       </ul>
     </div>
@@ -868,7 +984,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
         <div class="panel-body cap-grid">
           <div class="browsers" id="browsers"></div>
           <div class="sent">
-            <h4>SENT TO GOEL°</h4>
+            <h3>SENT TO GOEL°</h3>
             <div class="srow"><span class="proto">MP4</span><span class="pcx nm">BigBuckBunny-1080p.mp4</span></div>
             <div class="srow"><span class="proto">ZIP</span><span class="pcx nm">release-notes.zip</span></div>
             <button class="grab" id="grab">+ Grab all links (12)</button>
@@ -945,7 +1061,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <h2>Wi-Fi + Ethernet + hotspot. One download.</h2>
       <p>Something rare: Goel° splits a single download across every network adapter you have — by byte range — and merges the pieces on disk. Plug in a cable mid-download and watch the combined number climb.</p>
       <ul class="ticks">
-        <li>1–8 streams per adapter, each with its own cap</li>
+        <li>1–8 streams per adapter — every adapter is guaranteed a segment</li>
         <li>VPN-safety guards keep traffic where it belongs</li>
         <li>Try it: click an adapter to unplug it — the rest pick up the slack →</li>
       </ul>
@@ -1014,7 +1130,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <h2>Headless on Linux. Identical engine.</h2>
       <p>On Linux the same engine runs as <span class="mono">GoelDaemon</span> — no window, no display, just a service you drive entirely from Goel° Web. Pair your phone by scanning a QR code.</p>
       <ul class="ticks">
-        <li>Prebuilt x86_64 tarball, Swift runtime bundled</li>
+        <li>Prebuilt x86_64 tarball — Swift runtime bundled, system libs from apt</li>
         <li>Build from source for ARM64</li>
         <li>Queue survives restarts — tasks resume where they left off</li>
       </ul>
@@ -1037,9 +1153,30 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
   <div class="wrap">
     <div class="all-head rv">
       <span class="kicker">Everything else in the box</span>
-      <h2 class="slice-h2" style="font-family:var(--font-display);font-weight:600;font-size:var(--text-display-s);letter-spacing:-0.015em">No add-ons. No plug-ins. Just there.</h2>
+      <h2 class="h2-display">No add-ons. No <span class="nb">plug-ins.</span> Just there.</h2>
     </div>
-    <div class="grid rv" id="featgrid"></div>
+    <div class="grid rv" id="featgrid">
+      <div class="cellf" style="--i:0"><b><span class="m">⌕</span>Quick Look</b><span>Space previews finished files — and remote SFTP files too.</span></div>
+      <div class="cellf" style="--i:1"><b><span class="m">#</span>Checksums</b><span>MD5 / SHA-1 / SHA-256 / SHA-512, auto-detected from a pasted hash.</span></div>
+      <div class="cellf" style="--i:2"><b><span class="m">≡</span>History + CSV</b><span>Every download archived, searchable, re-downloadable, exportable.</span></div>
+      <div class="cellf" style="--i:3"><b><span class="m">▤</span>Watch folders</b><span>Drop a .torrent in a folder; it queues itself.</span></div>
+      <div class="cellf" style="--i:4"><b><span class="m">◈</span>RSS auto-download</b><span>Watch feeds, match titles by pattern, queue automatically.</span></div>
+      <div class="cellf" style="--i:5"><b><span class="m">◔</span>Scheduler</b><span>Give it a window — say 01:00–08:00 — and it pauses everything outside it.</span></div>
+      <div class="cellf" style="--i:6"><b><span class="m">⚙</span>Post-download actions</b><span>Extract archives, run a script, scan with antivirus — automatically.</span></div>
+      <div class="cellf" style="--i:7"><b><span class="m">▶</span>yt-dlp built in</b><span>Turn a video-site page into a direct download.</span></div>
+      <div class="cellf" style="--i:8"><b><span class="m">♪</span>In-app player</b><span>Play finished video/audio without leaving the app.</span></div>
+      <div class="cellf" style="--i:9"><b><span class="m">⇄</span>ffmpeg tools</b><span>Remux to another container, extract audio, grab subtitles.</span></div>
+      <div class="cellf" style="--i:10"><b><span class="m">✱</span>AppleScript + Shortcuts</b><span>Scriptable via .sdef — add, pause, query from automations.</span></div>
+      <div class="cellf" style="--i:11"><b><span class="m">⌘</span>URL scheme</b><span>goeldownloader:// links and the system Services menu.</span></div>
+      <div class="cellf" style="--i:12"><b><span class="m">◉</span>Dock progress</b><span>A live progress bar on the Dock icon, plus an active-count badge.</span></div>
+      <div class="cellf" style="--i:13"><b><span class="m">◐</span>Four themes</b><span>Frost Light, Frost Dark, Dracula, Nord — ⇧⌘T cycles.</span></div>
+      <div class="cellf" style="--i:14"><b><span class="m">⇅</span>Proxies & auth</b><span>HTTP/SOCKS5 proxy, cookies, headers, Keychain site logins.</span></div>
+      <div class="cellf" style="--i:15"><b><span class="m">⟳</span>Backup & restore</b><span>Full JSON export of settings + tasks, scheduled auto-backups.</span></div>
+      <div class="cellf" style="--i:16"><b><span class="m">☾</span>Power aware</b><span>Pause below a battery threshold; never sleep mid-download.</span></div>
+      <div class="cellf" style="--i:17"><b><span class="m">⚑</span>Duplicate detection</b><span>Warns before you add the same link twice.</span></div>
+      <div class="cellf" style="--i:18"><b><span class="m">𝔄</span>English + German</b><span>Localized UI, more languages ready to slot in.</span></div>
+      <div class="cellf" style="--i:19"><b><span class="m">↻</span>Sparkle updates</b><span>Silent in-app updates, plus a GitHub-Releases checker.</span></div>
+    </div>
   </div>
 </section>
 
@@ -1047,14 +1184,14 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
   <div class="wrap faq-grid rv">
     <div>
       <span class="kicker">FAQ</span>
-      <h2 style="font-family:var(--font-display);font-weight:600;font-size:var(--text-display-s);letter-spacing:-0.015em">Quick answers.</h2>
+      <h2 class="h2-display">Quick answers.</h2>
     </div>
     <div>
       <details><summary>Do I need Homebrew or any libraries?</summary><p>No. Every native library — libtorrent, libssh2, libcurl, OpenSSL — is bundled inside the app. Download the .dmg, drag to Applications, done.</p></details>
       <details><summary>Which Macs does it run on?</summary><p>macOS 14 (Sonoma) or later, Apple Silicon and Intel. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time.</p></details>
       <details><summary>Is it free?</summary><p>Yes — Goel° is open source under the MIT license.</p></details>
       <details><summary>Can it download from video sites?</summary><p>Official releases bundle yt-dlp: the “Resolve Media” button turns a video-site page into a direct download. HLS streams save to a clean .mp4.</p></details>
-      <details><summary>Does it really run on Linux?</summary><p>Yes — the same engine ships as GoelDaemon, a headless service driven entirely from the built-in web portal. Prebuilt for x86_64; build from source for ARM64.</p></details>
+      <details><summary>Does it really run on Linux?</summary><p>Yes — the same engine ships as GoelDaemon, a headless service driven entirely from the built-in web portal. Prebuilt for x86_64; build from source for ARM64. The tarball bundles the Swift runtime, but unlike the Mac app it expects a handful of system libraries from your package manager — libtorrent, libssh2, libcurl, OpenSSL, Boost and ffmpeg. One apt line, in the README.</p></details>
       <details><summary>Is remote access safe?</summary><p>The portal is off by default. When on, it's token- or password-authenticated, supports read-only mode and session timeouts, and refuses to expose over the LAN without a password.</p></details>
     </div>
   </div>
@@ -1079,15 +1216,19 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <a href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Releases</a>
       <a href="https://github.com/vinitkumargoel/goel/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
       <a href="https://github.com/vinitkumargoel/goel/blob/main/THIRD-PARTY-NOTICES.md" target="_blank" rel="noopener">Third-party notices</a>
-      <a href="privacy.html">Privacy</a>
-      <a href="terms.html">Terms</a>
-      <a href="cookies.html">Cookies</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/cookies">Cookies</a>
     </div>
     <div class="lic">MIT · © 2026 Vinit Kumar Goel · demo data on this page is illustrative</div>
   </div>
 </footer>
 
 <script>
+/* Declared first because the simulation, the terminal and the scroll
+   choreography all branch on it — it used to sit 500 lines below its readers. */
+const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 /* ---------- shared mock state ---------- */
 const F = {
   disc:  { bg: "var(--color-kind-disc)",  g: "◎" },
@@ -1097,7 +1238,7 @@ const F = {
 };
 let rows = [
   { id:1, name:"ubuntu-24.04.1-desktop-amd64.iso", proto:"HTTP", kind:"disc", size:4.7*1024, pct:62, state:"down", d:12.0, u:0, added:"Today 21:04", conns:8, path:"~/Downloads/ubuntu-24.04.1…", src:"releases.ubuntu.com/24.04" },
-  { id:2, name:"debian-12.6.0-amd64-DVD-1.iso", proto:"BT", kind:"disc", size:3.7*1024, pct:100, state:"seed", d:0, u:1.8, added:"Today 18:20", conns:14, path:"~/Downloads/debian-12.6.0…", src:"magnet:?xt=urn:btih:…", ratio:2.1 },
+  { id:2, name:"debian-12.6.0-amd64-DVD-1.iso", proto:"BT", kind:"disc", size:3.7*1024, pct:100, state:"seed", d:0, u:1.8, added:"Today 18:20", conns:14, path:"~/Downloads/debian-12.6.0…", src:"magnet:?xt=urn:btih:…", ratio:1.24 },
   { id:3, name:"Cosmos.S01E04.2160p.HDR.mkv", proto:"BT", kind:"video", size:17*1024, pct:41, state:"down", d:24.0, u:0.64, added:"Today 20:55", conns:37, path:"~/Downloads/Cosmos.S01E04…", src:"magnet:?xt=urn:btih:…" },
   { id:4, name:"project-backup-2026-07.tar.zst", proto:"SFTP", kind:"arch", size:2.2*1024, pct:78, state:"down", d:7.7, u:0, added:"Today 22:31", conns:1, path:"~/Downloads/project-backup…", src:"sftp://home-server/backups" },
   { id:5, name:"magnet:?xt=urn:btih:5c1a9d3e77…", proto:"BT", kind:"mag", size:0, pct:0, state:"meta", d:0, u:0, added:"Today 22:40", conns:3, path:"—", src:"magnet:?xt=urn:btih:5c1a9d…", peers:3 },
@@ -1105,13 +1246,31 @@ let rows = [
   { id:7, name:"BigBuckBunny-1080p.mp4", proto:"HLS", kind:"video", size:340, pct:100, state:"done", d:0, u:0, added:"Yesterday 11:20", conns:0, path:"~/Downloads/BigBuckBunny…", src:"stream.example.org/master.m3u8" },
   { id:8, name:"Fedora-Workstation-40.iso", proto:"FTP", kind:"disc", size:2.4*1024, pct:6, state:"fail", d:0, u:0, added:"Yesterday 09:15", conns:0, path:"~/Downloads/Fedora-Works…", src:"ftp://mirror.example.org/fedora" },
 ];
+/* pristine snapshot — the recycler restores from this so the queue never runs dry */
+const ROWS0 = JSON.parse(JSON.stringify(rows));
+/* Nominal speeds. The per-tick jitter oscillates around these instead of being
+   added to the previous value: as a random walk it had no restoring force, so
+   after a few minutes every transfer had wandered down onto the 0.3 MB/s floor
+   and the ETAs read "163m left" on a page selling a fast downloader. */
+rows.forEach(r => { r._base = r.d; r._ubase = r.u; });
+const SEED_RATIO_LIMIT = 2.0;   // matches TrafficProfile.high.seedRatioLimit
 let selId = 1, filter = "all", profile = 1, profName = "High";
 const FILTER_LBL = { all: "All files", down: "Active", pause: "Paused", done: "Completed", seed: "Seeding" };
 const fmtMB = mb => mb >= 1024 ? (mb/1024).toFixed(1).replace(/\.0$/,"") + " GB" : Math.round(mb) + " MB";
 const fmtSp = s => s <= 0 ? "—" : (s >= 1 ? s.toFixed(1).replace(/\.0$/,"") + " MB/s" : Math.round(s*1024) + " KB/s");
-const eta = r => { if (r.state!=="down"||r.d<=0) return ""; const left=(r.size*(100-r.pct)/100)/r.d/60/ (SIM); return " · " + (left<1? "<1m":Math.ceil(left)+"m") + " left"; };
-const SIM = 14; // sim speed-up so progress is visible
-const stTxt = r => ({ down: r.pct.toFixed(0) + "%" + eta(r), seed: "Seeding · ratio " + (r.ratio||2.1).toFixed(1), pause: "Paused · " + r.pct.toFixed(0) + "%", done: "Completed", fail: "FTP server closed…", meta: "Requesting info…" })[r.state];
+/* Real-world ETA — size and speed as shown, no sim factor. Dividing this by SIM
+   made every file on the page read "<1m left", which is not what a 4.7 GB ISO at
+   12 MB/s looks like. The bar advances faster than the clock; the number is the
+   one a visitor can sanity-check. */
+const eta = r => { if (r.state!=="down"||r.d<=0||!r.size) return ""; const left=(r.size*(100-r.pct)/100)/r.d/60; return " · " + (left<1? "<1m":Math.ceil(left)+"m") + " left"; };
+const TICK_MS = 600;
+/* Wall-clock speed-up. Progress per tick is d(MB/s) × SIM × 0.6 s, so 3.5 moves
+   the bars visibly within a few seconds and finishes the shortest task ~20 s in
+   — without burning the whole queue down before a visitor has read the hero.
+   (This used to carry a stray /60, which made the demo ~4× slower than real time
+   and left the bars looking painted on.) */
+const SIM = 3.5;
+const stTxt = r => ({ down: r.pct.toFixed(0) + "%" + eta(r), seed: "Seeding · ratio " + (r.ratio||0).toFixed(2), pause: "Paused · " + r.pct.toFixed(0) + "%", done: "Completed", fail: "FTP server closed…", meta: "Requesting info…" })[r.state];
 const stCls = r => ({ down:"", seed:"seed", pause:"pause", done:"done", fail:"fail", meta:"meta" })[r.state];
 const barCls = r => ({ down:"", seed:"seed", pause:"", done:"seed", fail:"bad", meta:"warn" })[r.state];
 
@@ -1178,7 +1337,7 @@ function renderRows() {
   host.innerHTML = vis.map((r, i) => `
     <div class="row ${r.id===selId?"sel":""}" data-id="${r.id}" tabindex="0" aria-label="${r.name}" aria-current="${r.id===selId}">
       <span class="idx">${i+1}</span>
-      <button class="pp" data-pp="${r.id}" aria-label="pause or resume">${r.state==="pause"?"▶":r.state==="fail"?"↻":"⏸"}</button>
+      <button class="pp" data-pp="${r.id}" aria-label="${r.state==="pause"?"Resume":r.state==="fail"?"Retry":"Pause"} ${r.name}">${r.state==="pause"?"▶":r.state==="fail"?"↻":"⏸"}</button>
       <span class="name-cell">
         <span class="fico" style="background:${F[r.kind].bg}">${F[r.kind].g}</span>
         <span class="name-main"><span class="nm">${r.name}</span><span class="pbar ${barCls(r)}"><i style="width:${r.state==="meta"?18:r.pct}%"></i></span></span>
@@ -1196,8 +1355,8 @@ document.addEventListener("click", e => {
   if (pp) {
     const r = rows.find(x => x.id == pp.dataset.pp);
     if (r.state === "down") { r.state = "pause"; r._d = r.d; r.d = 0; }
-    else if (r.state === "pause") { r.state = "down"; r.d = r._d || 5; }
-    else if (r.state === "fail") { r.state = "down"; r.d = 6.2; }
+    else if (r.state === "pause") { r.state = "down"; r.d = r._d || 5; r._base = r.d; }
+    else if (r.state === "fail") { r.state = "down"; r.d = 6.2; r._base = 6.2; }
     renderRows(); renderDetail(); return;
   }
   const row = e.target.closest(".row[data-id]");
@@ -1264,7 +1423,7 @@ function renderPop() {
         <span class="mid"><span class="mnm">${r.name}</span>
         <span class="pbar ${barCls(r)}" style="margin-top:6px"><i style="width:${r.state==="meta"?18:r.pct}%"></i></span>
         <span class="msub"><span class="m-st">${stTxt(r)}</span><span class="spd m-sp">${r.state==="seed"?fmtSp(r.u*profile):fmtSp(r.d*profile)}</span></span></span>
-        <button class="pp" data-pp="${r.id}" aria-label="Pause ${r.name}">⏸</button>
+        <button class="pp" data-pp="${r.id}" aria-label="Pause ${r.name} (menu bar)">⏸</button>
       </div>`).join("")}
     </div>
     <button class="pop-add" ${DEAD}>+ Add download</button>
@@ -1368,7 +1527,7 @@ document.getElementById("browsers").addEventListener("click", e => {
 let grabbed = false;
 document.getElementById("grab").addEventListener("click", () => {
   if (grabbed) return; grabbed = true;
-  rows.push({ id:9, name:"dataset-mirror-links.zip", proto:"HTTP", kind:"arch", size:640, pct:0, state:"down", d:9.4, u:0, added:"Just now", conns:6, path:"~/Downloads/dataset-mirror…", src:"example.com/downloads" });
+  rows.push({ id:9, name:"dataset-mirror-links.zip", proto:"HTTP", kind:"arch", size:640, pct:0, state:"down", d:9.4, _d0:9.4, _base:9.4, u:0, added:"Just now", conns:6, path:"~/Downloads/dataset-mirror…", src:"example.com/downloads" });
   document.getElementById("toast").classList.add("on");
   document.getElementById("grab").disabled = true;
   document.getElementById("grab").textContent = "✓ Sent to Goel°";
@@ -1383,7 +1542,7 @@ const SENDS = [
 ];
 document.querySelectorAll("[data-send]").forEach(btn => btn.addEventListener("click", () => {
   const s = SENDS[btn.dataset.send];
-  rows.push({ id: 10 + Number(btn.dataset.send), name: s.name, proto: "HTTP", kind: s.kind, size: s.size, pct: 0, state: "down", d: s.d, u: 0, added: "Just now", conns: 4, path: "~/Downloads/" + s.name, src: "example.com/downloads" });
+  rows.push({ id: 10 + Number(btn.dataset.send), name: s.name, proto: "HTTP", kind: s.kind, size: s.size, pct: 0, state: "down", d: s.d, _d0: s.d, _base: s.d, u: 0, added: "Just now", conns: 4, path: "~/Downloads/" + s.name, src: "example.com/downloads" });
   btn.disabled = true; btn.textContent = "✓ Sent";
   renderRows(); renderPortal();
 }, { once: true }));
@@ -1458,11 +1617,15 @@ document.getElementById("wrows").addEventListener("click", e => {
 });
 
 /* ---------- terminal ---------- */
+/* Verbatim from Sources/GoelDaemon/main.swift — including the plain-HTTP warning
+   it prints whenever you expose the portal to the LAN. Worth showing: the daemon
+   telling you to put it behind TLS is the honest version of "remote access". */
 const termLines = [
   ["p1","$ "],["t","GOEL_PORT=8080 GOEL_ALLOW_LAN=true \\\n  GOEL_USERNAME=admin GOEL_PASSWORD=•••••••• \\\n  GOEL_SAVE_DIR=~/Downloads ./run.sh\n"],
-  ["t","goel-daemon 1.0.1 · engine up (http ftp sftp bt hls)\n"],
-  ["ok","✓ portal listening on http://0.0.0.0:8080 — auth required\n"],
-  ["t","queue restored: 8 tasks · 2 active · seeding 1\n"],
+  ["ok","GoelDaemon: ready — portal on http://0.0.0.0:8080  (user: admin)\n"],
+  ["wn","GoelDaemon: WARNING — portal is on the LAN over plain HTTP; use a trusted\n  network or a TLS reverse proxy (e.g. nginx/caddy).\n"],
+  ["t","GoelDaemon: save dir ~/Downloads · db ~/.local/share/goel/goel.sqlite\n"],
+  ["t","GoelDaemon: API token written to ~/.local/share/goel/portal-token (mode 0600)\n"],
 ];
 const termEl = document.getElementById("term");
 let tIdx = 0, tChar = 0, tOut = "";
@@ -1478,31 +1641,6 @@ function typeTerm() {
   setTimeout(typeTerm, 24);
 }
 
-/* ---------- feature grid ---------- */
-const feats = [
-  ["⌕","Quick Look","Space previews finished files — and remote SFTP files too."],
-  ["#","Checksums","MD5 / SHA-1 / SHA-256 / SHA-512, auto-detected from a pasted hash."],
-  ["≡","History + CSV","Every download archived, searchable, re-downloadable, exportable."],
-  ["▤","Watch folders","Drop a .torrent in a folder; it queues itself."],
-  ["◈","RSS auto-download","Watch feeds, match titles by pattern, queue automatically."],
-  ["◔","Scheduler","Give it a window — say 01:00–08:00 — and it pauses everything outside it."],
-  ["⚙","Post-download actions","Extract archives, run a script, scan with antivirus — automatically."],
-  ["▶","yt-dlp built in","Turn a video-site page into a direct download."],
-  ["♪","In-app player","Play finished video/audio without leaving the app."],
-  ["⇄","ffmpeg tools","Remux to another container, extract audio, grab subtitles."],
-  ["✱","AppleScript + Shortcuts","Scriptable via .sdef — add, pause, query from automations."],
-  ["⌘","URL scheme","goeldownloader:// links and the system Services menu."],
-  ["◉","Dock progress","A live progress bar on the Dock icon, plus an active-count badge."],
-  ["◐","Four themes","Frost Light, Frost Dark, Dracula, Nord — ⇧⌘T cycles."],
-  ["⇅","Proxies & auth","HTTP/SOCKS5 proxy, cookies, headers, Keychain site logins."],
-  ["⟳","Backup & restore","Full JSON export of settings + tasks, scheduled auto-backups."],
-  ["☾","Power aware","Pause below a battery threshold; never sleep mid-download."],
-  ["⚑","Duplicate detection","Warns before you add the same link twice."],
-  ["𝔄","English + German","Localized UI, more languages ready to slot in."],
-  ["↻","Sparkle updates","Silent in-app updates, plus a GitHub-Releases checker."],
-];
-document.getElementById("featgrid").innerHTML = feats.map((f,i)=>`
-  <div class="cellf" style="--i:${i}"><b><span class="m">${f[0]}</span>${f[1]}</b><span>${f[2]}</span></div>`).join("");
 
 /* ---------- flicker-free patch updates (full re-render only on state changes) ---------- */
 function patchRows() {
@@ -1547,17 +1685,53 @@ const liveIO = new IntersectionObserver(es => es.forEach(e => {
 }), { rootMargin: "160px" });
 document.querySelectorAll("[data-live]").forEach(el => liveIO.observe(el));
 
+/* ---------- keeping the queue alive ---------- */
+/* Left alone, every download eventually completes and the "living product"
+   settles into a static wall of green ticks. Once fewer than two tasks are
+   moving, the task that finished longest ago is restarted from its pristine
+   snapshot — so a visitor who lingers still sees a working queue. Tasks whose
+   original state was a resting one (paused, failed, waiting on metadata) go back
+   to resting: the queue keeps its variety instead of turning into all-active. */
+let ticks = 0;
+function recycle() {
+  const finished = rows.filter(r => r._doneAt).sort((a, b) => a._doneAt - b._doneAt);
+  if (!finished.length) return;
+  const r = finished[0], seed = ROWS0.find(x => x.id === r.id);
+  r._doneAt = 0;
+  if (seed) {
+    Object.assign(r, JSON.parse(JSON.stringify(seed)));
+    if (seed.state !== "down" && seed.state !== "seed" && seed.state !== "done") return;
+  }
+  r.state = "down";
+  r.pct = 2 + (r.id * 7) % 9;   // a fresh start, not a jump back to where it died
+  r.u = 0; delete r.ratio;
+  r.d = Math.max(1.5, (seed ? seed.d : r._d0) || 5);
+  r._base = r.d; r._ubase = 0;
+  r.added = "Just now";
+}
+
 /* ---------- sim tick ---------- */
 function tick() {
+  ticks++;
   rows.forEach(r => {
-    if (r.state === "down" && r.d > 0) {
-      r.pct += (r.d * profile * SIM / 60) / r.size * 100 * 0.6;
-      r.d = Math.max(0.3, r.d + (Math.sin(Date.now()/900 + r.id) * 0.4));
-      if (r.pct >= 100) { r.pct = 100; r.state = r.proto === "BT" ? "seed" : "done"; if(r.proto==="BT"){r.u=1.1;r.ratio=0.0;} r.d = 0; }
+    if (r.state === "down" && r.d > 0 && r.size > 0) {
+      r.pct += (r.d * profile * SIM * (TICK_MS / 1000)) / r.size * 100;
+      r.d = Math.max(0.3, (r._base || r.d) * (1 + 0.22 * Math.sin(Date.now()/900 + r.id)));
+      if (r.pct >= 100) {
+        r.pct = 100; r.state = r.proto === "BT" ? "seed" : "done";
+        if (r.proto === "BT") { r.u = 1.1; r._ubase = 1.1; r.ratio = 0.0; }
+        r.d = 0; r._doneAt = ticks;
+      }
     }
-    if (r.state === "seed") { r.ratio = (r.ratio || 2.1) + 0.001; r.u = Math.max(0.2, r.u + Math.sin(Date.now()/1100+r.id)*0.15); }
-    if (r.state === "meta") { r.peers += (Date.now()%3===0?1:0); if (r.peers > 14) { r.state = "down"; r.name = "Sintel.2010.4k.remaster.mkv"; r.size = 5.1*1024; r.d = 3.2; r.kind = "video"; } }
+    if (r.state === "seed") {
+      r.ratio = (r.ratio || 0) + 0.001;
+      r.u = Math.max(0.2, (r._ubase || r.u) * (1 + 0.25 * Math.sin(Date.now()/1100 + r.id)));
+      /* the seed-ratio limit the feature list promises, actually firing */
+      if (r.ratio >= SEED_RATIO_LIMIT) { r.ratio = SEED_RATIO_LIMIT; r.state = "done"; r.u = 0; r._doneAt = ticks; }
+    }
+    if (r.state === "meta") { r.peers += (Date.now()%3===0?1:0); if (r.peers > 14) { r.state = "down"; r.name = "Sintel.2010.4k.remaster.mkv"; r.size = 5.1*1024; r.d = 3.2; r._base = 3.2; r.kind = "video"; } }
   });
+  if (rows.filter(r => r.state === "down" && r.d > 0).length < 2) recycle();
   // counts + totals
   const c = f => rows.filter(r => r.state === f).length;
   const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
@@ -1617,10 +1791,29 @@ function tick() {
   }
 }
 shell(); renderRows(); renderDetail(); renderPop(); renderPortal(); lastSig = sig();
-let simTimer = setInterval(tick, 600);
+
+/* ---------- run / pause ---------- */
+/* WCAG 2.2.2: this page auto-updates indefinitely, so it owes the visitor a stop
+   button — and someone who asked the OS for reduced motion gets the stop by
+   default, with the demo showing a full, sensible still frame. */
+let simTimer = null, simPaused = RM;
+const toggleEl = document.getElementById("demoToggle");
+function startSim() { if (!simTimer && !simPaused) { lastSig = ""; simTimer = setInterval(tick, TICK_MS); } }
+function stopSim() { if (simTimer) { clearInterval(simTimer); simTimer = null; } }
+function paintToggle() {
+  toggleEl.textContent = simPaused ? "▶ Play demo" : "⏸ Pause demo";
+  toggleEl.setAttribute("aria-label", simPaused ? "Play the interactive demo" : "Pause the interactive demo");
+}
+toggleEl.addEventListener("click", () => {
+  simPaused = !simPaused;
+  paintToggle();
+  simPaused ? stopSim() : startSim();
+});
+paintToggle();
+startSim();
+/* a hidden tab should not burn a timer — but resuming must not override a pause */
 document.addEventListener("visibilitychange", () => {
-  clearInterval(simTimer); simTimer = null;
-  if (!document.hidden) { lastSig = ""; simTimer = setInterval(tick, 600); }
+  document.hidden ? stopSim() : startSim();
 });
 
 /* ---------- scroll choreography: full-bleed hero app shrinks into the column ---------- */
@@ -1628,7 +1821,6 @@ const navEl = document.querySelector(".nav");
 const shrinkEl = document.getElementById("appShrink");
 const stageEl = shrinkEl.parentElement;
 const heroWrap = document.querySelector(".hero .wrap");
-const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let shH = 1, shTarget = 1, fxTicking = false;
 const scrollEl = shrinkEl.querySelector(".app-scroll");
 function measureShrink() {

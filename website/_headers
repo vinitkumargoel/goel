@@ -1,0 +1,50 @@
+# Response headers for the Cloudflare Workers static-assets deployment.
+# Cloudflare consumes this file and never serves it.
+
+/*
+  # The site is entirely first-party now — fonts included — so everything that
+  # is not our own origin can be refused outright. 'unsafe-inline' stays for
+  # script and style because the pages are hand-authored single files with an
+  # inline <style>, an inline <script> and inline style attributes, and there is
+  # no build step to emit hashes. Nothing on the page reflects user input, so
+  # the value CSP earns here is blocking *injected* external resources, which
+  # the rest of this policy does absolutely.
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  # No page here uses any of these; deny them so an injected script cannot either.
+  Permissions-Policy: accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()
+
+# Fonts are versioned by filename (family-weight-subset) — a different cut means
+# a different name — so they can be cached hard.
+/assets/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=86400
+
+# HTML must revalidate, or a release ships to browsers that never ask again.
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Crawler-facing files. The explicit charset matters: llms.txt carries the "Goel°"
+# degree sign and em dashes, and a bare text/plain gets decoded as Latin-1 by some
+# fetchers.
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/robots.txt
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/sitemap.xml
+  Content-Type: application/xml; charset=utf-8
+  Cache-Control: public, max-age=3600
