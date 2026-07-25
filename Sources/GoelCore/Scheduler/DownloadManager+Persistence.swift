@@ -12,7 +12,9 @@ extension DownloadManager {
     /// Record (and log) a persistence failure so it can be surfaced.
     func notePersistenceError(_ error: Error) {
         persistenceWarning = "Couldn’t save to disk: \(error.localizedDescription)"
-        FileHandle.standardError.write(Data("[GoelDownloader] persistence error: \(error)\n".utf8))
+        // The description can name the store's path, so it travels as a private
+        // field rather than being written straight to stderr.
+        GoelLog.persistence.error("Persistence failed", .detail(String(describing: error)))
     }
 
     /// Persist a single task. Enqueued on the serial pipeline so it can never be
@@ -23,7 +25,10 @@ extension DownloadManager {
 
     /// Persist the current settings on the serial pipeline.
     func persistSettings() {
-        pipeline?.enqueue(.saveSettings(settings))
+        // The user's own choice, never the managed overlay — writing the forced
+        // values back would make an administrator's policy survive the removal
+        // of the profile that imposed it.
+        pipeline?.enqueue(.saveSettings(storedSettings))
     }
 
     /// Remove a persisted task on the serial pipeline.

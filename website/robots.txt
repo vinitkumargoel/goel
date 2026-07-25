@@ -1,6 +1,7 @@
 # https://goel.vinitk.dev/robots.txt
-# Goel° is MIT-licensed open source and wants to be found — by search engines and
-# by assistants alike. Everything here is public marketing copy.
+# Goel° is source-available software (PolyForm Noncommercial 1.0.0) and wants to be
+# found — by search engines and by assistants alike. Everything here is public
+# marketing copy.
 #
 # To opt out of AI training while staying in AI *search*, change the training
 # crawlers below (GPTBot, ClaudeBot, Google-Extended, Applebot-Extended, CCBot,

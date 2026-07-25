@@ -137,33 +137,46 @@ struct SFTPBrowserView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
+            // Every control in this bar is a bare SF Symbol; the `.help` tooltips
+            // are pointer-only, so each needs a spoken name of its own. Keyboard
+            // shortcuts match the Finder equivalents where one exists.
             Button { vm.closeServerBrowser() } label: {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
                     .font(.system(size: 12, weight: .semibold))
             }
             .buttonStyle(.plain)
             .help("Back to downloads")
+            .a11yButton("Back to downloads")
 
             // Browser-style back / forward through visited folders.
             Button { Task { await model.goBack() } } label: { Image(systemName: "chevron.backward") }
                 .disabled(!model.canGoBack).help("Back")
+                .keyboardShortcut("[", modifiers: .command)
+                .a11yButton("Back")
             Button { Task { await model.goForward() } } label: { Image(systemName: "chevron.forward") }
                 .disabled(!model.canGoForward).help("Forward")
+                .keyboardShortcut("]", modifiers: .command)
+                .a11yButton("Forward")
 
             Image(systemName: "lock.rectangle.on.rectangle").foregroundStyle(Theme.indigo)
+                .a11yDecorative()
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.connection.label).font(.system(size: 13, weight: .semibold))
+                    .accessibilityAddTraits(.isHeader)
                 breadcrumbBar
             }
             Spacer(minLength: 8)
             Picker("", selection: $isGrid) {
                 Image(systemName: "list.bullet").tag(false)
+                    .accessibilityLabel("List")
                 Image(systemName: "square.grid.2x2").tag(true)
+                    .accessibilityLabel("Grid")
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(width: 78)
             .help("Switch between list and grid view")
+            .accessibilityLabel("View style")
 
             sortMenu
 
@@ -172,18 +185,29 @@ struct SFTPBrowserView: View {
             }
             .disabled(model.isAtRoot)
             .help("Parent folder")
+            .keyboardShortcut(.upArrow, modifiers: .command)
+            .a11yButton("Parent folder")
 
             Button { chooseUploadItems() } label: { Image(systemName: "arrow.up.doc") }
                 .help("Upload files or folders")
+                .a11yButton("Upload files or folders")
             Button { showNewFolder = true } label: { Image(systemName: "folder.badge.plus") }
                 .help("New folder")
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .a11yButton("New folder")
             Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                 .help("Refresh")
-            if model.isLoading { ProgressView().controlSize(.small) }
+                .keyboardShortcut("r", modifiers: .command)
+                .a11yButton("Refresh")
+            if model.isLoading {
+                ProgressView().controlSize(.small)
+                    .accessibilityLabel("Loading folder")
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .background(.regularMaterial)
+        .accessibilityLabel("Server browser toolbar")
     }
 
     /// Clickable path segments — jump up any number of levels in one click.
@@ -194,6 +218,8 @@ struct SFTPBrowserView: View {
                     if idx > 0 {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 7, weight: .semibold)).foregroundStyle(.tertiary)
+                            // A separator between path segments, not a control.
+                            .a11yDecorative()
                     }
                     let isLast = idx == breadcrumbs.count - 1
                     Button { if !isLast { Task { await model.go(toPath: crumb.path) } } } label: {
@@ -202,10 +228,16 @@ struct SFTPBrowserView: View {
                             .foregroundStyle(isLast ? Color.primary : Color.secondary)
                     }
                     .buttonStyle(.plain).disabled(isLast)
+                    // Which crumb is the *current* folder is shown only by a
+                    // darker text colour — colour alone, and inaudible.
+                    .accessibilityLabel(isLast ? "Current folder, \(crumb.label)"
+                                               : "Go to \(crumb.label)")
                 }
             }
         }
         .frame(maxWidth: 340, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Folder path")
     }
 
     /// Sort key + direction, plus the hidden-files toggle.
@@ -222,6 +254,10 @@ struct SFTPBrowserView: View {
         .menuIndicator(.hidden)
         .frame(width: 24)
         .help("Sort & display options")
+        // The menu's own items use "↑"/"↓" suffixes to mark the active key, so
+        // the current sort is stated here rather than left to those arrows.
+        .accessibilityLabel("Sort and display options")
+        .accessibilityValue("\(sortKeyRaw), \(sortAscending ? "ascending" : "descending")")
     }
 
     private func sortItemLabel(_ title: String, _ key: String) -> String {
@@ -294,18 +330,24 @@ struct SFTPBrowserView: View {
         HStack(spacing: 7) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
+                .a11yDecorative()
             TextField("Filter this folder", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .onSubmit(openSoleSearchResult)
+                .accessibilityLabel("Filter this folder")
+                .accessibilityHint("Press return to open the only match.")
             if !searchText.isEmpty {
                 Text("\(visibleEntries.count)")
                     .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
                     .foregroundStyle(.tertiary)
+                    // A bare number beside a filter field means nothing spoken.
+                    .accessibilityLabel("\(visibleEntries.count) matches")
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12))
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary).help("Clear filter")
+                .a11yButton("Clear filter")
             }
         }
         .padding(.horizontal, 9).padding(.vertical, 5)
@@ -567,6 +609,20 @@ struct SFTPBrowserView: View {
         .padding(14)
     }
 
+    /// "Folder, Documents" / "File, report.pdf" — the kind said in words, since
+    /// visually it is only an SF Symbol and a tint.
+    private func entryLabel(_ entry: SFTPEntry) -> String {
+        "\(entry.isDirectory ? "Folder" : "File"), \(entry.name)"
+    }
+
+    /// Size and modification date, spoken. Folders have no meaningful size, so
+    /// they report only their date rather than a misleading zero.
+    private func entryValue(_ entry: SFTPEntry) -> String {
+        A11y.sentence(
+            entry.isDirectory ? nil : A11y.bytes(entry.size),
+            entry.modified.map { "modified \($0.formatted(date: .abbreviated, time: .shortened))" })
+    }
+
     private func row(_ entry: SFTPEntry) -> some View {
         let hovered = hoveredEntry == entry.id
         let dropping = folderDropTarget == entry.id
@@ -591,6 +647,13 @@ struct SFTPBrowserView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .background(entryHighlight(hovered: hovered, dropping: dropping, selected: selected))
+        // Icon, name, size and date read as four fragments, and whether a row is
+        // a folder is carried only by its symbol and tint. One element, and say
+        // "Folder" or "File" out loud.
+        .a11yGroup(label: entryLabel(entry), value: entryValue(entry),
+                   hint: entry.isDirectory ? "Activate to open." : "Activate to select.")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { primaryAction(entry) }
         .contentShape(Rectangle())
         .onHover { inside in updateHover(entry.id, inside: inside) }
         .onTapGesture(count: 2) { primaryAction(entry) }
@@ -640,6 +703,12 @@ struct SFTPBrowserView: View {
                               : hovered ? Color.primary.opacity(0.12) : Color.clear,
                               lineWidth: (dropping || selected) ? 2 : 1)
         )
+        // Same collapse as the list row — a grid tile is one item, and selection
+        // here is signalled purely by an accent fill and border.
+        .a11yGroup(label: entryLabel(entry), value: entryValue(entry),
+                   hint: entry.isDirectory ? "Activate to open." : "Activate to select.")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { primaryAction(entry) }
         .contentShape(Rectangle())
         .onHover { inside in updateHover(entry.id, inside: inside) }
         .onTapGesture(count: 2) { primaryAction(entry) }
@@ -733,6 +802,8 @@ struct SFTPBrowserView: View {
             .foregroundStyle(Theme.accent)
         }
         .allowsHitTesting(false)
+        // Shown only mid-drag, a state that requires a pointer to reach.
+        .a11yDecorative()
     }
 
     // MARK: Transfer strip
@@ -741,10 +812,12 @@ struct SFTPBrowserView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Transfers").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if transfers.contains(where: { !$0.isActive }) {
                     Button("Clear") { vm.clearFinishedSFTPTransfers() }
                         .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
+                        .accessibilityLabel("Clear finished transfers")
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 5)
@@ -765,13 +838,20 @@ struct SFTPBrowserView: View {
     private func errorBanner(_ message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
+                .a11yDecorative()
             Text(message).font(.system(size: 12)).lineLimit(2)
+                // Triangle + orange wash are the only "this is an error" cues.
+                .accessibilityLabel("Error. \(message)")
             Spacer()
             Button { model.error = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
+                .a11yButton("Dismiss error")
         }
         .padding(.horizontal, 14).padding(.vertical, 7)
         .background(Theme.orange.opacity(0.12))
+        // The banner appears without taking focus, so nothing would otherwise
+        // tell a screen-reader user that the operation they just ran failed.
+        .onAppear { A11yAnnouncer.announce("Error. \(message)") }
     }
 
     // MARK: Drop / save handling

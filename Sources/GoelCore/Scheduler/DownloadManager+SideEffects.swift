@@ -159,9 +159,7 @@ extension DownloadManager {
                     path: path, executablePath: executable, argumentTemplate: template
                 )
                 if !passed {
-                    FileHandle.standardError.write(
-                        Data("[GoelDownloader] antivirus scan flagged or failed: \(path)\n".utf8)
-                    )
+                    GoelLog.scheduler.error("Antivirus scan flagged or failed", .path(path))
                 }
                 await self?.recordScanVerdict(id, passed: passed)
                 // Only hand a *clean* file to the auto-extract / post-download
@@ -232,8 +230,7 @@ extension DownloadManager {
             if !PathSafety.isContained(full, within: target) {
                 try? fm.removeItem(atPath: full)
                 en.skipDescendants()
-                FileHandle.standardError.write(Data(
-                    "[GoelDownloader] removed extracted entry escaping the folder: \(rel)\n".utf8))
+                GoelLog.scheduler.error("Removed extracted entry escaping the folder", .path(rel))
             }
         }
     }

@@ -362,7 +362,7 @@ actor HTTPEngine: HTTPConfigurable {
         do {
             try ensureDirectory(task.saveDirectory)
             let probe = try await probe(url, referer: task.referer,
-                                        extraHeaders: task.requestHeaders ?? [:])
+                                        extraHeaders: task.outboundHeaders(for: url))
 
             if let total = probe.totalBytes {
                 // On a resume/retry the partial file already holds the bytes
@@ -431,7 +431,7 @@ actor HTTPEngine: HTTPConfigurable {
                 retryInterval: networkConfig.retryInterval,
                 authorization: authorization,
                 referer: resolved.referer,
-                extraHeaders: resolved.requestHeaders ?? [:]
+                extraHeaders: resolved.outboundHeaders(for: url)
             )
 
             // Resolve this download's connection count from the cross-download

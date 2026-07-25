@@ -11,6 +11,16 @@ struct RootView: View {
     /// is dragged over the window. Drops are routed straight into the add flow.
     @State private var isDropTargeted = false
 
+    /// The ⌘K palette. Raised either by the View menu command (which posts
+    /// through ``CommandPaletteBus``, since a `Commands` body can't reach this
+    /// state) or by the empty state's shortcut row.
+    @State private var isCommandPalettePresented = false
+
+    /// The first-run flow. Evaluated once, at init, rather than on every update:
+    /// the flag flips as soon as the sheet appears, and re-reading it would tear
+    /// the sheet back down mid-presentation.
+    @State private var isOnboardingPresented = OnboardingState.needsOnboarding
+
     /// The detail panel is shown only when it's toggled on *and* a download is
     /// actually selected — so clicking away (deselecting) makes it slide out, and
     /// it returns when a task is picked again.
@@ -45,6 +55,13 @@ struct RootView: View {
                         SFTPBrowserView(connection: server,
                                         client: vm.sftpClient(for: server))
                             .id(server.id)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if vm.tasks.isEmpty {
+                        // A genuinely empty queue — as opposed to a filter that
+                        // matched nothing, which `DownloadListView` still owns.
+                        // Blank space here is the first thing a new user sees,
+                        // so it offers the ways in instead of describing itself.
+                        DownloadsEmptyState()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         DownloadListView()
@@ -83,6 +100,16 @@ struct RootView: View {
         .overlay(alignment: .bottom) { toastView }
         .overlay { dropOverlay }
         .overlay { confirmOverlay }
+        // Toasts and the persistence banner are the app's only feedback for
+        // several actions, and neither ever takes focus — so without an explicit
+        // announcement a screen-reader user gets no confirmation at all that
+        // "Copy source link" or "Convert to MP4" did anything.
+        .onChange(of: vm.toast) { _, message in
+            if let message { A11yAnnouncer.announce(message) }
+        }
+        .onChange(of: vm.persistenceWarning) { _, warning in
+            if let warning { A11yAnnouncer.announce("Warning. \(warning)") }
+        }
         .animation(.easeInOut(duration: 0.08), value: isDropTargeted)
         .onDrop(of: [.url, .fileURL], isTargeted: $isDropTargeted) { handleDrop($0) }
         .sheet(isPresented: $vm.isAddSheetPresented) {
@@ -114,6 +141,23 @@ struct RootView: View {
         .sheet(item: $vm.playerItem) { item in
             InAppPlayerView(item: item) { vm.playerItem = nil }
         }
+        .sheet(isPresented: $isCommandPalettePresented) {
+            CommandPalette()
+                .environmentObject(vm)
+        }
+        // First run only. `OnboardingView` writes the completion flag itself on
+        // every exit path, so this presents at most once per install.
+        .sheet(isPresented: $isOnboardingPresented) {
+            OnboardingView()
+                .environmentObject(vm)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: CommandPaletteBus.toggleNotification)) { _ in
+            // A second ⌘K while it's open closes it, the way every other
+            // palette behaves. Suppressed during onboarding so the first-run
+            // flow can't end up underneath a second sheet.
+            guard !isOnboardingPresented else { return }
+            isCommandPalettePresented.toggle()
+        }
     }
 
     /// The dashed "drop here" affordance shown only while a drag hovers the window
@@ -128,7 +172,7 @@ struct RootView: View {
                     Image(systemName: "arrow.down.to.line")
                         .font(.system(size: 34, weight: .regular))
                     Text("Drop a URL or .torrent file here")
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(size: 15, weight: .semibold)
                 }
                 .foregroundStyle(Theme.accent)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -141,6 +185,9 @@ struct RootView: View {
             }
             .allowsHitTesting(false)
             .transition(.opacity)
+            // Purely a drag affordance: it exists only while a pointer drag is
+            // in flight, which is not a state reachable without a pointer.
+            .a11yDecorative()
         }
     }
 
@@ -169,7 +216,11 @@ struct RootView: View {
     private func persistenceBanner(_ warning: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
-            Text(warning).font(.system(size: 12))
+                .a11yDecorative()
+            Text(warning).scaledFont(size: 12)
+                // The triangle and the orange wash are what mark this as a
+                // warning rather than a notice — neither survives to the ear.
+                .accessibilityLabel("Warning. \(warning)")
             Spacer()
             Button {
                 vm.persistenceWarning = nil
@@ -178,6 +229,7 @@ struct RootView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .a11yButton("Dismiss warning")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -189,9 +241,10 @@ struct RootView: View {
     private func clipboardBanner(_ link: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
-            Text("Copied link detected").font(.system(size: 12, weight: .semibold))
+                .a11yDecorative()
+            Text("Copied link detected").scaledFont(size: 12, weight: .semibold)
             Text(link)
-                .font(.system(size: 11, design: .monospaced))
+                .scaledFont(size: 11, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -199,6 +252,8 @@ struct RootView: View {
             Button("Add") { vm.acceptClipboardSuggestion() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+                // Bare "Add" doesn't say what gets added.
+                .accessibilityLabel("Add copied link to downloads")
             Button {
                 vm.dismissClipboardSuggestion()
             } label: {
@@ -206,6 +261,7 @@ struct RootView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .a11yButton("Dismiss copied link suggestion")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -217,7 +273,8 @@ struct RootView: View {
         if let toast = vm.toast {
             HStack(spacing: 9) {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.green)
-                Text(toast).font(.system(size: 12.5))
+                    .a11yDecorative()
+                Text(toast).scaledFont(size: 12.5)
             }
             .padding(.horizontal, 15)
             .padding(.vertical, 9)
@@ -226,6 +283,7 @@ struct RootView: View {
             .shadow(radius: 12, y: 6)
             .padding(.bottom, 52)
             .transition(.opacity)
+            .a11yGroup(label: toast)
         }
     }
 }

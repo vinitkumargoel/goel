@@ -14,10 +14,19 @@ import GoelCore
 /// URL-scheme open) to drain the spool. The filesystem spool — not the
 /// world-triggerable URL scheme — is the trust boundary, so spooled adds don't
 /// need the web-origin confirmation banner.
+///
+/// A message may also carry the browser's `Cookie` header for that URL (the
+/// extension only sends it when the user has explicitly granted the optional
+/// `cookies` permission). That is what makes logged-in downloads work at all.
+/// Cookies are credentials, so they are sanitised here, written to a `0600` file
+/// inside the already-`0700` spool, expired after ``BrowserSpool/cookieMaxAge``,
+/// and deleted the moment the app reads them. They are never logged and never
+/// echoed back to the browser.
 enum NativeMessagingHost {
 
     /// Longest message we'll read; native messaging caps host-bound messages
-    /// at 4 GB but ours are one URL, so anything huge is garbage.
+    /// at 4 GB but ours are one URL plus a cookie header, so anything huge is
+    /// garbage (``CookieHeader/maxLength`` caps the cookie at 8 KiB regardless).
     private static let maxMessageBytes: UInt32 = 1 << 20
 
     /// Serve messages until the browser closes the pipe. Never returns early.
@@ -38,13 +47,39 @@ enum NativeMessagingHost {
             writeMessage(["ok": false, "error": "unsupported url"])
             return
         }
+        // Cookies only ride with an http(s) capture — a magnet has no origin to
+        // scope them to, so there is nothing they could safely be sent to.
+        let scope: String? = URL(string: source.locator).flatMap(CookieHeader.scope(for:))
+        let cookie = scope == nil ? nil : (message["cookie"] as? String).flatMap(CookieHeader.sanitized)
+        let capture = BrowserCapture(
+            locator: source.locator,
+            referer: Self.sanitizedReferer(message["referrer"] as? String),
+            cookieHeader: cookie,
+            cookieHost: cookie == nil ? nil : scope
+        )
         do {
-            try BrowserSpool.enqueue(locator: source.locator)
+            try BrowserSpool.enqueue(capture)
             pokeApp()
-            writeMessage(["ok": true])
+            // Report only *whether* cookies were accepted. Echoing the value (or
+            // the names) back into the page's extension context would hand a
+            // compromised extension a read-back oracle for HttpOnly cookies.
+            writeMessage(["ok": true, "cookies": cookie != nil])
         } catch {
             writeMessage(["ok": false, "error": "spool write failed"])
         }
+    }
+
+    /// Keep a browser-supplied referrer only if it is a plain web URL of sane
+    /// length and carries no header-splitting characters. The engine sends this
+    /// verbatim as `Referer`, and the page that triggered the capture chose it.
+    private static func sanitizedReferer(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty, trimmed.utf8.count <= 2048,
+              !trimmed.unicodeScalars.contains(where: { $0 == "\r" || $0 == "\n" || $0.value == 0 }),
+              let scheme = URL(string: trimmed)?.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else { return nil }
+        return trimmed
     }
 
     /// Ask the running app (launching it if needed) to drain the spool. The
@@ -85,6 +120,31 @@ enum NativeMessagingHost {
     }
 }
 
+/// One capture handed over by the browser: the URL, plus the request context the
+/// page needed for it to work at all.
+///
+/// ``cookieHeader`` is a bearer credential. It lives in memory and in one `0600`
+/// spool file that is deleted on read; it is never persisted with the task (see
+/// ``DownloadTask/cookieHeader``) and never logged.
+struct BrowserCapture: Sendable, Equatable {
+    var locator: String
+    /// The page the download was started from, for hosts that gate on `Referer`.
+    var referer: String?
+    /// A sanitised `Cookie` header value, or nil when the user hasn't granted the
+    /// extension's optional cookie permission (the common case).
+    var cookieHeader: String?
+    /// The host ``cookieHeader`` was captured for; cookies go nowhere else.
+    var cookieHost: String?
+
+    init(locator: String, referer: String? = nil,
+         cookieHeader: String? = nil, cookieHost: String? = nil) {
+        self.locator = locator
+        self.referer = referer
+        self.cookieHeader = cookieHeader
+        self.cookieHost = cookieHost
+    }
+}
+
 /// The on-disk handoff between the native-messaging host process and the GUI
 /// app (they are separate processes of the same binary).
 enum BrowserSpool {
@@ -93,12 +153,24 @@ enum BrowserSpool {
     /// queue in one tick; leftovers drain on the next poke or launch.
     private static let drainCap = 100
 
+    /// How long a spooled cookie stays usable. The URL keeps forever — a capture
+    /// made while the app was closed should still queue — but the *credential*
+    /// attached to it is dropped once it is this old, so a laptop that sits shut
+    /// for a week doesn't wake up with a stale session cookie on disk. An expired
+    /// cookie is also useless: the session it belonged to has almost certainly
+    /// rotated, and the download would fail with a confusing 403 either way.
+    static let cookieMaxAge: TimeInterval = 60 * 60
+
     static var directory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("GoelDownloader/BrowserQueue", isDirectory: true)
     }
 
     static func enqueue(locator: String) throws {
+        try enqueue(BrowserCapture(locator: locator))
+    }
+
+    static func enqueue(_ capture: BrowserCapture) throws {
         let fm = FileManager.default
         // Restrict the spool to the owner (0700): this directory is a no-confirmation
         // command channel — any file dropped here queues a download — so it must not
@@ -107,12 +179,29 @@ enum BrowserSpool {
                                attributes: [.posixPermissions: 0o700])
         try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let file = directory.appendingPathComponent(UUID().uuidString + ".json")
-        let data = try JSONSerialization.data(withJSONObject: ["url": locator])
+        var object: [String: Any] = ["url": capture.locator]
+        if let referer = capture.referer { object["referer"] = referer }
+        if let cookie = capture.cookieHeader { object["cookie"] = cookie }
+        if let host = capture.cookieHost { object["cookieHost"] = host }
+        let data = try JSONSerialization.data(withJSONObject: object)
         try data.write(to: file, options: .atomic)
+        // The file can hold a session cookie, so tighten it past the process
+        // umask. The enclosing directory is already 0700, so the brief post-write
+        // window is not reachable by another user — this is the second lock.
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
 
     /// Read, delete, and return the spooled locators (oldest first, capped).
+    /// Compatibility shim for callers that only want URLs — it **discards** the
+    /// captured referer and cookies, so a logged-in download added through it
+    /// will fail. Prefer ``drainCaptures()``.
     static func drain() -> [String] {
+        drainCaptures().map(\.locator)
+    }
+
+    /// Read, delete, and return the spooled captures (oldest first, capped).
+    /// Cookies older than ``cookieMaxAge`` are stripped, the URL kept.
+    static func drainCaptures() -> [BrowserCapture] {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.creationDateKey]) else { return [] }
@@ -124,15 +213,27 @@ enum BrowserSpool {
                 return da < db
             }
             .prefix(drainCap)
-        var locators: [String] = []
+        var captures: [BrowserCapture] = []
         for file in ordered {
             if let data = try? Data(contentsOf: file),
                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let url = object["url"] as? String {
-                locators.append(url)
+                let written = (try? file.resourceValues(forKeys: [.creationDateKey]).creationDate)
+                    ?? .distantPast
+                let cookieIsFresh = Date().timeIntervalSince(written) <= cookieMaxAge
+                // Re-sanitise on the way out: the spool file is only as trustworthy
+                // as its 0700 directory, and re-validating is cheap.
+                let cookie = cookieIsFresh
+                    ? (object["cookie"] as? String).flatMap(CookieHeader.sanitized) : nil
+                captures.append(BrowserCapture(
+                    locator: url,
+                    referer: object["referer"] as? String,
+                    cookieHeader: cookie,
+                    cookieHost: cookie == nil ? nil : object["cookieHost"] as? String
+                ))
             }
             try? fm.removeItem(at: file)
         }
-        return locators
+        return captures
     }
 }

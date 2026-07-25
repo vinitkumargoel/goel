@@ -49,8 +49,13 @@ public enum RemoteStreamService {
     public static func parseByteRange(_ header: String, available: Int64) -> (Int64, Int64)? {
         let trimmed = header.trimmingCharacters(in: .whitespaces).lowercased()
         guard trimmed.hasPrefix("bytes=") else { return nil }
-        let spec = trimmed.dropFirst("bytes=".count)
-            .split(separator: ",")[0]   // first range only; we don't do multipart
+        // First range only; we don't do multipart. `split` omits empty pieces, so a
+        // header of exactly `bytes=` (or `bytes=,,,`) yields nothing — take `.first`
+        // rather than subscripting, which would trap and kill the whole process on a
+        // request any stream client can send. Nil here degrades to a full-body 200,
+        // the same as every other malformed range below.
+        guard let spec = trimmed.dropFirst("bytes=".count)
+            .split(separator: ",").first else { return nil }
         let parts = spec.split(separator: "-", maxSplits: 1,
                                omittingEmptySubsequences: false)
         guard parts.count == 2 else { return nil }

@@ -49,9 +49,8 @@ public final class PersistenceErrorHandler: @unchecked Sendable {
         if let onError = box.snapshot() {
             await onError(error)
         } else {
-            FileHandle.standardError.write(
-                Data("[GoelDownloader] persistence error: \(error)\n".utf8)
-            )
+            GoelLog.persistence.error("Persistence failed (no error bridge installed)",
+                                      .detail(String(describing: error)))
         }
     }
 }

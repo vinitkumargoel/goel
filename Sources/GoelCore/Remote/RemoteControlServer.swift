@@ -1,6 +1,9 @@
 #if !os(Linux)
 import Foundation
 import Network
+#if canImport(Security)
+import Security
+#endif
 
 /// The remote-access server: a minimal embedded HTTP endpoint exposing the queue
 /// to a phone/other machine — a live web page plus a JSON API (list, pause/resume,
@@ -24,12 +27,19 @@ public actor RemoteControlServer {
     /// reclaim the port instantly and used to fail (silently) with EADDRINUSE.
     private var boundPort: UInt16?
     private var boundExposeLAN: Bool?
+    /// TLS is part of the bind identity too — switching HTTP↔HTTPS or swapping the
+    /// certificate changes the socket's protocol stack, so it cannot be applied in
+    /// place the way a theme or a token can.
+    private var boundTLS: String?
 
     /// The current routing config (token, requireAuth, readOnly, theme, username),
     /// snapshotted from settings on each (re)start.
     private var routerConfig = RemoteRouter.Config(token: "")
     /// The stored password hash used to verify logins (never leaves the server).
     private var passwordHash = ""
+    /// Login throttling, header SSO and TLS — the hardening layer, all defaulting
+    /// to the portal's historical behaviour.
+    private var security = RemotePortalSecurity()
 
     /// Shared session/login state (cookie map, lockout, KDF concurrency).
     private let sessionStore = RemoteSessionStore()
@@ -59,6 +69,44 @@ public actor RemoteControlServer {
     /// streaming) notice a restart and wind down.
     private var generation = 0
 
+    /// Why the last ``start(port:allowLAN:config:passwordHash:sessionMinutes:security:)``
+    /// left nothing listening, or nil when the portal is bound (or stopped on purpose).
+    ///
+    /// `start` has two fail-closed refusals — an unusable TLS identity and a failed
+    /// bind — and both are *correct*, but until now both were also silent: the only
+    /// trace was a `GoelLog` line in the unified log, which the person using the app
+    /// will never see. Failing closed invisibly is indistinguishable from succeeding,
+    /// so Settings kept offering "Open" and "Copy Link" for a portal that was never
+    /// there. Recording the reason lets ``RemoteAccess`` — and through it the UI —
+    /// say *why* web access is off instead of quietly claiming it is on.
+    public enum StartFailure: Sendable, Equatable {
+        /// Portal TLS is on, but the PKCS#12 identity at this path could not be
+        /// loaded: wrong path, unreadable file, or a `GOEL_PORTAL_TLS_PASSPHRASE`
+        /// that doesn't match the bundle.
+        case tlsIdentityUnavailable(path: String)
+        /// The socket could not be bound — usually the port is already taken by
+        /// another process.
+        case bindFailed(port: UInt16)
+
+        /// Plain-language text written for the person using the app, naming the fix.
+        /// Matches the wording style of ``SFTPError/message``.
+        public var message: String {
+            switch self {
+            case .tlsIdentityUnavailable(let path):
+                let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+                let subject = trimmed.isEmpty ? "No HTTPS certificate is set, so web access can't start."
+                                              : "The HTTPS certificate at “\(trimmed)” couldn't be opened, so web access can't start."
+                return "\(subject) Check the path, and that GOEL_PORTAL_TLS_PASSPHRASE is set to that certificate's passphrase. Web access stays off rather than serving unencrypted."
+            case .bindFailed(let port):
+                return "Web access couldn't open port \(port) — another app is probably already using it. Pick a different port and try again."
+            }
+        }
+    }
+
+    /// Set on each refusal in `start`, cleared the moment a listener is bound or the
+    /// server is stopped. Read through ``lastStartFailure()``.
+    private var startFailure: StartFailure?
+
     /// A router bound to the current backend + config, rebuilt per use (cheap).
     private var router: RemoteRouter { RemoteRouter(backend: manager, config: routerConfig) }
 
@@ -77,8 +125,13 @@ public actor RemoteControlServer {
     /// failed silently: the UI still showed the portal "enabled" with nothing behind
     /// it. A rebind now happens only when the port or LAN exposure actually changes,
     /// and it first `await`s the old listener's full teardown.
+    ///
+    /// `security` carries the hardening layer (per-IP login backoff, header SSO,
+    /// TLS). It defaults to the pre-hardening posture so every existing caller —
+    /// and every existing test — keeps its exact behaviour.
     public func start(port: UInt16, allowLAN: Bool, config: RemoteRouter.Config,
-                      passwordHash: String, sessionMinutes: Int) async {
+                      passwordHash: String, sessionMinutes: Int,
+                      security: RemotePortalSecurity = RemotePortalSecurity()) async {
         let credentialsChanged = config.username != routerConfig.username
             || config.requireAuth != routerConfig.requireAuth
             || config.token != routerConfig.token
@@ -96,11 +149,30 @@ public actor RemoteControlServer {
         // read-only / token change takes effect on the existing socket immediately.
         self.routerConfig = config
         self.passwordHash = passwordHash
+        self.security = security
         // Single hop: rotate credentials and drop sessions together, so no login
         // can slip through this actor's suspension holding stale credentials.
         await sessionStore.configure(username: config.username, passwordHash: passwordHash,
                                      sessionMinutes: sessionMinutes,
                                      invalidatingSessions: credentialsChanged)
+        await sessionStore.configure(throttle: security.throttle)
+        if security.sso.isEnabled && !security.sso.isEffective {
+            // Enabled but unusable. Failing closed is correct, but silently is not:
+            // the operator thinks SSO is on and it is not.
+            //
+            // Name the precondition that is *actually* missing.
+            // ``TrustedIdentityHeaderPolicy/isEffective`` requires both a
+            // trusted-proxy list and a shared secret, so a message that always
+            // blames the proxy list sends an operator whose
+            // `GOEL_PORTAL_PROXY_SECRET` is unset to go editing settings that were
+            // never the problem. `isEnabled` is true here, so at least one of the
+            // two is empty and `missing` is never blank.
+            let missing = [security.sso.trustedProxies.isEmpty ? "trusted-proxies" : nil,
+                           security.sso.sharedSecret.isEmpty ? "shared-secret" : nil]
+                .compactMap { $0 }.joined(separator: ",")
+            GoelLog.remote.error("Header SSO is enabled but incomplete — the header will be ignored",
+                                 .state(missing, label: "missing"))
+        }
 
         // Refuse to expose an unauthenticated portal to the network. When sign-in
         // is off, ``RemoteRouter/authorize`` grants everyone full control, so a LAN
@@ -116,18 +188,24 @@ public actor RemoteControlServer {
         // password before ever binding to the network.
         let exposeLAN = allowLAN && config.requireAuth && !passwordHash.isEmpty
         if allowLAN && !exposeLAN {
-            let why = config.requireAuth ? "no portal password is set" : "sign-in is disabled"
-            FileHandle.standardError.write(Data("[GoelDownloader] LAN access refused — \(why); binding 127.0.0.1 only\n".utf8))
-        } else if exposeLAN, boundExposeLAN != true {
+            let why = config.requireAuth ? "no-portal-password" : "sign-in-disabled"
+            GoelLog.remote.notice("LAN access refused; binding 127.0.0.1 only",
+                                  .state(why, label: "reason"))
+        } else if exposeLAN, !security.tlsEnabled, boundExposeLAN != true {
             // Exposing on the LAN over plain HTTP: the login/cookie/token cross the
             // network unencrypted. Warn explicitly (once per bind) so the operator
-            // uses a trusted network or terminates TLS at a reverse proxy.
-            FileHandle.standardError.write(Data("[GoelDownloader] portal exposed on the LAN over plain HTTP — use only on a trusted network, or put it behind a TLS reverse proxy\n".utf8))
+            // enables the portal's own TLS, uses a trusted network, or terminates
+            // TLS at a reverse proxy.
+            GoelLog.remote.notice("Portal exposed on the LAN over plain HTTP — enable portal TLS, use a trusted network, or put it behind a TLS reverse proxy")
         }
+
+        // The socket's protocol stack is part of its identity, so a TLS toggle or a
+        // swapped certificate must force a rebind rather than being applied live.
+        let tlsKey = security.tlsEnabled ? "tls:\(security.tlsIdentityPath)" : "plain"
 
         // Already listening on the same endpoint? The live config above is all that
         // needed to change — keep the socket.
-        if listener != nil, boundPort == port, boundExposeLAN == exposeLAN {
+        if listener != nil, boundPort == port, boundExposeLAN == exposeLAN, boundTLS == tlsKey {
             return
         }
         // A real bind change: fully release any existing listener first, so the port
@@ -137,7 +215,21 @@ public actor RemoteControlServer {
         let listenPort = NWEndpoint.Port(rawValue: port) ?? 8899
         // SO_REUSEADDR as belt-and-braces for any lingering TIME_WAIT; the awaited
         // teardown above is what actually guarantees the port is free.
-        let parameters = NWParameters.tcp
+        let parameters: NWParameters
+        if security.tlsEnabled {
+            guard let tls = Self.tlsParameters(identityPath: security.tlsIdentityPath) else {
+                // Fail closed. Falling back to cleartext would hand the operator a
+                // portal they believe is encrypted while it quietly is not — the
+                // worst possible outcome of a mistyped certificate path.
+                GoelLog.remote.error("Portal TLS is enabled but the identity could not be loaded — refusing to serve cleartext",
+                                     .path(security.tlsIdentityPath))
+                startFailure = .tlsIdentityUnavailable(path: security.tlsIdentityPath)
+                return
+            }
+            parameters = tls
+        } else {
+            parameters = .tcp
+        }
         parameters.allowLocalEndpointReuse = true
         if !exposeLAN {
             parameters.requiredLocalEndpoint = NWEndpoint.hostPort(
@@ -150,7 +242,8 @@ public actor RemoteControlServer {
             newListener = try? NWListener(using: parameters)
         }
         guard let newListener else {
-            FileHandle.standardError.write(Data("[GoelDownloader] remote server failed to bind port \(port)\n".utf8))
+            GoelLog.remote.error("Remote server failed to bind", .count(Int(port), label: "port"))
+            startFailure = .bindFailed(port: port)
             return
         }
         // Advertise over Bonjour only when actually exposed to the network — a
@@ -165,11 +258,13 @@ public actor RemoteControlServer {
         newListener.stateUpdateHandler = { state in
             switch state {
             case .failed(let error):
-                FileHandle.standardError.write(Data(
-                    "[GoelDownloader] remote server listener failed on port \(portForLog): \(error)\n".utf8))
+                GoelLog.remote.error("Remote server listener failed",
+                                     .count(Int(portForLog), label: "port"),
+                                     .detail(String(describing: error)))
             case .waiting(let error):
-                FileHandle.standardError.write(Data(
-                    "[GoelDownloader] remote server waiting on port \(portForLog): \(error)\n".utf8))
+                GoelLog.remote.notice("Remote server waiting",
+                                      .count(Int(portForLog), label: "port"),
+                                      .detail(String(describing: error)))
             default:
                 break
             }
@@ -181,6 +276,56 @@ public actor RemoteControlServer {
         self.listener = newListener
         self.boundPort = port
         self.boundExposeLAN = exposeLAN
+        self.boundTLS = tlsKey
+        // Something is listening again — any earlier refusal is stale.
+        self.startFailure = nil
+    }
+
+    // MARK: TLS
+
+    /// Build TLS parameters from a PKCS#12 identity on disk, or `nil` when it
+    /// cannot be loaded.
+    ///
+    /// A `.p12` bundle is the only certificate form macOS can consume without a
+    /// third-party crypto library: `SecPKCS12Import` turns it into a `SecIdentity`
+    /// (certificate + private key), which `sec_identity_create` hands to
+    /// Network.framework. `Deploy/README.md` carries the two `openssl` commands
+    /// that produce one, self-signed or from a corporate CA.
+    private static func tlsParameters(identityPath: String) -> NWParameters? {
+        guard let identity = loadIdentity(path: identityPath) else { return nil }
+        let options = NWProtocolTLS.Options()
+        sec_protocol_options_set_local_identity(options.securityProtocolOptions, identity)
+        return NWParameters(tls: options)
+    }
+
+    private static func loadIdentity(path: String) -> sec_identity_t? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let data = FileManager.default.contents(atPath: trimmed) else {
+            return nil
+        }
+        // The passphrase comes from the environment, never from settings — see
+        // ``RemotePortalSecurity/tlsPassphrase``.
+        var options: [String: Any] = [
+            kSecImportExportPassphrase as String: RemotePortalSecurity.tlsPassphrase,
+        ]
+        if #available(macOS 15.0, *) {
+            // Keep the imported key in this process only. On earlier systems the
+            // import lands in the login keychain, which is why the deployment guide
+            // recommends a dedicated certificate rather than a shared one.
+            options[kSecImportToMemoryOnly as String] = kCFBooleanTrue as Any
+        }
+        var items: CFArray?
+        let status = SecPKCS12Import(data as CFData, options as CFDictionary, &items)
+        guard status == errSecSuccess,
+              let entries = items as? [[String: Any]],
+              let first = entries.first,
+              let raw = first[kSecImportItemIdentity as String] else {
+            GoelLog.remote.error("PKCS#12 import failed for the portal certificate",
+                                 .code(Int(status), label: "osstatus"))
+            return nil
+        }
+        let identity = raw as! SecIdentity
+        return sec_identity_create(identity)
     }
 
     /// Stop listening and **wait** for the socket to be fully released. Awaiting the
@@ -195,10 +340,18 @@ public actor RemoteControlServer {
         return (p, boundExposeLAN ?? false)
     }
 
+    /// Why nothing is listening after the last `start`, or nil when the portal is
+    /// bound. The companion to ``boundState()``: that answers *whether* the portal
+    /// is up, this answers *why not* in words a person can act on.
+    public func lastStartFailure() -> StartFailure? { startFailure }
+
     public func stop() async {
         generation += 1
+        // A deliberate stop is not a failure, and the next `start` re-decides.
+        startFailure = nil
         boundPort = nil
         boundExposeLAN = nil
+        boundTLS = nil
         guard let listener else { return }
         self.listener = nil
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
@@ -240,7 +393,24 @@ public actor RemoteControlServer {
             }
         }
         connection.start(queue: DispatchQueue(label: "goel.remote-conn"))
-        readRequest(connection, buffer: Data(), timeout: timeout)
+        readRequest(connection, buffer: Data(), timeout: timeout,
+                    client: Self.clientAddress(connection))
+    }
+
+    /// The peer's IP address as reported by the socket.
+    ///
+    /// This is the *only* address the auth layer will trust: it comes from the
+    /// kernel's view of the connection, so unlike `X-Forwarded-For` a client
+    /// cannot choose it. Both the login throttle and the trusted-proxy check for
+    /// header SSO key off this value.
+    private static func clientAddress(_ connection: NWConnection) -> String {
+        guard case .hostPort(let host, _) = connection.endpoint else { return "" }
+        switch host {
+        case .ipv4(let address): return "\(address)"
+        case .ipv6(let address): return "\(address)"
+        case .name(let name, _): return name
+        @unknown default:        return ""
+        }
     }
 
     /// Read from `connection` until a COMPLETE HTTP request has arrived — headers
@@ -251,7 +421,7 @@ public actor RemoteControlServer {
     /// request is whole, the size cap trips, or the peer / idle-timeout closes it.
     /// (The Linux server already accumulates this way via its NIO handler.)
     private nonisolated func readRequest(_ connection: NWConnection, buffer: Data,
-                                         timeout: Task<Void, Never>) {
+                                         timeout: Task<Void, Never>, client: String) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] chunk, _, isComplete, error in
             guard let self else { return }
             var buffer = buffer
@@ -266,30 +436,30 @@ public actor RemoteControlServer {
             if error != nil || buffer.count > Self.maxRequestBytes { return abort() }
             guard let bodyStart = RemoteRequest.headerEnd(buffer) else {
                 if isComplete { return abort() }          // closed mid-headers
-                return self.readRequest(connection, buffer: buffer, timeout: timeout)
+                return self.readRequest(connection, buffer: buffer, timeout: timeout, client: client)
             }
             let needBody = RemoteRequest.contentLength(buffer.prefix(bodyStart))
             if buffer.count - bodyStart < needBody {
                 if isComplete { return abort() }          // closed mid-body
-                return self.readRequest(connection, buffer: buffer, timeout: timeout)
+                return self.readRequest(connection, buffer: buffer, timeout: timeout, client: client)
             }
             // Whole request in hand — the idle timeout has done its job.
             timeout.cancel()
             let data = buffer
-            Task { await self.serve(connection, RemoteRequest(raw: data)) }
+            Task { await self.serve(connection, RemoteRequest(raw: data), client: client) }
         }
     }
 
     /// Dispatch a fully-read request. Streaming routes hold the connection open and
     /// send incrementally; everything else is one response and done.
-    private func serve(_ connection: NWConnection, _ request: RemoteRequest) async {
+    private func serve(_ connection: NWConnection, _ request: RemoteRequest, client: String) async {
         switch (request.method, request.path) {
         case ("GET", "/api/events"):
-            await serveEvents(connection, request)
+            await serveEvents(connection, request, client: client)
         case ("GET", "/stream"):
-            await serveStream(connection, request)
+            await serveStream(connection, request, client: client)
         default:
-            let response = await respond(to: request)
+            let response = await respond(to: request, client: client)
             connection.send(content: response, completion: .contentProcessed { _ in
                 connection.cancel()
             })
@@ -311,9 +481,10 @@ public actor RemoteControlServer {
 
     /// `GET /api/events` — an SSE stream pushing the task list every ~1.5 s.
     /// Ends when the client goes away (send fails) or the server restarts.
-    private func serveEvents(_ connection: NWConnection, _ request: RemoteRequest) async {
+    private func serveEvents(_ connection: NWConnection, _ request: RemoteRequest,
+                             client: String) async {
         let router = self.router
-        guard router.authorize(request, sessionAuthed: await validSession(request)) else {
+        guard router.authorize(request, sessionAuthed: await portalAuthed(request, client: client)) else {
             _ = await send(connection, RemoteRouter.response(status: "401 Unauthorized",
                                                              type: "text/plain",
                                                              body: Data("Invalid token\n".utf8)))
@@ -359,15 +530,15 @@ public actor RemoteControlServer {
     /// session verdict folded in. Unauthenticated browser page-loads are bounced
     /// to `/login`; the `/api` surface returns 401 (handled by the router) so
     /// script clients get a clean status instead of an HTML redirect.
-    private func respond(to request: RemoteRequest) async -> Data {
-        let authed = await validSession(request)
+    private func respond(to request: RemoteRequest, client: String) async -> Data {
+        let authed = await portalAuthed(request, client: client)
         let cfg = routerConfig
         switch (request.method, request.path) {
         case ("GET", "/login"):
             if authed || !cfg.requireAuth { return Self.redirect(to: "/") }
             return Self.htmlResponse(RemoteRouter.loginPage(theme: cfg.theme, error: nil))
         case ("POST", "/login"):
-            return await handleLogin(request)
+            return await handleLogin(request, client: client)
         case ("GET", "/logout"), ("POST", "/logout"):
             return await handleLogout(request)
         default:
@@ -383,12 +554,24 @@ public actor RemoteControlServer {
         await sessionStore.validSession(request)
     }
 
+    /// Is this request signed in — by its own session cookie, or by an identity a
+    /// trusted upstream proxy has already verified?
+    ///
+    /// The SSO branch is inert unless the operator enabled it *and* listed the
+    /// proxy's address, so on a default install this is exactly the old cookie
+    /// check with one extra boolean test.
+    private func portalAuthed(_ request: RemoteRequest, client: String) async -> Bool {
+        if await sessionStore.validSession(request) { return true }
+        return RemoteAuthService.trustedIdentity(request, client: client,
+                                                 policy: security.sso) != nil
+    }
+
     private func tokenAuthed(_ request: RemoteRequest) -> Bool {
         RemoteAuthService.tokenAuthed(request, token: routerConfig.token)
     }
 
-    private func handleLogin(_ request: RemoteRequest) async -> Data {
-        await sessionStore.handleLogin(request)
+    private func handleLogin(_ request: RemoteRequest, client: String) async -> Data {
+        await sessionStore.handleLogin(request, client: client)
     }
 
     private func handleLogout(_ request: RemoteRequest) async -> Data {
@@ -412,13 +595,14 @@ public actor RemoteControlServer {
     /// the whole file; a sequential in-progress torrent streams its contiguous
     /// prefix (kept behind a safety margin). Multi-file torrents stream their
     /// largest wanted file once finished.
-    private func serveStream(_ connection: NWConnection, _ request: RemoteRequest) async {
+    private func serveStream(_ connection: NWConnection, _ request: RemoteRequest,
+                             client: String) async {
         func reject(_ status: String, _ message: String) async {
             _ = await send(connection, RemoteRouter.response(status: status, type: "text/plain",
                                                              body: Data("\(message)\n".utf8)))
             connection.cancel()
         }
-        guard router.authorize(request, sessionAuthed: await validSession(request)) else {
+        guard router.authorize(request, sessionAuthed: await portalAuthed(request, client: client)) else {
             return await reject("401 Unauthorized", "Not signed in")
         }
         guard let manager,

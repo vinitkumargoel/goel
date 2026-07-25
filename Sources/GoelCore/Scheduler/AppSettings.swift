@@ -362,6 +362,86 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Override the release feed URL ("" = the built-in GitHub releases feed).
     public var updateFeedURL: String
 
+    // MARK: Remote portal hardening
+    //
+    // Everything below defaults to the behaviour the portal already had, so an
+    // existing install is byte-for-byte unaffected until an operator (or an MDM
+    // policy) turns something on.
+
+    /// Serve the portal over HTTPS instead of plain HTTP.
+    ///
+    /// Off by default because it needs a certificate the app cannot invent: the
+    /// operator supplies a PKCS#12 identity via ``remoteTLSIdentityPath`` (see
+    /// `Deploy/README.md` for the one-line `openssl` recipe). When the identity
+    /// cannot be loaded the server refuses to fall back to cleartext — silently
+    /// downgrading a portal the operator asked to encrypt would be worse than
+    /// not starting.
+    public var remoteTLSEnabled: Bool
+
+    /// Absolute path to a PKCS#12 (`.p12`) bundle holding the portal's
+    /// certificate and private key. Its passphrase is read from the
+    /// `GOEL_PORTAL_TLS_PASSPHRASE` environment variable — deliberately *not*
+    /// from here, so no secret ever lands in the settings file, a backup, or a
+    /// diagnostics export.
+    public var remoteTLSIdentityPath: String
+
+    /// Failed sign-ins allowed from one client address before the per-IP backoff
+    /// starts. The count is per address, so one attacker cannot lock everyone
+    /// else out of the portal.
+    public var remoteLoginMaxAttempts: Int
+
+    /// The first lockout, in seconds, once a client exceeds
+    /// ``remoteLoginMaxAttempts``. It doubles on each further failure up to a
+    /// fifteen-minute ceiling, which turns an online password guess from
+    /// "thousands per second" into "a handful per hour".
+    public var remoteLoginBackoffSeconds: Double
+
+    /// Trust an identity asserted by an upstream reverse proxy (Cloudflare
+    /// Access, Authelia, oauth2-proxy, an ingress doing SAML/OIDC) instead of
+    /// asking for the portal password.
+    ///
+    /// **Off by default, and it must stay that way unless the portal is genuinely
+    /// behind such a proxy.** A trusted header is an authentication bypass the
+    /// moment the port is reachable directly: anyone who can connect simply sends
+    /// the header themselves. ``remoteTrustedProxies`` is what makes it safe, and
+    /// the server refuses to honour the header while that list is empty.
+    public var remoteTrustedHeaderAuthEnabled: Bool
+
+    /// The header carrying the upstream-verified identity — e.g.
+    /// `X-Forwarded-User`, `Remote-User`, or `Cf-Access-Authenticated-User-Email`.
+    /// Compared case-insensitively.
+    public var remoteTrustedHeaderName: String
+
+    /// Client addresses permitted to assert ``remoteTrustedHeaderName``. Entries
+    /// are literal IPs (`10.0.0.7`, `::1`) or IPv4 CIDR blocks (`10.0.0.0/8`).
+    /// Empty means "trust nobody", which disables header SSO outright.
+    public var remoteTrustedProxies: [String]
+
+    // MARK: Audit log
+
+    /// Append a local, redacted record of every task added / completed / failed.
+    ///
+    /// Off by default. This is a **compliance** feature, not telemetry: the log is
+    /// written to this machine's disk and nothing in the app ever reads it back,
+    /// uploads it, or includes it in an export. See ``AuditLog`` for the redaction
+    /// rules (host only — never a full URL, query string or credential).
+    public var auditLogEnabled: Bool
+
+    /// Directory the audit log is written to. Empty ⇒ the app's own Application
+    /// Support folder. Point it at a directory your backup or SIEM collector
+    /// already watches.
+    public var auditLogDirectory: String
+
+    /// Delete rotated audit files older than this many days. `0` disables
+    /// age-based pruning (``auditLogKeepFiles`` still applies).
+    public var auditLogRetentionDays: Int
+
+    /// How many rotated audit files to keep alongside the live one.
+    public var auditLogKeepFiles: Int
+
+    /// Size at which the live audit file is rotated, in megabytes.
+    public var auditLogMaxFileMegabytes: Int
+
     public init(
         profiles: [TrafficProfile] = TrafficProfile.defaults,
         selectedProfileName: String = TrafficProfile.medium.name,
@@ -470,7 +550,21 @@ public struct AppSettings: Codable, Sendable, Hashable {
         backupKeepCount: Int = 20,
         // Updates
         autoCheckUpdates: Bool = false,
-        updateFeedURL: String = ""
+        updateFeedURL: String = "",
+        // Remote portal hardening
+        remoteTLSEnabled: Bool = false,
+        remoteTLSIdentityPath: String = "",
+        remoteLoginMaxAttempts: Int = 5,
+        remoteLoginBackoffSeconds: Double = 5,
+        remoteTrustedHeaderAuthEnabled: Bool = false,
+        remoteTrustedHeaderName: String = "X-Forwarded-User",
+        remoteTrustedProxies: [String] = [],
+        // Audit log
+        auditLogEnabled: Bool = false,
+        auditLogDirectory: String = "",
+        auditLogRetentionDays: Int = 90,
+        auditLogKeepFiles: Int = 12,
+        auditLogMaxFileMegabytes: Int = 8
     ) {
         self.profiles = profiles
         self.selectedProfileName = selectedProfileName
@@ -564,6 +658,18 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.backupKeepCount = backupKeepCount
         self.autoCheckUpdates = autoCheckUpdates
         self.updateFeedURL = updateFeedURL
+        self.remoteTLSEnabled = remoteTLSEnabled
+        self.remoteTLSIdentityPath = remoteTLSIdentityPath
+        self.remoteLoginMaxAttempts = remoteLoginMaxAttempts
+        self.remoteLoginBackoffSeconds = remoteLoginBackoffSeconds
+        self.remoteTrustedHeaderAuthEnabled = remoteTrustedHeaderAuthEnabled
+        self.remoteTrustedHeaderName = remoteTrustedHeaderName
+        self.remoteTrustedProxies = remoteTrustedProxies
+        self.auditLogEnabled = auditLogEnabled
+        self.auditLogDirectory = auditLogDirectory
+        self.auditLogRetentionDays = auditLogRetentionDays
+        self.auditLogKeepFiles = auditLogKeepFiles
+        self.auditLogMaxFileMegabytes = auditLogMaxFileMegabytes
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -597,6 +703,11 @@ public struct AppSettings: Codable, Sendable, Hashable {
         case rssFeeds, rssPollIntervalMinutes
         case backupKeepCount
         case autoCheckUpdates, updateFeedURL
+        case remoteTLSEnabled, remoteTLSIdentityPath
+        case remoteLoginMaxAttempts, remoteLoginBackoffSeconds
+        case remoteTrustedHeaderAuthEnabled, remoteTrustedHeaderName, remoteTrustedProxies
+        case auditLogEnabled, auditLogDirectory
+        case auditLogRetentionDays, auditLogKeepFiles, auditLogMaxFileMegabytes
     }
 
     /// Decodes every field with `decodeIfPresent`, falling back to the default
@@ -696,6 +807,18 @@ public struct AppSettings: Codable, Sendable, Hashable {
         backupKeepCount = try c.decodeIfPresent(Int.self, forKey: .backupKeepCount) ?? 20
         autoCheckUpdates = try c.decodeIfPresent(Bool.self, forKey: .autoCheckUpdates) ?? false
         updateFeedURL = try c.decodeIfPresent(String.self, forKey: .updateFeedURL) ?? ""
+        remoteTLSEnabled = try c.decodeIfPresent(Bool.self, forKey: .remoteTLSEnabled) ?? false
+        remoteTLSIdentityPath = try c.decodeIfPresent(String.self, forKey: .remoteTLSIdentityPath) ?? ""
+        remoteLoginMaxAttempts = try c.decodeIfPresent(Int.self, forKey: .remoteLoginMaxAttempts) ?? 5
+        remoteLoginBackoffSeconds = try c.decodeIfPresent(Double.self, forKey: .remoteLoginBackoffSeconds) ?? 5
+        remoteTrustedHeaderAuthEnabled = try c.decodeIfPresent(Bool.self, forKey: .remoteTrustedHeaderAuthEnabled) ?? false
+        remoteTrustedHeaderName = try c.decodeIfPresent(String.self, forKey: .remoteTrustedHeaderName) ?? "X-Forwarded-User"
+        remoteTrustedProxies = try c.decodeIfPresent([String].self, forKey: .remoteTrustedProxies) ?? []
+        auditLogEnabled = try c.decodeIfPresent(Bool.self, forKey: .auditLogEnabled) ?? false
+        auditLogDirectory = try c.decodeIfPresent(String.self, forKey: .auditLogDirectory) ?? ""
+        auditLogRetentionDays = try c.decodeIfPresent(Int.self, forKey: .auditLogRetentionDays) ?? 90
+        auditLogKeepFiles = try c.decodeIfPresent(Int.self, forKey: .auditLogKeepFiles) ?? 12
+        auditLogMaxFileMegabytes = try c.decodeIfPresent(Int.self, forKey: .auditLogMaxFileMegabytes) ?? 8
     }
 
     /// The currently selected profile, falling back to the first available (or

@@ -213,6 +213,12 @@ final class AppViewModel: ObservableObject {
     private static let speedPersistEveryTicks = 20
     private var speedSampleTick = 0
     private var speedSampler: Task<Void, Never>?
+    /// The payload of the last ``persistSpeedHistory()`` write, so a tick that
+    /// would re-encode byte-identical data can skip the store entirely. The save
+    /// is a whole-blob rewrite, and a session whose downloads are all paused
+    /// while an SFTP transfer runs would otherwise rewrite the same bytes every
+    /// 10 s for as long as the transfer lasts.
+    private var lastPersistedSpeedHistory: [String: [SpeedHistoryPoint]] = [:]
 
     /// Light / Dark / System, derived from (and persisted through) the core
     /// ``AppSettings/theme`` string so the choice survives relaunch. The setter
@@ -326,6 +332,23 @@ final class AppViewModel: ObservableObject {
 
     private let manager: DownloadManager
     private var updatesTask: Task<Void, Never>?
+
+    /// Which download engines are live, for the diagnostics report.
+    ///
+    /// `DownloadManager` builds all five engines eagerly in its initialiser, so
+    /// once ``start()`` has wired up the snapshot pump every kind is backed by a
+    /// running engine; before that the app is not observing anything yet and no
+    /// engine has been started. `updatesTask` is set last in `start()`, which
+    /// makes it the honest "we are live" edge.
+    ///
+    /// Deliberately *not* derived from the queue: an engine with no active task
+    /// is idle, not absent, and `DiagnosticsBundle` already reports the
+    /// active/total task counts per kind alongside this flag. Conflating the two
+    /// would make an idle engine indistinguishable from one that failed to come
+    /// up — exactly the distinction a support report needs to preserve.
+    var runningEngineKinds: Set<DownloadKind> {
+        updatesTask == nil ? [] : Set(DownloadKind.allCases)
+    }
 
     /// Watches the pasteboard for copied download links (Tier-1 convenience).
     private var clipboardMonitor: ClipboardMonitor?
@@ -462,6 +485,10 @@ final class AppViewModel: ObservableObject {
             guard let self else { return }
             let manager = self.manager
             Task { await manager.reconcileCompletedFiles() }
+            // An administrator can install or remove a configuration profile
+            // while the app is running; a policy that only took effect at launch
+            // would be one the user could dodge by never quitting.
+            self.refreshManagedPolicy()
         }
         // Best-effort flush of the speed-chart samples on quit. AppKit does not
         // await fire-and-forget Tasks on willTerminate, so do not half-wire
@@ -476,9 +503,18 @@ final class AppViewModel: ObservableObject {
         applyRemoteAccess()
         SparkleUpdaterService.shared.startIfConfigured()
         if !SparkleUpdaterService.shared.isConfigured, settings.autoCheckUpdates {
+            // Nobody is in the loop for the launch-time check, so it must carry
+            // the user's proxy and User-Agent like every other automatic fetch —
+            // otherwise the one request the user never asked for is also the one
+            // that ignores their egress setting. Snapshotted here rather than read
+            // inside the Task so the check uses the settings as they are now.
+            let feed = settings.updateFeedURL
+            let proxy = Self.proxySpec(from: settings)
+            let agent = Self.updateUserAgent(from: settings)
             Task { [weak self] in
                 guard let self else { return }
-                if case let .available(version, url) = await UpdateChecker.check(feedURL: self.settings.updateFeedURL) {
+                if case let .available(version, url) = await UpdateChecker.check(
+                    feedURL: feed, proxy: proxy, userAgent: agent) {
                     self.offerUpdate(version: version, url: url)
                 }
             }
@@ -715,7 +751,9 @@ final class AppViewModel: ObservableObject {
     /// user chose on the confirmation screen.
     func confirm(_ preview: DownloadPreview, saveDirectory: String?,
                  priority: FilePriority, checksum: Checksum?, startAt: Date? = nil,
-                 mirrors: [String]? = nil, deselectedFileIDs: [Int]? = nil) {
+                 mirrors: [String]? = nil, deselectedFileIDs: [Int]? = nil,
+                 cookieHeader: String? = nil, cookieSource: CookieSource? = nil,
+                 cookieHost: String? = nil) {
         // The manager dedups by source identity — starting an exact duplicate is
         // a no-op, so say that instead of a misleading "Added".
         guard existingDuplicate(of: preview.source) == nil else {
@@ -742,7 +780,10 @@ final class AppViewModel: ObservableObject {
                               scheduledAt: startAt, mirrors: mirrors,
                               suggestedName: preview.suggestedName,
                               totalBytes: seededBytes, files: seededFiles,
-                              deselectedFileIDs: skipFiles)
+                              deselectedFileIDs: skipFiles,
+                              cookieHeader: cookieHeader,
+                              cookieSource: cookieSource,
+                              cookieHost: cookieHost)
         }
         if let startAt {
             let formatter = RelativeDateTimeFormatter()
@@ -832,11 +873,26 @@ final class AppViewModel: ObservableObject {
         // Re-validate the scheme allowlist here too: the spool file is
         // user-only, but auto-adding without confirmation must never initiate an
         // authenticated `sftp:`/`ftp:` connection on a web page's behalf.
-        let locators = BrowserSpool.drain().filter {
-            DownloadSource.parse($0)?.isBrowserCaptureSafe == true
+        let captures = BrowserSpool.drainCaptures().filter {
+            DownloadSource.parse($0.locator)?.isBrowserCaptureSafe == true
         }
-        guard !locators.isEmpty else { return }
-        add(rawLines: locators.joined(separator: "\n"), saveDirectory: nil, priority: .normal)
+        guard !captures.isEmpty else { return }
+        // One add per capture rather than one batched add: each capture carries
+        // its own cookie scope and referrer, and a batch would have to flatten
+        // them into a single set — which is exactly the leak the host-exact
+        // scoping exists to prevent.
+        for capture in captures {
+            guard let source = DownloadSource.parse(capture.locator) else { continue }
+            Task {
+                let task = await manager.add(source: source, priority: .normal,
+                                             cookieHeader: capture.cookieHeader,
+                                             cookieSource: capture.cookieHeader == nil ? CookieSource.none : .browser,
+                                             cookieHost: capture.cookieHost)
+                if let referer = capture.referer {
+                    await manager.setRequestOptions(referer: referer, headers: nil, task: task.id)
+                }
+            }
+        }
     }
 
     /// Delegates to the core parser, which enforces the scheme allowlist
@@ -955,7 +1011,22 @@ final class AppViewModel: ObservableObject {
         aggregationLiveTask = nil
     }
 
-    func update(_ mutate: (inout AppSettings) -> Void) {
+    /// Commit a settings edit.
+    ///
+    /// `mutate` runs twice, on purpose. Once here against the **effective**
+    /// settings, so bound controls reflect the edit this frame; and once inside
+    /// the actor, where ``DownloadManager/apply(_:)`` runs it against the user's
+    /// own `storedSettings` — the only thing ever persisted.
+    ///
+    /// Handing the actor the already-mutated effective copy instead (`{ $0 = copy }`)
+    /// looks equivalent and is not: ``settings`` here is the managed (MDM) overlay
+    /// *applied* to the user's row, so a wholesale assignment would write an
+    /// administrator's forced keys into that row as if the user had chosen them,
+    /// and those values would then survive removal of the profile that imposed
+    /// them. Sending the mutation rather than the result is what keeps the user's
+    /// own settings round-tripping — hence `@escaping @Sendable`, which is what
+    /// lets the same closure cross into the actor.
+    func update(_ mutate: @escaping @Sendable (inout AppSettings) -> Void) {
         var copy = settings
         mutate(&copy)
         // Skip redundant commits. `@Published settings` fires on every assignment
@@ -973,9 +1044,8 @@ final class AppViewModel: ObservableObject {
         // picker) update this frame, then commit through the actor.
         settings = copy
         clipboardMonitor?.isEnabled = copy.clipboardMonitorEnabled
-        let committed = copy
         Task {
-            settings = await manager.apply { $0 = committed }
+            settings = await manager.apply(mutate)
             refreshAggregationState()
         }
         if launchChanged { LoginItemService.setEnabled(copy.launchAtLogin) }
@@ -1019,9 +1089,11 @@ final class AppViewModel: ObservableObject {
     func checkForUpdates() {
         if SparkleUpdaterService.shared.checkForUpdates() { return }
         let feed = settings.updateFeedURL
+        let proxy = Self.proxySpec(from: settings)
+        let agent = Self.updateUserAgent(from: settings)
         Task { [weak self] in
             guard let self else { return }
-            switch await UpdateChecker.check(feedURL: feed) {
+            switch await UpdateChecker.check(feedURL: feed, proxy: proxy, userAgent: agent) {
             case let .available(version, url):
                 self.offerUpdate(version: version, url: url)
             case let .upToDate(current):
@@ -1032,6 +1104,24 @@ final class AppViewModel: ObservableObject {
                 self.toastNow("Update check failed: \(message)")
             }
         }
+    }
+
+    /// The user's proxy configuration as a `Sendable` snapshot, for the guarded
+    /// update fetch. The core keeps the same one-liner for its own auto-fetches
+    /// (`DownloadManager.proxySpec(from:)`), but that one is internal to
+    /// `GoelCore`; this is the UI layer's copy, not a second policy.
+    private static func proxySpec(from settings: AppSettings) -> NetworkGuard.ProxySpec {
+        NetworkGuard.ProxySpec(mode: settings.proxyMode, type: settings.proxyType,
+                               host: settings.proxyHost, port: settings.proxyPort)
+    }
+
+    /// The User-Agent for the update fetch: the user's configured string, with
+    /// the shipped default standing in when they have cleared the field — an
+    /// empty header is not "no preference", it is a request that several release
+    /// hosts (GitHub among them) simply refuse.
+    private static func updateUserAgent(from settings: AppSettings) -> String {
+        let trimmed = settings.userAgent.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? "GoelDownloader/1.0 (macOS)" : trimmed
     }
 
     private func offerUpdate(version: String, url: URL) {
@@ -1175,12 +1265,27 @@ final class AppViewModel: ObservableObject {
     /// Write the current per-task speed-chart samples to the store (task-id
     /// string → sample ring), filtered to tasks that still exist so removed
     /// downloads don't linger on disk.
+    ///
+    /// Two filters keep this cheap, because the store side is a whole-blob
+    /// re-encode and single-row rewrite, not a delta:
+    ///
+    /// * Terminal tasks are skipped. The point of persisting is that a download's
+    ///   throughput graph *resumes* after relaunch; a completed or failed row has
+    ///   nothing left to resume, and the app deliberately keeps finished rows in
+    ///   the list, so without this a user with hundreds of them would have every
+    ///   one of their frozen rings re-encoded every 10 s for the sake of the one
+    ///   download that is actually moving. Their samples stay in memory for the
+    ///   rest of the session, so the on-screen sparkline is unaffected.
+    /// * An unchanged payload is not written at all (see
+    ///   ``lastPersistedSpeedHistory``).
     private func persistSpeedHistory() {
-        let known = Set(tasks.map(\.id))
         var out: [String: [SpeedHistoryPoint]] = [:]
-        for (id, samples) in taskSpeedHistory where known.contains(id) && !samples.isEmpty {
-            out[id.uuidString] = samples.map { SpeedHistoryPoint(down: $0.down, up: $0.up) }
+        for task in tasks where !task.status.isTerminal {
+            guard let samples = taskSpeedHistory[task.id], !samples.isEmpty else { continue }
+            out[task.id.uuidString] = samples.map { SpeedHistoryPoint(down: $0.down, up: $0.up) }
         }
+        guard out != lastPersistedSpeedHistory else { return }
+        lastPersistedSpeedHistory = out
         let manager = self.manager
         Task { await manager.persistSpeedHistory(out) }
     }
@@ -1188,6 +1293,9 @@ final class AppViewModel: ObservableObject {
     /// Seed ``taskSpeedHistory`` from the store at launch so each download's
     /// throughput chart continues where it left off.
     private func loadPersistedSpeedHistory(_ saved: [String: [SpeedHistoryPoint]]) {
+        // Seed the "already written" baseline with what is actually on disk, so
+        // the first differing save still gets through and prunes stale entries.
+        lastPersistedSpeedHistory = saved
         guard !saved.isEmpty else { return }
         var restored: [DownloadTask.ID: [SpeedSample]] = [:]
         for (idString, points) in saved {
@@ -1282,10 +1390,43 @@ final class AppViewModel: ObservableObject {
     /// Import a backup produced by ``exportBackup(to:)``: adopts its settings
     /// and merges its tasks (existing sources are skipped; restored tasks come
     /// back paused).
+    ///
+    /// Asks first. A backup file is untrusted input — it can arrive by email,
+    /// sync or download rather than from this user's own export — and adopting
+    /// its settings is a wholesale, un-undoable replacement of preferences the
+    /// user tuned by hand. ``DownloadManager/importEnvelope(_:)`` already refuses
+    /// to take the security-sensitive fields from a file at all; this is the
+    /// other half of that guarantee, because a file picker communicates neither
+    /// what is about to change nor what is protected.
     func importBackup(from url: URL) {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            toastNow("Import failed — couldn’t read that file")
+            return
+        }
+        // Decode before asking: a file that is not a backup at all deserves the
+        // plain error, not a confirmation for an import that cannot happen.
+        guard let incoming = Self.backupSettings(in: data) else {
+            toastNow("Import failed — not a valid backup file")
+            return
+        }
+        requestConfirm(
+            title: "Import this backup?",
+            message: Self.importSummary(
+                changes: Self.adoptableSettingChanges(from: incoming, current: settings)),
+            confirmTitle: "Import"
+        ) { [weak self] in
+            self?.adoptBackup(data)
+        }
+    }
+
+    /// Adopt a backup the user has confirmed. Split out of ``importBackup(from:)``
+    /// so the confirmation closure holds nothing but the already-read bytes.
+    private func adoptBackup(_ data: Data) {
         Task {
             do {
-                let data = try Data(contentsOf: url)
                 let added = try await manager.importEnvelope(data)
                 settings = await manager.currentSettings
                 toastNow(added > 0 ? "Imported \(added) download\(added == 1 ? "" : "s")"
@@ -1294,6 +1435,77 @@ final class AppViewModel: ObservableObject {
                 toastNow("Import failed — not a valid backup file")
             }
         }
+    }
+
+    /// Just enough of the export envelope to preview it. `AppExport` itself is
+    /// internal to `GoelCore`, and the tasks are the actor's business anyway.
+    private struct BackupSettingsOnly: Decodable {
+        let settings: AppSettings
+    }
+
+    /// The settings block of a backup file, or nil when this is not a backup.
+    private static func backupSettings(in data: Data) -> AppSettings? {
+        (try? JSONDecoder().decode(BackupSettingsOnly.self, from: data))?.settings
+    }
+
+    /// Settings fields the import would genuinely change, named as they appear
+    /// in the backup file and sorted so the same file always reads the same way.
+    ///
+    /// Advisory only. It re-states, by key prefix, the refusal list in
+    /// `DownloadManager.sanitizedImportedSettings` — which is internal to the
+    /// core and so cannot be asked directly — purely so the dialog does not
+    /// promise changes the actor will decline to make. If the two ever drift the
+    /// worst case is a dialog that over- or under-counts; the refusal itself
+    /// happens in the actor, so a protected value still cannot arrive from a file.
+    private static func adoptableSettingChanges(from incoming: AppSettings,
+                                                current: AppSettings) -> [String] {
+        guard incoming != current,
+              let new = jsonFields(incoming), let mine = jsonFields(current) else { return [] }
+        let protectedPrefixes = ["proxy", "remote", "antivirus", "postDownloadScript", "btWatch"]
+        let protectedKeys: Set<String> = [
+            "ffmpegPath", "defaultSaveDirectory", "auditLogDirectory", "rssFeeds", "updateFeedURL",
+        ]
+        return Set(new.keys).union(mine.keys).filter { key in
+            guard !protectedKeys.contains(key),
+                  !protectedPrefixes.contains(where: { key.hasPrefix($0) }) else { return false }
+            // Everything `JSONSerialization` produces is an `NSObject`, so one
+            // `isEqual` covers scalars, arrays and nested objects alike.
+            switch (new[key] as? NSObject, mine[key] as? NSObject) {
+            case (nil, nil): return false
+            case let (lhs?, rhs?): return !lhs.isEqual(rhs)
+            default: return true
+            }
+        }.sorted()
+    }
+
+    /// A settings value as its on-disk JSON object, so fields can be compared
+    /// without enumerating every one of them by hand (and without a new field
+    /// silently going unmentioned in the dialog).
+    private static func jsonFields(_ settings: AppSettings) -> [String: Any]? {
+        guard let data = try? JSONEncoder().encode(settings) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    /// The confirmation body: what changes, then what is protected regardless of
+    /// what the file asks for. The second half matters most — it is the answer to
+    /// "could this file quietly point my downloads through someone else's proxy
+    /// or unlock my remote portal?", and the answer is no.
+    private static func importSummary(changes: [String]) -> String {
+        let head: String
+        switch changes.count {
+        case 0:
+            head = "Its settings match yours, so no setting changes."
+        case 1...3:
+            head = "It changes \(changes.count) setting\(changes.count == 1 ? "" : "s"): "
+                + changes.joined(separator: ", ") + "."
+        default:
+            head = "It changes \(changes.count) settings, including "
+                + changes.prefix(3).joined(separator: ", ") + "."
+        }
+        return head + " Downloads it contains are added paused; ones already in your list are skipped.\n\n"
+            + "Security-sensitive settings are never taken from a backup: your proxy, the remote "
+            + "portal’s access, credentials and trusted-header (SSO) sign-in, your save and watch "
+            + "folders, RSS feeds, update feed, and any script or antivirus paths all stay as they are."
     }
 
     // MARK: Per-task controls
@@ -1532,6 +1744,71 @@ final class AppViewModel: ObservableObject {
 
     /// Whether an ffmpeg binary is reachable (honouring the settings override).
     var ffmpegAvailable: Bool { FFmpegService.isAvailable(override: settings.ffmpegPath) }
+
+    // MARK: Managed (MDM) policy
+
+    /// The managed-preferences overlay an administrator has deployed, for UI that
+    /// needs to disable and annotate the controls they have locked.
+    ///
+    /// Read here as well as in ``DownloadManager`` on purpose: the manager needs
+    /// it to *enforce* policy, the UI needs it to *explain* policy, and a forced
+    /// control that silently ignores the user's click is worse than one that says
+    /// who is in charge of it.
+    @Published private(set) var managedPolicy: ManagedPolicy = ManagedPolicy.current()
+
+    /// Re-read the overlay and push it through the manager's settings cascade.
+    ///
+    /// The actor's cascade reaches the engines, but not everything policy governs
+    /// lives behind the actor: the remote-control portal is started, stopped and
+    /// restarted from *this* object's ``settings`` copy, which nothing refreshes
+    /// mid-session (the manager's snapshot stream carries tasks only). So pull the
+    /// effective settings back and re-apply remote access on the same beat —
+    /// otherwise the nine `remote*` managed keys, including the administrator's
+    /// `remoteAccessEnabled` kill switch, would take effect no earlier than the
+    /// next launch while the listener kept serving.
+    func refreshManagedPolicy() {
+        managedPolicy = ManagedPolicy.current()
+        let manager = self.manager
+        Task {
+            await manager.refreshManagedPolicy()
+            settings = await manager.currentSettings
+            applyRemoteAccess()
+        }
+    }
+
+    /// The footnote shown under a control an administrator has locked.
+    static let managedFootnote = "Managed by your organisation."
+
+    /// Reveal the audit log's directory in Finder, creating nothing.
+    ///
+    /// Asks the ``AuditLog`` itself rather than recomputing the default path
+    /// here — the resolution rule (explicit directory, else Application Support)
+    /// lives in one place, and a second copy of it would eventually disagree.
+    func revealAuditLogFolder() {
+        let manager = self.manager
+        Task {
+            guard let url = await manager.auditLogDirectory() else {
+                await MainActor.run { self.toastNow("Audit log is off — nothing written yet") }
+                return
+            }
+            await MainActor.run { NSWorkspace.shared.open(url) }
+        }
+    }
+
+    /// The plain-language reason ffmpeg can't be used, or nil when it can.
+    ///
+    /// The companion to ``ffmpegAvailable``: views use this to keep the Convert /
+    /// Extract-audio actions *visible* and explain why they won't run, instead of
+    /// silently omitting them — a missing menu item is indistinguishable from a
+    /// feature that never existed.
+    var ffmpegUnavailableReason: String? {
+        FFmpegService.unavailableReason(override: settings.ffmpegPath)
+    }
+
+    /// One line describing which ffmpeg is in effect, for the Settings pane.
+    var ffmpegResolutionSummary: String {
+        FFmpegService.resolutionSummary(override: settings.ffmpegPath)
+    }
 
     /// Convert a finished media file into another container next to the original.
     func convertFile(task: DownloadTask, toExtension ext: String) {

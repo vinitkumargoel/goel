@@ -18,10 +18,10 @@ struct KVRow: View {
 
     var body: some View {
         HStack(alignment: .top) {
-            Text(key).font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(key).scaledFont(size: 12).foregroundStyle(.secondary)
             Spacer(minLength: 12)
             Text(value)
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundStyle(valueColor)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
@@ -34,8 +34,17 @@ struct KVRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
+                // Detail panels stack a dozen of these; an unnamed copy glyph
+                // per row is a dozen identical "button"s.
+                .a11yButton("Copy \(key.lowercased())")
             }
         }
+        // Key and value are a pair — read as "Save path, /Users/…", not as two
+        // adjacent strings whose relationship the listener has to infer. The
+        // copy button stays a separate, reachable element.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(key)
+        .accessibilityValue(value)
         .padding(.vertical, 7)
         Divider()
     }
@@ -45,10 +54,14 @@ struct SectionLabel: View {
     let text: String
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 10.5, weight: .bold))
+            .scaledFont(size: 10.5, weight: .bold)
             .foregroundStyle(.tertiary)
             .padding(.top, 16)
             .padding(.bottom, 8)
+            // Uppercased for style; spoken in its natural case, and marked as a
+            // heading so the rotor can jump between detail sections.
+            .accessibilityLabel(text)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -122,11 +135,11 @@ struct DetailsTab: View {
                 HStack(spacing: 8) {
                     Circle().fill(Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
                     Text(URLComponents(string: url)?.host ?? url)
-                        .font(.system(size: 11.5, design: .monospaced))
+                        .scaledFont(size: 11.5, design: .monospaced)
                         .foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Text("idle").font(.system(size: 10)).foregroundStyle(.tertiary)
+                    Text("idle").scaledFont(size: 10).foregroundStyle(.tertiary)
                 }
                 .padding(.vertical, 6)
                 Divider()
@@ -190,27 +203,37 @@ struct TrackerRow: View {
             Circle().fill(statusColor).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tracker.host)
-                    .font(.system(size: 11.5, design: .monospaced))
+                    .scaledFont(size: 11.5, design: .monospaced)
                     .lineLimit(1).truncationMode(.middle)
                 if !tracker.message.isEmpty {
                     Text(tracker.message)
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .scaledFont(size: 10).foregroundStyle(.tertiary)
                         .lineLimit(1).truncationMode(.tail)
                 }
             }
             Spacer(minLength: 8)
             if let s = tracker.seeds {
-                Text("\(s)S").font(.system(size: 10.5)).monospacedDigit().foregroundStyle(Theme.green)
+                Text("\(s)S").scaledFont(size: 10.5, monospacedDigit: true).foregroundStyle(Theme.green)
             }
             if let l = tracker.leeches {
-                Text("\(l)L").font(.system(size: 10.5)).monospacedDigit().foregroundStyle(Theme.orange)
+                Text("\(l)L").scaledFont(size: 10.5, monospacedDigit: true).foregroundStyle(Theme.orange)
             }
             Text(tracker.statusLabel)
-                .font(.system(size: 9.5, weight: .semibold))
+                .scaledFont(size: 9.5, weight: .semibold)
                 .foregroundStyle(statusColor)
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())
+        // Dot, host, message, "12S", "4L", status word — six fragments for one
+        // tracker, two of them letter-suffixed counts that read as gibberish.
+        .a11yGroup(
+            label: A11y.sentence("Tracker", tracker.host),
+            value: A11y.sentence(
+                tracker.statusLabel,
+                tracker.seeds.map { "\($0) seeds" },
+                tracker.leeches.map { "\($0) leechers" },
+                tracker.message.isEmpty ? nil : tracker.message))
+        .accessibilityAction(named: Text("Copy tracker URL")) { vm.copyToPasteboard(tracker.url) }
         .contextMenu {
             Button("Copy Tracker URL") { vm.copyToPasteboard(tracker.url) }
             if tracker.url.hasPrefix("http"), let url = URL(string: tracker.url) {
@@ -251,12 +274,13 @@ struct ProgressTab: View {
                 SectionLabel(text: "Piece map")
                 if task.status == .requestingMetadata {
                     Text("Waiting for metadata…")
-                        .font(.system(size: 11.5)).foregroundStyle(.secondary).padding(.vertical, 6)
+                        .scaledFont(size: 11.5).foregroundStyle(.secondary).padding(.vertical, 6)
                 } else {
                     ProgressView(value: task.fractionCompleted).tint(Theme.accent).padding(.vertical, 6)
                 }
             } else {
                 let have = buckets.filter { $0 >= 0.999 }.count
+                let partial = buckets.filter { $0 > 0 && $0 < 0.999 }.count
                 SectionLabel(text: "Piece map · \(have)/\(buckets.count) complete")
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(13), spacing: 3), count: 16), spacing: 3) {
                     ForEach(buckets.indices, id: \.self) { i in
@@ -265,6 +289,17 @@ struct ProgressTab: View {
                             .frame(width: 13, height: 13)
                     }
                 }
+                // Each cell is a 13pt unnamed rectangle whose only content is a
+                // colour. A large torrent puts several hundred of them in a row,
+                // so leaving them exposed buries the rest of the panel behind
+                // hundreds of meaningless stops — worse than silence. The map is
+                // a picture of a distribution; speak the distribution.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Piece map")
+                .accessibilityValue(
+                    "\(have) of \(buckets.count) blocks complete, "
+                    + "\(partial) in progress, "
+                    + "\(buckets.count - have - partial) not started")
             }
             legend
         }
@@ -289,11 +324,12 @@ struct ProgressTab: View {
                         Spacer()
                         Text("\(Int((task.fractionCompleted * 100).rounded()))%")
                     }
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundStyle(.secondary)
                     ProgressView(value: task.fractionCompleted)
                         .tint(task.status == .completed ? Theme.green : Theme.accent)
                 }
+                .a11yGroup(label: "Overall progress", value: task.accessibilityProgressValue)
             } else {
                 SectionLabel(text: "\(live.count) parallel segments")
                 ForEach(live) { segment in
@@ -303,11 +339,13 @@ struct ProgressTab: View {
                             Spacer()
                             Text("\(Int((segment.progress * 100).rounded()))%")
                         }
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(.secondary)
                         ProgressView(value: segment.progress)
                             .tint(segment.progress >= 1 ? Theme.green : Theme.accent)
                     }
+                    // Label, percent and bar are three readings of one segment.
+                    .a11yGroup(label: segment.label, value: A11y.percent(segment.progress))
                 }
             }
         }
@@ -319,9 +357,12 @@ struct ProgressTab: View {
             legendItem(Theme.accent, "Downloading")
             legendItem(Color.primary.opacity(0.08), "Missing")
         }
-        .font(.system(size: 11))
+        .scaledFont(size: 11)
         .foregroundStyle(.secondary)
         .padding(.top, 12)
+        // A key to colours, for a map whose contents are now spoken as counts.
+        // It explains nothing that isn't already in the map's value.
+        .a11yDecorative()
     }
 
     private func legendItem(_ color: Color, _ label: String) -> some View {
@@ -344,7 +385,7 @@ struct FilesTab: View {
                 fileRow(name: task.name, fraction: task.fractionCompleted,
                         size: task.totalBytes ?? 0, wanted: true, fileID: nil, priority: .normal)
                 Text("Single-file HTTP download — the one-file case of the unified multi-file model.")
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.tertiary)
             }
         } else {
@@ -371,16 +412,21 @@ struct FilesTab: View {
             }
             .buttonStyle(.plain)
             .disabled(fileID == nil)
+            // A checkbox drawn as a `Button` with a filled/empty square. Nothing
+            // in that says "checkbox", what it selects, or whether it is on.
+            .a11yButton(wanted ? "Skip \(name)" : "Download \(name)")
+            .accessibilityValue(wanted ? "Included" : "Skipped")
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                Text(name).scaledFont(size: 12).lineLimit(1).truncationMode(.middle)
                 ProgressView(value: fraction).tint(Theme.green)
             }
+            .a11yGroup(label: name, value: A11y.percent(fraction))
 
             Text(size.byteString)
-                .font(.system(size: 11))
+                .scaledFont(size: 11, monospacedDigit: true)
                 .foregroundStyle(.secondary)
-                .monospacedDigit()
+                .accessibilityLabel(A11y.bytes(size))
 
             if let fileID {
                 ActionMenu(items: [FilePriority.skip, .low, .normal, .high].map { p in
@@ -390,7 +436,7 @@ struct FilesTab: View {
                         Text(priority.displayName)
                         Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold))
                     }
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
                     .foregroundStyle(priority == .high ? Theme.orange : Color.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -398,6 +444,8 @@ struct FilesTab: View {
                                 in: RoundedRectangle(cornerRadius: 5))
                     .contentShape(Rectangle())
                 }
+                .accessibilityLabel("Priority for \(name)")
+                .accessibilityValue(priority.displayName)
             }
         }
         .padding(.vertical, 8)
@@ -461,7 +509,7 @@ struct ConnectionsTab: View {
 
     private func emptyConnections(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11.5))
+            .scaledFont(size: 11.5)
             .foregroundStyle(.secondary)
             .padding(.vertical, 8)
     }
@@ -476,9 +524,12 @@ struct ConnectionsTab: View {
                 Text("↓").frame(width: 50, alignment: .trailing)
                 Text(trailing).frame(width: 56, alignment: .trailing)
             }
-            .font(.system(size: 10.5, weight: .semibold))
+            .scaledFont(size: 10.5, weight: .semibold)
             .foregroundStyle(.tertiary)
             .padding(.vertical, 6)
+            // Column headings made of bare arrows ("↓", "↑"). Each row below now
+            // names its own figures, so the headings add nothing spoken.
+            .a11yDecorative()
             Divider()
         }
     }
@@ -489,12 +540,24 @@ struct ConnectionsTab: View {
     /// client name under the address when present.
     private func connRow(label: String, subtitle: String?, down: Double,
                          trailing: String, trailingColor: Color) -> some View {
+        connRowBody(label: label, subtitle: subtitle, down: down,
+                    trailing: trailing, trailingColor: trailingColor)
+            // Address, client name, rate and a bare trailing figure, read as one
+            // peer/segment. Without this each row is four stops, and the rate is
+            // an abbreviation ("2.4 MB/s") rather than words.
+            .a11yGroup(
+                label: A11y.sentence(label, subtitle.flatMap { $0.isEmpty || $0 == "peer" ? nil : $0 }),
+                value: A11y.sentence(A11y.speed(down), trailing))
+    }
+
+    private func connRowBody(label: String, subtitle: String?, down: Double,
+                             trailing: String, trailingColor: Color) -> some View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(label).font(.system(size: 11.5)).lineLimit(1).truncationMode(.middle)
+                    Text(label).scaledFont(size: 11.5).lineLimit(1).truncationMode(.middle)
                     if let subtitle, !subtitle.isEmpty, subtitle != "peer" {
-                        Text(subtitle).font(.system(size: 10)).foregroundStyle(.tertiary)
+                        Text(subtitle).scaledFont(size: 10).foregroundStyle(.tertiary)
                             .lineLimit(1).truncationMode(.tail)
                     }
                 }
@@ -503,7 +566,7 @@ struct ConnectionsTab: View {
                     .frame(width: 64, alignment: .trailing).foregroundStyle(Theme.green)
                 Text(trailing).frame(width: 56, alignment: .trailing).foregroundStyle(trailingColor)
             }
-            .font(.system(size: 11.5).monospacedDigit())
+            .scaledFont(size: 11.5, monospacedDigit: true)
             .padding(.vertical, 7)
             Divider()
         }

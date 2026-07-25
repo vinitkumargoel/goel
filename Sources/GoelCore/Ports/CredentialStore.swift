@@ -310,8 +310,8 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
         guard FileManager.default.fileExists(atPath: storeURL.path) else { return .missing }
         guard let data = try? Data(contentsOf: storeURL),
               let dict = try? JSONDecoder().decode([String: Entry].self, from: data) else {
-            FileHandle.standardError.write(Data(
-                "[GoelDownloader] credentials file unreadable at \(storeURL.path) — leaving it untouched\n".utf8))
+            GoelLog.persistence.error("Credentials file unreadable — leaving it untouched",
+                                      .path(storeURL.path))
             return .unreadable
         }
         return .ok(dict)
@@ -335,14 +335,17 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
         do {
             try data.write(to: url, options: .atomic)
         } catch {
-            FileHandle.standardError.write(Data("[GoelDownloader] failed to write credentials: \(error)\n".utf8))
+            GoelLog.persistence.error("Failed to write credentials", .detail(String(describing: error)))
             return false
         }
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         if let mode = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? NSNumber,
            mode.intValue & 0o077 != 0 {
-            FileHandle.standardError.write(Data(
-                "[GoelDownloader] WARNING credentials file is not private (mode \(String(mode.intValue, radix: 8)))\n".utf8))
+            // The permission bits are a property of the machine, not of the user's
+            // activity, so the octal mode stays public — it is the whole point of
+            // the warning that an operator can read it out of the log.
+            GoelLog.persistence.fault("Credentials file is not private",
+                                      .state(String(mode.intValue, radix: 8), label: "mode"))
         }
         return true
     }

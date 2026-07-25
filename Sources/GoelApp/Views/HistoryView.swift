@@ -22,7 +22,8 @@ struct HistoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("History").font(.system(size: 16, weight: .bold))
+                Text("History").scaledFont(size: 16, weight: .bold)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("Done") { vm.isHistoryPresented = false }
                     .keyboardShortcut(.defaultAction)
@@ -30,11 +31,14 @@ struct HistoryView: View {
 
             TextField("Search name or link", text: $search)
                 .textFieldStyle(.roundedBorder)
+                // The placeholder vanishes as soon as the field has text, so it
+                // can't be the field's only name.
+                .accessibilityLabel("Search history by name or link")
 
             if let entries {
                 if entries.isEmpty {
                     Text("Nothing here yet — finished downloads are archived automatically.")
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 } else {
@@ -42,6 +46,7 @@ struct HistoryView: View {
                 }
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .accessibilityLabel("Loading history")
             }
 
             HStack {
@@ -86,30 +91,43 @@ struct HistoryView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
+                .a11yDecorative()
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
-                    .font(.system(size: 12, weight: .medium))
+                    .scaledFont(size: 12, weight: .medium)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(entry.completedAt.formatted(date: .abbreviated, time: .shortened)
                      + (entry.totalBytes.map { " · \($0.byteString)" } ?? ""))
-                    .font(.system(size: 10.5))
+                    .scaledFont(size: 10.5)
                     .foregroundStyle(.secondary)
             }
+            // Name over a "date · size" line is one history entry.
+            .a11yGroup(label: entry.name,
+                       value: A11y.sentence(
+                        entry.completedAt.formatted(date: .abbreviated, time: .shortened),
+                        entry.totalBytes.map(A11y.bytes)))
             Spacer(minLength: 12)
             HStack(spacing: 4) {
-                iconButton("arrow.down.circle", help: "Download again") {
+                // Four unlabelled glyphs per row. Across a full history that is a
+                // wall of identical "button"s with no way to tell which does
+                // what, or which entry it belongs to.
+                iconButton("arrow.down.circle", help: "Download again",
+                           label: "Download “\(entry.name)” again") {
                     vm.redownload(entry)
                 }
-                iconButton("magnifyingglass.circle", help: "Reveal in Finder") {
+                iconButton("magnifyingglass.circle", help: "Reveal in Finder",
+                           label: "Reveal “\(entry.name)” in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting(
                         [URL(fileURLWithPath: entry.savePath)])
                 }
                 .disabled(!FileManager.default.fileExists(atPath: entry.savePath))
-                iconButton("doc.on.doc", help: "Copy link") {
+                iconButton("doc.on.doc", help: "Copy link",
+                           label: "Copy link for “\(entry.name)”") {
                     vm.copyToPasteboard(entry.locator)
                 }
-                iconButton("trash", help: "Remove entry") {
+                iconButton("trash", help: "Remove entry",
+                           label: "Remove “\(entry.name)” from history") {
                     vm.deleteHistoryEntry(entry.id)
                     entries?.removeAll { $0.id == entry.id }
                 }
@@ -119,13 +137,16 @@ struct HistoryView: View {
         .padding(.horizontal, 10)
     }
 
-    private func iconButton(_ symbol: String, help: String,
+    /// `help` is the pointer tooltip; `label` is what a screen reader hears, and
+    /// names the entry so the four buttons in a row stay distinguishable.
+    private func iconButton(_ symbol: String, help: String, label: String,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 12))
         }
         .buttonStyle(.borderless)
         .help(help)
+        .a11yButton(label)
     }
 
     private func exportCSV() {

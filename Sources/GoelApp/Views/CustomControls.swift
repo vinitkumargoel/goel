@@ -22,6 +22,12 @@ struct Dropdown<Value: Hashable>: View {
     let items: [Item]
     /// Fixed trigger width; `nil` lets the trigger fill its container.
     var width: CGFloat? = nil
+    /// What this dropdown chooses, spoken. A real `Picker` gets its name from
+    /// the surrounding `Form`/`LabeledContent`; this control is drawn by hand, so
+    /// the name has to be supplied. Left empty it falls back to the enclosing
+    /// ``SetRow``'s name, which covers every Preferences call site without
+    /// touching any of them.
+    var accessibilityName: String = ""
     /// Invoked after `selection` is updated when the user picks a row, so call
     /// sites can react (e.g. the "Choose folder…" sentinel) without a separate
     /// `.onChange`.
@@ -29,11 +35,21 @@ struct Dropdown<Value: Hashable>: View {
 
     @State private var isOpen = false
 
+    /// The name of the settings row this dropdown sits in, when it is in one.
+    @Environment(\.settingRowName) private var rowName
+
     private var currentLabel: String {
         for case let .option(value, title) in items where value == selection {
             return title
         }
         return ""
+    }
+
+    /// An explicit name wins, then the enclosing row's, then a last-resort
+    /// generic so the control is never wholly anonymous.
+    private var spokenName: String {
+        if !accessibilityName.isEmpty { return accessibilityName }
+        return rowName.isEmpty ? "Options" : rowName
     }
 
     var body: some View {
@@ -47,6 +63,7 @@ struct Dropdown<Value: Hashable>: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .a11yDecorative()
             }
             .font(.system(size: 13))
             .padding(.horizontal, 10)
@@ -57,6 +74,11 @@ struct Dropdown<Value: Hashable>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Announce as a pop-up button with its current choice, the way the
+        // system `Picker` this replaces would have.
+        .a11yGroup(label: spokenName, value: currentLabel,
+                   hint: "Activate to choose a different option.")
+        .accessibilityAddTraits(.isButton)
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 1) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
@@ -116,6 +138,12 @@ private struct DropdownRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        // The checkmark is drawn at zero opacity when unselected — present in the
+        // hierarchy either way, so it would be read on every row. Carry the
+        // selection as a trait instead.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
@@ -160,6 +188,10 @@ struct ActionMenu<Label: View>: View {
             label(isOpen)
         }
         .buttonStyle(.plain)
+        // The trigger's own label supplies the name; this states that the thing
+        // is a menu, not a plain button, so VoiceOver says "pop up button".
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(isOpen ? "" : "Activate to open the menu.")
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 1) {
                 ForEach(items) { item in
@@ -205,6 +237,12 @@ private struct ActionMenuRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        // Leading/trailing glyphs decorate the command (a checkmark, a sort
+        // chevron); the title is the command. Destructiveness is stated rather
+        // than left to the red tint alone.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.isDestructive ? "\(item.title), destructive" : item.title)
+        .accessibilityAddTraits(.isButton)
     }
 
     private var hoverFill: Color {
@@ -236,6 +274,10 @@ struct ToolbarMenuLabel: View {
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        // Icon + title + chevron would otherwise be read as three elements, the
+        // two glyphs by their SF Symbol names. It is one pop-up button.
+        .a11yGroup(label: title, hint: "Activate to open the \(title.lowercased()) menu.")
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -253,18 +295,23 @@ struct ConfirmDialogView: View {
             Color.black.opacity(0.28)
                 .ignoresSafeArea()
                 .onTapGesture(perform: dismiss)
+                // A scrim, not content. Without this VoiceOver offers an unnamed
+                // element covering the whole window in front of the dialog.
+                .a11yDecorative()
 
             VStack(spacing: 14) {
                 Image(systemName: request.isDestructive ? "trash.circle.fill" : "questionmark.circle.fill")
                     .font(.system(size: 34))
                     .foregroundStyle(request.isDestructive ? Theme.red : Theme.accent)
+                    .a11yDecorative()
 
                 VStack(spacing: 7) {
                     Text(request.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .scaledFont(size: 14, weight: .semibold)
                         .multilineTextAlignment(.center)
+                        .accessibilityAddTraits(.isHeader)
                     Text(request.message)
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -278,6 +325,9 @@ struct ConfirmDialogView: View {
                         request.onConfirm()
                         dismiss()
                     }
+                    // Return commits, so the dialog is completable without a
+                    // pointer. Escape already cancels via `.cancelAction`.
+                    .keyboardShortcut(.defaultAction)
                 }
                 .padding(.top, 2)
             }
@@ -286,6 +336,13 @@ struct ConfirmDialogView: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline))
             .shadow(radius: 30, y: 12)
+            // This is a hand-built modal, not a real sheet, so nothing tells
+            // assistive technology to stop reading the window behind it. `.isModal`
+            // is what confines VoiceOver to the dialog until it is dismissed —
+            // without it a destructive confirmation can be answered blind.
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
+            .accessibilityLabel(request.title)
         }
     }
 }
@@ -300,7 +357,7 @@ private struct DialogButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: kind == .normal ? .regular : .semibold))
+                .scaledFont(size: 13, weight: kind == .normal ? .regular : .semibold)
                 .foregroundStyle(foreground)
                 .padding(.horizontal, 18)
                 .frame(height: 30)
@@ -310,10 +367,21 @@ private struct DialogButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        // Destructiveness shows only as a red fill. Say it, so the difference
+        // between "Cancel" and "Remove" survives without colour.
+        .accessibilityLabel(kind == .destructive ? "\(title), destructive" : title)
+        .accessibilityAddTraits(.isButton)
     }
 
+    /// Ink derived from the fill rather than hard-coded white: the accent and
+    /// red fills are *light* colours in three of the four themes, where white
+    /// measured 2.0–2.8:1 on the app's only destructive confirmation.
     private var foreground: Color {
-        kind == .normal ? .primary : .white
+        switch kind {
+        case .normal: return .primary
+        case .primary: return Theme.onAccent
+        case .destructive: return Theme.onRed
+        }
     }
 
     private var background: Color {

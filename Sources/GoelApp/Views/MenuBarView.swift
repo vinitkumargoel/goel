@@ -107,13 +107,15 @@ struct MenuBarView: View {
     private func sectionLabel(_ text: String) -> some View {
         HStack {
             Text(text.uppercased())
-                .font(.system(size: 10, weight: .bold))
+                .scaledFont(size: 10, weight: .bold)
                 .foregroundStyle(.tertiary)
             Spacer()
         }
         .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 4)
+        .accessibilityLabel(text)
+        .accessibilityAddTraits(.isHeader)
     }
 
     // MARK: Header
@@ -125,7 +127,10 @@ struct MenuBarView: View {
         let count = listedTasks.count + activeTransfers.count
         return HStack(spacing: 12) {
             Text(count == 0 ? "Downloads" : "Downloads · \(count)")
-                .font(.system(size: 13, weight: .semibold))
+                .scaledFont(size: 13, weight: .semibold)
+                // "Downloads · 4" reads as "Downloads middle dot four".
+                .accessibilityLabel(count == 0 ? "Downloads" : "Downloads, \(count) in progress")
+                .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             speedStat(symbol: "arrow.down", value: vm.displayedCombinedSpeed.down, color: Theme.green)
             speedStat(symbol: "arrow.up", value: vm.displayedCombinedSpeed.up, color: Theme.teal)
@@ -155,7 +160,7 @@ struct MenuBarView: View {
             Button(action: addDownload) {
                 HStack(spacing: 7) {
                     Image(systemName: "plus").font(.system(size: 12, weight: .bold))
-                    Text("Add download").font(.system(size: 13, weight: .semibold))
+                    Text("Add download").scaledFont(size: 13, weight: .semibold)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
@@ -164,26 +169,31 @@ struct MenuBarView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .a11yButton("Add download", hint: "Opens the main window's add sheet.")
 
             HStack(spacing: 0) {
                 Button(action: pauseOrResumeAll) {
                     Label(activeTasks.isEmpty ? "Start all" : "Pause all",
                           systemImage: activeTasks.isEmpty ? "play.fill" : "pause.fill")
-                        .font(.system(size: 11.5))
+                        .scaledFont(size: 11.5)
                         .foregroundStyle(.secondary)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .a11yButton(activeTasks.isEmpty ? "Start all downloads" : "Pause all downloads")
                 Spacer(minLength: 0)
                 Button(action: openApp) {
                     HStack(spacing: 4) {
-                        Text("Open Goel°").font(.system(size: 11.5))
+                        Text("Open Goel°").scaledFont(size: 11.5)
                         Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
                     }
                     .foregroundStyle(.secondary)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // "Goel°" ends in a degree sign, which VoiceOver reads as
+                // "degrees"; and the chevron is a separate unnamed element.
+                .a11yButton("Open Goel main window")
             }
         }
         .padding(.horizontal, 14)
@@ -242,7 +252,7 @@ private struct MenuBarDownloadRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(task.name)
-                        .font(.system(size: 12, weight: .medium))
+                        .scaledFont(size: 12, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     KindBadge(task: task)
@@ -251,18 +261,34 @@ private struct MenuBarDownloadRow: View {
                 MiniProgressBar(task: task)
                 HStack(spacing: 5) {
                     Text(task.statusDetailText)
-                        .font(.system(size: 10.5))
+                        .scaledFont(size: 10.5)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     if let speed = trailingSpeed {
                         Text(speed.text)
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .scaledFont(size: 10.5, weight: .semibold, monospacedDigit: true)
                             .foregroundStyle(speed.color)
-                            .monospacedDigit()
                     }
                 }
             }
+            // Same treatment as the main list row: name + badge + bar + status +
+            // rate collapse to one spoken item, and the inline state button stays
+            // a separate, reachable control beside it.
+            //
+            // The label is the row's *identity* — name, transport, state — and
+            // nothing that ticks. VoiceOver re-reads a whole element when its
+            // label changes, so `accessibilityRowLabel` (which folds the live
+            // percent and ETA into the label) made a focused row re-speak itself
+            // about once a second, and say the percent twice because the value
+            // already carries it. The moving numbers stay in the value, which
+            // `.updatesFrequently` lets a screen reader re-read on its own
+            // without disturbing the label.
+            .a11yGroup(label: A11y.sentence(task.name,
+                                            task.accessibilityKindName,
+                                            task.accessibilityStatusName),
+                       value: task.accessibilityProgressValue)
+            .accessibilityAddTraits(.updatesFrequently)
             StateButton(task: task, vm: vm)
         }
         .padding(.horizontal, 14)
@@ -340,9 +366,16 @@ struct MenuBarSpeedLabel: View {
 
         var body: some View {
             if sample.down > 0 || sample.up > 0 {
+                // The two speed lines are drawn into a bitmap (see the type's
+                // note on why), which is completely opaque to VoiceOver — it is
+                // pixels, not text. Restate both rates as the image's label.
                 Image(nsImage: MenuBarSpeedLabel.speedImage(down: sample.down, up: sample.up))
+                    .accessibilityLabel(
+                        "Goel downloads. Downloading at \(A11y.speed(sample.down)), "
+                        + "uploading at \(A11y.speed(sample.up)).")
             } else {
                 Image(systemName: "arrow.down.circle")
+                    .accessibilityLabel("Goel downloads. Idle.")
             }
         }
 

@@ -159,10 +159,52 @@ final class HLSTests: XCTestCase {
         #EXTINF:4.0,
         seg0.m4s
         """
-        guard case .media(_, let mapURL, _, _)? = HLSParser.parse(text, baseURL: base) else {
+        guard case .media(_, let map, _, _)? = HLSParser.parse(text, baseURL: base) else {
             return XCTFail("expected media playlist")
         }
-        XCTAssertEqual(mapURL?.absoluteString, "https://cdn.example.com/video/init.mp4")
+        XCTAssertEqual(map?.url.absoluteString, "https://cdn.example.com/video/init.mp4")
+        XCTAssertNil(map?.byteRange, "a map without BYTERANGE covers the whole resource")
+    }
+
+    /// Single-file/CMAF packaging puts the init header and every fragment in one
+    /// resource. The map's `BYTERANGE` must survive parsing, or the init fetch
+    /// degrades to an unranged GET of the entire (here 400 MB) stream file, which
+    /// then gets concatenated in front of the fragments into an unplayable result.
+    func testParseFMP4InitMapKeepsByteRange() {
+        let text = """
+        #EXTM3U
+        #EXT-X-MAP:URI="stream.mp4",BYTERANGE="1184@0"
+        #EXTINF:4.0,
+        #EXT-X-BYTERANGE:501760@1184
+        stream.mp4
+        #EXTINF:4.0,
+        #EXT-X-BYTERANGE:498688
+        stream.mp4
+        """
+        guard case .media(let segs, let map, _, _)? = HLSParser.parse(text, baseURL: base) else {
+            return XCTFail("expected media playlist")
+        }
+        XCTAssertEqual(map?.url.absoluteString, "https://cdn.example.com/video/stream.mp4")
+        XCTAssertEqual(map?.byteRange, HLSByteRange(start: 0, length: 1184))
+        XCTAssertEqual(segs[0].byteRange, HLSByteRange(start: 1184, length: 501760))
+        // The second segment omits `@offset`, so it continues from the previous end.
+        XCTAssertEqual(segs[1].byteRange, HLSByteRange(start: 1184 + 501760, length: 498688))
+    }
+
+    /// A first segment with an implicit offset must start after the map's
+    /// sub-range, not at byte 0 — otherwise it re-reads the init header.
+    func testImplicitSegmentOffsetFollowsInitMapRange() {
+        let text = """
+        #EXTM3U
+        #EXT-X-MAP:URI="stream.mp4",BYTERANGE="800@0"
+        #EXTINF:4.0,
+        #EXT-X-BYTERANGE:12000
+        stream.mp4
+        """
+        guard case .media(let segs, _, _, _)? = HLSParser.parse(text, baseURL: base) else {
+            return XCTFail("expected media playlist")
+        }
+        XCTAssertEqual(segs[0].byteRange, HLSByteRange(start: 800, length: 12000))
     }
 
     func testParseRejectsNonPlaylist() {

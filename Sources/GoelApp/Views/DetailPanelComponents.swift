@@ -29,6 +29,13 @@ struct ProgressRing: View {
                 .shadow(color: tint.opacity(0.45), radius: 4)
                 .animation(.easeInOut(duration: 0.4), value: fraction)
         }
+        // Two stroked circles carry no meaning to assistive technology. Callers
+        // that overlay their own richer readout (the hero) replace this by
+        // collapsing the whole ZStack; this keeps the bare ring meaningful
+        // wherever it is used alone.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Progress")
+        .accessibilityValue(A11y.percent(fraction))
     }
 }
 
@@ -89,6 +96,21 @@ struct ThroughputGraph: View {
             SparkPath(samples: samples, maxValue: maxValue, filled: false)
                 .stroke(color, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
         }
+        // A shape of a trend cannot be spoken usefully sample by sample. Give the
+        // figures that actually answer "how fast, and is it holding up?" — the
+        // live rate sits beside the graph and is labelled separately.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Recent throughput")
+        .accessibilityValue(spokenSummary)
+    }
+
+    /// Peak and average over the window — the two numbers a sighted user reads
+    /// off the curve's height and its general level.
+    private var spokenSummary: String {
+        guard !samples.isEmpty else { return "No samples yet" }
+        let peak = samples.max() ?? 0
+        let mean = samples.reduce(0, +) / Double(samples.count)
+        return "average \(A11y.speed(mean)), peak \(A11y.speed(peak)), over the last \(samples.count) seconds"
     }
 }
 
@@ -146,10 +168,13 @@ struct DetailStatusPill: View {
         HStack(spacing: 5) {
             Circle().fill(task.statusColor).frame(width: 6, height: 6)
             Text(task.status.displayName)
-                .font(.system(size: 11.5))
+                .scaledFont(size: 11.5)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+        // The dot restates the adjacent word in colour; the word is the
+        // non-colour equivalent WCAG 1.4.1 asks for, and the only one spoken.
+        .a11yGroup(label: "Status", value: task.accessibilityStatusName)
     }
 }
 
@@ -167,27 +192,33 @@ struct DetailActionButtons: View {
     var body: some View {
         HStack(spacing: 8) {
             primary
-            button("Folder", "folder") { vm.revealInFinder(task) }
-            button("Copy", "doc.on.doc") { vm.copyToPasteboard(task.sourceLocator) }
+            button("Folder", "folder",
+                   spoken: "Show \(task.name) in Finder") { vm.revealInFinder(task) }
+            button("Copy", "doc.on.doc",
+                   spoken: "Copy source link for \(task.name)") { vm.copyToPasteboard(task.sourceLocator) }
             if !fill { Spacer(minLength: 0) }
         }
     }
 
     @ViewBuilder private var primary: some View {
         if task.status.isActive {
-            button("Pause", "pause.fill", prominent: true) { vm.pause(task.id) }
+            button("Pause", "pause.fill", spoken: "Pause \(task.name)", prominent: true) { vm.pause(task.id) }
         } else if task.status == .paused || task.status == .queued {
-            button("Resume", "play.fill", prominent: true) { vm.resume(task.id) }
+            button("Resume", "play.fill", spoken: "Resume \(task.name)", prominent: true) { vm.resume(task.id) }
         } else if case .failed = task.status {
-            button("Retry", "arrow.clockwise", prominent: true) { vm.retry(task.id) }
+            button("Retry", "arrow.clockwise", spoken: "Retry \(task.name)", prominent: true) { vm.retry(task.id) }
         }
     }
 
-    private func button(_ title: String, _ symbol: String,
+    /// `spoken` names the download the command acts on. The visible titles are
+    /// one word each because the bar is 340pt wide in the right dock; that is
+    /// fine to read and ambiguous to hear, since the panel's subject is
+    /// established well above these buttons.
+    private func button(_ title: String, _ symbol: String, spoken: String,
                         prominent: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
-                .font(.system(size: 11.5, weight: .medium))
+                .scaledFont(size: 11.5, weight: .medium)
                 .frame(maxWidth: fill ? .infinity : nil)
                 .padding(.horizontal, fill ? 4 : 10)
                 .frame(height: 28)
@@ -198,6 +229,7 @@ struct DetailActionButtons: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .a11yButton(spoken)
     }
 }
 

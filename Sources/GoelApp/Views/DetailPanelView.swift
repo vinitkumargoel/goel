@@ -40,6 +40,9 @@ struct DetailPanelView: View {
             .labelsHidden()
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
+            // `labelsHidden()` removes the name from assistive technology as
+            // well as from the screen, leaving an anonymous segmented control.
+            .accessibilityLabel("Detail section")
             Divider()
 
             ScrollView {
@@ -78,12 +81,15 @@ struct DetailPanelView: View {
             FileTypeIcon(type: task.fileType, size: 38)
             VStack(alignment: .leading, spacing: 3) {
                 Text(task.name)
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .scaledFont(size: 13.5, weight: .semibold)
                     .lineLimit(2)
+                    .accessibilityAddTraits(.isHeader)
                 HStack(spacing: 7) {
                     KindBadge(task: task)
                     DetailStatusPill(task: task)
                 }
+                .a11yGroup(label: A11y.sentence(task.accessibilityKindName,
+                                                task.accessibilityStatusName))
             }
             Spacer(minLength: 8)
             PanelDockToggle()
@@ -100,14 +106,21 @@ struct DetailPanelView: View {
                     .frame(width: 132, height: 132)
                 VStack(spacing: 1) {
                     Text("\(task.percentComplete)%")
-                        .font(.system(size: 30, weight: .bold))
-                        .monospacedDigit()
+                        .scaledFont(size: 30, weight: .bold, monospacedDigit: true)
                     Text("complete")
-                        .font(.system(size: 10.5))
+                        .scaledFont(size: 10.5)
                         .foregroundStyle(.tertiary)
                 }
             }
             .padding(.top, 4)
+            // The panel's centrepiece: a 132pt gauge that, untreated, is two
+            // unnamed `Circle` shapes plus the strings "62%" and "complete".
+            // Collapse the whole assembly into one progress element carrying the
+            // percent, the byte counts and the estimate.
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.updatesFrequently)
+            .accessibilityLabel("Download progress")
+            .accessibilityValue(task.accessibilityProgressValue)
 
             HStack(spacing: 22) {
                 DetailSpeedStat(symbol: "arrow.down", speed: vm.displaySpeed(for: task).down, color: Theme.green, size: 13)
@@ -115,18 +128,25 @@ struct DetailPanelView: View {
             }
 
             Text(sizeAndETA(for: task))
-                .font(.system(size: 11.5))
+                .scaledFont(size: 11.5, monospacedDigit: true)
                 .foregroundStyle(.secondary)
-                .monospacedDigit()
+                // "244.50 MB of 770.31 MB · ~6m" — the "·" and "~" are visual
+                // shorthand the ring's value already states properly.
+                .accessibilityLabel(A11y.sentence(
+                    "\(A11y.bytes(task.bytesDownloaded)) of \(A11y.bytes(task.totalBytes))",
+                    A11y.eta(task.estimatedTimeRemaining)))
 
             if case .failed(let error) = task.status {
                 Text("⚠ \(error.message)")
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(Theme.red)
                     .multilineTextAlignment(.center)
                     .padding(10)
                     .frame(maxWidth: .infinity)
                     .background(Theme.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+                    // The warning triangle is decoration on top of the word
+                    // "Failed"; announce the failure, not the glyph.
+                    .accessibilityLabel("Download failed. \(error.message)")
             }
         }
         .padding(.horizontal, 16)
@@ -172,6 +192,14 @@ struct DetailPanelView: View {
             }
             if let headers = task.requestHeaders, !headers.isEmpty {
                 KVRow(key: "Headers", value: "\(headers.count) custom")
+            }
+            // Cookie STATE only — never the value, and deliberately not
+            // `copyable`. After a relaunch the value is gone by design, so this
+            // row's job is to make that absence explainable and fixable.
+            if let cookieSource = task.cookieSource, cookieSource != .none {
+                KVRow(key: "Cookies",
+                      value: task.cookieHeader.map { "\(CookieHeader.count(in: $0)) attached · \(cookieSource.displayName)" }
+                          ?? "Not loaded — re-import from \(cookieSource.displayName)")
             }
             KVRow(key: "Priority", value: task.priority.displayName)
             KVRow(key: "Added", value: task.addedString)

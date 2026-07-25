@@ -26,10 +26,14 @@ struct AppToolbar: View {
             ]) { open in
                 ToolbarMenuLabel(title: "Select", systemImage: "checkmark.circle", active: open)
             }
+            .accessibilityValue("\(vm.selection.count) selected")
 
             ActionMenu(items: sortItems) { open in
                 ToolbarMenuLabel(title: "Sort", systemImage: "arrow.up.arrow.down", active: open)
             }
+            // The active sort key and direction are otherwise shown only as a
+            // chevron inside the (closed) popover.
+            .accessibilityValue("\(vm.sortKey.accessibilityName), \(vm.sortAscending ? "ascending" : "descending")")
 
             ActionMenu(items: [
                 .button("All files") { vm.filter = .all },
@@ -40,6 +44,7 @@ struct AppToolbar: View {
             ]) { open in
                 ToolbarMenuLabel(title: "Filter", systemImage: "line.3.horizontal.decrease.circle", active: open)
             }
+            .accessibilityValue(vm.filter.accessibilityName)
 
             Spacer()
 
@@ -47,9 +52,18 @@ struct AppToolbar: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.tertiary)
                     .font(.system(size: 12))
+                    // The placeholder text already says "Search downloads".
+                    .a11yDecorative()
                 TextField("Search downloads", text: $vm.search)
                     .textFieldStyle(.plain)
                     .frame(width: 180)
+                    // A placeholder disappears the moment the field has text, so
+                    // it can't be the only name the field has.
+                    .accessibilityLabel("Search downloads")
+                    // ⌘F is the universal "find" gesture and the field was
+                    // previously only reachable by clicking it or tabbing the
+                    // whole toolbar.
+                    .keyboardShortcut("f", modifiers: .command)
             }
             .padding(.horizontal, 10)
             .frame(height: 28)
@@ -65,6 +79,11 @@ struct AppToolbar: View {
             .controlSize(.large)
             .help("Toggle detail panel")
             .tint(vm.detailPanelVisible ? Theme.accent : nil)
+            .keyboardShortcut("i", modifiers: [.command, .option])
+            // Icon-only, and its on/off state is carried purely by the accent
+            // tint — invisible to VoiceOver and to a colour-blind user alike.
+            .a11yButton("Detail panel")
+            .accessibilityValue(vm.detailPanelVisible ? "Shown" : "Hidden")
         }
         .padding(.horizontal, 14)
         .frame(height: 52)

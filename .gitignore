@@ -61,7 +61,15 @@ build/
 # ---- Playwright CLI local session state (browser testing scratch) ----
 /.playwright-cli/
 
+# ---- Cloudflare Wrangler local cache (website/ Worker dev + deploy scratch) ----
+.wrangler/
+
 # Linux-vendored SQLite (build with Scripts/linux/build-sqlite.sh)
 Vendor/linux/sqlite/*.so
 Vendor/linux/sqlite/sqlite3.c
 Vendor/linux/sqlite/sqlite3.h
+
+# ---- Vendored ffmpeg (maintainer-staged, ~70 MB Mach-O) ----
+# Scripts/fetch_ffmpeg.sh reads an optional local binary from
+# Vendor/ffmpeg/<arch>/ffmpeg. Never commit one.
+Vendor/ffmpeg/

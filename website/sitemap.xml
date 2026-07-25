@@ -6,6 +6,11 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://goel.vinitk.dev/commercial</loc>
+    <lastmod>2026-07-25</lastmod>
+    <priority>0.9</priority>
+  </url>
+  <url>
     <loc>https://goel.vinitk.dev/privacy</loc>
     <lastmod>2026-07-25</lastmod>
     <priority>0.3</priority>

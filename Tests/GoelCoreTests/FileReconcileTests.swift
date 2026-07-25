@@ -106,6 +106,9 @@ final class FileReconcileTests: XCTestCase {
         XCTAssertNotNil(paused2, "a non-completed download is never pruned")
 
         // The prune is also written through to disk, not just the in-memory list.
+        // Drain the serial persistence pipeline first: it writes on a detached
+        // task, so reading the store straight away races the writer.
+        await manager.shutdown()
         XCTAssertFalse(try store.loadAllTasks().contains { $0.id == gone.id })
     }
 }

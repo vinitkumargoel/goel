@@ -355,10 +355,21 @@ extension AppViewModel {
 
     /// Record one file's progress within a parallel folder upload and report the
     /// summed aggregate as the row's byte count.
+    ///
+    /// The aggregate is carried *incrementally* — each callback adds only its own
+    /// delta to the row's current count — rather than re-summing the map. The map
+    /// keeps one entry per file in the subtree (every finished file pins its final
+    /// size back into it), so re-summing on every tick would be O(files) main-actor
+    /// work per tick, i.e. quadratic over the upload: a 20k-file drop would hitch
+    /// the UI progressively worse as it advanced.
     private func setFolderFileBytes(_ id: UUID, index: Int, bytes: Int64) {
-        sftpFolderBytes[id, default: [:]][index] = bytes
-        let sum = sftpFolderBytes[id]?.values.reduce(0, +) ?? 0
-        setTransferBytes(id, sum)
+        // No row, or no map, means the transfer was cancelled and both were already
+        // dropped; a late callback from a still-unwinding stream must not resurrect
+        // an entry (nothing would ever clear it) or count against a settled row.
+        guard let i = sftpTransfers.firstIndex(where: { $0.id == id }),
+              sftpFolderBytes[id] != nil else { return }
+        let previous = sftpFolderBytes[id, default: [:]].updateValue(bytes, forKey: index) ?? 0
+        sftpTransfers[i].record(bytes: sftpTransfers[i].bytes + bytes - previous)
     }
 
     private func setTransferTotal(_ id: UUID, _ total: Int64) {

@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Goel° Downloader — sample managed-settings configuration profile.
+
+    This profile demonstrates EVERY key the app reads from its managed
+    preferences domain (com.goel.downloader). Delete the ones you do not want to
+    control: an absent key is left entirely to the user, and only the keys you
+    ship here are locked.
+
+    Deploy it with Jamf Pro, Kandji, Intune, Mosyle, Munki, or `profiles install`
+    for a manual test. See Deploy/README.md for the per-MDM instructions and for
+    the exact meaning of every key.
+
+    Before shipping:
+      1. Replace both PayloadUUID values with fresh ones (`uuidgen`).
+      2. Replace PayloadOrganization with your organisation's name.
+      3. Sign it if your MDM requires signed profiles.
+
+    Nothing in this profile can disable, expire, or licence-gate the app. The
+    keys below only pin values a user could have chosen themselves.
+-->
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>PayloadType</key>
+            <string>com.goel.downloader</string>
+            <key>PayloadIdentifier</key>
+            <string>com.goel.downloader.settings</string>
+            <key>PayloadUUID</key>
+            <string>9E246AA7-2BAE-41F0-B71E-15DB5BDD1117</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+            <key>PayloadDisplayName</key>
+            <string>Goel° Downloader Settings</string>
+            <key>PayloadEnabled</key>
+            <true/>
+
+            <!-- ============================================================
+                 Storage
+                 ============================================================ -->
+
+            <!-- Absolute path new downloads are saved to. Must exist and be
+                 writable by the user; the app does not create it. -->
+            <key>defaultSaveDirectory</key>
+            <string>/Users/Shared/Downloads</string>
+
+            <!-- How the save folder is chosen when a download does not name one:
+                 automatic | byType | bySource | fixed
+                 Use "fixed" together with defaultSaveDirectory to pin everything
+                 to one approved location. -->
+            <key>defaultFolderRule</key>
+            <string>fixed</string>
+
+            <!-- ============================================================
+                 Proxy
+                 ============================================================ -->
+
+            <!-- none | system | manual -->
+            <key>proxyMode</key>
+            <string>manual</string>
+
+            <!-- http | socks5 -->
+            <key>proxyType</key>
+            <string>http</string>
+
+            <key>proxyHost</key>
+            <string>proxy.example.com</string>
+
+            <key>proxyPort</key>
+            <integer>3128</integer>
+
+            <!-- Route FTP/SFTP/BitTorrent through the manual proxy too. -->
+            <key>proxyAllProtocols</key>
+            <false/>
+
+            <!-- ============================================================
+                 Bandwidth
+                 ============================================================ -->
+
+            <!-- Name of the traffic profile the app starts on: Low | Medium | High
+                 (or the name of a profile the user created). -->
+            <key>selectedProfileName</key>
+            <string>Medium</string>
+
+            <!-- Whether the byte/sec caps apply at all. Setting either ceiling
+                 below implies this is true. -->
+            <key>speedLimitEnabled</key>
+            <true/>
+
+            <!-- Fleet-wide ceilings in BYTES per second, applied as a clamp to
+                 every profile — switching to "High" cannot escape them.
+                 5242880 = 5 MiB/s, 1048576 = 1 MiB/s. -->
+            <key>maxDownloadBytesPerSec</key>
+            <integer>5242880</integer>
+            <key>maxUploadBytesPerSec</key>
+            <integer>1048576</integer>
+
+            <!-- ============================================================
+                 Remote web portal
+                 ============================================================ -->
+
+            <!-- Master switch for the built-in web portal / JSON API. Set to
+                 <false/> to keep it off across the fleet. -->
+            <key>remoteAccessEnabled</key>
+            <false/>
+
+            <!-- Listen on the LAN instead of loopback only. Ignored unless
+                 remoteRequireAuth is true and a portal password is set. -->
+            <key>remoteAllowLAN</key>
+            <false/>
+
+            <!-- Require a portal sign-in. Leave true. -->
+            <key>remoteRequireAuth</key>
+            <true/>
+
+            <!-- Serve the portal read-only (view and stream, no changes). -->
+            <key>remoteReadOnly</key>
+            <true/>
+
+            <!-- Serve HTTPS. Requires remoteTLSIdentityPath and the
+                 GOEL_PORTAL_TLS_PASSPHRASE environment variable. -->
+            <key>remoteTLSEnabled</key>
+            <false/>
+
+            <!-- PKCS#12 bundle holding the portal's certificate + private key. -->
+            <key>remoteTLSIdentityPath</key>
+            <string>/Library/Application Support/Goel/portal.p12</string>
+
+            <!-- Header-based SSO for deployments behind Cloudflare Access,
+                 Authelia, oauth2-proxy or an SSO-aware ingress.
+                 DANGEROUS IF MISCONFIGURED: the header is only honoured when the
+                 connecting address appears in remoteTrustedProxies, and an empty
+                 list disables the feature entirely.
+                 Also requires the GOEL_PORTAL_PROXY_SECRET environment variable
+                 (a credential, so it is not settable from here) and the proxy
+                 sending that same value in the X-Goel-Proxy-Secret header next to
+                 the identity header. Unset variable = feature stays off, because
+                 a loopback peer address alone does not prove the request came
+                 from the proxy rather than from another local process. -->
+            <key>remoteTrustedHeaderAuthEnabled</key>
+            <false/>
+            <key>remoteTrustedHeaderName</key>
+            <string>X-Forwarded-User</string>
+            <key>remoteTrustedProxies</key>
+            <array>
+                <string>127.0.0.1</string>
+                <string>10.20.0.0/16</string>
+            </array>
+
+            <!-- ============================================================
+                 Updates
+                 ============================================================ -->
+
+            <!-- Let the app check for new releases. Set to <false/> when your
+                 patching process ships the app itself. -->
+            <key>autoCheckUpdates</key>
+            <false/>
+
+            <!-- Point the updater at an internal appcast you control. Empty
+                 string = the vendor's public feed. -->
+            <key>updateFeedURL</key>
+            <string>https://software.example.com/goel/appcast.xml</string>
+
+            <!-- ============================================================
+                 Audit log (local only — never transmitted anywhere)
+                 ============================================================ -->
+
+            <key>auditLogEnabled</key>
+            <true/>
+
+            <!-- Directory for the JSONL audit files. Empty string = the app's own
+                 Application Support folder. Point this at a path your backup or
+                 log collector already watches. -->
+            <key>auditLogDirectory</key>
+            <string>/Library/Logs/Goel</string>
+
+            <!-- Delete rotated files older than this many days (0 = never). -->
+            <key>auditLogRetentionDays</key>
+            <integer>365</integer>
+
+            <!-- How many rotated files to keep beside the live one. -->
+            <key>auditLogKeepFiles</key>
+            <integer>24</integer>
+
+            <!-- Rotate the live file once it passes this size, in megabytes. -->
+            <key>auditLogMaxFileMegabytes</key>
+            <integer>16</integer>
+        </dict>
+    </array>
+
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadIdentifier</key>
+    <string>com.goel.downloader.managed</string>
+    <key>PayloadUUID</key>
+    <string>3EB90FB7-E047-481C-B533-47ED4F50C4A7</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+    <key>PayloadDisplayName</key>
+    <string>Goel° Downloader — Managed Settings</string>
+    <key>PayloadDescription</key>
+    <string>Pins the download location, proxy, bandwidth ceiling, web portal and audit-log policy for Goel° Downloader.</string>
+    <key>PayloadOrganization</key>
+    <string>Example Corp</string>
+    <key>PayloadScope</key>
+    <string>System</string>
+    <key>PayloadRemovalDisallowed</key>
+    <false/>
+</dict>
+</plist>

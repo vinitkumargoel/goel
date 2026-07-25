@@ -192,10 +192,14 @@ extension DownloadManager {
                     // Archive the first completion. Removing the task later never
                     // touches this row — history outlives the queue.
                     persistHistory(HistoryEntry(task: tasks[i]))
+                    recordAudit(.completed, task: tasks[i])
                 }
                 onDownloadCompleted(tasks[i])
             }
-            if case .failed = status { scheduleAutoRetryIfNeeded(id) }
+            if case .failed = status {
+                if let i = index(of: id) { recordAudit(.failed, task: tasks[i]) }
+                scheduleAutoRetryIfNeeded(id)
+            }
             schedule()
         case .seeding:
             runningSlots.remove(id)

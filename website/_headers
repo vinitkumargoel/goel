@@ -9,7 +9,12 @@
   # no build step to emit hashes. Nothing on the page reflects user input, so
   # the value CSP earns here is blocking *injected* external resources, which
   # the rest of this policy does absolutely.
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests
+  #
+  # connect-src and form-action are 'self', not 'none': the commercial licensing
+  # page POSTs its enquiry to /api/enquiry on this same origin, via fetch() with a
+  # plain <form> submit as the no-JS fallback. Both need permitting, and 'self' is
+  # still enough to stop an injected script exfiltrating anything off-origin.
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; upgrade-insecure-requests
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

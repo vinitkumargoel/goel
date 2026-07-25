@@ -51,12 +51,15 @@ struct DetailBottomPanel: View {
                 FileTypeIcon(type: task.fileType, size: 40)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(task.name)
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .scaledFont(size: 13.5, weight: .semibold)
                         .lineLimit(2)
+                        .accessibilityAddTraits(.isHeader)
                     HStack(spacing: 7) {
                         KindBadge(task: task)
                         DetailStatusPill(task: task)
                     }
+                    .a11yGroup(label: A11y.sentence(task.accessibilityKindName,
+                                                    task.accessibilityStatusName))
                 }
                 Spacer(minLength: 0)
             }
@@ -65,12 +68,15 @@ struct DetailBottomPanel: View {
 
             if case .failed(let error) = task.status {
                 Text(error.message)
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundStyle(Theme.red)
                     .lineLimit(2)
                     .padding(9)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                    // Red on a red wash is the only thing marking this as an
+                    // error — colour alone. Say so.
+                    .accessibilityLabel("Download failed. \(error.message)")
             }
 
             Spacer(minLength: 0)
@@ -85,9 +91,11 @@ struct DetailBottomPanel: View {
     private func telemetryZone(for task: DownloadTask) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("LIVE THROUGHPUT")
-                .font(.system(size: 10, weight: .bold))
+                .scaledFont(size: 10, weight: .bold)
                 .tracking(0.7)
                 .foregroundStyle(.tertiary)
+                .accessibilityLabel("Live throughput")
+                .accessibilityAddTraits(.isHeader)
 
             HStack(spacing: 12) {
                 // Drive sparkline from VM history — no local Timer.publish.
@@ -98,7 +106,7 @@ struct DetailBottomPanel: View {
                     DetailSpeedStat(symbol: "arrow.down",
                                     speed: vm.displaySpeed(for: task).down,
                                     color: Theme.green, size: 16)
-                    Text("last 60s").font(.system(size: 10)).foregroundStyle(.tertiary)
+                    Text("last 60s").scaledFont(size: 10).foregroundStyle(.tertiary)
                 }
                 .fixedSize()
             }
@@ -111,11 +119,11 @@ struct DetailBottomPanel: View {
                 }
                 telStat("ETA") {
                     Text(task.etaText ?? "—")
-                        .font(.system(size: 12.5, weight: .semibold)).monospacedDigit()
+                        .scaledFont(size: 12.5, weight: .semibold, monospacedDigit: true)
                 }
                 telStat(task.swarmSummary.label) {
                     Text(task.swarmSummary.value)
-                        .font(.system(size: 12.5, weight: .semibold)).monospacedDigit()
+                        .scaledFont(size: 12.5, weight: .semibold, monospacedDigit: true)
                         .lineLimit(1)
                 }
             }
@@ -128,11 +136,16 @@ struct DetailBottomPanel: View {
                                         @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .bold))
+                .scaledFont(size: 10, weight: .bold)
                 .tracking(0.7)
                 .foregroundStyle(.tertiary)
+                // Uppercased and letter-spaced for the eye; some screen readers
+                // spell all-caps words out letter by letter.
+                .accessibilityLabel(label)
             content()
         }
+        // A caption over a figure is one reading — "ETA, 6 minutes" — not two.
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Zone 3 · tabbed detail
@@ -148,6 +161,8 @@ struct DetailBottomPanel: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(maxWidth: 440)
+                // `labelsHidden()` hides the name from VoiceOver too.
+                .accessibilityLabel("Detail section")
                 Spacer(minLength: 8)
                 PanelDockToggle()
             }
@@ -186,14 +201,14 @@ struct DetailBottomPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .lastTextBaseline) {
                 Text("\(task.percentComplete)%")
-                    .font(.system(size: 22, weight: .bold))
-                    .monospacedDigit()
+                    .scaledFont(size: 22, weight: .bold, monospacedDigit: true)
                 Spacer()
                 Text(task.sizeProgressText)
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
             }
             .padding(.bottom, 10)
+            .a11yGroup(label: "Progress", value: task.accessibilityProgressValue)
 
             if task.kind == .torrent {
                 KVRow(key: "Uploaded", value: task.bytesUploaded.byteString)
@@ -244,10 +259,17 @@ struct PanelDockToggle: View {
             Image(systemName: vm.detailPanelPosition == .right
                   ? "rectangle.bottomhalf.inset.filled"
                   : "rectangle.trailinghalf.inset.filled")
-                .font(.system(size: 14))
+                .scaledFont(size: 14)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .help(vm.detailPanelPosition == .right ? "Dock panel to bottom" : "Dock panel to right")
+        // A single unlabelled glyph, and one that previews the *destination*
+        // rather than the current state — so the label has to say both.
+        .a11yButton(vm.detailPanelPosition == .right
+                    ? "Dock detail panel to the bottom"
+                    : "Dock detail panel to the right")
+        .accessibilityValue(vm.detailPanelPosition == .right
+                            ? "Currently docked right" : "Currently docked bottom")
     }
 }

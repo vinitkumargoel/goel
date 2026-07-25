@@ -26,6 +26,9 @@ struct LinkGrabberSheet: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12, design: .monospaced))
                         .onSubmit(fetch)
+                        // The placeholder vanishes as soon as there is text, so
+                        // it cannot be the field's only name.
+                        .accessibilityLabel("Page URL")
                     Button(isFetching ? "Fetching…" : "Fetch") { fetch() }
                         .disabled(isFetching || pageText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -33,6 +36,8 @@ struct LinkGrabberSheet: View {
                     Label(fetchError, systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.orange)
+                        // Triangle + orange are the only "this failed" cues.
+                        .accessibilityLabel("Error. \(fetchError)")
                 }
                 if !links.isEmpty {
                     filterChips
@@ -117,6 +122,10 @@ struct LinkGrabberSheet: View {
                 .foregroundStyle(active ? Theme.accent : .secondary)
         }
         .buttonStyle(.plain)
+        // Which chip is active shows as an accent fill and a heavier weight —
+        // both purely visual. Carry it as a selection trait.
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
     }
 
     private var linkList: some View {
@@ -132,6 +141,9 @@ struct LinkGrabberSheet: View {
                         ))
                         .labelsHidden()
                         .toggleStyle(.checkbox)
+                        // `labelsHidden()` leaves a column of anonymous
+                        // checkboxes; name each by the link it selects.
+                        .accessibilityLabel(link.displayName)
                         Text(link.displayName)
                             .font(.system(size: 11.5))
                             .lineLimit(1)

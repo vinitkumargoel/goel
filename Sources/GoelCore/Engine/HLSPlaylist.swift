@@ -27,6 +27,17 @@ public struct HLSByteRange: Sendable, Hashable {
     public var length: Int  // number of bytes
 }
 
+/// The fMP4 initialisation segment (`#EXT-X-MAP`): the resource carrying the
+/// movie header, plus the optional `BYTERANGE` sub-range that single-file/CMAF
+/// packaging uses to place that header inside the *same* resource as the media
+/// fragments. The range has to travel with the URI: without it a downloader
+/// issues an unranged GET and pulls the whole (often multi-hundred-MB) file down
+/// as the "init segment", then concatenates it in front of the fragments.
+public struct HLSInitMap: Sendable, Hashable {
+    public var url: URL
+    public var byteRange: HLSByteRange? = nil  // nil = the whole resource is the init segment
+}
+
 /// One media segment (`#EXTINF` + its URI).
 public struct HLSSegment: Sendable, Hashable {
     public var url: URL
@@ -41,7 +52,7 @@ public struct HLSSegment: Sendable, Hashable {
 public enum HLSPlaylist: Sendable {
     case master([HLSVariant])
     case media(segments: [HLSSegment],
-               mapURL: URL?,
+               map: HLSInitMap?,
                targetDuration: Double,
                totalDuration: Double)
 }
@@ -70,7 +81,7 @@ enum HLSParser {
         var mediaSequence = 0
         var seq = 0
         var currentKey: HLSKey?
-        var mapURL: URL?
+        var map: HLSInitMap?
         var pendingVariant: (bw: Int, h: Int?, codecs: String?)?
         var pendingDuration: Double?
         var pendingByteRange: HLSByteRange?
@@ -94,7 +105,18 @@ enum HLSParser {
                 currentKey = parseKey(attributes(after: "#EXT-X-KEY:", in: line), baseURL: baseURL)
             } else if line.hasPrefix("#EXT-X-MAP:") {
                 let attrs = attributes(after: "#EXT-X-MAP:", in: line)
-                if let uri = attrs["URI"] { mapURL = resolve(uri, baseURL) }
+                if let uri = attrs["URI"], let u = resolve(uri, baseURL) {
+                    // Keep the map's own `BYTERANGE` (RFC 8216 §4.3.2.5): in CMAF
+                    // packaging the init header is a small slice at the head of the
+                    // very file the fragments live in, so dropping the range turns
+                    // the init fetch into a download of the entire stream.
+                    let range = attrs["BYTERANGE"].flatMap { parseByteRange($0, previousEnd: lastByteRangeEnd) }
+                    map = HLSInitMap(url: u, byteRange: range)
+                    // Seed the implicit-offset chain, so a first `#EXT-X-BYTERANGE`
+                    // that omits `@offset` starts after the init header rather than
+                    // at byte 0 (where it would re-read the header instead).
+                    if let range { lastByteRangeEnd = range.start + range.length }
+                }
             } else if line.hasPrefix("#EXTINF:") {
                 let field = value(of: line).split(separator: ",").first.map(String.init) ?? ""
                 pendingDuration = Double(field) ?? 0
@@ -135,7 +157,7 @@ enum HLSParser {
         }
         guard !segments.isEmpty else { return nil }
         let total = segments.reduce(0) { $0 + $1.duration }
-        return .media(segments: segments, mapURL: mapURL,
+        return .media(segments: segments, map: map,
                       targetDuration: targetDuration, totalDuration: total)
     }
 

@@ -31,4 +31,23 @@ extension HTTPEngine {
         }
         return req
     }
+
+    /// The task-aware form: the same request, plus the task's `Referer` and its
+    /// captured browser cookies when they are in scope for `url`.
+    ///
+    /// Cookies are the difference between downloading a paywalled/logged-in file
+    /// and downloading the site's login page, so this overload exists to make the
+    /// correct call site the easy one: it resolves headers through
+    /// ``DownloadTask/outboundHeaders(for:)``, which applies the host-exact scope
+    /// check. Building a request from `task.requestHeaders` by hand skips that
+    /// check and must not be done.
+    ///
+    /// The cookie value is never logged here or anywhere else — see the storage
+    /// note on ``DownloadTask/cookieHeader``.
+    nonisolated func makeRequest(_ url: URL, userAgent: String,
+                                 task: DownloadTask) -> URLRequest {
+        makeRequest(url, userAgent: userAgent,
+                    referer: task.referer,
+                    extraHeaders: task.outboundHeaders(for: url))
+    }
 }

@@ -182,6 +182,51 @@ final class SegmentedTransferTests: XCTestCase {
         XCTAssertEqual(restartRequests, 4, "a restart issues one ranged GET per segment")
     }
 
+    /// A resume cursor only describes bytes that live in the destination file. If
+    /// that file went away (Finder cleanup, disk cleaner, user tidying up) while the
+    /// download was paused, honouring the cursor would skip every "already done"
+    /// range, `preallocate` would recreate the file, and the resulting mostly-zero
+    /// file would still satisfy the `bytesWritten == total` net — a silent
+    /// corruption reported as success. A missing (or wrong-sized) file must restart.
+    func testResumeIsRefusedWhenPartialFileIsMissingOrWrongSize() async throws {
+        let payload = deterministicData(256 * 1024)
+        StubURLProtocol.set(.init(
+            data: payload, supportsRanges: true, sendContentLength: true,
+            etag: "\"v1\"", chunkSize: 64 * 1024, chunkDelayMicros: 0
+        ))
+        let ranges = SegmentedTransfer.makeRanges(total: Int64(payload.count), count: 4)
+        let segLen = ranges[0].end - ranges[0].start + 1
+        let cursor = SegmentedTransfer.ResumeCursor(
+            etag: "\"v1\"", lastModified: nil, totalBytes: Int64(payload.count),
+            ranges: ranges, completed: [segLen, segLen, segLen, 0]
+        )
+        let cursorData = try JSONEncoder().encode(cursor)
+
+        // --- File deleted while paused: cursor is discarded, everything refetched ---
+        StubURLProtocol.resetSeenUserAgents()
+        let missingPlan = plan(name: "resume-missing.bin", totalBytes: Int64(payload.count),
+                               acceptsRanges: true, segmentCount: 4, etag: "\"v1\"", existingResume: cursorData)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missingPlan.destination.path))
+        let missingOutcome = try await run(SegmentedTransfer(plan: missingPlan)).outcome
+
+        XCTAssertEqual(try Data(contentsOf: missingPlan.destination), payload,
+                       "a cursor whose partial file is gone must not leave zero-filled holes")
+        XCTAssertEqual(missingOutcome.bytesWritten, Int64(payload.count))
+        XCTAssertEqual(StubURLProtocol.seenUserAgents().count, 4,
+                       "every segment must be refetched, not just the one the cursor called incomplete")
+
+        // --- File truncated/replaced at the wrong size: same restart ---
+        StubURLProtocol.resetSeenUserAgents()
+        let shortPlan = plan(name: "resume-short.bin", totalBytes: Int64(payload.count),
+                             acceptsRanges: true, segmentCount: 4, etag: "\"v1\"", existingResume: cursorData)
+        try payload.prefix(1024).write(to: shortPlan.destination)
+        let shortOutcome = try await run(SegmentedTransfer(plan: shortPlan)).outcome
+
+        XCTAssertEqual(try Data(contentsOf: shortPlan.destination), payload)
+        XCTAssertEqual(shortOutcome.bytesWritten, Int64(payload.count))
+        XCTAssertEqual(StubURLProtocol.seenUserAgents().count, 4)
+    }
+
     // MARK: Pure range math
 
     func testMakeRangesPartitionsExactly() {

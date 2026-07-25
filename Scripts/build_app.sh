@@ -55,11 +55,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.1</string>
+    <string>1.0.2</string>
     <key>CFBundleVersion</key>
     <string>2</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Vinit Kumar Goel. Licensed under PolyForm Noncommercial 1.0.0. Commercial use requires a paid licence.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
@@ -128,6 +130,48 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# --- version stamping -------------------------------------------------------
+#
+# The literals above are the fallback for a plain working-copy build. For a
+# RELEASE build the git tag is the source of truth: tagging is the one step of
+# the release checklist that cannot be forgotten (it is what the appcast and the
+# GitHub release are named after), so deriving the version from it removes the
+# classic failure where the tag says v1.1.0 and the shipped Info.plist still
+# says 1.0.1. Only an EXACT tag match counts — being 13 commits past v1.0.1 does
+# not make you v1.0.1, and silently mislabelling a dev build as a release is
+# worse than leaving the literal alone.
+#
+#   GOEL_VERSION=1.2.0  — override CFBundleShortVersionString explicitly
+#   GOEL_BUILD=57       — override CFBundleVersion explicitly
+#
+# CFBundleVersion tracks the commit count: Sparkle compares this to decide
+# whether an appcast item is newer, so it must increase monotonically across
+# releases, which a commit count does and a hand-edited literal does not.
+plist_set() {  # plist_set <key> <value> — set, or add when the key is absent
+  /usr/libexec/PlistBuddy -c "Set :$1 $2" "$APP/Contents/Info.plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$APP/Contents/Info.plist"
+}
+
+VERSION_SOURCE="GOEL_VERSION"
+VERSION_OVERRIDE="${GOEL_VERSION:-}"
+if [ -z "$VERSION_OVERRIDE" ]; then
+  VERSION_SOURCE="git tag"
+  GIT_TAG="$(git describe --tags --exact-match 2>/dev/null || true)"
+  case "$GIT_TAG" in
+    v[0-9]*) VERSION_OVERRIDE="${GIT_TAG#v}" ;;
+    [0-9]*)  VERSION_OVERRIDE="$GIT_TAG" ;;
+  esac
+fi
+if [ -n "$VERSION_OVERRIDE" ]; then
+  echo "==> Version $VERSION_OVERRIDE (from $VERSION_SOURCE)"
+  plist_set CFBundleShortVersionString "$VERSION_OVERRIDE"
+else
+  echo "==> Version $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist") (untagged build — Info.plist literal)"
+fi
+
+BUILD_OVERRIDE="${GOEL_BUILD:-$(git rev-list --count HEAD 2>/dev/null || true)}"
+[ -n "$BUILD_OVERRIDE" ] && plist_set CFBundleVersion "$BUILD_OVERRIDE"
+
 # Executable + SwiftPM resource bundles (Bundle.module resolves these next to
 # the executable, so they live in Contents/MacOS alongside the binary).
 cp "$BIN/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
@@ -144,11 +188,25 @@ install_name_tool -add_rpath "@executable_path/../Frameworks" \
 # Sparkle activates only when a build provides its appcast + EdDSA public key:
 #   SPARKLE_FEED_URL="https://example.com/appcast.xml"
 #   SPARKLE_ED_KEY="<base64 public key from Sparkle's generate_keys>"
-# Without them the app uses the built-in release-feed checker instead.
-if [ -n "${SPARKLE_FEED_URL:-}" ] && [ -n "${SPARKLE_ED_KEY:-}" ]; then
+# Without them the app uses the built-in release-feed checker instead
+# (SparkleUpdaterService refuses to start on a half-configured bundle).
+#
+# Supplying only ONE of the pair is always a mistake — a feed without a key
+# means unverified downloads, a key without a feed means nothing happens — so
+# fail loudly here rather than shipping a build whose updater silently does the
+# wrong thing. HTTPS is likewise enforced at package time, not just at runtime.
+if [ -n "${SPARKLE_FEED_URL:-}" ] || [ -n "${SPARKLE_ED_KEY:-}" ]; then
+  if [ -z "${SPARKLE_FEED_URL:-}" ] || [ -z "${SPARKLE_ED_KEY:-}" ]; then
+    echo "error: set BOTH SPARKLE_FEED_URL and SPARKLE_ED_KEY, or neither." >&2
+    exit 1
+  fi
+  case "$SPARKLE_FEED_URL" in
+    https://*) ;;
+    *) echo "error: SPARKLE_FEED_URL must be https:// (got $SPARKLE_FEED_URL)" >&2; exit 1 ;;
+  esac
   echo "==> Enabling Sparkle updates ($SPARKLE_FEED_URL)"
-  /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $SPARKLE_FEED_URL" "$APP/Contents/Info.plist"
-  /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_ED_KEY" "$APP/Contents/Info.plist"
+  plist_set SUFeedURL "$SPARKLE_FEED_URL"
+  plist_set SUPublicEDKey "$SPARKLE_ED_KEY"
 fi
 
 # App icon (the dark variant is the shipped icon).
@@ -158,9 +216,15 @@ cp Assets/AppIcon-Dark.icns "$APP/Contents/Resources/AppIcon.icns"
 cp Sources/GoelApp/Resources/GoelDownloader.sdef "$APP/Contents/Resources/GoelDownloader.sdef"
 
 # License + third-party notices ride inside the bundle — BSD/Apache require the
-# notices to accompany the redistributed native libraries.
+# notices to accompany the redistributed native libraries. The commercial-licence
+# and trademark notes ride along too so a copy of the .app is self-describing:
+# someone who receives the bundle without the repository can still read what the
+# terms are and who to contact, which is the whole point of an honour-based
+# licence (there is no key check to tell them).
 [ -f LICENSE ] && cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
 [ -f THIRD-PARTY-NOTICES.md ] && cp THIRD-PARTY-NOTICES.md "$APP/Contents/Resources/THIRD-PARTY-NOTICES.txt"
+[ -f LICENSE-COMMERCIAL.md ] && cp LICENSE-COMMERCIAL.md "$APP/Contents/Resources/LICENSE-COMMERCIAL.txt"
+[ -f TRADEMARK.md ] && cp TRADEMARK.md "$APP/Contents/Resources/TRADEMARK.txt"
 
 # Safari Web Extension (.appex). Built by hand (no Xcode): the handler is a
 # minimal NSExtensionMain executable, and the SAME WebExtension resources the
@@ -189,6 +253,23 @@ codesign --force -s - "$APPEX"
 if [ "${BUNDLE_YTDLP:-1}" = "1" ]; then
   Scripts/fetch_ytdlp.sh "$APP/Contents/Resources/yt-dlp"
   codesign --force -s - "$APP/Contents/Resources/yt-dlp"
+fi
+
+# Optional: bundle a static LGPL ffmpeg (Convert / Extract Audio on finished
+# media). Adds ~40-80 MB. Set BUNDLE_FFMPEG=0 to ship without it — the actions
+# then TELL the user it is missing rather than silently disappearing.
+# FFMPEG_OPTIONAL=1 (the default here) downgrades "no source configured" from a
+# build failure to a warning; flip it to 0 once a checksummed LGPL asset is
+# pinned in Scripts/fetch_ffmpeg.sh. Signed ad-hoc now so bundle_dylibs.sh can
+# seal the app wrapper; the Developer ID block below re-signs it.
+if [ "${BUNDLE_FFMPEG:-1}" = "1" ]; then
+  FFMPEG_ARCH="$ARCH_ENV" FFMPEG_OPTIONAL="${FFMPEG_OPTIONAL:-1}" \
+    Scripts/fetch_ffmpeg.sh "$APP/Contents/Resources/ffmpeg"
+  # NOT collapsed into `[ -e ... ] && codesign ...`: under `set -e` a false test
+  # as the last statement of the outer if-body aborts the build.
+  if [ -e "$APP/Contents/Resources/ffmpeg" ]; then
+    codesign --force -s - "$APP/Contents/Resources/ffmpeg"
+  fi
 fi
 
 # Vendor native dylibs, rewrite install names, and sign.
@@ -266,6 +347,9 @@ if [ -n "${CODESIGN_IDENTITY:-}" ]; then
 
   # 3. Bundled yt-dlp — needs the hardened-runtime entitlements to run its Python.
   [ -e "$APP/Contents/Resources/yt-dlp" ] && sign --entitlements "$ENTITLEMENTS" "$APP/Contents/Resources/yt-dlp"
+
+  # 3b. Bundled ffmpeg — a plain static Mach-O; no entitlements needed.
+  [ -e "$APP/Contents/Resources/ffmpeg" ] && sign "$APP/Contents/Resources/ffmpeg"
 
   # 4. SwiftPM resource bundles, 5. Safari extension.
   for b in "$APP/Contents/MacOS/"*.bundle; do [ -e "$b" ] && sign "$b"; done

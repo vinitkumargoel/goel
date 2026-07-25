@@ -35,7 +35,14 @@ public final class RedirectSanitizer: NSObject, URLSessionTaskDelegate, @uncheck
         var sanitized = request
         let originalHost = originalURL?.host?.lowercased()
         let newHost = request.url?.host?.lowercased()
-        let downgradedToHTTP = (request.url?.scheme?.lowercased() != "https")
+        // A downgrade is a *loss* of transport security, so it has to be judged
+        // against where we started: only https→http qualifies. Deciding from the
+        // new scheme alone would also fire on a same-host http→http hop, which
+        // exposes nothing new (the first request already went out in the clear)
+        // yet would strip the `Cookie`/`Authorization` the origin still needs —
+        // turning a plain-http intranet redirect into a silent auth failure.
+        let downgradedToHTTP = (originalURL?.scheme?.lowercased() == "https")
+            && (request.url?.scheme?.lowercased() != "https")
         guard originalHost != newHost || downgradedToHTTP else { return sanitized }
         for name in (request.allHTTPHeaderFields ?? [:]).keys
         where !crossHostSafeHeaders.contains(name.lowercased()) {

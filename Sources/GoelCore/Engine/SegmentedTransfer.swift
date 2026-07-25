@@ -50,9 +50,10 @@ final class SegmentedTransfer: Sendable {
         self.progress = AsyncStream<TransferProgress> { cont = $0 }
         self.continuation = cont
 
-        // Resolve segmented-vs-single and the segment layout up front. Everything
-        // here is pure (cursor decode + validation + range math) so the caller can
-        // reserve the matching `connectionCount` before `run()`; the file I/O
+        // Resolve segmented-vs-single and the segment layout up front — cursor
+        // decode + validation + range math, plus one `stat` of the destination to
+        // confirm a cursor's bytes are still on disk — so the caller can reserve
+        // the matching `connectionCount` before `run()`; the mutating file I/O
         // (preallocate) stays in `run()`.
         guard let total = plan.totalBytes, plan.acceptsRanges else {
             self.segmented = false
@@ -75,7 +76,11 @@ final class SegmentedTransfer: Sendable {
            // Multi-path needs ≥1 range per adapter. A stale single-segment resume
            // from before aggregation was enabled would pin everything to one NIC.
            !(multiPath && cursor.ranges.count < plan.boundAdapters.count
-             && cursor.completed.allSatisfy { $0 == 0 }) {
+             && cursor.completed.allSatisfy { $0 == 0 }),
+           // …and the bytes the cursor claims are on disk must actually still be
+           // there (see ``destinationHoldsPreallocation``). Checked last: it is the
+           // only condition that touches the filesystem.
+           Self.destinationHoldsPreallocation(plan.destination, total: total) {
             // Remote unchanged and cursor sound: continue from where we left off.
             self.segmented = true
             self.plannedRanges = cursor.ranges
@@ -790,6 +795,23 @@ final class SegmentedTransfer: Sendable {
         return false
     }
 
+    /// Is the destination still the preallocated file the cursor describes?
+    ///
+    /// A ``ResumeCursor`` records how many bytes of each range were fetched, but the
+    /// bytes themselves live in the destination file — and the segmented path is the
+    /// only one that resumes from a side-channel record instead of the on-disk size
+    /// (see ``RemoteTransferPrep/openForResume``). If the partial file was deleted,
+    /// moved or replaced while the download was paused, ``preallocate`` would silently
+    /// recreate it, every "already done" range would be skipped, and the resulting
+    /// mostly-zero file would still satisfy the `bytesWritten == total` net and be
+    /// reported as `.completed`. So require the file to exist at exactly the size
+    /// ``preallocate`` gave it; anything else falls through to a fresh start.
+    static func destinationHoldsPreallocation(_ url: URL, total: Int64) -> Bool {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        guard let size = (attributes?[.size] as? NSNumber)?.int64Value else { return false }
+        return size == total
+    }
+
     /// Guard a decoded resume cursor before trusting its ranges/offsets for file
     /// seeks: a corrupted or tampered on-disk cursor must trigger a fresh start,
     /// never an out-of-bounds seek (a negative offset traps `UInt64(_:)`). Verifies
@@ -1150,12 +1172,21 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         lock.lock()
         outstanding += data.count
-        let suspend = !suspended && outstanding >= highWater
-        if suspend { suspended = true }
+        // `suspend()` MUST happen under the same lock that publishes `suspended`.
+        // Doing it after the unlock opens a lost-wakeup window: the consumer runs
+        // on the transfer's task, and it can drain below `lowWater`, observe
+        // `suspended == true`, clear it and call `resume()` on a task that has not
+        // suspended yet (a no-op) — after which our `suspend()` lands and nothing
+        // is left to undo it, stalling the segment forever. `consumed(_:)` calls
+        // `resume()` outside the lock and takes no other lock, so there is no
+        // inversion to deadlock against.
+        if !suspended && outstanding >= highWater {
+            suspended = true
+            dataTask.suspend()
+        }
         let cont = bodyCont
         lock.unlock()
         cont?.yield(data)
-        if suspend { dataTask.suspend() }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

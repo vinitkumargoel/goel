@@ -3,10 +3,12 @@
 > A fast, native macOS download manager that puts HTTP, FTP, SFTP, BitTorrent and HLS in
 > one queue. Written from scratch in Swift, ships as a single self-contained app with every
 > native library bundled (no Homebrew, no dependencies for end users), and runs headless on
-> Linux as `GoelDaemon` driven from a built-in web portal. Free and open source, MIT licensed.
+> Linux as `GoelDaemon` driven from a built-in web portal. Source-available under PolyForm
+> Noncommercial 1.0.0: free for personal use, commercially licensed for business use.
 
-Current version: 1.0.1 · Platforms: macOS 14 (Sonoma)+ on Apple Silicon and Intel; Linux x86_64
-(prebuilt) and ARM64 (from source) · Price: free · License: MIT · Source:
+Current version: 1.0.2 · Platforms: macOS 14 (Sonoma)+ on Apple Silicon and Intel; Linux x86_64
+(prebuilt) and ARM64 (from source) · Price: free for noncommercial use, paid licence for
+commercial use · License: PolyForm Noncommercial 1.0.0 · Source:
 https://github.com/vinitkumargoel/goel
 
 ## What it is
@@ -69,12 +71,27 @@ Linux: unpack `goel-daemon-<version>-linux-x86_64.tar.gz`, install the runtime l
 apt, then run `./run.sh` with the `GOEL_*` environment variables set, and open the portal in a
 browser.
 
+## Licensing
+
+Goel° is source-available, not open source: the licence is
+[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/), which
+permits any noncommercial purpose. Personal, hobby and student use is free, with every feature
+and no time limit — there is no trial, no licence key, no activation and no phone-home. Use by a
+charity, school, university, public research body, public safety or health organisation,
+environmental protection organisation or government institution is also free under the licence's
+*Noncommercial Organizations* clause. Use in the course of a business, by a contractor in
+billable work, or on a managed/MDM fleet requires a paid commercial licence, obtained by
+contacting the author via https://goel.vinitk.dev/commercial. The software itself does not
+enforce any of this.
+
 ## Privacy
 
 No accounts, no analytics, no tracking, in the app or on this website. The website sets no
 cookies and loads no third-party resources at all — typefaces, images, styles and scripts are
-served from its own domain. Download history, queue state, site logins and settings live on
-your device; saved credentials go in the macOS Keychain.
+served from its own domain. The one thing you can send us is the optional enquiry form on the
+commercial licensing page; what you type there is forwarded to a single mailbox to answer you,
+is not stored in a database or CRM, and is never sold or shared. Download history, queue state,
+site logins and settings live on your device; saved credentials go in the macOS Keychain.
 
 ## Pages
 
@@ -82,7 +99,10 @@ your device; saved credentials go in the macOS Keychain.
   app, the menu-bar popover, the SFTP browser, the piece map, the network aggregator, the web
   portal and the Linux daemon, plus a feature grid and FAQ.
 - [Privacy Policy](https://goel.vinitk.dev/privacy): what the site and the app do and do not collect.
-- [Terms & Conditions](https://goel.vinitk.dev/terms): MIT licensing, no warranty, acceptable use.
+- [Commercial Licensing](https://goel.vinitk.dev/commercial): who needs a paid licence and who
+  does not, the eligibility table, indicative pricing, what a licence includes, and an enquiry
+  form.
+- [Terms & Conditions](https://goel.vinitk.dev/terms): licensing, no warranty, acceptable use.
 - [Cookie Policy](https://goel.vinitk.dev/cookies): there are no cookies and no cookie banner.
 
 ## Source and downloads
@@ -91,7 +111,8 @@ your device; saved credentials go in the macOS Keychain.
   install and build instructions.
 - [Releases](https://github.com/vinitkumargoel/goel/releases): macOS `.dmg` (arm64, x86_64) and
   the Linux daemon tarball.
-- [License](https://github.com/vinitkumargoel/goel/blob/main/LICENSE): MIT.
+- [License](https://github.com/vinitkumargoel/goel/blob/main/LICENSE): PolyForm Noncommercial
+  1.0.0.
 - [Third-party notices](https://github.com/vinitkumargoel/goel/blob/main/THIRD-PARTY-NOTICES.md):
   licenses for libtorrent, libssh2, libcurl, OpenSSL, yt-dlp, Sparkle and others.
 

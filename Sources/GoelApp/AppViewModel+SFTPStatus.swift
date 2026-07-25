@@ -107,13 +107,13 @@ extension AppViewModel {
                 shouldContinue: { cap.underLimit }
             ) { sofar, total in cap.observe(sofar: sofar, total: total) }
             guard cap.underLimit else {
-                ServerStatusLog.logger.debug("os-release exceeded size cap; skipping")
+                GoelLog.app.debug("os-release exceeded size cap; skipping")
                 return nil
             }
             let text = (try? String(contentsOf: tmp, encoding: .utf8)) ?? ""
             return ServerOS.parse(osRelease: text)
         } catch {
-            ServerStatusLog.logger.debug("os-release read failed: \(String(describing: error), privacy: .public)")
+            GoelLog.app.debug("os-release read failed", .detail(String(describing: error)))
             return nil
         }
     }
