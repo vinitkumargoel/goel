@@ -43,8 +43,8 @@ will be. Use it for your own downloads, hobby projects, study or home media at n
 with nothing to sign and nothing to expire.
 
 **Commercial use requires a paid licence.** If Goel° is used in the course of a business,
-by a contractor billing a client, or deployed to a managed fleet, you need a commercial
-licence — see **[LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md)** for who needs one, who
+by a contractor billing a client, or deployed to a company's managed fleet, you need a
+commercial licence — see **[LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md)** for who needs one, who
 does not, and how to request one.
 
 | Your situation | What you need |
@@ -54,7 +54,8 @@ does not, and how to request one.
 | Evaluating Goel° before buying | **Free.** Evaluation is welcome and is not metered. |
 | Any company, sole trader, or for-profit entity | **[Commercial licence](LICENSE-COMMERCIAL.md)** |
 | Contractor or consultant, in billable work | **[Commercial licence](LICENSE-COMMERCIAL.md)** |
-| Managed fleet, MDM deployment, `GoelDaemon` on company infrastructure | **[Commercial licence](LICENSE-COMMERCIAL.md)** |
+| Managed fleet, MDM deployment, or `GoelDaemon`, **at a business** | **[Commercial licence](LICENSE-COMMERCIAL.md)** |
+| The same, at a charity, school or public body | **Free** — the licence covers the institution however it deploys. |
 | Bundling, reselling, or hosting Goel° for others | **[Commercial licence](LICENSE-COMMERCIAL.md)** — ask, this is quoted separately. |
 
 Pricing, the full entitlement matrix and an enquiry form live on the

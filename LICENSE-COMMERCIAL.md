@@ -7,9 +7,11 @@ separate, paid commercial licence from the author.
 
 This document explains who needs one, how to get one, and what you get for the money.
 
-> **Placeholder notice for the maintainer:** every address, price band and legal-entity
-> detail marked `TODO(owner)` below is a placeholder. Fill them in before publishing this
-> file or linking to it from the website. Nothing here is a binding offer until you do.
+> **Note for the maintainer:** the licensing address and the indicative price bands below
+> are filled in and match the commercial page. The one item still outstanding is the
+> **named legal entity and registered address** that will appear on the licence and the
+> invoice — decide that before issuing the first quote. Nothing in this file is a binding
+> offer; final terms are the written quote.
 
 ---
 
@@ -25,8 +27,11 @@ You need one if **any** of the following is true:
   outside what PolyForm's *Noncommercial Organizations* clause covers, or your
   procurement process requires a named, invoiced supplier agreement. (Many public bodies
   are permitted under PolyForm itself — see below — but still need paperwork.)
-- You **deploy Goel° to a managed fleet** — MDM, Jamf, Intune, Munki, a golden image, a
-  Docker image, or `GoelDaemon` running on shared or company-owned infrastructure.
+- You **deploy Goel° to a business's managed fleet** — MDM, Jamf, Intune, Munki, a golden
+  image, a Docker image, or `GoelDaemon` running on shared or company-owned
+  infrastructure. The deployment mechanism is not itself what triggers this: a charity,
+  school or public body that manages its own machines the same way is still permitted by
+  PolyForm's *Noncommercial Organizations* clause and owes nothing.
 - You **bundle, resell, host, or offer Goel° as part of a product or service** to third
   parties, including as a managed or hosted download service.
 - You need the software under terms the PolyForm licence does not offer — a warranty, an
@@ -118,9 +123,19 @@ drift apart.
 
 ## Pricing
 
-`TODO(owner)` — publish at least an indicative band here. Companies that cannot form a
-rough budget estimate from a public page frequently do not send the email at all, which
-costs far more than the discount a published price implies.
+Indicative bands, so you can put a number in a budget request before contacting anyone:
+
+| Tier | Indicative price | Who it is for |
+|---|---|---|
+| **Personal** | Free forever | Individuals, students, hobbyists, home labs — plus charities, schools and public bodies, which the licence already covers at no cost. |
+| **Business** | from ~$40–60 per seat, perpetual | Teams and companies up to roughly 250 seats. One-off payment; the version you buy is yours to keep and run indefinitely. |
+| **Enterprise** | from ~$5,000 per year, unlimited site licence | Whole-organisation coverage at the licensed entity, plus the artefacts procurement and IT need to deploy at scale. |
+
+These are indicative, not a binding offer; final pricing is confirmed in a written quote.
+Multi-year terms, reduced rates for the commercially directed work of an academic or
+non-profit institution, and currencies other than USD are available on request. These
+bands must stay in step with the [commercial page](https://goel.vinitk.dev/commercial);
+the two must not drift apart.
 
 ---
 
