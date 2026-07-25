@@ -866,3 +866,21 @@ necessary.  Here is a sample; alter the names:
 
 That's all there is to it!
 ```
+
+---
+
+## Website assets (not part of the application bundle)
+
+The marketing site under `website/` self-hosts its typefaces rather than loading them
+from a third-party CDN. These files ship with the site, not with the app.
+
+| Component | Subsets | License | Where it lives |
+|---|---|---|---|
+| [Inter](https://github.com/rsms/inter) | Latin, Latin-Ext | SIL OFL 1.1 | `website/assets/fonts/inter-*.woff2` |
+| [IBM Plex Mono](https://github.com/IBM/plex) | Latin, Latin-Ext | SIL OFL 1.1 | `website/assets/fonts/ibm-plex-mono-*.woff2` |
+
+Both are unmodified subsets as served by the Google Fonts API. The full license text and
+the required copyright notices — *Copyright 2020 The Inter Project Authors* and
+*Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"* — are bundled alongside the
+font files in [`website/assets/fonts/OFL.txt`](website/assets/fonts/OFL.txt), as OFL 1.1
+requires.

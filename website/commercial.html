@@ -6,6 +6,9 @@
 <title>Commercial Licensing — Goel°</title>
 <meta name="description" content="Goel° is free for personal use. Companies, government, education and managed fleets need a paid licence. Indicative pricing, what you get, and a one-business-day reply.">
 <meta name="theme-color" content="#16181d">
+<meta name="color-scheme" content="dark">
+<meta name="author" content="Vinit Kumar Goel">
+<meta name="robots" content="index, follow, max-image-preview:large">
 <link rel="canonical" href="https://goel.vinitk.dev/commercial">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
@@ -21,10 +24,11 @@
 <meta name="twitter:title" content="Commercial Licensing — Goel°">
 <meta name="twitter:description" content="Free for personal use. Licensed for business. Indicative pricing published, quote in one business day.">
 <meta name="twitter:image" content="https://goel.vinitk.dev/assets/og.jpg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="alternate" type="text/plain" title="llms.txt — plain-text site summary for language models" href="/llms.txt">
 <link rel="stylesheet" href="tokens.css">
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/inter-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/ibm-plex-mono-600-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/ibm-plex-mono-400-latin.woff2" crossorigin>
 <style>
 /* Hallmark · pre-emit critique: P5 H4 E4 S5 R5 V4 · commercial/licensing page, terminal theme
  * Shares the nav, button, kicker and footer vocabulary with index.html; adds only what a
@@ -270,12 +274,12 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
 
 <nav class="nav">
   <div class="wrap nav-in">
-    <a class="brand" href="index.html"><img class="logo" src="assets/goel-icon-128.png" alt="" width="24" height="24">GOEL<span class="deg">°</span></a>
+    <a class="brand" href="/"><img class="logo" src="assets/goel-icon-128.png" alt="" width="24" height="24">GOEL<span class="deg">°</span></a>
     <div class="nav-links">
       <a href="index.html#engine">Engine</a>
       <a href="index.html#web">Web</a>
       <a href="index.html#linux">Linux</a>
-      <a href="commercial.html" aria-current="page">Commercial</a>
+      <a href="/commercial" aria-current="page">Commercial</a>
       <a href="https://github.com/vinitkumargoel/goel/tree/main/docs" target="_blank" rel="noopener">Docs</a>
       <a href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">GitHub</a>
     </div>
@@ -574,7 +578,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
         <p class="form-note">
           Goes to one inbox and is used only to answer you. No CRM, no newsletter, no
           third-party trackers on this page. See the
-          <a class="link" href="privacy.html">privacy policy</a>.
+          <a class="link" href="/privacy">privacy policy</a>.
         </p>
       </div>
     </form>
@@ -701,16 +705,16 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
 
 <footer>
   <div class="wrap foot">
-    <a class="brand" href="index.html"><img class="logo" src="assets/goel-icon-128.png" alt="" width="24" height="24">GOEL<span class="deg">°</span></a>
+    <a class="brand" href="/"><img class="logo" src="assets/goel-icon-128.png" alt="" width="24" height="24">GOEL<span class="deg">°</span></a>
     <div class="links">
-      <a href="index.html">Home</a>
-      <a href="commercial.html">Commercial</a>
+      <a href="/">Home</a>
+      <a href="/commercial">Commercial</a>
       <a href="https://github.com/vinitkumargoel/goel/tree/main/docs" target="_blank" rel="noopener">Docs</a>
       <a href="https://github.com/vinitkumargoel/goel/tree/main/docs/compliance" target="_blank" rel="noopener">Compliance</a>
       <a href="https://github.com/vinitkumargoel/goel/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
-      <a href="privacy.html">Privacy</a>
-      <a href="terms.html">Terms</a>
-      <a href="cookies.html">Cookies</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/cookies">Cookies</a>
     </div>
     <div class="lic">© 2026 Vinit Kumar Goel · prices on this page are indicative and not an offer</div>
   </div>
