@@ -275,8 +275,20 @@ private struct MenuBarDownloadRow: View {
             // Same treatment as the main list row: name + badge + bar + status +
             // rate collapse to one spoken item, and the inline state button stays
             // a separate, reachable control beside it.
-            .a11yGroup(label: task.accessibilityRowLabel,
+            //
+            // The label is the row's *identity* — name, transport, state — and
+            // nothing that ticks. VoiceOver re-reads a whole element when its
+            // label changes, so `accessibilityRowLabel` (which folds the live
+            // percent and ETA into the label) made a focused row re-speak itself
+            // about once a second, and say the percent twice because the value
+            // already carries it. The moving numbers stay in the value, which
+            // `.updatesFrequently` lets a screen reader re-read on its own
+            // without disturbing the label.
+            .a11yGroup(label: A11y.sentence(task.name,
+                                            task.accessibilityKindName,
+                                            task.accessibilityStatusName),
                        value: task.accessibilityProgressValue)
+            .accessibilityAddTraits(.updatesFrequently)
             StateButton(task: task, vm: vm)
         }
         .padding(.horizontal, 14)

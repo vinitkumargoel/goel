@@ -20,10 +20,12 @@ final class RemoteAuthHardeningTests: XCTestCase {
     /// mint a session for the credential that was just revoked.
     func testLoginThatRacesACredentialRotationIsRefused() async {
         let store = RemoteSessionStore()
-        // Both hashes up front: hashing is as slow as verifying, so computing the
-        // replacement mid-race would let the login finish before the rotation lands.
-        let oldHash = RemotePassword.hash("old-secret")
-        let newHash = RemotePassword.hash("new-secret")
+        // Both hashes resolved up front: hashing is as slow as verifying, so
+        // deriving the replacement mid-race would let the login finish before the
+        // rotation lands. They come from ``PortalTestCredentials`` so the whole
+        // suite pays for each derivation once rather than once per test.
+        let oldHash = PortalTestCredentials.hash
+        let newHash = PortalTestCredentials.rotatedHash
         await store.configure(username: "admin", passwordHash: oldHash, sessionMinutes: 120)
 
         // Start the login, give it long enough to reach the detached PBKDF2 run
@@ -32,7 +34,7 @@ final class RemoteAuthHardeningTests: XCTestCase {
         // rotation land first still gets a meaningful, non-flaky test.
         async let response = store.handleLogin(
             request(headers: ["Content-Type": "application/json"],
-                    body: #"{"username":"admin","password":"old-secret"}"#),
+                    body: #"{"username":"admin","password":"\#(PortalTestCredentials.password)"}"#),
             client: "203.0.113.9")
         try? await Task.sleep(nanoseconds: 20_000_000)
         await store.configure(username: "admin", passwordHash: newHash,
@@ -56,11 +58,12 @@ final class RemoteAuthHardeningTests: XCTestCase {
     /// cannot be observed any other way.
     func testUnchangedCredentialsDoNotDisturbAnInFlightLogin() async {
         let store = RemoteSessionStore()
-        let hash = RemotePassword.hash("s3cret")
+        let hash = PortalTestCredentials.hash
         await store.configure(username: "admin", passwordHash: hash, sessionMinutes: 120)
 
         async let response = store.handleLogin(
-            request(headers: [:], body: #"{"username":"admin","password":"s3cret"}"#),
+            request(headers: [:],
+                    body: #"{"username":"admin","password":"\#(PortalTestCredentials.password)"}"#),
             client: "203.0.113.9")
         try? await Task.sleep(nanoseconds: 20_000_000)
         await store.configure(username: "admin", passwordHash: hash, sessionMinutes: 240)

@@ -74,7 +74,15 @@ public actor RemoteControlServer {
                                      invalidatingSessions: credentialsChanged)
         await sessionStore.configure(throttle: security.throttle)
         if security.sso.isEnabled && !security.sso.isEffective {
-            GoelLog.remote.error("Header SSO is enabled but no trusted proxies are configured — the header will be ignored")
+            // Name whichever precondition is missing — the proxy list, the shared
+            // secret (`GOEL_PORTAL_PROXY_SECRET`), or both — rather than always
+            // blaming the proxy list. Matches the macOS shell. `isEnabled` is true
+            // here, so at least one is empty and `missing` is never blank.
+            let missing = [security.sso.trustedProxies.isEmpty ? "trusted-proxies" : nil,
+                           security.sso.sharedSecret.isEmpty ? "shared-secret" : nil]
+                .compactMap { $0 }.joined(separator: ",")
+            GoelLog.remote.error("Header SSO is enabled but incomplete — the header will be ignored",
+                                 .state(missing, label: "missing"))
         }
 
         // The daemon links SwiftNIO but not NIOSSL, so it cannot terminate TLS

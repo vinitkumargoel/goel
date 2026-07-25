@@ -74,8 +74,14 @@ Connection: close
 |---|---|
 | Concurrent connections | 32 |
 | Concurrent SSE streams | 4 (a fifth gets `503 Too many live streams`) |
-| Login lockout | 5 failed attempts → 30-second lock |
+| Login throttle | Per client IP: 5 free attempts, then a 5-second lock doubling on each further failure, capped at 15 minutes |
 | Concurrent password verifications | capped; excess gets `429 Too Many Requests` |
+
+A throttled login gets `429 Too Many Requests` with a `Retry-After` header; the client
+address is the socket's peer address, never a header, so it cannot be spoofed to dodge the
+penalty. A correct password clears that client's record immediately. The free-attempt count
+and the first delay are configurable in **Settings → Web Access** (defaults above); the
+15-minute ceiling is not.
 
 Portal passwords are stored as `v2$saltHex$hashHex` — PBKDF2-HMAC-SHA256, 210,000
 iterations, 16-byte random salt. A legacy `v1` (iterated SHA-256) format is still

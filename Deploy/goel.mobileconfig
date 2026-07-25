@@ -133,7 +133,13 @@
                  Authelia, oauth2-proxy or an SSO-aware ingress.
                  DANGEROUS IF MISCONFIGURED: the header is only honoured when the
                  connecting address appears in remoteTrustedProxies, and an empty
-                 list disables the feature entirely. -->
+                 list disables the feature entirely.
+                 Also requires the GOEL_PORTAL_PROXY_SECRET environment variable
+                 (a credential, so it is not settable from here) and the proxy
+                 sending that same value in the X-Goel-Proxy-Secret header next to
+                 the identity header. Unset variable = feature stays off, because
+                 a loopback peer address alone does not prove the request came
+                 from the proxy rather than from another local process. -->
             <key>remoteTrustedHeaderAuthEnabled</key>
             <false/>
             <key>remoteTrustedHeaderName</key>

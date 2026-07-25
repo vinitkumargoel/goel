@@ -503,9 +503,18 @@ final class AppViewModel: ObservableObject {
         applyRemoteAccess()
         SparkleUpdaterService.shared.startIfConfigured()
         if !SparkleUpdaterService.shared.isConfigured, settings.autoCheckUpdates {
+            // Nobody is in the loop for the launch-time check, so it must carry
+            // the user's proxy and User-Agent like every other automatic fetch —
+            // otherwise the one request the user never asked for is also the one
+            // that ignores their egress setting. Snapshotted here rather than read
+            // inside the Task so the check uses the settings as they are now.
+            let feed = settings.updateFeedURL
+            let proxy = Self.proxySpec(from: settings)
+            let agent = Self.updateUserAgent(from: settings)
             Task { [weak self] in
                 guard let self else { return }
-                if case let .available(version, url) = await UpdateChecker.check(feedURL: self.settings.updateFeedURL) {
+                if case let .available(version, url) = await UpdateChecker.check(
+                    feedURL: feed, proxy: proxy, userAgent: agent) {
                     self.offerUpdate(version: version, url: url)
                 }
             }
@@ -1002,7 +1011,22 @@ final class AppViewModel: ObservableObject {
         aggregationLiveTask = nil
     }
 
-    func update(_ mutate: (inout AppSettings) -> Void) {
+    /// Commit a settings edit.
+    ///
+    /// `mutate` runs twice, on purpose. Once here against the **effective**
+    /// settings, so bound controls reflect the edit this frame; and once inside
+    /// the actor, where ``DownloadManager/apply(_:)`` runs it against the user's
+    /// own `storedSettings` — the only thing ever persisted.
+    ///
+    /// Handing the actor the already-mutated effective copy instead (`{ $0 = copy }`)
+    /// looks equivalent and is not: ``settings`` here is the managed (MDM) overlay
+    /// *applied* to the user's row, so a wholesale assignment would write an
+    /// administrator's forced keys into that row as if the user had chosen them,
+    /// and those values would then survive removal of the profile that imposed
+    /// them. Sending the mutation rather than the result is what keeps the user's
+    /// own settings round-tripping — hence `@escaping @Sendable`, which is what
+    /// lets the same closure cross into the actor.
+    func update(_ mutate: @escaping @Sendable (inout AppSettings) -> Void) {
         var copy = settings
         mutate(&copy)
         // Skip redundant commits. `@Published settings` fires on every assignment
@@ -1020,9 +1044,8 @@ final class AppViewModel: ObservableObject {
         // picker) update this frame, then commit through the actor.
         settings = copy
         clipboardMonitor?.isEnabled = copy.clipboardMonitorEnabled
-        let committed = copy
         Task {
-            settings = await manager.apply { $0 = committed }
+            settings = await manager.apply(mutate)
             refreshAggregationState()
         }
         if launchChanged { LoginItemService.setEnabled(copy.launchAtLogin) }
@@ -1066,9 +1089,11 @@ final class AppViewModel: ObservableObject {
     func checkForUpdates() {
         if SparkleUpdaterService.shared.checkForUpdates() { return }
         let feed = settings.updateFeedURL
+        let proxy = Self.proxySpec(from: settings)
+        let agent = Self.updateUserAgent(from: settings)
         Task { [weak self] in
             guard let self else { return }
-            switch await UpdateChecker.check(feedURL: feed) {
+            switch await UpdateChecker.check(feedURL: feed, proxy: proxy, userAgent: agent) {
             case let .available(version, url):
                 self.offerUpdate(version: version, url: url)
             case let .upToDate(current):
@@ -1079,6 +1104,24 @@ final class AppViewModel: ObservableObject {
                 self.toastNow("Update check failed: \(message)")
             }
         }
+    }
+
+    /// The user's proxy configuration as a `Sendable` snapshot, for the guarded
+    /// update fetch. The core keeps the same one-liner for its own auto-fetches
+    /// (`DownloadManager.proxySpec(from:)`), but that one is internal to
+    /// `GoelCore`; this is the UI layer's copy, not a second policy.
+    private static func proxySpec(from settings: AppSettings) -> NetworkGuard.ProxySpec {
+        NetworkGuard.ProxySpec(mode: settings.proxyMode, type: settings.proxyType,
+                               host: settings.proxyHost, port: settings.proxyPort)
+    }
+
+    /// The User-Agent for the update fetch: the user's configured string, with
+    /// the shipped default standing in when they have cleared the field — an
+    /// empty header is not "no preference", it is a request that several release
+    /// hosts (GitHub among them) simply refuse.
+    private static func updateUserAgent(from settings: AppSettings) -> String {
+        let trimmed = settings.userAgent.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? "GoelDownloader/1.0 (macOS)" : trimmed
     }
 
     private func offerUpdate(version: String, url: URL) {
@@ -1347,10 +1390,43 @@ final class AppViewModel: ObservableObject {
     /// Import a backup produced by ``exportBackup(to:)``: adopts its settings
     /// and merges its tasks (existing sources are skipped; restored tasks come
     /// back paused).
+    ///
+    /// Asks first. A backup file is untrusted input — it can arrive by email,
+    /// sync or download rather than from this user's own export — and adopting
+    /// its settings is a wholesale, un-undoable replacement of preferences the
+    /// user tuned by hand. ``DownloadManager/importEnvelope(_:)`` already refuses
+    /// to take the security-sensitive fields from a file at all; this is the
+    /// other half of that guarantee, because a file picker communicates neither
+    /// what is about to change nor what is protected.
     func importBackup(from url: URL) {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            toastNow("Import failed — couldn’t read that file")
+            return
+        }
+        // Decode before asking: a file that is not a backup at all deserves the
+        // plain error, not a confirmation for an import that cannot happen.
+        guard let incoming = Self.backupSettings(in: data) else {
+            toastNow("Import failed — not a valid backup file")
+            return
+        }
+        requestConfirm(
+            title: "Import this backup?",
+            message: Self.importSummary(
+                changes: Self.adoptableSettingChanges(from: incoming, current: settings)),
+            confirmTitle: "Import"
+        ) { [weak self] in
+            self?.adoptBackup(data)
+        }
+    }
+
+    /// Adopt a backup the user has confirmed. Split out of ``importBackup(from:)``
+    /// so the confirmation closure holds nothing but the already-read bytes.
+    private func adoptBackup(_ data: Data) {
         Task {
             do {
-                let data = try Data(contentsOf: url)
                 let added = try await manager.importEnvelope(data)
                 settings = await manager.currentSettings
                 toastNow(added > 0 ? "Imported \(added) download\(added == 1 ? "" : "s")"
@@ -1359,6 +1435,77 @@ final class AppViewModel: ObservableObject {
                 toastNow("Import failed — not a valid backup file")
             }
         }
+    }
+
+    /// Just enough of the export envelope to preview it. `AppExport` itself is
+    /// internal to `GoelCore`, and the tasks are the actor's business anyway.
+    private struct BackupSettingsOnly: Decodable {
+        let settings: AppSettings
+    }
+
+    /// The settings block of a backup file, or nil when this is not a backup.
+    private static func backupSettings(in data: Data) -> AppSettings? {
+        (try? JSONDecoder().decode(BackupSettingsOnly.self, from: data))?.settings
+    }
+
+    /// Settings fields the import would genuinely change, named as they appear
+    /// in the backup file and sorted so the same file always reads the same way.
+    ///
+    /// Advisory only. It re-states, by key prefix, the refusal list in
+    /// `DownloadManager.sanitizedImportedSettings` — which is internal to the
+    /// core and so cannot be asked directly — purely so the dialog does not
+    /// promise changes the actor will decline to make. If the two ever drift the
+    /// worst case is a dialog that over- or under-counts; the refusal itself
+    /// happens in the actor, so a protected value still cannot arrive from a file.
+    private static func adoptableSettingChanges(from incoming: AppSettings,
+                                                current: AppSettings) -> [String] {
+        guard incoming != current,
+              let new = jsonFields(incoming), let mine = jsonFields(current) else { return [] }
+        let protectedPrefixes = ["proxy", "remote", "antivirus", "postDownloadScript", "btWatch"]
+        let protectedKeys: Set<String> = [
+            "ffmpegPath", "defaultSaveDirectory", "auditLogDirectory", "rssFeeds", "updateFeedURL",
+        ]
+        return Set(new.keys).union(mine.keys).filter { key in
+            guard !protectedKeys.contains(key),
+                  !protectedPrefixes.contains(where: { key.hasPrefix($0) }) else { return false }
+            // Everything `JSONSerialization` produces is an `NSObject`, so one
+            // `isEqual` covers scalars, arrays and nested objects alike.
+            switch (new[key] as? NSObject, mine[key] as? NSObject) {
+            case (nil, nil): return false
+            case let (lhs?, rhs?): return !lhs.isEqual(rhs)
+            default: return true
+            }
+        }.sorted()
+    }
+
+    /// A settings value as its on-disk JSON object, so fields can be compared
+    /// without enumerating every one of them by hand (and without a new field
+    /// silently going unmentioned in the dialog).
+    private static func jsonFields(_ settings: AppSettings) -> [String: Any]? {
+        guard let data = try? JSONEncoder().encode(settings) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    /// The confirmation body: what changes, then what is protected regardless of
+    /// what the file asks for. The second half matters most — it is the answer to
+    /// "could this file quietly point my downloads through someone else's proxy
+    /// or unlock my remote portal?", and the answer is no.
+    private static func importSummary(changes: [String]) -> String {
+        let head: String
+        switch changes.count {
+        case 0:
+            head = "Its settings match yours, so no setting changes."
+        case 1...3:
+            head = "It changes \(changes.count) setting\(changes.count == 1 ? "" : "s"): "
+                + changes.joined(separator: ", ") + "."
+        default:
+            head = "It changes \(changes.count) settings, including "
+                + changes.prefix(3).joined(separator: ", ") + "."
+        }
+        return head + " Downloads it contains are added paused; ones already in your list are skipped.\n\n"
+            + "Security-sensitive settings are never taken from a backup: your proxy, the remote "
+            + "portal’s access, credentials and trusted-header (SSO) sign-in, your save and watch "
+            + "folders, RSS feeds, update feed, and any script or antivirus paths all stay as they are."
     }
 
     // MARK: Per-task controls

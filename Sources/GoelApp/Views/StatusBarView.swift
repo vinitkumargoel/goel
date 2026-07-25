@@ -88,7 +88,15 @@ struct StatusBarView: View {
     }
 
     private var snail: some View {
-        Button(action: vm.toggleSnail) {
+        // `speedLimitEnabled` is a ManagedPolicy key and this button is its only
+        // UI, so without this check a forced value is unenforceable here: the tap
+        // would flip the pill, the overlay would reassert the administrator's
+        // choice on the next apply, and the change would silently revert. Same
+        // reasoning as `.managed(…)` in Settings — the wording is substituted
+        // rather than layered on with that modifier because the button already
+        // carries its own `help` and hint, and one of each is all it can speak.
+        let locked = vm.managedPolicy.isLocked(.speedLimitEnabled)
+        return Button(action: vm.toggleSnail) {
             HStack(spacing: 6) {
                 Snail()
                     .stroke(style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
@@ -106,10 +114,15 @@ struct StatusBarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Toggle global speed limit")
+        .disabled(locked)
+        .help(locked ? AppViewModel.managedFootnote : "Toggle global speed limit")
         // The control is a hand-drawn snail path — literally an unnamed `Shape`
-        // to VoiceOver — and its on/off state shows only as an orange fill.
-        .a11yButton("Global speed limit", hint: "Activate to turn the speed limit on or off.")
+        // to VoiceOver — and its on/off state shows only as an orange fill. When
+        // it is locked, `help` is a pointer-only tooltip, so the reason has to be
+        // carried in the hint as well or the button is just dead to VoiceOver.
+        .a11yButton("Global speed limit",
+                    hint: locked ? AppViewModel.managedFootnote
+                                 : "Activate to turn the speed limit on or off.")
         .accessibilityValue(vm.settings.speedLimitEnabled
                             ? "On, \(vm.settings.selectedProfileName) profile"
                             : "Off, unlimited")

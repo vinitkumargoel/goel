@@ -210,15 +210,50 @@ remoteTrustedHeaderName        = X-Forwarded-User        (or Remote-User,
 remoteTrustedProxies           = [ 127.0.0.1, 10.20.0.0/16 ]
 ```
 
+Plus a shared secret, which lives in the environment rather than in settings for
+the same reason as the TLS passphrase — it is a credential, and the settings file
+ends up in backups and support emails:
+
+```xml
+<key>EnvironmentVariables</key>
+<dict>
+    <key>GOEL_PORTAL_PROXY_SECRET</key>
+    <string>…</string>
+</dict>
+```
+
+(on Linux, an `EnvironmentFile=` entry in the systemd unit). The proxy must send
+that same value in the `X-Goel-Proxy-Secret` header on every forwarded request,
+alongside the identity header. In nginx:
+
+```nginx
+proxy_set_header X-Forwarded-User    $authenticated_user;   # from your SSO step
+proxy_set_header X-Goel-Proxy-Secret "…";                   # == the variable above
+```
+
+The secret header's name is fixed, not configurable: the name is not the
+discriminator, the secret is, and one less knob is one less way to misconfigure
+an authentication path.
+
 **Read this before enabling it.** A blindly-trusted header is a complete
 authentication bypass: anyone who can reach the port simply sends the header
-themselves. Three rules make it safe, and the app enforces all three:
+themselves. Four rules make it safe, and the app enforces all four:
 
 1. It is **off by default**.
 2. It is ignored while `remoteTrustedProxies` is empty. An empty list means
    "trust nobody", never "trust everybody".
 3. The address checked is the **socket peer address from the kernel**, not
    `X-Forwarded-For`. A client cannot forge it.
+4. The request must carry `X-Goel-Proxy-Secret` matching
+   `GOEL_PORTAL_PROXY_SECRET`, compared in constant time. An unset or empty
+   variable disables header SSO outright — the identity header is never honoured
+   without it.
+
+Rule 4 is what makes the deployment below safe at all. Rule 3 only discriminates
+when the proxy sits on a *different* host; with the portal on loopback and the
+proxy on the same box every local process shares the peer address `127.0.0.1`, so
+any local user could `curl` the identity header in and become whoever they liked.
+The secret is the discriminator the proxy holds and they do not.
 
 Deploy the proxy so that it is the only thing that can reach the portal's port —
 ideally by leaving the portal on loopback and running the proxy on the same

@@ -503,8 +503,18 @@ struct AddDownloadSheet: View {
         isResolvingMedia = true
         resolveTask = Task { @MainActor in
             defer { isResolvingMedia = false }
-            if let resolved = await YtDlpResolver.resolve(pageURL, formatSelector: chosenFormat?.id),
-               let mediaPreview = YtDlpResolver.preview(for: resolved) {
+            // The outcome-returning API rather than the nil-returning shim: what
+            // yt-dlp itself said ("Sign in to confirm…", "Requested format is not
+            // available", "Video unavailable") is the only thing that tells the
+            // user which remedy applies — clear the quality choice, sign in, or
+            // give up on that page. A generic toast throws that away.
+            switch await YtDlpResolver.resolveMedia(pageURL, formatSelector: chosenFormat?.id) {
+            case .resolved(let resolved):
+                guard let mediaPreview = YtDlpResolver.preview(for: resolved) else {
+                    inputError = nil
+                    vm.toast = "yt-dlp couldn’t resolve that page"
+                    return
+                }
                 // Subtitles are NOT fetched here. "Save to" is still editable on
                 // this very screen, so writing sidecars now would put them
                 // wherever the folder happened to point at this instant and
@@ -513,9 +523,13 @@ struct AddDownloadSheet: View {
                 // folder the task is actually created with.
                 resolvedPageURL = pageURL
                 phase = .confirm(mediaPreview)
-            } else {
+            case .cancelled:
+                // Sheet dismissed / Cancel: stay silent rather than toast at a
+                // screen the user has already left.
+                break
+            case .failed(let reason):
                 inputError = nil
-                vm.toast = "yt-dlp couldn’t resolve that page"
+                vm.toast = reason
             }
         }
     }

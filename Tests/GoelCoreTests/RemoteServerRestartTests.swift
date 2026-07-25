@@ -79,7 +79,7 @@ final class RemoteServerRestartTests: XCTestCase {
     func testConfigChangeOnSamePortKeepsServing() async throws {
         let manager = DownloadManager()               // held strongly: server keeps it weak
         let server = RemoteControlServer(manager: manager)
-        let port: UInt16 = 18973
+        let port = LoopbackPort.reserve()
 
         await server.start(port: port, allowLAN: false,
                            config: RemoteRouter.Config(token: "t"),
@@ -89,7 +89,7 @@ final class RemoteServerRestartTests: XCTestCase {
         // Set a password (credentials change) — same port, so no rebind.
         await server.start(port: port, allowLAN: false,
                            config: RemoteRouter.Config(token: "t", requireAuth: true, username: "admin"),
-                           passwordHash: RemotePassword.hash("hunter2"), sessionMinutes: 120)
+                           passwordHash: PortalTestCredentials.hash, sessionMinutes: 120)
         try await expectServes(port: port, "portal must keep serving after a settings change")
 
         await server.stop()
@@ -101,14 +101,19 @@ final class RemoteServerRestartTests: XCTestCase {
         let manager = DownloadManager()               // held strongly: server keeps it weak
         let server = RemoteControlServer(manager: manager)
         let config = RemoteRouter.Config(token: "t")
+        // Two independently reserved ports: the second must be one the first
+        // listener never held, or "rebound cleanly" would be indistinguishable
+        // from "never moved".
+        let firstPort = LoopbackPort.reserve()
+        let secondPort = LoopbackPort.reserve()
 
-        await server.start(port: 18974, allowLAN: false, config: config,
+        await server.start(port: firstPort, allowLAN: false, config: config,
                            passwordHash: "", sessionMinutes: 120)
-        try await expectServes(port: 18974, "portal should serve on the first port")
+        try await expectServes(port: firstPort, "portal should serve on the first port")
 
-        await server.start(port: 18975, allowLAN: false, config: config,
+        await server.start(port: secondPort, allowLAN: false, config: config,
                            passwordHash: "", sessionMinutes: 120)
-        try await expectServes(port: 18975, "portal must serve on the new port after a rebind")
+        try await expectServes(port: secondPort, "portal must serve on the new port after a rebind")
 
         await server.stop()
     }
@@ -122,7 +127,7 @@ final class RemoteServerRestartTests: XCTestCase {
     func testSplitPostBodyIsReadInFull() async throws {
         let manager = DownloadManager()
         let server = RemoteControlServer(manager: manager)
-        let port: UInt16 = 18976
+        let port = LoopbackPort.reserve()
 
         await server.start(port: port, allowLAN: false,
                            config: RemoteRouter.Config(token: "t"),

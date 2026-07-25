@@ -364,7 +364,11 @@ struct DownloadRow: View {
         if vm.settings.remoteAccessEnabled, !vm.settings.remoteToken.isEmpty,
            RemoteStreamService.streamPlan(for: task) != nil {
             Button("Copy Stream Link") {
-                vm.copyToPasteboard("http://127.0.0.1:\(vm.settings.remotePort)/stream?id=\(task.id.uuidString)&token=\(vm.settings.remoteToken)")
+                // The portal fails closed onto TLS when `remoteTLSEnabled` is set —
+                // the socket then speaks *only* TLS, so a hardcoded `http://` link
+                // would simply refuse to connect and look like a broken stream.
+                let scheme = vm.settings.remoteTLSEnabled ? "https" : "http"
+                vm.copyToPasteboard("\(scheme)://127.0.0.1:\(vm.settings.remotePort)/stream?id=\(task.id.uuidString)&token=\(vm.settings.remoteToken)")
             }
         }
         Divider()

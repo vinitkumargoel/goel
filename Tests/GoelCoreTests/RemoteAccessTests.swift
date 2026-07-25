@@ -52,7 +52,7 @@ final class RemoteAccessTests: XCTestCase {
         XCTAssertTrue(RemoteAccessPolicy.needsRestart(previous: a, next: settings(requireAuth: false)))
         XCTAssertTrue(RemoteAccessPolicy.needsRestart(previous: a, next: settings(username: "bob")))
         XCTAssertTrue(RemoteAccessPolicy.needsRestart(
-            previous: a, next: settings(passwordHash: RemotePassword.hash("x"))))
+            previous: a, next: settings(passwordHash: PortalTestCredentials.hash)))
     }
 
     func testNeedsRestartOnLiveConfigChange() {
@@ -72,8 +72,12 @@ final class RemoteAccessTests: XCTestCase {
     func testApplyStartsAndStops() async {
         let manager = DownloadManager()
         let access = RemoteAccess()
-        // Ephemeral high port to reduce parallel-test collisions.
-        let port = 19_000 + Int.random(in: 0..<1_000)
+        // Kernel-reserved ports, so a concurrently running test process cannot be
+        // holding either of them — `allowLocalEndpointReuse` means a collision
+        // would not even be reported as a bind failure, it would just silently
+        // share the socket. See ``LoopbackPort``.
+        let port = Int(LoopbackPort.reserve())
+        let port2 = Int(LoopbackPort.reserve())
         var running = await access.isRunning
         XCTAssertFalse(running)
 
@@ -90,7 +94,6 @@ final class RemoteAccessTests: XCTestCase {
             XCTAssertTrue(stillRunning)
 
             // Port change should reconfigure while staying enabled.
-            let port2 = port + 1
             await access.apply(settings: settings(enabled: true, port: port2), backend: manager)
             let afterRestart = await access.isRunning
             if afterRestart {

@@ -198,12 +198,23 @@ struct RemoteAccessPane: View {
     /// plaintext is hashed on "Set" and only the hash is persisted).
     @State private var newPassword = ""
 
+    /// Every policy key this pane renders a control for, so the notice appears
+    /// whenever any one of them is locked rather than only for the obvious ones.
+    private static let managedKeys: [ManagedPolicy.Key] = [
+        .remoteAccessEnabled, .remoteAllowLAN, .remoteRequireAuth, .remoteReadOnly,
+        .remoteTLSEnabled, .remoteTLSIdentityPath,
+        .remoteTrustedHeaderAuthEnabled, .remoteTrustedHeaderName, .remoteTrustedProxies,
+    ]
+
     var body: some View {
         PaneScaffold(title: "Web Access",
                      subtitle: "Run the full download manager in a browser — add, stream, and manage everything from your phone or another Mac.") {
+            ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.managedKeys)
+
             SetRow(name: "Enable web portal",
                    desc: "Serves the browser UI and JSON API on the port below.") {
                 SettingSwitch(isOn: enabledBinding)
+                    .managed(.remoteAccessEnabled, vm.managedPolicy)
             }
             if vm.settings.remoteAccessEnabled {
                 SetRow(name: "Port", desc: "TCP port the embedded server listens on.") {
@@ -213,6 +224,7 @@ struct RemoteAccessPane: View {
                 SetRow(name: "Require sign-in",
                        desc: "Prompt for a username and password (recommended). Off = open access — only safe on localhost.") {
                     SettingSwitch(isOn: setting(vm, \.remoteRequireAuth))
+                        .managed(.remoteRequireAuth, vm.managedPolicy)
                 }
                 if vm.settings.remoteRequireAuth {
                     SetRow(name: "Username", desc: "") {
@@ -243,10 +255,12 @@ struct RemoteAccessPane: View {
                 SetRow(name: "Allow access from the network",
                        desc: "Off = this Mac only (localhost). On = any device on your LAN.") {
                     SettingSwitch(isOn: setting(vm, \.remoteAllowLAN))
+                        .managed(.remoteAllowLAN, vm.managedPolicy)
                 }
                 SetRow(name: "Read-only mode",
                        desc: "Let clients view and stream, but not add, remove, or change downloads.") {
                     SettingSwitch(isOn: setting(vm, \.remoteReadOnly))
+                        .managed(.remoteReadOnly, vm.managedPolicy)
                 }
                 SetRow(name: "Session timeout",
                        desc: "Minutes a browser stays signed in before re-login.") {

@@ -157,9 +157,21 @@ public actor RemoteControlServer {
                                      invalidatingSessions: credentialsChanged)
         await sessionStore.configure(throttle: security.throttle)
         if security.sso.isEnabled && !security.sso.isEffective {
-            // Enabled with an empty trusted-proxy list. Failing closed is correct,
-            // but silently is not: the operator thinks SSO is on and it is not.
-            GoelLog.remote.error("Header SSO is enabled but no trusted proxies are configured — the header will be ignored")
+            // Enabled but unusable. Failing closed is correct, but silently is not:
+            // the operator thinks SSO is on and it is not.
+            //
+            // Name the precondition that is *actually* missing.
+            // ``TrustedIdentityHeaderPolicy/isEffective`` requires both a
+            // trusted-proxy list and a shared secret, so a message that always
+            // blames the proxy list sends an operator whose
+            // `GOEL_PORTAL_PROXY_SECRET` is unset to go editing settings that were
+            // never the problem. `isEnabled` is true here, so at least one of the
+            // two is empty and `missing` is never blank.
+            let missing = [security.sso.trustedProxies.isEmpty ? "trusted-proxies" : nil,
+                           security.sso.sharedSecret.isEmpty ? "shared-secret" : nil]
+                .compactMap { $0 }.joined(separator: ",")
+            GoelLog.remote.error("Header SSO is enabled but incomplete — the header will be ignored",
+                                 .state(missing, label: "missing"))
         }
 
         // Refuse to expose an unauthenticated portal to the network. When sign-in

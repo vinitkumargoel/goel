@@ -21,8 +21,8 @@ final class RemotePortalStartFailureTests: XCTestCase {
         let manager = DownloadManager()
         let server = RemoteControlServer(manager: manager)
         let missing = NSTemporaryDirectory() + "goel-no-such-identity.p12"
-        await server.start(port: 19_800, allowLAN: false, config: config(),
-                           passwordHash: RemotePassword.hash("pw"), sessionMinutes: 120,
+        await server.start(port: LoopbackPort.reserve(), allowLAN: false, config: config(),
+                           passwordHash: PortalTestCredentials.hash, sessionMinutes: 120,
                            security: RemotePortalSecurity(tlsEnabled: true,
                                                           tlsIdentityPath: missing))
         let bound = await server.boundState()
@@ -42,18 +42,18 @@ final class RemotePortalStartFailureTests: XCTestCase {
         let manager = DownloadManager()
         let server = RemoteControlServer(manager: manager)
         let cfg = config()
-        let hash = RemotePassword.hash("pw")
-        await server.start(port: 19_801, allowLAN: false, config: cfg,
+        let hash = PortalTestCredentials.hash
+        await server.start(port: LoopbackPort.reserve(), allowLAN: false, config: cfg,
                            passwordHash: hash, sessionMinutes: 120,
                            security: RemotePortalSecurity(tlsEnabled: true,
                                                           tlsIdentityPath: "/definitely/not/here.p12"))
         var failure = await server.lastStartFailure()
         XCTAssertNotNil(failure)
 
-        // Ephemeral high port to reduce parallel-test collisions; a restricted CI
-        // that still refuses the bind must report *that* instead of the stale TLS
-        // reason, which is the property under test either way.
-        let port = UInt16(19_802 + Int.random(in: 0..<200))
+        // A kernel-reserved port, so no concurrent test process can be holding it;
+        // a restricted CI that still refuses the bind must report *that* instead of
+        // the stale TLS reason, which is the property under test either way.
+        let port = LoopbackPort.reserve()
         await server.start(port: port, allowLAN: false, config: cfg,
                            passwordHash: hash, sessionMinutes: 120)
         failure = await server.lastStartFailure()
