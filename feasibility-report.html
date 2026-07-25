@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Goel° goes mobile — Feasibility at a glance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --paper:#ffffff; --paper-2:#f6f8fb; --paper-3:#eef2f7; --paper-4:#e6ebf2;
+  --ink:#0f1b2d; --ink-2:#46566b; --ink-3:#7c8aa0; --ink-faint:#a7b2c3;
+  --accent:#2f8fef; --accent-2:#1f6fd0; --accent-soft:rgba(47,143,239,.12);
+  --android:#d81b60; --android-soft:rgba(216,27,96,.12);
+  --good:#16a34a; --good-soft:rgba(22,163,74,.12);
+  --warn:#d1880a; --warn-soft:rgba(209,136,10,.14);
+  --bad:#e0533d; --bad-soft:rgba(224,83,61,.12);
+  --line:rgba(15,27,45,.09); --line-2:rgba(15,27,45,.14);
+  --shadow-sm:0 1px 2px rgba(15,27,45,.05), 0 2px 8px rgba(15,27,45,.05);
+  --shadow:0 6px 24px -8px rgba(15,27,45,.18), 0 2px 6px rgba(15,27,45,.06);
+  --radius:16px; --radius-sm:11px;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0; color:var(--ink); font-size:15.5px; line-height:1.6;
+  background:
+    radial-gradient(1100px 520px at 8% -8%, rgba(47,143,239,.10), transparent 60%),
+    radial-gradient(900px 500px at 102% 2%, rgba(216,27,96,.06), transparent 55%),
+    var(--paper-2);
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px; margin:0 auto; padding:40px 22px 120px;}
+h1,h2,h3{letter-spacing:-.02em; line-height:1.12; margin:0;}
+p{margin:0 0 12px;}
+.mono{font-family:var(--mono);}
+.eyebrow{
+  display:inline-flex; gap:8px; align-items:center; font-family:var(--mono);
+  font-size:11.5px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--accent-2); background:var(--accent-soft); padding:6px 12px; border-radius:999px;
+}
+/* ---------- hero ---------- */
+.hero{margin-bottom:26px;}
+.hero h1{font-size:clamp(30px,5.4vw,50px); font-weight:800; margin:16px 0 12px;}
+.hero h1 .deg{color:var(--accent);}
+.hero .sub{font-size:clamp(16px,2.2vw,19px); color:var(--ink-2); max-width:60ch;}
+.meta-row{display:flex; flex-wrap:wrap; gap:8px; margin-top:18px;}
+.pill{font-size:12.5px; color:var(--ink-2); border:1px solid var(--line-2); background:var(--paper); padding:6px 12px; border-radius:999px;}
+.pill strong{color:var(--ink);}
+/* ---------- verdict ---------- */
+.verdict{
+  margin-top:22px; display:flex; gap:16px; align-items:flex-start;
+  background:linear-gradient(180deg,#ffffff,#f4faf6);
+  border:1px solid rgba(22,163,74,.34); border-left:5px solid var(--good);
+  border-radius:var(--radius); padding:20px 22px; box-shadow:var(--shadow-sm);
+}
+.verdict .mk{flex:0 0 auto; width:44px; height:44px; border-radius:12px; background:var(--good-soft); color:var(--good); display:grid; place-items:center; font-size:22px;}
+.verdict h2{font-size:17px; color:var(--good); margin-bottom:5px;}
+.verdict p{margin:0; color:var(--ink); font-size:14.5px;}
+/* ---------- stat tiles ---------- */
+.tiles{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:26px 0 8px;}
+.tile{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:20px 18px; box-shadow:var(--shadow-sm); position:relative; overflow:hidden;}
+.tile::before{content:""; position:absolute; inset:0 auto 0 0; width:4px; background:var(--accent);}
+.tile.g::before{background:var(--good);} .tile.a::before{background:var(--warn);} .tile.r::before{background:var(--bad);}
+.tile .big{font-family:var(--mono); font-weight:600; font-size:34px; letter-spacing:-.03em; color:var(--ink); line-height:1;}
+.tile .big .unit{font-size:18px; color:var(--ink-3);}
+.tile .lbl{margin-top:9px; font-size:13px; color:var(--ink-2); line-height:1.4;}
+/* ---------- sections ---------- */
+section{margin-top:44px;}
+.sec-head{display:flex; align-items:baseline; gap:12px; margin-bottom:6px;}
+.sec-head h2{font-size:23px; font-weight:700;}
+.sec-num{font-family:var(--mono); font-size:13px; color:var(--accent); font-weight:600;}
+.sec-sub{color:var(--ink-2); font-size:14.5px; margin-bottom:18px; max-width:74ch;}
+.card{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow-sm);}
+.card.pad{padding:22px;}
+/* ---------- TL;DR ---------- */
+.tldr{display:grid; grid-template-columns:1.15fr .85fr; gap:16px;}
+.tldr ul{margin:0; padding:0; list-style:none;}
+.tldr li{display:flex; gap:12px; padding:11px 0; border-bottom:1px dashed var(--line); font-size:14.5px; color:var(--ink);}
+.tldr li:last-child{border-bottom:0;}
+.tldr li .dot{flex:0 0 auto; width:12px; height:12px; border-radius:4px; margin-top:5px;}
+.dot.g{background:var(--good);} .dot.a{background:var(--warn);} .dot.r{background:var(--bad);} .dot.b{background:var(--accent);}
+.legend-card{display:flex; flex-direction:column; justify-content:center; gap:14px; background:var(--paper-3); border:0;}
+.legkey{display:flex; align-items:center; gap:11px; font-size:13.5px;}
+.legkey .sw{width:15px; height:15px; border-radius:5px; flex:0 0 auto;}
+.legkey b{font-family:var(--mono); font-size:12px;}
+/* ---------- chart frames ---------- */
+.chart-frame{padding:20px 22px 14px;}
+.chart-frame h3{font-size:16px; font-weight:700; margin-bottom:2px;}
+.chart-frame .cap{font-size:13px; color:var(--ink-3); margin-bottom:14px;}
+.chart-box{position:relative;}
+.two-col{display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:stretch;}
+.donut-note{display:flex; flex-direction:column; gap:12px; justify-content:center;}
+.donut-note .row{display:flex; gap:12px; align-items:flex-start; font-size:13.5px; color:var(--ink-2);}
+.donut-note .row .n{font-family:var(--mono); font-weight:600; color:var(--ink); min-width:34px;}
+/* ---------- keep/lose/gain ---------- */
+.klg{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
+.klg .col{border-radius:var(--radius); border:1px solid var(--line); background:var(--paper); overflow:hidden; box-shadow:var(--shadow-sm);}
+.klg .col h3{font-size:14px; padding:14px 16px; display:flex; align-items:center; gap:9px; color:#fff;}
+.klg .keep h3{background:linear-gradient(90deg,#16a34a,#12894a);}
+.klg .rep h3{background:linear-gradient(90deg,#d1880a,#b8770a);}
+.klg .gain h3{background:linear-gradient(90deg,#2f8fef,#1f6fd0);}
+.klg ul{margin:0; padding:8px 16px 16px; list-style:none;}
+.klg li{font-size:13.5px; color:var(--ink); padding:8px 0; border-bottom:1px solid var(--line); display:flex; gap:9px;}
+.klg li:last-child{border-bottom:0;}
+.klg li .i{flex:0 0 auto; opacity:.85;}
+.klg li small{display:block; color:var(--ink-3); font-size:11.5px; margin-top:1px;}
+/* ---------- torrent callout ---------- */
+.callout{display:flex; gap:18px; align-items:center; padding:22px 24px; border-radius:var(--radius);
+  background:linear-gradient(120deg, rgba(216,27,96,.07), rgba(47,143,239,.07)); border:1px solid var(--line-2);}
+.callout .glyph{flex:0 0 auto; width:60px; height:60px; border-radius:16px; background:var(--paper); border:1px solid var(--line-2); display:grid; place-items:center; font-size:30px; box-shadow:var(--shadow-sm);}
+.callout h3{font-size:17px; margin-bottom:6px;}
+.callout p{margin:0; font-size:14px; color:var(--ink-2);}
+.vs{display:inline-flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap;}
+.vs .b{font-family:var(--mono); font-size:12px; padding:5px 11px; border-radius:999px; font-weight:600;}
+.vs .ios{background:var(--bad-soft); color:#b93a26;}
+.vs .and{background:var(--good-soft); color:#12894a;}
+/* ---------- table ---------- */
+.tbl-wrap{overflow-x:auto; border-radius:var(--radius); border:1px solid var(--line); box-shadow:var(--shadow-sm); background:var(--paper);}
+table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:660px;}
+thead th{position:sticky; top:0; background:var(--paper-3); text-align:left; padding:12px 14px; font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); font-weight:600; border-bottom:1px solid var(--line-2);}
+tbody td{padding:11px 14px; border-bottom:1px solid var(--line); vertical-align:middle;}
+tbody tr:last-child td{border-bottom:0;}
+tbody tr:hover{background:var(--paper-2);}
+.grp td{background:var(--paper-4); font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2); font-weight:600; padding:8px 14px;}
+.feat-name{font-weight:600; color:var(--ink);}
+.badge{display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11.5px; font-weight:600; padding:4px 9px; border-radius:8px; white-space:nowrap;}
+.badge.g{background:var(--good-soft); color:#12894a;} .badge.a{background:var(--warn-soft); color:#a86c05;} .badge.r{background:var(--bad-soft); color:#b93a26;}
+.why{color:var(--ink-2); font-size:13px;}
+/* ---------- architecture ---------- */
+.arch{display:flex; flex-direction:column; gap:10px;}
+.layer{border-radius:12px; padding:16px 18px; border:1px solid var(--line-2); position:relative; background:var(--paper);}
+.layer .lh{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;}
+.layer h4{font-size:14.5px; margin:0;}
+.layer .desc{font-size:12.5px; color:var(--ink-3); margin-top:3px;}
+.layer .reuse{font-family:var(--mono); font-size:11.5px; font-weight:600; padding:4px 10px; border-radius:999px;}
+.reuse.hi{background:var(--good-soft); color:#12894a;} .reuse.mid{background:var(--warn-soft); color:#a86c05;} .reuse.lo{background:var(--bad-soft); color:#b93a26;}
+.layer.ui{background:linear-gradient(180deg,#fff,#fbfcfe);}
+.layer.core{border-color:rgba(47,143,239,.4); background:linear-gradient(180deg,#f6fbff,#eef6ff);}
+.layer.native{border-color:rgba(22,163,74,.4); background:linear-gradient(180deg,#f4fbf6,#edf8f0);}
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
+.chip{font-size:11.5px; font-family:var(--mono); background:var(--paper-3); border:1px solid var(--line); color:var(--ink-2); padding:3px 8px; border-radius:7px;}
+/* ---------- roadmap ---------- */
+.road{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
+.phase{border-radius:var(--radius); border:1px solid var(--line); background:var(--paper); overflow:hidden; box-shadow:var(--shadow-sm);}
+.phase .top{padding:16px 18px; color:#fff;}
+.phase.p1 .top{background:linear-gradient(120deg,#2f8fef,#1f6fd0);}
+.phase.p2 .top{background:linear-gradient(120deg,#d81b60,#a81549);}
+.phase.p0 .top{background:linear-gradient(120deg,#475569,#2f3d4f);}
+.phase .top .k{font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; opacity:.85;}
+.phase .top h3{font-size:18px; margin-top:3px;}
+.phase .top .when{font-size:12.5px; opacity:.9; margin-top:4px;}
+.phase .body{padding:14px 18px;}
+.phase .body ul{margin:0; padding-left:18px;}
+.phase .body li{font-size:13px; color:var(--ink-2); margin-bottom:6px;}
+/* ---------- risks ---------- */
+.risks{display:grid; grid-template-columns:repeat(2,1fr); gap:14px;}
+.risk{display:flex; gap:13px; padding:16px 18px; border-radius:var(--radius-sm); background:var(--paper); border:1px solid var(--line); box-shadow:var(--shadow-sm);}
+.risk .ic{flex:0 0 auto; width:36px; height:36px; border-radius:10px; display:grid; place-items:center; font-size:18px; background:var(--warn-soft);}
+.risk h4{font-size:14px; margin:0 0 3px;}
+.risk p{margin:0; font-size:13px; color:var(--ink-2);}
+footer{margin-top:56px; padding-top:22px; border-top:1px solid var(--line); color:var(--ink-3); font-size:12.5px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;}
+/* ---------- reveal animation ---------- */
+.reveal{opacity:0; transform:translateY(16px); transition:opacity .6s cubic-bezier(.22,1,.36,1), transform .6s cubic-bezier(.22,1,.36,1);}
+.reveal.in{opacity:1; transform:none;}
+@media (max-width:860px){
+  .tiles{grid-template-columns:repeat(2,1fr);}
+  .tldr,.two-col,.klg,.road,.risks{grid-template-columns:1fr;}
+}
+@media (prefers-reduced-motion:reduce){ .reveal{opacity:1; transform:none; transition:none;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HERO -->
+  <header class="hero reveal">
+    <span class="eyebrow">◆ Feasibility Study · Mobile</span>
+    <h1>Goel<span class="deg">°</span> goes mobile</h1>
+    <p class="sub">How much of the desktop download manager can live on a phone — what ships as‑is, what gets reimagined, and what a phone simply can't do. iOS first, Android close behind.</p>
+    <div class="meta-row">
+      <span class="pill">📱 <strong>Phase 1</strong> · iOS</span>
+      <span class="pill">🤖 <strong>Phase 2</strong> · Android</span>
+      <span class="pill">🧩 <strong>1 shared engine</strong> already cross‑platform</span>
+      <span class="pill mono">v1 · 2026‑07‑23</span>
+    </div>
+
+    <div class="verdict">
+      <div class="mk">✓</div>
+      <div>
+        <h2>Verdict — Go. The hard part is already done.</h2>
+        <p>The engine that does the downloading is <strong>already separated from the Mac interface</strong> and already runs on two operating systems. iOS becomes a <em>third</em> home for it. About <strong>two‑thirds of the app ships at full strength</strong>; the handful of features you lose are things a phone genuinely can't do — not things we failed to build.</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- STAT TILES -->
+  <div class="tiles">
+    <div class="tile g reveal">
+      <div class="big"><span data-count="20">0</span><span class="unit"> / 33</span></div>
+      <div class="lbl">features ship at <strong>full strength</strong> on iOS</div>
+    </div>
+    <div class="tile reveal">
+      <div class="big"><span data-count="70">0</span><span class="unit">%</span></div>
+      <div class="lbl">of the existing codebase is <strong>reusable</strong> on iOS</div>
+    </div>
+    <div class="tile r reveal">
+      <div class="big"><span data-count="3">0</span></div>
+      <div class="lbl">true <strong>desktop‑only</strong> blockers (physics, not effort)</div>
+    </div>
+    <div class="tile a reveal">
+      <div class="big">+<span data-count="6">0</span></div>
+      <div class="lbl">brand‑new <strong>iOS‑native</strong> superpowers we gain</div>
+    </div>
+  </div>
+
+  <!-- TL;DR -->
+  <section class="reveal">
+    <div class="sec-head"><span class="sec-num">01</span><h2>The one‑minute version</h2></div>
+    <p class="sec-sub">If you read nothing else, read this.</p>
+    <div class="tldr">
+      <div class="card pad">
+        <ul>
+          <li><span class="dot b"></span><div><strong>The engine is portable.</strong> The download brain (queue, HTTP, SFTP, HLS, checksums, history) is plain Swift that already builds for Mac <em>and</em> Linux. iOS is the same Swift with a new touch skin on top.</div></li>
+          <li><span class="dot g"></span><div><strong>The core transfer app is a green light.</strong> Downloading, browsing SFTP servers, video capture, queue, speed graphs, history — all come across cleanly.</div></li>
+          <li><span class="dot a"></span><div><strong>Some features change shape.</strong> The menu‑bar, Drop Basket and "run a script after download" become a Share button, Lock‑Screen live progress, and Shortcuts — different, often better.</div></li>
+          <li><span class="dot r"></span><div><strong>Three things a phone can't do:</strong> seed torrents, bond multiple internet connections, and act as an always‑on server. Apple also bars torrent apps from the App Store — <strong>but Android allows them.</strong></div></li>
+        </ul>
+      </div>
+      <div class="card pad legend-card">
+        <div style="font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3);">How to read the colours</div>
+        <div class="legkey"><span class="sw" style="background:var(--good)"></span><div><b>FULL</b> — ships as‑is or with a touch skin</div></div>
+        <div class="legkey"><span class="sw" style="background:var(--warn)"></span><div><b>PARTIAL</b> — works, but re‑imagined for a phone</div></div>
+        <div class="legkey"><span class="sw" style="background:var(--bad)"></span><div><b>DESKTOP‑ONLY</b> — a phone genuinely can't</div></div>
+        <div class="legkey"><span class="sw" style="background:var(--accent)"></span><div><b>iOS</b> vs <span style="color:var(--android); font-weight:700; font-family:var(--mono)">Android</span> throughout</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURE CHART -->
+  <section class="reveal">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Every feature, scored</h2></div>
+    <p class="sec-sub">How fully each capability can be supported on each platform (0 = impossible, 100 = full desktop parity). Sorted best‑to‑worst on iOS — the story reads top‑to‑bottom.</p>
+    <div class="card chart-frame">
+      <h3>Feature feasibility · iOS vs Android</h3>
+      <div class="cap">Higher is better. The green band up top is your Phase‑1 app; the red band at the bottom is where Android pulls ahead.</div>
+      <div class="chart-box" style="height:640px"><canvas id="featChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- DONUT + WHY -->
+  <section class="reveal">
+    <div class="sec-head"><span class="sec-num">03</span><h2>iOS coverage, at a glance</h2></div>
+    <p class="sec-sub">Grouping all 33 capabilities into three buckets.</p>
+    <div class="two-col">
+      <div class="card chart-frame">
+        <h3>What lands on iOS</h3>
+        <div class="cap">Share of capabilities by how well they port.</div>
+        <div class="chart-box" style="height:320px"><canvas id="donutChart"></canvas></div>
+      </div>
+      <div class="card pad donut-note">
+        <div class="row"><span class="n" style="color:var(--good)">20</span><div><strong>Full strength.</strong> The whole transfer + queue + browse + history experience, plus new iOS‑native surfaces.</div></div>
+        <div class="row"><span class="n" style="color:var(--warn)">5</span><div><strong>Re‑imagined.</strong> RSS auto‑add, scheduled windows, power‑awareness, archive extraction — trimmed to fit iOS background rules.</div></div>
+        <div class="row"><span class="n" style="color:var(--bad)">8</span><div><strong>Desktop‑only.</strong> Torrent seeding, multi‑NIC bonding, always‑on server, run‑a‑script, browser extensions — off‑limits inside the iOS sandbox.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- KEEP / RE-PLATFORM / GAIN -->
+  <section class="reveal">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Keep · Re‑imagine · Gain</h2></div>
+    <p class="sec-sub">Going mobile isn't only subtraction. The phone hands us surfaces the Mac never had.</p>
+    <div class="klg">
+      <div class="col keep">
+        <h3>✅ Keep as‑is</h3>
+        <ul>
+          <li><span class="i">⬇︎</span><div>HTTP/HTTPS + FTP downloads<small>same engine, static‑linked libcurl</small></div></li>
+          <li><span class="i">🔐</span><div>SFTP browser & transfers<small>libssh2 builds for iOS</small></div></li>
+          <li><span class="i">🎬</span><div>HLS video → MP4<small>AVFoundation path already exists</small></div></li>
+          <li><span class="i">📋</span><div>Queue, priorities, speed graphs<small>pure Swift, no changes</small></div></li>
+          <li><span class="i">🧮</span><div>Checksums + searchable history<small>CryptoKit + SQLite</small></div></li>
+          <li><span class="i">🎨</span><div>The 4 themes<small>Frost, Dark, Dracula, Nord</small></div></li>
+        </ul>
+      </div>
+      <div class="col rep">
+        <h3>🔄 Re‑imagine for touch</h3>
+        <ul>
+          <li><span class="i">📥</span><div>Menu‑bar & Drop Basket → <strong>Share Sheet</strong><small>a "Send to Goel°" button in every app</small></div></li>
+          <li><span class="i">👆</span><div>Right‑click menus → long‑press + swipe<small>the deep row actions still fit</small></div></li>
+          <li><span class="i">🗂️</span><div>Finder drag‑&‑drop → Files app pickers<small>import/export via share sheet</small></div></li>
+          <li><span class="i">🌐</span><div>Browser extensions → Safari share ext<small>Chrome plug‑ins don't exist on iOS</small></div></li>
+          <li><span class="i">⏱️</span><div>Watch folders → scheduled background refresh<small>within iOS's background budget</small></div></li>
+        </ul>
+      </div>
+      <div class="col gain">
+        <h3>✨ Gain — new on iOS</h3>
+        <ul>
+          <li><span class="i">📲</span><div><strong>Live Activities & Dynamic Island</strong><small>download % right on the Lock Screen</small></div></li>
+          <li><span class="i">🔲</span><div>Home‑Screen widgets<small>active downloads & speeds at a glance</small></div></li>
+          <li><span class="i">⚡</span><div>Shortcuts & App Intents<small>"add this link" as an automation</small></div></li>
+          <li><span class="i">🕹️</span><div><strong>Remote for your Mac/Linux Goel°</strong><small>the phone drives your desktop's queue</small></div></li>
+          <li><span class="i">🔔</span><div>Rich notifications<small>tap to open, pause, retry</small></div></li>
+          <li><span class="i">👀</span><div>Quick Look previews<small>peek any finished file</small></div></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- TORRENT CALLOUT -->
+  <section class="reveal">
+    <div class="sec-head"><span class="sec-num">05</span><h2>The torrent question</h2></div>
+    <div class="callout">
+      <div class="glyph">🧲</div>
+      <div>
+        <h3>This is the one place iOS and Android part ways</h3>
+        <p>A torrent client has to accept incoming connections and keep networking in the background to seed — both off‑limits on iOS — and Apple's App Store review routinely rejects BitTorrent apps outright. Google Play is far more permissive (plenty of torrent apps ship there), and Android allows the background service seeding needs.</p>
+        <div class="vs">
+          <span class="b ios">iOS · App Store ≈ 20% (blocked)</span>
+          <span class="b and">Android · Play ≈ 75% (allowed)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FULL TABLE -->
+  <section class="reveal">
+    <div class="sec-head"><span class="sec-num">06</span><h2>The full feature ledger</h2></div>
+    <p class="sec-sub">Everything, grouped the way you think about the app — with a plain‑English reason for each score.</p>
+    <div class="tbl-wrap">
+      <table id="featTable">
+        <thead><tr><th>Feature</th><th>iOS</th><th>Android</th><th>Why</th></tr></thead>
+        <tbody><!-- filled by JS --></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ARCHITECTURE / REUSE -->
+  <section class="reveal">
+    <div class="sec-head"><span class="sec-num">07</span><h2>What we reuse & centralise</h2></div>
+    <p class="sec-sub">You asked how much we can bundle once and share everywhere. Here's the answer — the app is already built in layers, and the two bottom layers travel to any platform.</p>
+
+    <div class="card pad" style="margin-bottom:16px">
+      <div class="arch">
+        <div class="layer ui">
+          <div class="lh"><div><h4>🎨 Interface</h4><div class="desc">The screens people touch — SwiftUI on Apple, Jetpack Compose on Android</div></div><span class="reuse lo">rebuilt per platform</span></div>
+          <div class="chips"><span class="chip">macOS: today</span><span class="chip">iOS: new touch skin</span><span class="chip">Android: Compose</span><span class="chip">shared: design tokens + icons</span></div>
+        </div>
+        <div class="layer" style="border-color:var(--line-2)">
+          <div class="lh"><div><h4>🔌 Contracts (the "Ports" layer)</h4><div class="desc">Named seams for the messy bits — power, notifications, storage, credentials. Each platform plugs in its own adapter.</div></div><span class="reuse hi">shared spec · 100%</span></div>
+          <div class="chips"><span class="chip">PowerControlling</span><span class="chip">FolderWatching</span><span class="chip">FileScanning</span><span class="chip">CredentialStore</span><span class="chip">DownloadEngine</span></div>
+        </div>
+        <div class="layer core">
+          <div class="lh"><div><h4>⚙️ Engine — <span class="mono">GoelCore</span></h4><div class="desc">The download brain: queue, scheduler, HTTP, HLS, checksums, persistence, policies. Plain Swift, no interface code.</div></div><span class="reuse hi">iOS ~88% · Linux 95%</span></div>
+          <div class="chips"><span class="chip">Apple (mac+iOS): direct</span><span class="chip">Linux: shipping</span><span class="chip">Windows: same Swift</span><span class="chip">Android: needs a Kotlin twin or bridge</span></div>
+        </div>
+        <div class="layer native">
+          <div class="lh"><div><h4>🧱 Native libraries (C/C++)</h4><div class="desc">libcurl, libssh2, libtorrent, OpenSSL — the same source compiles for every OS. Bundle once, reuse everywhere.</div></div><span class="reuse hi">every platform · 100%</span></div>
+          <div class="chips"><span class="chip">iOS: static xcframework</span><span class="chip">Android: NDK build</span><span class="chip">Linux/Windows: native</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card chart-frame">
+      <h3>How much of today's code each platform inherits</h3>
+      <div class="cap">Share of the existing codebase reusable without a rewrite. Linux is already live — proof the split works.</div>
+      <div class="chart-box" style="height:260px"><canvas id="reuseChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ROADMAP -->
+  <section class="reveal">
+    <div class="sec-head"><span class="sec-num">08</span><h2>Recommended phasing</h2></div>
+    <p class="sec-sub">Ship value fast, keep Android cheap, invest once in the shared core.</p>
+    <div class="road">
+      <div class="phase p0">
+        <div class="top"><div class="k">Phase 0 · this week</div><h3>Already mobile</h3><div class="when">zero new code</div></div>
+        <div class="body"><ul>
+          <li>The web portal already runs in any phone browser</li>
+          <li>Use it to validate demand before building native</li>
+          <li>"Scan from your phone" QR is in the app today</li>
+        </ul></div>
+      </div>
+      <div class="phase p1">
+        <div class="top"><div class="k">Phase 1 · iOS</div><h3>The clean core</h3><div class="when">the App‑Store‑safe app</div></div>
+        <div class="body"><ul>
+          <li>HTTP · FTP · SFTP · HLS · queue · history</li>
+          <li>Share Sheet, Live Activities, widgets, Shortcuts</li>
+          <li>Remote‑control your desktop Goel°</li>
+          <li><em>No</em> torrents in the store build</li>
+        </ul></div>
+      </div>
+      <div class="phase p2">
+        <div class="top"><div class="k">Phase 2 · Android</div><h3>Full power</h3><div class="when">torrents included</div></div>
+        <div class="body"><ul>
+          <li>Reuse the native C libraries + Ports contracts</li>
+          <li>Kotlin/Compose UI + engine twin (or Swift bridge)</li>
+          <li>BitTorrent that Play Store actually allows</li>
+          <li>Background service for real seeding</li>
+        </ul></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RISKS -->
+  <section class="reveal">
+    <div class="sec-head"><span class="sec-num">09</span><h2>Watch‑outs</h2></div>
+    <div class="risks">
+      <div class="risk"><div class="ic">🍏</div><div><h4>App Store review</h4><p>Keep the store build torrent‑free and it sails through. A full‑power build lives on Android, sideloading, or EU alt‑marketplaces.</p></div></div>
+      <div class="risk"><div class="ic">🔋</div><div><h4>Background limits</h4><p>iOS pauses long downloads when backgrounded. We lean on the system's background‑download service; very long jobs may need the app open.</p></div></div>
+      <div class="risk"><div class="ic">📦</div><div><h4>App size</h4><p>Static‑linking libtorrent + boost is heavy. If torrents aren't in the iOS build, we drop them and stay lean.</p></div></div>
+      <div class="risk"><div class="ic">🤖</div><div><h4>Android engine cost</h4><p>Swift doesn't run natively on Android. Budget for a Kotlin engine twin — or a shared C/Rust core — guided by the same Ports contracts.</p></div></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Goel° · mobile feasibility study — based on a full read of <span class="mono">GoelCore</span> (90 files) + <span class="mono">GoelApp</span> (55 files).</span>
+    <span class="mono">estimates, not commitments · rev 1</span>
+  </footer>
+</div>
+
+<script>
+/* ---------------- data ---------------- */
+const FEAT = [
+  {n:'Remote control (drive your Mac/Linux)', ios:95, and:95, why:'The phone as a remote for your desktop Goel° — a perfect mobile fit.'},
+  {n:'Share‑to‑Goel° from any app',           ios:95, and:95, why:'Share Sheet / Android intents beat the desktop Drop Basket.'},
+  {n:'Queue, scheduler & priorities',          ios:95, and:92, why:'Pure Swift actor, no platform code — ports untouched.'},
+  {n:'Live speed graphs & detail panel',       ios:95, and:90, why:'Sparklines and the progress ring redraw natively.'},
+  {n:'Checksums & searchable history',         ios:95, and:90, why:'CryptoKit + SQLite (GRDB) are first‑class on mobile.'},
+  {n:'HTTP / HTTPS downloads',                 ios:95, and:92, why:'URLSession + libcurl; background service handles the rest.'},
+  {n:'Themes & persistence',                   ios:98, and:93, why:'Trivial — the 4 themes and the database just move over.'},
+  {n:'Clipboard & link capture',               ios:90, and:90, why:'Clipboard read + custom URL scheme both supported.'},
+  {n:'HLS video → MP4',                        ios:90, and:82, why:'The AVFoundation + CommonCrypto path already exists.'},
+  {n:'FTP / FTPS',                             ios:85, and:85, why:'libcurl cross‑compiles; runs on a background thread.'},
+  {n:'SFTP browser & transfers',               ios:80, and:80, why:'libssh2 builds for mobile; no ssh‑agent, blocking threads.'},
+  {n:'Segmented multi‑connection',             ios:80, and:85, why:'Great in foreground; background is capped, no interface binding.'},
+  {n:'RSS auto‑download',                      ios:70, and:80, why:'Works, but polling leans on limited background refresh.'},
+  {n:'Scheduled download windows',             ios:45, and:65, why:'iOS background scheduler is best‑effort, not precise.'},
+  {n:'Power / network awareness',              ios:60, and:70, why:'Low‑power mode + path monitor; no IOKit sleep control.'},
+  {n:'Post‑download extract (unzip)',          ios:60, and:65, why:'In‑sandbox unzip works; can’t shell out like the Mac does.'},
+  {n:'Browser extension capture',              ios:35, and:40, why:'Only a Safari share extension — no Chrome/Firefox plug‑ins.'},
+  {n:'Remote server (host on device)',         ios:25, and:55, why:'No always‑on listener in the background on iOS.'},
+  {n:'BitTorrent (download + seed)',           ios:20, and:75, why:'Inbound sockets + seeding are barred; App Store rejects torrents.'},
+  {n:'Watch folders',                          ios:10, and:45, why:'No arbitrary filesystem to watch inside the sandbox.'},
+  {n:'Multi‑NIC bonding / aggregation',        ios:10, and:15, why:'Phones don’t expose per‑interface egress binding.'},
+  {n:'Post‑download run‑a‑script / antivirus', ios:5,  and:10, why:'Mobile apps can’t launch other programs at all.'},
+];
+const tier = v => v>=80 ? 'g' : v>=40 ? 'a' : 'r';
+const GROUPS = [
+  ['Core transfers', ['HTTP / HTTPS downloads','HLS video → MP4','FTP / FTPS','SFTP browser & transfers','Segmented multi‑connection','BitTorrent (download + seed)']],
+  ['Queue & data',   ['Queue, scheduler & priorities','Live speed graphs & detail panel','Checksums & searchable history','Themes & persistence']],
+  ['Adding downloads',['Share‑to‑Goel° from any app','Clipboard & link capture','RSS auto‑download','Browser extension capture']],
+  ['Automation & system',['Scheduled download windows','Power / network awareness','Post‑download extract (unzip)','Watch folders','Post‑download run‑a‑script / antivirus','Multi‑NIC bonding / aggregation']],
+  ['Remote & connectivity',['Remote control (drive your Mac/Linux)','Remote server (host on device)']],
+];
+
+/* ---------------- table ---------------- */
+(function(){
+  const tb = document.querySelector('#featTable tbody');
+  const byName = Object.fromEntries(FEAT.map(f=>[f.n,f]));
+  const label = t => t==='g'?'FULL':t==='a'?'PARTIAL':'BLOCKED';
+  GROUPS.forEach(([g, names])=>{
+    const gr = document.createElement('tr'); gr.className='grp';
+    gr.innerHTML = `<td colspan="4">${g}</td>`; tb.appendChild(gr);
+    names.forEach(n=>{
+      const f = byName[n]; if(!f) return;
+      const ti=tier(f.ios), ta=tier(f.and);
+      const tr=document.createElement('tr');
+      tr.innerHTML = `<td class="feat-name">${f.n}</td>
+        <td><span class="badge ${ti}">${f.ios} · ${label(ti)}</span></td>
+        <td><span class="badge ${ta}">${f.and} · ${label(ta)}</span></td>
+        <td class="why">${f.why}</td>`;
+      tb.appendChild(tr);
+    });
+  });
+})();
+
+/* ---------------- Chart.js theme ---------------- */
+const CSS = getComputedStyle(document.documentElement);
+const C = n => CSS.getPropertyValue(n).trim();
+const INK=C('--ink'), INK2=C('--ink-2'), INK3=C('--ink-3'), LINE=C('--line');
+const IOS=C('--accent'), AND=C('--android'), GOOD=C('--good'), WARN=C('--warn'), BAD=C('--bad');
+Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+Chart.defaults.font.size = 12;
+Chart.defaults.color = INK2;
+
+/* value-label plugin for horizontal bars */
+const barValues = {
+  id:'barValues',
+  afterDatasetsDraw(c){
+    const {ctx}=c;
+    c.data.datasets.forEach((ds,di)=>{
+      const meta=c.getDatasetMeta(di); if(meta.hidden) return;
+      meta.data.forEach((bar,i)=>{
+        const v=ds.data[i]; ctx.save();
+        ctx.font="600 10.5px 'IBM Plex Mono', monospace";
+        ctx.fillStyle=ds.borderColor; ctx.textBaseline='middle'; ctx.textAlign='left';
+        ctx.fillText(v, bar.x+6, bar.y);
+        ctx.restore();
+      });
+    });
+  }
+};
+
+/* ---------------- feature bar ---------------- */
+let featStarted=false;
+function drawFeat(){
+  if(featStarted) return; featStarted=true;
+  new Chart(document.getElementById('featChart'),{
+    type:'bar',
+    data:{ labels:FEAT.map(f=>f.n),
+      datasets:[
+        {label:'iOS', data:FEAT.map(f=>f.ios), backgroundColor:IOS+'e6', borderColor:IOS, borderWidth:0, borderRadius:4, barPercentage:.82, categoryPercentage:.74},
+        {label:'Android', data:FEAT.map(f=>f.and), backgroundColor:AND+'e6', borderColor:AND, borderWidth:0, borderRadius:4, barPercentage:.82, categoryPercentage:.74},
+      ]},
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      animation:{duration:900, easing:'easeOutQuart'},
+      layout:{padding:{right:26}},
+      scales:{
+        x:{min:0,max:100, grid:{color:LINE, drawTicks:false}, border:{display:false}, ticks:{stepSize:25, callback:v=>v}, title:{display:true, text:'feasibility  (0 – 100)', color:INK3, font:{size:11}}},
+        y:{grid:{display:false}, border:{display:false}, ticks:{color:INK, font:{size:11.5, weight:'500'}, crossAlign:'far', autoSkip:false}}
+      },
+      plugins:{
+        legend:{position:'top', align:'end', labels:{boxWidth:12, boxHeight:12, usePointStyle:true, pointStyle:'rectRounded', color:INK, font:{size:12.5, weight:'600'}}},
+        tooltip:{backgroundColor:'#0f1b2d', padding:10, cornerRadius:8, titleFont:{size:12}, bodyFont:{size:12}, callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.raw}/100`}}
+      }},
+    plugins:[barValues]
+  });
+}
+
+/* ---------------- donut ---------------- */
+let donutStarted=false;
+function drawDonut(){
+  if(donutStarted) return; donutStarted=true;
+  new Chart(document.getElementById('donutChart'),{
+    type:'doughnut',
+    data:{ labels:['Full strength','Re‑imagined','Desktop‑only'],
+      datasets:[{ data:[20,5,8], backgroundColor:[GOOD,WARN,BAD], borderColor:'#fff', borderWidth:3, hoverOffset:6 }]},
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'62%',
+      animation:{animateRotate:true, duration:1000},
+      plugins:{
+        legend:{position:'bottom', labels:{boxWidth:12, boxHeight:12, usePointStyle:true, pointStyle:'rectRounded', padding:14, color:INK, font:{size:12.5, weight:'600'}}},
+        tooltip:{backgroundColor:'#0f1b2d', padding:10, cornerRadius:8, callbacks:{label:ctx=>` ${ctx.label}: ${ctx.raw} of 33`}}
+      }},
+    plugins:[{ id:'center', afterDraw(c){
+      const {ctx,chartArea}=c; const x=(chartArea.left+chartArea.right)/2, y=(chartArea.top+chartArea.bottom)/2;
+      ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.font="600 30px 'IBM Plex Mono', monospace"; ctx.fillStyle=INK; ctx.fillText('61%', x, y-6);
+      ctx.font="600 11px 'Inter'"; ctx.fillStyle=INK3; ctx.fillText('FULL ON iOS', x, y+16);
+      ctx.restore();
+    }}]
+  });
+}
+
+/* ---------------- reuse bar ---------------- */
+let reuseStarted=false;
+function drawReuse(){
+  if(reuseStarted) return; reuseStarted=true;
+  const labels=['iOS','Android','Linux','Windows*'];
+  const data=[70,30,95,60];
+  const colors=[IOS, AND, GOOD, INK3];
+  new Chart(document.getElementById('reuseChart'),{
+    type:'bar',
+    data:{ labels, datasets:[{ data, backgroundColor:colors.map(c=>c+'e6'), borderColor:colors, borderWidth:0, borderRadius:6, barThickness:44 }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      animation:{duration:900, easing:'easeOutQuart'},
+      layout:{padding:{top:18}},
+      scales:{
+        y:{min:0,max:100, grid:{color:LINE, drawTicks:false}, border:{display:false}, ticks:{stepSize:25, callback:v=>v+'%'}},
+        x:{grid:{display:false}, border:{display:false}, ticks:{color:INK, font:{size:13, weight:'600'}}}
+      },
+      plugins:{ legend:{display:false},
+        tooltip:{backgroundColor:'#0f1b2d', padding:10, cornerRadius:8, callbacks:{label:ctx=>` ${ctx.raw}% of today’s code reused`}}}
+    },
+    plugins:[{ id:'topVals', afterDatasetsDraw(c){
+      const {ctx}=c; const meta=c.getDatasetMeta(0);
+      meta.data.forEach((bar,i)=>{ ctx.save(); ctx.font="600 13px 'IBM Plex Mono', monospace"; ctx.fillStyle=colors[i]; ctx.textAlign='center';
+        ctx.fillText(data[i]+'%', bar.x, bar.y-8); ctx.restore(); });
+    }}]
+  });
+}
+
+/* ---------------- count-up ---------------- */
+function countUp(el){
+  const target=+el.dataset.count, dur=1100, t0=performance.now();
+  function step(t){ const p=Math.min((t-t0)/dur,1); const e=1-Math.pow(1-p,3);
+    el.textContent=Math.round(target*e); if(p<1) requestAnimationFrame(step); }
+  requestAnimationFrame(step);
+}
+
+/* ---------------- reveal / lazy charts ---------------- */
+const io=new IntersectionObserver((es)=>{
+  es.forEach(e=>{ if(!e.isIntersecting) return;
+    e.target.classList.add('in');
+    e.target.querySelectorAll('[data-count]').forEach(countUp);
+    if(e.target.querySelector('#featChart')) drawFeat();
+    if(e.target.querySelector('#donutChart')) drawDonut();
+    if(e.target.querySelector('#reuseChart')) drawReuse();
+    io.unobserve(e.target);
+  });
+},{threshold:.18});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+document.querySelectorAll('.tile').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>

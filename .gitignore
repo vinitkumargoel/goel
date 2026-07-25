@@ -65,3 +65,12 @@ build/
 Vendor/linux/sqlite/*.so
 Vendor/linux/sqlite/sqlite3.c
 Vendor/linux/sqlite/sqlite3.h
+
+# ---- iOS app (apps/ios) ----
+# xcodegen regenerates the project from project.yml; never commit the generated one.
+apps/ios/*.xcodeproj/
+apps/ios/*.xcworkspace/
+apps/ios/.build/
+apps/ios/.build-*/
+# Large local test fixtures for the range server (generated with mkfile/dd)
+Scripts/ios/fixtures/

@@ -1,0 +1,1359 @@
+<title>Goel° for iOS — Visual Specification</title>
+
+<style>
+/* ============================================================
+   TOKENS
+   Device screens use authentic iOS system values.
+   Page chrome uses warm-biased neutrals (accent is warm).
+   ============================================================ */
+:root {
+  /* page chrome — light */
+  --page-bg:      #F5F3F0;
+  --page-panel:   #FFFFFF;
+  --page-ink:     #17150F;
+  --page-ink-2:   #57524A;
+  --page-ink-3:   #8B8479;
+  --page-rule:    #E2DDD5;
+  --ember:        #E85D18;
+  --ember-soft:   #FFF1E8;
+  --instrument:   #0B7FA8;
+
+  /* iOS system — dark (constant across page themes: the app IS dark) */
+  --ios-bg:        #000000;
+  --ios-elev-1:    #1C1C1E;
+  --ios-elev-2:    #2C2C2E;
+  --ios-elev-3:    #3A3A3C;
+  --ios-label:     #FFFFFF;
+  --ios-label-2:   rgba(235,235,245,.60);
+  --ios-label-3:   rgba(235,235,245,.30);
+  --ios-sep:       rgba(84,84,88,.65);
+  --ios-blue:      #0A84FF;
+  --ios-cyan:      #5AC8FA;
+  --ios-green:     #30D158;
+  --ios-red:       #FF453A;
+  --ios-orange:    #FF9F0A;
+  --ios-ember:     #FF6B2C;
+
+  /* type */
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* device metrics — iPhone 15/16 Pro, 1pt = 1px */
+  --dev-w: 393px;
+  --dev-h: 852px;
+  --dev-radius: 55px;
+  --island-w: 125px;
+  --island-h: 36px;
+  --safe-top: 59px;
+  --safe-bottom: 34px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page-bg:    #100E0C;
+    --page-panel: #1A1714;
+    --page-ink:   #F7F3ED;
+    --page-ink-2: #B3AAA0;
+    --page-ink-3: #7C736A;
+    --page-rule:  #2E2822;
+    --ember:      #FF7A38;
+    --ember-soft: #2A1A10;
+    --instrument: #5AC8FA;
+  }
+}
+:root[data-theme="dark"] {
+  --page-bg:    #100E0C;
+  --page-panel: #1A1714;
+  --page-ink:   #F7F3ED;
+  --page-ink-2: #B3AAA0;
+  --page-ink-3: #7C736A;
+  --page-rule:  #2E2822;
+  --ember:      #FF7A38;
+  --ember-soft: #2A1A10;
+  --instrument: #5AC8FA;
+}
+:root[data-theme="light"] {
+  --page-bg:      #F5F3F0;
+  --page-panel:   #FFFFFF;
+  --page-ink:     #17150F;
+  --page-ink-2:   #57524A;
+  --page-ink-3:   #8B8479;
+  --page-rule:    #E2DDD5;
+  --ember:        #E85D18;
+  --ember-soft:   #FFF1E8;
+  --instrument:   #0B7FA8;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--page-ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   PAGE CHROME
+   ============================================================ */
+.wrap { max-width: 1560px; margin: 0 auto; padding: 0 32px 120px; }
+
+.masthead {
+  padding: 88px 0 40px;
+  border-bottom: 1px solid var(--page-rule);
+}
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ember);
+  margin: 0 0 20px;
+}
+.masthead h1 {
+  font-size: clamp(40px, 6vw, 76px);
+  font-weight: 800;
+  letter-spacing: -.035em;
+  line-height: 1.02;
+  margin: 0 0 20px;
+  text-wrap: balance;
+  max-width: 16ch;
+}
+.masthead h1 .deg { color: var(--ember); }
+.lede {
+  font-size: 19px;
+  color: var(--page-ink-2);
+  max-width: 62ch;
+  margin: 0 0 32px;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  padding: 6px 11px;
+  border: 1px solid var(--page-rule);
+  border-radius: 999px;
+  color: var(--page-ink-2);
+  background: var(--page-panel);
+}
+.chip.on { color: var(--ember); border-color: var(--ember); background: var(--ember-soft); }
+
+section { padding-top: 88px; }
+.sec-head { margin-bottom: 40px; max-width: 68ch; }
+.sec-head h2 {
+  font-size: 32px; font-weight: 750; letter-spacing: -.025em;
+  margin: 12px 0 12px; text-wrap: balance;
+}
+.sec-head p { color: var(--page-ink-2); margin: 0; font-size: 16px; }
+.sec-head .num {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--page-ink-3);
+}
+
+.rack {
+  display: flex; flex-wrap: wrap;
+  gap: 72px 56px;
+  align-items: flex-start;
+}
+
+figure.device { margin: 0; width: var(--dev-w); }
+figcaption { margin-top: 22px; }
+figcaption .cap-t {
+  font-size: 15px; font-weight: 650; letter-spacing: -.01em;
+  display: block; margin-bottom: 6px;
+}
+figcaption .cap-d { font-size: 13.5px; color: var(--page-ink-2); margin: 0 0 10px; }
+figcaption .spec {
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.7;
+  color: var(--page-ink-3); border-left: 2px solid var(--page-rule);
+  padding-left: 10px;
+}
+figcaption .spec b { color: var(--ember); font-weight: 500; }
+
+/* ============================================================
+   DEVICE FRAME — iPhone 15/16 Pro, true 1:1
+   ============================================================ */
+.phone {
+  position: relative;
+  width: var(--dev-w); height: var(--dev-h);
+  border-radius: var(--dev-radius);
+  background: var(--ios-bg);
+  overflow: hidden;
+  box-shadow:
+    0 0 0 11px #0C0C0D,
+    0 0 0 12.5px #34343A,
+    0 0 0 14px #131316,
+    0 40px 80px -20px rgba(0,0,0,.55);
+  isolation: isolate;
+}
+.phone.short { height: 500px; }
+
+.screen {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  font-size: 17px; color: var(--ios-label);
+  overflow: hidden;
+}
+
+.island {
+  position: absolute; top: 11px; left: 50%;
+  transform: translateX(-50%);
+  width: var(--island-w); height: var(--island-h);
+  background: #000; border-radius: 19px;
+  z-index: 60; pointer-events: none;
+}
+
+/* status bar */
+.statusbar {
+  height: var(--safe-top);
+  display: flex; align-items: flex-end; justify-content: space-between;
+  padding: 0 24px 8px;
+  font-size: 15.5px; font-weight: 620; letter-spacing: -.01em;
+  flex: 0 0 auto; z-index: 50;
+}
+.statusbar .sb-r { display: flex; align-items: center; gap: 6px; }
+
+/* home indicator */
+.homebar {
+  height: var(--safe-bottom);
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
+}
+.homebar i {
+  display: block; width: 139px; height: 5px; border-radius: 3px;
+  background: rgba(255,255,255,.32);
+}
+
+/* nav */
+.navbar {
+  padding: 4px 16px 2px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex: 0 0 auto;
+}
+.navbar .nav-act { color: var(--ios-ember); font-size: 17px; }
+.largetitle {
+  padding: 0 16px 6px;
+  font-size: 34px; font-weight: 730; letter-spacing: -.022em;
+  flex: 0 0 auto;
+}
+
+.body { flex: 1 1 auto; overflow: hidden; }
+
+/* segmented control */
+.seg {
+  margin: 4px 16px 14px;
+  background: rgba(118,118,128,.24);
+  border-radius: 9px; padding: 2px;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  font-size: 13px; font-weight: 600;
+}
+.seg span {
+  text-align: center; padding: 6px 0; border-radius: 7px;
+  color: var(--ios-label-2);
+}
+.seg span.on { background: var(--ios-elev-3); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+
+/* ---------- download row ---------- */
+.row {
+  padding: 12px 16px;
+  display: grid; grid-template-columns: 38px 1fr auto; gap: 12px;
+  align-items: center;
+  border-bottom: .5px solid var(--ios-sep);
+}
+.ic {
+  width: 38px; height: 38px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--ios-elev-2);
+}
+.ic.ember { background: rgba(255,107,44,.16); }
+.ic.cyan  { background: rgba(90,200,250,.16); }
+.ic.green { background: rgba(48,209,88,.16); }
+
+.rmeta { min-width: 0; }
+.rname {
+  font-size: 15px; font-weight: 570; letter-spacing: -.012em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: 5px;
+}
+.rsub {
+  font-size: 12.5px; color: var(--ios-label-2);
+  font-variant-numeric: tabular-nums;
+  display: flex; align-items: center; gap: 5px;
+}
+.rsub b { color: var(--ios-ember); font-weight: 600; }
+.rsub .dot { color: var(--ios-label-3); }
+
+.track {
+  height: 4px; border-radius: 2px;
+  background: rgba(120,120,128,.32);
+  margin: 7px 0 6px; overflow: hidden;
+}
+.track i {
+  display: block; height: 100%; border-radius: 2px;
+  background: var(--ios-ember);
+}
+.track.cyan i { background: var(--ios-cyan); }
+.track.green i { background: var(--ios-green); }
+
+.rbtn {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: rgba(120,120,128,.24);
+  display: grid; place-items: center;
+}
+
+/* tab bar */
+.tabbar {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  padding: 8px 0 0;
+  border-top: .5px solid var(--ios-sep);
+  background: rgba(22,22,24,.92);
+  backdrop-filter: blur(24px);
+  flex: 0 0 auto;
+}
+.tab { text-align: center; color: var(--ios-label-3); }
+.tab span { display: block; font-size: 10px; margin-top: 3px; letter-spacing: .002em; }
+.tab.on { color: var(--ios-ember); }
+
+/* ---------- detail ---------- */
+.d-hero { padding: 8px 16px 18px; text-align: center; }
+.d-hero .fname {
+  font-size: 19px; font-weight: 680; letter-spacing: -.02em; margin-bottom: 4px;
+}
+.d-hero .fsrc {
+  font-family: var(--mono); font-size: 11px; color: var(--ios-label-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bignum {
+  font-size: 52px; font-weight: 720; letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums; margin: 14px 0 2px;
+}
+.bignum small { font-size: 24px; font-weight: 600; color: var(--ios-label-2); }
+.d-hero .rate {
+  font-size: 14px; color: var(--ios-ember); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.card {
+  background: var(--ios-elev-1);
+  border-radius: 14px; margin: 0 16px 14px; padding: 14px;
+}
+.card h4 {
+  font-size: 11px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ios-label-2); margin: 0 0 12px; font-weight: 620;
+}
+
+/* THE signature visual: parallel segments */
+.segrow {
+  display: grid; grid-template-columns: 26px 1fr 42px;
+  gap: 9px; align-items: center; margin-bottom: 8px;
+}
+.segrow:last-child { margin-bottom: 0; }
+.segrow .sid {
+  font-family: var(--mono); font-size: 9.5px; color: var(--ios-label-3);
+}
+.segrow .sbar {
+  height: 7px; border-radius: 3.5px;
+  background: rgba(120,120,128,.28); overflow: hidden; position: relative;
+}
+.segrow .sbar i {
+  position: absolute; inset: 0 auto 0 0;
+  border-radius: 3.5px;
+  background: linear-gradient(90deg, #FF8A4C, var(--ios-ember));
+}
+.segrow.done .sbar i { background: var(--ios-green); }
+.segrow.idle .sbar i { background: var(--ios-elev-3); }
+.segrow .spct {
+  font-family: var(--mono); font-size: 10px; text-align: right;
+  color: var(--ios-label-2); font-variant-numeric: tabular-nums;
+}
+
+.live .sbar i::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.42), transparent);
+  animation: sheen 1.9s linear infinite;
+}
+@keyframes sheen { from { transform: translateX(-100%);} to { transform: translateX(340%);} }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; }
+.stat .k {
+  font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--ios-label-3); margin-bottom: 3px;
+}
+.stat .v {
+  font-size: 16px; font-weight: 620; font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+.stat .v.g { color: var(--ios-green); }
+
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 16px; }
+.btn {
+  padding: 13px; border-radius: 12px; text-align: center;
+  font-size: 16px; font-weight: 620; letter-spacing: -.01em;
+}
+.btn.primary { background: var(--ios-ember); color: #fff; }
+.btn.ghost { background: var(--ios-elev-2); color: var(--ios-label); }
+
+/* sparkline */
+.spark { display: block; width: 100%; height: 44px; }
+
+/* ---------- lock screen ---------- */
+.lock {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(120% 80% at 22% 8%, #3B1F12 0%, transparent 55%),
+    radial-gradient(100% 70% at 82% 92%, #10222E 0%, transparent 60%),
+    #000;
+  display: flex; flex-direction: column;
+}
+.lock-time {
+  text-align: center; padding-top: 14px;
+}
+.lock-time .dt { font-size: 15px; font-weight: 560; color: rgba(255,255,255,.82); }
+.lock-time .tm {
+  font-size: 78px; font-weight: 250; letter-spacing: -.03em;
+  line-height: 1.02; font-variant-numeric: tabular-nums;
+}
+
+.accessories {
+  display: grid; grid-template-columns: 1fr 2fr 1fr;
+  gap: 10px; padding: 6px 26px 0; align-items: center;
+}
+.acc {
+  background: rgba(120,120,128,.30);
+  backdrop-filter: blur(14px);
+  border-radius: 12px; padding: 8px;
+  min-height: 60px;
+}
+.acc.circ {
+  border-radius: 50%; width: 60px; height: 60px;
+  display: grid; place-items: center; padding: 0; justify-self: center;
+}
+.acc .a-k {
+  font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: rgba(255,255,255,.62); margin-bottom: 2px;
+}
+.acc .a-v { font-size: 13px; font-weight: 630; font-variant-numeric: tabular-nums; }
+.acc .a-s { font-size: 10.5px; color: rgba(255,255,255,.6); font-variant-numeric: tabular-nums; }
+
+/* live activity */
+.la {
+  margin: auto 14px 12px;
+  background: rgba(28,28,30,.86);
+  backdrop-filter: blur(30px);
+  border-radius: 22px; padding: 14px;
+  border: .5px solid rgba(255,255,255,.10);
+}
+.la-top { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
+.la-top .la-ic {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: rgba(255,107,44,.20); display: grid; place-items: center;
+}
+.la-top .la-n { flex: 1; min-width: 0; }
+.la-top .la-n b {
+  display: block; font-size: 14px; font-weight: 620; letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.la-top .la-n span { font-size: 11.5px; color: var(--ios-label-2); font-variant-numeric: tabular-nums; }
+.la-top .la-p { font-size: 20px; font-weight: 680; font-variant-numeric: tabular-nums; }
+.la-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 11px; }
+.la-btns div {
+  background: rgba(120,120,128,.26); border-radius: 10px;
+  padding: 8px; text-align: center; font-size: 13.5px; font-weight: 600;
+}
+.la-btns div.stop { color: var(--ios-red); }
+.stale { color: var(--ios-label-3) !important; }
+
+/* ---------- dynamic island states ---------- */
+.island-demo {
+  background: #000; border-radius: 26px; padding: 26px 20px;
+  display: flex; flex-direction: column; gap: 22px; align-items: center;
+}
+.di {
+  background: #000; border-radius: 22px;
+  display: flex; align-items: center;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.07);
+}
+.di.compact {
+  width: 172px; height: 37px; justify-content: space-between; padding: 0 13px;
+}
+.di.minimal { width: 46px; height: 37px; justify-content: center; }
+.di.expanded {
+  width: 340px; border-radius: 34px; padding: 15px 17px;
+  flex-direction: column; align-items: stretch; gap: 11px;
+}
+.di-lbl {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--page-ink-3); text-align: center;
+}
+.ring { transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-linecap: round; }
+
+/* ---------- add sheet ---------- */
+.sheet-bg { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--ios-elev-1);
+  border-radius: 14px 14px 0 0;
+  padding: 10px 0 0;
+  max-height: 74%;
+  display: flex; flex-direction: column;
+}
+.grabber {
+  width: 36px; height: 5px; border-radius: 3px;
+  background: rgba(235,235,245,.3); margin: 0 auto 10px;
+}
+.sheet-h {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px 12px; border-bottom: .5px solid var(--ios-sep);
+}
+.sheet-h b { font-size: 17px; font-weight: 650; }
+.sheet-h span { color: var(--ios-ember); font-size: 17px; }
+
+.field {
+  padding: 12px 16px; border-bottom: .5px solid var(--ios-sep);
+  display: flex; justify-content: space-between; gap: 12px; align-items: center;
+}
+.field .fk { font-size: 15px; color: var(--ios-label-2); flex: 0 0 auto; }
+.field .fv {
+  font-size: 15px; text-align: right; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.field .fv.mono { font-family: var(--mono); font-size: 12.5px; }
+.toggle {
+  width: 51px; height: 31px; border-radius: 16px; background: var(--ios-green);
+  position: relative; flex: 0 0 auto;
+}
+.toggle.off { background: rgba(120,120,128,.32); }
+.toggle i {
+  position: absolute; top: 2px; left: 22px;
+  width: 27px; height: 27px; border-radius: 50%; background: #fff;
+  box-shadow: 0 2px 5px rgba(0,0,0,.3);
+}
+.toggle.off i { left: 2px; }
+
+/* ---------- player ---------- */
+.player-art {
+  height: 232px; position: relative;
+  background: linear-gradient(150deg, #2A1B14, #12222B 65%, #0A0A0C);
+  display: grid; place-items: center;
+}
+.playbtn {
+  width: 66px; height: 66px; border-radius: 50%;
+  background: rgba(255,255,255,.16); backdrop-filter: blur(12px);
+  display: grid; place-items: center;
+}
+.scrub { padding: 18px 20px 0; }
+.scrubtrack {
+  height: 6px; border-radius: 3px; background: rgba(120,120,128,.3);
+  position: relative; overflow: hidden;
+}
+.scrubtrack .buffered { position: absolute; inset: 0 auto 0 0; background: rgba(255,255,255,.26); border-radius: 3px; }
+.scrubtrack .played  { position: absolute; inset: 0 auto 0 0; background: #fff; border-radius: 3px; }
+.scrubtrack .head {
+  position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%;
+  background: #fff; transform: translate(-50%,-50%);
+}
+.scrub-t {
+  display: flex; justify-content: space-between; margin-top: 8px;
+  font-size: 11.5px; color: var(--ios-label-2); font-variant-numeric: tabular-nums;
+}
+.playable {
+  margin: 16px 20px 0; padding: 10px 12px;
+  background: rgba(255,107,44,.13); border-radius: 11px;
+  font-size: 12.5px; color: #FFB68C;
+  display: flex; align-items: center; gap: 8px;
+}
+
+/* ---------- home-screen widgets ---------- */
+.hs {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(90% 60% at 78% 12%, #40230F 0%, transparent 58%),
+    radial-gradient(90% 60% at 15% 88%, #10222E 0%, transparent 62%),
+    #08080A;
+  display: flex; flex-direction: column;
+}
+.wgrid { padding: 8px 24px 0; display: flex; flex-direction: column; gap: 22px; }
+.wrow { display: flex; gap: 18px; }
+.widget {
+  background: rgba(28,28,30,.84);
+  backdrop-filter: blur(24px);
+  border-radius: 22px; padding: 14px;
+  border: .5px solid rgba(255,255,255,.07);
+}
+.widget.sm { width: 158px; height: 158px; display: flex; flex-direction: column; }
+.widget.md { width: 100%; height: 158px; }
+.w-h {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 10px;
+  font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--ios-label-2); font-weight: 620;
+}
+.w-big {
+  font-size: 34px; font-weight: 720; letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.w-sub { font-size: 12px; color: var(--ios-label-2); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.wlist { display: flex; flex-direction: column; gap: 9px; }
+.wl { display: grid; grid-template-columns: 1fr 40px; gap: 8px; align-items: center; }
+.wl .wn {
+  font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wl .wp { font-size: 11px; text-align: right; color: var(--ios-label-2); font-variant-numeric: tabular-nums; }
+
+/* ---------- settings / library ---------- */
+.grouphead {
+  font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ios-label-2); padding: 18px 16px 7px;
+}
+.group { background: var(--ios-elev-1); border-radius: 12px; margin: 0 16px; overflow: hidden; }
+.grow {
+  padding: 12px 14px; display: flex; align-items: center; gap: 11px;
+  border-bottom: .5px solid var(--ios-sep); font-size: 15.5px;
+}
+.grow:last-child { border-bottom: 0; }
+.grow .gv { margin-left: auto; color: var(--ios-label-2); font-size: 15px; font-variant-numeric: tabular-nums; }
+.pill {
+  font-size: 11px; padding: 3px 8px; border-radius: 999px;
+  background: rgba(48,209,88,.18); color: var(--ios-green); font-weight: 620;
+}
+
+/* light-mode iOS variant */
+.screen.lightmode {
+  background: #F2F2F7; color: #000;
+}
+.screen.lightmode .row { border-color: rgba(60,60,67,.2); }
+.screen.lightmode .rsub { color: rgba(60,60,67,.6); }
+.screen.lightmode .track { background: rgba(120,120,128,.2); }
+.screen.lightmode .ic { background: rgba(120,120,128,.14); }
+.screen.lightmode .seg { background: rgba(120,120,128,.16); }
+.screen.lightmode .seg span { color: rgba(60,60,67,.62); }
+.screen.lightmode .seg span.on { background: #fff; color: #000; }
+.screen.lightmode .rbtn { background: rgba(120,120,128,.16); }
+.screen.lightmode .tabbar { background: rgba(249,249,249,.94); border-color: rgba(60,60,67,.2); }
+.screen.lightmode .homebar i { background: rgba(0,0,0,.34); }
+
+footer {
+  margin-top: 104px; padding-top: 36px;
+  border-top: 1px solid var(--page-rule);
+  color: var(--page-ink-3); font-size: 13px;
+}
+footer p { max-width: 74ch; }
+footer b { color: var(--page-ink-2); font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live .sbar i::after { animation: none; }
+  * { transition: none !important; }
+}
+@media (max-width: 900px) {
+  .wrap { padding: 0 18px 80px; }
+  .rack { gap: 56px 32px; justify-content: center; }
+}
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Visual specification · iOS 17+ · iPhone 15/16 Pro</p>
+    <h1>Goel<span class="deg">°</span> — the download manager that actually finishes.</h1>
+    <p class="lede">
+      Every frame below is drawn at true 1:1 — 393 × 852 pt, 55 pt device radius,
+      125 × 36 pt Dynamic Island, 59 pt top and 34 pt bottom safe areas — using the
+      real iOS system palette and the system font stack, so on an Apple display this
+      renders in actual SF&nbsp;Pro rather than a lookalike.
+    </p>
+    <div class="chips">
+      <span class="chip on">Ember #FF6B2C — active transfer</span>
+      <span class="chip">SF Pro via -apple-system</span>
+      <span class="chip">True-black OLED ground</span>
+      <span class="chip">4 pt progress · 44 pt hit targets</span>
+      <span class="chip">Hairline separators, 16 pt inset</span>
+    </div>
+  </header>
+
+  <!-- ================= CORE LOOP ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="num">One — the core loop</span>
+      <h2>Add it, watch it work, use it before it's finished.</h2>
+      <p>
+        The queue is the app. Everything here is real engine state — segmented multi-connection
+        transfer, live speed and ETA, mirror failover, and sequential download that makes a file
+        playable long before it completes.
+      </p>
+    </div>
+
+    <div class="rack">
+
+      <!-- 1. QUEUE -->
+      <figure class="device">
+        <div class="phone">
+          <div class="screen">
+            <div class="statusbar">
+              <span>9:41</span>
+              <span class="sb-r">
+                <svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1" opacity=".4"/></svg>
+                <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 10.2a1.4 1.4 0 100-2.8 1.4 1.4 0 000 2.8z" fill="#fff"/><path d="M3.6 6.1a6.4 6.4 0 018.8 0M1 3.4a10.2 10.2 0 0114 0" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".5" y=".5" width="21" height="11" rx="3.2" stroke="#fff" stroke-opacity=".4" fill="none"/><rect x="2" y="2" width="15" height="8" rx="2" fill="#fff"/><path d="M23.5 4.2v3.6c1-.3 1.5-.9 1.5-1.8s-.5-1.5-1.5-1.8z" fill="#fff" fill-opacity=".5"/></svg>
+              </span>
+            </div>
+
+            <div class="navbar">
+              <span class="nav-act">Edit</span>
+              <span class="nav-act">
+                <svg width="21" height="21" viewBox="0 0 21 21" fill="none"><path d="M10.5 4v13M4 10.5h13" stroke="#FF6B2C" stroke-width="2" stroke-linecap="round"/></svg>
+              </span>
+            </div>
+            <div class="largetitle">Downloads</div>
+
+            <div class="seg">
+              <span class="on">Active</span><span>All</span><span>Done</span>
+            </div>
+
+            <div class="body">
+              <!-- active, segmented -->
+              <div class="row">
+                <div class="ic ember">
+                  <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><path d="M10 3v9m0 0l3.4-3.4M10 12L6.6 8.6" stroke="#FF6B2C" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.6 13.4v1.8c0 .9.7 1.6 1.6 1.6h9.6c.9 0 1.6-.7 1.6-1.6v-1.8" stroke="#FF6B2C" stroke-width="1.9" stroke-linecap="round"/></svg>
+                </div>
+                <div class="rmeta">
+                  <div class="rname">ubuntu-24.04.1-desktop-amd64.iso</div>
+                  <div class="track"><i style="width:63%"></i></div>
+                  <div class="rsub"><b>48.2 MB/s</b><span class="dot">·</span>3.6 of 5.7 GB<span class="dot">·</span>44s left</div>
+                </div>
+                <div class="rbtn">
+                  <svg width="11" height="13" viewBox="0 0 11 13" fill="#fff"><rect width="3.4" height="13" rx="1.2"/><rect x="7.6" width="3.4" height="13" rx="1.2"/></svg>
+                </div>
+              </div>
+
+              <!-- sftp -->
+              <div class="row">
+                <div class="ic cyan">
+                  <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><rect x="2.6" y="3" width="14.8" height="5.2" rx="1.6" stroke="#5AC8FA" stroke-width="1.8"/><rect x="2.6" y="11.8" width="14.8" height="5.2" rx="1.6" stroke="#5AC8FA" stroke-width="1.8"/><circle cx="5.9" cy="5.6" r="1" fill="#5AC8FA"/><circle cx="5.9" cy="14.4" r="1" fill="#5AC8FA"/></svg>
+                </div>
+                <div class="rmeta">
+                  <div class="rname">nas-backup-2026-07-14.tar.zst</div>
+                  <div class="track cyan"><i style="width:31%"></i></div>
+                  <div class="rsub">sftp<span class="dot">·</span>12.4 MB/s<span class="dot">·</span>3.9 of 12.6 GB</div>
+                </div>
+                <div class="rbtn">
+                  <svg width="11" height="13" viewBox="0 0 11 13" fill="#fff"><rect width="3.4" height="13" rx="1.2"/><rect x="7.6" width="3.4" height="13" rx="1.2"/></svg>
+                </div>
+              </div>
+
+              <!-- playable / sequential -->
+              <div class="row">
+                <div class="ic ember">
+                  <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><rect x="2.4" y="4" width="15.2" height="12" rx="2.2" stroke="#FF6B2C" stroke-width="1.8"/><path d="M8.6 8.2l4 1.8-4 1.8V8.2z" fill="#FF6B2C"/></svg>
+                </div>
+                <div class="rmeta">
+                  <div class="rname">keynote-2026-4k-hdr.mp4</div>
+                  <div class="track"><i style="width:23%"></i></div>
+                  <div class="rsub"><b>Playable now</b><span class="dot">·</span>sequential<span class="dot">·</span>23%</div>
+                </div>
+                <div class="rbtn">
+                  <svg width="12" height="13" viewBox="0 0 12 13" fill="#fff"><path d="M1 1.2l10 5.3-10 5.3V1.2z"/></svg>
+                </div>
+              </div>
+
+              <!-- waiting for wifi -->
+              <div class="row">
+                <div class="ic">
+                  <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.2" stroke="rgba(235,235,245,.5)" stroke-width="1.8"/><path d="M10 6.2V10l2.6 1.6" stroke="rgba(235,235,245,.5)" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </div>
+                <div class="rmeta">
+                  <div class="rname">dataset-imagenet-subset.tar</div>
+                  <div class="track"><i style="width:8%;background:rgba(235,235,245,.3)"></i></div>
+                  <div class="rsub">Waiting for Wi-Fi<span class="dot">·</span>1.4 of 18 GB</div>
+                </div>
+                <div class="rbtn">
+                  <svg width="12" height="13" viewBox="0 0 12 13" fill="#fff"><path d="M1 1.2l10 5.3-10 5.3V1.2z"/></svg>
+                </div>
+              </div>
+
+              <!-- done -->
+              <div class="row">
+                <div class="ic green">
+                  <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><path d="M4.4 10.4l3.6 3.5 7.6-7.8" stroke="#30D158" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="rmeta">
+                  <div class="rname">Blender-4.2-macOS-arm64.dmg</div>
+                  <div class="rsub">412.3 MB<span class="dot">·</span>SHA-256 verified<span class="dot">·</span>2m ago</div>
+                </div>
+                <div class="rbtn">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 10.6V2.4m0 8.2l3-3m-3 3l-3-3" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11.4v1.4c0 .8.6 1.4 1.4 1.4h7.2c.8 0 1.4-.6 1.4-1.4v-1.4" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="tabbar">
+              <div class="tab on">
+                <svg width="23" height="23" viewBox="0 0 24 24" fill="none"><path d="M12 3.5v11m0 0l4.2-4.2M12 14.5l-4.2-4.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.2v2.1c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2v-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                <span>Downloads</span>
+              </div>
+              <div class="tab">
+                <svg width="23" height="23" viewBox="0 0 24 24" fill="none"><path d="M3.2 7.4c0-1.1.9-2 2-2h4l2 2.4h7.6c1.1 0 2 .9 2 2v8.8c0 1.1-.9 2-2 2H5.2c-1.1 0-2-.9-2-2V7.4z" stroke="currentColor" stroke-width="1.9"/></svg>
+                <span>Library</span>
+              </div>
+              <div class="tab">
+                <svg width="23" height="23" viewBox="0 0 24 24" fill="none"><rect x="3.4" y="4.6" width="17.2" height="12" rx="2" stroke="currentColor" stroke-width="1.9"/><path d="M8.4 19.6h7.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+                <span>Remote</span>
+              </div>
+              <div class="tab">
+                <svg width="23" height="23" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.9"/><path d="M19.4 12a7.4 7.4 0 00-.1-1.2l2-1.5-2-3.4-2.3 1a7.4 7.4 0 00-2-1.2L14.6 3h-5.2l-.4 2.7c-.7.3-1.4.7-2 1.2l-2.3-1-2 3.4 2 1.5a7.4 7.4 0 000 2.4l-2 1.5 2 3.4 2.3-1c.6.5 1.3.9 2 1.2l.4 2.7h5.2l.4-2.7c.7-.3 1.4-.7 2-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+                <span>Settings</span>
+              </div>
+            </div>
+
+            <div class="homebar"><i></i></div>
+          </div>
+          <div class="island"></div>
+        </div>
+        <figcaption>
+          <span class="cap-t">Downloads — the queue</span>
+          <p class="cap-d">Five states visible at once: segmented transfer, SFTP, playable-while-downloading, deferred-to-Wi-Fi, and verified-complete. Status is legible without reading a word.</p>
+          <p class="spec">Row 12 pt vertical · icon 38 pt / r10<br>Progress <b>4 pt</b>, fully rounded<br>Separator .5 pt inset 16 pt<br>Tab bar 49 pt + 34 pt indicator</p>
+        </figcaption>
+      </figure>
+
+      <!-- 2. DETAIL — the signature -->
+      <figure class="device">
+        <div class="phone">
+          <div class="screen">
+            <div class="statusbar">
+              <span>9:41</span>
+              <span class="sb-r">
+                <svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1" opacity=".4"/></svg>
+                <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".5" y=".5" width="21" height="11" rx="3.2" stroke="#fff" stroke-opacity=".4" fill="none"/><rect x="2" y="2" width="15" height="8" rx="2" fill="#fff"/></svg>
+              </span>
+            </div>
+
+            <div class="navbar">
+              <span class="nav-act">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12.4 3.6L6 10l6.4 6.4" stroke="#FF6B2C" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <span class="nav-act">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="#FF6B2C"><circle cx="4" cy="10" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="16" cy="10" r="1.7"/></svg>
+              </span>
+            </div>
+
+            <div class="body">
+              <div class="d-hero">
+                <div class="fname">ubuntu-24.04.1-desktop-amd64.iso</div>
+                <div class="fsrc">releases.ubuntu.com · 3 mirrors</div>
+                <div class="bignum">63<small>%</small></div>
+                <div class="rate">48.2 MB/s · 44 s remaining</div>
+              </div>
+
+              <div class="card">
+                <h4>Parallel connections — 6 active</h4>
+                <div class="segrow done"><span class="sid">01</span><span class="sbar"><i style="width:100%"></i></span><span class="spct">100%</span></div>
+                <div class="segrow live"><span class="sid">02</span><span class="sbar"><i style="width:78%"></i></span><span class="spct">78%</span></div>
+                <div class="segrow live"><span class="sid">03</span><span class="sbar"><i style="width:64%"></i></span><span class="spct">64%</span></div>
+                <div class="segrow live"><span class="sid">04</span><span class="sbar"><i style="width:57%"></i></span><span class="spct">57%</span></div>
+                <div class="segrow live"><span class="sid">05</span><span class="sbar"><i style="width:41%"></i></span><span class="spct">41%</span></div>
+                <div class="segrow live"><span class="sid">06</span><span class="sbar"><i style="width:22%"></i></span><span class="spct">22%</span></div>
+              </div>
+
+              <div class="card">
+                <h4>Throughput — last 60 s</h4>
+                <svg class="spark" viewBox="0 0 300 44" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#FF6B2C" stop-opacity=".42"/>
+                      <stop offset="1" stop-color="#FF6B2C" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <path d="M0 34 L20 30 L40 33 L60 22 L80 25 L100 15 L120 18 L140 11 L160 14 L180 8 L200 12 L220 7 L240 10 L260 6 L280 9 L300 5 L300 44 L0 44 Z" fill="url(#sg)"/>
+                  <path d="M0 34 L20 30 L40 33 L60 22 L80 25 L100 15 L120 18 L140 11 L160 14 L180 8 L200 12 L220 7 L240 10 L260 6 L280 9 L300 5" fill="none" stroke="#FF6B2C" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+                  <circle cx="300" cy="5" r="3.2" fill="#FF6B2C"/>
+                </svg>
+              </div>
+
+              <div class="card">
+                <div class="grid2">
+                  <div class="stat"><div class="k">Downloaded</div><div class="v">3.61 GB</div></div>
+                  <div class="stat"><div class="k">Total</div><div class="v">5.73 GB</div></div>
+                  <div class="stat"><div class="k">Resume</div><div class="v g">Supported</div></div>
+                  <div class="stat"><div class="k">Checksum</div><div class="v">SHA-256</div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="actions">
+              <div class="btn ghost">Pause</div>
+              <div class="btn primary">Share</div>
+            </div>
+
+            <div class="homebar"><i></i></div>
+          </div>
+          <div class="island"></div>
+        </div>
+        <figcaption>
+          <span class="cap-t">Detail — parallel segments</span>
+          <p class="cap-d">The signature screen. No competitor can draw this, because none of them actually splits a transfer. Each bar is one live connection with its own byte range; finished segments turn green.</p>
+          <p class="spec">Segment bar 7 pt / r3.5<br>Active segments carry a <b>sheen sweep</b><br>Sparkline: area fill + emphasized endpoint<br>Cards r14, 16 pt gutters</p>
+        </figcaption>
+      </figure>
+
+      <!-- 3. ADD SHEET -->
+      <figure class="device">
+        <div class="phone">
+          <div class="screen">
+            <div class="statusbar">
+              <span>9:41</span>
+              <span class="sb-r">
+                <svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1" opacity=".4"/></svg>
+                <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".5" y=".5" width="21" height="11" rx="3.2" stroke="#fff" stroke-opacity=".4" fill="none"/><rect x="2" y="2" width="15" height="8" rx="2" fill="#fff"/></svg>
+              </span>
+            </div>
+            <div class="largetitle" style="opacity:.32">Downloads</div>
+            <div class="body"></div>
+
+            <div class="sheet-bg"></div>
+            <div class="sheet">
+              <div class="grabber"></div>
+              <div class="sheet-h"><span>Cancel</span><b>Add Download</b><span style="opacity:.35">Add</span></div>
+              <div class="field"><span class="fk">Link</span><span class="fv mono">releases.ubuntu.com/…/desktop-amd64.iso</span></div>
+              <div class="field"><span class="fk">Name</span><span class="fv">ubuntu-24.04.1-desktop-amd64.iso</span></div>
+              <div class="field"><span class="fk">Size</span><span class="fv">5.73 GB</span></div>
+              <div class="field"><span class="fk">Type</span><span class="fv">Disk Image · resumable</span></div>
+              <div class="field"><span class="fk">Save to</span><span class="fv">Goel° › Linux</span></div>
+              <div class="field"><span class="fk">Wi-Fi only</span><span class="toggle"><i></i></span></div>
+              <div class="field" style="border-bottom:0"><span class="fk">Start paused</span><span class="toggle off"><i></i></span></div>
+              <div style="padding:14px 16px 8px">
+                <div class="btn primary">Add Download</div>
+              </div>
+              <div class="homebar"><i></i></div>
+            </div>
+          </div>
+          <div class="island"></div>
+        </div>
+        <figcaption>
+          <span class="cap-t">Add — metadata resolved before you commit</span>
+          <p class="cap-d">The engine probes the server first, so name, exact size, type and resumability are known <em>before</em> the tap. One decision, under three seconds — no surprises at 99%.</p>
+          <p class="spec">Sheet r14 top corners, grabber 36×5<br>Row height 44 pt minimum<br>Switch <b>51×31 pt</b>, knob 27 pt<br>“Resumable” surfaced up front</p>
+        </figcaption>
+      </figure>
+
+      <!-- 4. PLAYER -->
+      <figure class="device">
+        <div class="phone">
+          <div class="screen">
+            <div class="statusbar">
+              <span>9:41</span>
+              <span class="sb-r">
+                <svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1" opacity=".4"/></svg>
+                <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".5" y=".5" width="21" height="11" rx="3.2" stroke="#fff" stroke-opacity=".4" fill="none"/><rect x="2" y="2" width="15" height="8" rx="2" fill="#fff"/></svg>
+              </span>
+            </div>
+            <div class="navbar">
+              <span class="nav-act">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M6 6.6L10 10.6 14 6.6" stroke="#FF6B2C" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+            </div>
+
+            <div class="body">
+              <div class="player-art">
+                <div class="playbtn">
+                  <svg width="24" height="26" viewBox="0 0 24 26" fill="#fff"><path d="M2 1.6l20 11.4L2 24.4V1.6z"/></svg>
+                </div>
+              </div>
+
+              <div class="scrub">
+                <div class="scrubtrack">
+                  <div class="buffered" style="width:23%"></div>
+                  <div class="played" style="width:9%"></div>
+                  <div class="head" style="left:9%"></div>
+                </div>
+                <div class="scrub-t"><span>3:42</span><span>−37:18</span></div>
+              </div>
+
+              <div class="playable">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1.6l1.9 4 4.4.6-3.2 3.1.8 4.4L8 11.6l-3.9 2.1.8-4.4L1.7 6.2l4.4-.6L8 1.6z" fill="#FF6B2C"/></svg>
+                Playing at 23% — still downloading at 48.2 MB/s
+              </div>
+
+              <div class="card" style="margin-top:18px">
+                <h4>Downloaded ahead of playhead</h4>
+                <div class="grid2">
+                  <div class="stat"><div class="k">Buffer</div><div class="v g">+33 min</div></div>
+                  <div class="stat"><div class="k">Mode</div><div class="v">Sequential</div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="homebar"><i></i></div>
+          </div>
+          <div class="island"></div>
+        </div>
+        <figcaption>
+          <span class="cap-t">Player — value at 23%, not 100%</span>
+          <p class="cap-d">Sequential download means the file is playable while it transfers. The scrubber shows played, buffered and not-yet-downloaded as three distinct states — the user always knows how far ahead they can skip.</p>
+          <p class="spec">Scrubber 6 pt, knob 13 pt<br>Three-state track: played / buffered / empty<br>Buffer lead expressed in <b>minutes</b>, not bytes</p>
+        </figcaption>
+      </figure>
+
+    </div>
+  </section>
+
+  <!-- ================= GLANCEABLE ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="num">Two — glanceable surfaces</span>
+      <h2>The promise is "don't babysit it." These are what make that believable.</h2>
+      <p>
+        Three different technologies with three different update models — conflating them is how this
+        ships broken. The Live Activity is live; the widgets are ambient and refresh on a budget.
+        They are scoped so they can never visibly contradict each other.
+      </p>
+    </div>
+
+    <div class="rack">
+
+      <!-- LOCK SCREEN -->
+      <figure class="device">
+        <div class="phone">
+          <div class="lock">
+            <div class="statusbar">
+              <span></span>
+              <span class="sb-r">
+                <svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1" opacity=".4"/></svg>
+                <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".5" y=".5" width="21" height="11" rx="3.2" stroke="#fff" stroke-opacity=".4" fill="none"/><rect x="2" y="2" width="15" height="8" rx="2" fill="#fff"/></svg>
+              </span>
+            </div>
+
+            <div class="lock-time">
+              <div class="dt">Thursday, 23 July</div>
+              <div class="tm">9:41</div>
+            </div>
+
+            <div class="accessories">
+              <div class="acc circ">
+                <svg width="44" height="44" viewBox="0 0 44 44">
+                  <circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="5"/>
+                  <circle class="ring" cx="22" cy="22" r="17" fill="none" stroke="#FF6B2C" stroke-width="5"
+                          stroke-linecap="round" stroke-dasharray="107" stroke-dashoffset="40"
+                          transform="rotate(-90 22 22)"/>
+                  <text x="22" y="26" text-anchor="middle" font-size="12.5" font-weight="700" fill="#fff" font-family="-apple-system">63</text>
+                </svg>
+              </div>
+              <div class="acc">
+                <div class="a-k">Downloading</div>
+                <div class="a-v">ubuntu-24.04.1…iso</div>
+                <div class="a-s">63% · 2.1 GB left · 44 s</div>
+              </div>
+              <div class="acc circ">
+                <svg width="44" height="44" viewBox="0 0 44 44">
+                  <circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="5"/>
+                  <text x="22" y="20" text-anchor="middle" font-size="13" font-weight="700" fill="#fff" font-family="-apple-system">4</text>
+                  <text x="22" y="30" text-anchor="middle" font-size="7.5" fill="rgba(255,255,255,.62)" font-family="-apple-system">ACTIVE</text>
+                </svg>
+              </div>
+            </div>
+
+            <div class="la">
+              <div class="la-top">
+                <div class="la-ic">
+                  <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M10 3v9m0 0l3.4-3.4M10 12L6.6 8.6" stroke="#FF6B2C" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.6 13.4v1.8c0 .9.7 1.6 1.6 1.6h9.6c.9 0 1.6-.7 1.6-1.6v-1.8" stroke="#FF6B2C" stroke-width="1.9" stroke-linecap="round"/></svg>
+                </div>
+                <div class="la-n">
+                  <b>ubuntu-24.04.1-desktop-amd64.iso</b>
+                  <span>3.61 of 5.73 GB · 48.2 MB/s</span>
+                </div>
+                <div class="la-p">63%</div>
+              </div>
+              <div class="track"><i style="width:63%"></i></div>
+              <div class="la-btns">
+                <div>Pause</div>
+                <div class="stop">Cancel</div>
+              </div>
+            </div>
+
+            <div class="homebar"><i></i></div>
+          </div>
+          <div class="island"></div>
+        </div>
+        <figcaption>
+          <span class="cap-t">Lock Screen — Live Activity + accessory widgets</span>
+          <p class="cap-d">Live Activity owns liveness; the accessory widgets carry slow-moving aggregate truth. Pause and Cancel are App&nbsp;Intent buttons — they work without launching the app.</p>
+          <p class="spec">Live Activity r22, .5 pt hairline border<br>Accessories: <b>circular / rectangular / inline</b><br>Widget refresh is <b>budgeted</b>, not per-second<br>Buttons require iOS 17 App Intents</p>
+        </figcaption>
+      </figure>
+
+      <!-- DYNAMIC ISLAND -->
+      <figure class="device">
+        <div class="island-demo" style="min-height:852px;justify-content:center">
+          <div class="di-lbl">Compact — while using another app</div>
+          <div class="di compact">
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M10 3v9m0 0l3.4-3.4M10 12L6.6 8.6" stroke="#FF6B2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg width="21" height="21" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="3"/>
+              <circle cx="12" cy="12" r="9" fill="none" stroke="#FF6B2C" stroke-width="3" stroke-linecap="round"
+                      stroke-dasharray="56.5" stroke-dashoffset="21" transform="rotate(-90 12 12)"/>
+            </svg>
+          </div>
+
+          <div class="di-lbl">Minimal — sharing the Island</div>
+          <div class="di minimal">
+            <svg width="21" height="21" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="3"/>
+              <circle cx="12" cy="12" r="9" fill="none" stroke="#FF6B2C" stroke-width="3" stroke-linecap="round"
+                      stroke-dasharray="56.5" stroke-dashoffset="21" transform="rotate(-90 12 12)"/>
+            </svg>
+          </div>
+
+          <div class="di-lbl">Expanded — long press</div>
+          <div class="di expanded">
+            <div class="la-top" style="margin:0">
+              <div class="la-ic">
+                <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M10 3v9m0 0l3.4-3.4M10 12L6.6 8.6" stroke="#FF6B2C" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.6 13.4v1.8c0 .9.7 1.6 1.6 1.6h9.6c.9 0 1.6-.7 1.6-1.6v-1.8" stroke="#FF6B2C" stroke-width="1.9" stroke-linecap="round"/></svg>
+              </div>
+              <div class="la-n">
+                <b>ubuntu-24.04.1-desktop-amd64.iso</b>
+                <span>48.2 MB/s · 44 s remaining</span>
+              </div>
+              <div class="la-p">63%</div>
+            </div>
+            <div class="track"><i style="width:63%"></i></div>
+            <div class="la-btns" style="margin-top:2px">
+              <div>Pause</div>
+              <div class="stop">Cancel</div>
+            </div>
+          </div>
+
+          <div class="di-lbl" style="margin-top:14px">Backgrounded — honest degradation</div>
+          <div class="di expanded">
+            <div class="la-top" style="margin:0">
+              <div class="la-ic">
+                <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M10 3v9m0 0l3.4-3.4M10 12L6.6 8.6" stroke="rgba(235,235,245,.4)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div class="la-n">
+                <b>ubuntu-24.04.1-desktop-amd64.iso</b>
+                <span class="stale">3.61 GB downloaded · updated 2 min ago</span>
+              </div>
+              <div class="la-p stale">—</div>
+            </div>
+            <div class="track"><i style="width:63%;background:rgba(235,235,245,.34)"></i></div>
+          </div>
+        </div>
+        <figcaption>
+          <span class="cap-t">Dynamic Island — all four presentations</span>
+          <p class="cap-d">Every presentation gets designed, not just the pretty one. The fourth is the important one: while suspended, iOS runs the transfer out-of-process, so progress goes stale — we show a byte count and "updated 2 min ago" rather than a confident, wrong percentage.</p>
+          <p class="spec">Compact 172×37 · minimal 46×37<br>Expanded r34, App Intent buttons<br><b>staleDate</b> drives the degraded state<br>System limit ≈ 8 h of updates</p>
+        </figcaption>
+      </figure>
+
+      <!-- HOME SCREEN WIDGETS -->
+      <figure class="device">
+        <div class="phone">
+          <div class="hs">
+            <div class="statusbar">
+              <span>9:41</span>
+              <span class="sb-r">
+                <svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1" opacity=".4"/></svg>
+                <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".5" y=".5" width="21" height="11" rx="3.2" stroke="#fff" stroke-opacity=".4" fill="none"/><rect x="2" y="2" width="15" height="8" rx="2" fill="#fff"/></svg>
+              </span>
+            </div>
+
+            <div class="wgrid">
+              <div class="wrow">
+                <div class="widget sm">
+                  <div class="w-h">
+                    <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M10 3v9m0 0l3.4-3.4M10 12L6.6 8.6" stroke="#FF6B2C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Goel°
+                  </div>
+                  <div style="margin-top:auto">
+                    <div class="w-big">4</div>
+                    <div class="w-sub">active · 21.4 GB left</div>
+                    <div class="track" style="margin:10px 0 0"><i style="width:47%"></i></div>
+                  </div>
+                </div>
+
+                <div class="widget sm">
+                  <div class="w-h">Fastest</div>
+                  <div style="margin:auto 0">
+                    <div class="w-big" style="font-size:27px">48.2<span style="font-size:14px;font-weight:600;color:var(--ios-label-2)"> MB/s</span></div>
+                    <div class="w-sub">ubuntu-24.04.1…iso</div>
+                  </div>
+                  <svg class="spark" viewBox="0 0 130 26" preserveAspectRatio="none" style="height:26px">
+                    <path d="M0 20 L18 17 L36 19 L54 11 L72 14 L90 7 L108 10 L130 4" fill="none" stroke="#FF6B2C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="130" cy="4" r="2.6" fill="#FF6B2C"/>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="wrow">
+                <div class="widget md">
+                  <div class="w-h">Queue</div>
+                  <div class="wlist">
+                    <div class="wl"><span class="wn">ubuntu-24.04.1-desktop-amd64.iso</span><span class="wp">63%</span></div>
+                    <div class="track" style="margin:0"><i style="width:63%"></i></div>
+                    <div class="wl"><span class="wn">nas-backup-2026-07-14.tar.zst</span><span class="wp">31%</span></div>
+                    <div class="track cyan" style="margin:0"><i style="width:31%"></i></div>
+                    <div class="wl"><span class="wn">keynote-2026-4k-hdr.mp4</span><span class="wp">23%</span></div>
+                    <div class="track" style="margin:0"><i style="width:23%"></i></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="homebar" style="margin-top:auto"><i></i></div>
+          </div>
+          <div class="island"></div>
+        </div>
+        <figcaption>
+          <span class="cap-t">Home Screen &amp; StandBy widgets</span>
+          <p class="cap-d">Scoped deliberately to aggregate, slow-moving truth — "4 active · 21.4 GB left" — because WidgetKit grants only tens of refreshes a day. Never a per-second number that could disagree with the Live Activity.</p>
+          <p class="spec">Small 158×158, medium full-width<br>Widget r22, .5 pt hairline<br>Timeline-driven — <b>not</b> real-time<br>Reloaded on app execution time</p>
+        </figcaption>
+      </figure>
+
+    </div>
+  </section>
+
+  <!-- ================= SUPPORTING ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="num">Three — the rest of the app</span>
+      <h2>Files you can actually reach, and controls that respect your data plan.</h2>
+      <p>
+        iOS has no filesystem to write to, so the container becomes a first-class library that also
+        appears in Files. Settings carry the engine's real capabilities — traffic profiles, per-task
+        caps, scheduling — without exposing desktop concepts that mean nothing on a phone.
+      </p>
+    </div>
+
+    <div class="rack">
+
+      <!-- LIBRARY (light mode) -->
+      <figure class="device">
+        <div class="phone">
+          <div class="screen lightmode">
+            <div class="statusbar" style="color:#000">
+              <span>9:41</span>
+              <span class="sb-r">
+                <svg width="18" height="12" viewBox="0 0 18 12" fill="#000"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1" opacity=".35"/></svg>
+                <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".5" y=".5" width="21" height="11" rx="3.2" stroke="#000" stroke-opacity=".35" fill="none"/><rect x="2" y="2" width="15" height="8" rx="2" fill="#000"/></svg>
+              </span>
+            </div>
+
+            <div class="navbar"><span></span><span class="nav-act">Select</span></div>
+            <div class="largetitle">Library</div>
+            <div class="seg"><span class="on">Recent</span><span>Folders</span><span>Media</span></div>
+
+            <div class="body">
+              <div class="row">
+                <div class="ic green"><svg width="19" height="19" viewBox="0 0 20 20" fill="none"><path d="M4.4 10.4l3.6 3.5 7.6-7.8" stroke="#28A745" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="rmeta"><div class="rname">Blender-4.2-macOS-arm64.dmg</div><div class="rsub">412.3 MB · Verified · Today</div></div>
+                <div class="rbtn"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 11V2.6M8 2.6L5.2 5.4M8 2.6l2.8 2.8" stroke="#000" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="row">
+                <div class="ic ember"><svg width="19" height="19" viewBox="0 0 20 20" fill="none"><rect x="2.4" y="4" width="15.2" height="12" rx="2.2" stroke="#E85D18" stroke-width="1.8"/><path d="M8.6 8.2l4 1.8-4 1.8V8.2z" fill="#E85D18"/></svg></div>
+                <div class="rmeta"><div class="rname">keynote-2026-4k-hdr.mp4</div><div class="rsub">2.1 GB · 41 min · Yesterday</div></div>
+                <div class="rbtn"><svg width="12" height="13" viewBox="0 0 12 13" fill="#000"><path d="M1 1.2l10 5.3-10 5.3V1.2z"/></svg></div>
+              </div>
+              <div class="row">
+                <div class="ic cyan"><svg width="19" height="19" viewBox="0 0 20 20" fill="none"><rect x="3" y="3.4" width="14" height="13.2" rx="2" stroke="#0B7FA8" stroke-width="1.8"/><path d="M6.4 7.6h7.2M6.4 10.6h7.2M6.4 13.6h4.4" stroke="#0B7FA8" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+                <div class="rmeta"><div class="rname">nas-backup-2026-07-14.tar.zst</div><div class="rsub">12.6 GB · SFTP · 2 days ago</div></div>
+                <div class="rbtn"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 11V2.6M8 2.6L5.2 5.4M8 2.6l2.8 2.8" stroke="#000" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+
+              <div style="margin:18px 16px;padding:14px;background:rgba(120,120,128,.1);border-radius:14px;font-size:13px;color:rgba(60,60,67,.72);display:flex;gap:10px;align-items:flex-start">
+                <svg width="17" height="17" viewBox="0 0 20 20" fill="none" style="flex:0 0 auto;margin-top:1px"><path d="M2.6 6.4c0-1 .8-1.8 1.8-1.8h3.4l1.8 2.2h6.6c1 0 1.8.8 1.8 1.8v6.2c0 1-.8 1.8-1.8 1.8H4.4c-1 0-1.8-.8-1.8-1.8V6.4z" stroke="#0B7FA8" stroke-width="1.7"/></svg>
+                <span>Everything here also appears in the <b>Files</b> app under Goel° — nothing is trapped inside this app.</span>
+              </div>
+            </div>
+
+            <div class="tabbar">
+              <div class="tab"><svg width="23" height="23" viewBox="0 0 24 24" fill="none"><path d="M12 3.5v11m0 0l4.2-4.2M12 14.5l-4.2-4.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.2v2.1c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2v-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Downloads</span></div>
+              <div class="tab on"><svg width="23" height="23" viewBox="0 0 24 24" fill="none"><path d="M3.2 7.4c0-1.1.9-2 2-2h4l2 2.4h7.6c1.1 0 2 .9 2 2v8.8c0 1.1-.9 2-2 2H5.2c-1.1 0-2-.9-2-2V7.4z" stroke="currentColor" stroke-width="1.9"/></svg><span>Library</span></div>
+              <div class="tab"><svg width="23" height="23" viewBox="0 0 24 24" fill="none"><rect x="3.4" y="4.6" width="17.2" height="12" rx="2" stroke="currentColor" stroke-width="1.9"/><path d="M8.4 19.6h7.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span>Remote</span></div>
+              <div class="tab"><svg width="23" height="23" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.9"/><path d="M19.4 12a7.4 7.4 0 00-.1-1.2l2-1.5-2-3.4-2.3 1a7.4 7.4 0 00-2-1.2L14.6 3h-5.2l-.4 2.7c-.7.3-1.4.7-2 1.2l-2.3-1-2 3.4 2 1.5a7.4 7.4 0 000 2.4l-2 1.5 2 3.4 2.3-1c.6.5 1.3.9 2 1.2l.4 2.7h5.2l.4-2.7c.7-.3 1.4-.7 2-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg><span>Settings</span></div>
+            </div>
+            <div class="homebar"><i></i></div>
+          </div>
+          <div class="island"></div>
+        </div>
+        <figcaption>
+          <span class="cap-t">Library — in light mode</span>
+          <p class="cap-d">Shown light to prove the palette holds both ways. The sandbox becomes the feature: a File Provider extension puts every download in the Files app, so content is never trapped.</p>
+          <p class="spec">iOS light: #F2F2F7 ground, #FFF cards<br>Separator rgba(60,60,67,.2)<br>Ember shifts to <b>#E85D18</b> for AA contrast<br>Same metrics, re-toned — not inverted</p>
+        </figcaption>
+      </figure>
+
+      <!-- SETTINGS -->
+      <figure class="device">
+        <div class="phone">
+          <div class="screen">
+            <div class="statusbar">
+              <span>9:41</span>
+              <span class="sb-r">
+                <svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1" opacity=".4"/></svg>
+                <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".5" y=".5" width="21" height="11" rx="3.2" stroke="#fff" stroke-opacity=".4" fill="none"/><rect x="2" y="2" width="15" height="8" rx="2" fill="#fff"/></svg>
+              </span>
+            </div>
+            <div class="largetitle">Settings</div>
+
+            <div class="body">
+              <div class="grouphead">Transfers</div>
+              <div class="group">
+                <div class="grow">Traffic profile<span class="gv">Balanced ›</span></div>
+                <div class="grow">Maximum connections<span class="gv">6</span></div>
+                <div class="grow">Speed limit<span class="gv">Off ›</span></div>
+              </div>
+
+              <div class="grouphead">Cellular</div>
+              <div class="group">
+                <div class="grow">Download over cellular<span class="gv" style="margin-left:auto"><span class="toggle off"><i></i></span></span></div>
+                <div class="grow">Finish on Wi-Fi<span class="gv" style="margin-left:auto"><span class="toggle"><i></i></span></span></div>
+                <div class="grow">Data used this month<span class="gv">1.4 GB</span></div>
+              </div>
+
+              <div class="grouphead">Files</div>
+              <div class="group">
+                <div class="grow">Show in Files app<span class="gv" style="margin-left:auto"><span class="toggle"><i></i></span></span></div>
+                <div class="grow">Verify checksums<span class="gv" style="margin-left:auto"><span class="toggle"><i></i></span></span></div>
+                <div class="grow">Storage used<span class="gv">18.2 GB</span></div>
+              </div>
+
+              <div class="grouphead">Desktop</div>
+              <div class="group">
+                <div class="grow">Paired with<span class="gv">vinit’s Mac <span class="pill">Linked</span></span></div>
+              </div>
+            </div>
+
+            <div class="homebar"><i></i></div>
+          </div>
+          <div class="island"></div>
+        </div>
+        <figcaption>
+          <span class="cap-t">Settings — engine capability, phone vocabulary</span>
+          <p class="cap-d">Real engine features (traffic profiles, connection count, checksum verification) named the way a person thinks about them. Desktop-only concepts — watch folders, post-download scripts, the remote server — simply aren't here.</p>
+          <p class="spec">Grouped inset list, r12, 16 pt gutters<br>Row 44 pt, hairline between<br>Switches at native <b>51×31 pt</b><br>Pairing = the desktop continuity moat</p>
+        </figcaption>
+      </figure>
+
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      <b>On fidelity.</b> Frames are drawn at 1 pt = 1 px against iPhone 15/16 Pro metrics
+      (393 × 852 pt, 55 pt corner, 125 × 36 pt Dynamic Island, 59/34 pt safe areas) using iOS system
+      colours and the `-apple-system` stack — so on an Apple display this is genuinely SF Pro, not an
+      approximation. What HTML cannot reproduce: true SF Symbols (icons here are hand-drawn SVG
+      equivalents), UIKit material blur, spring physics, and Dynamic Type. Treat this as a
+      high-fidelity visual target, not a rendering of shipped code.
+    </p>
+    <p style="margin-top:14px">
+      <b>Honest about the hard part.</b> The backgrounded Dynamic Island state is drawn deliberately
+      degraded. While the app is suspended iOS runs the transfer out-of-process, so a Live Activity
+      cannot smoothly animate without a push server — a dependency this product rejects. Showing a
+      byte count and “updated 2 min ago” is the truthful design; a confident percentage would be a lie.
+    </p>
+  </footer>
+
+</div>
