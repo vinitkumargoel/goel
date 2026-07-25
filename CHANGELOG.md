@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.0.2] — 2026-07-25
+
+First release under the **PolyForm Noncommercial 1.0.0** licence. If you use Goel° at work,
+read the licence section below before upgrading past `v1.0.1`.
 
 ### Changed
 
@@ -168,6 +171,7 @@ native library bundled, no Homebrew required for end users.
 
 ---
 
-[Unreleased]: https://github.com/vinitkumargoel/goel/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/vinitkumargoel/goel/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/vinitkumargoel/goel/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/vinitkumargoel/goel/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/vinitkumargoel/goel/releases/tag/v1.0.0

@@ -6,7 +6,7 @@
 > Linux as `GoelDaemon` driven from a built-in web portal. Source-available under PolyForm
 > Noncommercial 1.0.0: free for personal use, commercially licensed for business use.
 
-Current version: 1.0.1 · Platforms: macOS 14 (Sonoma)+ on Apple Silicon and Intel; Linux x86_64
+Current version: 1.0.2 · Platforms: macOS 14 (Sonoma)+ on Apple Silicon and Intel; Linux x86_64
 (prebuilt) and ARM64 (from source) · Price: free for noncommercial use, paid licence for
 commercial use · License: PolyForm Noncommercial 1.0.0 · Source:
 https://github.com/vinitkumargoel/goel
