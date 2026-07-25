@@ -128,8 +128,8 @@ Indicative bands, so you can put a number in a budget request before contacting 
 | Tier | Indicative price | Who it is for |
 |---|---|---|
 | **Personal** | Free forever | Individuals, students, hobbyists, home labs — plus charities, schools and public bodies, which the licence already covers at no cost. |
-| **Business** | from ~$40–60 per seat, perpetual | Teams and companies up to roughly 250 seats. One-off payment; the version you buy is yours to keep and run indefinitely. |
-| **Enterprise** | from ~$5,000 per year, unlimited site licence | Whole-organisation coverage at the licensed entity, plus the artefacts procurement and IT need to deploy at scale. |
+| **Business** | from ~$10–20 per seat, perpetual | Teams and companies up to roughly 250 seats. One-off payment; the version you buy is yours to keep and run indefinitely. |
+| **Enterprise** | from ~$50 per seat, per year | Regulated, audited and large-fleet deployments, billed annually per seat, plus the artefacts procurement and IT need to deploy at scale. |
 
 These are indicative, not a binding offer; final pricing is confirmed in a written quote.
 Multi-year terms, reduced rates for the commercially directed work of an academic or
