@@ -1,4 +1,5 @@
 import Foundation
+import GoelCore
 
 /// A lightweight release checker for the direct-distribution build: fetches a
 /// GitHub-style releases feed (`tag_name` + `html_url`), compares against the
@@ -19,7 +20,21 @@ enum UpdateChecker {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1"
     }
 
-    static func check(feedURL: String) async -> Outcome {
+    /// Fetch the feed and decide whether a newer release exists.
+    ///
+    /// `proxy` and `userAgent` must be the *user's* configured values: the
+    /// automatic launch-time check runs with nobody in the loop, so it belongs on
+    /// ``NetworkGuard/fetch(url:proxy:userAgent:timeout:)`` alongside the other
+    /// no-confirmation fetches rather than on `URLSession.shared`. That buys the
+    /// three things the bare shared session cannot: the request honours the
+    /// configured proxy (a user on manual/SOCKS5 does not leak their real egress
+    /// IP to the release host, and `proxyMode == "none"` really is direct), the
+    /// redirect chain is bounded and sanitised, and a link-local target is refused
+    /// — the feed URL is operator-settable via MDM (``ManagedPolicy/Key/updateFeedURL``),
+    /// so it is not automatically trustworthy.
+    static func check(feedURL: String,
+                      proxy: NetworkGuard.ProxySpec = NetworkGuard.ProxySpec(),
+                      userAgent: String = "GoelDownloader/1.0 (macOS)") async -> Outcome {
         // HTTPS only: the feed decides which page the user is offered to open,
         // so a tamperable plaintext feed would hand that choice to the network.
         let trimmed = feedURL.trimmingCharacters(in: .whitespaces)
@@ -27,26 +42,26 @@ enum UpdateChecker {
               url.scheme?.lowercased() == "https" else {
             return .notConfigured
         }
-        do {
-            var request = URLRequest(url: url)
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            let (data, _) = try await URLSession.shared.data(for: request)
-            guard let release = Self.decodeRelease(data) else {
-                return .failed("The update feed didn’t contain a release.")
-            }
-            let latest = release.version.hasPrefix("v")
-                ? String(release.version.dropFirst()) : release.version
-            // The page is opened with NSWorkspace — never accept a scheme that
-            // could launch something local (file:) or otherwise non-web.
-            if isNewer(latest, than: currentVersion),
-               let page = URL(string: release.page),
-               page.scheme?.lowercased() == "https" {
-                return .available(version: latest, url: page)
-            }
-            return .upToDate(current: currentVersion)
-        } catch {
-            return .failed(error.localizedDescription)
+        // The guard collapses every failure (transport error, non-2xx, refused
+        // target) into nil, so there is no per-error string left to surface —
+        // one plain-language message covers them all.
+        guard let data = await NetworkGuard.fetch(url: url, proxy: proxy,
+                                                  userAgent: userAgent) else {
+            return .failed("Couldn’t reach the update feed.")
         }
+        guard let release = Self.decodeRelease(data) else {
+            return .failed("The update feed didn’t contain a release.")
+        }
+        let latest = release.version.hasPrefix("v")
+            ? String(release.version.dropFirst()) : release.version
+        // The page is opened with NSWorkspace — never accept a scheme that
+        // could launch something local (file:) or otherwise non-web.
+        if isNewer(latest, than: currentVersion),
+           let page = URL(string: release.page),
+           page.scheme?.lowercased() == "https" {
+            return .available(version: latest, url: page)
+        }
+        return .upToDate(current: currentVersion)
     }
 
     private struct Release: Decodable {

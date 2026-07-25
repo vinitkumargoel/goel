@@ -214,8 +214,16 @@ struct SettingsView: View {
 
     // MARK: General
 
+    /// The ``ManagedPolicy`` keys this pane renders a control for, so the notice
+    /// at the top appears exactly when one of them is locked.
+    private static let generalManagedKeys: [ManagedPolicy.Key] = [
+        .defaultFolderRule, .defaultSaveDirectory,
+    ]
+
     private var generalPane: some View {
         PaneScaffold(title: "General", subtitle: "Appearance, startup, and where files land.") {
+            ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.generalManagedKeys)
+
             SetRow(name: "Theme", desc: "Pick a look: Frost (light/dark), Dracula, or Nord.") {
                 Picker("", selection: $vm.theme) {
                     ForEach(AppTheme.allCases) { Text($0.rawValue).tag($0) }
@@ -253,13 +261,19 @@ struct SettingsView: View {
                     .option("bySource", "By source URL"),
                     .option("fixed", "Fixed folder…"),
                 ], width: 150)
+                .managed(.defaultFolderRule, vm.managedPolicy)
             }
             // For the "Fixed folder" rule, surface the actual destination and a
             // chooser so the existing default-save-directory feature stays usable.
             if vm.settings.defaultFolderRule == "fixed" {
                 SetRow(name: "Fixed folder", desc: vm.settings.defaultSaveDirectory) {
+                    // A forced path is re-applied by the overlay the moment the
+                    // picker commits, so an enabled button would open a panel,
+                    // accept a folder, and leave the row reading the old one —
+                    // indistinguishable from a broken picker. Say who owns it.
                     Button("Choose…") { chooseDefaultFolder() }
                         .accessibilityLabel("Choose fixed download folder")
+                        .managed(.defaultSaveDirectory, vm.managedPolicy)
                 }
             }
             SetRow(name: "When a file exists",
@@ -324,8 +338,18 @@ struct SettingsView: View {
 
     // MARK: Network
 
+    /// The ``ManagedPolicy`` keys this pane renders a control for. `proxyHost` and
+    /// `proxyPort` only appear under "Manual", but they belong to the pane's key
+    /// set all the same — the notice is about the pane, not about what is on
+    /// screen this instant.
+    private static let networkManagedKeys: [ManagedPolicy.Key] = [
+        .proxyMode, .proxyType, .proxyHost, .proxyPort,
+    ]
+
     private var networkPane: some View {
         PaneScaffold(title: "Network", subtitle: "Proxy, timeouts, retries, and authentication.") {
+            ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.networkManagedKeys)
+
             SectionHeader("Proxy")
             SetRow(name: "Proxy", desc: "Route traffic through a proxy server. Multi-path aggregation is disabled while a system or manual proxy is set.") {
                 Dropdown(selection: binding(\.proxyMode), items: [
@@ -333,6 +357,7 @@ struct SettingsView: View {
                     .option("system", "System"),
                     .option("manual", "Manual"),
                 ], width: 150)
+                .managed(.proxyMode, vm.managedPolicy)
             }
             if vm.settings.proxyMode == "manual" {
                 SetRow(name: "Proxy type", desc: "HTTP or SOCKS5 (applies to HTTP/HTTPS downloads).") {
@@ -340,6 +365,7 @@ struct SettingsView: View {
                         .option("http", "HTTP"),
                         .option("socks5", "SOCKS5"),
                     ], width: 150)
+                    .managed(.proxyType, vm.managedPolicy)
                 }
                 SetRow(name: "Proxy host", desc: "Hostname or IP of the proxy server.") {
                     SettingText(text: binding(\.proxyHost), width: 160)
@@ -394,9 +420,19 @@ struct SettingsView: View {
 
     // MARK: Traffic Limits
 
+    /// The ``ManagedPolicy`` keys this pane renders a control for. The two byte
+    /// ceilings are included even though their fields stay editable — see the
+    /// note on the speed rows below — because a value that snaps back to the
+    /// fleet cap needs the same explanation a disabled control gets.
+    private static let trafficManagedKeys: [ManagedPolicy.Key] = [
+        .selectedProfileName, .maxDownloadBytesPerSec, .maxUploadBytesPerSec,
+    ]
+
     private var trafficPane: some View {
         PaneScaffold(title: "Traffic Limits",
                      subtitle: "Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile.") {
+            ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.trafficManagedKeys)
+
             HStack(spacing: 10) {
                 ForEach(vm.settings.profiles) { profile in
                     profileCard(profile)
@@ -406,6 +442,12 @@ struct SettingsView: View {
 
             let active = vm.settings.selectedProfile
             SectionHeader("Editing: \(active.name) profile")
+            // The two speed fields are deliberately *not* `.managed(…)`. A forced
+            // `maxDownloadBytesPerSec` is applied by ``ManagedPolicy/apply(to:)``
+            // as a clamp over every profile, not as an assignment: asking for
+            // less than the fleet ceiling is still the user's call, and disabling
+            // the field would take that away. The pane notice above carries the
+            // explanation for the case where a larger number snaps back.
             SetRow(name: "Max download speed", desc: "0 = unlimited.") {
                 HStack(spacing: 4) {
                     SettingDouble(value: megabytesBinding(\.maxDownloadBytesPerSec), width: 70)
@@ -468,6 +510,10 @@ struct SettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // `selectedProfileName` is assigned outright by the overlay, so a card
+        // tapped under a forced profile would highlight for one frame and then
+        // jump back. Better to show it as the administrator's choice.
+        .managed(.selectedProfileName, vm.managedPolicy)
     }
 
     // MARK: BitTorrent
@@ -509,6 +555,12 @@ struct SettingsView: View {
     }
 
     // MARK: Advanced
+
+    /// The ``ManagedPolicy`` keys the Advanced pane renders a control for — all
+    /// of them in the Updates section.
+    private static let updatesManagedKeys: [ManagedPolicy.Key] = [
+        .autoCheckUpdates, .updateFeedURL,
+    ]
 
     private var advancedPane: some View {
         PaneScaffold(title: "Advanced", subtitle: "Notifications, power management, and backup.") {
@@ -572,6 +624,10 @@ struct SettingsView: View {
                 ], width: 140)
             }
             SectionHeader("Updates")
+            // Scoped to the section rather than the pane: Updates is the only
+            // part of Advanced an administrator can reach, and a banner at the
+            // top would imply the notification and power rows were locked too.
+            ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.updatesManagedKeys)
             SetRow(name: "Check for updates automatically", desc: "Once at launch.") {
                 SettingSwitch(isOn: binding(\.autoCheckUpdates))
                     .managed(.autoCheckUpdates, vm.managedPolicy)
@@ -579,6 +635,7 @@ struct SettingsView: View {
             SetRow(name: "Release feed URL",
                    desc: "A GitHub releases API URL (or compatible JSON feed).") {
                 SettingText(text: binding(\.updateFeedURL), width: 220)
+                    .managed(.updateFeedURL, vm.managedPolicy)
             }
             SetRow(name: "", desc: "") {
                 Button("Check Now") { vm.checkForUpdates() }

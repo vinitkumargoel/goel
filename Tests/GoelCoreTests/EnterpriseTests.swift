@@ -410,10 +410,17 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertNil(RemoteAuthService.trustedIdentity(request, client: "127.0.0.1", policy: policy))
     }
 
+    /// Once the proxy has presented its shared secret, the peer address is the
+    /// remaining discriminator: honoured from inside the trusted set, refused
+    /// from outside it or from an address we could not determine at all.
     func testHeaderIsHonouredOnlyFromATrustedAddress() {
         let policy = TrustedIdentityHeaderPolicy(isEnabled: true,
-                                                 trustedProxies: ["127.0.0.1", "10.20.0.0/16"])
-        let request = loginlessRequest(headers: ["x-forwarded-user": "a.patel"])
+                                                 trustedProxies: ["127.0.0.1", "10.20.0.0/16"],
+                                                 sharedSecret: "proxy-secret")
+        let request = loginlessRequest(headers: [
+            "x-forwarded-user": "a.patel",
+            TrustedIdentityHeaderPolicy.sharedSecretHeader: "proxy-secret",
+        ])
 
         XCTAssertEqual(RemoteAuthService.trustedIdentity(request, client: "127.0.0.1", policy: policy),
                        "a.patel")
@@ -425,12 +432,54 @@ final class EnterpriseTests: XCTestCase {
                      "an unknown peer address must not be trusted")
     }
 
+    /// A trusted peer address is not on its own proof of proxy origin: on the
+    /// deployment we document, everything else on the host can also dial
+    /// 127.0.0.1. Without the shared secret — or with a near-miss of it — a
+    /// trusted address must still buy nothing.
+    func testTrustedAddressWithoutTheProxySecretIsRefused() {
+        let policy = TrustedIdentityHeaderPolicy(isEnabled: true, trustedProxies: ["127.0.0.1"],
+                                                 sharedSecret: "proxy-secret")
+        let unsigned = loginlessRequest(headers: ["x-forwarded-user": "a.patel"])
+        XCTAssertNil(RemoteAuthService.trustedIdentity(unsigned, client: "127.0.0.1", policy: policy),
+                     "a trusted address without the proxy secret must not assert an identity")
+
+        let wrongSecret = loginlessRequest(headers: [
+            "x-forwarded-user": "a.patel",
+            TrustedIdentityHeaderPolicy.sharedSecretHeader: "proxy-secre",
+        ])
+        XCTAssertNil(RemoteAuthService.trustedIdentity(wrongSecret, client: "127.0.0.1", policy: policy),
+                     "a wrong proxy secret must not assert an identity")
+    }
+
+    /// Header-value rules, checked against a policy that is otherwise fully
+    /// satisfied — so a nil here is the value being refused, not the request
+    /// falling at the shared-secret gate first.
     func testMissingOrHostileHeaderValuesAreRefused() {
-        let policy = TrustedIdentityHeaderPolicy(isEnabled: true, trustedProxies: ["127.0.0.1"])
-        XCTAssertNil(RemoteAuthService.trustedIdentity(loginlessRequest(headers: [:]),
+        let policy = TrustedIdentityHeaderPolicy(isEnabled: true, trustedProxies: ["127.0.0.1"],
+                                                 sharedSecret: "proxy-secret")
+        func signed(_ user: String?) -> RemoteRequest {
+            var headers = [TrustedIdentityHeaderPolicy.sharedSecretHeader: "proxy-secret"]
+            if let user { headers["x-forwarded-user"] = user }
+            return loginlessRequest(headers: headers)
+        }
+        XCTAssertNil(RemoteAuthService.trustedIdentity(signed(nil),
                                                        client: "127.0.0.1", policy: policy))
-        XCTAssertNil(RemoteAuthService.trustedIdentity(loginlessRequest(headers: ["x-forwarded-user": ""]),
+        XCTAssertNil(RemoteAuthService.trustedIdentity(signed(""),
                                                        client: "127.0.0.1", policy: policy))
+        XCTAssertNil(RemoteAuthService.trustedIdentity(signed("   "),
+                                                       client: "127.0.0.1", policy: policy),
+                     "a whitespace-only identity is empty once trimmed")
+        // A control character embedded in the value (CRLF is already eaten by the
+        // request parser as a header break, so it cannot reach this guard — the
+        // interesting case is a control byte that survives into the value).
+        XCTAssertNil(RemoteAuthService.trustedIdentity(signed("a.patel\u{01}admin"),
+                                                       client: "127.0.0.1", policy: policy),
+                     "control characters are a smuggling attempt, refused not sanitised")
+        // The positive control: the same policy and address do grant an identity
+        // when the value itself is well-formed.
+        XCTAssertEqual(RemoteAuthService.trustedIdentity(signed("a.patel"),
+                                                         client: "127.0.0.1", policy: policy),
+                       "a.patel")
     }
 
     func testCIDRAndAddressNormalisation() {

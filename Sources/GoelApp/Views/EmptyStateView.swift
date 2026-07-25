@@ -64,6 +64,15 @@ struct DownloadsEmptyState: View {
                     title: "Drop a file",
                     detail: "Drag a .torrent or a link onto this window",
                     isPrimary: false,
+                    // The visible copy teaches the pointer gesture, but the
+                    // click does something else: it toggles the floating Drop
+                    // Basket panel. Spoken as written, the only description a
+                    // non-pointer user would get is an instruction they cannot
+                    // follow — and a second activation would silently close a
+                    // window they were never told had opened. So the spoken
+                    // pair names the button's actual effect instead.
+                    a11yLabel: "Show or hide the Drop Basket",
+                    a11yHint: "Opens a small floating window that accepts dragged links and torrent files. Activating again closes it.",
                     action: { DropBasketController.shared.toggle() })
 
                 EmptyStateAction(
@@ -154,6 +163,11 @@ private struct EmptyStateAction: View {
     /// Tints the card when it is the obvious next move (a link is on the
     /// clipboard). Purely visual — every card stays equally clickable.
     let isPrimary: Bool
+    /// Spoken label and hint, for the case where the visible copy describes a
+    /// gesture rather than what clicking the card does. They default to
+    /// `title`/`detail`, which is correct whenever the two agree.
+    var a11yLabel: String? = nil
+    var a11yHint: String? = nil
     let action: () -> Void
 
     @State private var hovering = false
@@ -188,7 +202,7 @@ private struct EmptyStateAction: View {
         // This is the first screen a new user meets, and each card is a symbol
         // over two lines of text — three elements for one button. One element,
         // with the detail line as its hint since it explains rather than names.
-        .a11yGroup(label: title, hint: detail)
+        .a11yGroup(label: a11yLabel ?? title, hint: a11yHint ?? detail)
         .accessibilityAddTraits(.isButton)
     }
 

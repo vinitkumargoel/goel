@@ -69,6 +69,44 @@ public actor RemoteControlServer {
     /// streaming) notice a restart and wind down.
     private var generation = 0
 
+    /// Why the last ``start(port:allowLAN:config:passwordHash:sessionMinutes:security:)``
+    /// left nothing listening, or nil when the portal is bound (or stopped on purpose).
+    ///
+    /// `start` has two fail-closed refusals — an unusable TLS identity and a failed
+    /// bind — and both are *correct*, but until now both were also silent: the only
+    /// trace was a `GoelLog` line in the unified log, which the person using the app
+    /// will never see. Failing closed invisibly is indistinguishable from succeeding,
+    /// so Settings kept offering "Open" and "Copy Link" for a portal that was never
+    /// there. Recording the reason lets ``RemoteAccess`` — and through it the UI —
+    /// say *why* web access is off instead of quietly claiming it is on.
+    public enum StartFailure: Sendable, Equatable {
+        /// Portal TLS is on, but the PKCS#12 identity at this path could not be
+        /// loaded: wrong path, unreadable file, or a `GOEL_PORTAL_TLS_PASSPHRASE`
+        /// that doesn't match the bundle.
+        case tlsIdentityUnavailable(path: String)
+        /// The socket could not be bound — usually the port is already taken by
+        /// another process.
+        case bindFailed(port: UInt16)
+
+        /// Plain-language text written for the person using the app, naming the fix.
+        /// Matches the wording style of ``SFTPError/message``.
+        public var message: String {
+            switch self {
+            case .tlsIdentityUnavailable(let path):
+                let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+                let subject = trimmed.isEmpty ? "No HTTPS certificate is set, so web access can't start."
+                                              : "The HTTPS certificate at “\(trimmed)” couldn't be opened, so web access can't start."
+                return "\(subject) Check the path, and that GOEL_PORTAL_TLS_PASSPHRASE is set to that certificate's passphrase. Web access stays off rather than serving unencrypted."
+            case .bindFailed(let port):
+                return "Web access couldn't open port \(port) — another app is probably already using it. Pick a different port and try again."
+            }
+        }
+    }
+
+    /// Set on each refusal in `start`, cleared the moment a listener is bound or the
+    /// server is stopped. Read through ``lastStartFailure()``.
+    private var startFailure: StartFailure?
+
     /// A router bound to the current backend + config, rebuilt per use (cheap).
     private var router: RemoteRouter { RemoteRouter(backend: manager, config: routerConfig) }
 
@@ -173,6 +211,7 @@ public actor RemoteControlServer {
                 // worst possible outcome of a mistyped certificate path.
                 GoelLog.remote.error("Portal TLS is enabled but the identity could not be loaded — refusing to serve cleartext",
                                      .path(security.tlsIdentityPath))
+                startFailure = .tlsIdentityUnavailable(path: security.tlsIdentityPath)
                 return
             }
             parameters = tls
@@ -192,6 +231,7 @@ public actor RemoteControlServer {
         }
         guard let newListener else {
             GoelLog.remote.error("Remote server failed to bind", .count(Int(port), label: "port"))
+            startFailure = .bindFailed(port: port)
             return
         }
         // Advertise over Bonjour only when actually exposed to the network — a
@@ -225,6 +265,8 @@ public actor RemoteControlServer {
         self.boundPort = port
         self.boundExposeLAN = exposeLAN
         self.boundTLS = tlsKey
+        // Something is listening again — any earlier refusal is stale.
+        self.startFailure = nil
     }
 
     // MARK: TLS
@@ -286,8 +328,15 @@ public actor RemoteControlServer {
         return (p, boundExposeLAN ?? false)
     }
 
+    /// Why nothing is listening after the last `start`, or nil when the portal is
+    /// bound. The companion to ``boundState()``: that answers *whether* the portal
+    /// is up, this answers *why not* in words a person can act on.
+    public func lastStartFailure() -> StartFailure? { startFailure }
+
     public func stop() async {
         generation += 1
+        // A deliberate stop is not a failure, and the next `start` re-decides.
+        startFailure = nil
         boundPort = nil
         boundExposeLAN = nil
         boundTLS = nil

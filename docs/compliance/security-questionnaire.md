@@ -148,10 +148,21 @@ query parameter for scripts. Token and username comparisons are **constant-time*
 response timing cannot be used to recover them byte by byte.
 
 **4.4 Is there brute-force protection?**
-Yes. Five failed logins trigger a 30-second lockout. Verification is checked before
-lockout so a correct credential always succeeds. There is also a cap on concurrent
-password verifications returning `429`, which prevents the deliberately expensive PBKDF2
-work from being used as a CPU-exhaustion vector.
+Yes, applied **per client address with exponential backoff**. Both parameters are
+settings; the shipped defaults are five free attempts, then a five-second lockout that
+**doubles on every further failure** up to a fifteen-minute ceiling. A correct password
+clears that address's record immediately, and an address that goes quiet is forgotten
+after an hour so a shared NAT egress IP does not accumulate penalties forever. The
+lockout is checked *before* the password is verified, so a flood costs the attacker a
+dictionary lookup rather than a PBKDF2 run. There is also a cap on concurrent password
+verifications returning `429`, which prevents the deliberately expensive PBKDF2 work from
+being used as a CPU-exhaustion vector.
+
+The key is the real TCP peer address, never a client-supplied header, so one guessing
+attacker cannot lock the legitimate user out. The corollary is stated plainly: a
+distributed attacker gets one attempt budget per source address, so this throttle bounds
+one host's guessing rate, not a botnet's. That is a reason to put the portal behind a
+proxy, VPN or Tailscale rather than on the open internet — see 5.4.
 
 **4.5 Is SSO supported?**
 SSO for the web portal is an Enterprise entitlement. The core application has no accounts

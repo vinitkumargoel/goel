@@ -55,8 +55,8 @@ public enum RemoteAuthService {
     /// protocol.
     ///
     /// It is also, if you get it wrong, a total authentication bypass — anyone who
-    /// can reach the port just sends the header. Three things guard it, and all
-    /// three must hold:
+    /// can reach the port just sends the header. Four things guard it, and all
+    /// four must hold:
     ///
     /// 1. The operator turned it on (``TrustedIdentityHeaderPolicy/isEnabled``).
     /// 2. ``TrustedIdentityHeaderPolicy/trustedProxies`` is non-empty — an empty
@@ -64,9 +64,25 @@ public enum RemoteAuthService {
     /// 3. The connection's *socket* peer address is in that list. The peer address
     ///    comes from the kernel, not from a header, so it cannot be spoofed by the
     ///    client; `X-Forwarded-For` is deliberately not consulted for this.
+    /// 4. The request carries ``TrustedIdentityHeaderPolicy/sharedSecretHeader``
+    ///    matching ``TrustedIdentityHeaderPolicy/sharedSecret``, which is never
+    ///    empty when the feature is live.
+    ///
+    /// Rule 4 exists because rule 3 only discriminates when the proxy is on a
+    /// *different* host, and the deployment we actually ship docs for is the
+    /// opposite: portal bound to loopback with nginx/Authelia in front of it on the
+    /// same box. There the proxy's peer address is `127.0.0.1` — indistinguishable
+    /// from every other process on the machine, so any local user could `curl` the
+    /// header in and become whoever they liked. A secret the proxy holds and other
+    /// local processes do not is what restores the discriminator. It is compared in
+    /// constant time, and it lives in the environment rather than in settings for
+    /// the same reason as ``RemotePortalSecurity/tlsPassphrase``.
     public static func trustedIdentity(_ request: RemoteRequest, client: String,
                                        policy: TrustedIdentityHeaderPolicy) -> String? {
         guard policy.isEnabled, !policy.trustedProxies.isEmpty else { return nil }
+        guard !policy.sharedSecret.isEmpty,
+              let presented = request.headers[TrustedIdentityHeaderPolicy.sharedSecretHeader],
+              RemoteRouter.constantTimeEquals(presented, policy.sharedSecret) else { return nil }
         guard IPMatcher.matches(client, any: policy.trustedProxies) else { return nil }
         let header = policy.headerName.lowercased()
         guard !header.isEmpty,
@@ -91,17 +107,36 @@ public struct TrustedIdentityHeaderPolicy: Sendable, Equatable {
     public var headerName: String
     /// Literal IPs or IPv4 CIDR blocks allowed to assert that header.
     public var trustedProxies: [String]
+    /// Secret the proxy must present in ``sharedSecretHeader``. Empty disables
+    /// header SSO entirely — a peer address alone is not proof of proxy origin
+    /// when the proxy shares the host with everyone else, which is the deployment
+    /// we document.
+    public var sharedSecret: String
+
+    /// Header carrying ``sharedSecret``. Fixed rather than configurable: the name
+    /// is not the discriminator, the secret is, and one less knob is one less way
+    /// to misconfigure an authentication path.
+    public static let sharedSecretHeader = "x-goel-proxy-secret"
+
+    /// ``sharedSecret`` as the operator supplies it: a launchd
+    /// `EnvironmentVariables` entry or a `systemd` `EnvironmentFile`, never the
+    /// settings JSON — that file gets backed up, exported and attached to support
+    /// emails, and this value is a credential.
+    public static var secretFromEnvironment: String {
+        ProcessInfo.processInfo.environment["GOEL_PORTAL_PROXY_SECRET"] ?? ""
+    }
 
     public init(isEnabled: Bool = false, headerName: String = "X-Forwarded-User",
-                trustedProxies: [String] = []) {
+                trustedProxies: [String] = [], sharedSecret: String = "") {
         self.isEnabled = isEnabled
         self.headerName = headerName
         self.trustedProxies = trustedProxies
+        self.sharedSecret = sharedSecret
     }
 
     /// Whether this policy can ever grant access. Used to log the "enabled but
     /// useless" misconfiguration loudly instead of failing closed in silence.
-    public var isEffective: Bool { isEnabled && !trustedProxies.isEmpty }
+    public var isEffective: Bool { isEnabled && !trustedProxies.isEmpty && !sharedSecret.isEmpty }
 }
 
 /// Minimal address matching for the trusted-proxy list: exact text match (which
@@ -351,7 +386,8 @@ public struct RemotePortalSecurity: Sendable, Equatable {
                   sso: TrustedIdentityHeaderPolicy(
                       isEnabled: settings.remoteTrustedHeaderAuthEnabled,
                       headerName: settings.remoteTrustedHeaderName,
-                      trustedProxies: settings.remoteTrustedProxies),
+                      trustedProxies: settings.remoteTrustedProxies,
+                      sharedSecret: TrustedIdentityHeaderPolicy.secretFromEnvironment),
                   tlsEnabled: settings.remoteTLSEnabled,
                   tlsIdentityPath: settings.remoteTLSIdentityPath)
     }
@@ -377,6 +413,14 @@ public actor RemoteSessionStore {
     private var sessionSeconds = 120 * 60
     private var username = ""
 
+    /// Bumped every time the credentials this store authenticates against change.
+    ///
+    /// ``handleLogin`` suspends for the whole PBKDF2 verification, and this actor
+    /// happily services ``configure(username:passwordHash:sessionMinutes:invalidatingSessions:)``
+    /// during that hop. The epoch is the token that lets the resumed login notice
+    /// it is holding a snapshot of credentials that no longer exist.
+    private var credentialEpoch = 0
+
     /// Per-client brute-force backoff. Replaces the old single global counter,
     /// which one attacker could trip to lock every other user out.
     private var throttle = RemoteLoginThrottle()
@@ -387,9 +431,20 @@ public actor RemoteSessionStore {
     /// actor hop. The two MUST be one call: split across two `await`s, the shell
     /// actor suspends in between and can service a login against the credentials
     /// it is halfway through rotating.
+    ///
+    /// Being one hop is necessary but not sufficient: a login that is *already*
+    /// suspended inside its PBKDF2 verification resumes after this returns, so it
+    /// also has to be told the ground moved. Bumping ``credentialEpoch`` is that
+    /// signal — see the guard in ``handleLogin(_:client:)``. The epoch only moves
+    /// when the credential material actually changes (or the caller is dropping
+    /// sessions anyway), so an unrelated settings save cannot fail a login that
+    /// happens to be in flight.
     public func configure(username: String, passwordHash: String, sessionMinutes: Int,
                           invalidatingSessions: Bool = false) {
         if invalidatingSessions { invalidateAll() }
+        if invalidatingSessions || self.username != username || self.passwordHash != passwordHash {
+            credentialEpoch &+= 1
+        }
         self.username = username
         self.passwordHash = passwordHash
         self.sessionSeconds = max(5, sessionMinutes) * 60
@@ -439,6 +494,7 @@ public actor RemoteSessionStore {
         let creds = RemoteAuthService.parseCredentials(request)
         let userOK = RemoteRouter.constantTimeEquals(creds.username, username)
         let hash = passwordHash
+        let epoch = credentialEpoch
         let password = creds.password
         let passOK: Bool
         if hash.isEmpty {
@@ -447,6 +503,19 @@ public actor RemoteSessionStore {
             activeVerifications += 1
             passOK = await Task.detached { RemotePassword.verify(password, against: hash) }.value
             activeVerifications -= 1
+        }
+
+        // `userOK`/`passOK` were decided against a snapshot taken *before* the
+        // verification suspended, and this actor services `configure` during that
+        // suspension. Without this guard an admin rotating a leaked password would
+        // see `invalidateAll()` run and then have an in-flight login mint a brand
+        // new session for the password they just revoked — good for the full
+        // session lifetime. Refuse; the client can retry against the live
+        // credentials. No failure is recorded: the attempt was never judged.
+        guard epoch == credentialEpoch else {
+            return RemoteAuthService.jsonError(
+                status: "401 Unauthorized",
+                message: "Sign-in credentials changed while signing in — please try again.")
         }
 
         if userOK && passOK {

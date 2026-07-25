@@ -58,6 +58,18 @@ extension DownloadManager {
     /// in a download phase — the actor suspends inside ``pause(_:)``, so the user
     /// may have hand-paused a later id meanwhile; such a task must NOT be recorded
     /// (it would be auto-resumed later), so it is dropped from the memory ledger.
+    ///
+    /// The memory round-trip is **committed before the actions are applied**. The
+    /// snapshot/`decide`/store sequence contains no `await`, so it is atomic with
+    /// respect to the actor: an overlapping tick always reads the latest ledgers.
+    /// Storing it after the loop instead would let a tick that suspended in
+    /// ``pause(_:)`` resume last and write back a value computed from its
+    /// pre-overlap snapshot — wiping `networkPausedIDs`/`windowPausedIDs` (the
+    /// affected tasks then never get their `.resume` on recovery and stay paused
+    /// forever) or `rssSeenKeys` (the next poll re-queues items the user deleted).
+    /// Five callers can overlap here: the window loop, the scheduled-start loop,
+    /// the RSS poll, ``applyNetworkPolicy(expensive:constrained:)`` and
+    /// ``updateSettings(_:)``.
     func runAutomation(feeds: [AutomationCore.FeedFetch] = []) async {
         let projection = tasks.map { task in
             AutomationCore.TaskPhase(
@@ -74,14 +86,18 @@ extension DownloadManager {
             networkExpensive: lastPathExpensive, networkConstrained: lastPathConstrained,
             feeds: feeds, memory: automationMemory))
 
-        var memory = decision.memory
+        automationMemory = decision.memory
+        scheduleWindowOpen = decision.memory.windowOpen
+
         for action in decision.actions {
             switch action {
             case .pause(let id, let ledger):
                 guard isInDownloadingPhase(id) else {
+                    // Un-record exactly this id rather than rewriting the ledger, so
+                    // entries an overlapping tick added meanwhile survive.
                     switch ledger {
-                    case .window: memory.windowPausedIDs.remove(id)
-                    case .network: memory.networkPausedIDs.remove(id)
+                    case .window: automationMemory.windowPausedIDs.remove(id)
+                    case .network: automationMemory.networkPausedIDs.remove(id)
                     }
                     continue
                 }
@@ -94,8 +110,6 @@ extension DownloadManager {
                 add(source: source, startPaused: startPaused)
             }
         }
-        automationMemory = memory
-        scheduleWindowOpen = memory.windowOpen
         publish()
         schedule()
     }

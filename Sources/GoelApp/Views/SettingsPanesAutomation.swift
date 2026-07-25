@@ -384,10 +384,18 @@ struct RemoteAccessPane: View {
         )
     }
 
+    /// The scheme the portal is actually listening with. `RemoteControlServer`
+    /// binds TLS parameters when `remoteTLSEnabled` is set and fails closed rather
+    /// than falling back, so the socket then speaks *only* TLS — handing out an
+    /// `http://` link would make a correctly running portal look broken.
+    private var scheme: String {
+        vm.settings.remoteTLSEnabled ? "https" : "http"
+    }
+
     /// The LAN-reachable control URL, when a LAN address exists.
     private var lanURL: URL? {
         guard let ip = LANAddress.primaryIPv4() else { return nil }
-        return URL(string: "http://\(ip):\(vm.settings.remotePort)/?token=\(vm.settings.remoteToken)")
+        return URL(string: "\(scheme)://\(ip):\(vm.settings.remotePort)/?token=\(vm.settings.remoteToken)")
     }
 
     /// Enabling generates a token on first use, so the server never starts
@@ -407,7 +415,7 @@ struct RemoteAccessPane: View {
     /// The loopback control URL. Optional because the port field accepts any
     /// `Int` (including negatives), which makes `URL(string:)` return nil.
     private var controlURL: URL? {
-        URL(string: "http://127.0.0.1:\(vm.settings.remotePort)/?token=\(vm.settings.remoteToken)")
+        URL(string: "\(scheme)://127.0.0.1:\(vm.settings.remotePort)/?token=\(vm.settings.remoteToken)")
     }
 
     private static func newToken() -> String {

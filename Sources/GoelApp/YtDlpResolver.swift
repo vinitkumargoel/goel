@@ -37,59 +37,72 @@ enum YtDlpResolver {
 
     static var isAvailable: Bool { executable != nil }
 
+    /// The outcome of resolving a page to a direct stream, distinguishing a
+    /// genuine failure (which carries yt-dlp's own explanation) from the caller
+    /// walking away mid-run, which must stay silent.
+    enum ResolveOutcome: Sendable {
+        case resolved(Resolved)
+        /// Sheet dismissed / Cancel — no toast, no stale UI.
+        case cancelled
+        case failed(String)
+    }
+
     /// Ask yt-dlp for the best *muxed* format (a single downloadable URL — no
-    /// ffmpeg merge step) of the media behind `url`. Nil on any failure.
+    /// ffmpeg merge step) of the media behind `url`.
     ///
     /// `formatSelector` is a yt-dlp format id chosen by the user in
     /// ``MediaFormatPicker``. When nil the default `b` (best muxed) is used —
     /// deliberately not a guess at an id, because an id that does not exist for
-    /// this video makes yt-dlp fail outright rather than fall back.
-    static func resolve(_ url: URL, formatSelector: String? = nil) async -> Resolved? {
-        guard let executable,
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else { return nil }
-        if Task.isCancelled { return nil }
+    /// this video makes yt-dlp fail outright rather than fall back. That failure
+    /// is precisely why this returns a reason rather than a bare nil: yt-dlp's own
+    /// line ("Requested format is not available", "Sign in to confirm…") is the
+    /// only thing that tells the user whether to clear the quality choice, sign
+    /// in, or try another page — and each needs a different remedy.
+    static func resolveMedia(_ url: URL, formatSelector: String? = nil) async -> ResolveOutcome {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            return .failed("That isn’t a web page address.")
+        }
+        if Task.isCancelled { return .cancelled }
 
-        let process = Process()
-        let stdout = Pipe()
-        process.executableURL = executable
-        process.arguments = ["-j", "--no-playlist", "--no-warnings",
-                             "-f", formatSelector ?? "b", url.absoluteString]
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
+        let result: ToolRun
         do {
-            try process.run()
+            // Watchdog: some extractors hang on slow sites; kill after 45 s.
+            result = try await run(["-j", "--no-playlist", "--no-warnings",
+                                    "-f", formatSelector ?? "b", url.absoluteString],
+                                   timeoutSeconds: 45)
+        } catch LaunchFailure.notInstalled {
+            return .failed("yt-dlp isn’t available, so Goel° can’t resolve that page.")
         } catch {
-            return nil
+            return .failed("Couldn’t start yt-dlp.")
         }
-        // Watchdog: some extractors hang on slow sites; kill after 45 s.
-        let watchdog = Task {
-            try? await Task.sleep(nanoseconds: 45_000_000_000)
-            if process.isRunning { process.terminate() }
+        if Task.isCancelled { return .cancelled }
+        guard result.status == 0 else {
+            return .failed(message(from: result.stderr,
+                                   fallback: "yt-dlp couldn’t resolve that page."))
         }
-        let data: Data = await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let output = stdout.fileHandleForReading.readDataToEndOfFile()
-                    process.waitUntilExit()
-                    continuation.resume(returning: output)
-                }
-            }
-        } onCancel: {
-            if process.isRunning { process.terminate() }
-        }
-        watchdog.cancel()
-        // Caller walked away (sheet dismissed / Cancel): stay silent, no stale UI.
-        if Task.isCancelled { return nil }
-        guard process.terminationStatus == 0,
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let object = try? JSONSerialization.jsonObject(with: result.stdout) as? [String: Any],
               let mediaString = object["url"] as? String,
               let media = URL(string: mediaString),
-              ["http", "https"].contains(media.scheme?.lowercased() ?? "") else { return nil }
-        return Resolved(
+              ["http", "https"].contains(media.scheme?.lowercased() ?? "") else {
+            // Exit 0 but no direct stream: usually a format that needs an ffmpeg
+            // merge, which this app can't download as a single URL.
+            return .failed("yt-dlp didn’t report a single downloadable stream for that page.")
+        }
+        return .resolved(Resolved(
             title: (object["title"] as? String) ?? "video",
             mediaURL: media,
-            fileExtension: object["ext"] as? String)
+            fileExtension: object["ext"] as? String))
+    }
+
+    /// Nil-on-anything-wrong shim over ``resolveMedia(_:formatSelector:)`` for
+    /// callers that have nowhere to show a reason. Prefer the outcome-returning
+    /// form — discarding the reason is what makes a failure undiagnosable.
+    static func resolve(_ url: URL, formatSelector: String? = nil) async -> Resolved? {
+        guard case .resolved(let resolved) = await resolveMedia(url, formatSelector: formatSelector) else {
+            return nil
+        }
+        return resolved
     }
 
     /// The outcome of a subtitle fetch, distinguishing "wrote N files" from the

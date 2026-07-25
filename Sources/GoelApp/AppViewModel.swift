@@ -213,6 +213,12 @@ final class AppViewModel: ObservableObject {
     private static let speedPersistEveryTicks = 20
     private var speedSampleTick = 0
     private var speedSampler: Task<Void, Never>?
+    /// The payload of the last ``persistSpeedHistory()`` write, so a tick that
+    /// would re-encode byte-identical data can skip the store entirely. The save
+    /// is a whole-blob rewrite, and a session whose downloads are all paused
+    /// while an SFTP transfer runs would otherwise rewrite the same bytes every
+    /// 10 s for as long as the transfer lasts.
+    private var lastPersistedSpeedHistory: [String: [SpeedHistoryPoint]] = [:]
 
     /// Light / Dark / System, derived from (and persisted through) the core
     /// ``AppSettings/theme`` string so the choice survives relaunch. The setter
@@ -1216,12 +1222,27 @@ final class AppViewModel: ObservableObject {
     /// Write the current per-task speed-chart samples to the store (task-id
     /// string → sample ring), filtered to tasks that still exist so removed
     /// downloads don't linger on disk.
+    ///
+    /// Two filters keep this cheap, because the store side is a whole-blob
+    /// re-encode and single-row rewrite, not a delta:
+    ///
+    /// * Terminal tasks are skipped. The point of persisting is that a download's
+    ///   throughput graph *resumes* after relaunch; a completed or failed row has
+    ///   nothing left to resume, and the app deliberately keeps finished rows in
+    ///   the list, so without this a user with hundreds of them would have every
+    ///   one of their frozen rings re-encoded every 10 s for the sake of the one
+    ///   download that is actually moving. Their samples stay in memory for the
+    ///   rest of the session, so the on-screen sparkline is unaffected.
+    /// * An unchanged payload is not written at all (see
+    ///   ``lastPersistedSpeedHistory``).
     private func persistSpeedHistory() {
-        let known = Set(tasks.map(\.id))
         var out: [String: [SpeedHistoryPoint]] = [:]
-        for (id, samples) in taskSpeedHistory where known.contains(id) && !samples.isEmpty {
-            out[id.uuidString] = samples.map { SpeedHistoryPoint(down: $0.down, up: $0.up) }
+        for task in tasks where !task.status.isTerminal {
+            guard let samples = taskSpeedHistory[task.id], !samples.isEmpty else { continue }
+            out[task.id.uuidString] = samples.map { SpeedHistoryPoint(down: $0.down, up: $0.up) }
         }
+        guard out != lastPersistedSpeedHistory else { return }
+        lastPersistedSpeedHistory = out
         let manager = self.manager
         Task { await manager.persistSpeedHistory(out) }
     }
@@ -1229,6 +1250,9 @@ final class AppViewModel: ObservableObject {
     /// Seed ``taskSpeedHistory`` from the store at launch so each download's
     /// throughput chart continues where it left off.
     private func loadPersistedSpeedHistory(_ saved: [String: [SpeedHistoryPoint]]) {
+        // Seed the "already written" baseline with what is actually on disk, so
+        // the first differing save still gets through and prunes stale entries.
+        lastPersistedSpeedHistory = saved
         guard !saved.isEmpty else { return }
         var restored: [DownloadTask.ID: [SpeedSample]] = [:]
         for (idString, points) in saved {
@@ -1586,10 +1610,23 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var managedPolicy: ManagedPolicy = ManagedPolicy.current()
 
     /// Re-read the overlay and push it through the manager's settings cascade.
+    ///
+    /// The actor's cascade reaches the engines, but not everything policy governs
+    /// lives behind the actor: the remote-control portal is started, stopped and
+    /// restarted from *this* object's ``settings`` copy, which nothing refreshes
+    /// mid-session (the manager's snapshot stream carries tasks only). So pull the
+    /// effective settings back and re-apply remote access on the same beat —
+    /// otherwise the nine `remote*` managed keys, including the administrator's
+    /// `remoteAccessEnabled` kill switch, would take effect no earlier than the
+    /// next launch while the listener kept serving.
     func refreshManagedPolicy() {
         managedPolicy = ManagedPolicy.current()
         let manager = self.manager
-        Task { await manager.refreshManagedPolicy() }
+        Task {
+            await manager.refreshManagedPolicy()
+            settings = await manager.currentSettings
+            applyRemoteAccess()
+        }
     }
 
     /// The footnote shown under a control an administrator has locked.

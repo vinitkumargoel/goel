@@ -305,9 +305,20 @@ public actor DownloadManager {
         installPersistErrorBridge()
 
         do {
-            if let saved = try store.loadSettings() { adoptStoredSettings(saved) }
+            let saved = try store.loadSettings()
+            // Adopt unconditionally — including the fresh-install case where
+            // `loadSettings()` returns nil. ``adoptStoredSettings(_:)`` is the only
+            // thing that ever configures ``auditLog``, so skipping it left the log
+            // at its disabled default while the effective ``settings`` — already
+            // carrying `init`'s managed overlay — said logging was on. The two
+            // layers then disagreed silently: an administrator's forced
+            // `auditLogEnabled = true` recorded nothing until the user happened to
+            // change some unrelated setting. Re-adopting the in-memory
+            // ``storedSettings`` is otherwise a no-op.
+            adoptStoredSettings(saved ?? storedSettings)
         } catch {
             notePersistenceError(error)
+            adoptStoredSettings(storedSettings)
         }
 
         do {
@@ -605,8 +616,24 @@ public actor DownloadManager {
 
     /// Pause a task (queued or active). Frees its slot so a queued task can run.
     public func pause(_ id: DownloadTask.ID) async {
-        guard let task = task(id) else { return }
-        guard task.status != .paused, !task.status.isTerminal else { return }
+        guard await pauseTask(id) else { return }
+        publish()
+        schedule()
+    }
+
+    /// The pause bookkeeping *without* the trailing snapshot/scheduler pass, so
+    /// ``pauseAll()`` can pause a whole queue and pay for both exactly once.
+    /// Returns whether the task was eligible and anything actually happened.
+    ///
+    /// The split matters at scale: ``publish()`` yields a fresh copy of the whole
+    /// list into every observer's unbounded stream, which makes the next in-place
+    /// status write copy the entire array, and ``schedule()`` re-filters and
+    /// re-sorts all N tasks. Per-task, that is quadratic and floods the UI with
+    /// snapshots it can't drain. Coalescing also stops the scheduler promoting a
+    /// queued task into a slot the loop is about to take back.
+    private func pauseTask(_ id: DownloadTask.ID) async -> Bool {
+        guard let task = task(id) else { return false }
+        guard task.status != .paused, !task.status.isTerminal else { return false }
 
         if engineStarted.contains(id) {
             await engine(for: task.source).pause(id)
@@ -616,28 +643,33 @@ public actor DownloadManager {
         // the actor was suspended — never clobber a terminal state with `.paused`.
         guard let i = index(of: id), !tasks[i].status.isTerminal else {
             updatePowerAssertion()
-            publish()
-            schedule()
-            return
+            return true
         }
         tasks[i].status = .paused
         tasks[i].connections = nil
         clearLiveRates(id)
         persist(tasks[i])
         updatePowerAssertion()
-        publish()
-        schedule()
+        return true
     }
 
     /// Resume a paused task. It re-enters the queue and is promoted subject to
     /// the simultaneous-download cap.
     public func resume(_ id: DownloadTask.ID) async {
-        guard let i = index(of: id), tasks[i].status == .paused else { return }
+        guard resumeTask(id) else { return }
+        publish()
+        schedule()
+    }
+
+    /// The resume bookkeeping without the trailing snapshot/scheduler pass — the
+    /// counterpart of ``pauseTask(_:)``, for the same reason. Returns whether the
+    /// task was actually paused and has now been re-queued.
+    private func resumeTask(_ id: DownloadTask.ID) -> Bool {
+        guard let i = index(of: id), tasks[i].status == .paused else { return false }
         tasks[i].status = .queued
         tasks[i].scheduledAt = nil   // starting now supersedes any scheduled start
         persist(tasks[i])
-        publish()
-        schedule()
+        return true
     }
 
     /// Retry a failed task: clear the error and re-queue it (keeping any partial
@@ -739,27 +771,51 @@ public actor DownloadManager {
         await pipeline?.shutdown()
     }
 
-    /// Pause every queued or active task.
+    /// Pause every queued or active task. One snapshot and one scheduler pass for
+    /// the whole batch — see ``pauseTask(_:)``.
     public func pauseAll() async {
         let ids = tasks
             .filter { $0.status.isActive || $0.status == .queued }
             .map(\.id)
-        for id in ids { await pause(id) }
+        var changed = false
+        for id in ids {
+            if await pauseTask(id) { changed = true }
+        }
+        guard changed else { return }
+        publish()
+        schedule()
     }
 
-    /// Resume every paused task.
+    /// Resume every paused task. One snapshot and one scheduler pass for the whole
+    /// batch; the single ``schedule()`` promotes up to the simultaneous cap in
+    /// strict priority order, rather than first-resumed-first-served.
     public func resumeAll() async {
         let ids = tasks.filter { $0.status == .paused }.map(\.id)
-        for id in ids { await resume(id) }
+        var changed = false
+        for id in ids {
+            if resumeTask(id) { changed = true }
+        }
+        guard changed else { return }
+        publish()
+        schedule()
     }
 
-    /// Apply a settings change in one deep call: mutate a copy of the current
-    /// ``settings``, push it through the full ``updateSettings(_:)`` cascade, and
-    /// return the committed value — so a caller never needs a separate
-    /// read-after-write round-trip to learn what was actually stored.
+    /// Apply a settings change in one deep call: mutate a copy of the user's own
+    /// ``storedSettings``, push it through the full ``updateSettings(_:)`` cascade,
+    /// and return the resulting **effective** settings — so a caller never needs a
+    /// separate read-after-write round-trip to learn what was actually stored.
+    ///
+    /// The copy is seeded from ``storedSettings``, never from the policy-overlaid
+    /// ``settings``: ``updateSettings(_:)`` persists whatever it is handed, so
+    /// starting from the effective value would write an administrator's forced keys
+    /// into the user's own row on the next unrelated edit, and the forced value
+    /// would then survive the removal of the profile that imposed it (see
+    /// ``adoptStoredSettings(_:)`` and `persistSettings()`). ``setDefaultSaveDirectory(_:)``
+    /// and `setActiveProfile(_:)` already start from ``storedSettings`` for the
+    /// same reason.
     @discardableResult
     public func apply(_ change: @Sendable (inout AppSettings) -> Void) async -> AppSettings {
-        var copy = settings
+        var copy = storedSettings
         change(&copy)
         await updateSettings(copy)
         return settings
@@ -1115,12 +1171,13 @@ public actor DownloadManager {
     /// come back `.paused` — like ``restore()`` — so nothing starts by surprise.
     /// Returns the number of tasks actually added.
     ///
-    /// Security: a backup file is untrusted input. Every task is re-sanitized,
-    /// and settings that can execute code or open network listeners (remote
-    /// access, post-download script, antivirus executable, RSS feeds, watch
-    /// folder) are NEVER adopted from a file — the current values are kept, so
-    /// a hostile "backup" can't silently turn the app into an exfiltration or
-    /// remote-control vector.
+    /// Security: a backup file is untrusted input. Every task is re-sanitized, and
+    /// settings that can execute code, open or unlock a network listener, redirect
+    /// traffic, or move where files land (post-download script, antivirus and
+    /// ffmpeg executables, the whole `remote*` portal family, the proxy, the
+    /// default save folder, the audit directory, RSS feeds, watch folder) are NEVER
+    /// adopted from a file — the current values are kept, so a hostile "backup"
+    /// can't silently turn the app into an exfiltration or remote-control vector.
     @discardableResult
     public func importEnvelope(_ data: Data) async throws -> Int {
         let envelope = try JSONDecoder().decode(AppExport.self, from: data)
@@ -1153,11 +1210,44 @@ public actor DownloadManager {
         // ffmpeg path is an executable we run on demand — never adopt one from an
         // imported backup (it would be a code-execution vector).
         safe.ffmpegPath = current.ffmpegPath
-        // Network listeners and auto-fetch surfaces.
+        // Network listeners and auto-fetch surfaces. The whole `remote*` family is
+        // forced back, not just the on/off switch: the portal's credentials
+        // (`remoteUsername`/`remotePasswordHash`), its auth policy
+        // (`remoteRequireAuth`/`remoteReadOnly`/`remoteTLS*`/`remoteLogin*`) and its
+        // reverse-proxy trust (`remoteTrustedHeaderAuthEnabled`/`remoteTrustedHeaderName`/
+        // `remoteTrustedProxies`, where a `0.0.0.0/0` entry trusts every client) are
+        // each on their own enough to hand a file's author control of an already
+        // enabled portal.
         safe.remoteAccessEnabled = current.remoteAccessEnabled
         safe.remotePort = current.remotePort
         safe.remoteToken = current.remoteToken
         safe.remoteAllowLAN = current.remoteAllowLAN
+        safe.remoteRequireAuth = current.remoteRequireAuth
+        safe.remoteUsername = current.remoteUsername
+        safe.remotePasswordHash = current.remotePasswordHash
+        safe.remoteReadOnly = current.remoteReadOnly
+        safe.remoteSessionMinutes = current.remoteSessionMinutes
+        safe.remoteTLSEnabled = current.remoteTLSEnabled
+        safe.remoteTLSIdentityPath = current.remoteTLSIdentityPath
+        safe.remoteLoginMaxAttempts = current.remoteLoginMaxAttempts
+        safe.remoteLoginBackoffSeconds = current.remoteLoginBackoffSeconds
+        safe.remoteTrustedHeaderAuthEnabled = current.remoteTrustedHeaderAuthEnabled
+        safe.remoteTrustedHeaderName = current.remoteTrustedHeaderName
+        safe.remoteTrustedProxies = current.remoteTrustedProxies
+        // Traffic interception. A proxy adopted from a file would silently route
+        // every HTTP/FTP/SFTP/torrent connection — with its URLs, `Cookie` headers
+        // and Basic-auth credentials — through a host the file's author chose, and
+        // would let them substitute the payload of any plain-HTTP download.
+        safe.proxyMode = current.proxyMode
+        safe.proxyType = current.proxyType
+        safe.proxyHost = current.proxyHost
+        safe.proxyPort = current.proxyPort
+        safe.proxyAllProtocols = current.proxyAllProtocols
+        // Filesystem reach: the default save folder is also the containment root
+        // the remote portal validates every requested path against, and the audit
+        // directory is where the compliance record is written.
+        safe.defaultSaveDirectory = current.defaultSaveDirectory
+        safe.auditLogDirectory = current.auditLogDirectory
         safe.rssFeeds = current.rssFeeds
         safe.btWatchFolderEnabled = current.btWatchFolderEnabled
         safe.btWatchFolderPath = current.btWatchFolderPath

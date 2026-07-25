@@ -253,10 +253,23 @@ struct DownloadRow: View {
         // row, and the same command is also on the context menu — which is where
         // the rest of these actions come from, so the action rotor ends up a
         // faithful subset of what a right-click offers.
+        //
+        // The label is the row's *identity* — name, transport, state — and
+        // nothing that ticks. VoiceOver re-reads a whole element when its label
+        // changes, so folding the live percent and ETA into the label (which
+        // `accessibilityRowLabel` does) made a focused row re-speak all fifteen
+        // words about once a second, and say the percent and estimate twice
+        // because the value already carries them. The moving numbers belong in
+        // `accessibilityProgressValue`, which `.updatesFrequently` lets a screen
+        // reader re-read on its own without disturbing the label.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(task.accessibilityRowLabel)
+        .accessibilityLabel(A11y.sentence(task.name,
+                                          task.accessibilityKindName,
+                                          task.accessibilityStatusName))
         .accessibilityValue(task.accessibilityProgressValue)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAddTraits(isSelected
+                                ? [.isButton, .isSelected, .updatesFrequently]
+                                : [.isButton, .updatesFrequently])
         .accessibilityHint("Select to show details.")
         .accessibilityAction(named: Text(task.accessibilityStateActionName), primaryStateAction)
         .accessibilityAction(named: Text("Show in Finder")) { vm.revealInFinder(task) }

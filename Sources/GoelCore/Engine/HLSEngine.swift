@@ -133,7 +133,7 @@ actor HLSEngine: HLSConfigurable {
         emit(id, .statusChanged(.downloading))
         do {
             try Task.checkCancellation()
-            let plan = try await resolveMediaPlaylist(playlistURL, maxHeight: maxHeight)
+            let plan = try await resolveMediaPlaylist(playlistURL, maxHeight: maxHeight, task: task)
             try await produce(id: id, task: task, plan: plan, concurrency: concurrency, rateCap: rateCap)
         } catch is CancellationError {
             // pause()/remove() cancelled the job; the manager owns the state.
@@ -147,21 +147,24 @@ actor HLSEngine: HLSConfigurable {
 
     /// Resolve the source playlist down to a concrete media plan, following one
     /// level of master → variant indirection.
-    private func resolveMediaPlaylist(_ url: URL, maxHeight: Int) async throws -> MediaPlan {
-        let text = try await fetchText(url)
+    private func resolveMediaPlaylist(_ url: URL, maxHeight: Int, task: DownloadTask) async throws -> MediaPlan {
+        let text = try await fetchText(url, task: task)
         switch HLSParser.parse(text, baseURL: url) {
         case .master(let variants):
             guard let variant = HLSParser.selectVariant(variants, maxHeight: maxHeight > 0 ? maxHeight : nil) else {
                 throw DownloadError.unknown("No playable variant in the HLS master playlist")
             }
-            let mediaText = try await fetchText(variant.url)
-            guard case .media(let segs, let mapURL, _, let total) =
+            let mediaText = try await fetchText(variant.url, task: task)
+            guard case .media(let segs, let initMap, _, let total) =
                     HLSParser.parse(mediaText, baseURL: variant.url) else {
                 throw DownloadError.unknown("HLS media playlist had no segments")
             }
-            return MediaPlan(segments: segs, mapURL: mapURL, totalDuration: total, bandwidth: variant.bandwidth)
-        case .media(let segs, let mapURL, _, let total):
-            return MediaPlan(segments: segs, mapURL: mapURL, totalDuration: total, bandwidth: 0)
+            return MediaPlan(segments: segs, initMap: initMap, totalDuration: total, bandwidth: variant.bandwidth,
+                             identity: Self.renditionIdentity(variant.url, bandwidth: variant.bandwidth,
+                                                              height: variant.height))
+        case .media(let segs, let initMap, _, let total):
+            return MediaPlan(segments: segs, initMap: initMap, totalDuration: total, bandwidth: 0,
+                             identity: Self.renditionIdentity(url, bandwidth: 0, height: nil))
         case nil:
             throw DownloadError.unknown("Not a valid HLS playlist")
         }
@@ -187,7 +190,7 @@ actor HLSEngine: HLSConfigurable {
                                        files: [TransferFile(id: 0, path: task.name, length: estTotal)]))
 
         let workDir = Self.workDir(for: id)
-        try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+        try Self.prepareWorkDir(workDir, identity: plan.identity)
 
         let keyCache = KeyCache()
         let progress = ProgressTracker(hub: hub, id: id, connections: concurrency)
@@ -196,13 +199,17 @@ actor HLSEngine: HLSConfigurable {
         let limiter: RateLimiter? = rateCap > 0 ? RateLimiter(bytesPerSecond: rateCap) : nil
 
         // fMP4 init map first, if present.
-        if let mapURL = plan.mapURL {
+        if let initMap = plan.initMap {
             try Task.checkCancellation()
             let initFile = workDir.appendingPathComponent("init.mp4")
             if Self.fileSize(initFile) == nil {
-                let data = try await fetchSegment(HLSSegment(url: mapURL, duration: 0, sequence: 0,
-                                                             key: segments.first?.key),
-                                                  keyCache: keyCache)
+                // Carry the map's own BYTERANGE: under CMAF single-file packaging
+                // the header is a small slice of the same resource the fragments
+                // occupy, and an unranged GET would fetch the whole stream here.
+                let data = try await fetchSegment(HLSSegment(url: initMap.url, duration: 0, sequence: 0,
+                                                             key: segments.first?.key,
+                                                             byteRange: initMap.byteRange),
+                                                  task: task, keyCache: keyCache)
                 try data.write(to: initFile)
                 if let limiter { await limiter.pace(data.count) }
             }
@@ -215,14 +222,14 @@ actor HLSEngine: HLSConfigurable {
             while started < prime {
                 let i = started; started += 1
                 group.addTask { try await self.downloadSegment(index: i, segment: segments[i],
-                                                               workDir: workDir, keyCache: keyCache,
+                                                               task: task, workDir: workDir, keyCache: keyCache,
                                                                progress: progress, limiter: limiter) }
             }
             while started < segments.count {
                 try await group.next()
                 let i = started; started += 1
                 group.addTask { try await self.downloadSegment(index: i, segment: segments[i],
-                                                               workDir: workDir, keyCache: keyCache,
+                                                               task: task, workDir: workDir, keyCache: keyCache,
                                                                progress: progress, limiter: limiter) }
             }
             try await group.waitForAll()
@@ -232,14 +239,14 @@ actor HLSEngine: HLSConfigurable {
 
         // Assemble in playlist order.
         var parts: [URL] = []
-        if plan.mapURL != nil { parts.append(workDir.appendingPathComponent("init.mp4")) }
+        if plan.initMap != nil { parts.append(workDir.appendingPathComponent("init.mp4")) }
         for i in 0..<segments.count {
             parts.append(workDir.appendingPathComponent(Self.segmentName(i)))
         }
 
         let destURL = URL(fileURLWithPath: task.savePath)
         try? FileManager.default.removeItem(at: destURL)
-        if plan.mapURL != nil {
+        if plan.initMap != nil {
             // fMP4: init + media fragments are already a valid (fragmented) MP4.
             try Self.concatenate(parts, to: destURL)
         } else {
@@ -261,7 +268,8 @@ actor HLSEngine: HLSConfigurable {
 
     // MARK: Segment fetch / decrypt
 
-    private nonisolated func downloadSegment(index: Int, segment: HLSSegment, workDir: URL,
+    private nonisolated func downloadSegment(index: Int, segment: HLSSegment, task: DownloadTask,
+                                             workDir: URL,
                                              keyCache: KeyCache, progress: ProgressTracker,
                                              limiter: RateLimiter?) async throws {
         try Task.checkCancellation()
@@ -270,7 +278,7 @@ actor HLSEngine: HLSConfigurable {
             await progress.add(existing)   // already downloaded (resume)
             return
         }
-        let data = try await fetchSegment(segment, keyCache: keyCache)
+        let data = try await fetchSegment(segment, task: task, keyCache: keyCache)
         // Write to a .part then rename so an interrupted write never looks complete.
         let tmp = dest.appendingPathExtension("part")
         try? FileManager.default.removeItem(at: tmp)
@@ -281,8 +289,9 @@ actor HLSEngine: HLSConfigurable {
         if let limiter { await limiter.pace(data.count) }
     }
 
-    private nonisolated func fetchSegment(_ segment: HLSSegment, keyCache: KeyCache) async throws -> Data {
-        let raw = try await fetchData(segment.url, range: segment.byteRange)
+    private nonisolated func fetchSegment(_ segment: HLSSegment, task: DownloadTask,
+                                          keyCache: KeyCache) async throws -> Data {
+        let raw = try await fetchData(segment.url, task: task, range: segment.byteRange)
         guard let key = segment.key else { return raw }
         switch key.method {
         case .none:
@@ -291,7 +300,7 @@ actor HLSEngine: HLSConfigurable {
             throw DownloadError.unknown("SAMPLE-AES encrypted streams aren’t supported")
         case .aes128:
             guard let keyURL = key.url else { throw DownloadError.unknown("HLS AES key has no URI") }
-            let keyData = try await keyCache.key(for: keyURL) { try await self.fetchData($0) }
+            let keyData = try await keyCache.key(for: keyURL) { try await self.fetchData($0, task: task) }
             let iv = key.iv ?? Self.iv(forSequence: segment.sequence)
             guard keyData.count == 16, iv.count == 16,
                   let decrypted = Self.aes128CBCDecrypt(raw, key: keyData, iv: iv) else {
@@ -301,15 +310,39 @@ actor HLSEngine: HLSConfigurable {
         }
     }
 
-    private nonisolated func fetchData(_ url: URL, range: HLSByteRange? = nil) async throws -> Data {
+    /// Build the request for one HLS fetch (playlist, AES key, init map, segment).
+    ///
+    /// Every outbound request goes through here so none is sent UA-less — and so
+    /// the task's credentials are never silently dropped. Playlists behind a login
+    /// are the normal case for HLS, so the captured `Cookie`, the `Referer` and any
+    /// custom ``DownloadTask/requestHeaders`` must ride along exactly as they do on
+    /// the HTTP engine. Headers are resolved through
+    /// ``DownloadTask/outboundHeaders(for:)`` rather than read from
+    /// `requestHeaders` directly: that is the one place the host-exact cookie scope
+    /// is enforced, and it correctly withholds the cookie when a segment lives on a
+    /// different CDN host from the playlist.
+    nonisolated func makeRequest(_ url: URL, task: DownloadTask,
+                                 range: HLSByteRange? = nil) -> URLRequest {
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        for (name, value) in task.outboundHeaders(for: url) {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        if let referer = task.referer, !referer.isEmpty {
+            request.setValue(referer, forHTTPHeaderField: "Referer")
+        }
         // EXT-X-BYTERANGE segments address a slice of a larger resource; request
         // just that byte range (servers answer 206, already within 200...299).
         if let range {
             request.setValue("bytes=\(range.start)-\(range.start + range.length - 1)",
                              forHTTPHeaderField: "Range")
         }
+        return request
+    }
+
+    private nonisolated func fetchData(_ url: URL, task: DownloadTask,
+                                       range: HLSByteRange? = nil) async throws -> Data {
+        let request = makeRequest(url, task: task, range: range)
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw DownloadError.httpStatus(http.statusCode)
@@ -317,8 +350,8 @@ actor HLSEngine: HLSConfigurable {
         return data
     }
 
-    private nonisolated func fetchText(_ url: URL) async throws -> String {
-        String(decoding: try await fetchData(url), as: UTF8.self)
+    private nonisolated func fetchText(_ url: URL, task: DownloadTask) async throws -> String {
+        String(decoding: try await fetchData(url, task: task), as: UTF8.self)
     }
 
     private func emit(_ id: UUID, _ event: EngineEvent) { hub.emit(id, event) }
@@ -332,6 +365,43 @@ actor HLSEngine: HLSConfigurable {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return base.appendingPathComponent("GoelDownloader/hls/\(id.uuidString)", isDirectory: true)
+    }
+
+    /// A stable identity for the rendition a plan's segments come from.
+    ///
+    /// Cached segment files are keyed only by their *position* in the playlist, so
+    /// the work directory is only safe to resume into when the same rendition is
+    /// being fetched — see ``prepareWorkDir(_:identity:)``. The query string is
+    /// deliberately excluded: signed CDN URLs carry a token that rotates on every
+    /// fetch, and folding it in would make every resume look like a new rendition
+    /// and throw away all the progress. Bandwidth and height are folded in so the
+    /// packagers that distinguish renditions by query alone still compare unequal.
+    static func renditionIdentity(_ url: URL, bandwidth: Int, height: Int?) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.query = nil
+        components?.fragment = nil
+        return "\(components?.string ?? url.absoluteString)|bw=\(bandwidth)|h=\(height ?? 0)"
+    }
+
+    /// Create the per-task work directory, discarding anything a *different*
+    /// rendition left behind.
+    ///
+    /// `pause()` keeps the work directory on purpose so a resume can skip segments
+    /// already on disk, but the selected rendition is re-resolved on every start:
+    /// the user can change the maximum video height between pause and resume, or
+    /// the master playlist's variant list can move. Reusing the old segments then
+    /// splices two renditions' elementary streams into one file — the remux either
+    /// fails or the video breaks at the join, and the task still reports success.
+    /// So the identity is stamped into the directory and a mismatch (including a
+    /// directory from a build that predates the stamp) starts over from empty.
+    static func prepareWorkDir(_ workDir: URL, identity: String) throws {
+        let stamp = workDir.appendingPathComponent("rendition.id")
+        let recorded = try? String(contentsOf: stamp, encoding: .utf8)
+        if recorded != identity, FileManager.default.fileExists(atPath: workDir.path) {
+            try FileManager.default.removeItem(at: workDir)
+        }
+        try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+        try identity.write(to: stamp, atomically: true, encoding: .utf8)
     }
 
     private static func fileSize(_ url: URL) -> Int64? {
@@ -483,9 +553,17 @@ actor HLSEngine: HLSConfigurable {
     /// The concrete download plan resolved from the source playlist.
     struct MediaPlan: Sendable {
         var segments: [HLSSegment]
-        var mapURL: URL?
+        /// The fMP4 init segment, carrying its own `BYTERANGE` when the packager
+        /// put the movie header inside the same resource as the fragments. The
+        /// range has to survive into the plan: fetching the map URL unranged
+        /// would pull the entire single-file stream down as the "init segment".
+        var initMap: HLSInitMap?
         var totalDuration: Double
         var bandwidth: Int
+        /// Identifies the rendition these segments came from, so a resumed work
+        /// directory filled by a different rendition is discarded rather than
+        /// spliced in. See ``HLSEngine/renditionIdentity(_:bandwidth:height:)``.
+        var identity: String
     }
 
     /// Caches fetched AES keys by URI so a shared key is downloaded once.

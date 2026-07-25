@@ -94,6 +94,29 @@ final class SecurityHardeningTests: XCTestCase {
         XCTAssertNil(out.value(forHTTPHeaderField: "Authorization"), "https→http downgrade strips secrets")
     }
 
+    func testRedirectKeepsHeadersOnSameHostPlainHTTPHop() {
+        // A legacy/intranet host that only speaks http redirecting within itself is
+        // not a downgrade — nothing is lost that the first request didn't already
+        // expose — so the origin's credentials must survive the hop. Stripping here
+        // would send the follow-up unauthenticated and quietly save a login page.
+        let orig = URL(string: "http://files.corp.local/download?id=5")!
+        let redirect = request("http://files.corp.local/store/report.zip",
+                               headers: ["Cookie": "session=1", "Authorization": "Basic x"])
+        let out = RedirectSanitizer.sanitize(redirect, originalURL: orig)
+        XCTAssertEqual(out.value(forHTTPHeaderField: "Cookie"), "session=1")
+        XCTAssertEqual(out.value(forHTTPHeaderField: "Authorization"), "Basic x")
+    }
+
+    func testRedirectStripsOnCrossHostPlainHTTPHop() {
+        // Plain http is only forgiven within one host: a hop to a *different* host
+        // is still a cross-origin leak regardless of scheme.
+        let orig = URL(string: "http://files.corp.local/a")!
+        let redirect = request("http://attacker.example.net/collect",
+                               headers: ["Cookie": "session=1"])
+        let out = RedirectSanitizer.sanitize(redirect, originalURL: orig)
+        XCTAssertNil(out.value(forHTTPHeaderField: "Cookie"))
+    }
+
     // MARK: #21 — PBKDF2 KDF upgrade (v2) with legacy (v1) verification
 
     func testPasswordHashIsV2AndVerifies() {
