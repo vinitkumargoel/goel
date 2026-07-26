@@ -226,6 +226,19 @@ else
   # -L follow redirects, -f fail on HTTP error, --retry for flaky networks.
   # Mirrors fetch_ytdlp.sh so both vendoring steps behave identically.
   curl -fL --retry 3 --retry-delay 2 -o "$TMP" "$URL"
+  # The digest is checked against the ASSET as published, and it is checked HERE
+  # — before the archive branches below hand unverified bytes to unzip/tar.
+  # Unpacking first and verifying afterwards still ends fail-closed, but it has
+  # already run an archive parser over whatever arrived.
+  ACTUAL="$(sha256_of "$TMP")"
+  if [ "$ACTUAL" != "$SHA" ]; then
+    rm -f "$TMP"
+    echo "error: ffmpeg download checksum mismatch" >&2
+    echo "       expected $SHA" >&2
+    echo "       actual   $ACTUAL" >&2
+    exit 1
+  fi
+  echo "    checksum OK ($SHA)"
   # Some publishers ship the binary inside a .zip/.tar.xz; unwrap those so the
   # caller never has to care which layout an asset happens to use.
   case "$URL" in
@@ -250,18 +263,9 @@ else
       cp "$TMP" "$DEST"
       ;;
   esac
-  # The digest is checked against the ASSET as published, not the unwrapped file,
-  # so verify the archive here and hand verify() only the non-checksum checks.
-  ACTUAL="$(sha256_of "$TMP")"
+  # The digest belonged to the archive, which has already been verified above, so
+  # verify() is handed only the non-checksum checks.
   rm -f "$TMP"
-  if [ "$ACTUAL" != "$SHA" ]; then
-    rm -f "$DEST"
-    echo "error: ffmpeg download checksum mismatch" >&2
-    echo "       expected $SHA" >&2
-    echo "       actual   $ACTUAL" >&2
-    exit 1
-  fi
-  echo "    checksum OK ($SHA)"
   chmod +x "$DEST"
   verify ""
 fi

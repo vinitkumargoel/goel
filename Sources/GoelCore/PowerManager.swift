@@ -128,4 +128,48 @@ public final class PowerManager: @unchecked Sendable {
         return sawMains
         #endif
     }
+
+    /// Remaining battery charge as a whole percentage, `0…100`, or `nil` on a
+    /// machine with no battery (or when the level can't be read).
+    ///
+    /// Backs the "pause downloads below battery threshold" policy. `nil` is
+    /// deliberately *not* zero: a desktop must never look like a nearly-flat
+    /// laptop, so the automation reads a missing level as "full" and leaves the
+    /// queue alone.
+    public var batteryPercent: Int? {
+        #if canImport(IOKit)
+        guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
+        else { return nil }
+        for source in sources {
+            // "Get" convention again — the description dictionary is not ours.
+            guard let description = IOPSGetPowerSourceDescription(snapshot, source)?
+                    .takeUnretainedValue() as? [String: Any],
+                  let current = description[kIOPSCurrentCapacityKey as String] as? Int,
+                  let maximum = description[kIOPSMaxCapacityKey as String] as? Int,
+                  maximum > 0
+            else { continue }
+            return min(100, max(0, current * 100 / maximum))
+        }
+        return nil
+        #else
+        // sysfs reports the level directly as a percentage.
+        let base = "/sys/class/power_supply"
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: base) else {
+            return nil
+        }
+        func read(_ path: String) -> String? {
+            (try? String(contentsOfFile: path, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        for entry in entries {
+            let dir = base + "/" + entry
+            guard read(dir + "/type") == "Battery",
+                  let capacity = read(dir + "/capacity").flatMap(Int.init)
+            else { continue }
+            return min(100, max(0, capacity))
+        }
+        return nil
+        #endif
+    }
 }

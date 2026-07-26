@@ -395,7 +395,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
           <li>Every feature, no limits</li>
           <li>Full source on GitHub</li>
           <li>Community support via GitHub issues</li>
-          <li>Automatic updates via Sparkle</li>
+          <li>Opt-in update checking (off by default)</li>
         </ul>
         <div class="cta"><a class="btn btn-ghost" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Download ↓</a></div>
       </div>
@@ -612,7 +612,9 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
         <p>
           No. There is no analytics, no crash reporting, no usage tracking and no licence
           check-in. The only outbound connections the app makes are the transfers you start and
-          the update check (Sparkle / GitHub Releases), which can be switched off in Settings.
+          the update check — which is <strong>off by default</strong>, with no feed URL set, so an
+          untouched install makes no outbound request at all. Turning it on is a deliberate act in
+          Settings → Advanced, and it can be forced off fleet-wide by managed policy.
           Downloads go directly from your machine to the server, peer or tracker you chose —
           nothing is relayed through us. This is verifiable in the source, and it is written into
           the commercial agreement as a warranty.

@@ -79,6 +79,14 @@ public enum SFTPBrowserPaths {
         return String(path[path.startIndex..<slash])
     }
 
+    /// Whether a server-supplied listing name is safe to join onto a remote path:
+    /// no separators and no parent traversal, so a hostile entry can't steer an
+    /// upload or a move outside the browsed tree. Hidden ".config"-style names
+    /// stay allowed — only path structure is rejected.
+    public static func isSafeChildName(_ name: String) -> Bool {
+        !name.isEmpty && !name.contains("/") && name != "." && name != ".."
+    }
+
     /// A name not present in `existing`, appending " (n)" before the extension on
     /// collision: "report.pdf" → "report (1).pdf", "archive.tar" → "archive (1).tar",
     /// "notes" → "notes (1)". Used to rename an upload rather than overwrite a

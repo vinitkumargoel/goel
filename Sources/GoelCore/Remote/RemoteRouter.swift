@@ -70,6 +70,20 @@ public struct RemoteRouter: Sendable {
                                  body: Data("Shutting down\n".utf8))
         }
 
+        // Cross-site write protection. The session cookie is SameSite=Strict, so a
+        // third-party page cannot ride an existing sign-in — but an *open* portal
+        // (`requireAuth == false`) authorises everyone, and a page in the user's
+        // browser can POST to 127.0.0.1 with a simple content type and no preflight.
+        // Browsers attach `Origin` to every POST, so a present-but-foreign Origin is
+        // a cross-site write: refuse it. Absent means a non-browser client (curl,
+        // the extension), which was never the threat. This does not defend against
+        // DNS rebinding — the rebound page's Origin matches Host — and a Host
+        // allowlist that would is incompatible with the documented reverse-proxy
+        // deployment, where Host is a real hostname.
+        guard Self.crossSiteWriteAllowed(request) else {
+            return Self.forbidden("Cross-site request refused.")
+        }
+
         // Read-only mode disables every state change (all mutations are POSTs).
         if config.readOnly, request.method == "POST" {
             return Self.forbidden("Read-only mode — changes are disabled from the web.")
@@ -137,18 +151,48 @@ public struct RemoteRouter: Sendable {
             guard let payload = try? JSONDecoder().decode(AddPayload.self, from: request.body)
             else { return Self.badRequest() }
             let folder = payload.folder?.trimmingCharacters(in: .whitespaces)
+            // Refuse an out-of-root folder instead of quietly saving somewhere else:
+            // a remote client that is told "added" has a right to assume the file
+            // landed where it asked. ``DownloadManager/remoteSaveDirectory(_:)``
+            // stays in place as the belt-and-braces check.
+            if let folder, !folder.isEmpty, await backend.remoteSaveDirectoryAllowed(folder) == false {
+                return Self.forbidden("That save folder is outside the downloads folder — refused. Choose a folder inside it, or leave it blank.")
+            }
             let priority = Self.priority(payload.priority)
             let paused = payload.paused ?? false
             let sources = payload.url
                 .split(whereSeparator: \.isNewline)
                 .compactMap { DownloadSource.parse(String($0).trimmingCharacters(in: .whitespaces)) }
             guard !sources.isEmpty else { return Self.badRequest() }
+            // The portal is a network-facing surface: a caller-supplied URL must not
+            // be able to steer this host at its own loopback or at the cloud-metadata
+            // range. A magnet names no fetchable host here — its swarm is reached by
+            // infohash — so only the URL-bearing sources are screened.
+            // Screened by resolved address, not just by spelling: a hostname that
+            // resolves to 127.0.0.1 (`localtest.me`) or to the metadata range
+            // (`metadata.google.internal`) is the same request with the digits
+            // hidden behind DNS.
+            var refused = 0
+            var allowed: [DownloadSource] = []
             for source in sources {
+                guard let url = source.fetchTargetURL else { allowed.append(source); continue }
+                if await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(url) {
+                    allowed.append(source)
+                    continue
+                }
+                GoelLog.remote.error("Remote add: refusing an internal-network target",
+                                     .state(url.scheme ?? "", label: "scheme"))
+                refused += 1
+            }
+            guard !allowed.isEmpty else {
+                return Self.forbidden("That address is on this machine or an internal network range — refused.")
+            }
+            for source in allowed {
                 await backend.remoteAdd(source: source,
                                         saveDirectory: (folder?.isEmpty == false) ? folder : nil,
                                         priority: priority, startPaused: paused)
             }
-            return Self.json(CountRow(added: sources.count))
+            return Self.json(CountRow(added: allowed.count, refused: refused))
 
         // MARK: History mutations
         case ("POST", "/api/history-remove"):
@@ -174,10 +218,39 @@ public struct RemoteRouter: Sendable {
         return Self.constantTimeEquals(query, config.token)
     }
 
-    /// One SSE frame (`data: <json>\n\n`) for the live event stream.
-    public func eventFrame(for tasks: [DownloadTask]) -> Data {
+    /// Whether a POST may proceed given the `Origin` its browser attached. No
+    /// `Origin` means no browser, which is the scripted/extension path and always
+    /// allowed; a foreign one is a cross-site write.
+    ///
+    /// `X-Forwarded-Host` counts as an authority too, because a reverse proxy that
+    /// does not rewrite `Host` leaves it naming the *upstream* (`127.0.0.1:8899`)
+    /// while the browser's Origin names the public hostname — a legitimate request
+    /// that a bare Host comparison would refuse. It cannot be abused to bypass the
+    /// check: a cross-site page can only add that header through a request that
+    /// takes a CORS preflight, and the portal answers no preflight.
+    static func crossSiteWriteAllowed(_ request: RemoteRequest) -> Bool {
+        guard request.method == "POST", let origin = request.headers["origin"] else { return true }
+        return originMatchesHost(origin, host: request.headers["host"])
+            || originMatchesHost(origin, host: request.headers["x-forwarded-host"])
+    }
+
+    /// Whether `origin` names the same authority the request was addressed to.
+    /// Scheme is ignored: the `Host` header carries none, and the socket only ever
+    /// speaks one scheme.
+    static func originMatchesHost(_ origin: String, host: String?) -> Bool {
+        guard let host = host?.trimmingCharacters(in: .whitespaces).lowercased(), !host.isEmpty,
+              let url = URL(string: origin.trimmingCharacters(in: .whitespaces)),
+              let originHost = url.host?.lowercased() else { return false }
+        if let port = url.port { return "\(originHost):\(port)" == host }
+        return originHost == host
+    }
+
+    /// One SSE frame (`data: <json>\n\n`) for the live event stream, or nil when
+    /// the snapshot could not be encoded — see ``json(_:)`` for why that is not
+    /// downgraded into an empty list.
+    public func eventFrame(for tasks: [DownloadTask]) -> Data? {
         let rows = tasks.map(TaskRow.init)
-        let json = (try? JSONEncoder().encode(rows)) ?? Data("[]".utf8)
+        guard let json = try? JSONEncoder().encode(rows) else { return nil }
         var frame = Data("data: ".utf8)
         frame.append(json)
         frame.append(Data("\n\n".utf8))
@@ -239,7 +312,15 @@ public struct RemoteRouter: Sendable {
     }
 
     static func json<T: Encodable>(_ value: T) -> Data {
-        let body = (try? JSONEncoder().encode(value)) ?? Data("null".utf8)
+        guard let body = try? JSONEncoder().encode(value) else {
+            // Encoding can only fail on a non-finite Double reaching a wire model
+            // from one of the engine bridges. `null` with a 200 told the client
+            // "here is your data, there is none" — an empty library is then
+            // indistinguishable from a wiped one. Say it failed instead.
+            GoelLog.remote.error("Remote API response could not be encoded")
+            return response(status: "500 Internal Server Error", type: "text/plain",
+                            body: Data("Could not encode the response\n".utf8))
+        }
         return response(status: "200 OK", type: "application/json", body: body)
     }
 
@@ -271,7 +352,12 @@ public struct RemoteRouter: Sendable {
         var priority: String?
         var paused: Bool?
     }
-    private struct CountRow: Encodable { var added: Int }
+    private struct CountRow: Encodable {
+        var added: Int
+        /// Sources dropped by the internal-address guard, so the portal can say so
+        /// rather than reporting a partial batch as a clean success.
+        var refused: Int
+    }
     private struct ConfigRow: Encodable {
         var username: String
         var readOnly: Bool
@@ -566,6 +652,14 @@ public protocol RemoteBackend: AnyObject, Sendable {
     func history(limit: Int) async -> [HistoryEntry]
     func removeHistoryEntry(_ id: UUID) async
     func clearHistory() async
+    /// Whether a caller-supplied save folder is inside the allowed downloads root.
+    /// Defaulted to `true` so in-memory conformers keep compiling; the real
+    /// scheduler answers with ``PathSafety/isContained(_:within:)``.
+    func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool
+}
+
+public extension RemoteBackend {
+    func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { true }
 }
 
 extension DownloadManager: RemoteBackend {
@@ -580,6 +674,10 @@ extension DownloadManager: RemoteBackend {
                           priority: FilePriority, startPaused: Bool) async {
         _ = add(source: source, saveDirectory: remoteSaveDirectory(saveDirectory),
                 priority: priority, startPaused: startPaused)
+    }
+
+    public func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool {
+        PathSafety.isContained(folder, within: settings.defaultSaveDirectory)
     }
 
     /// Constrain a remote-supplied save directory to the configured downloads

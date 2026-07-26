@@ -16,10 +16,28 @@ prompt for an app downloaded outside the App Store; you only see it once.
 
 ### The app opens and immediately quits
 
-Usually a missing or mismatched native library, which only affects builds made from
-source. Rebuild with `swift build -c release` and check that libtorrent-rasterbar,
-libssh2 and OpenSSL 3 are installed under the Homebrew prefix the build used. Set
-`GOEL_BREW_PREFIX` if yours is not `/opt/homebrew`.
+Almost always a mismatched native library. Two different causes:
+
+**A downloaded `1.0.0` or `1.0.1` release, on a Mac older than macOS 26.** Those two
+archives were built before the deployment-target gate existed, and the OpenSSL and
+libtorrent dylibs vendored into them declare a minimum of macOS 26.0 (libssh2 declares
+15.0) while the app itself advertises 14.0. dyld refuses an over-targeted library before
+the app's own code runs, so there is no error dialog to read — it just quits. Confirm it
+on a copy you hold:
+
+```bash
+Scripts/check_min_os.sh "/Applications/Goel°.app"
+```
+
+There is no workaround short of a newer release or a build of your own; the gate now runs
+in both `Scripts/build_app.sh` and `Scripts/make_dmg.sh`, so no later archive can carry
+the mismatch.
+
+**A build made from source.** Rebuild with `swift build -c release` and check that
+libtorrent-rasterbar, libssh2 and OpenSSL 3 are installed under the Homebrew prefix the
+build used. Set `GOEL_BREW_PREFIX` if yours is not `/opt/homebrew`. If `check_min_os.sh`
+reports over-targeted dylibs, your Homebrew bottles were poured for a newer macOS than the
+app targets — rebuild them with `MACOSX_DEPLOYMENT_TARGET=14.0`, or build on macOS 14.
 
 ### macOS asks for permissions again after every rebuild
 
@@ -66,14 +84,34 @@ URLs, do not support resume. There is nothing the client can do about that.
 ### Downloaded files are missing
 
 Check the task's **Save path** in the detail pane — it may have gone to a per-task folder
-rather than your default. If the file downloaded through the web portal, note that a
-remote-supplied folder outside the configured downloads root is rejected and the default
-is used instead. That rejection is logged to stderr.
+rather than your default. It will not have gone somewhere you did not name: if the request
+came through the web portal and asked for a folder outside the configured downloads root,
+`POST /api/add` refuses the whole request with `403` and adds nothing, rather than quietly
+saving elsewhere.
 
 ### A torrent shows 100% but keeps running
 
 That is **seeding**, not a stuck download. It uploads to other peers until your seeding
-rules stop it. Stop it manually, or set a share-ratio or seeding-time limit.
+rules stop it. Stop it manually, or set a **share-ratio** limit — per task from the
+download's **Seed Until Ratio** menu, or for every torrent from the traffic profile's
+seed-ratio figure in **Settings → Traffic Limits**. (There is no seeding-*time* limit;
+ratio is the only automatic stop.) A per-task ratio of `0` means "seed indefinitely" and
+overrides the profile.
+
+### An `.m3u8` stream is refused instead of downloading
+
+HLS downloads deliberately fail loudly rather than produce a file that looks fine until you
+play it. The error text names which case you hit:
+
+| Refusal | Why |
+|---|---|
+| "This is a live HLS stream (no `#EXT-X-ENDLIST`)" | A live playlist has no end to download to. The file would stop at whatever had been published when the walk reached it, and report success. Only finished (VOD) streams can be downloaded. |
+| "…delivers its audio as a separate track that this downloader can't mux in" | The variant's audio is a separate `#EXT-X-MEDIA` rendition and the variant declares no audio codec of its own. Fetching the video alone would give you a silent file. |
+| "…uses DRM (`KEYFORMAT=…`) encryption, which this downloader can't decrypt" | FairPlay, Widevine or any non-`identity` key format. Unencrypted and AES-128 streams work; nothing else does, and the licence endpoint is never contacted. |
+| "The assembled HLS file is empty" | Segments arrived but the remux produced no playable output. The segment cache is kept so a retry does not re-download. |
+
+There is no override for any of these — an option to save the file anyway would just be the
+truncated or silent file with an extra click in front of it.
 
 ---
 

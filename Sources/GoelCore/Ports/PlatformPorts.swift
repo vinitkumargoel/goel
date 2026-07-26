@@ -15,6 +15,18 @@ import Foundation
 public protocol PowerControlling: Sendable {
     func setPreventSleep(_ on: Bool)
     var isOnBattery: Bool { get }
+
+    /// Remaining battery charge, 0…100, or `nil` on a machine with no battery (or
+    /// when the level can't be read). Backs the "pause below battery threshold"
+    /// policy, which without it had no number to compare against.
+    var batteryPercent: Int? { get }
+}
+
+public extension PowerControlling {
+    /// A conformer that can't report a charge level reports none — the automation
+    /// then treats the machine as full and never pauses on battery level. Defaulted
+    /// so existing conformers (and the test fakes) compile unchanged.
+    var batteryPercent: Int? { nil }
 }
 
 /// Watches a directory for newly-appearing `.torrent` files. Mirrors the subset of
@@ -47,6 +59,7 @@ public final class SystemPowerControl: PowerControlling {
 
     public func setPreventSleep(_ on: Bool) { manager.setPreventSleep(on) }
     public var isOnBattery: Bool { manager.isOnBattery }
+    public var batteryPercent: Int? { manager.batteryPercent }
 }
 
 /// Production ``FolderWatching`` backed by a live ``WatchFolderMonitor``.

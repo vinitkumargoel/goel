@@ -38,6 +38,13 @@ public actor RemoteControlServer {
     private var boundPort: UInt16?
     private var boundExposeLAN: Bool?
 
+    /// Why the last `start` left nothing listening. Shared with the macOS shell so
+    /// ``RemoteAccess`` reports the same reasons on both transports.
+    public typealias StartFailure = RemotePortalStartFailure
+    /// Set on each refusal in `start`, cleared the moment a channel is bound or the
+    /// server is stopped. Read through ``lastStartFailure()``.
+    private var startFailure: StartFailure?
+
     // Concurrency caps (mirror the macOS shell). The connection cap is enforced at
     // accept time by `gate` (see RequestAccumulator), not after buffering a request.
     private var sseConnections = 0
@@ -93,6 +100,9 @@ public actor RemoteControlServer {
         if security.tlsEnabled {
             GoelLog.remote.error("Portal TLS is not supported by the Linux daemon — terminate TLS at a reverse proxy; refusing to serve cleartext")
             await stop()
+            // After `stop()`, which clears it — a deliberate stop is not a failure,
+            // but this one is, and the operator has to be told why.
+            startFailure = .tlsUnsupported
             return
         }
 
@@ -128,16 +138,21 @@ public actor RemoteControlServer {
             self.channel = ch
             self.boundPort = port
             self.boundExposeLAN = exposeLAN
+            // Something is listening again — any earlier refusal is stale.
+            self.startFailure = nil
         } catch {
             GoelLog.remote.error("Remote server failed to bind",
                                  .count(Int(port), label: "port"),
                                  .detail(String(describing: error)))
+            startFailure = .bindFailed(port: port)
             try? await group.shutdownGracefully()
         }
     }
 
     public func stop() async {
         generation += 1
+        // A deliberate stop is not a failure, and the next `start` re-decides.
+        startFailure = nil
         boundPort = nil
         boundExposeLAN = nil
         gate = nil
@@ -164,6 +179,11 @@ public actor RemoteControlServer {
         guard channel != nil, let p = boundPort else { return nil }
         return (p, boundExposeLAN ?? false)
     }
+
+    /// Why nothing is listening after the last `start`, or nil when the portal is
+    /// bound. The companion to ``boundState()``: that answers *whether* the portal
+    /// is up, this answers *why not* in words a person can act on.
+    public func lastStartFailure() -> StartFailure? { startFailure }
 
     // MARK: Dispatch (called by the per-connection handler once a request is whole)
 
@@ -205,7 +225,12 @@ public actor RemoteControlServer {
         head += "Connection: keep-alive\r\n\r\n"
         if await sink.send(Data(head.utf8)) {
             while generation == myGeneration, let manager {
-                let frame = router.eventFrame(for: await manager.taskSnapshot())
+                guard let frame = router.eventFrame(for: await manager.taskSnapshot()) else {
+                    // Skip the tick rather than pushing an empty list, which would
+                    // blank the client's view of a queue that is still running.
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    continue
+                }
                 guard await sink.send(frame) else { break }
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
             }
@@ -224,10 +249,33 @@ public actor RemoteControlServer {
             if authed || !cfg.requireAuth { return Self.redirect(to: "/") }
             return Self.htmlResponse(RemoteRouter.loginPage(theme: cfg.theme, error: nil))
         case ("POST", "/login"):
+            // A foreign page must not be able to force-log-in a victim, so the
+            // login route takes the same Origin check as every other POST.
+            guard RemoteRouter.crossSiteWriteAllowed(request) else {
+                return RemoteRouter.forbidden("Cross-site request refused.")
+            }
             return await handleLogin(request, client: client)
         case ("GET", "/logout"), ("POST", "/logout"):
+            // Signing out drops the session AND bumps the generation, winding down
+            // every live event stream and byte-range download on the server. Ahead
+            // of the auth gate it let any unauthenticated caller do that from a bare
+            // `curl`; gate it with the same predicate every other route uses.
+            guard router.authorize(request, sessionAuthed: authed) else {
+                return request.method == "GET"
+                    ? Self.redirect(to: "/login")
+                    : RemoteRouter.response(status: "401 Unauthorized", type: "text/plain",
+                                            body: Data("Not signed in\n".utf8))
+            }
             return await handleLogout(request)
         default:
+            if RemoteAuthService.shouldPromoteTokenToSession(
+                request, requireAuth: cfg.requireAuth,
+                sessionAuthed: authed, tokenAuthed: tokenAuthed(request)) {
+                return RemoteRouter.response(
+                    status: "200 OK", type: "text/html; charset=utf-8",
+                    body: Data(RemoteRouter.page(config: cfg).utf8),
+                    extraHeaders: ["Set-Cookie": await sessionStore.issueSession()])
+            }
             if cfg.requireAuth, !authed, !tokenAuthed(request),
                request.method == "GET", !request.path.hasPrefix("/api") {
                 return Self.redirect(to: "/login")
@@ -257,8 +305,12 @@ public actor RemoteControlServer {
     }
 
     private func handleLogout(_ request: RemoteRequest) async -> Data {
-        generation += 1
-        return await sessionStore.handleLogout(request)
+        let result = await sessionStore.handleLogout(request)
+        // Only a real sign-out needs the bump: it is what forces open SSE and
+        // byte-range loops to re-authenticate. Bumping it for a logout that dropped
+        // nothing turned one stray request into every client's dead stream.
+        if result.droppedSession { generation += 1 }
+        return result.response
     }
 
     private static func redirect(to location: String) -> Data {

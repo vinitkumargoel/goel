@@ -1,5 +1,53 @@
 import Foundation
 
+/// Why the last portal start left nothing listening, or nil when the portal is
+/// bound (or stopped on purpose).
+///
+/// Starting the portal has three fail-closed refusals — an unusable TLS identity,
+/// a port that is not a port, and a failed bind — and all three are *correct*, but
+/// they were also silent: the only trace was a `GoelLog` line in the unified log,
+/// which the person using the app will never see. Failing closed invisibly is
+/// indistinguishable from succeeding, so Settings kept offering "Open" and "Copy
+/// Link" for a portal that was never there. Recording the reason lets
+/// ``RemoteAccess`` — and through it the UI — say *why* web access is off instead
+/// of quietly claiming it is on.
+///
+/// Declared here rather than nested in a shell so both the Network.framework and
+/// the NIO transport can report the same reasons.
+public enum RemotePortalStartFailure: Sendable, Equatable {
+    /// Portal TLS is on, but the PKCS#12 identity at this path could not be
+    /// loaded: wrong path, unreadable file, or a `GOEL_PORTAL_TLS_PASSPHRASE`
+    /// that doesn't match the bundle.
+    case tlsIdentityUnavailable(path: String)
+    /// Portal TLS is on, but this build cannot terminate it — the Linux daemon
+    /// links SwiftNIO without NIOSSL. Reported separately because the fix is a
+    /// different one: a TLS-terminating reverse proxy, not a certificate path.
+    case tlsUnsupported
+    /// The configured port is outside 1…65535, so there is nothing to bind.
+    case portUnavailable(Int)
+    /// The socket could not be bound — usually the port is already taken by
+    /// another process.
+    case bindFailed(port: UInt16)
+
+    /// Plain-language text written for the person using the app, naming the fix.
+    /// Matches the wording style of ``SFTPError/message``.
+    public var message: String {
+        switch self {
+        case .tlsIdentityUnavailable(let path):
+            let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+            let subject = trimmed.isEmpty ? "No HTTPS certificate is set, so web access can't start."
+                                          : "The HTTPS certificate at “\(trimmed)” couldn't be opened, so web access can't start."
+            return "\(subject) Check the path, and that GOEL_PORTAL_TLS_PASSPHRASE is set to that certificate's passphrase. Web access stays off rather than serving unencrypted."
+        case .tlsUnsupported:
+            return "This build can't serve HTTPS itself, so web access stays off rather than serving unencrypted. Put it behind a TLS-terminating reverse proxy (nginx, Caddy, Traefik) and turn “Serve over HTTPS” off."
+        case .portUnavailable(let port):
+            return "\(port) isn't a usable port, so web access can't start. Pick a number between 1 and 65535 — 8899 is the default."
+        case .bindFailed(let port):
+            return "Web access couldn't open port \(port) — another app is probably already using it. Pick a different port and try again."
+        }
+    }
+}
+
 /// Pure restart / run decisions for the remote portal, lifted out of the
 /// lifecycle actor so they can be unit-tested with plain `AppSettings` values.
 public enum RemoteAccessPolicy {
@@ -46,6 +94,9 @@ public actor RemoteAccess {
     /// Last settings we successfully bound with (nil when stopped / bind failed).
     private var applied: AppSettings?
     private var running = false
+    /// Why the last apply left nothing listening. Cleared on every success and on
+    /// a deliberate stop.
+    private var failure: RemotePortalStartFailure?
 
     public init() {}
 
@@ -62,6 +113,17 @@ public actor RemoteAccess {
         if let applied, running, !RemoteAccessPolicy.needsRestart(previous: applied, next: settings) {
             return
         }
+        // A port outside 1…65535 is a typo, not a request for an ephemeral bind.
+        // `UInt16(clamping:)` mapped it to 0, which Network.framework reads as "any
+        // free port": the portal came up somewhere nobody could predict while
+        // Settings still claimed it was running on the number the user typed.
+        guard let port = UInt16(exactly: settings.remotePort), port > 0 else {
+            GoelLog.remote.error("Web access port is out of range",
+                                 .count(settings.remotePort, label: "port"))
+            await stop()
+            failure = .portUnavailable(settings.remotePort)
+            return
+        }
         let server = self.server ?? RemoteControlServer(manager: backend)
         self.server = server
         let config = RemoteRouter.Config(
@@ -71,7 +133,7 @@ public actor RemoteAccess {
             theme: settings.remoteTheme,
             username: settings.remoteUsername)
         await server.start(
-            port: UInt16(clamping: settings.remotePort),
+            port: port,
             allowLAN: settings.remoteAllowLAN,
             config: config,
             passwordHash: settings.remotePasswordHash,
@@ -80,11 +142,15 @@ public actor RemoteAccess {
         if await server.boundState() != nil {
             self.applied = settings
             self.running = true
+            self.failure = nil
         } else {
             // Bind failed (port in use, privilege, …). Do not claim success — leave
-            // `applied` nil so the next apply with the same settings retries.
+            // `applied` nil so the next apply with the same settings retries, and
+            // keep the reason so the UI can say what went wrong instead of showing
+            // a portal that isn't there.
             self.applied = nil
             self.running = false
+            self.failure = await server.lastStartFailure()
         }
     }
 
@@ -92,6 +158,7 @@ public actor RemoteAccess {
         guard server != nil || running else {
             applied = nil
             running = false
+            failure = nil
             return
         }
         await server?.stop()
@@ -100,9 +167,16 @@ public actor RemoteAccess {
         server = nil
         applied = nil
         running = false
+        failure = nil
     }
 
     public var isRunning: Bool { running }
+
+    /// Why web access is off after the last ``apply(settings:backend:)``, or nil
+    /// when it is running (or was stopped on purpose). The companion to
+    /// ``isRunning``: that says *whether*, this says *why not*, in words a person
+    /// can act on.
+    public var lastStartFailure: RemotePortalStartFailure? { failure }
 
     /// Bound port / LAN exposure from the live server, if any.
     public func boundState() async -> (port: UInt16, exposedLAN: Bool)? {

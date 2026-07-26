@@ -66,7 +66,10 @@ struct ConnectionBudget: Sendable, Equatable {
         want = min(want, hostRoom(host: host, maxPerServer: profile.maxConnectionsPerServer))
         want = min(want, globalRoom(maxConnections: profile.maxConnections))
         let minSegment: Int64 = 64 * 1024
-        let bySize = max(1, Int((total + minSegment - 1) / minSegment))
+        // `(total - 1) / minSegment + 1` rather than `(total + minSegment - 1) / …`:
+        // the latter overflows — and traps — on a declared size near `Int64.max`, and
+        // the size arrives from a server header.
+        let bySize = total <= 0 ? 1 : Int(min(Int64(Int.max), (total - 1) / minSegment + 1))
         return max(1, min(want, bySize))
     }
 }

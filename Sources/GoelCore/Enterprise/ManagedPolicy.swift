@@ -23,6 +23,13 @@ import CoreFoundation
 // then says whether that value came from the managed level (locked) or merely
 // from the user's own domain (a seeded default they may still change).
 //
+// A key is enforced if and only if it arrives *forced*. That is the trust
+// boundary and the only one: the preference domain is the app's own bundle
+// identifier, so its search chain ends in a plist the user can write, and a
+// value picked up from there is a seeded default the user still owns — never
+// policy. Both readers gate on forcedness at the source, and `apply(to:)` reads
+// exclusively through accessors that gate on it again.
+//
 // This file is deliberately a *pure* layer over ``AppSettings``:
 //
 //     let managed = ManagedPolicy.current()
@@ -99,6 +106,36 @@ public enum ManagedValue: Sendable, Equatable {
         case .bool, .int:           return nil
         }
     }
+
+    /// Map a decoded JSON object or property list onto the managed value space,
+    /// dropping every entry whose shape is not one an administrator may send.
+    ///
+    /// Shared by the file readers so the two can never drift on what a policy
+    /// value is allowed to look like.
+    ///
+    /// `JSONSerialization` and `PropertyListSerialization` both hand back
+    /// `NSNumber` for booleans and integers alike, so `1` may land in the `.bool`
+    /// bucket and `true` in the `.int` bucket depending on the platform's
+    /// bridging. That is harmless here because the accessors above coerce between
+    /// the two — a flag read as `.int(1)` still answers `boolValue == true`, and
+    /// a count read as `.bool(true)` still answers `intValue == 1`.
+    static func dictionary(from object: [String: Any]) -> [String: ManagedValue] {
+        var parsed: [String: ManagedValue] = [:]
+        for (key, raw) in object {
+            if let flag = raw as? Bool { parsed[key] = .bool(flag) }
+            else if let number = raw as? Int { parsed[key] = .int(number) }
+            // `Int(_:)` on a `Double` traps outside `Int`'s range, and a policy
+            // file is parsed input: `9e30` is valid JSON and would abort the
+            // process at construction. Truncate toward zero the way `Int(_:)`
+            // did, but let a value that cannot be a whole number in range fall
+            // through to "not managed" like every other uncoercible value.
+            else if let number = raw as? Double,
+                    let whole = Int(exactly: number.rounded(.towardZero)) { parsed[key] = .int(whole) }
+            else if let text = raw as? String { parsed[key] = .string(text) }
+            else if let list = raw as? [String] { parsed[key] = .stringList(list) }
+        }
+        return parsed
+    }
 }
 
 /// The read side of managed preferences, behind a port so the policy layer can be
@@ -127,6 +164,11 @@ public struct ManagedPolicy: Sendable, Equatable {
 
     /// The preference domain a configuration profile must target. Matches the
     /// app's bundle identifier — that is what `CFPreferencesCopyAppValue` searches.
+    ///
+    /// The domain is deliberately the bundle identifier and is *not* what makes a
+    /// value trustworthy: a user can write any domain they like, suffixed or not,
+    /// so a "managed-only" name would buy nothing. Forcedness is the trust
+    /// boundary — see ``apply(to:)``.
     public static let domain = "com.goel.downloader"
 
     /// Every key an administrator may set. The raw values are the literal keys
@@ -231,6 +273,12 @@ public struct ManagedPolicy: Sendable, Equatable {
 
     /// Layer the policy over the user's settings and return the effective values.
     ///
+    /// Only *forced* entries are enforced. An unforced value is at most a seeded
+    /// default the user still owns — it arrived through a search chain that ends
+    /// in a plist the user can write, so treating it as policy would let any
+    /// local process hand itself the fleet's proxy, save folder and audit-log
+    /// switch. See ``forcedValue(_:)``.
+    ///
     /// Unset keys are left completely alone — this never resets a setting to a
     /// default just because it is absent from the payload. Values that fail to
     /// coerce (a payload saying `proxyPort = "eight-thousand"`) are ignored
@@ -258,6 +306,13 @@ public struct ManagedPolicy: Sendable, Equatable {
         let downCeiling = int(.maxDownloadBytesPerSec).map(Int64.init)
         let upCeiling = int(.maxUploadBytesPerSec).map(Int64.init)
         if (downCeiling ?? 0) > 0 || (upCeiling ?? 0) > 0 {
+            // ``AppSettings/selectedProfile`` falls back to the static `.medium`
+            // when the list is empty, and that fallback is not in `profiles` —
+            // so clamping the list alone would let an empty one (which an
+            // imported backup can supply) run at Medium's 50 MB/s under a 5 MB/s
+            // fleet ceiling. Materialise the fallback so there is something to
+            // clamp.
+            if out.profiles.isEmpty { out.profiles = [.medium] }
             out.profiles = out.profiles.map { profile in
                 var p = profile
                 if let cap = downCeiling, cap > 0 {
@@ -304,11 +359,23 @@ public struct ManagedPolicy: Sendable, Equatable {
     }
 
     // MARK: Typed accessors
+    //
+    // Every accessor goes through ``forcedValue(_:)``: only a value the
+    // administrator *forced* is policy. An unforced value reached us through the
+    // ordinary preference search chain — which ends in the user-writable
+    // `~/Library/Preferences/<domain>.plist` — so honouring it would let any
+    // local process appoint itself the IT department.
 
-    private func string(_ key: Key) -> String? { entries[key]?.value.stringValue }
-    private func bool(_ key: Key) -> Bool? { entries[key]?.value.boolValue }
-    private func int(_ key: Key) -> Int? { entries[key]?.value.intValue }
-    private func stringList(_ key: Key) -> [String]? { entries[key]?.value.stringListValue }
+    /// The value for `key`, but only when it is forced.
+    private func forcedValue(_ key: Key) -> ManagedValue? {
+        guard let entry = entries[key], entry.isForced else { return nil }
+        return entry.value
+    }
+
+    private func string(_ key: Key) -> String? { forcedValue(key)?.stringValue }
+    private func bool(_ key: Key) -> Bool? { forcedValue(key)?.boolValue }
+    private func int(_ key: Key) -> Int? { forcedValue(key)?.intValue }
+    private func stringList(_ key: Key) -> [String]? { forcedValue(key)?.stringListValue }
 
     // MARK: Reading
 
@@ -324,12 +391,18 @@ public struct ManagedPolicy: Sendable, Equatable {
 
     /// The policy in effect on this machine right now.
     ///
-    /// macOS reads the managed-preferences domain; Linux reads
-    /// `/etc/goel/managed-policy.json` (override with `GOEL_MANAGED_POLICY`).
+    /// macOS reads the profile an MDM dropped in `/Library/Managed Preferences`,
+    /// falling back to the managed-preferences domain through CoreFoundation;
+    /// Linux reads `/etc/goel/managed-policy.json` (override with `GOEL_MANAGED_POLICY`).
     /// Anywhere else — and on an unmanaged Mac — this is empty, and the app runs
     /// exactly as it does for a personal user.
     public static func current() -> ManagedPolicy {
         #if os(macOS)
+        // Prefer the managed-preferences directory itself: the trust boundary is
+        // then a filesystem permission we can point at, not an API contract we
+        // have to take on faith. CFPreferences remains the fallback (and is
+        // itself forced-gated) for hosts where the profile lands elsewhere.
+        if let managed = ManagedPreferencePathReader(domain: domain) { return read(using: managed) }
         return read(using: CFManagedPreferenceReader(domain: domain))
         #else
         let path = ProcessInfo.processInfo.environment["GOEL_MANAGED_POLICY"]
@@ -342,16 +415,31 @@ public struct ManagedPolicy: Sendable, Equatable {
     }
 }
 
-// MARK: - macOS reader
+// MARK: - Policy-file trust
+
+/// Whether `path` can be rewritten by someone other than its owner.
+///
+/// The authority of a policy file is its permissions — nothing else
+/// distinguishes an administrator's policy from a file any local user could
+/// edit — so the readers below refuse a group- or world-writable one rather than
+/// trust it. A file we cannot stat is left to the read itself to fail on.
+private func isWritableByOthers(_ path: String) -> Bool {
+    guard let mode = (try? FileManager.default.attributesOfItem(atPath: path))?[.posixPermissions],
+          let bits = (mode as? NSNumber)?.uint16Value else { return false }
+    return bits & 0o022 != 0
+}
+
+// MARK: - macOS readers
 
 #if os(macOS)
 /// Reads the managed domain through CoreFoundation.
 ///
 /// `CFPreferencesCopyAppValue` walks the full search chain — managed profile
-/// first, then the user's own domain — which is exactly the precedence an
-/// administrator expects. `CFPreferencesAppValueIsForced` distinguishes the two
-/// so a value seeded with `defaults write` shows up as managed-but-editable
-/// while a profile-installed value shows up as locked.
+/// first, then the user's own domain — and that chain ends in a plist the user
+/// can write. This reader therefore reports a value only when
+/// `CFPreferencesAppValueIsForced` says a configuration profile put it there.
+/// Anything the user seeded themselves is invisible here: it is their own
+/// preference, not their organisation's policy.
 public struct CFManagedPreferenceReader: ManagedPreferenceReading {
 
     /// Held as a `String`, not a `CFString`: `CFString` is not `Sendable`, and
@@ -363,7 +451,13 @@ public struct CFManagedPreferenceReader: ManagedPreferenceReading {
     }
 
     public func value(forKey key: String) -> ManagedValue? {
-        guard let raw = CFPreferencesCopyAppValue(key as CFString, domain as CFString) else {
+        // Only a forced value is policy. `CFPreferencesCopyAppValue` walks the
+        // whole search chain and that chain ends in the user-writable
+        // `~/Library/Preferences/<domain>.plist`, so without this gate a single
+        // `defaults write` would hand any local process the fleet's proxy, save
+        // folder and audit-log switch.
+        guard CFPreferencesAppValueIsForced(key as CFString, domain as CFString),
+              let raw = CFPreferencesCopyAppValue(key as CFString, domain as CFString) else {
             return nil
         }
         return Self.convert(raw)
@@ -391,6 +485,60 @@ public struct CFManagedPreferenceReader: ManagedPreferenceReading {
         return nil
     }
 }
+
+/// Reads a configuration profile straight out of `/Library/Managed Preferences`
+/// — the root-owned directory an MDM writes profiles into.
+///
+/// Every value found there is forced by construction: reaching that directory
+/// already required root. That makes the trust boundary a filesystem permission
+/// this code can point at, rather than an API contract it has to take on faith,
+/// which is why this reader is preferred over ``CFManagedPreferenceReader``.
+///
+/// `root` and `user` are injectable so the trust rule can be unit-tested;
+/// production passes neither.
+public struct ManagedPreferencePathReader: ManagedPreferenceReading {
+
+    /// Where macOS materialises installed configuration profiles.
+    public static let managedRoot = "/Library/Managed Preferences"
+
+    private let values: [String: ManagedValue]
+
+    /// Load the device-scope profile, then overlay the current user's — more
+    /// specific wins, which is the precedence CoreFoundation itself applies.
+    public init?(domain: String, user: String = NSUserName(), root: String = managedRoot) {
+        var merged = Self.load(root + "/" + domain + ".plist") ?? [:]
+        for (key, value) in Self.load(root + "/" + user + "/" + domain + ".plist") ?? [:] {
+            merged[key] = value
+        }
+        // Finding nothing means "no profile at this path", not "unmanaged": the
+        // caller falls back to CoreFoundation, so this reader can only ever add
+        // coverage, never take it away.
+        guard !merged.isEmpty else { return nil }
+        self.values = merged
+    }
+
+    /// Parse one profile plist, or `nil` when it is absent, unreadable, or not a
+    /// dictionary. A profile that lands here writable by anyone but its owner is
+    /// refused: the directory's permissions are the whole reason to trust it.
+    private static func load(_ path: String) -> [String: ManagedValue]? {
+        guard !isWritableByOthers(path) else {
+            GoelLog.app.error("refusing a group/world-writable managed preference file", .path(path))
+            return nil
+        }
+        guard let data = FileManager.default.contents(atPath: path),
+              let object = try? PropertyListSerialization.propertyList(
+                from: data, options: [], format: nil) as? [String: Any] else {
+            return nil
+        }
+        return ManagedValue.dictionary(from: object)
+    }
+
+    public func value(forKey key: String) -> ManagedValue? { values[key] }
+
+    /// Everything this reader returns came out of the managed-preferences
+    /// directory, so everything it returns is forced.
+    public func isForced(_ key: String) -> Bool { values[key] != nil }
+}
 #endif
 
 // MARK: - File reader (Linux daemons, and tests everywhere)
@@ -402,7 +550,10 @@ public struct CFManagedPreferenceReader: ManagedPreferenceReading {
 /// tests, so the policy layering can be exercised without an enrolled Mac.
 ///
 /// Every key present is reported as forced: a file placed in `/etc` by root is
-/// the administrator speaking, with the same authority a profile carries.
+/// the administrator speaking, with the same authority a profile carries. That
+/// is checked, not assumed — ``init(contentsOfFile:)`` refuses a file any user
+/// could rewrite, because a file that is only *claimed* to be root's is exactly
+/// as trustworthy as the `defaults write` this layer already refuses.
 public struct JSONManagedPreferenceReader: ManagedPreferenceReading {
 
     private let values: [String: ManagedValue]
@@ -411,29 +562,34 @@ public struct JSONManagedPreferenceReader: ManagedPreferenceReading {
         self.values = values
     }
 
-    /// Parse a JSON object of scalar (or string-array) values. Returns `nil` when
-    /// the file is missing or unreadable — an absent policy file means "unmanaged",
-    /// never "fail to launch".
+    /// Parse a JSON object of scalar (or string-array) values.
+    ///
+    /// Returns `nil` — meaning "unmanaged", never "fail to launch" — in three
+    /// distinct cases: the file is absent, the file is writable by someone other
+    /// than its owner, or the file is present but does not parse. Only the first
+    /// is ordinary, so the other two are logged.
     public init?(contentsOfFile path: String) {
-        guard let data = FileManager.default.contents(atPath: path),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        // The authority of this file is its permissions — nothing else
+        // distinguishes an administrator's policy from a file any user could
+        // rewrite. A group- or world-writable one is refused rather than
+        // trusted, because trusting it is how a local user grants themselves a
+        // fleet proxy and turns the audit log off.
+        if isWritableByOthers(path) {
+            GoelLog.app.error("refusing a group/world-writable managed policy file", .path(path))
             return nil
         }
-        var parsed: [String: ManagedValue] = [:]
-        // `JSONSerialization` hands back `NSNumber` for both booleans and integers,
-        // so `1` may land in the `.bool` bucket and `true` in the `.int` bucket
-        // depending on the platform's bridging. That is harmless here because
-        // ``ManagedValue`` coerces between the two — a flag read as `.int(1)` still
-        // answers `boolValue == true`, and a count read as `.bool(true)` still
-        // answers `intValue == 1`.
-        for (key, raw) in object {
-            if let flag = raw as? Bool { parsed[key] = .bool(flag) }
-            else if let number = raw as? Int { parsed[key] = .int(number) }
-            else if let number = raw as? Double { parsed[key] = .int(Int(number)) }
-            else if let text = raw as? String { parsed[key] = .string(text) }
-            else if let list = raw as? [String] { parsed[key] = .stringList(list) }
+        guard let data = FileManager.default.contents(atPath: path) else { return nil }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            // A file that exists but does not parse is an administrator's typo,
+            // not an unmanaged machine. Running unmanaged is still the right
+            // outcome — refusing to launch over a stray comma would be worse —
+            // but it must not happen silently, or a fleet loses its policy with
+            // nothing anywhere saying so.
+            GoelLog.app.error("managed policy file is present but is not a JSON object",
+                              .path(path))
+            return nil
         }
-        self.values = parsed
+        self.values = ManagedValue.dictionary(from: object)
     }
 
     public func value(forKey key: String) -> ManagedValue? { values[key] }

@@ -89,10 +89,15 @@ protocol HTTPConfigurable: FilePrioritizing {
     func configure(_ net: HTTPNetworkConfig) async
     /// Multi-path adapter set for network aggregation. Default no-op for mocks.
     func configureAggregation(_ config: AggregationEngineConfig) async
+    /// The user's "when a file exists" choice (`rename` | `overwrite`). The engine
+    /// re-resolves a name once the response headers arrive, so it has to read the
+    /// same setting ``DownloadManager/makeTask`` did. Default no-op for mocks.
+    func configureFileConflictPolicy(_ policy: String) async
 }
 
 extension HTTPConfigurable {
     func configureAggregation(_ config: AggregationEngineConfig) async {}
+    func configureFileConflictPolicy(_ policy: String) async {}
 }
 
 /// The HLS engine's preferred-rendition-height seam.
@@ -176,6 +181,11 @@ public struct EngineMetadata: Sendable {
     /// header or a `.sha256` sidecar file), offered as the pre-filled checksum on
     /// the add-confirmation screen. Never trusted silently — the user sees it.
     public var suggestedChecksum: Checksum?
+    /// Why the probe failed, when the engine knows a concrete reason (a corrupt
+    /// `.torrent`, an unreachable session). Preferred over the manager's generic
+    /// "it may still work when you start" note, which would otherwise invite the
+    /// user to queue something that cannot work.
+    public var failureNote: String?
 
     public init(
         name: String,
@@ -183,7 +193,8 @@ public struct EngineMetadata: Sendable {
         files: [TransferFile] = [],
         isEstimatedSize: Bool = false,
         reachable: Bool = true,
-        suggestedChecksum: Checksum? = nil
+        suggestedChecksum: Checksum? = nil,
+        failureNote: String? = nil
     ) {
         self.name = name
         self.totalBytes = totalBytes
@@ -191,6 +202,7 @@ public struct EngineMetadata: Sendable {
         self.isEstimatedSize = isEstimatedSize
         self.reachable = reachable
         self.suggestedChecksum = suggestedChecksum
+        self.failureNote = failureNote
     }
 }
 

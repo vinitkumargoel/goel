@@ -27,7 +27,9 @@ actor HLSEngine: HLSConfigurable {
     nonisolated var capabilities: EngineCapabilities { [] }
 
     private nonisolated let hub = EventHub()
-    private nonisolated let session: URLSession
+    /// The session every playlist/key/segment fetch goes through. Internal rather
+    /// than private only so the redirect hardening below is directly testable.
+    nonisolated let session: URLSession
     private nonisolated let userAgent: String
 
     private var tasks: [UUID: DownloadTask] = [:]
@@ -45,7 +47,13 @@ actor HLSEngine: HLSConfigurable {
         #if !os(Linux)
         config.waitsForConnectivity = true   // get-only in swift-corelibs-foundation
         #endif
-        self.session = URLSession(configuration: config)
+        // Built with the SAME redirect sanitizer the HTTP engine installs.
+        // `makeRequest` attaches the task's `Cookie`, `Referer` and custom auth
+        // headers to every fetch, and Foundation replays a hand-set header across
+        // a redirect to any host — so without the delegate a single 30x hands the
+        // user's session credentials to an arbitrary third party.
+        self.session = URLSession(configuration: config,
+                                  delegate: RedirectSanitizer.shared, delegateQueue: nil)
     }
 
     // MARK: DownloadEngine
@@ -154,7 +162,14 @@ actor HLSEngine: HLSConfigurable {
             guard let variant = HLSParser.selectVariant(variants, maxHeight: maxHeight > 0 ? maxHeight : nil) else {
                 throw DownloadError.unknown("No playable variant in the HLS master playlist")
             }
+            // A variant whose audio lives in a separate rendition needs muxing
+            // this downloader can't do; fetching it alone yields a silent video,
+            // so refuse rather than hand back a file that looks fine until played.
+            if variant.hasSeparateAudio, !HLSParser.declaresAudioCodec(variant.codecs) {
+                throw DownloadError.unknown("This stream delivers its audio as a separate track that this downloader can’t mux in — the result would be a silent video.")
+            }
             let mediaText = try await fetchText(variant.url, task: task)
+            guard HLSParser.isFinished(mediaText) else { throw Self.liveStreamRefusal }
             guard case .media(let segs, let initMap, _, let total) =
                     HLSParser.parse(mediaText, baseURL: variant.url) else {
                 throw DownloadError.unknown("HLS media playlist had no segments")
@@ -163,6 +178,7 @@ actor HLSEngine: HLSConfigurable {
                              identity: Self.renditionIdentity(variant.url, bandwidth: variant.bandwidth,
                                                               height: variant.height))
         case .media(let segs, let initMap, _, let total):
+            guard HLSParser.isFinished(text) else { throw Self.liveStreamRefusal }
             return MediaPlan(segments: segs, initMap: initMap, totalDuration: total, bandwidth: 0,
                              identity: Self.renditionIdentity(url, bandwidth: 0, height: nil))
         case nil:
@@ -185,7 +201,7 @@ actor HLSEngine: HLSConfigurable {
             throw DownloadError.unknown("HLS destination escapes the download folder")
         }
 
-        let estTotal = plan.bandwidth > 0 ? Int64(Double(plan.bandwidth) / 8.0 * plan.totalDuration) : 0
+        let estTotal = Self.estimatedBytes(bandwidth: plan.bandwidth, duration: plan.totalDuration)
         hub.emit(id, .metadataResolved(name: task.name, totalBytes: estTotal,
                                        files: [TransferFile(id: 0, path: task.name, length: estTotal)]))
 
@@ -206,10 +222,14 @@ actor HLSEngine: HLSConfigurable {
                 // Carry the map's own BYTERANGE: under CMAF single-file packaging
                 // the header is a small slice of the same resource the fragments
                 // occupy, and an unranged GET would fetch the whole stream here.
+                // The map carries the key that was in force where it appeared —
+                // NOT the first segment's, which may be a later `#EXT-X-KEY` (or
+                // may encrypt a header the playlist left in plaintext).
                 let data = try await fetchSegment(HLSSegment(url: initMap.url, duration: 0, sequence: 0,
-                                                             key: segments.first?.key,
+                                                             key: initMap.key,
                                                              byteRange: initMap.byteRange),
-                                                  task: task, keyCache: keyCache)
+                                                  task: task, keyCache: keyCache,
+                                                  requiresExplicitIV: true)
                 try data.write(to: initFile)
                 if let limiter { await limiter.pace(data.count) }
             }
@@ -256,11 +276,27 @@ actor HLSEngine: HLSConfigurable {
             try await Self.remuxToMP4(from: tsURL, to: destURL)
         }
 
-        let actual = Self.fileSize(destURL) ?? estTotal
+        // `fileSize` declines both a missing file and a zero-byte one, so falling
+        // back to the ESTIMATE here would report a concat/remux that produced
+        // nothing as a completed download of `estTotal` bytes.
+        guard let actual = Self.fileSize(destURL) else {
+            throw DownloadError.unknown("The assembled HLS file is empty — the stream produced no playable output")
+        }
         hub.emit(id, .metadataResolved(name: task.name, totalBytes: actual,
                                        files: [TransferFile(id: 0, path: task.name, length: actual)]))
         hub.emit(id, .progress(bytesDownloaded: actual, bytesUploaded: 0,
                                downloadSpeed: 0, uploadSpeed: 0, connectionCount: 0))
+
+        // Integrity check: the Add sheet offers a checksum field for HLS and the
+        // detail panel reports the result, so the check has to actually run. It
+        // throws before the work directory is cleared, leaving the segment cache
+        // in place for a retry.
+        if let expected = task.expectedChecksum {
+            hub.emit(id, .statusChanged(.verifying))
+            let matched = try await ChecksumVerifier.verify(fileAt: destURL, expected: expected)
+            guard matched else { throw DownloadError.checksumMismatch }
+        }
+
         try? FileManager.default.removeItem(at: workDir)
         hub.complete(id)
         await clearJob(id)
@@ -289,19 +325,30 @@ actor HLSEngine: HLSConfigurable {
         if let limiter { await limiter.pace(data.count) }
     }
 
+    /// Fetch one segment and decrypt it when a key applies. `requiresExplicitIV`
+    /// is set for the fMP4 init map, which has no sequence number of its own to
+    /// derive an IV from (RFC 8216 §4.3.2.5 requires the playlist to state one).
     private nonisolated func fetchSegment(_ segment: HLSSegment, task: DownloadTask,
-                                          keyCache: KeyCache) async throws -> Data {
+                                          keyCache: KeyCache,
+                                          requiresExplicitIV: Bool = false) async throws -> Data {
         let raw = try await fetchData(segment.url, task: task, range: segment.byteRange)
         guard let key = segment.key else { return raw }
         switch key.method {
         case .none:
             return raw
-        case .sampleAES:
-            throw DownloadError.unknown("SAMPLE-AES encrypted streams aren’t supported")
+        case .unsupported(let method):
+            throw DownloadError.unknown("This stream uses \(method) encryption, which this downloader can’t decrypt")
         case .aes128:
             guard let keyURL = key.url else { throw DownloadError.unknown("HLS AES key has no URI") }
             let keyData = try await keyCache.key(for: keyURL) { try await self.fetchData($0, task: task) }
-            let iv = key.iv ?? Self.iv(forSequence: segment.sequence)
+            let iv: Data
+            if let explicit = key.iv {
+                iv = explicit
+            } else if requiresExplicitIV {
+                throw DownloadError.unknown("This stream's encrypted fMP4 header declares no IV, so it can’t be decrypted")
+            } else {
+                iv = Self.iv(forSequence: segment.sequence)
+            }
             guard keyData.count == 16, iv.count == 16,
                   let decrypted = Self.aes128CBCDecrypt(raw, key: keyData, iv: iv) else {
                 throw DownloadError.unknown("HLS segment decryption failed")
@@ -332,10 +379,16 @@ actor HLSEngine: HLSConfigurable {
             request.setValue(referer, forHTTPHeaderField: "Referer")
         }
         // EXT-X-BYTERANGE segments address a slice of a larger resource; request
-        // just that byte range (servers answer 206, already within 200...299).
-        if let range {
-            request.setValue("bytes=\(range.start)-\(range.start + range.length - 1)",
-                             forHTTPHeaderField: "Range")
+        // just that byte range (servers answer 206, which `fetchData` requires).
+        // The last-byte arithmetic is overflow-checked rather than trusted: the
+        // parser bounds every range it produces, but a range built elsewhere must
+        // still not be able to trap here. A range we can't express is left off,
+        // and the response check downstream then refuses the unranged answer.
+        if let range, range.start >= 0, range.length > 0 {
+            let (last, overflow) = range.start.addingReportingOverflow(range.length - 1)
+            if !overflow {
+                request.setValue("bytes=\(range.start)-\(last)", forHTTPHeaderField: "Range")
+            }
         }
         return request
     }
@@ -344,14 +397,31 @@ actor HLSEngine: HLSConfigurable {
                                        range: HLSByteRange? = nil) async throws -> Data {
         let request = makeRequest(url, task: task, range: range)
         let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw DownloadError.httpStatus(http.statusCode)
+        if let http = response as? HTTPURLResponse {
+            // A ranged fetch must be answered 206 — the same acceptance rule the
+            // segmented HTTP pump applies. A server that ignores `Range` and
+            // returns 200 with the whole resource would otherwise have that entire
+            // file written as one segment and spliced into the output. (`.retry`
+            // is a rejection here too: HLS has no per-segment retry loop.)
+            guard SegmentedTransfer.classify(http.statusCode, ranged: range != nil) == .accept else {
+                throw DownloadError.httpStatus(http.statusCode)
+            }
+        }
+        if let range, data.count != range.length {
+            throw DownloadError.unknown("HLS byte-range request returned \(data.count) bytes, expected \(range.length)")
         }
         return data
     }
 
     private nonisolated func fetchText(_ url: URL, task: DownloadTask) async throws -> String {
-        String(decoding: try await fetchData(url, task: task), as: UTF8.self)
+        let data = try await fetchData(url, task: task)
+        // A playlist is a small text file — a long VOD's runs to a few hundred KB.
+        // Anything past a few MB is an error page or a hostile body, and decoding
+        // it into a `String` would cost as much memory again as receiving it did.
+        guard data.count <= Self.maxPlaylistBytes else {
+            throw DownloadError.unknown("The HLS playlist is implausibly large (\(Int64(data.count).byteString)) — refusing to parse it")
+        }
+        return String(decoding: data, as: UTF8.self)
     }
 
     private func emit(_ id: UUID, _ event: EngineEvent) { hub.emit(id, event) }
@@ -360,6 +430,29 @@ actor HLSEngine: HLSConfigurable {
     // MARK: Static helpers
 
     private static func segmentName(_ index: Int) -> String { String(format: "seg-%06d.bin", index) }
+
+    /// Upper bound on a playlist body (8 MB) — see ``fetchText(_:task:)``.
+    private static let maxPlaylistBytes = 8 * 1024 * 1024
+
+    /// Refusal for a media playlist that never declares itself finished.
+    /// A live stream has no end to download to: the file would stop at whatever
+    /// had been published when the walk reached it, and report success.
+    static let liveStreamRefusal = DownloadError.unknown(
+        "This is a live HLS stream (no #EXT-X-ENDLIST). Only finished (VOD) streams can be downloaded — the file would stop at whatever part had been published.")
+
+    /// The download-size estimate from the variant's advertised bitrate and the
+    /// playlist's total duration.
+    ///
+    /// Guarded rather than computed inline: a playlist can say `#EXTINF:inf`, and
+    /// converting a non-finite (or `Int64`-overflowing) product traps the process.
+    /// The figure is only an estimate the UI shows as approximate, so an unusable
+    /// one is reported as 0 — "unknown" — rather than crashing over cosmetics.
+    static func estimatedBytes(bandwidth: Int, duration: Double) -> Int64 {
+        guard bandwidth > 0, duration.isFinite, duration > 0 else { return 0 }
+        let bytes = Double(bandwidth) / 8.0 * duration
+        guard bytes.isFinite, bytes < Double(Int64.max) else { return 0 }
+        return Int64(bytes)
+    }
 
     private static func workDir(for id: UUID) -> URL {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first

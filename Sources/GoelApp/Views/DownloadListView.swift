@@ -395,6 +395,7 @@ struct DownloadRow: View {
             }
             Menu("Seed Until Ratio") {
                 Button(seedRatioLabel(nil)) { vm.setSeedRatioLimit(nil, task: task.id) }
+                Button(seedRatioLabel(0)) { vm.setSeedRatioLimit(0, task: task.id) }
                 ForEach([0.5, 1.0, 1.5, 2.0, 3.0], id: \.self) { r in
                     Button(seedRatioLabel(r)) { vm.setSeedRatioLimit(r, task: task.id) }
                 }
@@ -478,12 +479,24 @@ struct DownloadRow: View {
         return isActive ? "✓ \(name)" : name
     }
 
+    /// Menu label for one seed-ratio choice. nil is "no per-task limit", which
+    /// now means the profile's global limit applies — saying "Unlimited" there
+    /// would misdescribe it. An explicit 0 is the way to seed one torrent
+    /// forever regardless of the profile.
     private func seedRatioLabel(_ ratio: Double?) -> String {
         let current = task.seedRatioLimit
         let isActive = ratio == nil
             ? (current == nil)
             : (current.map { abs($0 - ratio!) < 0.001 } ?? false)
-        let name = ratio.map { String(format: "%.1f", $0) } ?? "Unlimited"
+        let name: String
+        switch ratio {
+        case nil:
+            name = String(format: "Profile default (%.1f×)", vm.settings.effectiveProfile.seedRatioLimit)
+        case .some(let r) where r <= 0:
+            name = "Seed indefinitely"
+        case .some(let r):
+            name = String(format: "%.1f", r)
+        }
         return isActive ? "✓ \(name)" : name
     }
 

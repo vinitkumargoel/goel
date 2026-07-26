@@ -20,6 +20,8 @@ import Glibc   // umask, so the token file is created private from birth
 //   GOEL_TOKEN         API bearer token (else auto-generated → private file)
 //   GOEL_SAVE_DIR      default download folder            (default ~/Downloads)
 //   GOEL_DB            queue database path                (default ~/.local/share/goel-downloader/queue.sqlite)
+//   GOEL_WATCH_DIR     folder watched for .torrent files  (unset = leave as configured)
+//   GOEL_WATCH_AUTOSTART  start watched torrents without confirmation  (default false)
 // ============================================================================
 
 func env(_ key: String, _ fallback: String) -> String {
@@ -47,6 +49,11 @@ let username = env("GOEL_USERNAME", "admin")
 let password = ProcessInfo.processInfo.environment["GOEL_PASSWORD"] ?? ""
 let tokenEnv = ProcessInfo.processInfo.environment["GOEL_TOKEN"] ?? ""
 let saveDir = env("GOEL_SAVE_DIR", home.appendingPathComponent("Downloads").path)
+// Watch folder. Opt-in and non-destructive: leaving GOEL_WATCH_DIR unset keeps
+// whatever is already persisted rather than clearing it, so a restart with a
+// trimmed unit file doesn't silently switch the feature off.
+let watchDir = env("GOEL_WATCH_DIR", "")
+let watchAutoStart = envBool("GOEL_WATCH_AUTOSTART", false)
 
 try? FileManager.default.createDirectory(
     atPath: (dbPath as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
@@ -87,6 +94,11 @@ Task {
         // otherwise keep any existing one, or generate a fresh one on first boot.
         if !tokenEnv.isEmpty { settings.remoteToken = tokenEnv }
         else if settings.remoteToken.isEmpty { settings.remoteToken = RemotePassword.randomHex(bytes: 24) }
+        if !watchDir.isEmpty {
+            settings.btWatchFolderPath = watchDir
+            settings.btWatchFolderEnabled = true
+            settings.btWatchStartWithoutConfirmation = watchAutoStart
+        }
         await manager.updateSettings(settings)
         _ = await manager.setDefaultSaveDirectory(saveDir)
 

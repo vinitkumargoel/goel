@@ -125,9 +125,12 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
     return sock;
 }
 
-// Full connect + host-key check + auth. On success returns a blocking session
-// with `*sock_out` owned by the caller (tear down via gsb_teardown).
-static LIBSSH2_SESSION *gsb_open(const GSBAuth *a, int *sock_out, GSBResult *r) {
+// Connect + handshake + host-key check, and nothing else — everything that must
+// happen BEFORE a credential is offered. Split out (rather than inlined into
+// gsb_open) so `gsb_hostkey` can stop here, learn the fingerprint and hang up
+// without ever presenting a password or a key. On success returns a blocking
+// session with `*sock_out` owned by the caller and `r->fingerprint` filled.
+static LIBSSH2_SESSION *gsb_connect_verified(const GSBAuth *a, int *sock_out, GSBResult *r) {
     pthread_once(&g_once, gsb_do_init);
     if (g_init_rc != 0) { gsb_set(r, GSB_ERR_INIT, "libssh2 init failed"); return NULL; }
 
@@ -171,6 +174,17 @@ static LIBSSH2_SESSION *gsb_open(const GSBAuth *a, int *sock_out, GSBResult *r) 
         libssh2_session_disconnect(session, "bye");
         libssh2_session_free(session); close(sock); return NULL;
     }
+
+    *sock_out = sock;
+    return session;
+}
+
+// Full connect + host-key check + auth. On success returns a blocking session
+// with `*sock_out` owned by the caller (tear down via gsb_teardown).
+static LIBSSH2_SESSION *gsb_open(const GSBAuth *a, int *sock_out, GSBResult *r) {
+    int sock = -1;
+    LIBSSH2_SESSION *session = gsb_connect_verified(a, &sock, r);
+    if (!session) return NULL;
 
     // Auth: password first (if given), then a private key file, then optionally
     // ssh-agent. `tried` records what was actually attempted so a failure can say
@@ -270,6 +284,18 @@ GSBResult gsb_probe(const GSBAuth *auth) {
     return r;
 }
 
+GSBResult gsb_hostkey(const GSBAuth *auth) {
+    GSBResult r = { GSB_OK, 0, {0}, {0} };
+    int sock = -1;
+    // Deliberately gsb_connect_verified, not gsb_open: the point of this call is
+    // to learn who we are talking to while offering nothing to a host we have
+    // not yet decided to trust.
+    LIBSSH2_SESSION *s = gsb_connect_verified(auth, &sock, &r);
+    if (!s) return r;
+    gsb_teardown(s, sock);
+    return r;
+}
+
 GSBResult gsb_list(const GSBAuth *auth, const char *path,
                    gsb_entry_cb cb, void *userdata) {
     GSBResult r = { GSB_OK, 0, {0}, {0} };
@@ -289,7 +315,24 @@ GSBResult gsb_list(const GSBAuth *auth, const char *path,
     char name[1024];
     LIBSSH2_SFTP_ATTRIBUTES attrs;
     int n;
-    while ((n = libssh2_sftp_readdir_ex(dir, name, sizeof(name) - 1, NULL, 0, &attrs)) > 0) {
+    // A negative return is NOT end-of-directory — that is n == 0. It is a read
+    // failure, an SFTP protocol error, or a server-supplied name too long for the
+    // buffer, arriving partway through the enumeration. Leaving the loop on it the
+    // same way as on EOF reported a TRUNCATED listing as a complete one, and this
+    // listing is what the upload path uses to decide which remote names are free:
+    // entries that fell off the end look unused, so the overwrite prompt never
+    // appears and the upload truncates a file the user was never asked about. Fail
+    // the whole call instead — a directory we could only partly read is a directory
+    // we cannot vouch for. (The session is blocking, so EAGAIN is not in play.)
+    while ((n = libssh2_sftp_readdir_ex(dir, name, sizeof(name) - 1, NULL, 0, &attrs)) != 0) {
+        if (n < 0) {
+            char *e = NULL; libssh2_session_last_error(s, &e, NULL, 0);
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Directory listing ended early%s%s",
+                     (e && *e) ? " — " : "", (e && *e) ? e : "");
+            gsb_set(&r, GSB_ERR_IO, msg);
+            break;
+        }
         name[n] = '\0';
         if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
         int is_dir = (attrs.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) &&
@@ -376,6 +419,17 @@ GSBResult gsb_download(const GSBAuth *auth, const char *remote,
         gsb_throttle(max_bps, window, &start);
     }
 
+    // EOF is not the same as "the whole file arrived". A stream cut short must
+    // fail loudly rather than leave a truncated file looking finished — the Swift
+    // side treats a clean return as "every byte moved" and snaps the row to 100%.
+    // `total` is 0 when the size was never known, and `<` (not `!=`) so a file
+    // that grew mid-read is not failed.
+    if (r.code == GSB_OK && total > 0 && sofar < total) {
+        char m[160];
+        snprintf(m, sizeof(m), "Transfer ended early — received %lld of %lld bytes", sofar, total);
+        gsb_set(&r, GSB_ERR_IO, m);
+    }
+
     libssh2_sftp_close(h);
     libssh2_sftp_shutdown(sftp);
     gsb_teardown(s, sock);
@@ -430,6 +484,15 @@ GSBResult gsb_upload(const GSBAuth *auth, const char *remote, long long total,
             break;
         }
         gsb_throttle(max_bps, sofar, &start);
+    }
+
+    // Same assertion as the download side: the read callback returning 0 means
+    // "no more bytes", which is only the same as "the file is sent" when the
+    // count matches. Guarded on GSB_OK so a user cancel still reports as aborted.
+    if (r.code == GSB_OK && total > 0 && sofar < total) {
+        char m[160];
+        snprintf(m, sizeof(m), "Upload ended early — sent %lld of %lld bytes", sofar, total);
+        gsb_set(&r, GSB_ERR_IO, m);
     }
 
     libssh2_sftp_close(h);

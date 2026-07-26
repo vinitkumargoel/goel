@@ -15,12 +15,16 @@ struct SFTPTransfer: Identifiable {
     let id = UUID()
     /// The server this transfer belongs to, so the browser can filter to its own.
     let connectionID: UUID
-    let name: String
+    /// Not `let`: a download retry may have to land on a uniqued name, because the
+    /// path this row first claimed can belong to another transfer by then. See
+    /// ``AppViewModel/retrySFTPTransfer(_:)``.
+    var name: String
     let direction: Direction
     /// True when an upload's source is a directory (uploaded recursively).
     let isDirectory: Bool
     /// The local file/folder: an upload's source, or a download's destination.
-    let localURL: URL
+    /// Mutable for the same reason as ``name``.
+    var localURL: URL
     /// The resolved remote target (upload) or remote source (download). Enough,
     /// with `connectionID`, to retry the transfer after a failure/cancel.
     let remotePath: String
@@ -218,7 +222,10 @@ final class SFTPBrowserModel: ObservableObject {
     }
 
     func open(_ entry: SFTPEntry) async {
-        guard entry.isDirectory else { return }
+        // The name is server-supplied and joined onto the browsed path, so a
+        // listing entry named ".." or "a/b" would silently walk the user out of
+        // the tree they think they're in.
+        guard entry.isDirectory, SFTPBrowserPaths.isSafeChildName(entry.name) else { return }
         await navigate(to: Self.join(path, entry.name))
     }
 
@@ -348,17 +355,31 @@ final class SFTPBrowserModel: ObservableObject {
             // just the wrapping Task — the blocking download runs on its own
             // thread and only observes this flag on progress ticks.
             let cancelled = CancelFlag()
+            // The listing's byte count is the server's claim, not a fact, and a
+            // drag-out has no size check of its own — so bound what a drag can
+            // pull into the temp directory.
+            let cap = ByteCap(limit: Self.dragOutByteCap)
             let task = Task {
                 do {
-                    try await client.downloadToFile(remote: remote, localURL: tmp,
-                                                    shouldContinue: { !cancelled.isCancelled }) { _, _ in }
+                    try await client.downloadToFile(
+                        remote: remote, localURL: tmp,
+                        shouldContinue: { !cancelled.isCancelled && cap.underLimit }
+                    ) { sofar, total in cap.observe(sofar: sofar, total: total) }
+                    guard cap.underLimit else {
+                        try? FileManager.default.removeItem(at: tmpDir)
+                        completion(nil, false, Self.tooLargeToDrag(safeName))
+                        return
+                    }
                     completion(tmp, false, nil)
                     // The system copies our file after the handler returns; give
                     // it a wide margin, then remove the temp copy.
                     Self.scheduleTempCleanup(tmpDir)
                 } catch {
+                    // Tripping the cap aborts the transfer, so the throw arrives
+                    // as a bare "Aborted" — say what actually happened.
                     try? FileManager.default.removeItem(at: tmpDir)
-                    completion(nil, false, error)
+                    let failure: Error = cap.underLimit ? error : Self.tooLargeToDrag(safeName)
+                    completion(nil, false, failure)
                 }
             }
             let progress = Progress(totalUnitCount: 1)
@@ -366,6 +387,15 @@ final class SFTPBrowserModel: ObservableObject {
             return progress
         }
         return provider
+    }
+
+    /// The most a single drag-out will pull to disk before it is abandoned.
+    /// Matches the browser's preview cap — both fetch a server-sized file into
+    /// the temp directory on nothing more than a gesture.
+    private static let dragOutByteCap: Int64 = 512 * 1024 * 1024
+
+    private nonisolated static func tooLargeToDrag(_ name: String) -> SFTPError {
+        SFTPError(kind: .io, message: "“\(name)” is too large to drag out of the browser.")
     }
 
     // MARK: Path helpers (delegate to the tested GoelCore logic)

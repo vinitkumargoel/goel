@@ -42,17 +42,19 @@ Three kinds, all of them things you asked for:
 
 1. **Your transfers** — directly from your machine to the server, peer or tracker in the
    source you added. Nothing is proxied through us.
-2. **The update check** — Sparkle / GitHub Releases, on macOS. Disable it in
-   **Settings → Updates**.
+2. **The update check** — a GitHub-Releases feed check on macOS, **off by default** with an empty
+   feed URL, so it makes no request until you configure it in **Settings → Advanced**.
+   (Sparkle is bundled but dormant: it only activates in a build whose `Info.plist` carries an
+   appcast URL and public key, and no published release carries one yet.)
 3. **The web portal**, if you enable it — served from your own machine to whoever you
    let reach it.
 
-Turn off the update check and Goel° is silent until you add a download.
+Leave the update check off — its default — and Goel° is silent until you add a download.
 
 ### Can it run air-gapped?
 
-Yes. Disable the update check and it makes no connection it was not explicitly told to
-make.
+Yes. Leave the update check off — it starts off — and it makes no connection it was not
+explicitly told to make.
 
 ### Where are my passwords stored?
 
@@ -89,12 +91,26 @@ in playback order.
 
 ### Does it support browser integration?
 
-There is a WebExtension shipped inside the app bundle
-(`Resources/BrowserExtension`), loaded unpacked, plus a Safari App Extension.
+Yes, but it is side-loaded rather than installed from a store. A WebExtension ships inside
+the app bundle (`Resources/BrowserExtension`); **Settings → Browser** reveals the folder and
+installs the native-messaging helper. What each browser does with it differs:
+
+- **Chromium family** — Chrome, Edge, Brave, Chromium, Vivaldi, Arc. `chrome://extensions` →
+  Developer mode → **Load unpacked** → that folder. It stays loaded across restarts.
+- **Firefox** — `about:debugging` → **Load Temporary Add-on**. Firefox discards temporary
+  add-ons when it quits, so this has to be repeated after every Firefox restart. A permanent
+  install needs a Mozilla-signed `.xpi`, which is not published yet.
+- **Safari** — the extension is an app extension inside the bundle, so Safari finds it once
+  the app is in `/Applications` (quit and reopen Safari once). Enable **Goel° Capture** in
+  Safari's extension list. An unsigned or ad-hoc build additionally needs Safari →
+  Develop → **Allow Unsigned Extensions**, which resets each session.
 
 ### Are there speed limits and scheduling?
 
-Yes — global and per-task rate limits, plus a scheduler for time-of-day rules.
+Yes, plus a scheduler for time-of-day rules. Read the limits precisely, though: the traffic
+profile's cap is enforced **across all HTTP downloads together**, while FTP, SFTP and HLS
+transfers each get their own limiter — so several of those running at once can exceed the
+profile figure. Per-task limits apply to one task and stack in front of the shared cap.
 
 ---
 

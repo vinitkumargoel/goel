@@ -197,12 +197,18 @@ public actor AuditLog {
 
         /// Build the policy from user/managed settings. Kept here so the mapping
         /// from ``AppSettings`` lives next to the thing it configures.
+        ///
+        /// The megabyte figure is re-clamped to `1…1024` on the way in even though
+        /// ``AppSettings/validated()`` already did it: `megabytes * 1024 * 1024`
+        /// **traps** on `Int` overflow, and a hard crash is too sharp an edge to
+        /// leave depending on a caller having gone through the boundary.
         public init(settings: AppSettings) {
             let directory = settings.auditLogDirectory
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            let megabytes = min(max(1, settings.auditLogMaxFileMegabytes), 1024)
             self.init(isEnabled: settings.auditLogEnabled,
                       directory: directory.isEmpty ? nil : URL(fileURLWithPath: directory),
-                      maxFileBytes: settings.auditLogMaxFileMegabytes * 1024 * 1024,
+                      maxFileBytes: megabytes * 1024 * 1024,
                       keepFiles: settings.auditLogKeepFiles,
                       retentionDays: settings.auditLogRetentionDays)
         }

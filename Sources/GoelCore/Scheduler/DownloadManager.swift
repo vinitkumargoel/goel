@@ -225,11 +225,14 @@ public actor DownloadManager {
         self.ftpEngine = ftpEngine ?? FTPEngine(profile: settings.effectiveProfile)
         self.sftpEngine = sftpEngine ?? SFTPEngine(profile: settings.effectiveProfile)
         // The managed overlay is resolved once here so the very first read of
-        // `settings` — before any restore — already reflects MDM policy.
+        // `settings` — before any restore — already reflects MDM policy. Both
+        // rows are clamped on the same beat as ``adoptStoredSettings(_:)`` does,
+        // so an injected settings value can't reach an engine unvalidated.
         let policy = ManagedPolicy.current()
         self.managedPolicy = policy
-        self.storedSettings = settings
-        self.settings = policy.apply(to: settings)
+        let stored = settings.validated()
+        self.storedSettings = stored
+        self.settings = policy.apply(to: stored).validated()
         self.store = store
         self.power = power
         self.folderWatch = folderWatch
@@ -267,11 +270,14 @@ public actor DownloadManager {
         self.ftpEngine = FTPEngine(profile: settings.effectiveProfile)
         self.sftpEngine = SFTPEngine(profile: settings.effectiveProfile)
         // The managed overlay is resolved once here so the very first read of
-        // `settings` — before any restore — already reflects MDM policy.
+        // `settings` — before any restore — already reflects MDM policy. Both
+        // rows are clamped on the same beat as ``adoptStoredSettings(_:)`` does,
+        // so an injected settings value can't reach an engine unvalidated.
         let policy = ManagedPolicy.current()
         self.managedPolicy = policy
-        self.storedSettings = settings
-        self.settings = policy.apply(to: settings)
+        let stored = settings.validated()
+        self.storedSettings = stored
+        self.settings = policy.apply(to: stored).validated()
         self.store = store
         self.power = power
         self.folderWatch = folderWatch
@@ -596,7 +602,9 @@ public actor DownloadManager {
         return DownloadPreview(
             source: source, suggestedName: name, totalBytes: meta.totalBytes,
             isEstimatedSize: meta.isEstimatedSize, files: meta.files, kind: kind,
-            note: meta.reachable ? nil : Self.unresolvedNote(for: kind),
+            // An engine that knows *why* it failed says so; the generic note is
+            // the fallback, not an override.
+            note: meta.reachable ? nil : (meta.failureNote ?? Self.unresolvedNote(for: kind)),
             suggestedChecksum: meta.suggestedChecksum)
     }
 
@@ -882,9 +890,17 @@ public actor DownloadManager {
     /// The audit log is re-configured on the same beat because its policy lives
     /// in the same settings object, and a managed profile is exactly the kind of
     /// thing that turns it on.
+    ///
+    /// This is also the one place settings are validated. Every writer —
+    /// ``updateSettings(_:)``, ``apply(_:)``, ``setProfile(_:)``,
+    /// ``setActiveProfile(_:)``, ``setDefaultSaveDirectory(_:)``, ``restore()``
+    /// and ``importEnvelope(_:)`` — funnels through here, so a clamp installed
+    /// once covers the UI, the remote API, the daemon and a restored backup
+    /// alike. The overlay is validated *after* it is applied: a managed profile
+    /// forcing an out-of-range value must not be able to slip past the clamp.
     func adoptStoredSettings(_ newSettings: AppSettings) {
-        storedSettings = newSettings
-        settings = managedPolicy.apply(to: newSettings)
+        storedSettings = newSettings.validated()
+        settings = managedPolicy.apply(to: storedSettings).validated()
         let auditConfiguration = AuditLog.Configuration(settings: settings)
         Task { [auditLog] in await auditLog.configure(auditConfiguration) }
     }
@@ -965,14 +981,16 @@ public actor DownloadManager {
         publish()
     }
 
-    /// Set (or clear, with nil) a per-torrent seed-ratio limit. When seeding
-    /// reaches it, the engine stops the torrent and marks it completed.
+    /// Set a per-torrent seed-ratio limit. When seeding reaches it, the engine
+    /// stops the torrent and marks it completed. nil clears the per-task limit so
+    /// the traffic profile's global limit applies again; an explicit 0 means
+    /// "seed this one indefinitely" and overrides the profile.
     public func setSeedRatioLimit(_ ratio: Double?, task id: DownloadTask.ID) async {
         guard let task = task(id) else { return }
         await (engine(for: task.source) as? TorrentControlling)?.setSeedRatioLimit(ratio, task: id)
         // Re-resolve the index after the actor hop (see setTaskUploadLimit).
         if let i = index(of: id) {
-            tasks[i].seedRatioLimit = (ratio ?? 0) > 0 ? ratio : nil
+            tasks[i].seedRatioLimit = ratio
             persist(tasks[i])
         }
         publish()
@@ -1184,13 +1202,26 @@ public actor DownloadManager {
         var added = 0
         for imported in envelope.tasks {
             let task = PersistenceStore.sanitizedForImport(imported)
+            // An envelope is untrusted input: two entries may carry the SAME task id
+            // (hand-edited, or two backups merged). `taskIndex` keys on the id, so the
+            // loser would become an unreachable zombie row — never pausable, removable
+            // or retryable — and the view model's snapshot fold keys on it too. Refuse
+            // the duplicate here rather than survive it downstream.
+            guard index(of: task.id) == nil else { continue }
             guard dedupIndex[task.source.dedupKey] == nil else { continue }
             let t = Self.normalizeRestored(task)
             appendTask(t)
             persist(t)
             added += 1
         }
-        await updateSettings(Self.sanitizedImportedSettings(envelope.settings, current: settings))
+        // `storedSettings`, not `settings`: the security-sensitive fields are
+        // restored from the user's OWN row, never from the policy-overlaid one.
+        // `updateSettings` persists whatever it is handed, so passing the
+        // effective row would write an administrator's forced keys in as if the
+        // user had chosen them — and they would outlive the profile.
+        // `adoptStoredSettings` re-applies the overlay on top, so the effective
+        // settings are unchanged.
+        await updateSettings(Self.sanitizedImportedSettings(envelope.settings, current: storedSettings))
         return added
     }
 

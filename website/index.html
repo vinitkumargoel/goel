@@ -54,9 +54,9 @@
       "featureList": [
         "One unified queue for HTTP, FTP, SFTP, BitTorrent and HLS",
         "Segmented multi-connection HTTP with mirror and Metalink failover",
-        "Full BitTorrent client with per-file priority and seeding controls",
+        "Full BitTorrent client with per-file priority, DHT, PeX and share-ratio seeding limits",
         "SFTP file browser with host-key pinning",
-        "Browser extensions for Chrome, Edge, Brave, Firefox and Safari",
+        "Side-loaded browser extension for Chrome, Edge, Brave, Chromium, Vivaldi, Arc, Firefox and Safari",
         "Network aggregation across multiple adapters",
         "Optional authenticated web portal",
         "Headless Linux daemon"
@@ -91,11 +91,11 @@
         { "@type": "Question", "name": "Do I need Homebrew or any libraries?",
           "acceptedAnswer": { "@type": "Answer", "text": "No. Every native library — libtorrent, libssh2, libcurl, OpenSSL — is bundled inside the app. Download the .dmg, drag to Applications, done." } },
         { "@type": "Question", "name": "Which Macs does it run on?",
-          "acceptedAnswer": { "@type": "Answer", "text": "macOS 14 (Sonoma) or later, Apple Silicon and Intel. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time." } },
+          "acceptedAnswer": { "@type": "Answer", "text": "macOS 14 (Sonoma) or later, Apple Silicon and Intel. One caveat on the current downloads: the 1.0.0 and 1.0.1 archives were built before the deployment-target gate existed, and the OpenSSL and libtorrent libraries vendored into them need a newer macOS than the app advertises, so they will not launch between Sonoma and macOS 26. The gate runs on every build and every disk image from 1.0.2 onward. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time." } },
         { "@type": "Question", "name": "Is it free?",
           "acceptedAnswer": { "@type": "Answer", "text": "Free for personal use — individuals, students, hobby projects and home labs, with every feature and no time limit. Charities, schools and public bodies are free too, under the licence's Noncommercial Organizations clause. Using it in the course of a business, by a contractor in billable work, or on a managed corporate fleet needs a paid licence. The licence is PolyForm Noncommercial 1.0.0; see https://goel.vinitk.dev/commercial for the eligibility table and pricing." } },
         { "@type": "Question", "name": "Can it download from video sites?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Official releases bundle yt-dlp: the “Resolve Media” button turns a video-site page into a direct download. HLS streams save to a clean .mp4." } },
+          "acceptedAnswer": { "@type": "Answer", "text": "Official releases bundle yt-dlp: the “Resolve Media” button turns a video-site page into a direct download. Finished (VOD) HLS streams save to a clean .mp4, unencrypted or AES-128 — live streams, DRM and renditions whose audio is a separate track are refused with a reason rather than saved half-done." } },
         { "@type": "Question", "name": "Does it really run on Linux?",
           "acceptedAnswer": { "@type": "Answer", "text": "Yes — the same engine ships as GoelDaemon, a headless service driven entirely from the built-in web portal. Prebuilt for x86_64; build from source for ARM64. The tarball bundles the Swift runtime, but unlike the Mac app it expects a handful of system libraries from your package manager — libtorrent, libssh2, libcurl, OpenSSL, Boost and ffmpeg. One apt line, in the README." } },
         { "@type": "Question", "name": "Is remote access safe?",
@@ -619,6 +619,8 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
   font-family: var(--font-mono); font-size: 11.5px; color: var(--color-ink-soft);
   border: 1px solid var(--color-line); border-radius: 999px; padding: 4px 12px 4px 8px;
 }
+/* Small print that qualifies a claim above it — kept at AA contrast (ink-faint). */
+.fine { margin-top: 10px; font-size: 0.78rem; line-height: 1.5; color: var(--color-ink-faint); }
 
 /* Goel° Web — browser window with live portal */
 .web-head { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--space-xl); align-items: end; }
@@ -928,8 +930,10 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <ul class="ticks">
         <li>Per-file priority — Skip / Low / Normal / High (try it →)</li>
         <li>Live piece map, tracker table, peer view</li>
-        <li>DHT, PeX, encryption, seed-ratio limits</li>
+        <li>DHT, PeX, encryption, share-ratio limits per task or per profile</li>
+        <li>Fast-resume — ratios and upload totals survive a quit</li>
       </ul>
+      <p class="fine">One honest limit: swarm traffic follows a <b>manual SOCKS5</b> proxy only. An HTTP proxy carries tracker announces but not peer connections, and the system proxy can't be applied to the swarm at all — Settings says which of the three you're getting instead of implying the peers are covered.</p>
     </div>
     <div class="panel-wrap">
       <div class="dither alt"></div>
@@ -976,7 +980,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
     <div class="slice-copy">
       <span class="kicker">Capture everywhere</span>
       <h2>Copy a link. It's already here.</h2>
-      <p>Extensions for Chrome, Edge, Brave, Firefox and Safari send downloads straight to the queue. The clipboard watcher offers anything you copy; the floating Drop Basket catches drags from any app.</p>
+      <p>A WebExtension bundled inside the app sends downloads straight to the queue. It is side-loaded, not store-installed: Chromium browsers take it with <span class="mono">Load unpacked</span> and keep it, Firefox only as a temporary add-on you re-load after each restart, and Safari finds its copy inside the app bundle. The clipboard watcher offers anything you copy; the floating Drop Basket catches drags from any app.</p>
       <ul class="ticks">
         <li>Link Grabber pulls every file from a page — try “Grab all” →</li>
         <li>Batch add with <span class="mono">file[01-20].zip</span> pattern expansion</li>
@@ -1020,6 +1024,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
         <span><svg class="blogo s" aria-hidden="true"><use href="#lg-firefox"/></svg>Firefox</span>
         <span><svg class="blogo s" aria-hidden="true"><use href="#lg-safari"/></svg>Safari</span>
       </div>
+      <p class="fine">Side-loaded from the app bundle — no store listing yet. Firefox discards temporary add-ons on quit, so it needs re-loading each time you restart it.</p>
     </div>
     <div class="panel-wrap">
       <div class="dither"></div>
@@ -1171,7 +1176,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <div class="cellf" style="--i:6"><b><span class="m">⚙</span>Post-download actions</b><span>Extract archives, run a script, scan with antivirus — automatically.</span></div>
       <div class="cellf" style="--i:7"><b><span class="m">▶</span>yt-dlp built in</b><span>Turn a video-site page into a direct download.</span></div>
       <div class="cellf" style="--i:8"><b><span class="m">♪</span>In-app player</b><span>Play finished video/audio without leaving the app.</span></div>
-      <div class="cellf" style="--i:9"><b><span class="m">⇄</span>ffmpeg tools</b><span>Remux to another container, extract audio, grab subtitles.</span></div>
+      <div class="cellf" style="--i:9"><b><span class="m">⇄</span>ffmpeg tools</b><span>Remux to another container, extract audio, grab subtitles — needs an ffmpeg, bundled only in builds that pin one; otherwise point Settings at your own.</span></div>
       <div class="cellf" style="--i:10"><b><span class="m">✱</span>AppleScript + Shortcuts</b><span>Scriptable via .sdef — add, pause, query from automations.</span></div>
       <div class="cellf" style="--i:11"><b><span class="m">⌘</span>URL scheme</b><span>goeldownloader:// links and the system Services menu.</span></div>
       <div class="cellf" style="--i:12"><b><span class="m">◉</span>Dock progress</b><span>A live progress bar on the Dock icon, plus an active-count badge.</span></div>
@@ -1180,8 +1185,8 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <div class="cellf" style="--i:15"><b><span class="m">⟳</span>Backup & restore</b><span>Full JSON export of settings + tasks, scheduled auto-backups.</span></div>
       <div class="cellf" style="--i:16"><b><span class="m">☾</span>Power aware</b><span>Pause below a battery threshold; never sleep mid-download.</span></div>
       <div class="cellf" style="--i:17"><b><span class="m">⚑</span>Duplicate detection</b><span>Warns before you add the same link twice.</span></div>
-      <div class="cellf" style="--i:18"><b><span class="m">𝔄</span>English + German</b><span>Localized UI, more languages ready to slot in.</span></div>
-      <div class="cellf" style="--i:19"><b><span class="m">↻</span>Sparkle updates</b><span>Silent in-app updates, plus a GitHub-Releases checker.</span></div>
+      <div class="cellf" style="--i:18"><b><span class="m">𝔄</span>English + German</b><span>The translation seam works and German is real, but coverage is still just the sidebar status filters — the rest of the UI is English.</span></div>
+      <div class="cellf" style="--i:19"><b><span class="m">↻</span>Update checker</b><span>A GitHub-Releases check, off until you set a feed URL. Sparkle is bundled but dormant — no release ships an appcast yet.</span></div>
     </div>
   </div>
 </section>
@@ -1194,9 +1199,9 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
     </div>
     <div>
       <details><summary>Do I need Homebrew or any libraries?</summary><p>No. Every native library — libtorrent, libssh2, libcurl, OpenSSL — is bundled inside the app. Download the .dmg, drag to Applications, done.</p></details>
-      <details><summary>Which Macs does it run on?</summary><p>macOS 14 (Sonoma) or later, Apple Silicon and Intel. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time.</p></details>
+      <details><summary>Which Macs does it run on?</summary><p>macOS 14 (Sonoma) or later, Apple Silicon and Intel. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time.</p><p class="fine">One caveat on the downloads currently published: the <span class="mono">1.0.0</span> and <span class="mono">1.0.1</span> archives were built before the deployment-target gate existed, and the OpenSSL and libtorrent libraries vendored into them declare a minimum of macOS 26 even though the app advertises 14. macOS refuses an over-targeted library before the app starts, so those two builds quit on launch on a Mac between Sonoma and macOS 26. The gate now runs on every build <em>and</em> every disk image, so no later release can carry the mismatch.</p></details>
       <details><summary>Is it free?</summary><p>Free for personal use — individuals, students, hobby projects and home labs, with every feature and no time limit. Charities, schools and public bodies are free too, under the licence's <em>Noncommercial Organizations</em> clause. Using it in the course of a business, by a contractor in billable work, or on a managed corporate fleet needs a paid licence. The licence is <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial 1.0.0</a>; see <a href="/commercial">commercial licensing</a> for the eligibility table and pricing.</p></details>
-      <details><summary>Can it download from video sites?</summary><p>Official releases bundle yt-dlp: the “Resolve Media” button turns a video-site page into a direct download. HLS streams save to a clean .mp4.</p></details>
+      <details><summary>Can it download from video sites?</summary><p>Official releases bundle yt-dlp: the “Resolve Media” button turns a video-site page into a direct download. Finished (VOD) HLS streams save to a clean .mp4, unencrypted or AES-128. Live streams, DRM-protected streams and renditions that carry their audio as a separate track are refused with a stated reason, rather than saved as a truncated or silent file.</p></details>
       <details><summary>Does it really run on Linux?</summary><p>Yes — the same engine ships as GoelDaemon, a headless service driven entirely from the built-in web portal. Prebuilt for x86_64; build from source for ARM64. The tarball bundles the Swift runtime, but unlike the Mac app it expects a handful of system libraries from your package manager — libtorrent, libssh2, libcurl, OpenSSL, Boost and ffmpeg. One apt line, in the README.</p></details>
       <details><summary>Is remote access safe?</summary><p>The portal is off by default. When on, it's token- or password-authenticated, supports read-only mode and session timeouts, and refuses to expose over the LAN without a password.</p></details>
     </div>

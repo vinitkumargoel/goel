@@ -92,8 +92,9 @@ final class TorrentEngineTests: XCTestCase {
                           "set GOEL_LIVE_NET=1 to run the live network test")
         let torrentURL = try await discoverDebianTorrent()
         let engine = TorrentEngine(profile: .high)
-        let meta = await engine.resolveMetadata(for: .torrentFile(torrentURL),
-                                                saveDirectory: tempDir.path, timeout: 60)
+        // The preview probes into a throwaway directory of its own — there is no
+        // save directory to pass, by construction.
+        let meta = try await engine.resolveMetadata(for: .torrentFile(torrentURL), timeout: 60)
         let resolved = try XCTUnwrap(meta, "metadata must resolve from the .torrent")
         XCTAssertGreaterThan(resolved.totalBytes, 0)
         XCTAssertFalse(resolved.files.isEmpty, "the file list must be populated")

@@ -252,8 +252,12 @@ commercial use.
   so a rebuild resolves the same code.
 - macOS release builds are signed and notarised; local development builds are signed with
   a stable identity so macOS retains its permission grants across rebuilds.
-- Updates are delivered over HTTPS and verified by Sparkle's EdDSA signature check before
-  installation. An unsigned or mis-signed update is refused.
+- Where Sparkle is enabled, updates are delivered over HTTPS and verified by its EdDSA
+  signature check before installation; an unsigned or mis-signed update is refused. No
+  published release enables it — activation requires `SUFeedURL` and `SUPublicEDKey` in
+  `Info.plist`, and none carries them — so today updating means fetching the next notarised
+  artefact by hand, prompted by the built-in GitHub-Releases checker, which installs nothing
+  itself.
 - Native library versions track Homebrew's formulae at build time; the exact versions in
   any given release are recorded in that release's notes.
 

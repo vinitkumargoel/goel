@@ -54,12 +54,29 @@ actor HTTPEngine: HTTPConfigurable {
     /// inactive so tests and single-path downloads stay on URLSession.
     var aggregationConfig = AggregationEngineConfig.disabled
 
+    /// The user's "when a file exists" choice, pushed from ``DownloadManager``.
+    /// The post-probe rename below re-resolves the on-disk name, so it must honour
+    /// the same picker ``DownloadManager/makeTask`` reads — otherwise "Overwrite"
+    /// still produced `name (1).mp4` whenever a `Content-Disposition` name
+    /// collided. Defaults to the settings default so an unconfigured engine keeps
+    /// the safe, non-clobbering behaviour.
+    var fileConflictPolicy = "rename"
+
     /// Aggregate open-connection accounting across ALL concurrent downloads, so
     /// the profile's global `maxConnections` and per-host `maxConnectionsPerServer`
     /// caps hold in sum — not merely within a single task. Reserved when a
     /// download's segments start and released when it finishes / pauses / fails.
     /// Distinct from the per-download ``ConnectionGovernor`` (adaptive 429 shrink).
     var connectionBudget = ConnectionBudget()
+
+    /// The engine-wide download pacer, threaded into every transfer's
+    /// ``TransferPlan/sharedLimiter`` so the profile's byte cap holds in SUM across
+    /// concurrent downloads — the whole-app "Max download speed" the Traffic pane
+    /// presents — instead of each download claiming the full cap for itself. A
+    /// per-task limit is chained in FRONT of this one (see
+    /// ``SegmentedTransfer/makeLimiter``), so it stays private to its task.
+    /// Retargeted in place by ``applyLimits(_:)``: it outlives any one download.
+    let downloadPacer: RateLimiter
 
     // MARK: Per-task state
 
@@ -135,6 +152,7 @@ actor HTTPEngine: HTTPConfigurable {
         self.session = session
         self.profile = profile
         self.credentials = credentials
+        self.downloadPacer = RateLimiter(bytesPerSecond: profile.maxDownloadBytesPerSec)
     }
 
     /// Build a session from a configuration.
@@ -145,6 +163,7 @@ actor HTTPEngine: HTTPConfigurable {
                                   delegate: RedirectSanitizer.shared, delegateQueue: nil)
         self.profile = profile
         self.credentials = credentials
+        self.downloadPacer = RateLimiter(bytesPerSecond: profile.maxDownloadBytesPerSec)
     }
 
     /// Default real-world session.
@@ -160,6 +179,7 @@ actor HTTPEngine: HTTPConfigurable {
                                   delegate: RedirectSanitizer.shared, delegateQueue: nil)
         self.profile = profile
         self.credentials = credentials
+        self.downloadPacer = RateLimiter(bytesPerSecond: profile.maxDownloadBytesPerSec)
     }
 
     // MARK: DownloadEngine
@@ -220,6 +240,10 @@ actor HTTPEngine: HTTPConfigurable {
 
     func applyLimits(_ profile: TrafficProfile) async {
         self.profile = profile
+        // The engine-wide pacer is long-lived (in-flight downloads already hold a
+        // reference), so a profile change is retargeted in place rather than
+        // waiting for the next transfer to build a fresh limiter.
+        await downloadPacer.setRate(profile.maxDownloadBytesPerSec)
     }
 
     /// Apply network-layer settings. The bandwidth cap rides on `profile` (see
@@ -310,6 +334,10 @@ actor HTTPEngine: HTTPConfigurable {
         aggregationConfig = config
     }
 
+    func configureFileConflictPolicy(_ policy: String) async {
+        fileConflictPolicy = policy
+    }
+
     /// Resolve a URL's name + size for the preview, adapting the concrete
     /// ``resolveMetadata(for:currentName:)`` probe to the engine-agnostic seam. The
     /// URL-derived base name mirrors the scheduler's default-name rule so a failed
@@ -387,13 +415,25 @@ actor HTTPEngine: HTTPConfigurable {
             // Refine the on-disk name now that response headers are known:
             // `Content-Disposition` supplies the real filename, `Content-Type` a
             // missing extension. Doing this before the first byte is written means
-            // there is no partial file to move. On a resume the server returns the
-            // same name, so `refinedName` is a no-op and the existing partial (kept
-            // under the already-resolved name) is reused untouched.
-            if let better = Self.refinedName(current: task.name,
+            // there is no partial file to move — which is also why it is confined to
+            // a run that has downloaded nothing yet. `makeTask` resolves the on-disk
+            // name conflict "at creation time only — never on resume/retry, which
+            // reuse the stored name and rely on the partial file still living at the
+            // same path"; this is the other half of that rule. On a resume the partial
+            // already sits at `savePath`, so `PathSafety.uniqueName` would step OVER
+            // it to a free name: the cursor's bytes would no longer be at the
+            // destination, `SegmentedTransfer.destinationHoldsPreallocation` would
+            // refuse the cursor, and every pause/resume cycle would restart from byte
+            // zero under yet another name.
+            let isFirstAttempt = task.resumeData == nil && task.bytesDownloaded == 0
+            if isFirstAttempt,
+               let better = Self.refinedName(current: task.name,
                                              suggestedName: probe.suggestedName,
                                              contentType: probe.contentType) {
-                let unique = PathSafety.uniqueName(base: better, in: task.saveDirectory)
+                // Same policy leaf `makeTask` uses, so both name-resolution sites
+                // obey the one "when a file exists" picker.
+                let unique = DownloadManager.resolveName(better, in: task.saveDirectory,
+                                                         policy: fileConflictPolicy)
                 if unique != task.name {
                     tasks[id]?.name = unique
                     emit(id, .nameResolved(unique))
@@ -465,8 +505,12 @@ actor HTTPEngine: HTTPConfigurable {
                 boundAdapters = []
             }
 
-            // The tighter of the profile ceiling and the task's own limit.
-            let maxBytesPerSecond = profile.effectiveDownloadCap(taskLimit: resolved.speedLimitBytesPerSec)
+            // Only the task's OWN limit rides on the plan: the profile ceiling is
+            // enforced by `downloadPacer`, which every concurrent transfer shares so
+            // the cap holds in sum. Folding them together here (the old
+            // `effectiveDownloadCap`) gave each download a private copy of the
+            // profile cap, so N downloads reached N × it.
+            let maxBytesPerSecond = resolved.speedLimitBytesPerSec ?? 0
 
             // Mirror URLs ride along for the segmented path (the manager already
             // sanitized them to http/https, deduped, capped).
@@ -484,6 +528,7 @@ actor HTTPEngine: HTTPConfigurable {
                 session: session,
                 settings: settings,
                 maxBytesPerSecond: maxBytesPerSecond,
+                sharedLimiter: downloadPacer,
                 flushSize: Self.flushSize,
                 mirrors: mirrors,
                 boundAdapters: boundAdapters,
@@ -574,13 +619,25 @@ actor HTTPEngine: HTTPConfigurable {
     /// cursor, used to preflight only the REMAINING free space a resume/retry
     /// needs (the partial file already occupies the completed bytes). Returns 0 —
     /// so a fresh download still checks the full size — when there is no cursor,
-    /// it doesn't decode, or it describes a differently-sized remote.
-    private static func resumedBytesOnDisk(_ resumeData: Data?, total: Int64) -> Int64 {
+    /// it doesn't decode, it describes a differently-sized remote, or it is
+    /// arithmetic nonsense. `internal` so the untrusted-cursor guards below are
+    /// assertable without driving a whole download.
+    static func resumedBytesOnDisk(_ resumeData: Data?, total: Int64) -> Int64 {
         guard let data = resumeData,
               let cursor = try? JSONDecoder().decode(SegmentedTransfer.ResumeCursor.self, from: data),
               cursor.totalBytes == total else { return 0 }
-        let done = cursor.completed.reduce(0, +)
-        return max(0, min(done, total))
+        // Summed defensively: a cursor can arrive verbatim from an imported backup
+        // envelope, and `reduce(0, +)` traps on `Int64` overflow. Anything
+        // nonsensical reports 0, so the caller preflights the FULL size — the safe
+        // direction, and the same "no usable cursor" answer as the guards above.
+        var done: Int64 = 0
+        for segment in cursor.completed {
+            guard segment >= 0 else { return 0 }
+            let (sum, overflowed) = done.addingReportingOverflow(segment)
+            if overflowed { return 0 }
+            done = sum
+        }
+        return min(done, max(0, total))
     }
 
     // Request building lives in `HTTPEngine+Requests.swift`.

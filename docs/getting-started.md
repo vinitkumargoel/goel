@@ -71,8 +71,8 @@ same list and are managed the same way.
 | **HTTP / HTTPS** | Multi-connection segmented downloading, resume across restarts |
 | **FTP / FTPS** | Explicit and implicit TLS |
 | **SFTP** | Password or SSH key auth; keys and passwords stored in the macOS Keychain |
-| **BitTorrent** | Magnets and `.torrent` files, per-file priorities, sequential mode, DHT |
-| **HLS** | `.m3u8` playlists, including AES-128 encrypted segments |
+| **BitTorrent** | Magnets and `.torrent` files, per-file priorities, sequential mode, DHT, PeX, share-ratio limits with fast-resume. Swarm traffic is proxied only through a manual SOCKS5 proxy |
+| **HLS** | Finished (VOD) `.m3u8` playlists, unencrypted or AES-128, remuxed to `.mp4`. Live streams, DRM and separate-audio renditions are refused with a reason — see [troubleshooting](troubleshooting.md) |
 
 ---
 
@@ -126,9 +126,14 @@ distro's stock `libsqlite3` does not have it.
 
 ## Updates
 
-macOS builds check for new releases through Sparkle. This is the only outbound connection
-Goel° makes that you did not ask for, and you can turn it off in **Settings → Updates**.
-With it off, the app makes no network connection except the transfers you start.
+Goel° does not check for updates until you ask it to. Automatic checking is **off** by
+default and the update-feed URL starts empty, so out of the box there is no outbound
+connection except the transfers you start.
+
+To turn it on, set the feed URL and the automatic-check switch in **Settings → Advanced**;
+**Check Now** there runs it once. The bundled Sparkle framework is a separate route that
+only activates when a build stamps an appcast URL and public key into `Info.plist` — no
+published release carries one yet, so Sparkle is inert in the downloads on the Releases page.
 
 ---
 

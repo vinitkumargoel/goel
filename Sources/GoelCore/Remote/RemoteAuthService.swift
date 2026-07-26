@@ -46,6 +46,22 @@ public enum RemoteAuthService {
         return false
     }
 
+    /// Whether this request is a token deep-link landing on the portal root and
+    /// should be handed a session cookie.
+    ///
+    /// The QR code and "Copy Link" hand out `…/?token=<token>`, which authenticates
+    /// exactly one page load: the portal's own `fetch`, `EventSource` and
+    /// `<a download>` calls carry no token, so every one of them 401'd and the page
+    /// bounced straight back to `/login`. Promoting that first load to a normal
+    /// session makes the link work, survive a reload, and lets the client scrub the
+    /// secret out of the address bar. The token is not weakened by this: rotating it
+    /// already drops every session.
+    public static func shouldPromoteTokenToSession(_ request: RemoteRequest, requireAuth: Bool,
+                                                   sessionAuthed: Bool, tokenAuthed: Bool) -> Bool {
+        requireAuth && !sessionAuthed && tokenAuthed
+            && request.method == "GET" && request.path == "/"
+    }
+
     /// The identity asserted by a trusted upstream proxy, or `nil`.
     ///
     /// This is the cheap 90% of "enterprise SSO": Cloudflare Access, Authelia,
@@ -439,6 +455,11 @@ public actor RemoteSessionStore {
     /// when the credential material actually changes (or the caller is dropping
     /// sessions anyway), so an unrelated settings save cannot fail a login that
     /// happens to be in flight.
+    ///
+    /// `sessionMinutes` is clamped to `5…43200` (five minutes to thirty days).
+    /// The floor is the existing "a session shorter than this is unusable" rule;
+    /// the ceiling is what stops `minutes * 60` **trapping** on `Int` overflow —
+    /// the field behind it is an unbounded text box in the Web Access pane.
     public func configure(username: String, passwordHash: String, sessionMinutes: Int,
                           invalidatingSessions: Bool = false) {
         if invalidatingSessions { invalidateAll() }
@@ -447,7 +468,7 @@ public actor RemoteSessionStore {
         }
         self.username = username
         self.passwordHash = passwordHash
-        self.sessionSeconds = max(5, sessionMinutes) * 60
+        self.sessionSeconds = min(max(5, sessionMinutes), 43_200) * 60
     }
 
     /// Adopt the login-throttle policy. Kept separate from ``configure`` because
@@ -520,13 +541,9 @@ public actor RemoteSessionStore {
 
         if userOK && passOK {
             throttle.recordSuccess(client)
-            pruneSessions()
-            let sid = RemotePassword.randomHex(bytes: 32)
-            sessions[sid] = Date().addingTimeInterval(TimeInterval(sessionSeconds))
-            let cookie = "goel_session=\(sid); Path=/; HttpOnly; SameSite=Strict; Max-Age=\(sessionSeconds)"
             return RemoteRouter.response(status: "200 OK", type: "application/json",
                                          body: Data("{\"ok\":true}".utf8),
-                                         extraHeaders: ["Set-Cookie": cookie])
+                                         extraHeaders: ["Set-Cookie": issueSession()])
         }
 
         let penalty = throttle.recordFailure(client, now: Date())
@@ -552,13 +569,27 @@ public actor RemoteSessionStore {
         throttle.failureCount(client)
     }
 
-    /// Clear session cookie. Caller must bump generation so open SSE/streams re-auth.
-    public func handleLogout(_ request: RemoteRequest) -> Data {
-        if let sid = request.cookie("goel_session") { sessions[sid] = nil }
+    /// Mint a session and return the `Set-Cookie` value for it. Used by a
+    /// successful password login and by a token deep-link the shell has already
+    /// authenticated — on that path no password is involved on purpose, because
+    /// the token *is* the credential.
+    public func issueSession() -> String {
+        pruneSessions()
+        let sid = RemotePassword.randomHex(bytes: 32)
+        sessions[sid] = Date().addingTimeInterval(TimeInterval(sessionSeconds))
+        return "goel_session=\(sid); Path=/; HttpOnly; SameSite=Strict; Max-Age=\(sessionSeconds)"
+    }
+
+    /// Clear the session cookie. Reports whether a live session was actually
+    /// dropped, so the caller only pays the generation bump — which winds down
+    /// every open stream on the server — for a real sign-out.
+    public func handleLogout(_ request: RemoteRequest) -> (response: Data, droppedSession: Bool) {
+        var dropped = false
+        if let sid = request.cookie("goel_session") { dropped = sessions.removeValue(forKey: sid) != nil }
         let cookie = "goel_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
-        return RemoteRouter.response(status: "200 OK", type: "application/json",
-                                     body: Data("{\"ok\":true}".utf8),
-                                     extraHeaders: ["Set-Cookie": cookie])
+        return (RemoteRouter.response(status: "200 OK", type: "application/json",
+                                      body: Data("{\"ok\":true}".utf8),
+                                      extraHeaders: ["Set-Cookie": cookie]), dropped)
     }
 
     private func pruneSessions() {

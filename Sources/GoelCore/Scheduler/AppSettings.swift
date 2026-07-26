@@ -56,8 +56,10 @@ public struct AppSettings: Codable, Sendable, Hashable {
     public var defaultFolderRule: String
 
     /// What to do when a file with the target name already exists at add time:
-    /// `overwrite` (truncate and replace), `rename` (append ` (n)` to keep both),
-    /// or `skip` (don't add the download).
+    /// `overwrite` (truncate and replace) or `rename` (append ` (n)` to keep
+    /// both). Only those two are implemented, and anything else is treated as
+    /// `rename` — the non-destructive choice — by both
+    /// ``AppSettings/validated()`` and ``DownloadManager/resolveName(_:in:policy:)``.
     public var existingFileReaction: String
 
     /// Watch the clipboard and offer to add copied http(s)/magnet links.

@@ -75,6 +75,21 @@ public struct SFTPClient: Sendable {
         SFTPResult(try await run { auth in gsb_probe(auth) }).fingerprint
     }
 
+    /// Connect far enough to read the server's host key, then hang up — no
+    /// credential is offered. This is what makes first-contact approval worth
+    /// anything: the fingerprint can be shown, and refused, before the password
+    /// has ever been on the wire.
+    public func hostKeyFingerprint() async throws -> String {
+        let result = await runOnThread(expected: nil, name: "goel.sftp-hostkey") { auth in
+            gsb_hostkey(auth)
+        }
+        guard result.code == GSB_OK else {
+            throw SFTPResult(result).asError(host: target.host, port: target.port,
+                                             username: target.username)
+        }
+        return SFTPResult(result).fingerprint
+    }
+
     public func list(_ path: String) async throws -> [SFTPEntry] {
         let collector = ListCollector()
         _ = try await run { auth in
@@ -119,8 +134,17 @@ public struct SFTPClient: Sendable {
             onProgress: { total, sofar in progress(sofar, total); return shouldContinue?() ?? true },
             onRead: nil)
         defer { try? handle.close() }
-        _ = try await runTransfer(ctx) { auth, box in
+        let result = try await runTransfer(ctx) { auth, box in
             gsb_download(auth, remote, 0, maxBytesPerSecond, sftpWriteThunk, sftpProgressThunk, box)
+        }
+        // The shim counts bytes handed to the write callback, not bytes that
+        // reached the disk; `result.value` carries the size the server reported.
+        // Assert the file actually holds them, so a short write can never settle
+        // as a finished transfer with a truncated file on disk.
+        let written = (try? FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
+        if let short = TransferCompletion.shortfall(expected: result.value, written: written) {
+            throw SFTPError(kind: .io,
+                            message: "The download of “\(localURL.lastPathComponent)” ended early — \(short) byte\(short == 1 ? "" : "s") never arrived.")
         }
     }
 
@@ -135,7 +159,14 @@ public struct SFTPClient: Sendable {
         guard let handle = try? FileHandle(forReadingFrom: localURL) else {
             throw SFTPError(kind: .io, message: "Could not open the local file for reading")
         }
-        let total = (try? FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
+        // A size we can't read would silently disable the shim's "was the whole
+        // file sent?" assertion (`total == 0` means "size unknown" there), so a
+        // truncated upload would report success. Refuse rather than guess.
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: localURL.path),
+              let total = attributes[.size] as? Int64 else {
+            throw SFTPError(kind: .io,
+                            message: "Could not read the size of “\(localURL.lastPathComponent)”, so Goel can’t tell whether the whole file was sent.")
+        }
         // A local read that *throws* must not be folded into the `return 0` that
         // signals a clean EOF — the C upload loop would treat it as end-of-file,
         // truncate-write only the bytes sent so far, and report success. Capture
@@ -179,7 +210,16 @@ public struct SFTPClient: Sendable {
                                   write: @escaping @Sendable (UnsafeRawBufferPointer) -> Bool,
                                   progress: @escaping @Sendable (Int64, Int64) -> Bool) async -> SFTPResult {
         let ctx = TransferContext(onWrite: write, onProgress: progress, onRead: nil)
-        let expected = hostKeys.fingerprint(host: target.host, port: target.port)
+        let expected: String?
+        do {
+            expected = try await pinnedFingerprint()
+        } catch let e as SFTPError {
+            // This entry point reports through its result rather than throwing, so
+            // a refusal has to be phrased as one.
+            return SFTPResult(code: Int32(GSB_ERR_HOSTKEY), message: e.message)
+        } catch {
+            return SFTPResult(code: Int32(GSB_ERR_HOSTKEY), message: error.localizedDescription)
+        }
         let result = await withCheckedContinuation { (cont: CheckedContinuation<GSBResult, Never>) in
             let box = Unmanaged.passRetained(ctx)
             let thread = Thread {
@@ -200,19 +240,26 @@ public struct SFTPClient: Sendable {
 
     // MARK: Plumbing
 
-    /// Run a session-scoped op on a dedicated thread; throw on failure and pin
-    /// the host key on first successful connect.
-    private func run(_ body: @escaping @Sendable (UnsafePointer<GSBAuth>) -> GSBResult) async throws -> GSBResult {
-        let expected = hostKeys.fingerprint(host: target.host, port: target.port)
-        let result = await withCheckedContinuation { (cont: CheckedContinuation<GSBResult, Never>) in
+    /// Run one blocking C call on its own thread. No trust policy of its own —
+    /// the caller decides what `expected` should be (see ``pinnedFingerprint()``).
+    private func runOnThread(expected: String?, name: String,
+                             _ body: @escaping @Sendable (UnsafePointer<GSBAuth>) -> GSBResult) async -> GSBResult {
+        await withCheckedContinuation { (cont: CheckedContinuation<GSBResult, Never>) in
             let thread = Thread {
                 let r = Self.withAuth(self.target, expected: expected, body)
                 cont.resume(returning: r)
             }
-            thread.name = "goel.sftp-op"
+            thread.name = name
             thread.stackSize = 1 << 20
             thread.start()
         }
+    }
+
+    /// Run a session-scoped op on a dedicated thread; throw on failure and pin
+    /// the host key on first successful connect.
+    private func run(_ body: @escaping @Sendable (UnsafePointer<GSBAuth>) -> GSBResult) async throws -> GSBResult {
+        let expected = try await pinnedFingerprint()
+        let result = await runOnThread(expected: expected, name: "goel.sftp-op", body)
         learnIfNeeded(expected: expected, result: result)
         guard result.code == GSB_OK else {
             throw SFTPResult(result).asError(host: target.host, port: target.port,
@@ -223,7 +270,7 @@ public struct SFTPClient: Sendable {
 
     private func runTransfer(_ ctx: TransferContext,
                              _ body: @escaping @Sendable (UnsafePointer<GSBAuth>, UnsafeMutableRawPointer) -> GSBResult) async throws -> GSBResult {
-        let expected = hostKeys.fingerprint(host: target.host, port: target.port)
+        let expected = try await pinnedFingerprint()
         let result = await withCheckedContinuation { (cont: CheckedContinuation<GSBResult, Never>) in
             let box = Unmanaged.passRetained(ctx)
             let thread = Thread {
@@ -245,8 +292,45 @@ public struct SFTPClient: Sendable {
         return result
     }
 
+    /// The endpoint as the user wrote it, for messages.
+    private var endpoint: String {
+        target.port == 22 ? target.host : "\(target.host):\(target.port)"
+    }
+
+    /// The fingerprint this connection must match, resolving first contact.
+    ///
+    /// Three outcomes for a host with no pin. With an approver installed the key
+    /// is read in a credential-free pre-flight and pinned only if the user
+    /// accepts it, so the password is never offered to a host whose identity the
+    /// user hasn't seen. Without one — the daemon, the CLI paths, tests — the
+    /// classic trust-on-first-use applies and ``learnIfNeeded(expected:result:)``
+    /// pins after the fact, because there is nobody to ask. A pin record we can't
+    /// read refuses outright: silently re-learning would downgrade an already
+    /// verified server back to first contact.
+    private func pinnedFingerprint() async throws -> String? {
+        switch hostKeys.lookup(host: target.host, port: target.port) {
+        case .pinned(let fingerprint):
+            return fingerprint
+        case .unavailable:
+            throw SFTPError(kind: .hostKey,
+                            message: "Goel can’t read its record of this server’s identity, so it won’t connect. Reset the pinned host key for \(endpoint) and re-verify.")
+        case .none:
+            guard let approver = HostKeyTrust.shared.approver else { return nil }
+            let fingerprint = try await hostKeyFingerprint()
+            guard await approver.approveFirstContact(host: target.host, port: target.port,
+                                                     fingerprint: fingerprint) else {
+                throw SFTPError(kind: .hostKey,
+                                message: "You didn’t confirm the identity of \(endpoint), so Goel didn’t connect.")
+            }
+            hostKeys.setFingerprint(fingerprint, host: target.host, port: target.port)
+            return fingerprint
+        }
+    }
+
     /// On a first, un-pinned connect (`expected == nil`) that succeeded far
     /// enough to read the host key, remember it so later connects are pinned.
+    /// Only reachable when no approver is installed — with one,
+    /// ``pinnedFingerprint()`` has already pinned or refused.
     private func learnIfNeeded(expected: String?, result: GSBResult) {
         guard expected == nil else { return }
         let fp = withUnsafeBytes(of: result.fingerprint) { raw -> String in
@@ -293,6 +377,16 @@ public struct SFTPResult: Sendable {
     public let value: Int64
     public let fingerprint: String
     public let message: String
+
+    /// A refusal decided in Swift before any C call was made — an unreadable pin
+    /// record, or a declined first-contact approval — for the entry points that
+    /// report through a result instead of throwing.
+    init(code: Int32, message: String) {
+        self.code = code
+        self.value = 0
+        self.fingerprint = ""
+        self.message = message
+    }
 
     init(_ r: GSBResult) {
         code = Int32(r.code)

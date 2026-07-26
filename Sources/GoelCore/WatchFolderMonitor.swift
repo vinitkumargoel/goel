@@ -30,6 +30,11 @@ public final class WatchFolderMonitor: @unchecked Sendable {
     /// Invoked once per newly-discovered `.torrent` file.
     private var onNewTorrent: (@Sendable (URL) -> Void)?
 
+    /// Whether the last scan could not read the directory. Edge-triggered: the
+    /// timer fires every two seconds, so logging each failure would fill the log
+    /// with one line per tick for as long as the folder stays gone.
+    private var lastScanFailed = false
+
     /// How often the watched directory is rescanned.
     private let pollInterval: DispatchTimeInterval = .seconds(2)
 
@@ -59,6 +64,7 @@ public final class WatchFolderMonitor: @unchecked Sendable {
                 if self.watchedPath != path { self.seen.removeAll() }
                 self.watchedPath = path
                 self.onNewTorrent = onNewTorrent
+                self.lastScanFailed = false
 
                 let timer = DispatchSource.makeTimerSource(queue: self.queue)
                 timer.schedule(deadline: .now(), repeating: self.pollInterval)
@@ -82,6 +88,7 @@ public final class WatchFolderMonitor: @unchecked Sendable {
                 self?.watchedPath = nil
                 self?.onNewTorrent = nil
                 self?.seen.removeAll()
+                self?.lastScanFailed = false
                 cont.resume()
             }
         }
@@ -89,15 +96,31 @@ public final class WatchFolderMonitor: @unchecked Sendable {
 
     /// Diff the watched directory and report any `.torrent` file not seen yet.
     /// Always runs on `queue`.
+    ///
+    /// A folder that was deleted, renamed, unmounted or is no longer readable used
+    /// to be indistinguishable from an empty one — the watch went silent forever
+    /// with nothing to explain it. The failure is now logged, but only on the
+    /// transition into failure, and the timer deliberately keeps running so the
+    /// watch recovers by itself when the folder comes back.
     private func scan() {
         guard let path = watchedPath, let callback = onNewTorrent else { return }
         let directory = URL(fileURLWithPath: path, isDirectory: true)
 
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )) ?? []
+        let contents: [URL]
+        do {
+            contents = try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            lastScanFailed = false
+        } catch {
+            if !lastScanFailed {
+                lastScanFailed = true
+                GoelLog.scheduler.error("Watch folder unreadable", .path(path))
+            }
+            return
+        }
 
         for url in contents where url.pathExtension.lowercased() == "torrent" {
             let key = url.standardizedFileURL.path

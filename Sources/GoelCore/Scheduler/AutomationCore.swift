@@ -77,6 +77,10 @@ enum AutomationCore {
         var networkPaused = false
         /// Tasks the network policy paused, so recovery resumes exactly those.
         var networkPausedIDs: Set<UUID> = []
+        /// Whether the battery policy currently holds the queue paused.
+        var powerPaused = false
+        /// Tasks the battery policy paused, so recovery resumes exactly those.
+        var powerPausedIDs: Set<UUID> = []
         /// Feed item keys already queued this run, so a poll never re-adds items.
         var rssSeenKeys: Set<String> = []
 
@@ -85,7 +89,7 @@ enum AutomationCore {
 
     /// Which policy paused a task — so the manager can un-record a pause it could
     /// not actually apply (the task changed phase across an `await`).
-    enum Ledger: Sendable, Equatable, Hashable { case window, network }
+    enum Ledger: Sendable, Equatable, Hashable { case window, network, power }
 
     enum Action: Sendable, Equatable, Hashable {
         case pause(UUID, Ledger)
@@ -103,11 +107,17 @@ enum AutomationCore {
         var tasks: [TaskPhase]
         var networkExpensive: Bool
         var networkConstrained: Bool
+        /// Whether the machine is running on battery rather than AC.
+        var onBattery: Bool
+        /// Remaining charge, 0…100, or `nil` when there is no battery to read.
+        /// A missing level reads as full, so a desktop is never paused.
+        var batteryPercent: Int?
         var feeds: [FeedFetch]
         var memory: Memory
 
         init(now: Date, calendar: Calendar, settings: AppSettings,
                     tasks: [TaskPhase], networkExpensive: Bool, networkConstrained: Bool,
+                    onBattery: Bool = false, batteryPercent: Int? = nil,
                     feeds: [FeedFetch] = [], memory: Memory) {
             self.now = now
             self.calendar = calendar
@@ -115,6 +125,8 @@ enum AutomationCore {
             self.tasks = tasks
             self.networkExpensive = networkExpensive
             self.networkConstrained = networkConstrained
+            self.onBattery = onBattery
+            self.batteryPercent = batteryPercent
             self.feeds = feeds
             self.memory = memory
         }
@@ -133,9 +145,10 @@ enum AutomationCore {
     /// The one entry point: pure and total over its ``Snapshot``.
     ///
     /// Policies are evaluated in a fixed order — download window, then network
-    /// awareness, then per-task scheduled starts, then RSS — and a task is
-    /// pause-claimed by at most one ledger per tick (window wins), so a paused id
-    /// is attributed to a single owner and recovers deterministically.
+    /// awareness, then battery level, then per-task scheduled starts, then RSS —
+    /// and a task is pause-claimed by at most one ledger per tick (window beats
+    /// network beats power), so a paused id is attributed to a single owner and
+    /// recovers deterministically.
     static func decide(_ s: Snapshot) -> Decision {
         var memory = s.memory
         var actions: [Action] = []
@@ -206,6 +219,34 @@ enum AutomationCore {
             memory.networkPaused = false
             for id in memory.networkPausedIDs.sortedByUUID() { actions.append(.resume(id)) }
             memory.networkPausedIDs = []
+        }
+
+        // MARK: Power awareness
+        // "Pause downloads below battery threshold" — same latch/unlatch shape as
+        // the network policy, and third in the single-owner ordering (window >
+        // network > power) so a task paused by an earlier ledger is not re-claimed
+        // and is resumed by whoever actually paused it. A machine that reports no
+        // charge level (a desktop, or a read that failed) counts as full.
+        let batteryLow = s.settings.pauseBelowBatteryThreshold
+            && s.onBattery
+            && (s.batteryPercent ?? 100) <= s.settings.batteryThresholdPercent
+        if batteryLow, !memory.powerPaused {
+            var paused: Set<UUID> = []
+            for t in s.tasks where t.downloadingPhase && !claimedThisTick.contains(t.id) {
+                actions.append(.pause(t.id, .power))
+                paused.insert(t.id)
+                claimedThisTick.insert(t.id)
+            }
+            // Latch only once something was actually paused — see the network
+            // branch above for why an empty latch would consume the policy.
+            if !paused.isEmpty {
+                memory.powerPaused = true
+                memory.powerPausedIDs = paused
+            }
+        } else if !batteryLow, memory.powerPaused {
+            memory.powerPaused = false
+            for id in memory.powerPausedIDs.sortedByUUID() { actions.append(.resume(id)) }
+            memory.powerPausedIDs = []
         }
 
         // MARK: Per-task scheduled starts

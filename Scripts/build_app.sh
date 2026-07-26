@@ -11,7 +11,19 @@
 #      without Homebrew.
 #
 # Usage: Scripts/build_app.sh
-# Result: dist/GoelDownloader.app  (ready to zip / drag to /Applications / ship)
+# Result: dist/Goel°.app
+#
+# By default this produces a LOCAL build: signed with whatever identity is handy
+# so macOS keeps its privacy grants across rebuilds, and deliberately NOT
+# packaged into a release archive, because such a build is not one.
+#
+#   GOEL_RELEASE=1    demand a Developer ID Application certificate, a configured
+#                     updater and a clean Gatekeeper assessment; only then emit
+#                     dist/Goel-Downloader-<version>-macos-<arch>.zip
+#   GOEL_LOCAL_DEV=1  throwaway build: the deployment-target gates warn instead
+#                     of failing, and nothing distributable is produced
+#
+# See RELEASE.md for the full release sequence.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."   # repo root
@@ -26,17 +38,89 @@ APP="dist/$APP_BUNDLE.app"
 ARCH_ENV="${GOEL_ARCH:-$(uname -m)}"
 ARCH_FLAGS=(--arch "$ARCH_ENV")
 
+# GOEL_LOCAL_DEV=1 marks a throwaway build on the developer's own machine: the
+# deployment-target gates degrade to warnings, and in exchange no distributable
+# archive is produced (see DISTRIBUTABLE below). It is never set in CI.
+#
+# GOEL_RELEASE=1 is the opposite end: it demands a Developer ID Application
+# certificate, a configured updater, a Gatekeeper-clean result, and only then
+# emits an archive. The two are mutually exclusive by construction.
+LOCAL_DEV="${GOEL_LOCAL_DEV:-0}"
+GOEL_RELEASE="${GOEL_RELEASE:-0}"
+if [ "$LOCAL_DEV" = "1" ] && [ "$GOEL_RELEASE" = "1" ]; then
+  echo "error: GOEL_LOCAL_DEV=1 and GOEL_RELEASE=1 are contradictory." >&2
+  echo "       GOEL_LOCAL_DEV waives the gates a release exists to satisfy." >&2
+  exit 1
+fi
+
 # Size-optimized release: -Osize favors smaller code over speed (irrelevant for
 # a UI/IO-bound downloader), -dead_strip drops unreferenced code at link time.
 BUILD_FLAGS=(-Xswiftc -Osize -Xlinker -dead_strip)
 echo "==> swift build -c $CONFIG --arch $ARCH_ENV (size-optimized)"
-swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${BUILD_FLAGS[@]}"
+# Working files (build log, notarization payload, Gatekeeper report) all live
+# here so none of them can be mistaken for a release artifact in dist/.
+SCRATCH="$(mktemp -d -t goel-build)"
+trap 'rm -rf "$SCRATCH"' EXIT
+
+# The build log is kept because ld's "built for newer version of macOS" warning
+# is the earliest signal that a linked dylib will not load on the OS this app
+# advertises. It scrolls past in a normal build and nothing else looks at it, so
+# it is promoted to an error here. `pipefail` is already on, so a failing
+# `swift build` still aborts despite the pipe into tee.
+#
+# This is an EARLY signal, not the authority: an incremental build that relinks
+# nothing prints no warning. Scripts/check_min_os.sh inspects the assembled
+# bundle itself and is what actually decides.
+BUILD_LOG="$SCRATCH/build.log"
+swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${BUILD_FLAGS[@]}" 2>&1 | tee "$BUILD_LOG"
+if grep -q 'which was built for newer version' "$BUILD_LOG"; then
+  echo "error: the linker warned that a dependency targets a newer macOS than this app:" >&2
+  grep 'which was built for newer version' "$BUILD_LOG" | sed 's/^/    /' >&2
+  echo "       dyld will refuse those libraries at launch. See Scripts/check_min_os.sh" >&2
+  echo "       for how to produce correctly-targeted dylibs." >&2
+  if [ "$LOCAL_DEV" != "1" ]; then
+    exit 1
+  fi
+  echo "warning: GOEL_LOCAL_DEV=1 — continuing. This build is NOT shippable." >&2
+fi
 BIN="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${BUILD_FLAGS[@]}" --show-bin-path)"
 
 echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
+# --- about the TCC purpose strings below ------------------------------------
+#
+# A missing *UsageDescription is not a cosmetic omission: macOS TERMINATES a
+# process that sends an Apple event without NSAppleEventsUsageDescription, so
+# the "shut down when downloads finish" drain would kill the app instead of the
+# Mac. The rest are the folders and networks this app is actually pointed at:
+#
+#   NSAppleEvents        LiveSystemActions asks System Events to shut down.
+#   NSLocalNetwork       RemoteControlServer binds an NWListener and advertises
+#     + NSBonjourServices  _http._tcp; SFTP/NAS transfers reach LAN hosts. The
+#                        service type must match RemoteControlServer exactly or
+#                        the advertisement is dropped without a word.
+#   Downloads/Desktop/   the save directory defaults to ~/Downloads with no open
+#     Documents          panel (so there is no implicit grant), and a persisted
+#                        watch folder is re-read at launch.
+#   Removable/Network    documented targets for finished files (SMB/NFS, disks).
+#     Volumes
+#
+# Nothing else is listed because nothing else is called — no camera, microphone,
+# photos or contacts API exists in this codebase, and an unused purpose string is
+# a claim the app cannot justify.
+#
+# NSAppTransportSecurity: a general-purpose download client fetches URLs the
+# *user* supplies, and plain http:// is one of them. Without this dict every
+# http:// transfer fails with NSURLErrorAppTransportSecurityRequiresSecureConnection
+# (-1022) — verified against a packaged build — which surfaces as a generic
+# transfer error on a URL that works fine in curl. The scheme allowlist lives in
+# NetworkGuard (http/https only) and the redirect chain is sanitised by
+# RedirectSanitizer, so relaxing ATS does not widen what the app will fetch; it
+# only stops ATS from vetoing a capability the app documents. Sparkle's appcast
+# and the release feed independently require https, so the updater path is
+# unaffected by this.
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -72,6 +156,29 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <true/>
     <key>OSAScriptingDefinition</key>
     <string>GoelDownloader.sdef</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Goel° asks System Events to sleep or shut down your Mac when you have chosen to do that after downloads finish.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Goel° needs your local network to serve the remote-control portal to your other devices and to reach NAS shares and SFTP hosts.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_http._tcp</string>
+    </array>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>Goel° needs your Downloads folder so it can save downloads to, and watch for new .torrent files in, the folder you chose.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>Goel° needs your Desktop folder so it can save downloads to, and watch for new .torrent files in, the folder you chose.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Goel° needs your Documents folder so it can save downloads to, and watch for new .torrent files in, the folder you chose.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>Goel° needs removable disks so it can save downloads to, and watch for new .torrent files in, the folder you chose.</string>
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>Goel° needs network volumes so it can save downloads to, and watch for new .torrent files in, the folder you chose.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -169,8 +276,32 @@ else
   echo "==> Version $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist") (untagged build — Info.plist literal)"
 fi
 
-BUILD_OVERRIDE="${GOEL_BUILD:-$(git rev-list --count HEAD 2>/dev/null || true)}"
-[ -n "$BUILD_OVERRIDE" ] && plist_set CFBundleVersion "$BUILD_OVERRIDE"
+PLIST_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
+if [ -n "${GOEL_BUILD:-}" ]; then
+  plist_set CFBundleVersion "$GOEL_BUILD"
+else
+  BUILD_OVERRIDE="$(git rev-list --count HEAD 2>/dev/null || true)"
+  # The commit count only increases monotonically over a COMPLETE history. A
+  # shallow clone (actions/checkout defaults to fetch-depth: 1) counts 1 commit
+  # and would stamp a release with a CFBundleVersion *below* the one already
+  # shipped — Sparkle would then read the new release as older and never offer
+  # it. Refuse rather than silently regress; an explicit GOEL_BUILD is exempt,
+  # because that is a human asserting the number on purpose.
+  if [ -n "$BUILD_OVERRIDE" ] && [ "$BUILD_OVERRIDE" -lt "$PLIST_BUILD" ] 2>/dev/null; then
+    echo "error: git-derived CFBundleVersion ($BUILD_OVERRIDE) is lower than the" >&2
+    echo "       Info.plist literal ($PLIST_BUILD), so this build would look OLDER" >&2
+    echo "       than the last release to Sparkle." >&2
+    if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo unknown)" = "true" ]; then
+      echo "       This clone is SHALLOW — fetch the full history (fetch-depth: 0)." >&2
+    else
+      echo "       Set GOEL_BUILD=<n> explicitly if this number is intentional." >&2
+    fi
+    exit 1
+  fi
+  if [ -n "$BUILD_OVERRIDE" ]; then
+    plist_set CFBundleVersion "$BUILD_OVERRIDE"
+  fi
+fi
 
 # Executable + SwiftPM resource bundles (Bundle.module resolves these next to
 # the executable, so they live in Contents/MacOS alongside the binary).
@@ -207,6 +338,15 @@ if [ -n "${SPARKLE_FEED_URL:-}" ] || [ -n "${SPARKLE_ED_KEY:-}" ]; then
   echo "==> Enabling Sparkle updates ($SPARKLE_FEED_URL)"
   plist_set SUFeedURL "$SPARKLE_FEED_URL"
   plist_set SUPublicEDKey "$SPARKLE_ED_KEY"
+elif [ "$GOEL_RELEASE" = "1" ] && [ "${GOEL_NO_UPDATER:-0}" != "1" ]; then
+  # Neither var set. For a local build that is fine — the in-app checker tells
+  # the user to configure a feed. For a RELEASE it means the copy people
+  # download has no way to learn that a later one exists, and nothing anywhere
+  # would say so. Make that a decision someone has to take on purpose.
+  echo "error: GOEL_RELEASE=1 but neither SPARKLE_FEED_URL nor SPARKLE_ED_KEY is set," >&2
+  echo "       so this release would ship with no update path at all." >&2
+  echo "       Set both, or set GOEL_NO_UPDATER=1 to acknowledge shipping without one." >&2
+  exit 1
 fi
 
 # App icon (the dark variant is the shipped icon).
@@ -221,10 +361,26 @@ cp Sources/GoelApp/Resources/GoelDownloader.sdef "$APP/Contents/Resources/GoelDo
 # someone who receives the bundle without the repository can still read what the
 # terms are and who to contact, which is the whole point of an honour-based
 # licence (there is no key check to tell them).
-[ -f LICENSE ] && cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
-[ -f THIRD-PARTY-NOTICES.md ] && cp THIRD-PARTY-NOTICES.md "$APP/Contents/Resources/THIRD-PARTY-NOTICES.txt"
-[ -f LICENSE-COMMERCIAL.md ] && cp LICENSE-COMMERCIAL.md "$APP/Contents/Resources/LICENSE-COMMERCIAL.txt"
-[ -f TRADEMARK.md ] && cp TRADEMARK.md "$APP/Contents/Resources/TRADEMARK.txt"
+#
+# All four are tracked files, so a missing one is a broken checkout or a bad
+# merge, not a condition to route around: copying "if present" turns a licence
+# obligation into a coin toss that nothing reports. Fail instead.
+for pair in \
+  "LICENSE:LICENSE.txt" \
+  "THIRD-PARTY-NOTICES.md:THIRD-PARTY-NOTICES.txt" \
+  "LICENSE-COMMERCIAL.md:LICENSE-COMMERCIAL.txt" \
+  "TRADEMARK.md:TRADEMARK.txt"
+do
+  src="${pair%%:*}"
+  dst="${pair#*:}"
+  if [ ! -f "$src" ]; then
+    echo "error: $src is missing — it must ride inside the bundle." >&2
+    echo "       Redistributing the native libraries without their notices is a" >&2
+    echo "       licence violation, so this is not something to skip." >&2
+    exit 1
+  fi
+  cp "$src" "$APP/Contents/Resources/$dst"
+done
 
 # Safari Web Extension (.appex). Built by hand (no Xcode): the handler is a
 # minimal NSExtensionMain executable, and the SAME WebExtension resources the
@@ -251,7 +407,7 @@ codesign --force -s - "$APPEX"
 # Signed ad-hoc now so bundle_dylibs can seal the app wrapper; the Developer ID
 # block below re-signs it with hardened runtime + entitlements.
 if [ "${BUNDLE_YTDLP:-1}" = "1" ]; then
-  Scripts/fetch_ytdlp.sh "$APP/Contents/Resources/yt-dlp"
+  YTDLP_ARCH="$ARCH_ENV" Scripts/fetch_ytdlp.sh "$APP/Contents/Resources/yt-dlp"
   codesign --force -s - "$APP/Contents/Resources/yt-dlp"
 fi
 
@@ -274,6 +430,29 @@ fi
 
 # Vendor native dylibs, rewrite install names, and sign.
 Scripts/bundle_dylibs.sh "$APP"
+
+# The vendored dylibs are the ones most likely to out-target the app, so the
+# deployment-target gate runs the moment they land — before any time is spent
+# signing or notarizing a bundle that cannot launch. It runs again after signing,
+# because signing is the last step that can substitute a binary.
+#
+# MINOS_OK records the *honest* answer. Exit 3 means GOEL_LOCAL_DEV=1 waived a
+# real failure, and a waived bundle must not be notarized, stapled or packaged —
+# `DISTRIBUTABLE=0` alone was not enough, because it only guards the .zip: the
+# stapling block below is gated on CODESIGN_IDENTITY, and make_dmg.sh admits any
+# stapled app. That is how a bundle full of unlaunchable dylibs reached a signed,
+# notarized .dmg. Run through an `if` so `set -e` doesn't abort before the status
+# can be read.
+minos_gate() {
+  if GOEL_LOCAL_DEV="$LOCAL_DEV" Scripts/check_min_os.sh "$1"; then
+    MINOS_OK=1
+  else
+    status=$?
+    [ "$status" = 3 ] || exit "$status"
+    MINOS_OK=0
+  fi
+}
+minos_gate "$APP"
 
 # Optional Developer ID distribution, gated on env vars so the default build
 # stays untouched:
@@ -305,10 +484,57 @@ ENTITLEMENTS="Scripts/Goel.entitlements"
 # instead, so approvals persist across rebuilds. Any identity works for local
 # use; an "Apple Development" one is what most Macs with Xcode already have.
 # Set CODESIGN_IDENTITY=- to force the old ad-hoc behaviour.
-if [ -z "${CODESIGN_IDENTITY:-}" ]; then
-  AUTO_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
-                  | sed -n 's/^[[:space:]]*[0-9]*)[[:space:]]*[0-9A-F]*[[:space:]]*"\(.*\)"$/\1/p' \
-                  | head -1)
+#
+# GOEL_RELEASE=1 switches this from "any identity keeps TCC happy" to "only a
+# Developer ID Application certificate will do". The two are NOT interchangeable:
+# an Apple Development certificate signs perfectly and is then rejected by
+# Gatekeeper on every machine that is not the one that built it, which is exactly
+# how a build can look successful and still be undistributable. DISTRIBUTABLE
+# records which of the two happened, and nothing is packaged for release unless
+# it is 1.
+DISTRIBUTABLE=0
+
+# All codesigning identities, one per line, as `security` reports them.
+codesigning_identities() {
+  security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/^[[:space:]]*[0-9]*)[[:space:]]*[0-9A-F]*[[:space:]]*"\(.*\)"$/\1/p'
+}
+
+if [ "$GOEL_RELEASE" = "1" ]; then
+  if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+    case "$CODESIGN_IDENTITY" in
+      "Developer ID Application: "*) ;;
+      *) echo "error: GOEL_RELEASE=1 but CODESIGN_IDENTITY is '$CODESIGN_IDENTITY'." >&2
+         echo "       Only a 'Developer ID Application: …' certificate produces a bundle" >&2
+         echo "       Gatekeeper will accept on someone else's Mac." >&2
+         exit 1 ;;
+    esac
+  else
+    # Never `head -1` the whole list: the first line is usually an Apple
+    # Development certificate, and picking it silently is the defect this gate
+    # exists to prevent. Filter first, and refuse an ambiguous match rather than
+    # guessing which team ships.
+    DEV_ID_LIST="$(codesigning_identities | grep '^Developer ID Application:' || true)"
+    DEV_ID_COUNT="$(printf '%s' "$DEV_ID_LIST" | grep -c . || true)"
+    if [ "$DEV_ID_COUNT" -eq 0 ]; then
+      echo "error: GOEL_RELEASE=1 but no 'Developer ID Application' identity is installed." >&2
+      echo "       There is no fallback here — an Apple Development signature is not" >&2
+      echo "       valid for distribution. Install the certificate, then check with:" >&2
+      echo "         security find-identity -v -p codesigning" >&2
+      exit 1
+    fi
+    if [ "$DEV_ID_COUNT" -gt 1 ]; then
+      echo "error: more than one 'Developer ID Application' identity is installed:" >&2
+      printf '%s\n' "$DEV_ID_LIST" | sed 's/^/    /' >&2
+      echo "       Set CODESIGN_IDENTITY explicitly — guessing here is how a release" >&2
+      echo "       goes out signed by the wrong team." >&2
+      exit 1
+    fi
+    CODESIGN_IDENTITY="$DEV_ID_LIST"
+  fi
+  DISTRIBUTABLE=1
+elif [ -z "${CODESIGN_IDENTITY:-}" ]; then
+  AUTO_IDENTITY="$(codesigning_identities | head -1)"
   if [ -n "$AUTO_IDENTITY" ]; then
     CODESIGN_IDENTITY="$AUTO_IDENTITY"
     echo "==> Auto-selected signing identity (keeps macOS privacy approvals across rebuilds):"
@@ -359,25 +585,94 @@ if [ -n "${CODESIGN_IDENTITY:-}" ]; then
   sign --entitlements "$ENTITLEMENTS" "$APP/Contents/MacOS/$APP_NAME"
   sign --entitlements "$ENTITLEMENTS" "$APP"
 
-  codesign --verify --strict --deep "$APP" && echo "    signed & verified."
+  # NOT `codesign --verify … && echo ok`: a failing command that is not the last
+  # in an AND list does not trip `set -e`, so the old form printed nothing on
+  # failure and carried straight on to package a bundle whose seal was broken.
+  if ! codesign --verify --strict --deep "$APP"; then
+    echo "error: code signature verification failed for $APP" >&2
+    exit 1
+  fi
+  echo "    signed & verified."
+
+  # Signing is the last step that can replace a Mach-O in the bundle, so the
+  # deployment-target gate runs once more over the finished article.
+  minos_gate "$APP"
+
+  # Notarizing a waived bundle is what made the escape hatch dangerous: a stapled
+  # ticket is a distribution credential, and make_dmg.sh (rightly) trusts it. A
+  # throwaway build does not get one, so the hatch stays throwaway.
+  if [ -n "${NOTARY_PROFILE:-}" ] && [ "$MINOS_OK" != 1 ]; then
+    echo "error: refusing to notarize $APP — its deployment-target gate was waived" >&2
+    echo "       by GOEL_LOCAL_DEV=1. Stapling a ticket to it would let make_dmg.sh" >&2
+    echo "       wrap binaries that cannot launch on macOS $(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist" 2>/dev/null) into a release .dmg." >&2
+    echo "       Build without GOEL_LOCAL_DEV, on a runner whose Homebrew bottles" >&2
+    echo "       match the deployment target. See Scripts/check_min_os.sh." >&2
+    exit 1
+  fi
+
   if [ -n "${NOTARY_PROFILE:-}" ]; then
     echo "==> Notarizing (profile: $NOTARY_PROFILE)"
-    ditto -c -k --keepParent "$APP" "dist/$APP_NAME.zip"
-    xcrun notarytool submit "dist/$APP_NAME.zip" --keychain-profile "$NOTARY_PROFILE" --wait
+    # The submission zip is the PRE-staple copy. It is worthless once notarytool
+    # has answered and actively dangerous sitting in dist/ next to the real
+    # artifacts, so it is written to the scratch dir the trap removes.
+    ditto -c -k --keepParent "$APP" "$SCRATCH/$APP_NAME.zip"
+    xcrun notarytool submit "$SCRATCH/$APP_NAME.zip" --keychain-profile "$NOTARY_PROFILE" --wait
     xcrun stapler staple "$APP"
     echo "    notarized and stapled."
+  fi
+
+  # Gatekeeper is the only authority on whether a download will open on someone
+  # else's Mac. `codesign --verify` cannot see a rejection — it checks the seal,
+  # not the policy — so the real assessment happens here.
+  #
+  # `spctl` alone is not enough either: on the signing machine a
+  # Developer-ID-signed but UNNOTARIZED bundle is still accepted locally, and it
+  # says so in the `source=` line. That line is the honest signal, so it is what
+  # gets matched. Local/dev builds skip the whole block: they are not claiming to
+  # pass, and a CI runner with no certificate has nothing to assess.
+  if [ "$DISTRIBUTABLE" = 1 ]; then
+    echo "==> Gatekeeper assessment"
+    SPCTL_LOG="$SCRATCH/spctl.log"
+    if ! spctl -a -vvv -t exec "$APP" 2>&1 | tee "$SPCTL_LOG"; then
+      echo "error: Gatekeeper rejected $APP — it will not open on another Mac." >&2
+      exit 1
+    fi
+    if ! grep -q 'source=Notarized Developer ID' "$SPCTL_LOG"; then
+      echo "error: Gatekeeper accepted $APP but not as notarized:" >&2
+      grep 'source=' "$SPCTL_LOG" | sed 's/^/    /' >&2
+      echo "       Only 'source=Notarized Developer ID' means a downloaded copy opens" >&2
+      echo "       cleanly. Set NOTARY_PROFILE and re-run." >&2
+      exit 1
+    fi
+    if ! xcrun stapler validate "$APP"; then
+      echo "error: no valid notarization ticket is stapled to $APP." >&2
+      echo "       Without the ticket the first launch needs Apple to be reachable." >&2
+      exit 1
+    fi
+    echo "    Gatekeeper: notarized, stapled, accepted."
   fi
 fi
 
 # Compressed distributable (drag-to-share / drag-to-/Applications). The .app
 # installs at ~19 MB but the native dylibs compress well, so the download is
 # roughly half that.
-VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
-ZIP="dist/Goel-Downloader-${VERSION}-macos-${ARCH_ENV}.zip"
-echo "==> Packaging $ZIP"
-rm -f "$ZIP"
-ditto -c -k --keepParent "$APP" "$ZIP"
-
-echo "==> Done: $APP"
-printf '    installed: %s   download(zip): %s\n' \
-  "$(du -sh "$APP" | cut -f1)" "$(du -sh "$ZIP" | cut -f1)"
+#
+# Only a build that actually cleared the Developer ID + notarization gates gets
+# one. An ad-hoc or Apple-Development bundle used to produce a file with exactly
+# the release name, indistinguishable from the real thing until someone
+# downloaded it and Gatekeeper refused to open it.
+if [ "$DISTRIBUTABLE" = 1 ]; then
+  VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+  ZIP="dist/Goel-Downloader-${VERSION}-macos-${ARCH_ENV}.zip"
+  echo "==> Packaging $ZIP"
+  rm -f "$ZIP"
+  ditto -c -k --keepParent "$APP" "$ZIP"
+  echo "==> Done: $APP"
+  printf '    installed: %s   download(zip): %s\n' \
+    "$(du -sh "$APP" | cut -f1)" "$(du -sh "$ZIP" | cut -f1)"
+else
+  echo "==> Done: $APP  (local/dev build — no distributable archive emitted)"
+  printf '    installed: %s\n' "$(du -sh "$APP" | cut -f1)"
+  echo "    To produce a release archive, set GOEL_RELEASE=1 with a Developer ID"
+  echo "    Application certificate and NOTARY_PROFILE. See RELEASE.md."
+fi

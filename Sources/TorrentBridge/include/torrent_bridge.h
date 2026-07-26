@@ -24,6 +24,20 @@ typedef enum {
     GT_STATE_PAUSED       = 7
 } GTState;
 
+/// How a torrent is added. Bit flags OR'd together into the `mode` argument of
+/// `gt_add_magnet` / `gt_add_torrent_file` / `gt_add_resume`.
+typedef enum {
+    GT_ADD_DEFAULT       = 0,
+    /// A metadata-only probe for the add-confirmation preview. Fails closed on
+    /// a torrent that is already in the session (libtorrent would otherwise
+    /// hand back the LIVE handle, and removing the probe would evict the user's
+    /// running download), and requests no payload the user hasn't agreed to.
+    GT_ADD_METADATA_ONLY = 1,
+    /// Add with Peer Exchange disabled for this torrent. libtorrent has no
+    /// session-wide PeX switch — it is a per-torrent flag.
+    GT_ADD_DISABLE_PEX   = 2
+} GTAddMode;
+
 /// A snapshot of a torrent's progress, filled by `gt_get_status`.
 typedef struct {
     int32_t state;
@@ -55,15 +69,52 @@ void gt_session_set_rate_limits(GTSession session, int download_bps, int upload_
 /// torrent pull from more peers on the High profile. Values < 1 are ignored.
 void gt_session_set_connections(GTSession session, int connections_limit);
 
+/// Apply the settings that libtorrent accepts on a *running* session (DHT / LSD
+/// / uTP / encryption), so a Settings change takes effect immediately instead of
+/// waiting for the next launch. `enc_policy` matches `gt_session_create`.
+void gt_session_apply_settings(GTSession session, int enable_dht, int enable_lsd,
+                               int enable_utp, int enc_policy);
+
+/// Route the torrent swarm through a proxy. `proxy_type` follows libtorrent's
+/// `settings_pack::proxy_type_t` (0 = none, 2 = SOCKS5, 4 = HTTP). Hostnames are
+/// always resolved by the proxy (no DNS leak) and tracker announces always
+/// follow it; `peer_connections` decides whether peer connections do too — pass
+/// 0 for an HTTP proxy, which cannot carry them.
+void gt_session_set_proxy(GTSession session, int proxy_type, const char *host,
+                          int port, int peer_connections);
+
+/// Drain the session's alert queue (nothing else consumes it, and libtorrent
+/// drops alerts once it fills), then copy the last session-level failure it
+/// reported — currently a failed listen — into `out` and clear it, so the caller
+/// surfaces it once. Returns 1 when a message was written, 0 when there is
+/// nothing to report.
+int gt_session_last_error(GTSession session, char *out, int cap);
+
 /* --- Adding torrents ----------------------------------------------------- */
 
-/// Add a magnet URI. Returns a handle, or NULL (writing a message to err_out).
+/// Add a magnet URI with the given `GTAddMode` bits. Returns a handle, or NULL
+/// (writing a message to err_out).
 GTHandle gt_add_magnet(GTSession session, const char *magnet_uri, const char *save_path,
-                       char *err_out, int err_cap);
+                       int mode, char *err_out, int err_cap);
 
 /// Add a `.torrent` file by path. Returns a handle, or NULL (err_out set).
 GTHandle gt_add_torrent_file(GTSession session, const char *file_path, const char *save_path,
-                             char *err_out, int err_cap);
+                             int mode, char *err_out, int err_cap);
+
+/* --- Fast resume ---------------------------------------------------------- */
+
+/// Write libtorrent fast-resume data for `handle` to `path`, replacing it
+/// atomically (temp file + rename). Blocks up to `timeout_ms` for the session to
+/// produce the blob. Returns 1 on success, 0 on timeout/failure — in which case
+/// any previously saved blob is left untouched.
+int gt_save_resume_data(GTSession session, GTHandle handle, const char *path, int timeout_ms);
+
+/// Re-add a torrent from previously saved resume data, so its lifetime upload
+/// total survives a relaunch and its pieces aren't re-hashed. `save_path` is
+/// forced onto the restored parameters — the app's folder stays authoritative.
+/// Returns a handle, or NULL (err_out set) when there is no usable blob.
+GTHandle gt_add_resume(GTSession session, const char *resume_path, const char *save_path,
+                       int mode, char *err_out, int err_cap);
 
 /* --- Per-torrent control ------------------------------------------------- */
 
@@ -97,12 +148,22 @@ void gt_set_sequential(GTHandle handle, int sequential);
 /// Per-torrent download rate cap in bytes/sec (0 = unlimited).
 void gt_set_download_limit(GTHandle handle, int bytes_per_sec);
 
+/// Toggle Peer Exchange for one torrent. libtorrent has no session-wide PeX
+/// setting, so a live toggle has to be applied handle by handle.
+void gt_set_pex(GTHandle handle, int enable);
+
 /* --- Per-file selection (multi-file torrents) ---------------------------- */
 
 int  gt_file_count(GTHandle handle);
-/// Fill name/size/done/priority for file `index`. Returns 1 ok, 0 otherwise.
+/// Fill name/size/done/priority for file `index`. `name_out` receives the file's
+/// path *relative to the save folder*, so files with the same name in different
+/// subfolders stay distinguishable. Returns 1 ok, 0 otherwise.
 int  gt_file_info(GTHandle handle, int index, char *name_out, int name_cap,
                   int64_t *size_out, int64_t *done_out, int *priority_out);
+/// Fill `out[i]` with file `i`'s completed byte count, for up to `cap` files, in
+/// one pass. Returns the number written. `gt_file_info`'s `done_out` recomputes
+/// the whole vector per call, which is O(n²) over a torrent's file list.
+int  gt_file_progress(GTHandle handle, int64_t *out, int cap);
 /// Set libtorrent file priority (0 = don't download … 7 = top).
 void gt_set_file_priority(GTHandle handle, int index, int priority);
 

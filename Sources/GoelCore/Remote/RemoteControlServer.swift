@@ -70,38 +70,10 @@ public actor RemoteControlServer {
     private var generation = 0
 
     /// Why the last ``start(port:allowLAN:config:passwordHash:sessionMinutes:security:)``
-    /// left nothing listening, or nil when the portal is bound (or stopped on purpose).
-    ///
-    /// `start` has two fail-closed refusals — an unusable TLS identity and a failed
-    /// bind — and both are *correct*, but until now both were also silent: the only
-    /// trace was a `GoelLog` line in the unified log, which the person using the app
-    /// will never see. Failing closed invisibly is indistinguishable from succeeding,
-    /// so Settings kept offering "Open" and "Copy Link" for a portal that was never
-    /// there. Recording the reason lets ``RemoteAccess`` — and through it the UI —
-    /// say *why* web access is off instead of quietly claiming it is on.
-    public enum StartFailure: Sendable, Equatable {
-        /// Portal TLS is on, but the PKCS#12 identity at this path could not be
-        /// loaded: wrong path, unreadable file, or a `GOEL_PORTAL_TLS_PASSPHRASE`
-        /// that doesn't match the bundle.
-        case tlsIdentityUnavailable(path: String)
-        /// The socket could not be bound — usually the port is already taken by
-        /// another process.
-        case bindFailed(port: UInt16)
-
-        /// Plain-language text written for the person using the app, naming the fix.
-        /// Matches the wording style of ``SFTPError/message``.
-        public var message: String {
-            switch self {
-            case .tlsIdentityUnavailable(let path):
-                let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
-                let subject = trimmed.isEmpty ? "No HTTPS certificate is set, so web access can't start."
-                                              : "The HTTPS certificate at “\(trimmed)” couldn't be opened, so web access can't start."
-                return "\(subject) Check the path, and that GOEL_PORTAL_TLS_PASSPHRASE is set to that certificate's passphrase. Web access stays off rather than serving unencrypted."
-            case .bindFailed(let port):
-                return "Web access couldn't open port \(port) — another app is probably already using it. Pick a different port and try again."
-            }
-        }
-    }
+    /// left nothing listening. The reasons live in ``RemotePortalStartFailure`` so
+    /// both transports report the same set; this alias keeps the shell-scoped
+    /// spelling every existing caller uses.
+    public typealias StartFailure = RemotePortalStartFailure
 
     /// Set on each refusal in `start`, cleared the moment a listener is bound or the
     /// server is stopped. Read through ``lastStartFailure()``.
@@ -507,7 +479,12 @@ public actor RemoteControlServer {
         head += "Connection: keep-alive\r\n\r\n"
         if await send(connection, Data(head.utf8)) {
             while generation == myGeneration, let manager {
-                let frame = router.eventFrame(for: await manager.taskSnapshot())
+                guard let frame = router.eventFrame(for: await manager.taskSnapshot()) else {
+                    // Skip the tick rather than pushing an empty list, which would
+                    // blank the client's view of a queue that is still running.
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    continue
+                }
                 guard await send(connection, frame) else { break }
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
             }
@@ -538,10 +515,34 @@ public actor RemoteControlServer {
             if authed || !cfg.requireAuth { return Self.redirect(to: "/") }
             return Self.htmlResponse(RemoteRouter.loginPage(theme: cfg.theme, error: nil))
         case ("POST", "/login"):
+            // A foreign page must not be able to force-log-in a victim, so the
+            // login route takes the same Origin check as every other POST.
+            guard RemoteRouter.crossSiteWriteAllowed(request) else {
+                return RemoteRouter.forbidden("Cross-site request refused.")
+            }
             return await handleLogin(request, client: client)
         case ("GET", "/logout"), ("POST", "/logout"):
+            // Signing out is a state change, and a loud one: it drops the session
+            // AND bumps the generation, which winds down every live event stream
+            // and byte-range download on the server. Registered ahead of the auth
+            // gate it let any unauthenticated caller do that from a bare `curl`.
+            // Gate it with the same predicate every other route uses.
+            guard router.authorize(request, sessionAuthed: authed) else {
+                return request.method == "GET"
+                    ? Self.redirect(to: "/login")
+                    : RemoteRouter.response(status: "401 Unauthorized", type: "text/plain",
+                                            body: Data("Not signed in\n".utf8))
+            }
             return await handleLogout(request)
         default:
+            if RemoteAuthService.shouldPromoteTokenToSession(
+                request, requireAuth: cfg.requireAuth,
+                sessionAuthed: authed, tokenAuthed: tokenAuthed(request)) {
+                return RemoteRouter.response(
+                    status: "200 OK", type: "text/html; charset=utf-8",
+                    body: Data(RemoteRouter.page(config: cfg).utf8),
+                    extraHeaders: ["Set-Cookie": await sessionStore.issueSession()])
+            }
             if cfg.requireAuth, !authed, !tokenAuthed(request),
                request.method == "GET", !request.path.hasPrefix("/api") {
                 return Self.redirect(to: "/login")
@@ -575,9 +576,12 @@ public actor RemoteControlServer {
     }
 
     private func handleLogout(_ request: RemoteRequest) async -> Data {
-        // Bump generation so open SSE / streams re-auth after cookie clear.
-        generation += 1
-        return await sessionStore.handleLogout(request)
+        let result = await sessionStore.handleLogout(request)
+        // Only a real sign-out needs the bump: it is what forces open SSE and
+        // byte-range loops to re-authenticate. Bumping it for a logout that dropped
+        // nothing turned one stray request into every client's dead stream.
+        if result.droppedSession { generation += 1 }
+        return result.response
     }
 
     private static func redirect(to location: String) -> Data {

@@ -17,9 +17,9 @@ Rebuilt from scratch in Swift, self-contained, and Homebrew-free. Native SwiftUI
 
 <br>
 
-<a href="Assets/videos/goel-keynote-demo.mp4"><img src="Assets/videos/goel-keynote-poster.jpg" width="900" alt="Watch the Goel° demo — a 49-second cinematic tour: one unified queue (HTTP, FTP, SFTP, BitTorrent, HLS), live progress and speed, the BitTorrent piece map, browser-extension capture, and menu-bar + web-portal access. Click to play." /></a>
+<a href="Assets/videos/goel-keynote-demo.mp4"><img src="Assets/videos/goel-keynote-poster.jpg" width="900" alt="Watch the Goel° demo — a 64-second cinematic tour: one unified queue (HTTP, FTP, SFTP, BitTorrent, HLS), live progress and speed, the BitTorrent piece map, browser-extension capture, and menu-bar + web-portal access. Click to play." /></a>
 
-<sub><i>▶ <b><a href="Assets/videos/goel-keynote-demo.mp4">Watch the 49-second demo</a></b> 🔊 · downloads shown are illustrative mock data</i></sub>
+<sub><i>▶ <b><a href="Assets/videos/goel-keynote-demo.mp4">Watch the 64-second demo</a></b> 🔊 · downloads shown are illustrative mock data</i></sub>
 
 </div>
 
@@ -114,15 +114,15 @@ but must pick their own name, icon and bundle identifier.
 ## Features
 
 - **One unified queue** — HTTP/HTTPS, FTP/FTPS, SFTP, BitTorrent, and HLS downloads share one list and one interface.
-- **Segmented HTTP** — adaptive multi-connection downloads with resume, mirror/Metalink failover, and rate limiting.
-- **Full BitTorrent** — `.torrent` files and magnets via libtorrent, per-file priority, and complete seeding controls.
+- **Segmented HTTP** — adaptive multi-connection downloads with resume, mirror/Metalink failover, and rate limiting: the traffic profile's cap holds across every HTTP download at once, not per download. FTP, SFTP and HLS are still capped per transfer, so N of those together can exceed the profile figure.
+- **Full BitTorrent** — `.torrent` files and magnets via libtorrent, per-file priority, DHT/PeX/encryption toggles, and share-ratio seeding limits set per task or per traffic profile — carried across restarts by fast-resume, so ratios and upload totals survive a quit. Swarm traffic follows a **manual SOCKS5** proxy only: an HTTP proxy carries tracker announces but not peer connections, and the system proxy cannot be applied to the swarm at all. Settings states which of the three you are getting rather than implying the peers are covered.
 - **SFTP browser** — browse, upload, and download on remote servers with host-key pinning.
-- **HLS video** — download streaming video to a clean `.mp4`.
+- **HLS video** — download a finished (VOD) `.m3u8` stream to a clean `.mp4`, unencrypted or AES-128. Live streams, DRM (FairPlay/Widevine), and renditions that carry their audio as a separate track are refused with a stated reason rather than saved as a truncated or silent file.
 - **Easy adding** — clipboard auto-paste, batch add, drag & drop, a floating Drop Basket, a web-page Link Grabber, and an optional bundled `yt-dlp` resolver.
 - **Queue management** — sortable/filterable list, a detail panel with live speed graphs, and Low/Medium/High traffic profiles.
-- **Browser integration** — capture downloads from Chrome/Edge/Brave/Firefox and Safari extensions.
+- **Browser integration** — a WebExtension bundled inside the app and **side-loaded**, not installed from a store. Chromium-family browsers (Chrome, Edge, Brave, Chromium, Vivaldi, Arc) take it via Developer mode → **Load unpacked** and keep it. Firefox only accepts it as a **temporary add-on**, so it has to be re-loaded after every Firefox restart. Safari's version ships as an extension inside the app bundle and is switched on in Safari's own settings.
 - **macOS native** — menu-bar extra, Dock progress, Services menu, URL scheme, AppleScript, and notifications.
-- **Automation** — watch folders, scheduled download windows, power/network awareness, and post-download actions (extract, script, antivirus scan).
+- **Automation** — a watched folder for `.torrent` files, scheduled download windows, power/network awareness (pause below a battery percentage; pause on an expensive or constrained network), and post-download actions (extract, script, antivirus scan).
 - **Remote control** — an optional token-authenticated local HTTP server to manage downloads from another device.
 - **Checksums & history** — MD5/SHA verification plus searchable, re-downloadable history with CSV export.
 - **Self-contained** — every native library is bundled; no Homebrew or dependencies for end users.
@@ -142,6 +142,14 @@ but must pick their own name, icon and bundle identifier.
 3. Launch it.
 
 Everything the app needs is bundled — **no Homebrew or libraries required.**
+
+**Known issue with the `1.0.0` and `1.0.1` downloads:** those two archives were built before
+`Scripts/check_min_os.sh` existed, and the OpenSSL and libtorrent dylibs vendored into them declare a
+minimum of **macOS 26.0** (libssh2 declares 15.0) even though the app advertises 14.0. dyld refuses an
+over-targeted library before `main()`, so on a Mac between Sonoma and macOS 26 those builds quit on
+launch. Check a copy you already hold with `Scripts/check_min_os.sh "/Applications/Goel°.app"`. The gate
+runs in both `Scripts/build_app.sh` and `Scripts/make_dmg.sh` from `1.0.2` onward, so no later archive can
+be produced with the mismatch.
 
 **First-launch note (Gatekeeper):** a notarized release just opens. For an un-notarized build (e.g. a
 beta), right-click the app → **Open** → **Open**, or run once:
@@ -230,34 +238,54 @@ brew install libtorrent-rasterbar openssl@3 libssh2 boost
 swift build
 swift run GoelDownloader
 
-# 3. Assemble a distributable, self-contained .app (vendors dylibs, strips, signs)
-Scripts/build_app.sh          # → dist/Goel°.app  (+ a .zip)
+# 3. Assemble a self-contained .app (vendors dylibs, strips, signs)
+Scripts/build_app.sh          # → dist/Goel°.app  (local build — no release archive)
 
 # 4. Wrap it in a drag-to-Applications disk image
-Scripts/make_dmg.sh           # → dist/Goel-Downloader-<version>-macos-arm64.dmg
+GOEL_LOCAL_DEV=1 Scripts/make_dmg.sh   # unsigned image, written outside dist/
 ```
 
 **Signing & notarization** (for public distribution) — provide Apple Developer credentials:
 ```bash
+GOEL_RELEASE=1 \
 CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 NOTARY_PROFILE="your-notarytool-keychain-profile" \
 Scripts/build_app.sh
 ```
 This signs with hardened runtime + the entitlements in `Scripts/Goel.entitlements`, submits to Apple's
 notary service, and staples the ticket — which is what lets a downloaded app open without warnings.
+`GOEL_RELEASE=1` is what makes a release a release: without it the script produces a local build and
+emits **no** distributable archive, because an Apple Development signature is valid for signing and
+rejected by Gatekeeper everywhere else. With it, the archive is written only after `spctl` reports
+`source=Notarized Developer ID` and the ticket validates.
 
 **Bundling toggle:** `BUNDLE_YTDLP=0 Scripts/build_app.sh` builds without the ~35 MB yt-dlp binary.
 
-**Cutting a release:** follow **[RELEASE.md](RELEASE.md)** step by step — it replaces CI
-and covers signing, notarisation, the DMG, Sparkle appcast signing, and rollback.
+**If the build stops on deployment targets:** the vendored Homebrew dylibs are built for the OS of
+the machine that poured them, and dyld refuses one that needs a newer macOS than the app advertises —
+`Scripts/check_min_os.sh` catches that before it ships. Build on a macOS 14 machine or runner (as CI
+does), rebuild the dependencies with `MACOSX_DEPLOYMENT_TARGET=14.0`, or set `GOEL_LOCAL_DEV=1` for a
+throwaway build that warns instead (and produces nothing distributable).
+
+**Cutting a release:** follow **[RELEASE.md](RELEASE.md)** step by step — CI covers build, tests and
+the packaging gates; RELEASE.md covers signing, notarisation, the DMG, Sparkle appcast signing, and
+rollback.
 
 ---
 
 ## Updating
 
-- **Sparkle** — the bundled auto-update framework; point it at an appcast for silent in-app updates.
-- **Built-in checker** — a lightweight GitHub-Releases feed check. Configure the feed URL in
-  **Settings → Advanced**.
+**Goel° does not check for updates unless you switch it on.** Both routes below start inert, so a fresh
+install makes no update request at all.
+
+- **Sparkle** — the framework is bundled, but it stays **dormant unless the build stamps an appcast URL
+  and its EdDSA public key into `Info.plist`** (`SPARKLE_FEED_URL` + `SPARKLE_ED_KEY` — see
+  [RELEASE.md](RELEASE.md)). No published release has carried a feed yet, so in the builds on the
+  Releases page today Sparkle does nothing; the updater refuses to start rather than half-run.
+- **Built-in checker** — a lightweight GitHub-Releases feed check, and the one that actually runs.
+  Automatic checking is **off** by default and the feed URL starts empty; set both in
+  **Settings → Advanced**, then **Check Now**. With no feed URL configured the button says so instead of
+  reporting "up to date".
 
 Third-party libraries are frozen at build time and travel inside each release; there is no separate
 library updater by design.

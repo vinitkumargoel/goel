@@ -184,6 +184,20 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         }
     }
 
+    /// The URL this source will actually be fetched from — nil for a magnet, whose
+    /// swarm is reached by infohash rather than by contacting a named host.
+    ///
+    /// This is the address that has to be screened whenever the source came from
+    /// somewhere other than the person at the keyboard (the web portal's
+    /// `POST /api/add`, the browser-extension spool), so it lives with the type
+    /// rather than being re-derived at each of those seams.
+    public var fetchTargetURL: URL? {
+        switch self {
+        case .url(let url), .torrentFile(let url), .hlsStream(let url): return url
+        case .magnet: return nil
+        }
+    }
+
     /// Web-page / server-script path extensions that are pages to *view*, not
     /// files to download. Used to gate the passive clipboard-capture banner so a
     /// copied article/repo/search URL isn't offered as a download.

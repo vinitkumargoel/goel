@@ -122,11 +122,18 @@ extension AppViewModel {
 /// A thread-safe byte-count guard for a bounded download: the progress callback
 /// feeds it and `shouldContinue` reads it, so an over-cap transfer aborts on the
 /// next tick. `@unchecked Sendable` — all access is serialised by the lock.
-private final class ByteCap: @unchecked Sendable {
+///
+/// Internal rather than private because every download of a *server-supplied*
+/// size needs one: a listing's byte count is a claim, not a fact, so the browser's
+/// preview and drag-out fetches bound themselves the same way this probe does.
+final class ByteCap: @unchecked Sendable {
     private let lock = NSLock()
     private let limit: Int64
     private var over = false
     init(limit: Int64) { self.limit = limit }
+    /// Feed from a progress tick. Watching `total` as well as `sofar` means an
+    /// over-cap transfer is refused on the *first* tick rather than after the
+    /// whole cap has been written to disk.
     func observe(sofar: Int64, total: Int64) {
         lock.lock(); defer { lock.unlock() }
         if sofar > limit || total > limit { over = true }

@@ -306,15 +306,18 @@ struct RemoteAccessPane: View {
                         .accessibilityLabel("Regenerate API token")
                     }
                 }
+                if let failure = vm.remotePortalFailure {
+                    SetRow(name: "Web access is not running", desc: failure) { EmptyView() }
+                }
                 SetRow(name: "Open portal", desc: "Open it here, or from another device on your LAN.") {
                     HStack(spacing: 8) {
                         Button("Open") { if let url = controlURL { NSWorkspace.shared.open(url) } }
-                            .disabled(controlURL == nil)
+                            .disabled(controlURL == nil || vm.remotePortalFailure != nil)
                             .accessibilityLabel("Open web portal in browser")
                         Button("Copy Link") {
                             if let url = controlURL { vm.copyToPasteboard(url.absoluteString) }
                         }
-                        .disabled(controlURL == nil)
+                        .disabled(controlURL == nil || vm.remotePortalFailure != nil)
                         .accessibilityLabel("Copy web portal link")
                     }
                 }

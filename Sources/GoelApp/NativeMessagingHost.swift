@@ -43,7 +43,13 @@ enum NativeMessagingHost {
               // credential-free web-download schemes — never an `sftp:`/`ftp:`
               // link a web page could use to trigger an authenticated outbound
               // connection. (Those schemes are still allowed via the add box.)
-              source.isBrowserCaptureSafe else {
+              source.isBrowserCaptureSafe,
+              // …and only at a host a *web page* is allowed to steer this app at.
+              // The scheme check says nothing about the destination, so without
+              // this a page could spool `http://127.0.0.1:<port>/…` and have the
+              // app fetch a service on this machine that was deliberately never
+              // exposed to the browser, with no user in the loop at all.
+              Self.captureTargetAllowed(source) else {
             writeMessage(["ok": false, "error": "unsupported url"])
             return
         }
@@ -67,6 +73,17 @@ enum NativeMessagingHost {
         } catch {
             writeMessage(["ok": false, "error": "spool write failed"])
         }
+    }
+
+    /// Whether a capture's fetch target is a host this app may be pointed at by a
+    /// page. Same rule the network portal applies to a caller-supplied add, and for
+    /// the same reason — neither caller is the person at the keyboard. A magnet
+    /// names no host, so there is nothing to screen. This is the spelling-only
+    /// check; the app re-screens the spool against resolved addresses when it
+    /// drains it, which is where the blocking lookup belongs.
+    private static func captureTargetAllowed(_ source: DownloadSource) -> Bool {
+        guard let url = source.fetchTargetURL else { return true }
+        return NetworkGuard.isAllowedRemoteAddTarget(url)
     }
 
     /// Keep a browser-supplied referrer only if it is a plain web URL of sane

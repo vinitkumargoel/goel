@@ -27,6 +27,12 @@ struct SFTPConnectionEditor: View {
     @State private var testing = false
     @State private var testResult: TestResult?
     @State private var hostKeyReset = false
+    /// Drives an `.alert`, not ``AppViewModel/requestConfirm(title:message:confirmTitle:destructive:onConfirm:)``:
+    /// the shared confirm dialog is an `.overlay` on `RootView`'s content, and
+    /// this editor is a `.sheet` stacked above that content — so the dialog would
+    /// be drawn permanently *behind* the sheet and the reset could never be
+    /// confirmed. An alert presents its own window and works from inside a sheet.
+    @State private var confirmingHostKeyReset = false
 
     private enum TestResult {
         case success(String)
@@ -115,6 +121,12 @@ struct SFTPConnectionEditor: View {
             .padding(.horizontal, 20).padding(.vertical, 14)
         }
         .frame(width: 460)
+        .alert("Reset the pinned host key?", isPresented: $confirmingHostKeyReset) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset Key", role: .destructive) { resetPinnedHostKey() }
+        } message: {
+            Text("Goel will trust whatever key \(pinnedEndpointHost) presents next. Only do this after a legitimate server rekey, then re-verify with Test.")
+        }
     }
 
     private func field(_ label: String, _ prompt: String, _ text: Binding<String>) -> some View {
@@ -200,23 +212,15 @@ struct SFTPConnectionEditor: View {
         }
     }
 
-    /// Forget the pinned SSH fingerprint so trust-on-first-use re-learns it —
-    /// the in-app recovery after a legitimate server rekey (the pin otherwise
-    /// fails closed and permanently blocks the connection).
+    /// Forget the pinned SSH fingerprint so the next connection asks about the
+    /// key again — the in-app recovery after a legitimate server rekey, and the
+    /// only way out of a pin record Goel can no longer read (either fails closed
+    /// and permanently blocks the connection).
     @ViewBuilder
     private var hostKeyResetControl: some View {
         VStack(alignment: .leading, spacing: 4) {
             Button {
-                vm.requestConfirm(
-                    title: "Reset the pinned host key?",
-                    message: "Goel will trust whatever key this server presents next. Only do this after a legitimate server rekey, then re-verify with Test.",
-                    confirmTitle: "Reset Key",
-                    destructive: true
-                ) {
-                    HostKeyStore.shared.reset(host: host, port: portNumber)
-                    testResult = nil
-                    hostKeyReset = true
-                }
+                confirmingHostKeyReset = true
             } label: {
                 Label("Reset pinned host key", systemImage: "key.slash")
                     .scaledFont(size: 11)
@@ -224,7 +228,7 @@ struct SFTPConnectionEditor: View {
             .buttonStyle(.link)
             .help("Forget the saved SSH host-key fingerprint. Use this only after a legitimate server rekey, then re-verify with Test.")
             if hostKeyReset {
-                Text("Pinned key cleared — it will be re-learned on the next connection.")
+                Text("Pinned key cleared — Goel will ask you to confirm the key on the next connection.")
                     .scaledFont(size: 10).foregroundStyle(.secondary)
             }
         }
@@ -295,6 +299,22 @@ struct SFTPConnectionEditor: View {
     }
 
     // MARK: Actions
+
+    /// The pin that blocks a connection belongs to the *saved* endpoint — the
+    /// host and port fields may have been edited since — so the reset targets
+    /// that, not the draft.
+    private var pinnedEndpointHost: String { existing?.host ?? host }
+    private var pinnedEndpointPort: Int { existing?.port ?? portNumber }
+
+    private func resetPinnedHostKey() {
+        guard HostKeyStore.shared.reset(host: pinnedEndpointHost, port: pinnedEndpointPort) else {
+            testResult = .failure("Goel couldn’t clear the saved host key for \(pinnedEndpointHost).",
+                                  detail: nil)
+            return
+        }
+        testResult = nil
+        hostKeyReset = true
+    }
 
     private func draftConnection() -> SFTPConnection {
         // Store the tilde-expanded path: libssh2 opens it with plain fopen(), so

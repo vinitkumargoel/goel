@@ -1,8 +1,11 @@
 # Releasing Goel°
 
-There is no CI pipeline. This file **is** the pipeline. Follow it top to bottom,
-in order, ticking boxes as you go. It is written to be followed at 1am by
-someone who is tired and has forgotten everything, so nothing is left implicit.
+CI (`.github/workflows/ci.yml`) builds, tests and runs the deployment-target and
+Info.plist gates on every push and pull request, but it does **not** cut releases —
+signing needs a certificate that cannot live on a hosted runner. So this file is
+still the release pipeline. Follow it top to bottom, in order, ticking boxes as
+you go. It is written to be followed at 1am by someone who is tired and has
+forgotten everything, so nothing is left implicit.
 
 Every step is copy-pasteable from the repo root. The app bundle is
 `dist/Goel°.app` — the `°` is part of the name, so **always keep the quotes**.
@@ -116,6 +119,7 @@ git describe --tags --exact-match         # must print exactly: v1.1.0
 Set the env vars in the same shell, then run the build script.
 
 ```bash
+export GOEL_RELEASE=1                       # required — see below
 export CODESIGN_IDENTITY="Developer ID Application: Your Name (YOURTEAMID)"
 export NOTARY_PROFILE="goel-notary"
 export BUNDLE_YTDLP=1                       # 1 = bundle yt-dlp (~35 MB, recommended)
@@ -125,12 +129,25 @@ export SPARKLE_ED_KEY="<base64 public key printed by generate_keys>"
 Scripts/build_app.sh
 ```
 
+**`GOEL_RELEASE=1` is not optional.** Without it the script produces a *local*
+build — signed with whatever identity is handy so macOS keeps its privacy
+grants, and deliberately **not** packaged into `dist/…​.zip`. That is the point:
+an Apple Development signature is perfectly valid for signing and is rejected by
+Gatekeeper on every machine that is not yours, so a build that cannot pass must
+not be able to produce a file that looks like a release. With `GOEL_RELEASE=1`
+the script demands a Developer ID Application certificate, refuses to fall back
+to anything else, and gates the archive on `spctl` reporting
+`source=Notarized Developer ID` plus a valid stapled ticket.
+
 What the script does with each variable:
 
 | Env var | Effect |
 |---|---|
-| `CODESIGN_IDENTITY` | Signs inside-out with hardened runtime + `Scripts/Goel.entitlements`. Unset → auto-picks the first identity in your keychain (dev convenience). `-` → ad-hoc. **For a release this must be the Developer ID identity, spelled exactly as `security find-identity -v -p codesigning` prints it.** |
+| `GOEL_RELEASE` | `1` demands a Developer ID Application identity, a configured updater and a clean Gatekeeper assessment, and is the only way a distributable archive is emitted. Unset/`0` → local build, no archive. |
+| `CODESIGN_IDENTITY` | Signs inside-out with hardened runtime + `Scripts/Goel.entitlements`. Under `GOEL_RELEASE=1` it must start with `Developer ID Application: `, spelled exactly as `security find-identity -v -p codesigning` prints it; leave it unset and the script picks the single Developer ID identity, or refuses if there are none or several. Outside a release, unset → auto-picks the first identity in your keychain (dev convenience) and `-` → ad-hoc. |
 | `NOTARY_PROFILE` | Submits to Apple's notary service, waits, and staples the ticket to the `.app`. Only runs when `CODESIGN_IDENTITY` is set. |
+| `GOEL_NO_UPDATER` | `1` acknowledges shipping a release with no Sparkle feed. Without it, `GOEL_RELEASE=1` refuses to build when `SPARKLE_FEED_URL`/`SPARKLE_ED_KEY` are unset. |
+| `GOEL_LOCAL_DEV` | `1` downgrades the deployment-target gates to warnings for a throwaway build. Mutually exclusive with `GOEL_RELEASE=1`, never produces an archive, and — because a stapled ticket is what makes a bundle look shippable to `make_dmg.sh` — refuses to notarize or staple a bundle whose gate it waived. |
 | `BUNDLE_YTDLP` | `1` (default) bundles a frozen yt-dlp; `0` ships without it and the "Resolve with yt-dlp" button stays hidden. |
 | `SPARKLE_FEED_URL` | Written to `Info.plist` as `SUFeedURL`. Must be `https://`. |
 | `SPARKLE_ED_KEY` | Written to `Info.plist` as `SUPublicEDKey`. |
@@ -199,6 +216,13 @@ spctl -a -vvv -t install     "dist/Goel-Downloader-1.1.0-macos-arm64.dmg"
 ```
 
 Note `-t install` (not `-t exec`) for a disk image.
+
+`make_dmg.sh` re-runs the deployment-target gate and the Gatekeeper assessment on
+the app it was handed — it is a release path in its own right and cannot assume
+`build_app.sh` ran in the same invocation. It also builds the image in a scratch
+directory and moves it into `dist/` only after signing, notarization, stapling and
+the final assessment have all passed, so a failure leaves nothing behind that
+looks like a release.
 
 You now have two artifacts in `dist/`:
 
@@ -340,6 +364,7 @@ switch and it is the first thing you touch.**
 ## Quick reference
 
 ```bash
+export GOEL_RELEASE=1
 export CODESIGN_IDENTITY="Developer ID Application: Your Name (YOURTEAMID)"
 export NOTARY_PROFILE="goel-notary"
 export BUNDLE_YTDLP=1
@@ -354,6 +379,11 @@ Scripts/make_dmg.sh
 .build/artifacts/sparkle/Sparkle/bin/sign_update "dist/Goel-Downloader-1.1.0-macos-arm64.zip"
 # → paste into appcast.xml
 git push origin main && git push origin v1.1.0
-gh release create v1.1.0 --title "Goel° 1.1.0" --notes-file notes.md dist/*.dmg dist/*.zip
+# Name the two files explicitly — never glob dist/. It is not pruned between
+# releases, so a glob uploads every artifact still lying there, including ones
+# built before a gate existed, under a version nobody is releasing today.
+gh release create v1.1.0 --title "Goel° 1.1.0" --notes-file notes.md \
+  "dist/Goel-Downloader-1.1.0-macos-arm64.dmg" \
+  "dist/Goel-Downloader-1.1.0-macos-arm64.zip"
 # → publish appcast.xml last
 ```

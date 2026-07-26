@@ -181,9 +181,12 @@ No. We have no access to any credential, key or token used by the product.
 |---|---|---|
 | The transfers themselves | User adds a download | Inherent to the product |
 | BitTorrent peer/tracker/DHT traffic | User adds a torrent | Don't use torrents |
-| Update check (Sparkle / GitHub Releases) | Periodic, macOS | **Yes** — Settings → Updates |
+| Update check (GitHub Releases feed) | **Off by default** — makes no request until an operator sets a feed URL | **Yes** — Settings → Advanced, and forceable off fleet-wide via the `autoCheckUpdates` managed-policy key |
 
-There is no fourth category. Nothing is proxied through vendor infrastructure.
+There is no fourth category. Nothing is proxied through vendor infrastructure. Note that the
+bundled Sparkle framework is **not** a fourth connection today: it activates only in a build
+whose `Info.plist` carries `SUFeedURL` and `SUPublicEDKey`, and no published release carries
+them, so in the artefacts on the releases page Sparkle makes no connection at all.
 
 **5.2 What inbound listeners does the product open?**
 Two, both optional:
@@ -218,13 +221,29 @@ authenticated remote client could drop a file into an auto-run location such as
 ## 6. Application security
 
 **6.1 Is the application code-signed?**
-Yes. macOS releases are signed with a Developer ID and notarised by Apple. Local
-development builds are signed with a stable identity so macOS retains permission grants
-across rebuilds.
+The release build path requires a **Developer ID Application** certificate, hardened
+runtime, notarisation by Apple and a stapled ticket, and refuses to produce a
+distributable archive unless all four hold — `Scripts/build_app.sh` gates on
+`spctl -a -vvv -t exec` reporting `source=Notarized Developer ID` and on
+`xcrun stapler validate`, and `Scripts/make_dmg.sh` applies the equivalent gates to the
+disk image. Local development builds are signed with a stable identity so macOS retains
+permission grants across rebuilds, and are explicitly not packaged as releases.
+
+Artefacts published **before** those gates existed were signed with an Apple Development
+certificate and were neither notarised nor stapled, so Gatekeeper rejects them. They are
+being re-cut; verify any copy you hold with `spctl -a -vvv -t exec "/Applications/Goel°.app"`
+and treat anything other than `source=Notarized Developer ID` as one of the old builds.
 
 **6.2 How is update integrity ensured?**
-Sparkle verifies an EdDSA signature on the update before installing it, over HTTPS. An
-unsigned or mis-signed update is refused. The whole mechanism can be disabled.
+Where Sparkle is enabled, it verifies an EdDSA signature on the update before installing it,
+over HTTPS; an unsigned or mis-signed update is refused, and `build_app.sh` refuses to stamp a
+feed URL that is not `https://` or to stamp one of the two required keys without the other.
+Be precise about the current state, though: **no published release enables Sparkle**, because
+none carries an appcast URL and public key, and `SparkleUpdaterService` refuses to start on a
+half-configured bundle rather than running unverified. What ships today is the GitHub-Releases
+checker, which only *reports* a newer version and opens the release page in the browser — it
+downloads and installs nothing, so update integrity rests on the notarised artefact you then
+fetch by hand. Both mechanisms can be disabled, and the checker starts disabled.
 
 **6.3 Does the app run sandboxed?**
 It is distributed outside the Mac App Store and requires access to user-chosen download

@@ -27,6 +27,14 @@ Three ways in, checked in this order:
 The token comparison is constant-time (it examines every byte regardless of where the
 first mismatch is), so response timing cannot be used to recover it prefix-by-prefix.
 
+A `GET /` carrying a valid `?token=` is also **promoted to a real session cookie** and served
+the portal page, which is what makes the QR code and "Copy Link" in **Settings → Web Access**
+work as a one-tap pairing link from a phone — the token authenticates the first request and
+the cookie carries the rest. The portal's own JavaScript then strips `token=` out of the
+address bar with `history.replaceState`, so the secret does not linger in the URL bar, a
+bookmark or a screenshot. It is still a secret in a link: treat a shared QR image as a shared
+password.
+
 ```sh
 export GOEL="http://127.0.0.1:8899"
 export TOKEN="…"                     # Settings → Web Access
@@ -184,16 +192,27 @@ The only route with a JSON request body.
 - If no line parses into a valid source, the response is `400 Bad Request`.
 - `folder` is trimmed; empty means "use the per-source default".
 
-Response is a count, not `{"ok":true}`:
+Response is a pair of counts, not `{"ok":true}`. `refused` is always present:
 
 ```json
-{ "added": 2 }
+{ "added": 2, "refused": 0 }
 ```
 
-> **Path containment.** A `folder` outside the configured downloads root is **rejected**,
-> and the safe per-source default is used instead. Without this, an authenticated client
-> could drop a file into an auto-run location such as `~/Library/LaunchAgents`. The
-> rejection is logged to stderr; the request still succeeds.
+> **Path containment.** A `folder` outside the configured downloads root fails the whole
+> request with `403 Forbidden` and adds nothing — it is **not** silently redirected to the
+> default. Without the check, an authenticated client could drop a file into an auto-run
+> location such as `~/Library/LaunchAgents`; without the refusal, a client told "added"
+> could not tell where the file actually went.
+>
+> **Internal-address guard.** Every URL-bearing source is screened against loopback, the
+> link-local/cloud-metadata range and the unspecified address, **by resolved address** — a
+> hostname that resolves into those ranges is refused too, as are the integer, octal, hex
+> and IPv4-mapped-IPv6 spellings. Refused lines are counted in `refused`; if nothing in the
+> batch survives, the response is `403 Forbidden`. Private LAN ranges (`10/8`, `172.16/12`,
+> `192.168/16`) are deliberately allowed, since pulling from a NAS is the point. Note that
+> a screened URL is only screened at the point of adding: an allowed host that **redirects**
+> to an internal address is followed, and the child URIs inside an accepted HLS playlist are
+> checked for scheme but not for address.
 
 #### `POST /api/history-remove?id=<uuid>`
 
@@ -319,7 +338,7 @@ AUTH=(-H "Authorization: Bearer $TOKEN")
 curl -s "${AUTH[@]}" -X POST "$GOEL/api/add" \
   -H 'content-type: application/json' \
   -d '{"url":"https://example.org/a.iso\nhttps://example.org/b.iso","paused":true}'
-# → {"added":2}
+# → {"added":2,"refused":0}
 
 # List them
 curl -s "${AUTH[@]}" "$GOEL/api/tasks" | jq -r '.[] | "\(.id)  \(.statusToken)  \(.name)"'

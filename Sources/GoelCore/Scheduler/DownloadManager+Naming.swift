@@ -67,13 +67,20 @@ extension DownloadManager {
         return PathSafety.sanitizedName(stem, fallback: "video") + ".mp4"
     }
 
-    /// Apply the file-conflict policy to a freshly derived name. `overwrite`
-    /// (or anything unrecognised) keeps the name as-is; `rename` appends
-    /// ` (1)`, ` (2)`, … before the extension until the path is free. Bounded so
-    /// a pathological directory can never spin forever.
+    /// Apply the file-conflict policy to a freshly derived name. Only an explicit
+    /// `overwrite` keeps the name as-is; `rename` — and anything unrecognised —
+    /// appends ` (1)`, ` (2)`, … before the extension until the path is free.
+    /// Bounded so a pathological directory can never spin forever.
+    ///
+    /// Deliberately fails **closed**. The previous shape (`policy == "rename"`
+    /// renames, everything else keeps the name) turned any unknown value into
+    /// permission to truncate the user's existing file, and an unknown value is
+    /// exactly what a persisted or imported settings blob can carry.
+    /// ``AppSettings/validated()`` coerces the field as well; this is the second
+    /// line, at the site that does the damage.
     static func resolveName(_ base: String, in directory: String, policy: String) -> String {
-        guard policy == "rename" else { return base }
-        return PathSafety.uniqueName(base: base, in: directory)
+        guard policy == "overwrite" else { return PathSafety.uniqueName(base: base, in: directory) }
+        return base
     }
 
     private static func magnetDisplayName(_ magnet: String) -> String? {

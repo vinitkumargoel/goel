@@ -199,11 +199,18 @@ struct SettingsView: View {
 
     /// A megabytes-per-second view onto a profile's byte/sec field, so speeds are
     /// edited in MB/s while the core keeps storing raw bytes (1 MB = 1024×1024).
+    ///
+    /// The field is a plain unbounded number `TextField`, and `Int64(Double)`
+    /// **traps** when the product doesn't fit (and on NaN/∞), so a long number
+    /// typed into "Max download speed" would terminate the app. Clamping to
+    /// 1 TB/s on the way in is only about not trapping — the profile's own
+    /// ceiling is enforced by ``TrafficProfile/validated()``.
     private func megabytesBinding(_ keyPath: WritableKeyPath<TrafficProfile, Int64>) -> Binding<Double> {
         Binding(
             get: { Double(vm.settings.selectedProfile[keyPath: keyPath]) / 1_048_576 },
             set: { mbPerSec in
-                let bytes = Int64(max(0, mbPerSec) * 1_048_576)
+                let mb = mbPerSec.isFinite ? min(max(0, mbPerSec), 1_048_576) : 0
+                let bytes = Int64(mb * 1_048_576)
                 vm.update { settings in
                     guard let idx = settings.profiles.firstIndex(where: { $0.name == settings.selectedProfileName }) else { return }
                     settings.profiles[idx][keyPath: keyPath] = bytes
@@ -235,13 +242,15 @@ struct SettingsView: View {
                 // `SetRow` environment only reaches the `Setting*` wrappers.
                 .accessibilityLabel("Theme")
             }
-            SetRow(name: "Language", desc: "English to start; structured for localization.") {
-                Dropdown(selection: binding(\.language), items: [
-                    .option("English", "English"),
-                    .option("Deutsch", "Deutsch"),
-                    .option("हिन्दी", "हिन्दी"),
-                    .option("日本語", "日本語"),
-                ], width: 150)
+            // Offer exactly the languages that ship a strings table. The list used
+            // to include हिन्दी and 日本語, which have none and silently resolved to
+            // English — a promise the code contradicted. A value persisted from
+            // that build is repaired by ``AppSettings/validated()``, so the picker
+            // never renders an empty trigger for an option it no longer offers.
+            SetRow(name: "Language", desc: "English and Deutsch ship translations today.") {
+                Dropdown(selection: binding(\.language),
+                         items: L10n.supportedLanguages.map { .option($0.name, $0.name) },
+                         width: 150)
             }
             SetRow(name: "Launch at login", desc: "Start Goel° when you log in.") {
                 SettingSwitch(isOn: binding(\.launchAtLogin))
@@ -529,8 +538,27 @@ struct SettingsView: View {
             SetRow(name: "Watch folder for .torrent files", desc: "Auto-add new torrents that appear in a folder.") {
                 SettingSwitch(isOn: binding(\.btWatchFolderEnabled))
             }
-            SetRow(name: "Start watched torrents without confirmation", desc: "") {
-                SettingSwitch(isOn: binding(\.btWatchStartWithoutConfirmation))
+            // The watch is armed by `btWatchFolderPath`, not by the switch above:
+            // with no path the monitor stops immediately, so the toggle alone did
+            // nothing. This chooser is the only writer of that path — without it
+            // the feature could not be enabled by any user. The rest of the
+            // watch-folder options are hidden while it is off, so nothing is
+            // offered that cannot take effect.
+            if vm.settings.btWatchFolderEnabled {
+                SetRow(name: "Watched folder",
+                       desc: vm.settings.btWatchFolderPath.isEmpty
+                           ? "No folder chosen — nothing is being watched."
+                           : vm.settings.btWatchFolderPath) {
+                    Button("Choose…") {
+                        if let url = FilePicker.chooseDirectory() {
+                            vm.update { $0.btWatchFolderPath = url.path }
+                        }
+                    }
+                    .accessibilityLabel("Choose watched torrent folder")
+                }
+                SetRow(name: "Start watched torrents without confirmation", desc: "") {
+                    SettingSwitch(isOn: binding(\.btWatchStartWithoutConfirmation))
+                }
             }
             SetRow(name: "Encryption mode", desc: "Protocol encryption for peer connections.") {
                 Dropdown(selection: binding(\.btEncryptionMode), items: [
@@ -551,7 +579,23 @@ struct SettingsView: View {
             SetRow(name: "Enable µTP", desc: "BitTorrent over UDP for better congestion control.") {
                 SettingSwitch(isOn: binding(\.btEnableUTP))
             }
+            if let gap = swarmProxyGap {
+                Label(gap.rawValue, systemImage: "exclamationmark.shield.fill")
+                    .scaledFont(size: 11)
+                    .foregroundStyle(Theme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+    }
+
+    /// Why the configured proxy doesn't (fully) cover the torrent swarm. Stated
+    /// here rather than left silent: a user who set a proxy and sees nothing
+    /// would reasonably assume their peers go through it.
+    private var swarmProxyGap: SwarmProxy.Gap? {
+        SwarmProxy.resolve(NetworkGuard.ProxySpec(mode: vm.settings.proxyMode,
+                                                  type: vm.settings.proxyType,
+                                                  host: vm.settings.proxyHost,
+                                                  port: vm.settings.proxyPort)).gap
     }
 
     // MARK: Advanced
@@ -578,8 +622,19 @@ struct SettingsView: View {
                 HStack(spacing: 4) {
                     // Entering a positive threshold enables the pause-on-battery
                     // feature; entering 0 disables it. One control, both fields.
+                    //
+                    // The getter reports 0 while the feature is off, even though a
+                    // threshold is stored (20 by default). Showing the stored 20
+                    // made the control dead at its own displayed value: re-typing
+                    // 20 produced an identical `AppSettings`, `vm.update` dropped
+                    // it as a no-op, and the boolean was never flipped — so the
+                    // only way to switch the feature on was to enter some *other*
+                    // number. A displayed 0 means "off".
                     SettingInt(value: Binding(
-                        get: { vm.settings.batteryThresholdPercent },
+                        get: {
+                            vm.settings.pauseBelowBatteryThreshold
+                                ? vm.settings.batteryThresholdPercent : 0
+                        },
                         set: { newValue in
                             vm.update {
                                 $0.batteryThresholdPercent = newValue

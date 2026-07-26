@@ -84,6 +84,12 @@ typedef void (*gsb_entry_cb)(void *userdata, const char *name, int is_dir,
 // Connect + authenticate only (the "Test Connection" button). Fills fingerprint.
 GSBResult gsb_probe(const GSBAuth *auth);
 
+// Connect, handshake and read the host key — then disconnect. NO credential is
+// ever offered, so this is safe against a host whose identity is not yet known:
+// it exists so the fingerprint can be shown for approval *before* the first
+// connection that would authenticate. Fills fingerprint; honours expected_fp.
+GSBResult gsb_hostkey(const GSBAuth *auth);
+
 // List a remote directory, invoking `cb` for each entry.
 GSBResult gsb_list(const GSBAuth *auth, const char *path,
                    gsb_entry_cb cb, void *userdata);

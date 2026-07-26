@@ -54,14 +54,24 @@ enum UpdateChecker {
         }
         let latest = release.version.hasPrefix("v")
             ? String(release.version.dropFirst()) : release.version
+        // Each of these is reported for what it is. Folding them together — the
+        // old `if isNewer(…), let page = …, scheme == https` — meant a real,
+        // newer release whose link was unusable came out as "Up to date", which
+        // is a failure reported as success.
+        guard let candidate = components(latest) else {
+            return .failed("The update feed gave a version this app can’t read.")
+        }
+        guard let running = components(currentVersion),
+              isNewer(candidate, than: running) else {
+            return .upToDate(current: currentVersion)
+        }
         // The page is opened with NSWorkspace — never accept a scheme that
         // could launch something local (file:) or otherwise non-web.
-        if isNewer(latest, than: currentVersion),
-           let page = URL(string: release.page),
-           page.scheme?.lowercased() == "https" {
-            return .available(version: latest, url: page)
+        guard let page = URL(string: release.page),
+              page.scheme?.lowercased() == "https" else {
+            return .failed("Version \(latest) is available, but the update feed gave an unusable link.")
         }
-        return .upToDate(current: currentVersion)
+        return .available(version: latest, url: page)
     }
 
     private struct Release: Decodable {
@@ -78,14 +88,42 @@ enum UpdateChecker {
     }
 
     /// Numeric dotted-component comparison ("1.10" > "1.9").
+    ///
+    /// A version neither side can parse is not newer — but ``check(feedURL:)``
+    /// asks ``components(_:)`` itself so it can *say* the feed was unreadable
+    /// instead of quietly reporting "up to date".
     static func isNewer(_ candidate: String, than current: String) -> Bool {
-        let a = candidate.split(separator: ".").map { Int($0) ?? 0 }
-        let b = current.split(separator: ".").map { Int($0) ?? 0 }
+        guard let a = components(candidate), let b = components(current) else { return false }
+        return isNewer(a, than: b)
+    }
+
+    private static func isNewer(_ a: [Int], than b: [Int]) -> Bool {
         for i in 0..<max(a.count, b.count) {
             let x = i < a.count ? a[i] : 0
             let y = i < b.count ? b[i] : 0
             if x != y { return x > y }
         }
         return false
+    }
+
+    /// A dotted version as numeric components, or nil when a component carries
+    /// no leading number at all.
+    ///
+    /// The pre-release suffix is what makes this necessary: `Int($0) ?? 0` maps
+    /// "3-rc1" to 0, so 1.0.3-rc1 parsed as [1, 0, 0] and was judged NOT newer
+    /// than 1.0.2 — a genuinely newer release sitting in the feed, reported to
+    /// the user as up to date. Comparing on the numeric prefix orders a release
+    /// candidate alongside its final version, which is the honest answer for a
+    /// checker that only offers a download page.
+    private static func components(_ version: String) -> [Int]? {
+        let parts = version.split(separator: ".")
+        guard !parts.isEmpty else { return nil }
+        var out: [Int] = []
+        for part in parts {
+            let digits = part.prefix { $0.isASCII && $0.isNumber }
+            guard let value = Int(digits) else { return nil }
+            out.append(value)
+        }
+        return out
     }
 }

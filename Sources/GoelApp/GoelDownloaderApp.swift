@@ -100,6 +100,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.setActivationPolicy(.regular)
         app.activate(ignoringOtherApps: true)
 
+        // Close the trust-on-first-use hole for the GUI: with an approver
+        // installed, `SFTPClient` reads an unknown server's host key in a
+        // credential-free pre-flight and waits for the user's decision before it
+        // authenticates. GoelCore's default is nil — classic learn-on-first-
+        // connect — which is the only workable policy where there is nobody to
+        // ask, so the daemon, the `sftp://` URL paths and the tests keep it.
+        HostKeyTrust.shared.approver = HostKeyApprovalPresenter.shared
+
         // Return freed heap pages to the OS on system memory pressure, so a
         // transient spike (a big transfer, a directory walk) doesn't leave the
         // resident footprint inflated. Non-destructive — only already-free pages.
@@ -117,8 +125,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Closing the last window quits — unless downloads are still running *and*
+    /// the menu-bar item is showing, in which case the app stays resident and
+    /// keeps transferring. The popover's "Open Goel°" button is the way back to a
+    /// window. With the menu-bar item switched off there is no way back, so
+    /// staying resident would strand the user with an invisible process; the app
+    /// quits, and ``applicationShouldTerminate(_:)`` asks first.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        !(ActiveWorkGate.shared.hasActiveWork && ActiveWorkGate.shared.menuBarVisible)
+    }
+
+    /// Confirm before quitting on top of work in progress.
+    ///
+    /// Not a duplicate of the check above: that one decides whether a window close
+    /// should quit at all, this one covers every other route out — ⌘Q, the Dock
+    /// menu, a log-out. The queue's own auto-shutdown drain reaches
+    /// `NSApp.terminate(nil)` only once nothing is active, so `hasActiveWork` is
+    /// already false there and no alert interrupts it.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard ActiveWorkGate.shared.hasActiveWork else { return .terminateNow }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Downloads are still running."
+        alert.informativeText =
+            "Quitting now stops them. Unfinished downloads are kept and can be resumed next launch."
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
     /// The user switched to another app: download latency no longer matters, so

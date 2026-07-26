@@ -28,31 +28,48 @@ and trackers you pick.
 - **One unified queue** — HTTP/HTTPS, FTP/FTPS, SFTP, BitTorrent and HLS in a single list.
 - **Segmented HTTP engine** — adaptive multi-connection downloads with resume, mirror and
   Metalink failover, and auto-retry with back-off. Segments per server are set by the traffic
-  profile: 4 (Low), 8 (Medium, the default) or 16 (High).
+  profile: 4 (Low), 8 (Medium, the default) or 16 (High). The profile's speed cap is enforced
+  across every HTTP download at once, not per download; FTP, SFTP and HLS transfers are each
+  capped individually, so several of those together can exceed the profile figure.
 - **Full BitTorrent** — `.torrent` files and magnet links via libtorrent, live piece map,
   per-file priority (Skip / Low / Normal / High), tracker and peer tables, DHT, PeX,
-  encryption and seed-ratio limits.
+  encryption, and share-ratio seeding limits set per task or per traffic profile and carried
+  across restarts by fast-resume. Swarm traffic is proxied only through a **manual SOCKS5**
+  proxy: an HTTP proxy carries tracker announces but not peer connections, and the system
+  proxy cannot be applied to the swarm — Settings states which of the three applies.
 - **SFTP browser** — a real remote file manager: browse, upload, rename, move, multi-select,
   host-key pinning, drag and drop to Finder, and Quick Look a remote file without downloading it.
-- **HLS video** — download streaming video to a clean `.mp4`; `yt-dlp` is bundled in official
-  releases to turn a video-site page into a direct download.
+- **HLS video** — download a finished (VOD) `.m3u8` stream to a clean `.mp4`, unencrypted or
+  AES-128; `yt-dlp` is bundled in official releases to turn a video-site page into a direct
+  download. Live streams, DRM (FairPlay/Widevine) and renditions whose audio is a separate
+  track are refused with a stated reason rather than saved truncated or silent.
 - **Network aggregator** — splits one download across every network adapter you have (Wi-Fi,
   Ethernet, phone hotspot) by byte range and merges the pieces on disk. 1–8 streams per
   adapter, every adapter guaranteed at least one segment, with VPN-safety guards.
-- **Browser capture** — extensions for Chrome, Edge, Brave, Firefox and Safari, a clipboard
-  watcher, a floating Drop Basket, a Link Grabber that pulls every file off a page, batch add
-  with `file[01-20].zip` pattern expansion, and importers for aria2, JDownloader and IDM.
+- **Browser capture** — one WebExtension bundled inside the app and **side-loaded**, not
+  store-installed: Chromium browsers (Chrome, Edge, Brave, Chromium, Vivaldi, Arc) take it via
+  Developer mode → Load unpacked and keep it; Firefox accepts it only as a *temporary* add-on
+  and discards it on quit, so it must be re-loaded after each Firefox restart; Safari finds its
+  app-extension copy inside the bundle and it is switched on in Safari's settings. Plus a
+  clipboard watcher, a floating Drop Basket, a Link Grabber that pulls every file off a page,
+  batch add with `file[01-20].zip` pattern expansion, and importers for aria2, JDownloader and IDM.
 - **macOS integration** — menu-bar extra, live Dock progress and badge, Services menu,
   `goeldownloader://` URL scheme, AppleScript via `.sdef`, Shortcuts, system notifications.
   Shortcuts: ⌘N add, ⇧⌘L grab links, ⇧⌘B drop basket, ⇧⌘T cycle theme.
-- **Automation** — watch folders, RSS auto-download with title patterns, scheduled download
-  windows, power and network awareness, and post-download actions (extract, run a script,
-  antivirus scan).
+- **Automation** — a watched folder for `.torrent` files, RSS auto-download with title
+  patterns, scheduled download windows, power and network awareness (pause below a battery
+  percentage, pause on an expensive or constrained network), and post-download actions
+  (extract, run a script, antivirus scan).
 - **Housekeeping** — MD5/SHA-1/SHA-256/SHA-512 checksums auto-detected from a pasted hash,
   searchable and re-downloadable history with CSV export, duplicate detection, in-app media
-  player, ffmpeg remux/extract tools, proxies (HTTP/SOCKS5), Keychain-stored site logins,
-  full JSON backup and restore, Sparkle updates, four themes (Frost Light, Frost Dark,
-  Dracula, Nord), English and German.
+  player, ffmpeg remux/extract tools (needs an ffmpeg — bundled only in builds that pin one,
+  otherwise point Settings at your own), proxies (HTTP/SOCKS5), Keychain-stored site logins,
+  full JSON backup and restore, four themes (Frost Light, Frost Dark, Dracula, Nord). Update
+  checking is off by default: the GitHub-Releases check needs a feed URL set in Settings →
+  Advanced, and the bundled Sparkle framework stays dormant until a build stamps an appcast
+  URL and public key into `Info.plist`, which no published release does yet. Localization is
+  partial — the seam works and German is a real table, but coverage today is the sidebar
+  status filters; the rest of the UI is English.
 - **Goel° Web** — an optional portal serving the same queue from your own machine, token- or
   password-authenticated, with read-only mode and session timeouts. Off by default, and it
   refuses to bind to the LAN unless a password is set.
@@ -66,6 +83,12 @@ and trackers you pick.
 macOS: download the `.dmg` for your architecture from the releases page, drag Goel° to
 Applications, launch it. Nothing else to install. A notarized release opens normally; an
 un-notarized beta needs right-click → Open the first time.
+
+Caveat on the two archives published so far: `1.0.0` and `1.0.1` predate the deployment-target
+gate, and the OpenSSL and libtorrent dylibs vendored into them declare a minimum of macOS 26
+while the app advertises 14. dyld refuses an over-targeted library before `main()`, so those two
+builds quit on launch on a Mac between Sonoma and macOS 26. `Scripts/check_min_os.sh` now gates
+both the app build and the disk image, so no later release can carry the mismatch.
 
 Linux: unpack `goel-daemon-<version>-linux-x86_64.tar.gz`, install the runtime libraries with
 apt, then run `./run.sh` with the `GOEL_*` environment variables set, and open the portal in a

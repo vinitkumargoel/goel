@@ -1,0 +1,498 @@
+import XCTest
+#if !os(Linux)
+import Network
+#endif
+@testable import GoelCore
+
+/// Regressions for the remote-control API and the web portal.
+///
+/// Every case here fails against the behaviour that shipped before this file
+/// existed: the add route fetched any caller-supplied URL, `/logout` sat in front
+/// of the auth gate, a QR deep-link produced a page that could not talk to its own
+/// API, an out-of-root save folder was silently swapped for the default, a single
+/// non-finite Double blanked the whole task list with a 200, and a cross-site POST
+/// to an open loopback portal was honoured.
+
+// MARK: - Fakes
+
+/// ``RemoteBackend`` that refuses every caller-supplied save folder, standing in
+/// for a scheduler whose downloads root does not contain the requested path.
+private final class FolderRefusingBackend: RemoteBackend, @unchecked Sendable {
+    private(set) var added: [DownloadSource] = []
+    private(set) var folders: [String?] = []
+
+    func taskSnapshot() async -> [DownloadTask] { [] }
+    func task(_ id: UUID) async -> DownloadTask? { nil }
+    func pauseAll() async {}
+    func resumeAll() async {}
+    func pause(_ id: UUID) async {}
+    func resume(_ id: UUID) async {}
+    func retry(_ id: UUID) async {}
+    func remove(_ id: UUID, deleteData: Bool) async {}
+    func forceRecheck(_ id: UUID) async {}
+    func setSequential(_ sequential: Bool, task id: UUID) async {}
+    func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {}
+    func remoteAdd(source: DownloadSource) async { added.append(source) }
+    func remoteAdd(source: DownloadSource, saveDirectory: String?,
+                   priority: FilePriority, startPaused: Bool) async {
+        added.append(source)
+        folders.append(saveDirectory)
+    }
+    func history(limit: Int) async -> [HistoryEntry] { [] }
+    func removeHistoryEntry(_ id: UUID) async {}
+    func clearHistory() async {}
+    func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { false }
+}
+
+// MARK: - Tests
+
+final class PortalRemediationTests: XCTestCase {
+
+    private func str(_ d: Data) -> String { String(decoding: d, as: UTF8.self) }
+
+    private func request(_ raw: String) -> RemoteRequest {
+        RemoteRequest(raw: Data(raw.utf8))
+    }
+
+    /// `POST /api/add?token=secret` carrying `body` as JSON.
+    private func addRequest(_ body: String, headers: String = "") -> RemoteRequest {
+        request("POST /api/add?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n"
+                + headers + "\r\n" + body)
+    }
+
+    // MARK: RP-01 — SSRF: internal targets refused on /api/add
+
+    /// Loopback, the cloud-metadata address, and the legacy integer/octal
+    /// spellings of 127.0.0.1 must all be refused outright — the add must not
+    /// reach the backend at all.
+    func testAddRefusesInternalNetworkTargets() async throws {
+        let internalTargets = [
+            "http://127.0.0.1:9/x.bin",
+            "http://localhost:8080/x.bin",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://2130706433/x.bin",
+            "http://0177.0.0.1/x.bin",
+            "http://[::1]:9/x.bin",
+        ]
+        for target in internalTargets {
+            let backend = FakeRemoteBackend()
+            let router = RemoteRouter(backend: backend, token: "secret")
+            let out = str(await router.handle(addRequest(#"{"url":"\#(target)"}"#)))
+            XCTAssertTrue(out.hasPrefix("HTTP/1.1 403"), "\(target) should be refused — got: \(out)")
+            XCTAssertTrue(backend.added.isEmpty, "\(target) must never reach the backend")
+        }
+    }
+
+    /// The guard must not break the ordinary cases: a public URL, a NAS on the
+    /// LAN (the headline "add from my phone" scenario), an SFTP target, and a
+    /// magnet — which names no fetchable host at all.
+    func testAddStillAcceptsPublicLANAndMagnetSources() async throws {
+        let allowed = [
+            "https://e/x.bin",
+            "http://192.168.1.10/x.iso",
+            "sftp://nas/x.zip",
+            "magnet:?xt=urn:btih:0000000000000000000000000000000000000000",
+        ]
+        for target in allowed {
+            let backend = FakeRemoteBackend()
+            let router = RemoteRouter(backend: backend, token: "secret")
+            let out = str(await router.handle(addRequest(#"{"url":"\#(target)"}"#)))
+            XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), "\(target) should be accepted — got: \(out)")
+            XCTAssertEqual(backend.added.count, 1, "\(target) should have been added")
+        }
+    }
+
+    /// A batch that mixes a good and an internal target adds the good one and
+    /// *says* how many it dropped, instead of reporting a clean success.
+    func testAddReportsRefusedCountForAMixedBatch() async {
+        let backend = FakeRemoteBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let body = #"{"url":"https://e/ok.bin\nhttp://127.0.0.1/secret"}"#
+        let out = str(await router.handle(addRequest(body)))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
+        XCTAssertTrue(out.contains("\"added\":1"), out)
+        XCTAssertTrue(out.contains("\"refused\":1"), out)
+        XCTAssertEqual(backend.added.count, 1)
+    }
+
+    func testRemoteAddTargetGuardClassifiesHosts() {
+        func url(_ text: String) -> URL { URL(string: text)! }
+        XCTAssertFalse(NetworkGuard.isAllowedRemoteAddTarget(url("http://127.0.0.1/x")))
+        XCTAssertFalse(NetworkGuard.isAllowedRemoteAddTarget(url("http://0.0.0.0/x")))
+        XCTAssertFalse(NetworkGuard.isAllowedRemoteAddTarget(url("http://169.254.169.254/x")))
+        XCTAssertFalse(NetworkGuard.isAllowedRemoteAddTarget(url("file:///etc/passwd")))
+        XCTAssertTrue(NetworkGuard.isAllowedRemoteAddTarget(url("https://example.com/x")))
+        XCTAssertTrue(NetworkGuard.isAllowedRemoteAddTarget(url("ftp://ftp.example.com/x")))
+        // A real hostname that merely starts with a zero is not an octal literal.
+        XCTAssertTrue(NetworkGuard.isAllowedRemoteAddTarget(url("http://0x-mirror.example.com/x")))
+    }
+
+    // MARK: RP-04 — an out-of-root save folder is refused, not silently swapped
+
+    func testAddRefusesOutOfRootSaveFolder() async {
+        let backend = FolderRefusingBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let body = #"{"url":"https://e/x.bin","folder":"/etc/cron.d"}"#
+        let out = str(await router.handle(addRequest(body)))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 403"), out)
+        XCTAssertTrue(backend.added.isEmpty, "a refused folder must not add anything")
+    }
+
+    func testAddWithNoFolderIsUnaffectedByTheContainmentCheck() async {
+        let backend = FolderRefusingBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let out = str(await router.handle(addRequest(#"{"url":"https://e/x.bin"}"#)))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
+        XCTAssertEqual(backend.added.count, 1)
+    }
+
+    // MARK: RP-05 — an unencodable response is a 500, not an empty 200
+
+    private struct UnencodableRow: Encodable {
+        var progress: Double
+    }
+
+    func testJSONEncodeFailureIsAServerErrorNotAnEmptyBody() {
+        let out = str(RemoteRouter.json(UnencodableRow(progress: .nan)))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 500"), out)
+        XCTAssertFalse(out.contains("null"), "a wiped list must not be served as success")
+        // The healthy path is unchanged.
+        XCTAssertTrue(str(RemoteRouter.json(UnencodableRow(progress: 0.5))).hasPrefix("HTTP/1.1 200 OK"))
+    }
+
+    func testEventFrameIsNilRatherThanAnEmptyListWhenEncodingFails() {
+        var task = DownloadTask(id: UUID(), source: .url(URL(string: "https://e/x.bin")!),
+                                name: "x.bin", saveDirectory: "/tmp", status: .downloading)
+        let router = RemoteRouter(backend: FakeRemoteBackend(), token: "secret")
+        XCTAssertNotNil(router.eventFrame(for: [task]))
+        task.downloadSpeed = .infinity
+        XCTAssertNil(router.eventFrame(for: [task]),
+                     "a non-finite speed must skip the tick, not blank the client's list")
+    }
+
+    // MARK: RP-06 — cross-site writes refused
+
+    func testForeignOriginPOSTIsRefused() async {
+        let backend = FakeRemoteBackend()
+        let config = RemoteRouter.Config(token: "", requireAuth: false)
+        let router = RemoteRouter(backend: backend, config: config)
+        let out = str(await router.handle(request(
+            "POST /api/pause-all HTTP/1.1\r\nHost: 127.0.0.1:8899\r\nOrigin: http://evil.test\r\n\r\n")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 403"), out)
+        XCTAssertFalse(backend.pausedAll, "a cross-site POST must not reach the backend")
+    }
+
+    func testSameOriginPOSTIsAllowed() async {
+        let backend = FakeRemoteBackend()
+        let config = RemoteRouter.Config(token: "", requireAuth: false)
+        let router = RemoteRouter(backend: backend, config: config)
+        let out = str(await router.handle(request(
+            "POST /api/pause-all HTTP/1.1\r\nHost: 127.0.0.1:8899\r\nOrigin: http://127.0.0.1:8899\r\n\r\n")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
+        XCTAssertTrue(backend.pausedAll)
+    }
+
+    /// No `Origin` means no browser — `curl`, the extension, a script. Those were
+    /// never the threat and must keep working.
+    func testOriginlessPOSTIsAllowed() async {
+        let backend = FakeRemoteBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let out = str(await router.handle(request("POST /api/pause-all?token=secret HTTP/1.1\r\n\r\n")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
+        XCTAssertTrue(backend.pausedAll)
+    }
+
+    /// A reverse proxy that forwards the public hostname only in
+    /// `X-Forwarded-Host` must not have every portal action refused.
+    func testForwardedHostCountsAsTheAuthority() async {
+        let backend = FakeRemoteBackend()
+        let config = RemoteRouter.Config(token: "", requireAuth: false)
+        let router = RemoteRouter(backend: backend, config: config)
+        let out = str(await router.handle(request(
+            "POST /api/pause-all HTTP/1.1\r\nHost: 127.0.0.1:8899\r\n"
+            + "X-Forwarded-Host: goel.example.com\r\nOrigin: https://goel.example.com\r\n\r\n")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
+        XCTAssertTrue(backend.pausedAll)
+    }
+
+    func testOriginMatchingIgnoresSchemeButNotPort() {
+        XCTAssertTrue(RemoteRouter.originMatchesHost("https://box.local:8899", host: "box.local:8899"))
+        XCTAssertTrue(RemoteRouter.originMatchesHost("http://Box.Local", host: "box.local"))
+        XCTAssertFalse(RemoteRouter.originMatchesHost("http://127.0.0.1:9999", host: "127.0.0.1:8899"))
+        XCTAssertFalse(RemoteRouter.originMatchesHost("null", host: "127.0.0.1:8899"))
+        XCTAssertFalse(RemoteRouter.originMatchesHost("http://127.0.0.1:8899", host: nil))
+    }
+
+    // MARK: RP-03 — a token deep-link becomes a real session
+
+    func testTokenDeepLinkOnlyPromotesTheRootPageLoad() {
+        func promotes(_ raw: String, sessionAuthed: Bool = false, tokenAuthed: Bool = true,
+                      requireAuth: Bool = true) -> Bool {
+            RemoteAuthService.shouldPromoteTokenToSession(
+                request(raw), requireAuth: requireAuth,
+                sessionAuthed: sessionAuthed, tokenAuthed: tokenAuthed)
+        }
+        XCTAssertTrue(promotes("GET / HTTP/1.1\r\n\r\n"))
+        XCTAssertFalse(promotes("GET / HTTP/1.1\r\n\r\n", sessionAuthed: true))
+        XCTAssertFalse(promotes("GET / HTTP/1.1\r\n\r\n", tokenAuthed: false))
+        XCTAssertFalse(promotes("GET / HTTP/1.1\r\n\r\n", requireAuth: false))
+        XCTAssertFalse(promotes("GET /api/tasks HTTP/1.1\r\n\r\n"))
+        XCTAssertFalse(promotes("POST / HTTP/1.1\r\n\r\n"))
+    }
+
+    /// The portal JS must strip the token from the address bar once the server has
+    /// exchanged it for a cookie. A text assertion, not a behavioural one — the JS
+    /// is an inert string constant from GoelCore's point of view.
+    func testPortalScriptScrubsTheTokenFromTheAddressBar() {
+        XCTAssertTrue(RemotePortalAssets.js.contains("history.replaceState"),
+                      "the token must not linger in the address bar or in history")
+    }
+
+    // MARK: RP-07 — "Copied" must mean copied
+
+    /// Also a text guard: `navigator.clipboard` is undefined over plain HTTP, which
+    /// is the default LAN deployment, so the unconditional success toast was a lie.
+    func testPortalScriptDoesNotClaimAnUnverifiedCopy() {
+        XCTAssertFalse(RemotePortalAssets.js.contains("writeText(t).catch(()=>{});toast('Copied'"),
+                       "the copy toast must follow the copy, not precede it")
+        XCTAssertTrue(RemotePortalAssets.js.contains("function copyFallback("),
+                      "a non-secure context needs a selection-copy fallback")
+    }
+
+    // MARK: RP-09 — a no-op logout must not tear down everybody's streams
+
+    func testLogoutReportsWhetherASessionWasActuallyDropped() async throws {
+        let store = RemoteSessionStore()
+        await store.configure(username: "admin", passwordHash: PortalTestCredentials.hash,
+                              sessionMinutes: 120)
+        let noCookie = await store.handleLogout(request("POST /logout HTTP/1.1\r\n\r\n"))
+        XCTAssertFalse(noCookie.droppedSession,
+                       "a logout that dropped nothing must not cost every client its stream")
+
+        let body = #"{"username":"admin","password":"\#(PortalTestCredentials.password)"}"#
+        let login = await store.handleLogin(request(
+            "POST /login HTTP/1.1\r\nContent-Length: \(body.utf8.count)\r\n\r\n" + body))
+        let sid = try XCTUnwrap(sessionCookie(in: login), "the login should have minted a session")
+        let signOut = await store.handleLogout(request(
+            "POST /logout HTTP/1.1\r\nCookie: goel_session=\(sid)\r\n\r\n"))
+        XCTAssertTrue(signOut.droppedSession, "a real sign-out must be reported as one")
+    }
+
+    /// The `goel_session` value out of a `Set-Cookie` header in a raw response.
+    private func sessionCookie(in response: Data) -> String? {
+        for line in str(response).components(separatedBy: "\r\n") {
+            guard line.lowercased().hasPrefix("set-cookie:"),
+                  let range = line.range(of: "goel_session=") else { continue }
+            let value = line[range.upperBound...].prefix { $0 != ";" }
+            return value.isEmpty ? nil : String(value)
+        }
+        return nil
+    }
+
+    // MARK: RP-08 / RP-10 — a refused start is reportable, and a bad port is refused
+
+    private func portalSettings(port: Int) -> AppSettings {
+        var s = AppSettings()
+        s.remoteAccessEnabled = true
+        s.remotePort = port
+        s.remoteAllowLAN = false
+        s.remoteToken = "t"
+        s.remoteRequireAuth = true
+        s.remoteUsername = "admin"
+        s.remotePasswordHash = PortalTestCredentials.hash
+        s.remoteSessionMinutes = 120
+        return s
+    }
+
+    func testOutOfRangePortIsRefusedAndReported() async {
+        let manager = DownloadManager()
+        let access = RemoteAccess()
+        for port in [0, -1, 70000] {
+            await access.apply(settings: portalSettings(port: port), backend: manager)
+            let running = await access.isRunning
+            XCTAssertFalse(running, "port \(port) must not bind an unpredictable ephemeral port")
+            let failure = await access.lastStartFailure
+            XCTAssertEqual(failure, .portUnavailable(port))
+        }
+        await access.stop()
+        let cleared = await access.lastStartFailure
+        XCTAssertNil(cleared, "a deliberate stop is not a failure")
+    }
+
+    /// A portal that refuses to start rather than serve cleartext must say so all
+    /// the way up to ``RemoteAccess``, which is what the UI reads. (The Linux
+    /// daemon reports the same refusal as ``RemotePortalStartFailure/tlsUnsupported``,
+    /// so the exact case is asserted only where TLS is implemented.)
+    func testUnusableTLSIdentityIsReportedThroughRemoteAccess() async {
+        let manager = DownloadManager()
+        let access = RemoteAccess()
+        var settings = portalSettings(port: Int(LoopbackPort.reserve()))
+        settings.remoteTLSEnabled = true
+        settings.remoteTLSIdentityPath = NSTemporaryDirectory() + "goel-no-such-identity.p12"
+        await access.apply(settings: settings, backend: manager)
+
+        let running = await access.isRunning
+        XCTAssertFalse(running)
+        let failure = await access.lastStartFailure
+        XCTAssertNotNil(failure, "a refused start must be reportable, not just logged")
+        XCTAssertTrue(failure?.message.contains("unencrypted") == true)
+        #if !os(Linux)
+        XCTAssertEqual(failure, .tlsIdentityUnavailable(path: settings.remoteTLSIdentityPath))
+        #endif
+        await access.stop()
+    }
+
+    /// A port the kernel just told us is free must not be reported as unusable.
+    /// The bind itself can still be refused in a restricted environment, so this
+    /// asserts on the *reason*, not on the outcome.
+    func testAValidPortIsNeverReportedAsOutOfRange() async {
+        let manager = DownloadManager()
+        let access = RemoteAccess()
+        let port = Int(LoopbackPort.reserve())
+        await access.apply(settings: portalSettings(port: port), backend: manager)
+        let failure = await access.lastStartFailure
+        XCTAssertNotEqual(failure, .portUnavailable(port))
+        await access.stop()
+    }
+}
+
+// MARK: - Live-socket regressions
+
+#if !os(Linux)
+/// The two defects that only exist in the I/O shell's route table: `/logout`
+/// registered ahead of the auth gate, and a token deep-link that never became a
+/// session. Both need a real listener, because the pure router never sees either
+/// route.
+final class PortalShellRemediationTests: XCTestCase {
+
+    /// Send `request` over a fresh loopback connection and return the whole
+    /// response head, or nil if nothing answered.
+    private func send(_ request: String, port: UInt16) async -> String? {
+        await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+            let conn = NWConnection(host: .ipv4(.loopback),
+                                    port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+            let done = DispatchQueue(label: "portal-probe.\(port)")
+            var finished = false
+            func finish(_ value: String?) {
+                done.async {
+                    guard !finished else { return }
+                    finished = true
+                    conn.cancel()
+                    cont.resume(returning: value)
+                }
+            }
+            conn.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    conn.send(content: Data(request.utf8), completion: .contentProcessed { _ in
+                        conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, _, _ in
+                            finish(data.map { String(decoding: $0, as: UTF8.self) })
+                        }
+                    })
+                case .failed, .cancelled, .waiting:
+                    finish(nil)
+                default:
+                    break
+                }
+            }
+            done.asyncAfter(deadline: .now() + 1.0) { finish(nil) }
+            conn.start(queue: done)
+        }
+    }
+
+    /// Poll until the portal answers, so a test never races the listener's start.
+    private func waitUntilServing(port: UInt16) async throws {
+        for _ in 0..<50 {
+            if let head = await send("GET /api/config?token=t HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+                                     port: port), head.contains("HTTP/1.1") {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        throw XCTSkip("the portal never came up on this machine")
+    }
+
+    /// RP-02: `/logout` used to sit in front of the auth gate, so an anonymous
+    /// `curl` could drop the session and wind down every live stream.
+    func testUnauthenticatedLogoutIsRefused() async throws {
+        let backend = PortalProbeBackend()
+        let server = RemoteControlServer(manager: backend)
+        let port = LoopbackPort.reserve()
+        await server.start(port: port, allowLAN: false,
+                           config: RemoteRouter.Config(token: "t", requireAuth: true,
+                                                       username: "admin"),
+                           passwordHash: PortalTestCredentials.hash, sessionMinutes: 120)
+        guard await server.boundState() != nil else {
+            throw XCTSkip("could not bind a loopback port in this environment")
+        }
+        defer { Task { await server.stop() } }
+        try await waitUntilServing(port: port)
+
+        let getHead = await send("GET /logout HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+                                 port: port)
+        let get = try XCTUnwrap(getHead)
+        XCTAssertTrue(get.hasPrefix("HTTP/1.1 303"), "an anonymous GET /logout must bounce to login — got: \(get)")
+
+        let postHead = await send("POST /logout HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+                                  port: port)
+        let post = try XCTUnwrap(postHead)
+        XCTAssertTrue(post.hasPrefix("HTTP/1.1 401"), "an anonymous POST /logout must be refused — got: \(post)")
+        XCTAssertFalse(post.contains("{\"ok\":true}"))
+    }
+
+    /// RP-03: `GET /?token=…` — the QR code and "Copy Link" — must hand back a
+    /// session cookie, because everything the page does next carries no token.
+    func testTokenDeepLinkIssuesASessionCookie() async throws {
+        let backend = PortalProbeBackend()
+        let server = RemoteControlServer(manager: backend)
+        let port = LoopbackPort.reserve()
+        await server.start(port: port, allowLAN: false,
+                           config: RemoteRouter.Config(token: "t", requireAuth: true,
+                                                       username: "admin"),
+                           passwordHash: PortalTestCredentials.hash, sessionMinutes: 120)
+        guard await server.boundState() != nil else {
+            throw XCTSkip("could not bind a loopback port in this environment")
+        }
+        defer { Task { await server.stop() } }
+        try await waitUntilServing(port: port)
+
+        let landingHead = await send(
+            "GET /?token=t HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", port: port)
+        let landing = try XCTUnwrap(landingHead)
+        XCTAssertTrue(landing.hasPrefix("HTTP/1.1 200 OK"), landing)
+        XCTAssertTrue(landing.contains("Set-Cookie: goel_session="),
+                      "a token deep-link must become a session, or the page's own fetches all 401")
+
+        let sid = try XCTUnwrap(landing.components(separatedBy: "goel_session=").dropFirst().first?
+            .prefix { $0 != ";" }.description)
+        let reloadHead = await send(
+            "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: goel_session=\(sid)\r\nConnection: close\r\n\r\n",
+            port: port)
+        let reload = try XCTUnwrap(reloadHead)
+        XCTAssertTrue(reload.hasPrefix("HTTP/1.1 200 OK"),
+                      "the issued session must survive a reload — got: \(reload)")
+    }
+}
+
+/// A do-nothing backend held strongly by the tests above; ``RemoteControlServer``
+/// keeps its manager weakly.
+private final class PortalProbeBackend: RemoteBackend, @unchecked Sendable {
+    func taskSnapshot() async -> [DownloadTask] { [] }
+    func task(_ id: UUID) async -> DownloadTask? { nil }
+    func pauseAll() async {}
+    func resumeAll() async {}
+    func pause(_ id: UUID) async {}
+    func resume(_ id: UUID) async {}
+    func retry(_ id: UUID) async {}
+    func remove(_ id: UUID, deleteData: Bool) async {}
+    func forceRecheck(_ id: UUID) async {}
+    func setSequential(_ sequential: Bool, task id: UUID) async {}
+    func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {}
+    func remoteAdd(source: DownloadSource) async {}
+    func remoteAdd(source: DownloadSource, saveDirectory: String?,
+                   priority: FilePriority, startPaused: Bool) async {}
+    func history(limit: Int) async -> [HistoryEntry] { [] }
+    func removeHistoryEntry(_ id: UUID) async {}
+    func clearHistory() async {}
+}
+#endif

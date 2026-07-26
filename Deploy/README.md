@@ -21,14 +21,18 @@ software:
 ## 1. Managed preferences
 
 The app reads its managed settings from the preference domain
-**`com.goel.downloader`** using `CFPreferencesCopyAppValue`, which means a
-configuration profile delivered by any MDM works: the value lands in
-`/Library/Managed Preferences/` and takes precedence over anything the user has
-set locally.
+**`com.goel.downloader`**, so a configuration profile delivered by any MDM
+works: the value lands in `/Library/Managed Preferences/`, which is where the
+app reads it from (falling back to `CFPreferencesCopyAppValue` for hosts that
+put it elsewhere).
 
-Keys delivered by a profile are also reported as *forced* — the app knows the
-administrator owns them, so the matching controls can be shown as locked rather
-than silently reverting the user's edits.
+**A key is enforced if and only if it arrives *forced* from a configuration
+profile.** That is an enforcement contract, not a UI hint. The preference domain
+is the app's own bundle identifier, so its search chain ends in a plist the user
+can write — a value found there is a seeded default the user still owns, and the
+app will not treat it as policy. Forced keys are also the ones the Settings UI
+shows as locked, so the administrator's choices are visible rather than silently
+reverting the user's edits.
 
 `goel.mobileconfig` demonstrates every supported key. Delete the ones you do not
 want to control; an absent key is left entirely to the user.
@@ -126,13 +130,17 @@ defaults read /Library/Managed\ Preferences/com.goel.downloader.plist
 sudo profiles remove -identifier com.goel.downloader.managed
 ```
 
-You can also test a single key without a profile at all — the app reads the
-normal preference search chain, so this works and shows up as *managed but not
-locked*:
+### `defaults write` is not a shortcut
 
-```bash
-defaults write com.goel.downloader auditLogEnabled -bool true
-```
+Installing the profile is the only supported way to test a key. `defaults write
+com.goel.downloader …` has **no effect on policy**, deliberately: that domain is
+writable by the logged-in user, so honouring a value from it would let any local
+process appoint itself the IT department — pointing every download through a
+proxy of its choosing, redirecting the save folder, and switching off the audit
+log that would have recorded it. The app enforces forced values only.
+
+Verify what the app will actually see with the `defaults read` line above; it
+reads `/Library/Managed Preferences/`, which only root can write.
 
 ---
 
@@ -227,6 +235,7 @@ that same value in the `X-Goel-Proxy-Secret` header on every forwarded request,
 alongside the identity header. In nginx:
 
 ```nginx
+proxy_set_header Host                $host;                 # or X-Forwarded-Host
 proxy_set_header X-Forwarded-User    $authenticated_user;   # from your SSO step
 proxy_set_header X-Goel-Proxy-Secret "…";                   # == the variable above
 ```
@@ -234,6 +243,12 @@ proxy_set_header X-Goel-Proxy-Secret "…";                   # == the variable 
 The secret header's name is fixed, not configurable: the name is not the
 discriminator, the secret is, and one less knob is one less way to misconfigure
 an authentication path.
+
+The `Host` line is not optional. Every mutating request is checked for a
+cross-site `Origin`, and the portal compares it against `Host` (falling back to
+`X-Forwarded-Host`). nginx's default `proxy_pass` rewrites `Host` to the upstream
+address, so without one of those two headers a legitimate browser request from
+your public hostname looks like a cross-site write and is refused with 403.
 
 **Read this before enabling it.** A blindly-trusted header is a complete
 authentication bypass: anyone who can reach the port simply sends the header
@@ -284,6 +299,18 @@ JSON
 Override the path with the `GOEL_MANAGED_POLICY` environment variable. Every key
 present in the file is treated as forced — a file placed in `/etc` by root is the
 administrator speaking.
+
+That authority is the file's permissions and nothing else, so it is checked: **a
+group- or world-writable policy file is refused**, logged, and the daemon runs
+unmanaged rather than trusting a file any local user could rewrite. `sudo tee`
+above respects your umask, so set the mode explicitly:
+
+```bash
+sudo chmod 0644 /etc/goel/managed-policy.json
+```
+
+A file that exists but does not parse is also refused and logged — the daemon
+still starts, but a typo will not silently cost you the whole policy.
 
 ---
 

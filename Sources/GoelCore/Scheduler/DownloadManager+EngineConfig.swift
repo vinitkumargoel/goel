@@ -29,6 +29,10 @@ extension DownloadManager {
     func applyEngineConfigs() async {
         await applyLimits()
         await (httpEngine as? HTTPConfigurable)?.configure(httpNetworkConfig())
+        // The engine re-resolves a download's name once response headers arrive, so
+        // it needs the same "when a file exists" choice `makeTask` applied.
+        await (httpEngine as? HTTPConfigurable)?
+            .configureFileConflictPolicy(settings.existingFileReaction)
         await (torrentEngine as? TorrentControlling)?.configure(torrentSessionConfig())
         await (hlsEngine as? HLSConfigurable)?.configure(maxHeight: settings.hlsMaxHeight)
         await applyAggregationConfig()

@@ -134,7 +134,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
   <p>The app has no accounts and no analytics or tracking built in. It talks to the network only to do its job:</p>
   <ul>
     <li><strong>Your downloads</strong> — transfers go directly from your machine to the servers, peers or trackers you choose. No traffic passes through any server of ours.</li>
-    <li><strong>Update checks</strong> — the app checks for new releases (via Sparkle and the GitHub-Releases checker). You can disable this in Settings.</li>
+    <li><strong>Update checks</strong> — <em>off by default.</em> The GitHub-Releases check starts disabled with an empty feed URL, so a fresh install makes no update request at all; you switch it on in Settings → Advanced. The bundled Sparkle framework is a second route that stays dormant unless a build stamps an appcast URL and public key into its <span class="mono">Info.plist</span>, which no published release does yet.</li>
     <li><strong>Goel° Web</strong> — if you enable the web portal, it is served from your own machine, protected by a token or password. Nothing is relayed through third-party servers.</li>
   </ul>
   <p>Download history, queue state, site logins and settings are stored locally on your device. Credentials you save are kept in the macOS Keychain. Backups are plain JSON files that you create and keep yourself.</p>

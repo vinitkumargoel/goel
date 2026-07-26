@@ -464,23 +464,43 @@ struct SFTPBrowserView: View {
         }
     }
 
+    /// The most a preview will pull to disk, applied both to the size the server
+    /// advertised and to the bytes that actually arrive.
+    private var previewByteCap: Int64 { 512 * 1024 * 1024 }
+
     /// Fetch a file to a temp copy, then peek it in the system Quick Look panel.
     private func quickLook(_ entry: SFTPEntry) {
         guard !entry.isDirectory, let client else { return }
-        guard entry.size < 512 * 1024 * 1024 else { vm.toastNow("Too large to preview"); return }
+        guard entry.size < previewByteCap else { vm.toastNow("Too large to preview"); return }
         let safe = PathSafety.sanitizedName(entry.name)
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("GoelQL-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let tmp = dir.appendingPathComponent(safe)
         let remote = SFTPBrowserModel.join(model.path, entry.name)
+        // `entry.size` is the server's claim, not a fact — a server reporting 0
+        // would otherwise stream unbounded data into the temp directory behind a
+        // preview the user asked for. Bound the fetch itself.
+        let cap = ByteCap(limit: previewByteCap)
         vm.toastNow("Preparing preview…")
         Task {
             do {
-                try await client.downloadToFile(remote: remote, localURL: tmp) { _, _ in }
+                try await client.downloadToFile(remote: remote, localURL: tmp,
+                                                shouldContinue: { cap.underLimit }) { sofar, total in
+                    cap.observe(sofar: sofar, total: total)
+                }
+                guard cap.underLimit else {
+                    try? FileManager.default.removeItem(at: dir)
+                    await MainActor.run { vm.toastNow("Too large to preview") }
+                    return
+                }
                 await MainActor.run { QuickLookPresenter.shared.present(tmp) }
             } catch {
-                await MainActor.run { vm.toastNow("Couldn’t preview “\(entry.name)”") }
+                // Tripping the cap aborts the transfer, so the throw arrives as a
+                // bare "Aborted" — say what actually happened.
+                try? FileManager.default.removeItem(at: dir)
+                let message = cap.underLimit ? "Couldn’t preview “\(entry.name)”" : "Too large to preview"
+                await MainActor.run { vm.toastNow(message) }
             }
         }
     }
@@ -514,7 +534,13 @@ struct SFTPBrowserView: View {
                 }
                 Divider()
             }
-            let folders = model.entries.filter { $0.isDirectory && $0.id != entry.id }
+            // `folder.name` is server-supplied and gets joined straight onto the
+            // remote path, exactly like a drop target — so it gets the same
+            // guard: an entry named "../.." must not relocate the file outside
+            // the browsed tree. A malformed entry is simply not offered.
+            let folders = model.entries.filter {
+                $0.isDirectory && $0.id != entry.id && SFTPBrowserPaths.isSafeChildName($0.name)
+            }
             if folders.isEmpty {
                 Text("No subfolders")
             } else {
@@ -872,7 +898,7 @@ struct SFTPBrowserView: View {
         // any separator or parent-traversal so a hostile listing can't steer an
         // upload outside the browsed directory. (Hidden ".config"-style names stay
         // allowed; only path structure is rejected.)
-        guard !folder.name.contains("/"), folder.name != "..", folder.name != "." else {
+        guard SFTPBrowserPaths.isSafeChildName(folder.name) else {
             vm.toastNow("Can’t upload into “\(folder.name)”")
             return false
         }

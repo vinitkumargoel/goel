@@ -1,0 +1,129 @@
+# Continuous integration for Goel°.
+#
+# This exists because the two worst defects this project has shipped — vendored
+# dylibs targeting a newer macOS than the app advertises, and artifacts signed
+# with a certificate that is not valid for distribution — were both invisible on
+# the machine that built them and would have been caught by a single unsigned
+# build on a clean runner. RELEASE.md used to open with "There is no CI
+# pipeline. This file IS the pipeline."; it is now the release procedure, and
+# this file is the gate.
+#
+# Deliberately runs on macos-14, not the newest available image: Homebrew pours
+# bottles for the OS of the machine that installs them, so a sonoma runner
+# produces libtorrent/openssl/libssh2 with minos 14.0 — matching the app's
+# LSMinimumSystemVersion. On a newer runner the deployment-target gate would
+# fail honestly, which is the correct outcome but not a build we could ship.
+#
+# Nothing here is allowed to `|| true` past a missing tool. A step that passes
+# because its checker was absent is worse than no step at all.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, test and gate
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # MANDATORY. Scripts/build_app.sh derives CFBundleVersion from
+          # `git rev-list --count HEAD`; on the default shallow clone that is 1,
+          # which is lower than the version already shipped and would make
+          # Sparkle read the new release as older. build_app.sh now refuses such
+          # a build outright, so a shallow clone fails the job rather than
+          # producing a bad artifact.
+          fetch-depth: 0
+
+      - name: Install native dependencies
+        run: brew install libtorrent-rasterbar boost openssl@3 libssh2
+
+      - name: Build
+        run: |
+          set -o pipefail
+          swift build 2>&1 | tee build.log
+
+      - name: Fail on deployment-target link warnings
+        run: |
+          if grep -q 'which was built for newer version' build.log; then
+            echo "::error::a linked dependency targets a newer macOS than this app"
+            grep 'which was built for newer version' build.log
+            exit 1
+          fi
+
+      - name: Test
+        run: swift test
+
+      # Runs with no bundle and no signing identity, so it gates every pull
+      # request rather than only the ones that build an app.
+      - name: Deployment-target comparator self-test
+        run: Scripts/check_min_os.sh --self-test
+
+      # The gate that would have caught the shipped-dylib defect. Needs no
+      # certificate: CODESIGN_IDENTITY=- forces ad-hoc signing, and the bundled
+      # yt-dlp/ffmpeg downloads are skipped to keep the job quick — neither
+      # affects what is being measured.
+      - name: Assemble the app bundle and check deployment targets
+        env:
+          GOEL_LOCAL_DEV: "0"
+          BUNDLE_YTDLP: "0"
+          BUNDLE_FFMPEG: "0"
+          CODESIGN_IDENTITY: "-"
+        run: |
+          Scripts/build_app.sh
+          Scripts/check_min_os.sh "dist/Goel°.app"
+
+  # Signing, notarization and artifact upload are NOT automated: they need a
+  # Developer ID certificate and a notarytool credential, neither of which
+  # belongs on a hosted runner that any fork can trigger. Releases are cut by
+  # hand following RELEASE.md, on a self-hosted or secret-backed runner if that
+  # ever changes.
+  #
+  # What CAN be checked for a tag without any secret is that the tag agrees with
+  # what the build would stamp — the mislabelled-release failure that
+  # build_app.sh's version derivation exists to prevent. That is what this job
+  # does; it makes no claim to have produced anything.
+  release-readiness:
+    name: Release readiness
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag matches the version the build would stamp
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::tag '$TAG' is not vMAJOR.MINOR.PATCH"; exit 1 ;;
+          esac
+          EXACT="$(git describe --tags --exact-match)"
+          if [ "$EXACT" != "$TAG" ]; then
+            echo "::error::HEAD is not exactly $TAG (git describe says '$EXACT')"
+            exit 1
+          fi
+          echo "Tag $TAG will stamp CFBundleShortVersionString ${TAG#v}."
+
+      - name: Licence files the bundle must carry are present
+        run: |
+          missing=0
+          for f in LICENSE LICENSE-COMMERCIAL.md TRADEMARK.md THIRD-PARTY-NOTICES.md; do
+            if [ ! -f "$f" ]; then echo "::error::$f is missing"; missing=1; fi
+          done
+          exit "$missing"
+
+      - name: Remaining release steps are manual
+        run: |
+          echo "Signing, notarization, stapling and upload are performed by hand."
+          echo "Follow RELEASE.md sections 5-7 with GOEL_RELEASE=1."

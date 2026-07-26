@@ -371,6 +371,12 @@ final class AppViewModel: ObservableObject {
     /// Deep façade over the embedded remote-control server (Settings → Remote Access).
     private let remoteAccess = RemoteAccess()
 
+    /// Why web access is not running, in words the Web Access pane can show, or
+    /// nil when the portal is up. A refused start is fail-closed and correct, but
+    /// reporting it as success is what left Settings offering "Open" and "Copy
+    /// Link" for a portal that never bound.
+    @Published private(set) var remotePortalFailure: String?
+
     /// The last link the clipboard monitor surfaced, so the same copy isn't
     /// offered twice (and a dismissed suggestion stays dismissed).
     private var lastClipboardHandled: String?
@@ -438,6 +444,10 @@ final class AppViewModel: ObservableObject {
         guard updatesTask == nil else { return }
         await manager.restore()
         settings = await manager.currentSettings
+        // Seed the delegate's gate from the restored preference, so the very first
+        // window close after launch already knows whether there is a menu-bar way
+        // back into the app. `update(_:)` keeps it current from here on.
+        ActiveWorkGate.shared.menuBarVisible = settings.menuBarExtraEnabled
         // Restore each download's persisted speed-chart samples so the throughput
         // graph continues after relaunch instead of starting from scratch.
         loadPersistedSpeedHistory(await manager.loadSpeedHistory())
@@ -884,6 +894,13 @@ final class AppViewModel: ObservableObject {
         for capture in captures {
             guard let source = DownloadSource.parse(capture.locator) else { continue }
             Task {
+                // The host screen the native-messaging host applied was on the
+                // spelling only. Repeat it here against the addresses the name
+                // actually resolves to: a page that spools `http://localtest.me/…`
+                // is asking for this machine's loopback with the digits hidden
+                // behind DNS, and nothing downstream of an auto-add asks the user.
+                if let target = source.fetchTargetURL,
+                   await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(target) == false { return }
                 let task = await manager.add(source: source, priority: .normal,
                                              cookieHeader: capture.cookieHeader,
                                              cookieSource: capture.cookieHeader == nil ? CookieSource.none : .browser,
@@ -1029,6 +1046,12 @@ final class AppViewModel: ObservableObject {
     func update(_ mutate: @escaping @Sendable (inout AppSettings) -> Void) {
         var copy = settings
         mutate(&copy)
+        // Clamp here as well as in the actor. `guard copy != settings` below
+        // compares the *pre*-clamp value, so an out-of-range edit that the actor
+        // would pull back to the value already held would be committed here and
+        // then silently reverted — one frame of a control showing a number the
+        // engine never got. Validating first makes the two sides agree.
+        copy = copy.validated()
         // Skip redundant commits. `@Published settings` fires on every assignment
         // regardless of equality, so a no-op write (e.g. SwiftUI writing a control's
         // current value back through its binding) would needlessly re-persist,
@@ -1044,6 +1067,7 @@ final class AppViewModel: ObservableObject {
         // picker) update this frame, then commit through the actor.
         settings = copy
         clipboardMonitor?.isEnabled = copy.clipboardMonitorEnabled
+        ActiveWorkGate.shared.menuBarVisible = copy.menuBarExtraEnabled
         Task {
             settings = await manager.apply(mutate)
             refreshAggregationState()
@@ -1078,6 +1102,10 @@ final class AppViewModel: ObservableObject {
         let manager = self.manager
         Task {
             await remoteAccess.apply(settings: settings, backend: manager)
+            // A refused start is fail-closed and correct; reporting it as success
+            // is what left the pane offering "Open" for a portal that never bound.
+            let failure = await remoteAccess.lastStartFailure
+            remotePortalFailure = failure?.message
         }
     }
 
@@ -1185,6 +1213,12 @@ final class AppViewModel: ObservableObject {
             autoShutdownAction: settings.autoShutdownAction)
         let output = SnapshotReducer.reduce(reducerState, snapshot, env)
         reducerState = output.state
+        // Publish the one fact `AppDelegate` needs to refuse to quit on the last
+        // window closing. Reusing the reducer's own active-work computation keeps
+        // the two from drifting; SFTP transfers are outside the queue snapshot, so
+        // they are folded in here.
+        ActiveWorkGate.shared.hasActiveWork =
+            output.state.lastHadActiveWork || sftpTransfers.contains { $0.isActive }
         // Drain first (it may terminate the app), then the banners — matching the
         // original checkQueueDrained → emitNotifications ordering.
         if let intent = output.drainIntent {

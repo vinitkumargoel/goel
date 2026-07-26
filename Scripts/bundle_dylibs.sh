@@ -77,7 +77,11 @@ while [ "$changed" = 1 ]; do
     done
   done
 done
-[ -e "$FRAMEWORKS"/*.dylib ] 2>/dev/null || echo "    (nothing to vendor — already self-contained)"
+# `[ -e "$FRAMEWORKS"/*.dylib ]` is a syntax error the moment the glob matches
+# more than one file ("too many arguments"), which made this message print after
+# successfully vendoring four dylibs. Test the first match instead.
+set -- "$FRAMEWORKS"/*.dylib
+[ -e "$1" ] || echo "    (nothing to vendor — already self-contained)"
 
 echo "==> Rewriting install names to @rpath"
 rewrite_refs() {
@@ -141,10 +145,17 @@ fi
 # codesign reject them ("bundle format unrecognized") and, in turn, blocks the
 # app wrapper from sealing. Give any such bundle a minimal Info.plist so it
 # becomes a signable bundle. Harmless to resource lookup (done by name).
+#
+# The version pair is read from the app's own Info.plist rather than written as
+# a literal: build_app.sh derives those two values from the git tag precisely so
+# no part of the bundle can drift from the release, and a hardcoded 1.0.2/2 in
+# here reintroduces exactly that drift one directory down.
 ensure_bundle_plist() {
-  local b="$1" name
+  local b="$1" name short build
   [ -f "$b/Info.plist" ] && return 0
   name="$(basename "$b" .bundle)"
+  short="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")"
+  build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")"
   cat > "$b/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -154,8 +165,8 @@ ensure_bundle_plist() {
     <key>CFBundleName</key><string>$name</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundlePackageType</key><string>BNDL</string>
-    <key>CFBundleShortVersionString</key><string>1.0.2</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleShortVersionString</key><string>$short</string>
+    <key>CFBundleVersion</key><string>$build</string>
 </dict>
 </plist>
 EOF
@@ -197,8 +208,12 @@ echo "    OK — no Homebrew paths remain. Frameworks:"
 ls -1 "$FRAMEWORKS" | sed 's/^/      /'
 
 # Confirm the whole bundle (exe + nested dylibs + bundles) is validly signed.
-if codesign --verify --deep --strict "$APP" 2>/dev/null; then
-  echo "    OK — code signature valid (ad-hoc, --deep --strict)"
-else
-  echo "warning: codesign --verify --deep --strict reported issues" >&2
+# A failure here is terminal, not advisory: build_app.sh goes straight on to
+# re-sign this bundle with a Developer ID and package it, so "reported issues"
+# meant shipping a bundle whose seal was already broken. stderr is deliberately
+# not swallowed — the reason codesign gives is the only diagnostic there is.
+if ! codesign --verify --deep --strict "$APP"; then
+  echo "error: bundle is not validly signed after vendoring" >&2
+  exit 1
 fi
+echo "    OK — code signature valid (ad-hoc, --deep --strict)"

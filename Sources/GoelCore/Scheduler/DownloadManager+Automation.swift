@@ -30,16 +30,21 @@ extension DownloadManager {
     /// ``schedule()`` can't promote into a closed window between this settings
     /// change and the async evaluation; the pause/resume side-effects still run
     /// asynchronously through ``runAutomation(feeds:)``.
+    ///
+    /// The same 30-second loop carries the battery-threshold policy, so it is also
+    /// armed when "pause below battery threshold" is on with the schedule off —
+    /// otherwise the charge level would only ever be re-read on a settings change
+    /// and the queue would never notice the battery draining.
     func updateDownloadSchedule() {
         scheduleTask?.cancel()
         scheduleTask = nil
-        guard settings.scheduleEnabled else {
+        if settings.scheduleEnabled {
+            scheduleWindowOpen = Self.isWindowOpen(settings: settings, date: Date())
+        } else {
             scheduleWindowOpen = true
-            Task { await self.runAutomation() }
-            return
         }
-        scheduleWindowOpen = Self.isWindowOpen(settings: settings, date: Date())
         Task { await self.runAutomation() }
+        guard settings.scheduleEnabled || settings.pauseBelowBatteryThreshold else { return }
         scheduleTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
@@ -84,6 +89,7 @@ extension DownloadManager {
             now: Date(), calendar: .current, settings: settings,
             tasks: projection,
             networkExpensive: lastPathExpensive, networkConstrained: lastPathConstrained,
+            onBattery: power.isOnBattery, batteryPercent: power.batteryPercent,
             feeds: feeds, memory: automationMemory))
 
         automationMemory = decision.memory
@@ -98,6 +104,7 @@ extension DownloadManager {
                     switch ledger {
                     case .window: automationMemory.windowPausedIDs.remove(id)
                     case .network: automationMemory.networkPausedIDs.remove(id)
+                    case .power: automationMemory.powerPausedIDs.remove(id)
                     }
                     continue
                 }
@@ -205,11 +212,17 @@ extension DownloadManager {
     // MARK: RSS auto-download
 
     /// (Re)arm the feed-polling loop when any feed is enabled.
+    ///
+    /// The poll interval is clamped to `5…10080` minutes (five minutes to a week)
+    /// before the nanosecond conversion: the multiplication **traps** on `UInt64`
+    /// overflow above roughly three hundred million minutes, and
+    /// `rssPollIntervalMinutes` is one of the fields an imported backup can set.
     func updateRSSSchedule() {
         rssTask?.cancel()
         rssTask = nil
         guard settings.rssFeeds.contains(where: \.enabled) else { return }
-        let interval = UInt64(max(5, settings.rssPollIntervalMinutes)) * 60 * 1_000_000_000
+        let minutes = min(max(5, settings.rssPollIntervalMinutes), 10_080)
+        let interval = UInt64(minutes) * 60 * 1_000_000_000
         Task { await self.pollFeeds() }
         rssTask = Task { [weak self] in
             while !Task.isCancelled {

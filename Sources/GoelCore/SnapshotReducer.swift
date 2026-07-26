@@ -68,10 +68,20 @@ public enum SnapshotReducer {
 
         // MARK: Next state — always refreshed, even when suppressed / first tick.
         var state = prev
-        state.lastStatuses = Dictionary(uniqueKeysWithValues: snapshot.map { ($0.id, $0.status) })
-        state.lastScanVerdicts = Dictionary(uniqueKeysWithValues: snapshot.compactMap { task in
-            task.scanVerdict.map { (task.id, $0) }
-        })
+        // Built last-wins with an explicit loop, never `Dictionary(uniqueKeysWithValues:)`:
+        // that initializer TRAPS on a repeated key, and a snapshot can carry two tasks
+        // under one id (a backup envelope is untrusted input — see `importEnvelope`).
+        // Last-wins is the rule the notification pass above already reads by, so both
+        // halves of the fold agree. Same reasoning as `DownloadManager.rebuildTaskIndex()`.
+        var statuses: [UUID: DownloadStatus] = [:]
+        var verdicts: [UUID: String] = [:]
+        statuses.reserveCapacity(snapshot.count)
+        for task in snapshot {
+            statuses[task.id] = task.status
+            verdicts[task.id] = task.scanVerdict   // nil removes the key
+        }
+        state.lastStatuses = statuses
+        state.lastScanVerdicts = verdicts
         state.lastHadActiveWork = hasActiveWork
         state.hasSeenFirstSnapshot = true
 

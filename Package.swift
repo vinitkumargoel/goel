@@ -166,6 +166,11 @@ targets += [
         ]
     ),
     .testTarget(name: "GoelCoreTests", dependencies: ["GoelCore"]),
+    // GoelApp is an executableTarget, but its top-level `main.swift` does not
+    // clash with a test host, so `@testable import GoelApp` works. Its pure
+    // helpers (version comparison, row presentation, list filtering) were
+    // untested purely because there was nowhere to put the tests.
+    .testTarget(name: "GoelAppTests", dependencies: ["GoelApp"]),
 ]
 products += [
     .executable(name: "GoelDownloader", targets: ["GoelApp"]),

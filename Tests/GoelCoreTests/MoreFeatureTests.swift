@@ -385,9 +385,13 @@ final class MoreFeatureTests: XCTestCase {
     func testHostKeyStorePinsAndResets() {
         let defaults = UserDefaults(suiteName: "goel.hostkey.test.\(UUID().uuidString)")!
         let store = HostKeyStore(defaults: defaults)
+        // A real pin is the 64 lowercase hex characters `gsb_hex_sha256` emits;
+        // the store rejects anything else so a malformed value can't reach the C
+        // shim, which skips verification outright for an empty fingerprint.
+        let pin = String(repeating: "ab", count: 32)
         XCTAssertNil(store.fingerprint(host: "h", port: 22))
-        store.setFingerprint("aabb", host: "H", port: 22)          // case-insensitive host
-        XCTAssertEqual(store.fingerprint(host: "h", port: 22), "aabb")
+        store.setFingerprint(pin, host: "H", port: 22)             // case-insensitive host
+        XCTAssertEqual(store.fingerprint(host: "h", port: 22), pin)
         XCTAssertNil(store.fingerprint(host: "h", port: 2222))     // port-scoped
         store.reset(host: "h", port: 22)
         XCTAssertNil(store.fingerprint(host: "h", port: 22))

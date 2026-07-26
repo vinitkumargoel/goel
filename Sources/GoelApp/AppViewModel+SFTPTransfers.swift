@@ -79,9 +79,24 @@ extension AppViewModel {
         // `downloadToFile` truncate-creates its destination, so writing onto an
         // existing local file would silently destroy it — there's no download
         // conflict prompt. Pick a non-colliding "name (n).ext" instead (matching
-        // the upload rename policy). This also stops two different remote dotfiles,
-        // which both sanitize to the literal "download", from clobbering each other.
-        let existingNames = Set((try? FileManager.default.contentsOfDirectory(atPath: localDir.path)) ?? [])
+        // the upload rename policy). Without a listing there is no way to tell a
+        // free name from one that would destroy an existing file, so refuse.
+        guard let listed = try? FileManager.default.contentsOfDirectory(atPath: localDir.path) else {
+            toastNow("Couldn’t read “\(localDir.lastPathComponent)”, so “\(entry.name)” wasn’t downloaded.")
+            return
+        }
+        var existingNames = Set(listed)
+        // Downloads queued a moment ago haven't created their files yet, so the
+        // directory listing alone would hand two remote entries the same local
+        // name — every dotfile sanitizes to the literal "download", so a
+        // multi-select of ".bashrc" and ".zshrc" would have the second truncate
+        // the first. Reserve what is already heading for this folder, the same
+        // in-batch bookkeeping the upload side does. `sftpTransfers` is appended
+        // to synchronously below, so on the main actor this is race-free.
+        existingNames.formUnion(sftpTransfers.lazy
+            .filter { $0.direction == .download && $0.isActive
+                && $0.localURL.deletingLastPathComponent().standardizedFileURL == localDir.standardizedFileURL }
+            .map { $0.localURL.lastPathComponent })
         let localName = SFTPBrowserPaths.uniqueName(safeName, existing: existingNames)
         let destination = localDir.appendingPathComponent(localName)
         guard SFTPBrowserModel.isContained(destination, in: localDir) else {
@@ -139,6 +154,19 @@ extension AppViewModel {
     }
 
     /// Re-run a failed/cancelled transfer in place (same row, reset counters).
+    ///
+    /// A retry is not a free replay of the first attempt's authorisation: the
+    /// destination has moved on since. A failed download deletes its partial file
+    /// and its row stops reserving that name, so by the time Retry is clicked the
+    /// path this row still points at may belong to a *different*, completed
+    /// transfer — and `downloadToFile` truncate-creates, so replaying blind would
+    /// destroy a file nobody was asked about. That is not exotic either: every
+    /// dotfile sanitizes to the same literal "download", so two remote dotfiles
+    /// into one folder collide by default.
+    ///
+    /// So the checks that guarded the first attempt run again here, and a
+    /// destination that cannot be checked settles the row as failed rather than
+    /// being written to on a guess.
     func retrySFTPTransfer(_ id: UUID) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }), !sftpTransfers[i].isActive else { return }
         let t = sftpTransfers[i]
@@ -147,25 +175,100 @@ extension AppViewModel {
         // refused, the row must stay failed with the reason toasted, not sit
         // "running" against a client that was never built.
         guard let client = sftpClientReportingFailure(for: connection) else { return }
+        // Marked running *before* the preflight below, so this row reserves its
+        // destination against any transfer started while the preflight is in flight.
         sftpTransfers[i].state = .running
         sftpTransfers[i].resetProgress()
         let cancel = CancelFlag()
-        let task: Task<Void, Never>
-        switch t.direction {
-        case .upload:
-            task = Task { [weak self] in
-                guard let self else { return }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            switch t.direction {
+            case .upload:
+                guard await self.retriedUploadIsStillAuthorised(id: id, client: client,
+                                                                remoteTarget: t.remotePath,
+                                                                isDir: t.isDirectory) else { return }
                 await self.runUpload(id: id, client: client, localURL: t.localURL,
                                      isDir: t.isDirectory, remoteTarget: t.remotePath, cancel: cancel)
-            }
-        case .download:
-            task = Task { [weak self] in
-                guard let self else { return }
+            case .download:
+                guard let destination = self.retriedDownloadDestination(id: id, current: t.localURL)
+                else { return }
                 await self.runDownload(id: id, client: client,
-                                       remoteSource: t.remotePath, destination: t.localURL, cancel: cancel)
+                                       remoteSource: t.remotePath, destination: destination, cancel: cancel)
             }
         }
         sftpTransferTasks[id] = (task, cancel)
+    }
+
+    /// The local path a retried download may write to: the row's own destination
+    /// when it is still free, a uniqued sibling when something else has claimed it
+    /// since, or nil when the folder can't be read — in which case the row is
+    /// settled as failed rather than left running.
+    ///
+    /// Renaming rather than truncating is the same policy the upload side applies
+    /// to a collision, and the row is updated so the list names the file that
+    /// actually appears on disk.
+    private func retriedDownloadDestination(id: UUID, current: URL) -> URL? {
+        let directory = current.deletingLastPathComponent()
+        var listing = DirectoryListing.unavailable
+        if let listed = try? FileManager.default.contentsOfDirectory(atPath: directory.path) {
+            var taken = Set(listed)
+            // Every *other* download heading for this folder has reserved its name —
+            // the same in-batch bookkeeping `startDownload` does. This row is
+            // excluded: it is allowed to keep the name it already holds.
+            taken.formUnion(sftpTransfers.lazy
+                .filter { $0.id != id && $0.direction == .download && $0.isActive
+                    && $0.localURL.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL }
+                .map { $0.localURL.lastPathComponent })
+            listing = .names(taken)
+        }
+        guard let name = SFTPOverwritePlan.retryName(current.lastPathComponent, against: listing) else {
+            settleTransfer(id, .failed("Couldn’t read “\(directory.lastPathComponent)” — nothing was downloaded."))
+            return nil
+        }
+        guard name != current.lastPathComponent else { return current }
+        let destination = directory.appendingPathComponent(name)
+        guard SFTPBrowserModel.isContained(destination, in: directory) else {
+            settleTransfer(id, .failed("Refusing to write “\(name)” outside the chosen folder."))
+            return nil
+        }
+        if let i = sftpTransfers.firstIndex(where: { $0.id == id }) {
+            sftpTransfers[i].localURL = destination
+            sftpTransfers[i].name = name
+        }
+        return destination
+    }
+
+    /// Whether a retried upload may still write to its remote target.
+    ///
+    /// The user already authorised this exact path (either it was free, or they
+    /// answered the overwrite prompt), and a first attempt that failed part-way has
+    /// itself left a partial file there — so an existing *file* is expected and
+    /// overwriting it is what Retry means. What must not happen is the two failure
+    /// modes the first attempt was guarded against: a parent directory that can no
+    /// longer be listed (nothing may be sent on a guess), and a single-file target
+    /// that is now a *directory*, which `client.upload` would truncate-create
+    /// against. A folder upload legitimately targets a directory, so it only needs
+    /// the listing to succeed.
+    private func retriedUploadIsStillAuthorised(id: UUID, client: SFTPClient,
+                                                remoteTarget: String, isDir: Bool) async -> Bool {
+        let parent = SFTPBrowserPaths.parent(of: remoteTarget)
+        let place = parent == "." ? "Home" : parent
+        let entries: [SFTPEntry]
+        do {
+            entries = try await client.list(parent)
+        } catch let e as SFTPError {
+            settleTransfer(id, .failed("Couldn’t check what’s already in \(place) — nothing was uploaded. \(e.message)"))
+            return false
+        } catch {
+            settleTransfer(id, .failed("Couldn’t check what’s already in \(place) — nothing was uploaded."))
+            return false
+        }
+        let name = (remoteTarget as NSString).lastPathComponent
+        if !isDir, entries.contains(where: { $0.name == name && $0.isDirectory }) {
+            settleTransfer(id, .failed("“\(name)” is a folder on the server now — nothing was uploaded."))
+            return false
+        }
+        return true
     }
 
     /// Drop every settled (finished/failed/cancelled) transfer from the list.
@@ -183,25 +286,50 @@ extension AppViewModel {
     // MARK: Preparation
 
     private func prepareUpload(items: [URL], remoteDir: String, connection: SFTPConnection) async {
-        guard let client = sftpClientReportingFailure(for: connection) else { return }
-        let existing = Set(((try? await client.list(remoteDir)) ?? []).map(\.name))
-        var free: [SFTPUploadConflictRequest.Item] = []
-        var colliding: [SFTPUploadConflictRequest.Item] = []
-        // A name collides if it's already on the server *or* if an earlier item
-        // in this same batch already claimed it — otherwise two picked items
-        // that share a last path component (e.g. two "photo.jpg" from different
-        // folders) would both be "free" and race two writers onto one remote path.
-        var taken = existing
+        // Classify every item before anything else — including before the client
+        // is resolved, so a batch that can't be sent never raises a Keychain
+        // prompt. A stat we can't read must not default to "file": the item would
+        // be routed to `client.upload`, which truncate-creates the remote name and
+        // only then fails on the directory, after destroying whatever was there.
+        var isDirectories: [Bool] = []
         for url in items {
-            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            let item = SFTPUploadConflictRequest.Item(url: url, isDirectory: isDir)
-            if taken.contains(url.lastPathComponent) {
-                colliding.append(item)
-            } else {
-                free.append(item)
-                taken.insert(url.lastPathComponent)
+            guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]),
+                  let isDirectory = values.isDirectory else {
+                toastNow("Couldn’t read “\(url.lastPathComponent)” — nothing was uploaded.")
+                return
             }
+            isDirectories.append(isDirectory)
         }
+
+        guard let client = sftpClientReportingFailure(for: connection) else { return }
+        let listing: DirectoryListing
+        var listingDetail: String?
+        do {
+            listing = .names(Set(try await client.list(remoteDir).map(\.name)))
+        } catch let e as SFTPError {
+            listing = .unavailable
+            listingDetail = e.message
+        } catch {
+            listing = .unavailable
+        }
+
+        // A directory we couldn't read is not an empty directory. Treating it as
+        // one reads as "no conflicts", skips the overwrite prompt, and authorises
+        // `LIBSSH2_FXF_TRUNC` over files the user was never asked about — so
+        // nothing is sent.
+        guard case .names(let existing) = listing,
+              let split = SFTPOverwritePlan.split(names: items.map(\.lastPathComponent),
+                                                  against: listing) else {
+            let place = remoteDir == "." ? "Home" : remoteDir
+            toastNow("Couldn’t check what’s already in \(place) — nothing was uploaded."
+                     + (listingDetail.map { " \($0)" } ?? ""))
+            return
+        }
+        func item(_ index: Int) -> SFTPUploadConflictRequest.Item {
+            SFTPUploadConflictRequest.Item(url: items[index], isDirectory: isDirectories[index])
+        }
+        let free = split.free.map(item)
+        let colliding = split.colliding.map(item)
         if colliding.isEmpty {
             launchUploads(connection: connection, remoteDir: remoteDir,
                           plan: free.map { PlannedUpload(url: $0.url, isDirectory: $0.isDirectory,
@@ -274,6 +402,17 @@ extension AppViewModel {
                               remoteRoot: String, cap: Int64, cancel: CancelFlag) async throws {
         // Walk the tree off the main actor so a large folder doesn't hitch the UI.
         let scan = await Task.detached { FolderScan(scanning: root) }.value
+        // A walk that failed, or that skipped entries it couldn't classify, would
+        // otherwise settle as a finished upload of an empty or partial tree — a
+        // failure reported to the user as success. Refuse before anything is sent.
+        guard !scan.enumerationFailed else {
+            throw SFTPError(kind: .io, message: "Couldn’t read “\(root.lastPathComponent)” — nothing was uploaded.")
+        }
+        if let first = scan.unreadable.first {
+            let others = scan.unreadable.count - 1
+            throw SFTPError(kind: .io,
+                            message: "Couldn’t read “\(first)”\(others > 0 ? " and \(others) more item\(others == 1 ? "" : "s")" : "") inside “\(root.lastPathComponent)” — nothing was uploaded.")
+        }
         setTransferTotal(id, scan.total)
         sftpFolderBytes[id] = [:]
 
@@ -387,6 +526,10 @@ extension AppViewModel {
         sftpTransferTasks[id] = nil
         sftpFolderBytes[id] = nil
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
+        // Snapping to the total on success is only honest because the shim now
+        // fails a transfer that ended short of its known size — `.finished` means
+        // every byte moved, so this only closes the gap left by a final progress
+        // tick that arrived just before EOF.
         if state == .finished { sftpTransfers[i].bytes = max(sftpTransfers[i].bytes, sftpTransfers[i].total) }
         // A settled transfer contributes no throughput to the status-bar / menu-bar
         // totals or the sidebar indicator.
@@ -457,22 +600,59 @@ private struct FolderScan: Sendable {
     var files: [File] = []
     var dirs: [[String]] = []
     var total: Int64 = 0
+    /// True when the walk could not start at all.
+    var enumerationFailed = false
+    /// The names the walk could not read or classify. A folder upload must not
+    /// report success for a subtree it never actually read, so these abort it.
+    var unreadable: [String] = []
 
     init(scanning root: URL) {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .fileSizeKey]
         let rootCount = root.pathComponents.count
-        guard let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys)) else { return }
+        // `errorHandler` escapes, so the skipped names can't accumulate into a
+        // local of this initializer — same shape as ``ReadErrorBox``.
+        let failures = ScanFailureBox()
+        guard let en = FileManager.default.enumerator(
+            at: root, includingPropertiesForKeys: Array(keys), options: [],
+            errorHandler: { url, _ in failures.add(url.lastPathComponent); return true }
+        ) else {
+            enumerationFailed = true
+            return
+        }
         for case let url as URL in en {
             let rel = Array(url.pathComponents.dropFirst(rootCount))
-            let vals = try? url.resourceValues(forKeys: keys)
-            if vals?.isDirectory == true {
+            // An unclassifiable entry matched neither branch below and was
+            // silently dropped, so the upload sent a partial tree and called it
+            // finished. Record it instead.
+            guard let vals = try? url.resourceValues(forKeys: keys) else {
+                failures.add(url.lastPathComponent)
+                continue
+            }
+            if vals.isDirectory == true {
                 dirs.append(rel)
-            } else if vals?.isRegularFile == true {
-                let size = Int64(vals?.fileSize ?? 0)
+            } else if vals.isRegularFile == true {
+                let size = Int64(vals.fileSize ?? 0)
                 files.append(File(url: url, rel: rel, size: size))
                 total += size
             }
         }
+        unreadable = failures.names
+    }
+}
+
+/// Collects the names a folder walk couldn't read. `FileManager`'s
+/// `errorHandler` escapes and runs on the enumerating thread, so the failures
+/// need a reference box with a lock rather than a captured local.
+private final class ScanFailureBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [String] = []
+    func add(_ name: String) {
+        lock.lock(); defer { lock.unlock() }
+        stored.append(name)
+    }
+    var names: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return stored
     }
 }
 

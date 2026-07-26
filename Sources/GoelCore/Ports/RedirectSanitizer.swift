@@ -51,10 +51,29 @@ public final class RedirectSanitizer: NSObject, URLSessionTaskDelegate, @uncheck
         return sanitized
     }
 
+    /// The request to send for a redirect hop, or nil to refuse the hop.
+    ///
+    /// Stripping headers was only half the job: the handler used to follow every
+    /// `Location` it was handed, so a URL the user (or the portal, or the browser
+    /// extension) added could 302 the app into `127.0.0.1` or `169.254.169.254`
+    /// and none of the screening done on the *original* address applied to where
+    /// it actually ended up. A hop is now judged exactly as any other
+    /// server-chosen sub-resource is — see ``NetworkGuard/isAllowedSubresource(_:of:)``
+    /// for why leaving the original host is the line that matters.
+    ///
+    /// Refusing returns nil, which makes the 3xx itself the task's response. Every
+    /// engine here checks the status code, so the download fails rather than
+    /// silently saving a redirect body.
+    static func followed(_ request: URLRequest, originalURL: URL?) -> URLRequest? {
+        guard let next = request.url,
+              NetworkGuard.isAllowedSubresource(next, of: originalURL) else { return nil }
+        return sanitize(request, originalURL: originalURL)
+    }
+
     public func urlSession(_ session: URLSession, task: URLSessionTask,
                            willPerformHTTPRedirection response: HTTPURLResponse,
                            newRequest request: URLRequest,
                            completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(Self.sanitize(request, originalURL: task.originalRequest?.url))
+        completionHandler(Self.followed(request, originalURL: task.originalRequest?.url))
     }
 }

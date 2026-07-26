@@ -55,7 +55,10 @@ final class SegmentedTransfer: Sendable {
         // confirm a cursor's bytes are still on disk — so the caller can reserve
         // the matching `connectionCount` before `run()`; the mutating file I/O
         // (preallocate) stays in `run()`.
-        guard let total = plan.totalBytes, plan.acceptsRanges else {
+        // A negative `totalBytes` is a broken (or hostile) `Content-Length` /
+        // `Content-Range`; treat it as "size unknown" and drop to a single stream
+        // rather than feed it to the range math and `preallocate`.
+        guard let total = plan.totalBytes, total >= 0, plan.acceptsRanges else {
             self.segmented = false
             self.plannedRanges = []
             self.restoredBytes = [:]
@@ -105,8 +108,23 @@ final class SegmentedTransfer: Sendable {
     /// terminates whether we complete, fail, or are cancelled.
     func run() async throws -> TransferOutcome {
         defer { continuation.finish() }
-        guard segmented else { return try await runSingle() }
-        return try await runSegmented(total: plan.totalBytes!)
+        // `segmented` is only ever set alongside a present, non-negative
+        // `totalBytes`; binding it here states that in the type system instead of
+        // force-unwrapping a value parsed out of a server header.
+        guard segmented, let total = plan.totalBytes else { return try await runSingle() }
+        return try await runSegmented(total: total)
+    }
+
+    // MARK: Pacing
+
+    /// The pacer this transfer's flushes go through: the task's own cap (when it
+    /// has one) chained in front of the engine-wide pacer, so the profile ceiling
+    /// holds in SUM across concurrent downloads while a per-task limit stays
+    /// private to this transfer. Either may be absent; `nil` means unlimited.
+    /// `static` (and `internal`) so the selection is assertable without moving bytes.
+    static func makeLimiter(_ plan: TransferPlan) -> RateLimiter? {
+        guard plan.maxBytesPerSecond > 0 else { return plan.sharedLimiter }
+        return RateLimiter(bytesPerSecond: plan.maxBytesPerSecond, next: plan.sharedLimiter)
     }
 
     // MARK: Segmented download
@@ -126,7 +144,7 @@ final class SegmentedTransfer: Sendable {
                             initialSegmentBytes: initialBytes, connectionCount: ranges.count,
                             expectedTotal: total)
 
-        let limiter = plan.maxBytesPerSecond > 0 ? RateLimiter(bytesPerSecond: plan.maxBytesPerSecond) : nil
+        let limiter = Self.makeLimiter(plan)
         let session = plan.session
         // One governor per download: it begins at the requested fan-out and
         // adapts down to the server's real concurrent-connection ceiling.
@@ -486,7 +504,7 @@ final class SegmentedTransfer: Sendable {
         let ledger = Ledger(continuation: continuation, meta: nil,
                             initialSegmentBytes: [0: 0], connectionCount: 1,
                             expectedTotal: plan.totalBytes)
-        let limiter = plan.maxBytesPerSecond > 0 ? RateLimiter(bytesPerSecond: plan.maxBytesPerSecond) : nil
+        let limiter = Self.makeLimiter(plan)
 
         try await streamSingle(session: plan.session, limiter: limiter, ledger: ledger,
                                url: plan.url, fileURL: plan.destination)
@@ -586,9 +604,10 @@ final class SegmentedTransfer: Sendable {
                 try handle.write(contentsOf: buffer)
                 written += Int64(buffer.count)
                 await ledger.advance(segment: segment, by: buffer.count)
-                // Pace against the profile's aggregate download cap. Shared across
-                // all segments, so combined throughput converges on the cap (no-op
-                // when unlimited).
+                // Pace against the profile's aggregate download cap. The pacer
+                // behind this one is shared across all segments AND across every
+                // concurrent download, so combined throughput converges on the cap
+                // (no-op when unlimited).
                 await limiter?.pace(buffer.count)
                 buffer.removeAll(keepingCapacity: true)
             }
@@ -608,7 +627,9 @@ final class SegmentedTransfer: Sendable {
     /// fan-out before any instance method is available.
     static func clampSegmentCount(_ requested: Int, total: Int64,
                                   minSegment: Int64 = 64 * 1024) -> Int {
-        let bySize = max(1, Int((total + minSegment - 1) / minSegment))
+        // `(total - 1) / minSegment + 1` rather than `(total + minSegment - 1) / …`:
+        // the latter overflows — and traps — on a declared size near `Int64.max`.
+        let bySize = total <= 0 ? 1 : Int(min(Int64(Int.max), (total - 1) / minSegment + 1))
         return max(1, min(requested, bySize))
     }
 
@@ -771,6 +792,11 @@ final class SegmentedTransfer: Sendable {
     /// Size the destination file before segments seek into it, so each segment can
     /// write at its own offset without racing to grow the file.
     static func preallocate(_ url: URL, size: Int64) throws {
+        // The size is a parsed server header, so it can be negative; `UInt64(size)`
+        // below would trap on it. Refuse the transfer instead of dying.
+        guard size >= 0 else {
+            throw DownloadError.network("Server declared an impossible size (\(size) bytes)")
+        }
         let fm = FileManager.default
         if !fm.fileExists(atPath: url.path) {
             fm.createFile(atPath: url.path, contents: nil)
@@ -1036,7 +1062,12 @@ struct TransferPlan: Sendable {
     var segmentCount: Int
     var session: URLSession
     var settings: RequestSettings
+    /// This download's OWN speed limit (0 = uncapped). The profile-wide ceiling
+    /// rides on ``sharedLimiter`` instead, so it can hold across downloads.
     var maxBytesPerSecond: Int64
+    /// The caller's engine-wide download pacer, shared by every concurrent
+    /// transfer so the profile's cap holds in sum rather than per download.
+    var sharedLimiter: RateLimiter? = nil
     var flushSize: Int
     /// Alternative URLs for the same bytes. Only the segmented path uses them
     /// (a 206's Content-Range total proves a mirror serves the same file; the
@@ -1220,7 +1251,10 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
         // downgrade) must not carry the user's per-task secrets to whoever the new
         // host is: this strips Authorization, Referer, Cookie AND every custom
         // per-task header (API keys etc.), keeping only neutral transport headers.
-        completionHandler(RedirectSanitizer.sanitize(request, originalURL: task.originalRequest?.url))
+        // It also refuses the hop outright when the new host is loopback or the
+        // link-local/metadata range — a `Location` is chosen by the server, so
+        // following it blindly turns any download into an SSRF primitive.
+        completionHandler(RedirectSanitizer.followed(request, originalURL: task.originalRequest?.url))
     }
 }
 

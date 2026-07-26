@@ -251,6 +251,14 @@ struct AddDownloadSheet: View {
                     fileList(preview.files, selectable: preview.kind == .torrent)
                 }
 
+                if allFilesDeselected(preview) {
+                    Label("Pick at least one file to download.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 if let note = preview.note {
                     Label(note, systemImage: "info.circle.fill")
                         .font(.system(size: 11))
@@ -321,11 +329,22 @@ struct AddDownloadSheet: View {
                     .buttonStyle(.borderedProminent)
                     // Starting can itself be a yt-dlp resolve (see `start`), and
                     // a second press would resolve again and queue a second,
-                    // differently-signed copy of the same video.
-                    .disabled(isResolvingMedia)
+                    // differently-signed copy of the same video. A torrent with
+                    // every file unticked has nothing to fetch: libtorrent would
+                    // report it finished at once and the user would get a
+                    // "Downloaded" row and no bytes.
+                    .disabled(isResolvingMedia || allFilesDeselected(preview))
             }
             .padding(14)
         }
+    }
+
+    /// True when this is a torrent whose every file has been unticked — an
+    /// impossible download rather than an empty one.
+    private func allFilesDeselected(_ preview: DownloadPreview) -> Bool {
+        preview.kind == .torrent
+            && !preview.files.isEmpty
+            && deselectedFileIDs.isSuperset(of: Set(preview.files.map(\.id)))
     }
 
     /// Name + kind badge + size header for the confirm screen.

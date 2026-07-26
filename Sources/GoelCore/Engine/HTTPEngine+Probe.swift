@@ -159,9 +159,19 @@ extension HTTPEngine {
         return interpretRangedGet(http)
     }
 
+    /// A declared size only counts when it is a real, non-negative byte count. A
+    /// hostile or broken `Content-Length` / `Content-Range` of `-1` would otherwise
+    /// ride into ``SegmentedTransfer/preallocate``, whose `UInt64(size)` conversion
+    /// traps. `nil` means "size unknown", which drops the download to a single
+    /// stream — the safe direction.
+    private static func declaredSize(_ raw: String?) -> Int64? {
+        guard let value = raw.flatMap({ Int64($0) }), value >= 0 else { return nil }
+        return value
+    }
+
     private func interpretHead(_ http: HTTPURLResponse) -> ProbeResult {
         let acceptsRanges = (header(http, "Accept-Ranges")?.lowercased() == "bytes")
-        let length = header(http, "Content-Length").flatMap { Int64($0) }
+        let length = Self.declaredSize(header(http, "Content-Length"))
         return ProbeResult(
             totalBytes: length,
             acceptsRanges: acceptsRanges && length != nil,
@@ -182,9 +192,9 @@ extension HTTPEngine {
 
         if http.statusCode == 206 {
             // "bytes 0-0/12345" -> 12345
-            let total = header(http, "Content-Range")
+            let total = Self.declaredSize(header(http, "Content-Range")
                 .flatMap { $0.split(separator: "/").last }
-                .flatMap { Int64($0) }
+                .map(String.init))
             return ProbeResult(totalBytes: total, acceptsRanges: total != nil, etag: etag,
                                lastModified: lastModified, suggestedName: suggestedName,
                                contentType: contentType, server: header(http, "Server"),
@@ -192,7 +202,7 @@ extension HTTPEngine {
         }
 
         // Server ignored the Range header and returned the whole body.
-        let length = header(http, "Content-Length").flatMap { Int64($0) }
+        let length = Self.declaredSize(header(http, "Content-Length"))
         return ProbeResult(totalBytes: length, acceptsRanges: false, etag: etag,
                            lastModified: lastModified, suggestedName: suggestedName,
                            contentType: contentType, server: header(http, "Server"),
