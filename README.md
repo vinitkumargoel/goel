@@ -17,9 +17,9 @@ Rebuilt from scratch in Swift, self-contained, and Homebrew-free. Native SwiftUI
 
 <br>
 
-<a href="Assets/videos/goel-keynote-demo.mp4"><img src="Assets/videos/goel-keynote-poster.jpg" width="900" alt="Watch the Goel° demo — a 64-second cinematic tour: one unified queue (HTTP, FTP, SFTP, BitTorrent, HLS), live progress and speed, the BitTorrent piece map, browser-extension capture, and menu-bar + web-portal access. Click to play." /></a>
+<a href="Assets/videos/goel-keynote-demo.mp4"><img src="Assets/videos/goel-keynote-poster.jpg" width="900" alt="Watch the Goel° demo — a 49-second cinematic tour: one unified queue (HTTP, FTP, SFTP, BitTorrent, HLS), live progress and speed, the BitTorrent piece map, browser-extension capture, and menu-bar + web-portal access. Click to play." /></a>
 
-<sub><i>▶ <b><a href="Assets/videos/goel-keynote-demo.mp4">Watch the 64-second demo</a></b> 🔊 · downloads shown are illustrative mock data</i></sub>
+<sub><i>▶ <b><a href="Assets/videos/goel-keynote-demo.mp4">Watch the 49-second demo</a></b> 🔊 · downloads shown are illustrative mock data</i></sub>
 
 </div>
 

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Goel° UI replica — film capture</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<script type="module">
+import { PAGES } from './render.js';
+
+const q = new URLSearchParams(location.search);
+const page = q.get('page') || 'app';
+const theme = q.get('theme');
+const onCanvas = q.get('canvas') !== '0';
+
+if (theme) document.documentElement.dataset.theme = theme;
+if (onCanvas) document.body.classList.add('on-canvas');
+
+const build = PAGES[page];
+if (!build) throw new Error(`unknown page: ${page}`);
+document.body.insertAdjacentHTML('beforeend', build());
+
+// signal for the capture script: fonts resolved and layout settled
+document.fonts.ready.then(() => {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.documentElement.dataset.ready = '1';
+  }));
+});
+</script>
+</body>
+</html>
