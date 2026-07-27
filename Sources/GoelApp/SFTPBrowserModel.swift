@@ -9,7 +9,13 @@ import GoelCore
 /// stays cancellable; the browser and status bar just render it. One row per
 /// top-level item picked/dropped — a folder aggregates its whole subtree.
 struct SFTPTransfer: Identifiable {
-    enum Direction { case upload, download }
+    enum Direction {
+        case upload, download
+        /// A remote→remote copy or move. SFTP has no server-side copy, so the
+        /// bytes still stream through this machine — but never through a local
+        /// file, which is why such a row has no ``localURL``.
+        case remoteCopy
+    }
     enum State: Equatable { case running, finished, failed(String), cancelled }
 
     let id = UUID()
@@ -23,8 +29,9 @@ struct SFTPTransfer: Identifiable {
     /// True when an upload's source is a directory (uploaded recursively).
     let isDirectory: Bool
     /// The local file/folder: an upload's source, or a download's destination.
+    /// Nil for a ``Direction/remoteCopy``, which never touches the disk.
     /// Mutable for the same reason as ``name``.
-    var localURL: URL
+    var localURL: URL?
     /// The resolved remote target (upload) or remote source (download). Enough,
     /// with `connectionID`, to retry the transfer after a failure/cancel.
     let remotePath: String
@@ -54,7 +61,7 @@ struct SFTPTransfer: Identifiable {
     /// Explicit init: the private sampling fields would otherwise make the
     /// synthesized memberwise initializer private.
     init(connectionID: UUID, name: String, direction: Direction, isDirectory: Bool,
-         localURL: URL, remotePath: String, total: Int64 = 0) {
+         localURL: URL?, remotePath: String, total: Int64 = 0) {
         self.connectionID = connectionID
         self.name = name
         self.direction = direction
@@ -129,8 +136,54 @@ extension SFTPTransfer {
     /// The direction icon. `filledWhenFinished` fills it on completion (the browser
     /// tray does; the compact status row keeps the outline).
     func iconName(filledWhenFinished: Bool) -> String {
-        let base = direction == .upload ? "arrow.up.circle" : "arrow.down.circle"
+        let base: String
+        switch direction {
+        case .upload:     base = "arrow.up.circle"
+        case .download:   base = "arrow.down.circle"
+        case .remoteCopy: base = "arrow.left.arrow.right.circle"
+        }
         return (filledWhenFinished && state == .finished) ? base + ".fill" : base
+    }
+
+    /// The small arrow glyph beside a compact row.
+    var arrowGlyph: String {
+        switch direction {
+        case .upload:     return "arrow.up"
+        case .download:   return "arrow.down"
+        case .remoteCopy: return "arrow.left.arrow.right"
+        }
+    }
+
+    /// The colour that identifies the direction, independent of state.
+    var directionTint: Color {
+        switch direction {
+        case .upload:     return Theme.teal
+        case .download:   return Theme.green
+        case .remoteCopy: return Theme.accent
+        }
+    }
+
+    /// What this row is doing, as a present-participle headline.
+    var activityLabel: String {
+        switch direction {
+        case .upload:     return "Uploading"
+        case .download:   return "Downloading"
+        case .remoteCopy: return "Copying"
+        }
+    }
+
+    /// The noun used when asking whether to cancel this row.
+    var cancelNoun: String {
+        switch direction {
+        case .upload:     return "upload"
+        case .download:   return "download"
+        case .remoteCopy: return "copy"
+        }
+    }
+
+    /// The preposition naming ``remoteFolderLabel``'s role for this direction.
+    var folderPreposition: String {
+        direction == .download ? "From" : "To"
     }
 
     /// The compact running-progress label: percent when the total is known, bytes otherwise.
@@ -371,6 +424,59 @@ final class SFTPBrowserModel: ObservableObject {
         } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
     }
 
+    // MARK: Metadata
+
+    /// Full attributes for one entry, for the info panel. Reads the *link* rather
+    /// than its target, and separately resolves where a link points.
+    func info(for entry: SFTPEntry) async -> SFTPEntryInfo? {
+        guard let client, SFTPBrowserPaths.isSafeChildName(entry.name) else { return nil }
+        let full = Self.join(path, entry.name)
+        do {
+            let attributes = try await client.attributes(full)
+            // A link's target is a second round trip, so only pay it for links.
+            // A target that can't be read is not an error — a dangling link is a
+            // perfectly ordinary thing to be looking at in an info panel.
+            var target: String?
+            if attributes.isSymlink {
+                target = try? await client.linkTarget(full)
+            }
+            return SFTPEntryInfo(name: entry.name, path: full,
+                                 attributes: attributes, linkTarget: target)
+        } catch let e as SFTPError {
+            error = e.message; return nil
+        } catch {
+            self.error = error.localizedDescription; return nil
+        }
+    }
+
+    /// Apply a new permission mode to an entry, then re-list so the change shows.
+    @discardableResult
+    func setPermissions(_ entry: SFTPEntry, mode: UInt32) async -> Bool {
+        guard let client, SFTPBrowserPaths.isSafeChildName(entry.name) else { return false }
+        do {
+            try await client.setPermissions(Self.join(path, entry.name), mode)
+            await refresh()
+            return true
+        } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
+    }
+
+    /// Free/total space on the volume holding the current folder, or nil when the
+    /// server doesn't support the query. Runs on the background connection so a
+    /// slow answer never delays a folder click.
+    func volumeSpace() async -> SFTPVolumeSpace? {
+        guard let client else { return nil }
+        return try? await client.onBackground().freeSpace(path)
+    }
+
+    /// The total size of a folder's subtree — what the info panel shows in place
+    /// of the meaningless directory-inode size the listing carries.
+    func recursiveSize(of entry: SFTPEntry, shouldContinue: @escaping @Sendable () -> Bool) async -> Int64? {
+        guard let client, entry.isDirectory, SFTPBrowserPaths.isSafeChildName(entry.name) else { return nil }
+        return try? await SFTPRelay.treeSize(client.onBackground(),
+                                             path: Self.join(path, entry.name),
+                                             shouldContinue: shouldContinue)
+    }
+
     // MARK: Transfers
     //
     // Uploads and "Download to…" downloads are owned by the app-wide transfer
@@ -464,10 +570,16 @@ final class SFTPBrowserModel: ObservableObject {
 
     /// Whether `url` resolves to a path inside `directory` (belt-and-suspenders
     /// on top of `sanitizedName`, which already strips slashes and `..`).
-    static func isContained(_ url: URL, in directory: URL) -> Bool {
-        let base = directory.standardizedFileURL.path
-        let target = url.standardizedFileURL.path
-        return target == base || target.hasPrefix(base.hasSuffix("/") ? base : base + "/")
+    ///
+    /// Delegates to ``PathSafety/isContained(_:within:)``, which resolves symlinks
+    /// as well as collapsing `..` — standardizing alone leaves a symlinked
+    /// component intact, so a download folder containing a link that points
+    /// outside would have passed a purely textual check.
+    ///
+    /// `nonisolated`: pure path arithmetic with no model state, and the folder
+    /// download checks every file it writes from its transfer workers.
+    nonisolated static func isContained(_ url: URL, in directory: URL) -> Bool {
+        PathSafety.isContained(url.path, within: directory.path)
     }
 
     /// Remove a drag-out temp directory after the system has had time to copy

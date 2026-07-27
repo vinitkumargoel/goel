@@ -35,16 +35,44 @@ extension AppViewModel {
     @discardableResult
     func saveServer(_ connection: SFTPConnection, password: String?,
                     keyPassphrase: String? = nil) -> CredentialWrite {
+        // The previously saved endpoint matters as much as the new one: renaming a
+        // host or user leaves a pooled connection under the OLD key that nothing
+        // else would ever reach.
+        let previous = server(connection.id)
         let outcome = SFTPConnectionStore.shared.save(connection, password: password,
                                                       keyPassphrase: keyPassphrase)
         reloadServers()
+        // Pooled connections capture their credentials when they are opened, so
+        // an edited password or key would otherwise keep reconnecting with the
+        // old one until the app restarted.
+        dropPooledConnections(for: connection, and: previous)
         return outcome
+    }
+
+    /// Close every live connection belonging to these endpoints.
+    private func dropPooledConnections(for connection: SFTPConnection,
+                                       and previous: SFTPConnection?) {
+        var endpoints = [SFTPTarget(host: connection.host, port: connection.port,
+                                    username: connection.username, password: nil)]
+        if let previous, previous.host != connection.host || previous.port != connection.port
+            || previous.username != connection.username {
+            endpoints.append(SFTPTarget(host: previous.host, port: previous.port,
+                                        username: previous.username, password: nil))
+        }
+        Task {
+            for endpoint in endpoints where !endpoint.host.isEmpty {
+                await SFTPSessionPool.shared.disconnectAll(matching: endpoint)
+            }
+        }
     }
 
     /// Delete a server and its stored password.
     func removeServer(_ id: SFTPConnection.ID) {
         if selectedServer == id { selectedServer = nil }
         if sftpBrowserNavigation?.connectionID == id { sftpBrowserNavigation = nil }
+        // Read before the store forgets it — a removed server must not leave a
+        // live, authenticated connection behind.
+        if let going = server(id) { dropPooledConnections(for: going, and: nil) }
         SFTPBrowserLocationStore.shared.removePath(for: id)
         SFTPConnectionStore.shared.remove(id)
         reloadServers()

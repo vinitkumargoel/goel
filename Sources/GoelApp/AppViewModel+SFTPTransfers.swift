@@ -68,7 +68,7 @@ extension AppViewModel {
                        remoteDir: String, toLocalDir localDir: URL) {
         // User-initiated, so report why nothing happened rather than returning
         // mute — a refused Keychain prompt otherwise looks like a dead menu item.
-        guard !entry.isDirectory else { return }
+        //
         // Resolved here and handed to `runDownload`, so one download = one
         // Keychain read rather than one to check and another to transfer.
         guard let client = sftpClientReportingFailure(for: connection) else { return }
@@ -95,8 +95,8 @@ extension AppViewModel {
         // to synchronously below, so on the main actor this is race-free.
         existingNames.formUnion(sftpTransfers.lazy
             .filter { $0.direction == .download && $0.isActive
-                && $0.localURL.deletingLastPathComponent().standardizedFileURL == localDir.standardizedFileURL }
-            .map { $0.localURL.lastPathComponent })
+                && $0.localURL?.deletingLastPathComponent().standardizedFileURL == localDir.standardizedFileURL }
+            .compactMap { $0.localURL?.lastPathComponent })
         let localName = SFTPBrowserPaths.uniqueName(safeName, existing: existingNames)
         let destination = localDir.appendingPathComponent(localName)
         guard SFTPBrowserModel.isContained(destination, in: localDir) else {
@@ -105,14 +105,19 @@ extension AppViewModel {
         let remoteSource = SFTPBrowserPaths.join(remoteDir, entry.name)
         let cancel = CancelFlag()
         let transfer = SFTPTransfer(connectionID: connection.id, name: localName, direction: .download,
-                                    isDirectory: false, localURL: destination, remotePath: remoteSource,
-                                    total: entry.size)
+                                    isDirectory: entry.isDirectory, localURL: destination,
+                                    remotePath: remoteSource,
+                                    // A folder's listed size is its inode's, not
+                                    // its contents'; the real total lands once the
+                                    // tree has been walked.
+                                    total: entry.isDirectory ? 0 : entry.size)
         sftpTransfers.append(transfer)
         let id = transfer.id
         let task = Task { [weak self] in
             guard let self else { return }
             await self.runDownload(id: id, client: client,
-                                   remoteSource: remoteSource, destination: destination, cancel: cancel)
+                                   remoteSource: remoteSource, destination: destination,
+                                   cancel: cancel, isDirectory: entry.isDirectory)
         }
         sftpTransferTasks[id] = (task, cancel)
     }
@@ -127,7 +132,7 @@ extension AppViewModel {
         // An already-settled row (finished/failed/cancelled) just gets dropped —
         // no need to ask.
         guard t.isActive else { cancelSFTPTransfer(id); return }
-        let verb = t.direction == .upload ? "upload" : "download"
+        let verb = t.cancelNoun
         requestConfirm(
             title: "Cancel this \(verb)?",
             message: "“\(t.name)” will stop transferring and be removed from the list.",
@@ -149,6 +154,7 @@ extension AppViewModel {
         }
         sftpTransferTasks[id] = nil
         sftpFolderBytes[id] = nil
+        sftpRemoteCopyPlans[id] = nil
         sftpTransfers.removeAll { $0.id == id }
         toastNow("Transfer cancelled")
     }
@@ -182,18 +188,27 @@ extension AppViewModel {
         let cancel = CancelFlag()
         let task = Task { [weak self] in
             guard let self else { return }
+            // Both branches need the row's local endpoint; a row that somehow
+            // lost it can't be replayed against a guessed path.
+            guard let localURL = t.localURL else {
+                self.settleTransfer(id, .failed("This transfer can’t be retried."))
+                return
+            }
             switch t.direction {
             case .upload:
                 guard await self.retriedUploadIsStillAuthorised(id: id, client: client,
                                                                 remoteTarget: t.remotePath,
                                                                 isDir: t.isDirectory) else { return }
-                await self.runUpload(id: id, client: client, localURL: t.localURL,
+                await self.runUpload(id: id, client: client, localURL: localURL,
                                      isDir: t.isDirectory, remoteTarget: t.remotePath, cancel: cancel)
             case .download:
-                guard let destination = self.retriedDownloadDestination(id: id, current: t.localURL)
+                guard let destination = self.retriedDownloadDestination(id: id, current: localURL)
                 else { return }
                 await self.runDownload(id: id, client: client,
-                                       remoteSource: t.remotePath, destination: destination, cancel: cancel)
+                                       remoteSource: t.remotePath, destination: destination,
+                                       cancel: cancel, isDirectory: t.isDirectory)
+            case .remoteCopy:
+                await self.runRemoteCopy(id: id, cancel: cancel)
             }
         }
         sftpTransferTasks[id] = (task, cancel)
@@ -217,8 +232,8 @@ extension AppViewModel {
             // excluded: it is allowed to keep the name it already holds.
             taken.formUnion(sftpTransfers.lazy
                 .filter { $0.id != id && $0.direction == .download && $0.isActive
-                    && $0.localURL.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL }
-                .map { $0.localURL.lastPathComponent })
+                    && $0.localURL?.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL }
+                .compactMap { $0.localURL?.lastPathComponent })
             listing = .names(taken)
         }
         guard let name = SFTPOverwritePlan.retryName(current.lastPathComponent, against: listing) else {
@@ -274,7 +289,10 @@ extension AppViewModel {
     /// Drop every settled (finished/failed/cancelled) transfer from the list.
     func clearFinishedSFTPTransfers() {
         let before = sftpTransfers.count
+        let dropped = Set(sftpTransfers.lazy.filter { !$0.isActive }.map(\.id))
         sftpTransfers.removeAll { !$0.isActive }
+        // A dropped row can never be retried, so its replay plan is dead weight.
+        for id in dropped { sftpRemoteCopyPlans[id] = nil }
         if sftpTransfers.count != before { toastNow("Cleared finished transfers") }
     }
 
@@ -365,9 +383,12 @@ extension AppViewModel {
     /// Takes an already-resolved `client` rather than resolving its own: the
     /// Keychain can prompt on every read, so a 20-file drop would otherwise
     /// raise 20 prompts. One resolution per user action, reused for the batch.
-    private func runUpload(id: UUID, client: SFTPClient, localURL: URL, isDir: Bool,
+    private func runUpload(id: UUID, client baseClient: SFTPClient, localURL: URL, isDir: Bool,
                            remoteTarget: String, cancel: CancelFlag) async {
         let cap = settings.effectiveProfile.maxUploadBytesPerSec
+        // One connection for this whole job, so a 500-file folder pays one
+        // handshake rather than 500. Released below on every exit path.
+        let client = baseClient.forTransfer(id)
         do {
             if isDir {
                 try await uploadFolder(id: id, client: client, root: localURL,
@@ -390,14 +411,16 @@ extension AppViewModel {
         } catch {
             settleTransfer(id, error: error)
         }
+        await client.finishTransfer(id)
         // Any outcome may have created/partially-written remote files
         // (libssh2 opens with CREAT), so refresh a browser on this server.
         bumpMutation()
     }
 
-    /// How many files a single folder upload sends at once. Each stream is its own
-    /// libssh2 session on its own thread, so several small files (latency-bound on
-    /// their open/close round-trips) move in parallel instead of one at a time.
+    /// How many files a single folder upload sends at once. Each stream holds its
+    /// own libssh2 session on its own thread — reused across every file that
+    /// stream handles — so several small files (latency-bound on their open/close
+    /// round-trips) move in parallel without re-handshaking per file.
     private static let maxParallelUploads = 4
 
     /// Recreate a local folder tree on the server and upload its files — several
@@ -422,11 +445,16 @@ extension AppViewModel {
         sftpFolderBytes[id] = [:]
 
         // Directories first (shallowest → deepest) so every file's parent exists.
-        // mkdir on an existing dir errors; ignore it so overwrite/merge works.
-        _ = try? await client.mkdir(remoteRoot)
+        // `makeDirectory` tolerates one that already exists — merging into a folder
+        // is normal — but still raises permission-denied, quota, and
+        // name-taken-by-a-file, which a blanket `try?` here used to swallow: an
+        // upload of a tree of empty folders would then report success having
+        // created nothing at all.
+        try await SFTPRelay.makeDirectory(remoteRoot, on: client)
         for rel in scan.dirs.sorted(by: { $0.count < $1.count }) {
             if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
-            _ = try? await client.mkdir(rel.reduce(remoteRoot, SFTPBrowserPaths.join))
+            try await SFTPRelay.makeDirectory(rel.reduce(remoteRoot, SFTPBrowserPaths.join),
+                                              on: client)
         }
 
         let files = scan.files
@@ -436,13 +464,23 @@ extension AppViewModel {
         // transfers still respect the one profile limit (0 = unlimited).
         let perStreamCap = cap > 0 ? max(1, cap / Int64(parallel)) : 0
 
-        // Upload with a bounded window: prime `parallel` files, then start the next
-        // as each finishes. A throw (I/O error or cancel) cancels the group.
+        // `parallel` long-lived workers, each pulling the next file off a shared
+        // cursor. Workers rather than a bounded submit-window because each worker
+        // *owns* one connection for its whole life: a window would let a newly
+        // submitted task land on a slot whose predecessor was still running, and
+        // the two would then queue behind each other on one thread. A throw (I/O
+        // error or cancel) cancels the group.
+        let cursor = UploadCursor()
+        let streamIDs = (0..<parallel).map { _ in UUID() }
+        defer {
+            // Detached: `defer` cannot await, and these must be returned to the
+            // pool even when the group throws.
+            let ids = streamIDs
+            Task.detached { for streamID in ids { await client.finishTransfer(streamID) } }
+        }
         try await withThrowingTaskGroup(of: Void.self) { group in
-            var next = 0
-            func submit(_ index: Int) {
-                let file = files[index]
-                let remoteFile = file.rel.reduce(remoteRoot, SFTPBrowserPaths.join)
+            for streamID in streamIDs {
+                let stream = client.forTransfer(streamID)
                 group.addTask { [weak self] in
                     // Read the capture into an immutable local once. The progress
                     // closure below is @Sendable, and reading a capture-list var
@@ -452,59 +490,209 @@ extension AppViewModel {
                     // Deliberately not unwrapped: a view model that has gone away
                     // must skip the progress reporting, not the upload.
                     let model = self
-                    if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
-                    let coalescer = ProgressCoalescer()
-                    try await client.upload(localURL: file.url, remote: remoteFile,
-                                            maxBytesPerSecond: perStreamCap,
-                                            shouldContinue: { !cancel.isCancelled }) { sofar, total in
-                        guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
-                        guard let model else { return }
-                        Task { @MainActor in model.setFolderFileBytes(id, index: index, bytes: sofar) }
-                    }
-                    // Pin this file's contribution to its full size on completion so
-                    // the aggregate lands exactly on the total even if the final
-                    // progress tick arrived just before EOF.
-                    if let model {
-                        await MainActor.run { model.setFolderFileBytes(id, index: index, bytes: file.size) }
+                    while let index = await cursor.next(limit: files.count) {
+                        if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
+                        let file = files[index]
+                        let remoteFile = file.rel.reduce(remoteRoot, SFTPBrowserPaths.join)
+                        let coalescer = ProgressCoalescer()
+                        try await stream.upload(localURL: file.url, remote: remoteFile,
+                                                maxBytesPerSecond: perStreamCap,
+                                                shouldContinue: { !cancel.isCancelled }) { sofar, total in
+                            guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
+                            guard let model else { return }
+                            Task { @MainActor in model.setFolderFileBytes(id, index: index, bytes: sofar) }
+                        }
+                        // Pin this file's contribution to its full size on completion
+                        // so the aggregate lands exactly on the total even if the
+                        // final progress tick arrived just before EOF.
+                        if let model {
+                            await MainActor.run { model.setFolderFileBytes(id, index: index, bytes: file.size) }
+                        }
                     }
                 }
             }
-            while next < parallel { submit(next); next += 1 }
-            while try await group.next() != nil {
-                if cancel.isCancelled { group.cancelAll(); throw SFTPError(kind: .aborted, message: "Cancelled") }
-                if next < files.count { submit(next); next += 1 }
-            }
+            try await group.waitForAll()
+        }
+    }
+
+    /// Hands out file indices to the folder-upload workers, one at a time.
+    private actor UploadCursor {
+        private var index = 0
+        func next(limit: Int) -> Int? {
+            guard index < limit else { return nil }
+            defer { index += 1 }
+            return index
         }
     }
 
     /// Takes an already-resolved `client` — see ``runUpload(id:client:localURL:isDir:remoteTarget:cancel:)``.
-    private func runDownload(id: UUID, client: SFTPClient, remoteSource: String,
-                             destination: URL, cancel: CancelFlag) async {
+    private func runDownload(id: UUID, client baseClient: SFTPClient, remoteSource: String,
+                             destination: URL, cancel: CancelFlag, isDirectory: Bool = false) async {
         let cap = settings.effectiveProfile.maxDownloadBytesPerSec
+        // This job's own connection, so a download never queues behind a folder
+        // listing (and vice versa). Released on every exit path below.
+        let client = baseClient.forTransfer(id)
         // `downloadToFile` truncate-creates the destination up front, so any
         // non-success outcome (cancel, network stall, disk-full, remote gone)
         // leaves a partial file that must be cleaned up — not just on cancel.
         var succeeded = false
         do {
-            let coalescer = ProgressCoalescer()
-            try await client.downloadToFile(remote: remoteSource, localURL: destination,
-                                            maxBytesPerSecond: cap,
-                                            shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
-                guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
-                guard let self else { return }
-                Task { @MainActor in self.setTransferProgress(id, bytes: sofar, total: total) }
+            if isDirectory {
+                try await downloadFolder(id: id, client: client, remoteRoot: remoteSource,
+                                         localRoot: destination, cap: cap, cancel: cancel)
+            } else {
+                let coalescer = ProgressCoalescer()
+                try await client.downloadToFile(remote: remoteSource, localURL: destination,
+                                                maxBytesPerSecond: cap,
+                                                shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
+                    guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
+                    guard let self else { return }
+                    Task { @MainActor in self.setTransferProgress(id, bytes: sofar, total: total) }
+                }
             }
             succeeded = true
             settleTransfer(id, .finished)
         } catch {
             settleTransfer(id, error: error)
         }
+        await client.finishTransfer(id)
+        // A failed folder download leaves a partial tree, exactly as a failed file
+        // leaves a partial file — both are removed rather than left to look
+        // finished.
         if !succeeded { try? FileManager.default.removeItem(at: destination) }
+    }
+
+    /// Recreate a remote folder tree locally and download its files, several at a
+    /// time — the mirror of ``uploadFolder(id:client:root:remoteRoot:cap:cancel:)``,
+    /// including its per-stream connections and its aggregate byte counting.
+    private func downloadFolder(id: UUID, client: SFTPClient, remoteRoot: String,
+                                localRoot: URL, cap: Int64, cancel: CancelFlag) async throws {
+        // Walked on the background connection so a large tree doesn't hold the
+        // job's own connection while it enumerates.
+        let plan = try await SFTPRelay.walk(client.onBackground(), root: remoteRoot,
+                                            shouldContinue: { !cancel.isCancelled })
+        // A walk that had to skip an entry would silently download a partial tree
+        // and then report it as complete. Refuse instead, matching the local scan.
+        try SFTPRelay.requireComplete(plan)
+        setTransferTotal(id, plan.files.reduce(0) { $0 + $1.size })
+        sftpFolderBytes[id] = [:]
+
+        // Every remote name is sanitised before it touches the disk, and
+        // sanitising is lossy: every dotfile collapses to the literal "download",
+        // and long names are clamped. So ".alpha/x" and ".beta/x" both want the
+        // same local path, and four parallel streams would truncate each other's
+        // files with no error at all. Resolve the whole tree to distinct local
+        // paths up front, exactly as the single-file download reserves names.
+        let layout = try Self.localLayout(for: plan, under: localRoot)
+
+        // Directories first, shallowest first, so every file has a parent.
+        try FileManager.default.createDirectory(at: localRoot, withIntermediateDirectories: true)
+        for url in layout.directories {
+            if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+
+        let files = plan.files
+        guard !files.isEmpty else { return }
+        let parallel = min(Self.maxParallelUploads, files.count)
+        let perStreamCap = cap > 0 ? max(1, cap / Int64(parallel)) : 0
+
+        let cursor = UploadCursor()
+        let streamIDs = (0..<parallel).map { _ in UUID() }
+        defer {
+            let ids = streamIDs
+            Task.detached { for streamID in ids { await client.finishTransfer(streamID) } }
+        }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for streamID in streamIDs {
+                let stream = client.forTransfer(streamID)
+                group.addTask { [weak self] in
+                    let model = self
+                    while let index = await cursor.next(limit: files.count) {
+                        if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
+                        let file = files[index]
+                        let local = layout.files[index]
+                        let remote = file.relative.reduce(remoteRoot, SFTPBrowserPaths.join)
+                        let coalescer = ProgressCoalescer()
+                        try await stream.downloadToFile(remote: remote, localURL: local,
+                                                        maxBytesPerSecond: perStreamCap,
+                                                        shouldContinue: { !cancel.isCancelled }) { sofar, total in
+                            guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
+                            guard let model else { return }
+                            Task { @MainActor in model.setFolderFileBytes(id, index: index, bytes: sofar) }
+                        }
+                        if let model {
+                            await MainActor.run { model.setFolderFileBytes(id, index: index, bytes: file.size) }
+                        }
+                    }
+                }
+            }
+            try await group.waitForAll()
+        }
+    }
+
+    /// Where each item of a remote tree lands locally.
+    struct LocalLayout {
+        /// Directories to create, shallowest first.
+        let directories: [URL]
+        /// One URL per file in the plan, in the plan's own order.
+        let files: [URL]
+    }
+
+    /// Map a remote tree onto distinct local paths.
+    ///
+    /// Two things make this more than a join. Server-supplied names are untrusted,
+    /// so each component is rejected outright if it carries path structure and
+    /// sanitised otherwise; and sanitising is *lossy* — every dotfile becomes
+    /// "download", long names are clamped — so distinct remote names routinely
+    /// collide. Each directory keeps a record of the names already claimed inside
+    /// it, and a collision takes a "name (2)" sibling rather than silently
+    /// overwriting a different remote file.
+    nonisolated static func localLayout(for plan: SFTPRelay.TreePlan,
+                                        under root: URL) throws -> LocalLayout {
+        // Remote relative path -> resolved local URL, so a file's parent is found
+        // at the name its directory actually took.
+        var resolved: [[String]: URL] = [[]: root]
+        // Local directory path -> names already used inside it.
+        var claimed: [String: Set<String>] = [:]
+
+        func place(_ relative: [String], isDirectory: Bool) throws -> URL {
+            let parentPath = Array(relative.dropLast())
+            guard let name = relative.last, let parent = resolved[parentPath] else {
+                throw SFTPError(kind: .io, message: "Couldn’t work out where to save “\(relative.joined(separator: "/"))”.")
+            }
+            guard SFTPBrowserPaths.isSafeChildName(name) else {
+                throw SFTPError(kind: .io,
+                                message: "The server sent an item named “\(name)”, which Goel won’t write to disk.")
+            }
+            let key = parent.standardizedFileURL.path
+            var taken = claimed[key] ?? []
+            let unique = SFTPBrowserPaths.uniqueName(PathSafety.sanitizedName(name), existing: taken)
+            taken.insert(unique)
+            claimed[key] = taken
+
+            let url = parent.appendingPathComponent(unique)
+            // Belt and braces on top of the per-component checks: the final path
+            // must still resolve inside the folder the user chose.
+            guard PathSafety.isContained(url.path, within: root.path) else {
+                throw SFTPError(kind: .io, message: "Refusing to write outside the download folder.")
+            }
+            if isDirectory { resolved[relative] = url }
+            return url
+        }
+
+        // Shallowest first, so a directory is always placed before its children
+        // need to look up its resolved name.
+        let directories = try plan.directories
+            .sorted { $0.count < $1.count }
+            .map { try place($0, isDirectory: true) }
+        let files = try plan.files.map { try place($0.relative, isDirectory: false) }
+        return LocalLayout(directories: directories, files: files)
     }
 
     // MARK: Row bookkeeping (all on the main actor)
 
-    private func setTransferBytes(_ id: UUID, _ bytes: Int64) {
+    func setTransferBytes(_ id: UUID, _ bytes: Int64) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
         sftpTransfers[i].record(bytes: bytes)
     }
@@ -528,18 +716,18 @@ extension AppViewModel {
         sftpTransfers[i].record(bytes: sftpTransfers[i].bytes + bytes - previous)
     }
 
-    private func setTransferTotal(_ id: UUID, _ total: Int64) {
+    func setTransferTotal(_ id: UUID, _ total: Int64) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
         sftpTransfers[i].total = total
     }
 
-    private func setTransferProgress(_ id: UUID, bytes: Int64, total: Int64) {
+    func setTransferProgress(_ id: UUID, bytes: Int64, total: Int64) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
         if total > 0 { sftpTransfers[i].total = total }
         sftpTransfers[i].record(bytes: bytes)
     }
 
-    private func settleTransfer(_ id: UUID, _ state: SFTPTransfer.State) {
+    func settleTransfer(_ id: UUID, _ state: SFTPTransfer.State) {
         sftpTransferTasks[id] = nil
         sftpFolderBytes[id] = nil
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
@@ -557,7 +745,7 @@ extension AppViewModel {
     /// Settle a transfer that threw: an explicit abort is a user cancel, an
     /// `SFTPError` carries its own message, anything else falls back to the
     /// system description.
-    private func settleTransfer(_ id: UUID, error: Error) {
+    func settleTransfer(_ id: UUID, error: Error) {
         if let e = error as? SFTPError {
             settleTransfer(id, e.kind == .aborted ? .cancelled : .failed(e.message))
         } else {
@@ -565,7 +753,7 @@ extension AppViewModel {
         }
     }
 
-    private func bumpMutation() { sftpMutationTick &+= 1 }
+    func bumpMutation() { sftpMutationTick &+= 1 }
 
     private static func fileSize(_ url: URL) -> Int64 {
         Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)

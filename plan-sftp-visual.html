@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Goel° — SFTP Finder Parity · Interactive Plan</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface:    #fcfcfb;
+    --plane:      #f9f9f7;
+    --ink:        #0b0b0b;
+    --ink-2:      #52514e;
+    --muted:      #898781;
+    --grid:       #e1e0d9;
+    --baseline:   #c3c2b7;
+    --border:     rgba(11,11,11,0.10);
+    --shadow:     0 1px 2px rgba(11,11,11,.04), 0 8px 24px rgba(11,11,11,.05);
+
+    --blue:       #2a78d6;
+    --blue-250:   #86b6ef;
+    --blue-350:   #5598e7;
+    --blue-600:   #184f95;
+    --blue-wash:  #eaf2fd;
+
+    --good:       #0ca30c;
+    --warning:    #fab219;
+    --serious:    #ec835a;
+    --critical:   #d03b3b;
+    --good-text:  #006300;
+
+    --r: 14px;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--plane); color: var(--ink);
+    font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 40px 22px 100px; }
+
+  /* ---------- typography ---------- */
+  h1 { font-size: 34px; line-height: 1.1; letter-spacing: -.024em; margin: 0 0 10px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+       margin: 0 0 14px; font-weight: 700; }
+  h3 { font-size: 17px; letter-spacing: -.012em; margin: 0 0 6px; }
+  p  { margin: 0 0 10px; color: var(--ink-2); }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .86em;
+         background: var(--plane); border: 1px solid var(--border);
+         padding: 1px 5px; border-radius: 5px; color: #35404f; }
+  .lead { font-size: 17px; color: var(--ink-2); max-width: 68ch; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- layout ---------- */
+  section { margin: 0 0 46px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); box-shadow: var(--shadow);
+  }
+  .pad { padding: 22px 24px; }
+  .grid { display: grid; gap: 14px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 900px) { .g2, .g3, .g4 { grid-template-columns: 1fr; } }
+
+  /* ---------- hero ---------- */
+  header.hero { margin-bottom: 30px; }
+  .eyebrow {
+    display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--blue); background: var(--blue-wash);
+    padding: 5px 11px; border-radius: 999px; margin-bottom: 16px;
+  }
+
+  /* ---------- stat tiles ---------- */
+  .tile { padding: 18px 20px; }
+  .tile .k { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em;
+             color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+  .tile .v { font-size: 34px; font-weight: 650; letter-spacing: -.03em; line-height: 1;
+             font-variant-numeric: tabular-nums; }
+  .tile .s { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+
+  /* ---------- calculator ---------- */
+  .calc-controls { display: grid; gap: 20px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 760px) { .calc-controls { grid-template-columns: 1fr; } }
+  .ctl label { display: flex; justify-content: space-between; align-items: baseline;
+               font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .ctl label .out { font-variant-numeric: tabular-nums; color: var(--blue);
+                    font-size: 15px; font-weight: 700; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 22px;
+    background: transparent; cursor: pointer; margin: 0;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 5px; border-radius: 999px; background: var(--grid);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 19px; height: 19px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--blue); margin-top: -7px;
+    box-shadow: 0 1px 3px rgba(11,11,11,.18);
+  }
+  input[type=range]::-moz-range-track { height: 5px; border-radius: 999px; background: var(--grid); }
+  input[type=range]::-moz-range-thumb {
+    width: 17px; height: 17px; border-radius: 50%; background: var(--surface);
+    border: 2px solid var(--blue); box-shadow: 0 1px 3px rgba(11,11,11,.18);
+  }
+  .preset-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
+  .preset {
+    font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--ink-2);
+  }
+  .preset:hover { background: var(--plane); border-color: var(--baseline); }
+  .preset[aria-pressed=true] { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  /* bars */
+  .bars { margin-top: 26px; display: grid; gap: 16px; }
+  .bar-row .bl {
+    display: flex; align-items: baseline; gap: 8px; font-size: 13.5px;
+    font-weight: 600; margin-bottom: 7px;
+  }
+  .bar-row .bl .ico { font-size: 13px; }
+  .bar-row .bl .sub { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+  .bar-line { display: flex; align-items: center; gap: 12px; }
+  .track { height: 30px; background: var(--plane); border-radius: 4px; overflow: hidden;
+           border: 1px solid var(--border); flex: 1; }
+  .fill { height: 100%; border-radius: 0 4px 4px 0; min-width: 3px;
+          transition: width .32s cubic-bezier(.4,0,.2,1); }
+  .val { flex: 0 0 auto; min-width: 96px; text-align: right; font-size: 14px;
+         font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums;
+         white-space: nowrap; }
+  .f-today { background: var(--critical); }
+  .f-after { background: var(--good); }
+
+  .headline {
+    margin-top: 24px; padding: 18px 20px; border-radius: 10px;
+    background: var(--blue-wash); border: 1px solid rgba(42,120,214,.22);
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  .headline .big { font-size: 40px; font-weight: 700; letter-spacing: -.03em;
+                   color: var(--blue-600); line-height: 1; font-variant-numeric: tabular-nums; }
+  .headline .txt { font-size: 14px; color: var(--ink-2); flex: 1; min-width: 230px; }
+  .formula { margin-top: 16px; font-size: 12.5px; color: var(--muted); }
+
+  /* ---------- filters ---------- */
+  .filter-bar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+  }
+  .chip {
+    font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--ink-2); display: inline-flex;
+    align-items: center; gap: 6px;
+  }
+  .chip:hover { background: var(--plane); }
+  .chip[aria-pressed=true] { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .chip .n { font-size: 11px; opacity: .7; font-variant-numeric: tabular-nums; }
+  .search {
+    font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+    min-width: 190px; flex: 1; max-width: 300px;
+  }
+  .search:focus { outline: 2px solid var(--blue); outline-offset: 1px; border-color: transparent; }
+  .spacer { flex: 1; }
+  .count { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ---------- gap rows ---------- */
+  .gap {
+    border-bottom: 1px solid var(--border); transition: background .12s;
+  }
+  .gap:last-child { border-bottom: 0; }
+  .gap.dim { opacity: .32; }
+  .gap.hit { background: var(--blue-wash); }
+  .gap-head {
+    width: 100%; text-align: left; font: inherit; cursor: pointer; background: none;
+    border: 0; padding: 13px 18px; display: flex; align-items: center; gap: 12px;
+  }
+  .gap-head:hover { background: rgba(11,11,11,.025); }
+  .gap-head .tw { color: var(--muted); font-size: 11px; width: 10px; flex: 0 0 10px;
+                  transition: transform .16s; }
+  .gap[open-row=true] .gap-head .tw { transform: rotate(90deg); }
+  .gap-head .title { font-weight: 600; font-size: 14px; flex: 1; }
+  .sev {
+    flex: 0 0 auto; display: inline-grid; place-items: center; min-width: 34px; height: 21px;
+    border-radius: 5px; font-size: 10.5px; font-weight: 800; letter-spacing: .04em;
+    border: 1px solid transparent;
+  }
+  .sev.P0 { background: var(--critical); color: #fff; }
+  .sev.P1 { background: rgba(236,131,90,.20); color: #8a3d18; border-color: rgba(236,131,90,.5); }
+  .sev.P2 { background: rgba(250,178,25,.22); color: #74510a; border-color: rgba(250,178,25,.55); }
+  .sev.P3 { background: var(--plane); color: var(--muted); border-color: var(--border); }
+  .catlab { font-size: 11.5px; color: var(--muted); flex: 0 0 auto; }
+  .phlab {
+    flex: 0 0 auto; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+    padding: 2px 8px; border-radius: 999px; background: var(--plane);
+    border: 1px solid var(--border); color: var(--ink-2);
+  }
+  .gap-body { padding: 0 18px 16px 40px; font-size: 13.5px; color: var(--ink-2); }
+  .gap-body .ev { border-left: 2px solid var(--blue-250); padding-left: 12px; }
+
+  /* ---------- topology toggle ---------- */
+  .seg {
+    display: inline-flex; padding: 3px; background: var(--plane);
+    border: 1px solid var(--border); border-radius: 999px; gap: 3px;
+  }
+  .seg button {
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; border: 0;
+    background: none; color: var(--ink-2); padding: 6px 16px; border-radius: 999px;
+  }
+  .seg button[aria-pressed=true] { background: var(--surface); color: var(--ink);
+                                   box-shadow: 0 1px 2px rgba(11,11,11,.10); }
+  .diagram {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.5;
+    background: var(--plane); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; color: #3d4654; overflow-x: auto; white-space: pre; margin: 16px 0 0;
+  }
+  .diagram .bad { color: var(--critical); font-weight: 600; }
+  .diagram .ok  { color: var(--good-text); font-weight: 600; }
+  .diagram .hi  { color: var(--blue); font-weight: 600; }
+
+  /* ---------- relay pipe ---------- */
+  .pipe { margin-top: 18px; }
+  .pipe-track {
+    height: 44px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--plane); overflow: hidden; position: relative; display: flex;
+  }
+  .cellbox { flex: 1; display: flex; gap: 3px; padding: 8px; }
+  .cell { flex: 1; border-radius: 3px; background: var(--grid); transition: background .18s; }
+  .cell.on { background: var(--blue); }
+  .pipe-ends { display: flex; justify-content: space-between; font-size: 12px;
+               color: var(--muted); margin-top: 8px; font-weight: 600; }
+
+  /* ---------- decisions ---------- */
+  .dec { padding: 18px 20px; cursor: pointer; }
+  .dec .q { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+  .dec .a { font-size: 15px; font-weight: 650; letter-spacing: -.01em; margin-bottom: 4px;
+            display: flex; gap: 8px; align-items: flex-start; }
+  .dec .a .tick { color: var(--good-text); flex: 0 0 auto; }
+  .dec .why { font-size: 13.5px; color: var(--ink-2); margin: 0; }
+  .dec .alts { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
+  .dec .alt { font-size: 13px; color: var(--muted); margin-bottom: 8px; display: flex; gap: 8px; }
+  .dec .alt .x { color: var(--critical); flex: 0 0 auto; font-weight: 700; }
+  .dec[aria-expanded=false] .alts { display: none; }
+  .dec .more { font-size: 12px; font-weight: 700; color: var(--blue); margin-top: 12px; }
+
+  /* ---------- phases ---------- */
+  .phase {
+    display: grid; grid-template-columns: 54px 1fr; gap: 16px; padding: 18px 20px;
+    cursor: pointer; border-bottom: 1px solid var(--border);
+  }
+  .phase:last-child { border-bottom: 0; }
+  .phase:hover { background: rgba(11,11,11,.02); }
+  .phase[aria-pressed=true] { background: var(--blue-wash); }
+  .pnum {
+    width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+    font-weight: 700; font-size: 17px; color: #fff; font-variant-numeric: tabular-nums;
+  }
+  .p1 { background: var(--blue-250); color: var(--blue-600) !important; }
+  .p2 { background: var(--blue-350); }
+  .p3 { background: var(--blue); }
+  .p4 { background: var(--blue-600); }
+  .phase ul { margin: 8px 0 0; padding-left: 1.1em; font-size: 13.5px; color: var(--ink-2); }
+  .phase li { margin-bottom: 4px; }
+  .phase .meta { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .phase[aria-pressed=false] ul, .phase[aria-pressed=false] .meta { display: none; }
+
+  .meter { margin: 0 0 18px; }
+  .meter-track { height: 12px; background: var(--plane); border: 1px solid var(--border);
+                 border-radius: 999px; overflow: hidden; display: flex; }
+  .meter-seg { height: 100%; transition: width .4s cubic-bezier(.4,0,.2,1); }
+  .meter-lab { display: flex; justify-content: space-between; font-size: 12px;
+               color: var(--muted); margin-top: 8px; font-variant-numeric: tabular-nums; }
+
+  /* ---------- risks ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border);
+           vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+       color: var(--muted); font-weight: 700; background: var(--plane); }
+  tr:last-child td { border-bottom: 0; }
+  td { color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-weight: 600; }
+
+  .note {
+    border-left: 3px solid var(--blue); background: var(--blue-wash);
+    padding: 13px 16px; border-radius: 0 8px 8px 0; margin: 14px 0 0;
+    font-size: 13.5px; color: var(--ink);
+  }
+  .note.danger { border-color: var(--critical); background: rgba(208,59,59,.07); }
+  .note.warn { border-color: var(--serious); background: rgba(236,131,90,.10); }
+
+  footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid var(--border);
+           color: var(--muted); font-size: 12.5px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ══════════════ HERO ══════════════ -->
+  <header class="hero">
+    <div class="eyebrow">Interactive plan · v1</div>
+    <h1>SFTP → Finder parity</h1>
+    <p class="lead">
+      Making Goel°'s remote browser feel the way Finder feels — including copy, paste and move,
+      within a server and between two servers. In-app only: no volume mount, no File Provider
+      extension. Every figure below is derived from the source, not the changelog.
+    </p>
+  </header>
+
+  <section>
+    <div class="grid g4">
+      <div class="card tile"><div class="k">Gaps found</div><div class="v num">21</div>
+        <div class="s">across 3 categories</div></div>
+      <div class="card tile"><div class="k">Blocking</div>
+        <div class="v num" style="color:var(--critical)">2</div>
+        <div class="s">P0 — both are session reuse</div></div>
+      <div class="card tile"><div class="k">Already built</div><div class="v num">17</div>
+        <div class="s">source files, ~5,200 lines</div></div>
+      <div class="card tile"><div class="k">New bridge calls</div><div class="v num">5</div>
+        <div class="s">all exist in libssh2 1.11</div></div>
+    </div>
+  </section>
+
+  <!-- ══════════════ CALCULATOR ══════════════ -->
+  <section id="calc">
+    <h2>The blocking problem, in numbers</h2>
+    <div class="card pad">
+      <h3>Every operation opens its own SSH connection</h3>
+      <p>
+        <code>SFTPClient.run()</code> spawns a thread per call; every <code>gsb_*</code> function
+        begins with <code>gsb_open()</code> — TCP connect, key exchange, host-key verification,
+        authentication, <code>libssh2_sftp_init</code> — and ends with <code>gsb_teardown()</code>.
+        <code>uploadFolder</code> calls <code>upload</code> once per file. Drag the sliders.
+      </p>
+
+      <div class="calc-controls" style="margin-top:22px">
+        <div class="ctl">
+          <label for="rtt">Round-trip latency to server <span class="out"><span id="rttOut">100</span> ms</span></label>
+          <input type="range" id="rtt" min="2" max="300" step="1" value="100"
+                 aria-describedby="rttHint" />
+          <div id="rttHint" style="font-size:12px;color:var(--muted);margin-top:4px">
+            LAN ≈ 2 ms · same continent ≈ 30 ms · transatlantic ≈ 100 ms · satellite ≈ 300 ms
+          </div>
+        </div>
+        <div class="ctl">
+          <label for="files">Files in the folder <span class="out"><span id="filesOut">500</span></span></label>
+          <input type="range" id="files" min="1" max="2000" step="1" value="500" />
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">
+            A photo library, a <code>node_modules</code>, a site backup.
+          </div>
+        </div>
+      </div>
+
+      <div class="preset-row" role="group" aria-label="Scenario presets">
+        <button class="preset" data-rtt="2"   data-files="500"  aria-pressed="false">LAN NAS backup</button>
+        <button class="preset" data-rtt="30"  data-files="1200" aria-pressed="false">Regional VPS deploy</button>
+        <button class="preset" data-rtt="100" data-files="500"  aria-pressed="true">Transatlantic photos</button>
+        <button class="preset" data-rtt="220" data-files="80"   aria-pressed="false">Remote site, poor link</button>
+      </div>
+
+      <div class="bars" role="img" aria-labelledby="barsCap">
+        <p id="barsCap" class="sr">Comparison of connection overhead before and after Phase 1.</p>
+        <div class="bar-row">
+          <div class="bl">
+            <span class="ico" aria-hidden="true">▲</span>
+            <span>Today</span>
+            <span class="sub">— <span id="hsToday" class="num">500</span> full handshakes</span>
+          </div>
+          <div class="bar-line">
+            <div class="track"><div class="fill f-today" id="barToday" style="width:100%"></div></div>
+            <div class="val" id="valToday">4 min 42 s</div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <div class="bl">
+            <span class="ico" aria-hidden="true">✓</span>
+            <span>After Phase&nbsp;1</span>
+            <span class="sub">— 1 handshake for the whole job</span>
+          </div>
+          <div class="bar-line">
+            <div class="track"><div class="fill f-after" id="barAfter" style="width:1%"></div></div>
+            <div class="val" id="valAfter">0.6 s</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="headline">
+        <div class="big"><span id="ratio">500</span>×</div>
+        <div class="txt">
+          less connection overhead on this folder — <strong id="saved">4 minutes 41 seconds</strong>
+          of pure cryptographic handshaking that moves no data at all.
+        </div>
+      </div>
+
+      <p class="formula">
+        Model: <code>overhead = handshakes × (5.5 × RTT + 15 ms)</code> — TCP connect (1 RTT),
+        banner and key exchange (≈2.5 RTT), authentication (≈1 RTT), <code>sftp_init</code> (1 RTT),
+        plus ≈15 ms fixed asymmetric-crypto cost. <strong>Data transfer time is excluded</strong> —
+        it is unchanged by this work. This measures only the overhead that session reuse removes.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════ GAP EXPLORER ══════════════ -->
+  <section id="gaps">
+    <h2>Gap explorer</h2>
+    <div class="card">
+      <div class="filter-bar">
+        <div role="group" aria-label="Filter by category" style="display:flex;gap:7px;flex-wrap:wrap">
+          <button class="chip" data-cat="all" aria-pressed="true">All <span class="n">21</span></button>
+          <button class="chip" data-cat="Structural" aria-pressed="false">Structural <span class="n">8</span></button>
+          <button class="chip" data-cat="Metadata" aria-pressed="false">Metadata <span class="n">5</span></button>
+          <button class="chip" data-cat="Presentation" aria-pressed="false">Presentation <span class="n">8</span></button>
+        </div>
+        <div class="spacer"></div>
+        <label class="sr" for="q">Search gaps</label>
+        <input id="q" class="search" type="search" placeholder="Search gaps &amp; evidence…" />
+      </div>
+      <div class="filter-bar" style="border-bottom:1px solid var(--border)">
+        <div role="group" aria-label="Filter by severity" style="display:flex;gap:7px;flex-wrap:wrap">
+          <button class="chip" data-sev="all" aria-pressed="true">Any severity</button>
+          <button class="chip" data-sev="P0" aria-pressed="false">P0 <span class="n">2</span></button>
+          <button class="chip" data-sev="P1" aria-pressed="false">P1 <span class="n">6</span></button>
+          <button class="chip" data-sev="P2" aria-pressed="false">P2 <span class="n">7</span></button>
+          <button class="chip" data-sev="P3" aria-pressed="false">P3 <span class="n">6</span></button>
+        </div>
+        <div class="spacer"></div>
+        <span class="count" id="gapCount">21 shown</span>
+      </div>
+      <div id="gapList"></div>
+    </div>
+    <div class="note">
+      Click any row for the evidence in the source. Selecting a phase further down highlights the
+      gaps that phase closes.
+    </div>
+  </section>
+
+  <!-- ══════════════ TOPOLOGY ══════════════ -->
+  <section id="topology">
+    <h2>Session architecture</h2>
+    <div class="card pad">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+        <h3 style="margin:0" id="topoTitle">Today — a connection per operation</h3>
+        <div class="seg" role="group" aria-label="Architecture view">
+          <button id="tToday" aria-pressed="true">Today</button>
+          <button id="tAfter" aria-pressed="false">After Phase 1</button>
+        </div>
+      </div>
+      <div class="diagram" id="topoDiagram"></div>
+      <div class="note warn" id="topoNote"></div>
+    </div>
+  </section>
+
+  <!-- ══════════════ COPY ENGINE ══════════════ -->
+  <section id="copy">
+    <h2>Copy engine</h2>
+    <div class="grid g2">
+      <div class="card pad">
+        <h3>The relay pipe</h3>
+        <p>
+          SFTP has no server-side copy, and libssh2 1.11 cannot send OpenSSH's
+          <code>copy-data@openssh.com</code>. So bytes come off one session and go onto another
+          through a bounded ring buffer, with backpressure both ways.
+        </p>
+        <div class="pipe">
+          <div class="pipe-track"><div class="cellbox" id="cells"></div></div>
+          <div class="pipe-ends">
+            <span>◀ source session · <code>gsb_download</code></span>
+            <span><code>gsb_upload</code> · dest session ▶</span>
+          </div>
+        </div>
+        <p style="margin-top:14px;font-size:13px">
+          Upload starts immediately rather than after a full staging download, so wall-clock is
+          roughly halved and no temp disk is needed — a 200 GB move needs no 200 GB of free space.
+        </p>
+      </div>
+
+      <div class="card pad">
+        <h3>Move, in order of preference</h3>
+        <ol style="padding-left:1.15em;font-size:13.5px;color:var(--ink-2)">
+          <li style="margin-bottom:10px">
+            <strong>Same server, same filesystem</strong> — one <code>rename</code>. Instant,
+            atomic, no data moves. <em>Exists today.</em>
+          </li>
+          <li style="margin-bottom:10px">
+            <strong>Same server, different filesystem</strong> — <code>rename</code> fails with
+            <code>SSH_FX_FAILURE</code>; fall back to relay, stat-verify, delete source.
+            <em>Fails outright today.</em>
+          </li>
+          <li>
+            <strong>Different servers</strong> — relay, stat-verify, delete source. No alternative
+            without agent forwarding.
+          </li>
+        </ol>
+        <div class="note danger">
+          <strong>Partial failure is not rolled back.</strong> A folder move that dies at file 300
+          of 500 leaves both sides intact and reports exactly what moved. Automatic rollback of a
+          half-finished move is how a failed operation becomes a data-loss event.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════ DECISIONS ══════════════ -->
+  <section id="decisions">
+    <h2>Decisions <span style="text-transform:none;letter-spacing:0;font-weight:400">— click a card for the alternatives that were rejected</span></h2>
+    <div class="grid g2" id="decList"></div>
+  </section>
+
+  <!-- ══════════════ PHASES ══════════════ -->
+  <section id="phases">
+    <h2>Roadmap</h2>
+    <div class="meter">
+      <div class="meter-track" id="meter"></div>
+      <div class="meter-lab">
+        <span id="meterLab">Select a phase to see cumulative coverage</span>
+        <span><span id="meterN">0</span> / 21 gaps closed</span>
+      </div>
+    </div>
+    <div class="card" id="phaseList"></div>
+  </section>
+
+  <!-- ══════════════ RISKS ══════════════ -->
+  <section id="risks">
+    <h2>Risks</h2>
+    <div class="card" style="overflow:hidden">
+      <table>
+        <thead><tr><th style="width:22%">Risk</th><th style="width:64px">Sev</th><th>Mitigation</th></tr></thead>
+        <tbody id="riskRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Goel° — SFTP Finder-parity plan v1 · baseline <code>main</code>, CI green (run 30287660204) ·
+    libssh2 1.11.1 vendored · companion: <a href="plan-sftp-finder.html" style="color:var(--blue)">plan-sftp-finder.html</a>
+  </footer>
+</div>
+
+<script>
+/* ══════════════════════ DATA ══════════════════════ */
+const GAPS = [
+  // ---- Structural ----
+  {t:"No session reuse", c:"Structural", s:"P0", ph:1,
+   e:"Every <code>gsb_*</code> in <code>ssh_bridge.c</code> opens with <code>gsb_open()</code> and closes with <code>gsb_teardown()</code>. <code>SFTPClient.run</code> spawns a fresh <code>Thread</code> per call. A rename costs a full SSH handshake."},
+  {t:"Per-file handshakes in folder jobs", c:"Structural", s:"P0", ph:1,
+   e:"<code>uploadFolder</code> invokes <code>client.upload</code> once per file, and each call reconnects from scratch. A 500-file folder performs 500 complete handshakes."},
+  {t:"No folder download", c:"Structural", s:"P1", ph:2,
+   e:"<code>startDownload</code> opens with <code>guard !entry.isDirectory else { return }</code>, and <code>downloadTargets</code> filters directories out silently. Uploads recurse; downloads do not."},
+  {t:"No copy / paste", c:"Structural", s:"P1", ph:2,
+   e:"No clipboard handling anywhere in <code>SFTPBrowserView</code>. SFTP has no server-side copy primitive, and libssh2 1.11 exposes no way to send OpenSSH's <code>copy-data@openssh.com</code> extension."},
+  {t:"Move is barely a move", c:"Structural", s:"P1", ph:2,
+   e:"<code>moveMenu</code> offers only the parent folder and the current folder's immediate subfolders. No drag-to-move inside the pane, no arbitrary destination, no cross-server move."},
+  {t:"No cross-filesystem rename fallback", c:"Structural", s:"P1", ph:2,
+   e:"<code>client.rename</code> is called directly with no fallback. A move between two mounts on the same server returns <code>SSH_FX_FAILURE</code> and simply fails."},
+  {t:"Delete is non-recursive", c:"Structural", s:"P1", ph:2,
+   e:"<code>gsb_remove(path, is_dir)</code> maps to <code>rmdir</code>. The confirm sheet admits it: “The folder must be empty.”"},
+  {t:"No undo", c:"Structural", s:"P2", ph:2,
+   e:"No undo stack exists. Rename, move and new-folder are all trivially reversible with a single <code>rename</code>, but nothing records them."},
+  // ---- Metadata ----
+  {t:"Symlinks are invisible", c:"Metadata", s:"P1", ph:3,
+   e:"Listing uses <code>libssh2_sftp_readdir_ex</code> attrs only. A symlinked directory renders as a plain file and cannot be opened. No <code>lstat</code>, no <code>readlink</code>, no badge, no target, no cycle guard."},
+  {t:"No Get Info", c:"Metadata", s:"P2", ph:3,
+   e:"No <code>⌘I</code> sheet exists. Note that <code>SFTPEntry.permissions</code> is already populated by <code>sftpEntryThunk</code> and stored on the model — then never displayed anywhere."},
+  {t:"No chmod", c:"Metadata", s:"P2", ph:3,
+   e:"The bridge has no <code>setstat</code> call at all, though <code>libssh2_sftp_setstat</code> is linked and available."},
+  {t:"No free-space readout", c:"Metadata", s:"P2", ph:3,
+   e:"Nothing calls <code>libssh2_sftp_statvfs</code>, which libssh2 1.11 does expose. This one is nearly free once sessions exist."},
+  {t:"No folder sizes", c:"Metadata", s:"P3", ph:3,
+   e:"The status footer sums only files in the current listing; folders contribute nothing to the total."},
+  // ---- Presentation ----
+  {t:"No thumbnails", c:"Presentation", s:"P2", ph:4,
+   e:"<code>SFTPFileIcon</code> maps file extensions to SF Symbols. A folder of photographs renders as 200 identical <code>photo</code> glyphs. This is the largest single visual difference from Finder."},
+  {t:"Search is one folder deep", c:"Presentation", s:"P2", ph:4,
+   e:"<code>visibleEntries</code> filters <code>model.entries</code> by name substring. No recursive walk exists, and server-side <code>find</code> is impossible without a shell."},
+  {t:"Rename is a modal alert", c:"Presentation", s:"P2", ph:4,
+   e:"<code>.alert(\"Rename …\")</code> with a <code>TextField</code> interrupts the flow. Finder renames in place on a second click or Return."},
+  {t:"Missing keyboard parity", c:"Presentation", s:"P3", ph:4,
+   e:"No <code>⌘⌫</code>, <code>⌘I</code>, <code>⌘D</code>, <code>⌘⇧.</code>, <code>⌘⇧G</code> or <code>⌘↓</code>. No type-ahead selection — the single deepest piece of Finder muscle memory."},
+  {t:"Sort is a menu, not headers", c:"Presentation", s:"P3", ph:4,
+   e:"List view has no column headers to click or drag, and there is no Kind sort. Sorting hides behind an <code>arrow.up.arrow.down</code> menu button."},
+  {t:"No favourites or Recents", c:"Presentation", s:"P3", ph:4,
+   e:"<code>SFTPBrowserLocationStore</code> remembers exactly one path per connection. No bookmarks, no Recents, no tags."},
+  {t:"Byte caps Finder does not have", c:"Presentation", s:"P3", ph:4,
+   e:"<code>dragOutByteCap</code> and <code>previewByteCap</code> are both hard-coded to 512 MB. Dragging out a 600 MB file fails rather than showing progress."},
+  {t:"Interactive transfers cannot resume", c:"Presentation", s:"P3", ph:4,
+   e:"Only the queued <code>SFTPEngine</code> path supports <code>resumeFrom</code>. A browser download interrupted at 90% restarts from zero."}
+];
+
+const DECISIONS = [
+  {q:"Finder-feel in Goel's pane, or an actual Finder mount?",
+   a:"In-pane. No File Provider extension.",
+   w:"Every gap can be closed in-pane and ships incrementally.",
+   alts:["A File Provider extension needs a new app-extension target, the <code>com.apple.developer.fileprovider</code> entitlement, a separate process, and a rewrite of <code>SFTPClient</code> into a long-lived session service. Months, not weeks.",
+         "FUSE puts a kernel extension in the dependency chain and asks every user to install it — against the project's self-contained, Homebrew-free promise."]},
+  {q:"How far does the session-reuse fix go?",
+   a:"Full handle-based refactor of the C API.",
+   w:"Get Info, folder sizes, recursive delete and folder download are all N round trips. Half a fix is no fix.",
+   alts:["Metadata-only reuse leaves folder jobs handshaking once per file — the worst case stays broken.",
+         "Swift-side caching and optimistic UI hides nothing: the first click on any folder still pays a full handshake."]},
+  {q:"One session with many channels, or many sessions?",
+   a:"Multiple TCP sessions, one per role.",
+   w:"Reuses the existing blocking C code almost unchanged, at the cost of a few extra authentications.",
+   alts:["Multiplexing channels over one session authenticates once and is kinder to the server — but every channel must be driven from a single thread with non-blocking I/O, turning every blocking loop in <code>ssh_bridge.c</code> into an <code>EAGAIN</code> state machine. That is a rewrite of a working, CI-green file.",
+         "A single strictly-serial session is cheapest on the server, but a slow listing still delays the next click."]},
+  {q:"How is a same-server copy performed with no server-side copy primitive?",
+   a:"Relay through the local machine, behind a pluggable strategy.",
+   w:"Universal on day one — works on chrooted, sftp-only accounts — with zero new attack surface.",
+   alts:["<code>libssh2_channel_exec</code> running <code>cp -a</code> would make same-server copies instant and free, but introduces shell execution with user-supplied paths into a codebase that currently has none, and breaks on <code>ForceCommand internal-sftp</code> anyway. Added later as a strategy, behind a capability probe.",
+         "Relay-only forever is simplest, but a large same-server duplicate burns your bandwidth twice for no reason."]},
+  {q:"What does ⌘C put on the clipboard?",
+   a:"Full parity, both directions.",
+   w:"Internal clipboard carrying <code>(connectionID, [remotePaths], intent)</code> for Goel→Goel across servers; <code>NSFilePromiseProvider</code> for Goel→Finder; <code>.fileURL</code> read for Finder→Goel.",
+   alts:["Internal-only would leave ⌘V in Finder dead, which is exactly the muscle memory being reproduced.",
+         "Risk accepted: pasteboard file promises have historically been unreliable. Drag-out already works and stays the primary path; promise-paste degrades to a toast, never a hang."]},
+  {q:"What proof is required before a move deletes the original?",
+   a:"Stat-verify the destination byte count, then delete.",
+   w:"One round trip, and it catches truncation, short writes and out-of-space — the failures that actually occur.",
+   alts:["A content checksum would mean reading the whole file back again — there is no cheap remote hash without a shell.",
+         "“Copy, then ask before deleting” is safest but stops being a move; every folder move would need a second confirmation.",
+         "Trusting the transfer alone relies on assertions that only cover the local half of a relay."]},
+  {q:"Where do relayed bytes meet?",
+   a:"A bounded in-memory pipe.",
+   w:"No temp disk, no size ceiling, and the upload starts immediately so wall-clock is roughly halved.",
+   alts:["Staging through a temp file is almost no new code, but needs free disk equal to the file size and doubles the wall-clock.",
+         "Risk accepted: two blocking loops with mutual backpressure can wedge. A buffer-age watchdog aborts both sides."]},
+  {q:"Is there a Trash?",
+   a:"No. An undo stack instead.",
+   w:"⌘Z covers rename, move and new-folder — each reversible with a single <code>rename</code>. Delete stays permanent behind a sheet that says so.",
+   alts:["A <code>~/.Trash</code> convention would be a lie that breaks on read-only mounts and quota'd homes, and silently consumes the user's disk quota on the server."]}
+];
+
+const PHASES = [
+  {n:1, t:"Sessions", badge:"no visible features",
+   d:"The handle-based C refactor, the session actor, role-based allocation, idle timeout and transparent reconnect. Ships as pure speed.",
+   items:["<code>gsb_session_open</code> / <code>_close</code> / <code>_alive</code>; all ops take a handle",
+          "Dedicated pthread per session draining a serial command queue",
+          "Roles: interactive · background · one per transfer job",
+          "Folder upload rewired to reuse one session for the whole job",
+          "Per-server concurrent-session cap with queueing"],
+   meta:"Cannot be parallelised. Everything else depends on it."},
+  {n:2, t:"Copy, paste, move", badge:"the requested work",
+   d:"The CopyEngine and the full clipboard, same server and across servers.",
+   items:["<code>CopyStrategy</code> protocol; <code>RelayStrategy</code> with the bounded pipe",
+          "Stat-verify before source deletion; cross-filesystem <code>rename</code> fallback",
+          "Recursive folder download, mirroring <code>uploadFolder</code>",
+          "Recursive delete with a pre-scan count and size",
+          "<code>⌘C</code> / <code>⌘V</code> / <code>⌘⌥V</code>; internal clipboard + promises + <code>.fileURL</code>",
+          "Drag onto a sidebar server row for cross-server copy",
+          "Undo stack for rename, move and new-folder"],
+   meta:"Delivers everything you explicitly asked for."},
+  {n:3, t:"Finder metadata", badge:"bridge work",
+   d:"The five new bridge calls and the surfaces that consume them.",
+   items:["Symlink badges, targets, resolve-on-open, cycle guards on every walk",
+          "Get Info sheet (<code>⌘I</code>) with chmod write-back",
+          "Free space in the status footer via <code>statvfs</code>",
+          "Folder size calculation on the background session"],
+   meta:"All five calls already exist in libssh2 1.11 — no patching."},
+  {n:4, t:"Finder feel", badge:"polish",
+   d:"The remaining differences, each individually small.",
+   items:["Image thumbnails, lazily fetched on the background session, LRU-cached to disk",
+          "Inline rename replacing the modal alert",
+          "Sortable, resizable column headers including Kind",
+          "Type-ahead selection; <code>⌘⇧G</code> go-to-path",
+          "<code>⌘⌫</code> <code>⌘I</code> <code>⌘D</code> <code>⌘⇧.</code> <code>⌘↓</code>",
+          "Remote-folder favourites; recursive background search",
+          "Raise the drag-out cap; route browser downloads through the resumable path"],
+   meta:"Individually small, collectively the difference between “a file list” and “Finder”."}
+];
+
+const RISKS = [
+  ["Relay pipe deadlock","P0","Two blocking C loops with mutual backpressure can wedge if either side stalls. A watchdog on buffer age aborts both; the <code>CancelFlag</code> is observed by both progress callbacks; cancellation is tested against a deliberately stalled server."],
+  ["Session refactor regresses the queued engine","P0","<code>SFTPEngine</code> and the resumable download path share <code>SFTPClient</code>. The existing <code>SFTPSessionTests</code>, <code>sftpRemediationTests</code> and <code>sftpFailOpenRemediationTests</code> must pass unchanged before anything else lands."],
+  ["Symlink cycles","P1","Recursive download, recursive delete, folder sizing and search all walk the tree. Each carries a visited set and a depth cap. Today's code cannot hit this only because it cannot see symlinks at all — making them visible creates the hazard."],
+  ["Host-key trust across many sessions","P1","Opening 3–4 sessions per server must not mean 3–4 approval prompts, nor a race where two first-contact probes both pin. Approval resolves once per server per app run, ahead of session creation; the pin is written under a lock."],
+  ["Reconnect during a mutation","P1","A dropped session that transparently reconnects must not silently replay a half-applied <code>rename</code> or <code>remove</code>. Mutations are never auto-retried across a reconnect; they surface the failure and the browser re-lists."],
+  ["Thumbnail fetch storms","P2","Scrolling a 2,000-file folder must not queue 2,000 downloads. Requests are bounded, cancelled on scroll-away, size-capped, and served from the disk LRU first."],
+  ["Pasteboard file promises","P2","<code>NSFilePromiseProvider</code> paste into Finder has historically been unreliable. Drag-out stays the primary path; if promise-paste proves flaky it degrades to a no-op with a toast rather than a hang."]
+];
+
+/* ══════════════════════ CALCULATOR ══════════════════════ */
+const HS_RTT = 5.5, HS_FIXED = 15;
+const $ = id => document.getElementById(id);
+
+function fmt(ms){
+  if (ms < 1000) return Math.round(ms) + " ms";
+  if (ms < 60000) return (ms/1000).toFixed(1) + " s";
+  const m = Math.floor(ms/60000), s = Math.round((ms%60000)/1000);
+  return m + " min " + (s ? s + " s" : "");
+}
+function fmtLong(ms){
+  if (ms < 1000) return Math.round(ms) + " milliseconds";
+  if (ms < 60000) return (ms/1000).toFixed(1) + " seconds";
+  const m = Math.floor(ms/60000), s = Math.round((ms%60000)/1000);
+  return m + (m===1?" minute":" minutes") + (s ? " " + s + (s===1?" second":" seconds") : "");
+}
+
+function recalc(){
+  const r = +$("rtt").value, n = +$("files").value;
+  const one = HS_RTT * r + HS_FIXED;
+  const today = n * one, after = one;
+
+  $("rttOut").textContent = r;
+  $("filesOut").textContent = n.toLocaleString();
+  $("hsToday").textContent = n.toLocaleString();
+  $("valToday").textContent = fmt(today);
+  $("valAfter").textContent = fmt(after);
+  $("ratio").textContent = n.toLocaleString();
+  $("saved").textContent = fmtLong(today - after);
+
+  $("barAfter").style.width = Math.max(0.4, (after/today)*100) + "%";
+
+  document.querySelectorAll(".preset").forEach(b =>
+    b.setAttribute("aria-pressed", (+b.dataset.rtt === r && +b.dataset.files === n) ? "true" : "false"));
+}
+$("rtt").addEventListener("input", recalc);
+$("files").addEventListener("input", recalc);
+document.querySelectorAll(".preset").forEach(b => b.addEventListener("click", () => {
+  $("rtt").value = b.dataset.rtt; $("files").value = b.dataset.files; recalc();
+}));
+
+/* ══════════════════════ GAP EXPLORER ══════════════════════ */
+let fCat = "all", fSev = "all", fQ = "", hlPhase = 0;
+
+function renderGaps(){
+  const list = $("gapList");
+  list.innerHTML = "";
+  let shown = 0;
+  GAPS.forEach((g, i) => {
+    const matchCat = fCat === "all" || g.c === fCat;
+    const matchSev = fSev === "all" || g.s === fSev;
+    const hay = (g.t + " " + g.e).toLowerCase().replace(/<[^>]+>/g, "");
+    const matchQ = !fQ || hay.includes(fQ);
+    const visible = matchCat && matchSev && matchQ;
+    if (!visible) return;
+    shown++;
+
+    const row = document.createElement("div");
+    row.className = "gap" + (hlPhase && g.ph === hlPhase ? " hit" : (hlPhase ? " dim" : ""));
+    row.setAttribute("open-row", "false");
+    row.innerHTML =
+      '<button class="gap-head" aria-expanded="false">' +
+        '<span class="tw" aria-hidden="true">▶</span>' +
+        '<span class="sev ' + g.s + '">' + g.s + '</span>' +
+        '<span class="title">' + g.t + '</span>' +
+        '<span class="catlab">' + g.c + '</span>' +
+        '<span class="phlab">Phase ' + g.ph + '</span>' +
+      '</button>' +
+      '<div class="gap-body" hidden><div class="ev">' + g.e + '</div></div>';
+
+    const btn = row.querySelector(".gap-head"), body = row.querySelector(".gap-body");
+    btn.addEventListener("click", () => {
+      const open = row.getAttribute("open-row") === "true";
+      row.setAttribute("open-row", String(!open));
+      btn.setAttribute("aria-expanded", String(!open));
+      body.hidden = open;
+    });
+    list.appendChild(row);
+  });
+  $("gapCount").textContent = shown + (shown === 1 ? " shown" : " shown");
+  if (!shown) list.innerHTML = '<div style="padding:34px;text-align:center;color:var(--muted);font-size:13.5px">No gaps match those filters.</div>';
+}
+
+document.querySelectorAll("[data-cat]").forEach(b => b.addEventListener("click", () => {
+  fCat = b.dataset.cat;
+  document.querySelectorAll("[data-cat]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  renderGaps();
+}));
+document.querySelectorAll("[data-sev]").forEach(b => b.addEventListener("click", () => {
+  fSev = b.dataset.sev;
+  document.querySelectorAll("[data-sev]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  renderGaps();
+}));
+$("q").addEventListener("input", e => { fQ = e.target.value.trim().toLowerCase(); renderGaps(); });
+
+/* ══════════════════════ TOPOLOGY ══════════════════════ */
+const TOPO = {
+  today: {
+    title: "Today — a connection per operation",
+    note: "<strong>A 500-file folder upload performs 500 complete handshakes.</strong> Minutes of pure cryptographic overhead moving no data.",
+    d:
+'<span class="bad">every single operation</span>\n' +
+'  SFTPClient.run()\n' +
+'    └─ Thread { withAuth { <span class="hi">gsb_list(auth, path, …)</span> } }\n' +
+'                              │\n' +
+'                              ├─ gsb_open()\n' +
+'                              │    ├─ TCP connect            <span class="bad">1 RTT</span>\n' +
+'                              │    ├─ SSH banner + KEX       <span class="bad">2–3 RTT + crypto</span>\n' +
+'                              │    ├─ host-key verify\n' +
+'                              │    ├─ authenticate           <span class="bad">1–2 RTT</span>\n' +
+'                              │    └─ libssh2_sftp_init()    <span class="bad">1 RTT</span>\n' +
+'                              ├─ …the actual work…           <span class="ok">1 RTT</span>\n' +
+'                              └─ gsb_teardown()'
+  },
+  after: {
+    title: "After Phase 1 — three roles, sessions held open",
+    note: "A busy user may hold 3–4 authenticated connections to one host. OpenSSH's default <code>MaxStartups</code> (10:30:100) accommodates that comfortably, and the session manager caps and queues beyond it so a strict server cannot be tripped by a burst of thumbnail requests.",
+    d:
+'SFTPSessionActor(connection)          <span class="hi">serial command queue per session</span>\n' +
+'  │\n' +
+'  ├─ <span class="ok">interactive</span>   list · stat · mkdir · rename · remove\n' +
+'  │                  never blocked by a scan or a transfer\n' +
+'  │\n' +
+'  ├─ <span class="ok">background</span>    recursive walks · folder sizes · thumbnails\n' +
+'  │                  delete pre-scans · search\n' +
+'  │\n' +
+'  └─ <span class="ok">transfer[job]</span> one session per JOB, not per file\n' +
+'                     a 500-file folder = <span class="ok">1 handshake</span>\n\n' +
+'each session: <span class="hi">one dedicated pthread</span>, owns its LIBSSH2_SESSION for life,\n' +
+'              drains a command queue, reconnects transparently on drop,\n' +
+'              closes after an idle timeout'
+  }
+};
+function setTopo(k){
+  $("topoDiagram").innerHTML = TOPO[k].d;
+  $("topoTitle").textContent = TOPO[k].title;
+  $("topoNote").innerHTML = TOPO[k].note;
+  $("topoNote").className = "note " + (k === "today" ? "danger" : "warn");
+  $("tToday").setAttribute("aria-pressed", String(k === "today"));
+  $("tAfter").setAttribute("aria-pressed", String(k === "after"));
+}
+$("tToday").addEventListener("click", () => setTopo("today"));
+$("tAfter").addEventListener("click", () => setTopo("after"));
+
+/* ══════════════════════ RELAY PIPE ══════════════════════ */
+const NCELL = 22;
+const cellbox = $("cells");
+for (let i = 0; i < NCELL; i++){
+  const c = document.createElement("div"); c.className = "cell"; cellbox.appendChild(c);
+}
+const cells = [...cellbox.children];
+let head = 0, tail = 0, tick = 0;
+setInterval(() => {
+  tick++;
+  if (tick % 2 === 0) head = (head + 1) % (NCELL * 2);          // producer
+  if (tick % 3 === 0) tail = (tail + 1) % (NCELL * 2);          // consumer, slower
+  const depth = Math.max(0, Math.min(NCELL, head - tail));
+  cells.forEach((c, i) => c.classList.toggle("on", i < depth));
+  if (depth >= NCELL) head = tail + NCELL;                       // backpressure
+}, 110);
+
+/* ══════════════════════ DECISIONS ══════════════════════ */
+$("decList").innerHTML = DECISIONS.map(d =>
+  '<div class="card dec" role="button" tabindex="0" aria-expanded="false">' +
+    '<p class="q">' + d.q + '</p>' +
+    '<div class="a"><span class="tick" aria-hidden="true">✓</span><span>' + d.a + '</span></div>' +
+    '<p class="why">' + d.w + '</p>' +
+    '<div class="alts">' + d.alts.map(a =>
+      '<div class="alt"><span class="x" aria-hidden="true">✕</span><span>' + a + '</span></div>').join("") +
+    '</div>' +
+    '<div class="more">Alternatives considered ▾</div>' +
+  '</div>').join("");
+
+document.querySelectorAll(".dec").forEach(d => {
+  const toggle = () => {
+    const open = d.getAttribute("aria-expanded") === "true";
+    d.setAttribute("aria-expanded", String(!open));
+    d.querySelector(".more").textContent = open ? "Alternatives considered ▾" : "Hide alternatives ▴";
+  };
+  d.addEventListener("click", toggle);
+  d.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+  });
+});
+
+/* ══════════════════════ PHASES + METER ══════════════════════ */
+const PCOL = ["", "var(--blue-250)", "var(--blue-350)", "var(--blue)", "var(--blue-600)"];
+
+$("phaseList").innerHTML = PHASES.map(p =>
+  '<div class="phase" role="button" tabindex="0" aria-pressed="false" data-ph="' + p.n + '">' +
+    '<div class="pnum p' + p.n + '">' + p.n + '</div>' +
+    '<div>' +
+      '<h3>' + p.t + ' <span class="phlab" style="font-weight:600">' + p.badge + '</span> ' +
+        '<span class="phlab" style="font-weight:600">' +
+        GAPS.filter(g => g.ph === p.n).length + ' gaps</span></h3>' +
+      '<p style="font-size:13.5px;margin:0">' + p.d + '</p>' +
+      '<ul>' + p.items.map(i => '<li>' + i + '</li>').join("") + '</ul>' +
+      '<div class="meta">' + p.meta + '</div>' +
+    '</div>' +
+  '</div>').join("");
+
+function setPhase(n){
+  hlPhase = (hlPhase === n) ? 0 : n;
+  document.querySelectorAll(".phase").forEach(el =>
+    el.setAttribute("aria-pressed", String(+el.dataset.ph === hlPhase)));
+
+  const meter = $("meter");
+  meter.innerHTML = "";
+  let closed = 0;
+  for (let i = 1; i <= 4; i++){
+    const c = GAPS.filter(g => g.ph === i).length;
+    if (hlPhase && i > hlPhase) break;
+    closed += c;
+    const seg = document.createElement("div");
+    seg.className = "meter-seg";
+    seg.style.width = (c / GAPS.length * 100) + "%";
+    seg.style.background = PCOL[i];
+    // 2px surface gap between adjacent fills
+    if (i > 1) seg.style.borderLeft = "2px solid var(--surface)";
+    meter.appendChild(seg);
+    if (!hlPhase && i === 4) closed = GAPS.length;
+  }
+  $("meterN").textContent = hlPhase ? closed : 0;
+  $("meterLab").textContent = hlPhase
+    ? "Cumulative coverage through Phase " + hlPhase + " — highlighted in the explorer above"
+    : "Select a phase to see cumulative coverage";
+  if (!hlPhase){ meter.innerHTML = ""; }
+  renderGaps();
+}
+document.querySelectorAll(".phase").forEach(el => {
+  const go = () => setPhase(+el.dataset.ph);
+  el.addEventListener("click", go);
+  el.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+  });
+});
+
+/* ══════════════════════ RISKS ══════════════════════ */
+$("riskRows").innerHTML = RISKS.map(r =>
+  '<tr><td>' + r[0] + '</td><td><span class="sev ' + r[1] + '">' + r[1] + '</span></td><td>' + r[2] + '</td></tr>'
+).join("");
+
+/* ══════════════════════ BOOT ══════════════════════ */
+recalc();
+setTopo("today");
+renderGaps();
+</script>
+</body>
+</html>

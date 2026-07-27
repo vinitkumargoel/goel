@@ -137,10 +137,10 @@ struct SFTPTransferRow: View {
                         .scaledFont(size: 10.5, monospacedDigit: true).foregroundStyle(.secondary)
                     if !transfer.speedLabel.isEmpty {
                         Label(transfer.speedLabel,
-                              systemImage: transfer.direction == .upload ? "arrow.up" : "arrow.down")
+                              systemImage: transfer.arrowGlyph)
                             .labelStyle(.titleAndIcon)
                             .scaledFont(size: 10.5, weight: .semibold, monospacedDigit: true)
-                            .foregroundStyle(transfer.direction == .upload ? Theme.teal : Theme.green)
+                            .foregroundStyle(transfer.directionTint)
                     }
                     if let eta = transfer.etaLabel {
                         Text(eta).scaledFont(size: 10.5, monospacedDigit: true).foregroundStyle(.tertiary)
@@ -169,7 +169,7 @@ struct SFTPTransferRow: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
-            Text("\(transfer.direction == .upload ? "To" : "From") \(transfer.remoteFolderLabel)")
+            Text("\(transfer.folderPreposition) \(transfer.remoteFolderLabel)")
                 .scaledFont(size: density == .compact ? 10 : 10.5)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -186,7 +186,7 @@ struct SFTPTransferRow: View {
 
     /// "Uploading" / "Downloading" — the arrow glyph and tint, in words.
     private var spokenDirection: String {
-        transfer.direction == .upload ? "Uploading" : "Downloading"
+        transfer.activityLabel
     }
 
     /// The transfer's live numbers as one spoken value, ending in its state so a
@@ -214,7 +214,7 @@ struct SFTPTransferRow: View {
             if density == .compact, !transfer.speedLabel.isEmpty {
                 Text(transfer.speedLabel)
                     .font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                    .foregroundStyle(transfer.direction == .upload ? Theme.teal : Theme.green)
+                    .foregroundStyle(transfer.directionTint)
             }
             if density == .full {
                 Text(transfer.progressLabel)
