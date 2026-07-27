@@ -144,14 +144,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// already false there and no alert interrupts it.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard ActiveWorkGate.shared.hasActiveWork else { return .terminateNow }
+        // A conversion is not a download: it can't be resumed next launch, and
+        // abandoning one leaves a half-written file behind. Say which of the two
+        // is actually running rather than warning about the wrong thing.
+        let converting = MainActor.assumeIsolated { AppViewModel.shared?.mediaJobs.hasLiveWork } ?? false
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Downloads are still running."
-        alert.informativeText =
-            "Quitting now stops them. Unfinished downloads are kept and can be resumed next launch."
+        alert.messageText = converting ? "Work is still in progress."
+                                       : "Downloads are still running."
+        alert.informativeText = converting
+            ? "Quitting now stops it. Unfinished downloads are kept and can be resumed next "
+            + "launch; a conversion in progress is cancelled and its partial file removed."
+            : "Quitting now stops them. Unfinished downloads are kept and can be resumed next launch."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+        guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        guard converting else { return .terminateNow }
+        // Hold the quit open just long enough for each ffmpeg to stop and its
+        // partial file to be removed. Terminating immediately would orphan the
+        // child process and leave the half-written output on disk — the cleanup
+        // runs when the process exits, and that needs the app to still be alive.
+        Task { @MainActor in
+            AppViewModel.shared?.mediaJobs.cancelAll()
+            await AppViewModel.shared?.mediaJobs.waitForShutdown()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     /// The user switched to another app: download latency no longer matters, so

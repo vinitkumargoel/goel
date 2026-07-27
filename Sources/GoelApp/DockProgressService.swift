@@ -16,14 +16,27 @@ final class DockProgressService {
     private var lastBadge: String?
     private var lastFraction: Double = -1
 
-    func update(with tasks: [DownloadTask]) {
+    /// Refresh the tile.
+    ///
+    /// `mediaBusyCount` is every live conversion; `mediaFractions` holds only the
+    /// ones whose source length is known, since a job with no declared duration
+    /// has no fraction to contribute and must not be folded in as a zero.
+    ///
+    /// Conversions are counted and drawn alongside downloads because from the
+    /// Dock's point of view they are the same question — "is Goel° busy, and how
+    /// far along is it" — and a conversion that ran for six minutes used to leave
+    /// the icon looking completely idle.
+    func update(with tasks: [DownloadTask],
+                mediaBusyCount: Int = 0,
+                mediaFractions: [Double] = []) {
         let active = tasks.filter { task in
             switch task.status {
             case .downloading, .requestingMetadata, .verifying: return true
             default: return false
             }
         }
-        let badge = active.isEmpty ? nil : "\(active.count)"
+        let busyCount = active.count + mediaBusyCount
+        let badge = busyCount == 0 ? nil : "\(busyCount)"
         if badge != lastBadge {
             NSApp.dockTile.badgeLabel = badge
             lastBadge = badge
@@ -32,7 +45,16 @@ final class DockProgressService {
         let sized = active.filter { ($0.totalBytes ?? 0) > 0 }
         let total = sized.reduce(Int64(0)) { $0 + ($1.totalBytes ?? 0) }
         let done = sized.reduce(Int64(0)) { $0 + min($1.bytesDownloaded, $1.totalBytes ?? 0) }
-        let fraction = total > 0 ? Double(done) / Double(total) : -1
+        // Downloads are weighted by bytes against each other; each conversion
+        // counts as one unit of equal weight. Mixing bytes and seconds on one bar
+        // can't be exact, and pretending otherwise would be worse than a bar that
+        // simply moves right as everything progresses.
+        let downloadWeight = total > 0 ? 1.0 : 0
+        let downloadProgress = total > 0 ? Double(done) / Double(total) : 0
+        let units = downloadWeight + Double(mediaFractions.count)
+        let fraction = units > 0
+            ? (downloadProgress * downloadWeight + mediaFractions.reduce(0, +)) / units
+            : -1
 
         let visibilityChanged = (fraction < 0) != (lastFraction < 0)
         guard visibilityChanged || abs(fraction - lastFraction) >= 0.005 else { return }

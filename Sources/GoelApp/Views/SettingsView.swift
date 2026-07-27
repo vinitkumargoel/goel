@@ -336,6 +336,16 @@ struct SettingsView: View {
                 .scaledFont(size: 10)
                 .foregroundStyle(vm.ffmpegUnavailableReason == nil ? Color.secondary : Theme.orange)
                 .fixedSize(horizontal: false, vertical: true)
+            SetRow(name: "Conversions at once",
+                   desc: "ffmpeg already uses every core for one job, so running more at "
+                       + "the same time makes each one slower without finishing the batch sooner.") {
+                Dropdown(selection: binding(\.mediaConcurrency), items: [
+                    .option(1, "1"),
+                    .option(2, "2"),
+                    .option(3, "3"),
+                    .option(4, "4"),
+                ], width: 90)
+            }
         }
     }
 

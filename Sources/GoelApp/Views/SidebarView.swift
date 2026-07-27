@@ -25,6 +25,7 @@ struct SidebarView: View {
                     item("Archives", "doc.zipper", .type(.archive))
                     item("Apps", "app.badge", .type(.app))
                 }
+                MediaJobsSidebarGroup(center: vm.mediaJobs)
                 serversGroup
             }
             .padding(10)
@@ -328,5 +329,58 @@ struct SidebarView: View {
         .a11yGroup(label: label, value: "\(vm.count(for: filter)) downloads",
                    hint: "Activate to filter the list.")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+// MARK: - Media jobs
+
+/// A live count of running conversions, shown only while there are any.
+///
+/// The dock in the window's corner is the detailed view; this row exists so the
+/// sidebar says *somewhere* that ffmpeg is working — a job stays discoverable
+/// after its card is dismissed, and the window is never silent about work in
+/// progress again.
+///
+/// Its own view, taking the center as an `@ObservedObject`, because
+/// ``MediaJobCenter`` is nested inside ``AppViewModel``: SwiftUI does not
+/// propagate a nested observable's changes through the outer one, so reading
+/// `vm.mediaJobs` from `SidebarView`'s body would render once and then freeze.
+///
+/// Not a filter. There is nothing in the download list to filter down to, so it
+/// is a read-only row rather than a button that would do nothing when clicked.
+private struct MediaJobsSidebarGroup: View {
+
+    @ObservedObject var center: MediaJobCenter
+
+    var body: some View {
+        if center.liveCount > 0 {
+            Text("MEDIA")
+                .scaledFont(size: 10.5, weight: .bold)
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 8)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+                .accessibilityLabel("Media")
+                .accessibilityAddTraits(.isHeader)
+            HStack(spacing: 9) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 13))
+                    .frame(width: 16)
+                Text("Converting")
+                    .scaledFont(size: 13)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text("\(center.liveCount)")
+                    .scaledFont(size: 11, weight: .semibold, monospacedDigit: true)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Theme.accent.opacity(0.18)))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .a11yGroup(label: "Converting",
+                       value: "\(center.liveCount) media job\(center.liveCount == 1 ? "" : "s") in progress")
+        }
     }
 }

@@ -50,7 +50,7 @@ struct MenuBarView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if listedTasks.isEmpty && activeTransfers.isEmpty {
+            if listedTasks.isEmpty && activeTransfers.isEmpty && vm.mediaLiveCount == 0 {
                 emptyState
             } else {
                 ScrollView {
@@ -77,6 +77,14 @@ struct MenuBarView: View {
                                     })
                                 Divider()
                             }
+                        }
+                        // Conversions keep the app alive after its last window is
+                        // closed, so they must be reachable from the menu bar —
+                        // otherwise Goel° sits in the Dock doing invisible work
+                        // that cannot be cancelled from anywhere.
+                        if vm.mediaLiveCount > 0 {
+                            sectionLabel("Conversions")
+                            MenuBarMediaSection(center: vm.mediaJobs)
                         }
                     }
                     .background(
@@ -130,7 +138,7 @@ struct MenuBarView: View {
         // Count what the popover actually lists (unfinished downloads + live SFTP
         // transfers), so the header number matches the rows below rather than only
         // the actively-transferring subset.
-        let count = listedTasks.count + activeTransfers.count
+        let count = listedTasks.count + activeTransfers.count + vm.mediaLiveCount
         return HStack(spacing: 12) {
             Text(count == 0 ? "Downloads" : "Downloads · \(count)")
                 .scaledFont(size: 13, weight: .semibold)
@@ -337,6 +345,59 @@ private struct MenuBarSFTPTransferRow: View {
             Button("Keep Going", role: .cancel) {}
         } message: {
             Text("“\(transfer.name)” will stop transferring and be removed from the list.")
+        }
+    }
+}
+
+/// Live conversions in the menu-bar popover: name, percentage, and a stop button.
+///
+/// Its own view, observing ``MediaJobCenter`` directly, because a nested
+/// `ObservableObject` read through ``AppViewModel`` never invalidates the parent's
+/// body — the rows would render once and then freeze at whatever the first sample
+/// happened to say.
+private struct MenuBarMediaSection: View {
+
+    @ObservedObject var center: MediaJobCenter
+
+    var body: some View {
+        ForEach(center.jobs.filter { $0.state.isLive }) { job in
+            HStack(spacing: 10) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 18)
+                    .a11yDecorative()
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(job.kind.activeTitle)
+                        .scaledFont(size: 12, weight: .medium)
+                        .lineLimit(1)
+                    Text(job.sourceName)
+                        .scaledFont(size: 10.5)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 4)
+                if let fraction = job.fraction {
+                    Text("\(Int((fraction * 100).rounded()))%")
+                        .scaledFont(size: 11, design: .monospaced)
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    center.cancel(job.id)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(job.state == .cancelling && !job.isStopStuck())
+                .accessibilityLabel("Cancel \(job.kind.activeTitle)")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            Divider()
         }
     }
 }

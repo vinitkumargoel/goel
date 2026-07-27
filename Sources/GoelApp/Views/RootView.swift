@@ -100,6 +100,9 @@ struct RootView: View {
                 .overlay { if let tint = Theme.windowTint { tint } }
         }
         .overlay(alignment: .bottom) { toastView }
+        // Above the toast layer: a conversion card persists for the whole job,
+        // and a passing toast must not be able to sit on top of it.
+        .overlay(alignment: .bottomTrailing) { MediaJobDock(center: vm.mediaJobs) }
         .overlay { dropOverlay }
         .overlay { confirmOverlay }
         // Toasts and the persistence banner are the app's only feedback for
