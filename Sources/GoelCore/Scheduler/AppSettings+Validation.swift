@@ -74,6 +74,10 @@ public extension AppSettings {
         s.auditLogRetentionDays = s.auditLogRetentionDays.clamped(to: 0...3650)
         s.auditLogKeepFiles = s.auditLogKeepFiles.clamped(to: 0...1000)
         s.auditLogMaxFileMegabytes = s.auditLogMaxFileMegabytes.clamped(to: 1...1024)
+        // Upper bound as well as lower: every ffmpeg spreads itself across all
+        // cores, so a hand-edited settings file asking for 64 at once would spawn
+        // 64 processes that fight each other and finish the batch no sooner.
+        s.mediaConcurrency = s.mediaConcurrency.clamped(to: 1...8)
         s.language = Self.supportedLanguageName(s.language)
         if s.existingFileReaction != "rename", s.existingFileReaction != "overwrite" {
             s.existingFileReaction = "rename"

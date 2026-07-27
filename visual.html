@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Goel° — Convert &amp; Extract Audio · Gap analysis and proposed design</title>
+<style>
+  :root {
+    --bg: #0f1218; --bg2: #161b24; --bg3: #1c2330; --border: #2a3344;
+    --text: #e8ecf4; --muted: #8b96ab; --dim: #5c677a;
+    --accent: #4ea1ff; --accent-dim: rgba(78,161,255,.12);
+    --green: #3ecf8e; --green-dim: rgba(62,207,142,.12);
+    --amber: #f0b429; --amber-dim: rgba(240,180,41,.12);
+    --red: #f07178; --red-dim: rgba(240,113,120,.12);
+    --violet: #c4a0d0; --violet-dim: rgba(196,160,208,.12);
+    --radius: 12px;
+    font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--text); line-height: 1.55; font-size: 15px;
+    background: radial-gradient(1200px 600px at 10% -10%, #1a2740 0%, transparent 55%),
+                radial-gradient(900px 500px at 100% 0%, #1a2430 0%, transparent 50%), var(--bg);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 48px 24px 120px; }
+  .hero {
+    border: 1px solid var(--border); border-radius: 18px; padding: 36px 40px; margin-bottom: 28px;
+    background: linear-gradient(180deg, var(--bg3), var(--bg2));
+    box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 12px 40px rgba(0,0,0,.35);
+  }
+  .eyebrow {
+    display: inline-flex; font-size: 12px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--accent); background: var(--accent-dim);
+    padding: 5px 10px; border-radius: 999px; margin-bottom: 14px;
+  }
+  h1 { font-size: 30px; line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .subtitle { color: var(--muted); font-size: 16px; max-width: 74ch; margin: 0 0 18px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pill {
+    font-size: 12.5px; color: var(--muted); border: 1px solid var(--border);
+    background: var(--bg); padding: 5px 11px; border-radius: 999px;
+  }
+  .pill strong { color: var(--text); }
+  .verdict {
+    margin-top: 20px; padding: 16px 18px; border-radius: 12px;
+    border: 1px solid rgba(240,113,120,.42); background: var(--red-dim);
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .verdict .mark {
+    flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(240,113,120,.22); color: var(--red);
+    display: grid; place-items: center; font-weight: 700;
+  }
+  .verdict h2 { margin: 0 0 4px; font-size: 15px; color: var(--red); border: 0; padding: 0; }
+  .verdict p { margin: 0; color: var(--text); font-size: 14px; }
+  nav.toc {
+    position: sticky; top: 0; z-index: 30; backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px); background: rgba(15,18,24,.92);
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px;
+    margin-bottom: 32px; display: flex; flex-wrap: wrap; gap: 4px 12px;
+  }
+  nav.toc a { color: var(--muted); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+  nav.toc a:hover { color: var(--accent); text-decoration: none; }
+  section { margin-bottom: 44px; scroll-margin-top: 70px; }
+  h2 {
+    font-size: 21px; letter-spacing: -0.015em; margin: 0 0 12px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 15.5px; margin: 22px 0 8px; }
+  h4 { font-size: 13.5px; margin: 14px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 700; font-size: 11.5px; }
+  p { color: var(--muted); margin: 0 0 10px; }
+  p strong, li strong { color: var(--text); }
+  ul, ol { color: var(--muted); margin: 0 0 10px; padding-left: 1.25em; }
+  li { margin-bottom: 5px; }
+  code {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+    background: var(--bg3); border: 1px solid var(--border); padding: 1px 5px;
+    border-radius: 5px; color: #c5d0e6;
+  }
+  pre {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; color: #c5d0e6; margin: 10px 0 14px;
+  }
+  pre .c { color: var(--dim); }
+  pre .k { color: var(--violet); }
+  pre .s { color: var(--green); }
+  .grid { display: grid; gap: 12px; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 860px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .hero { padding: 24px; } h1 { font-size: 24px; }
+    .wrap { padding: 28px 16px 80px; }
+  }
+  .card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 14px; }
+  .card p { margin: 0; font-size: 13px; }
+  .tag {
+    display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; padding: 2px 7px; border-radius: 5px;
+  }
+  .tag.go { background: var(--green-dim); color: var(--green); }
+  .tag.warn { background: var(--amber-dim); color: var(--amber); }
+  .tag.no { background: var(--red-dim); color: var(--red); }
+  .tag.info { background: var(--accent-dim); color: var(--accent); }
+  .tag.fix { background: var(--violet-dim); color: var(--violet); }
+  .table-scroll { overflow-x: auto; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 13px; min-width: 640px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; margin: 10px 0 14px;
+  }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th {
+    background: var(--bg3); color: var(--text); font-weight: 600;
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em;
+  }
+  tr:last-child td { border-bottom: 0; }
+  td { color: var(--muted); }
+  td:first-child { color: var(--text); font-weight: 500; }
+  .num { color: var(--dim); font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; }
+
+  /* ---------- App mockup ---------- */
+  .stage {
+    background: #10141b; border: 1px solid var(--border); border-radius: 14px;
+    padding: 0; overflow: hidden; margin: 14px 0 6px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.4);
+  }
+  .titlebar {
+    height: 36px; background: linear-gradient(180deg,#242c3a,#1d2431);
+    border-bottom: 1px solid var(--border); display: flex; align-items: center;
+    padding: 0 12px; gap: 7px;
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+  .titlebar .tt { margin-left: 10px; font-size: 12px; color: var(--dim); font-weight: 600; }
+  .appbody { display: flex; min-height: 320px; }
+  .sidebar {
+    width: 172px; flex: 0 0 172px; background: #141922; border-right: 1px solid var(--border);
+    padding: 12px 8px; font-size: 12.5px;
+  }
+  .sb-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 7px;
+    color: var(--muted); margin-bottom: 2px;
+  }
+  .sb-item.on { background: var(--accent-dim); color: var(--text); font-weight: 600; }
+  .sb-item .cnt {
+    margin-left: auto; font-size: 10.5px; background: var(--bg3); color: var(--muted);
+    padding: 1px 6px; border-radius: 999px; font-family: ui-monospace, monospace;
+  }
+  .sb-item.job .cnt { background: rgba(78,161,255,.22); color: var(--accent); }
+  .sb-head { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); padding: 10px 9px 5px; font-weight: 700; }
+  .main { flex: 1; position: relative; padding: 10px 12px; min-width: 0; }
+  .row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 8px;
+    border-bottom: 1px solid rgba(42,51,68,.6); font-size: 12.5px;
+  }
+  .row .ic { width: 22px; height: 22px; border-radius: 5px; background: var(--bg3); display: grid; place-items: center; font-size: 10px; color: var(--muted); }
+  .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .st { font-size: 11px; color: var(--dim); font-family: ui-monospace, monospace; }
+  .row.busy .st { color: var(--accent); }
+
+  /* job dock */
+  .jobdock {
+    position: absolute; right: 12px; bottom: 12px; width: 330px;
+    display: flex; flex-direction: column; gap: 8px; z-index: 5;
+  }
+  .job {
+    background: rgba(28,35,48,.97); border: 1px solid var(--border); border-radius: 11px;
+    padding: 10px 11px; box-shadow: 0 10px 30px rgba(0,0,0,.45);
+    backdrop-filter: blur(10px);
+  }
+  .job.ok { border-color: rgba(62,207,142,.5); }
+  .job.err { border-color: rgba(240,113,120,.5); }
+  .job.stall { border-color: rgba(240,180,41,.5); }
+  .job-top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .job-glyph {
+    width: 24px; height: 24px; flex: 0 0 auto; border-radius: 6px; display: grid; place-items: center;
+    background: var(--accent-dim); color: var(--accent); font-size: 11px; font-weight: 700;
+  }
+  .job.ok .job-glyph { background: var(--green-dim); color: var(--green); }
+  .job.err .job-glyph { background: var(--red-dim); color: var(--red); }
+  .job.stall .job-glyph { background: var(--amber-dim); color: var(--amber); }
+  .job-title { font-size: 12px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-x {
+    flex: 0 0 auto; width: 20px; height: 20px; border-radius: 5px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; line-height: 1;
+    display: grid; place-items: center; padding: 0;
+  }
+  .job-x:hover { border-color: var(--red); color: var(--red); background: var(--red-dim); }
+  .job-sub { font-size: 11px; color: var(--dim); margin-bottom: 7px; font-family: ui-monospace, monospace; }
+  .bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#4ea1ff,#6fc0ff); border-radius: 3px; transition: width .28s linear; }
+  .job.ok .bar > i { background: linear-gradient(90deg,#2fae76,#3ecf8e); }
+  .job.err .bar > i { background: #f07178; }
+  .job.stall .bar > i { background: linear-gradient(90deg,#d09a1f,#f0b429); }
+  .bar.indet > i { width: 34% !important; animation: slide 1.35s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -34%; } 100% { margin-left: 100%; } }
+  .job-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; }
+  .job-foot .grow { flex: 1; }
+  .lnk { color: var(--accent); cursor: pointer; font-size: 11px; font-weight: 600; }
+  .lnk:hover { text-decoration: underline; }
+  .lnk.quiet { color: var(--muted); font-weight: 500; }
+  .errbox {
+    margin-top: 8px; background: #131820; border: 1px solid var(--border); border-radius: 7px;
+    padding: 7px 8px; font-family: ui-monospace, monospace; font-size: 10.5px; color: #d9a0a4;
+    max-height: 62px; overflow: auto; white-space: pre-wrap;
+  }
+  .ctl { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; align-items: center; }
+  .btn {
+    font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg3); color: var(--text); font-family: inherit;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #08131f; }
+  .btn.primary:hover { filter: brightness(1.1); color: #08131f; }
+  .hint { font-size: 12px; color: var(--dim); }
+
+  /* context menu mock */
+  .ctxwrap { display: flex; gap: 18px; flex-wrap: wrap; }
+  .ctx {
+    width: 268px; background: rgba(40,47,61,.98); border: 1px solid #3a4457; border-radius: 9px;
+    padding: 5px; font-size: 12.5px; box-shadow: 0 14px 40px rgba(0,0,0,.5);
+  }
+  .ctx .mi { padding: 5px 10px; border-radius: 5px; display: flex; align-items: center; gap: 8px; color: var(--text); }
+  .ctx .mi .r { margin-left: auto; color: var(--dim); font-size: 11px; font-family: ui-monospace, monospace; }
+  .ctx .mi.dis { color: var(--dim); }
+  .ctx .mi.hl { background: var(--accent); color: #08131f; }
+  .ctx .mi.hl .r { color: rgba(8,19,31,.7); }
+  .ctx .sep { height: 1px; background: #454f63; margin: 4px 6px; }
+  .caption { font-size: 12px; color: var(--dim); margin-top: 8px; }
+
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 12px 0; }
+  .node {
+    flex: 1 1 150px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 11px 12px; font-size: 12px; color: var(--muted); min-width: 140px;
+  }
+  .node b { display: block; color: var(--text); font-size: 12.5px; margin-bottom: 3px; }
+  .node.hi { border-color: rgba(78,161,255,.5); background: linear-gradient(180deg, rgba(78,161,255,.07), var(--bg2)); }
+  .node.new { border-color: rgba(196,160,208,.5); background: linear-gradient(180deg, rgba(196,160,208,.07), var(--bg2)); }
+  .arrow { align-self: center; color: var(--dim); font-size: 16px; }
+  @media (max-width: 720px) { .arrow { transform: rotate(90deg); width: 100%; text-align: center; } }
+
+  .kv { display: grid; grid-template-columns: 168px 1fr; gap: 6px 14px; font-size: 13px; }
+  .kv dt { color: var(--text); font-weight: 600; }
+  .kv dd { color: var(--muted); margin: 0; }
+  @media (max-width: 640px) { .kv { grid-template-columns: 1fr; } .kv dd { margin-bottom: 8px; } }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+  .panel { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--bg2); }
+  .panel.before { border-color: rgba(240,113,120,.35); }
+  .panel.after { border-color: rgba(62,207,142,.35); }
+  .panel h4 { margin-top: 0; }
+  .tl { list-style: none; padding: 0; margin: 0; font-size: 12.5px; }
+  .tl li { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px dashed rgba(42,51,68,.8); }
+  .tl li:last-child { border-bottom: 0; }
+  .tl .t { flex: 0 0 62px; color: var(--dim); font-family: ui-monospace, monospace; font-size: 11px; }
+  footer { color: var(--dim); font-size: 12.5px; border-top: 1px solid var(--border); padding-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hero">
+  <div class="eyebrow">Design review · before implementation</div>
+  <h1>Convert &amp; Extract Audio: what's missing, and what I want to build</h1>
+  <p class="subtitle">
+    The feature works — it produces correct files. What it does not do is tell you anything while it
+    works, or let you stop it. This page is the gap analysis and the proposed design, for you to
+    approve or redirect before I touch any Swift.
+  </p>
+  <div class="meta-row">
+    <span class="pill">Surface · <strong>right-click → Convert To / Extract Audio</strong></span>
+    <span class="pill">Code · <strong>FFmpegService.swift</strong>, <strong>AppViewModel:1870–1897</strong></span>
+    <span class="pill">Gaps found · <strong>15</strong></span>
+    <span class="pill">Blocking · <strong>4</strong></span>
+  </div>
+  <div class="verdict">
+    <div class="mark">!</div>
+    <div>
+      <h2>The core problem is architectural, not cosmetic</h2>
+      <p>
+        A conversion has <em>no object representing it</em>. <code>convertFile</code> spawns a detached
+        <code>Task</code>, drops the handle, and shows a 2.4-second toast. Nothing in the app holds a
+        reference to the running job — so there is nothing to draw a progress bar from and nothing to
+        cancel. Adding a spinner is not the fix; the job needs to exist first.
+      </p>
+    </div>
+  </div>
+
+  <div class="verdict" style="border-color:rgba(62,207,142,.42);background:var(--green-dim)">
+    <div class="mark" style="background:rgba(62,207,142,.22);color:var(--green)">✓</div>
+    <div>
+      <h2 style="color:var(--green)">Built — and four things in here changed on the way</h2>
+      <p>
+        This document was the plan. It has been kept as written and annotated where the implementation
+        disagreed with it, rather than quietly edited to match. The four differences, each marked
+        <span class="tag no">changed</span> or <span class="tag no">not shipped</span> where it appears:
+      </p>
+      <ul style="margin-top:8px;margin-bottom:0">
+        <li><strong>Per-format size estimates in the Extract Audio menu are cut.</strong> They needed a
+        probe process spawned from inside a submenu, and were wrong on the first right-click by design.
+        The estimate survives where it can act — the free-space pre-flight.</li>
+        <li><strong>No <code>AVAsset</code> fast path.</strong> It cannot open MKV or WebM, and cannot
+        answer the codec half of the probe. One uniform <code>ffmpeg -i</code> covers every container.</li>
+        <li><strong>Notifications follow the user's existing settings</strong> rather than a hardcoded
+        “only when not frontmost”.</li>
+        <li><strong>Recording conversions in History is not built.</strong> It was listed as lowest
+        priority and droppable; it was dropped.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<nav class="toc">
+  <a href="#today">What happens today</a>
+  <a href="#gaps">The 15 gaps</a>
+  <a href="#design">Proposed design</a>
+  <a href="#mockup">UI mockup</a>
+  <a href="#menu">Context menu</a>
+  <a href="#behaviour">Behaviour spec</a>
+  <a href="#copy">The stream-copy fix</a>
+  <a href="#files">Files I'd change</a>
+  <a href="#tests">Tests</a>
+  <a href="#scope">Out of scope</a>
+</nav>
+
+<!-- ============================================================ -->
+<section id="today">
+  <h2>What happens today</h2>
+  <p>
+    Here is the complete user-visible life of a conversion, as the code currently writes it. The right
+    column is what I'm proposing instead.
+  </p>
+
+  <div class="split">
+    <div class="panel before">
+      <h4><span class="tag no">Today</span></h4>
+      <ul class="tl">
+        <li><span class="t">0.0s</span><span>You click <strong>Convert To → MKV</strong>.</span></li>
+        <li><span class="t">0.0s</span><span>Toast: “Converting to MKV…”.</span></li>
+        <li><span class="t">2.4s</span><span>Toast disappears. <strong>The app now looks idle.</strong></span></li>
+        <li><span class="t">2.4s+</span><span>No spinner, no bar, no row, no menu-bar hint, no Dock badge. Nothing.</span></li>
+        <li><span class="t">…</span><span>You cannot cancel. You cannot tell if it's running, wedged, or already finished.</span></li>
+        <li><span class="t">…</span><span>You right-click and hit Convert again, because there was no feedback. Now two ffmpegs run.</span></li>
+        <li><span class="t">6m 40s</span><span>Toast: “Saved ‘clip.mkv’”. If you were in another app, you never see it.</span></li>
+        <li><span class="t">—</span><span>On failure: 200 chars of ffmpeg stderr, in a toast, for 2.4 seconds. Uncopyable.</span></li>
+      </ul>
+    </div>
+    <div class="panel after">
+      <h4><span class="tag go">Proposed</span></h4>
+      <ul class="tl">
+        <li><span class="t">0.0s</span><span>Click <strong>Convert To → MKV</strong>.</span></li>
+        <li><span class="t">0.1s</span><span>A <strong>job card</strong> docks bottom-right and stays until you dismiss it.</span></li>
+        <li><span class="t">0.3s</span><span>Duration probed → real percentage, not a spinner.</span></li>
+        <li><span class="t">1s+</span><span>Bar advances. “38% · 4:12 of 11:02 · ~2m 30s left · 1.8×”.</span></li>
+        <li><span class="t">any</span><span><strong>✕ cancels</strong> — SIGTERM, then SIGKILL, partial output deleted.</span></li>
+        <li><span class="t">any</span><span>Sidebar shows “Media jobs 1”. Dock icon shows combined progress.</span></li>
+        <li><span class="t">on stall</span><span>Card turns amber: “No progress for 5 min — ffmpeg may be stuck.”</span></li>
+        <li><span class="t">done</span><span>Card turns green with <strong>Reveal in Finder</strong>; notification if backgrounded.</span></li>
+        <li><span class="t">on fail</span><span>Card turns red and <strong>stays</strong>, with full ffmpeg output + Copy.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="gaps">
+  <h2>The 15 gaps</h2>
+  <p>Ordered by severity. The four marked <span class="tag no">blocking</span> are the ones you actually felt.</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th style="width:34px">#</th><th style="width:210px">Gap</th><th>What it means in practice</th><th style="width:96px">Severity</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>No job object exists</td><td><code>Task { … }</code> is spawned and the handle discarded; the <code>Process</code> is a local in <code>FFmpegService.run</code>. Nothing in the app can observe or reach a running conversion.</td><td><span class="tag no">blocking</span></td></tr>
+      <tr><td class="num">2</td><td>No progress at all</td><td>ffmpeg is launched with <code>-loglevel error</code> and stdout to <code>/dev/null</code>. It emits no progress and nobody would read it. Duration is never probed, so even a percentage is uncomputable.</td><td><span class="tag no">blocking</span></td></tr>
+      <tr><td class="num">3</td><td>No cancel</td><td>There is no path from any UI element to <code>process.terminate()</code>. A 90-minute 4K transcode started by mistake runs to completion or you force-quit the app.</td><td><span class="tag no">blocking</span></td></tr>
+      <tr><td class="num">4</td><td>Feedback is a 2.4s toast</td><td><code>toast</code> is a single <code>String?</code> for the entire app. Two conversions overwrite each other's message; any other toast (“Copied link”) erases it early.</td><td><span class="tag no">blocking</span></td></tr>
+      <tr><td class="num">5</td><td>Container change always re-encodes</td><td><code>convert(input:toExtension:)</code> passes <em>no</em> codec flags, so ffmpeg re-encodes video for a pure container swap. MP4→MKV should be a <strong>seconds-long stream copy</strong>; today it's minutes of CPU <em>and</em> generation loss. <a href="#copy">Detail →</a></td><td><span class="tag no">high</span></td></tr>
+      <tr><td class="num">6</td><td>Errors are unreadable</td><td>stderr truncated to the last 200 characters, shown for 2.4s, not selectable, not copyable, not logged. Diagnosing a failed convert is impossible from the UI.</td><td><span class="tag warn">high</span></td></tr>
+      <tr><td class="num">7</td><td>Unbounded concurrency</td><td>Select 12 files, Convert → 12 simultaneous ffmpeg processes. Each spawns N encoder threads. The machine stalls and every job gets slower.</td><td><span class="tag warn">high</span></td></tr>
+      <tr><td class="num">8</td><td>Quitting abandons jobs</td><td><code>ActiveWorkGate.hasActiveWork</code> counts downloads and SFTP transfers only. Quit mid-convert and ffmpeg dies with no “are you sure”, leaving a partial file the cleanup path never reaches.</td><td><span class="tag warn">high</span></td></tr>
+      <tr><td class="num">9</td><td>No duplicate guard</td><td>Nothing checks whether this input is already converting to this target. Double-click gives two processes writing <code>clip.mkv</code> and <code>clip (1).mkv</code>.</td><td><span class="tag warn">medium</span></td></tr>
+      <tr><td class="num">10</td><td>Blind 30-minute watchdog</td><td>A fixed timer kills the process at 30 min. A legitimate long transcode is murdered; a genuinely wedged one waits the full 30. Either way the message reads “ffmpeg failed.” because stderr is empty.</td><td><span class="tag warn">medium</span></td></tr>
+      <tr><td class="num">11</td><td>No ETA, speed, or size</td><td>Even with a bar you'd want “~2m left, 1.8×, 240 MB written”. All of it is available from ffmpeg's progress stream and currently discarded.</td><td><span class="tag warn">medium</span></td></tr>
+      <tr><td class="num">12</td><td>Result is a dead end</td><td>“Saved ‘clip.mp3’” is a string. You cannot click it to reveal, open, or play the thing that was just made.</td><td><span class="tag info">medium</span></td></tr>
+      <tr><td class="num">13</td><td>No disk-space check</td><td>Extracting WAV from a 2-hour video writes ~1.2 GB. No estimate is shown and free space is never checked — you find out when ffmpeg fails with ENOSPC.</td><td><span class="tag info">medium</span></td></tr>
+      <tr><td class="num">14</td><td>Nothing is announced</td><td>VoiceOver gets no notice that a job started, progressed, or finished — the toast isn't marked live for this path. Inconsistent with the care taken elsewhere in the codebase.</td><td><span class="tag info">low</span></td></tr>
+      <tr><td class="num">15</td><td>No record afterwards</td><td>Conversions leave no trace in History. “What did I extract from that lecture last week?” is unanswerable inside the app.</td><td><span class="tag info">low</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="design">
+  <h2>Proposed design</h2>
+  <p>
+    One new owner object, one new view, and a rewrite of the process plumbing to stream progress.
+    Parsing stays pure and lives in <code>GoelCore</code> — matching the rule this codebase already
+    states out loud: <em>“parsers live in GoelCore as pure functions while GoelApp owns the process
+    plumbing”</em>. That's what makes it testable without ffmpeg on CI.
+  </p>
+
+  <div class="flow">
+    <div class="node"><b>Context menu</b>Convert / Extract, now showing per-target estimates and an in-flight state</div>
+    <div class="arrow">→</div>
+    <div class="node new"><b>MediaJobCenter</b><span class="tag fix">new</span> Queue, concurrency cap, dedupe, cancel, retained <code>Process</code> handles</div>
+    <div class="arrow">→</div>
+    <div class="node hi"><b>FFmpegService</b>Rewritten to stream <code>-progress pipe:1</code> and yield updates</div>
+    <div class="arrow">→</div>
+    <div class="node new"><b>MediaProgress</b><span class="tag fix">new, in Core</span> Pure parsers: progress lines, duration banner, size estimate</div>
+  </div>
+  <div class="flow">
+    <div class="node new"><b>MediaJobDock</b><span class="tag fix">new view</span> Stacked cards: bar, ETA, cancel, reveal, error detail</div>
+    <div class="arrow">→</div>
+    <div class="node hi"><b>Sidebar badge</b>“Media jobs · 2” while any job is live</div>
+    <div class="arrow">→</div>
+    <div class="node hi"><b>ActiveWorkGate</b>Media jobs now count as active work at quit time</div>
+    <div class="arrow">→</div>
+    <div class="node hi"><b>Dock + Notifications</b>Combined progress on the Dock icon; completion notice when backgrounded</div>
+  </div>
+
+  <h3>The job model</h3>
+<pre><span class="c">// GoelApp/MediaJobCenter.swift — new</span>
+<span class="k">struct</span> MediaJob: Identifiable {
+    <span class="k">let</span> id: UUID
+    <span class="k">let</span> input: URL
+    <span class="k">let</span> kind: Kind              <span class="c">// .convert(ext) | .extractAudio(format)</span>
+    <span class="k">var</span> state: State            <span class="c">// .queued .probing .running .cancelling</span>
+                                <span class="c">// .finished(URL) .failed(String) .cancelled</span>
+    <span class="k">var</span> fraction: Double?       <span class="c">// nil ⇒ indeterminate, and we SAY so</span>
+    <span class="k">var</span> processedSeconds: Double
+    <span class="k">var</span> totalSeconds: Double?    <span class="c">// from AVAsset, else ffmpeg's -i banner</span>
+    <span class="k">var</span> speed: Double?          <span class="c">// ffmpeg "speed=1.8x"</span>
+    <span class="k">var</span> bytesWritten: Int64
+    <span class="k">var</span> lastAdvance: Date       <span class="c">// drives the stall detector</span>
+    <span class="k">var</span> log: String             <span class="c">// full stderr, kept for the error card</span>
+}
+
+<span class="c">// Owner. @MainActor + ObservableObject, matching AppViewModel's style.</span>
+<span class="k">final class</span> MediaJobCenter: ObservableObject {
+    <span class="k">@Published private(set) var</span> jobs: [MediaJob] = []
+    <span class="k">func</span> enqueue(_ request: MediaJobRequest)   <span class="c">// dedupes, then queues</span>
+    <span class="k">func</span> cancel(_ id: UUID)                    <span class="c">// SIGTERM → 2s → SIGKILL → rm partial</span>
+    <span class="k">func</span> dismiss(_ id: UUID)                   <span class="c">// terminal cards only</span>
+    <span class="k">var</span> hasLiveWork: Bool                      <span class="c">// feeds ActiveWorkGate</span>
+}</pre>
+
+  <h3>How progress actually arrives</h3>
+  <p>
+    ffmpeg is asked for a machine-readable progress stream on stdout, which is currently thrown away
+    entirely. The change to the argument list is small; the change to what the user sees is not.
+  </p>
+<pre><span class="c">// before — silent, unobservable</span>
+[<span class="s">"-nostdin"</span>, <span class="s">"-loglevel"</span>, <span class="s">"error"</span>, <span class="s">"-y"</span>, <span class="s">"-i"</span>, input] + extra + [output]
+
+<span class="c">// after — a key=value line block roughly twice a second on stdout</span>
+[<span class="s">"-nostdin"</span>, <span class="s">"-loglevel"</span>, <span class="s">"error"</span>, <span class="s">"-y"</span>,
+ <span class="s">"-progress"</span>, <span class="s">"pipe:1"</span>, <span class="s">"-nostats"</span>,
+ <span class="s">"-i"</span>, input] + extra + [output]</pre>
+<pre><span class="c">// what ffmpeg then writes, and what MediaProgress.parse() turns into a MediaJob update</span>
+out_time_us=252480000
+total_size=41582592
+speed=1.83x
+progress=continue</pre>
+  <p>
+    Duration comes from parsing ffmpeg's own <code>Duration: 00:11:02.34</code> banner. If that fails
+    we show an <em>indeterminate</em> bar with elapsed time and bytes written, and we do not invent a
+    percentage.
+  </p>
+  <p class="hint">
+    <strong>Changed during implementation.</strong> The plan opened with an <code>AVAsset</code> fast
+    path and fell back to the banner. Dropped: AVFoundation cannot open MKV or WebM at all, and it
+    cannot answer the second half of the question — the source audio codec, which decides whether the
+    track can be lifted out without re-encoding — without loading tracks anyway. One uniform probe that
+    works for every container the app can download beat a fast path covering half of them.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<section id="mockup">
+  <h2>UI mockup — the job dock</h2>
+  <p>
+    Live mockup. Press <strong>Start a conversion</strong> to watch the states, or jump straight to any
+    state. The ✕ on a running card cancels it, exactly as it would in the app.
+  </p>
+
+  <div class="stage">
+    <div class="titlebar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="tt">Goel° — Downloads</span>
+    </div>
+    <div class="appbody">
+      <div class="sidebar">
+        <div class="sb-head">Library</div>
+        <div class="sb-item on">All <span class="cnt">18</span></div>
+        <div class="sb-item">Active <span class="cnt">2</span></div>
+        <div class="sb-item">Completed <span class="cnt">16</span></div>
+        <div class="sb-head">Tools</div>
+        <div class="sb-item job" id="sbJobs" style="display:none">Media jobs <span class="cnt" id="sbCount">1</span></div>
+        <div class="sb-item">History</div>
+      </div>
+      <div class="main">
+        <div class="row"><span class="ic">MP4</span><span class="nm">Lecture 07 — Distributed Consensus.mp4</span><span class="st" id="r1">Completed</span></div>
+        <div class="row"><span class="ic">MKV</span><span class="nm">Interview with the maintainer.mkv</span><span class="st">Completed</span></div>
+        <div class="row"><span class="ic">MP4</span><span class="nm">Conference keynote 2026 (4K).mp4</span><span class="st">Completed</span></div>
+        <div class="row"><span class="ic">WEB</span><span class="nm">Sound design breakdown.webm</span><span class="st">Completed</span></div>
+
+        <div class="jobdock" id="dock"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ctl">
+    <button class="btn primary" onclick="demoRun()">▶ Start a conversion</button>
+    <button class="btn" onclick="demoTwo()">Two at once + one queued</button>
+    <button class="btn" onclick="demoState('ok')">Finished state</button>
+    <button class="btn" onclick="demoState('err')">Failure state</button>
+    <button class="btn" onclick="demoState('stall')">Stalled state</button>
+    <button class="btn" onclick="demoState('indet')">Unknown-duration state</button>
+    <button class="btn" onclick="demoClear()">Clear</button>
+  </div>
+  <p class="hint">Cards for finished jobs clear themselves after 12 seconds (8 in the original plan — raised so there is time to reach “Reveal in Finder” before the card goes). Cancelled cards clear on the same timer. <strong>Failed cards stay until dismissed</strong> — a failure you didn't read is a failure you didn't get told about. Past five cards the stack stops growing and the rest are summarised as “+N more waiting”, because this is an overlay on the window and cannot scroll.</p>
+
+  <h3>Why a docked card and not a row in the main list</h3>
+  <p>
+    The main list is bound to <code>DownloadTask</code>s owned by the <code>DownloadManager</code> actor.
+    A conversion is not a download: it has no URL, no bytes-per-second over a network, no resume, no
+    retry, no persistence. Forcing it into that model would mean either a fake <code>DownloadTask</code>
+    (which then leaks into History, the CLI, the portal API and every filter) or a variant enum that
+    every list call site has to unwrap. The dock is additive: nothing that exists today changes shape.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<section id="menu">
+  <h2>Context menu — before and after</h2>
+  <p>
+    Two changes: sizes are shown before you commit to a format, and a target already being produced
+    says so instead of silently starting a second copy.
+  </p>
+  <div class="ctxwrap">
+    <div>
+      <div class="ctx">
+        <div class="mi">Open folder</div>
+        <div class="mi">Play in Goel°</div>
+        <div class="sep"></div>
+        <div class="mi">Convert To <span class="r">›</span></div>
+        <div class="mi hl">Extract Audio <span class="r">›</span></div>
+        <div class="sep"></div>
+        <div class="mi">Copy source link</div>
+      </div>
+      <div class="caption"><span class="tag no">Today</span> — no sizes, no state, no way to know one is already running.</div>
+    </div>
+    <div>
+      <div class="ctx">
+        <div class="mi">Open folder</div>
+        <div class="mi">Play in Goel°</div>
+        <div class="sep"></div>
+        <div class="mi dis">Converting to MKV — 38% <span class="r">✕</span></div>
+        <div class="mi">Convert To <span class="r">›</span></div>
+        <div class="mi hl">Extract Audio <span class="r">›</span></div>
+        <div class="sep"></div>
+        <div class="mi">Copy source link</div>
+      </div>
+      <div class="caption"><span class="tag go">Proposed</span> — an in-flight job appears in the menu of the file it came from, cancellable from there too.</div>
+    </div>
+    <div>
+      <div class="ctx">
+        <div class="mi" style="color:var(--dim);font-size:11px;padding-bottom:2px">Extract Audio</div>
+        <div class="mi hl">MP3 <span class="r">~15 MB</span></div>
+        <div class="mi">M4A <span class="r">~16 MB · copy, instant</span></div>
+        <div class="mi">FLAC <span class="r">~72 MB</span></div>
+        <div class="mi">WAV <span class="r">~111 MB</span></div>
+      </div>
+      <div class="caption"><span class="tag no">Not shipped</span> — see below.</div>
+    </div>
+  </div>
+  <p class="hint">
+    <strong>Cut during implementation — the one thing in this mockup that is not in the build.</strong>
+    The per-format size estimates are gone. Getting one needs the source duration, the duration needs an
+    <code>ffmpeg -i</code> probe, and a probe is a process — this would have spawned one from inside a
+    submenu the user may only be passing over, then cached the answer so that the <em>first</em>
+    right-click on any file showed bare names anyway. The estimate still runs where it can actually act
+    on the answer: the free-space pre-flight, which refuses the job before it starts if the disk cannot
+    hold the result. The <code>Convert To</code> menu keeps its “copy, instant” label — that one is
+    derived from the two file extensions alone, costs nothing, and is right the first time.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<section id="behaviour">
+  <h2>Behaviour spec</h2>
+  <p>The decisions worth arguing about, stated explicitly so you can overrule any of them now rather than after the code exists.</p>
+  <dl class="kv">
+    <dt>Concurrency</dt>
+    <dd><strong>2 simultaneous jobs</strong>, the rest queued and shown as “Waiting…”. ffmpeg already saturates all cores per job; a third concurrent transcode makes every job slower, not the batch faster. Configurable in Settings → Media tools if you want it.</dd>
+
+    <dt>Dedupe</dt>
+    <dd>Enqueueing an (input, target) pair that is already queued or running does not start a second job — it flashes the existing card instead.</dd>
+
+    <dt>Cancel</dt>
+    <dd><code>SIGTERM</code> → 2-second grace → <code>SIGKILL</code>. The partial output is deleted and the card says “Partial file removed”, so a deletion is never silent — and it says “Nothing was written” instead when the job was cancelled before it ever claimed a file, because asserting a cleanup that did not happen is its own small lie. If a cancel is still outstanding after 6 seconds (a SIGKILL has landed and the process still hasn't exited — uninterruptible I/O on a stalled volume is the realistic case) the card turns amber, says so, and offers <strong>Stop waiting</strong>, which releases the queue slot and the card. A <code>.cancelling</code> job stops counting against the concurrency cap the moment it is asked to stop, so one wedged cancel can never wedge the queue behind it.</dd>
+
+    <dt>Stall detection</dt>
+    <dd>Replaces the blind 30-minute kill. If <code>out_time</code> hasn't advanced in <strong>5 minutes</strong>, the card turns amber and offers Cancel — but <strong>does not kill</strong>. A slow-but-alive 4-hour transcode is no longer murdered at minute 30, and a genuinely wedged one is flagged 25 minutes earlier.</dd>
+
+    <dt>Quitting</dt>
+    <dd>Live media jobs set <code>ActiveWorkGate.hasActiveWork</code>, so Quit raises the existing confirmation. Confirming cancels each job cleanly (partials removed) rather than orphaning them.</dd>
+
+    <dt>Disk space</dt>
+    <dd>Estimate the output before launching; if free space is under estimate × 1.2, refuse the job with both numbers in the message rather than letting ffmpeg discover ENOSPC twenty minutes in. <span class="tag no">changed</span> The estimate is <em>not</em> also shown in the menu — see the note under the context-menu mockups.</dd>
+
+    <dt>Notifications</dt>
+    <dd>Only for jobs that ran <strong>longer than 20 seconds</strong> — a notification for a 1.5-second stream copy you were watching is noise. Beyond that, conversions obey the same three notification settings as everything else in the app: <code>notifyOnCompleted</code>, <code>notifyOnFailed</code>, and <code>notifyOnlyWhenInactive</code>. <span class="tag no">changed</span> The plan hardcoded “only when not frontmost”; that is the user's switch, not ours.</dd>
+
+    <dt>Accessibility</dt>
+    <dd>The dock is an <code>.updatesFrequently</code> live region; start and terminal states are announced, intermediate percentages are not (VoiceOver reading “39%… 40%…” forever is hostile).</dd>
+
+    <dt>Failure text</dt>
+    <dd>Full stderr retained on the job, shown in a scrollable box in the card, with <strong>Copy details</strong>. The one-line summary stays plain-language; the raw output is there when it's needed.</dd>
+
+    <dt>History</dt>
+    <dd><span class="tag no">not shipped</span> Finished conversions would be appended to the existing History view as a distinct kind. Listed here as lowest priority and droppable, and dropped: it means a new persisted record type touching the History store, the CLI and the portal API, for a feature whose actual complaint was “I can't see what's happening right now”. Worth doing on its own, not inside this change.</dd>
+  </dl>
+</section>
+
+<!-- ============================================================ -->
+<section id="copy">
+  <h2>The stream-copy fix (gap #5)</h2>
+  <p>
+    This one is a genuine defect rather than missing UI, and it's the reason conversions feel so slow
+    that the absent progress bar hurts as much as it does.
+  </p>
+<pre><span class="c">// FFmpegService.convert — current</span>
+<span class="k">static func</span> convert(input: URL, toExtension ext: String, …) <span class="k">async</span> -> Outcome {
+    <span class="k">let</span> output = uniqueSibling(of: input, extension: ext)
+    <span class="k">return await</span> run(input: input, output: output,
+                     extraArgs: [],        <span class="c">// ← no codec flags at all</span>
+                     override: override)
+}</pre>
+  <p>
+    With no <code>-c</code> flags, ffmpeg picks each output stream's encoder from the container's
+    defaults and <strong>re-encodes</strong>. Converting a 1080p H.264 MP4 to MKV — a pure container
+    swap where every byte of the video stream could be copied verbatim — instead spends minutes
+    re-compressing and throws away quality doing it.
+  </p>
+  <h4>Proposed</h4>
+  <ul>
+    <li>Attempt <code>-c copy</code> first for container changes. MP4→MKV, MKV→MP4, MOV→MP4 typically finish in <strong>seconds</strong>, losslessly.</li>
+    <li>If ffmpeg refuses (target container can't hold that codec — e.g. some MKV audio into MP4), fall back to a re-encode <strong>and say so on the card</strong>: “WebM can't store this audio track — re-encoding, this will take longer.”</li>
+    <li>Same for audio extraction: if the source audio codec already matches the target (AAC → M4A, FLAC → FLAC), use <code>-c:a copy</code>. Instant and bit-exact instead of a lossy re-encode of already-lossy audio.</li>
+  </ul>
+  <p>
+    Net effect: the most common conversions stop being slow at all, and the ones that genuinely are
+    slow now explain why.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<section id="files">
+  <h2>Files I'd change</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th style="width:280px">File</th><th style="width:74px"></th><th>Change</th></tr></thead>
+    <tbody>
+      <tr><td>GoelCore/Model/MediaProgress.swift</td><td><span class="tag fix">new</span></td><td>Pure parsers: ffmpeg <code>-progress</code> key/value blocks, the <code>Duration:</code> banner, ETA arithmetic, output-size estimation per format. No process, no I/O — the whole thing is unit-testable on CI without ffmpeg installed.</td></tr>
+      <tr><td>GoelApp/MediaJobCenter.swift</td><td><span class="tag fix">new</span></td><td>The owner: job list, queue with concurrency cap, dedupe, retained <code>Process</code> handles, cancel with SIGTERM→SIGKILL, stall detection, partial cleanup.</td></tr>
+      <tr><td>GoelApp/Views/MediaJobDock.swift</td><td><span class="tag fix">new</span></td><td>The stacked cards: progress bar, ETA line, cancel, reveal, error disclosure, auto-dismiss on success.</td></tr>
+      <tr><td>GoelApp/FFmpegService.swift</td><td><span class="tag warn">rewrite</span></td><td><code>run</code> becomes a streaming call that reports progress and returns a cancellable handle. Adds duration probing, <code>-c copy</code> attempt with re-encode fallback, and drops the blind 30-min watchdog. Resolution logic is untouched — that part is right.</td></tr>
+      <tr><td>GoelApp/AppViewModel.swift</td><td><span class="tag info">edit</span></td><td><code>convertFile</code> / <code>extractAudio</code> stop spawning detached tasks and enqueue on the center. Publishes the center for views. Feeds <code>ActiveWorkGate</code> and <code>DockProgressService</code>.</td></tr>
+      <tr><td>GoelApp/Views/DownloadListView.swift</td><td><span class="tag info">edit</span></td><td>Context menu gains size estimates, the in-flight row, and the duplicate guard. The existing “stay visible and explain why” behaviour when ffmpeg is missing is kept as-is — that part is already right.</td></tr>
+      <tr><td>GoelApp/Views/RootView.swift</td><td><span class="tag info">edit</span></td><td>Host the dock in the overlay stack, above the toast layer.</td></tr>
+      <tr><td>GoelApp/Views/SidebarView.swift</td><td><span class="tag info">edit</span></td><td>“Media jobs · N” entry, visible only while jobs are live.</td></tr>
+      <tr><td>GoelApp/ActiveWorkGate.swift</td><td><span class="tag info">edit</span></td><td><code>hasActiveWork</code> accounts for live media jobs.</td></tr>
+      <tr><td>GoelApp/Views/SettingsView.swift</td><td><span class="tag info">edit</span></td><td>Concurrency limit under Media tools, next to the existing ffmpeg-path field.</td></tr>
+      <tr><td>Tests/GoelCoreTests/MediaProgressTests.swift</td><td><span class="tag fix">new</span></td><td>Fixture-driven tests for every parser and estimator.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="tests">
+  <h2>What gets tested</h2>
+  <p>
+    Following the pattern already set by <code>MediaWorkflowTests</code>: parsers are pure and live in
+    Core, so the tests run on a CI box with no ffmpeg and still protect the real logic.
+  </p>
+  <ul>
+    <li>Progress-block parsing, including partial blocks split across pipe reads (the realistic failure mode).</li>
+    <li><code>Duration:</code> banner parsing — present, absent, malformed, and streams reporting <code>N/A</code>.</li>
+    <li>Fraction never exceeds 1.0 when <code>out_time</code> overruns a slightly-wrong duration.</li>
+    <li>ETA arithmetic at 0% (no estimate offered rather than “∞”), mid-run, and at 100%.</li>
+    <li>Size estimation per audio format against known bitrates.</li>
+    <li>Stall detection: advancing vs static <code>out_time</code> across the threshold.</li>
+    <li>Dedupe key: same input + same target collides; same input + different target does not.</li>
+    <li>Codec-compatibility decision table for the copy-vs-re-encode choice.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="scope">
+  <h2>Deliberately out of scope</h2>
+  <p>Things I could build here and am proposing <em>not</em> to, so the decision is yours rather than mine by omission:</p>
+  <div class="grid grid-3">
+    <div class="card">
+      <span class="tag info">deferred</span>
+      <h3>Remote portal support</h3>
+      <p>Starting and watching conversions from the web portal. Needs API surface and auth thinking; a separate piece of work.</p>
+    </div>
+    <div class="card">
+      <span class="tag info">deferred</span>
+      <h3>Trim / crop / bitrate options</h3>
+      <p>A real transcode settings sheet. This change is about making the existing conversions observable, not about growing them.</p>
+    </div>
+    <div class="card">
+      <span class="tag info">deferred</span>
+      <h3>Auto-convert after download</h3>
+      <p>“Always extract MP3 from this site” as a rule. Plausible next step, but it needs the job system to exist first.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Nothing has been implemented yet. Tell me what to change — the concurrency default, the dock's
+  position, whether History should record conversions, whether the stream-copy fix belongs in this
+  change or its own — and I'll adjust before writing any Swift.
+</footer>
+
+</div>
+
+<script>
+(function () {
+  var dock = document.getElementById('dock');
+  var sbJobs = document.getElementById('sbJobs');
+  var sbCount = document.getElementById('sbCount');
+  var timers = [];
+
+  function clearTimers() { timers.forEach(clearInterval); timers.forEach(clearTimeout); timers = []; }
+
+  function syncSidebar() {
+    var live = dock.querySelectorAll('.job.live').length;
+    sbJobs.style.display = live ? 'flex' : 'none';
+    sbCount.textContent = live;
+  }
+
+  function mmss(s) {
+    s = Math.max(0, Math.round(s));
+    var m = Math.floor(s / 60);
+    return m + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  function card(opts) {
+    var el = document.createElement('div');
+    el.className = 'job ' + (opts.cls || '');
+    el.innerHTML =
+      '<div class="job-top">' +
+        '<div class="job-glyph">' + (opts.glyph || '⇄') + '</div>' +
+        '<div class="job-title">' + opts.title + '</div>' +
+        (opts.closable === false ? '' : '<button class="job-x" title="Cancel">✕</button>') +
+      '</div>' +
+      '<div class="job-sub">' + opts.sub + '</div>' +
+      '<div class="bar' + (opts.indet ? ' indet' : '') + '"><i style="width:' + (opts.pct || 0) + '%"></i></div>' +
+      (opts.foot ? '<div class="job-foot">' + opts.foot + '</div>' : '') +
+      (opts.err ? '<div class="errbox">' + opts.err + '</div>' : '');
+    var x = el.querySelector('.job-x');
+    if (x) x.onclick = function () {
+      if (el.classList.contains('live')) {
+        el._cancelled = true;
+        el.className = 'job';
+        el.querySelector('.job-glyph').textContent = '⊘';
+        el.querySelector('.job-title').textContent = 'Cancelled';
+        el.querySelector('.job-sub').textContent = 'Partial file removed';
+        el.querySelector('.bar').classList.remove('indet');
+        el.querySelector('.bar > i').style.width = '0%';
+        syncSidebar();
+      } else {
+        el.remove(); syncSidebar();
+      }
+    };
+    dock.appendChild(el);
+    syncSidebar();
+    return el;
+  }
+
+  function runJob(title, sub, totalSec, rate) {
+    var el = card({ title: title, sub: sub, cls: 'live', glyph: '⇄' });
+    el.classList.add('live');
+    var t = 0;
+    var id = setInterval(function () {
+      if (el._cancelled || !el.isConnected) { clearInterval(id); return; }
+      t += 0.35 * rate;
+      var pct = Math.min(100, (t / totalSec) * 100);
+      el.querySelector('.bar > i').style.width = pct + '%';
+      var left = Math.max(0, (totalSec - t) / rate);
+      el.querySelector('.job-sub').textContent =
+        Math.round(pct) + '% · ' + mmss(t) + ' of ' + mmss(totalSec) +
+        ' · ~' + mmss(left) + ' left · ' + rate.toFixed(1) + '×';
+      if (pct >= 100) {
+        clearInterval(id);
+        el.className = 'job ok';
+        el.querySelector('.job-glyph').textContent = '✓';
+        el.querySelector('.job-title').textContent = 'Converted to MKV';
+        el.querySelector('.job-sub').textContent = 'Lecture 07 — Distributed Consensus.mkv · 412 MB · 34s';
+        var f = document.createElement('div');
+        f.className = 'job-foot';
+        f.innerHTML = '<span class="lnk">Reveal in Finder</span><span class="lnk quiet">Open</span><span class="grow"></span><span class="lnk quiet">Dismiss</span>';
+        f.querySelector('.lnk.quiet:last-child').onclick = function () { el.remove(); syncSidebar(); };
+        el.appendChild(f);
+        syncSidebar();
+        timers.push(setTimeout(function () { if (el.isConnected) { el.style.transition = 'opacity .5s'; el.style.opacity = 0; setTimeout(function(){ el.remove(); syncSidebar(); }, 500); } }, 8000));
+      }
+    }, 350);
+    timers.push(id);
+    return el;
+  }
+
+  window.demoClear = function () { clearTimers(); dock.innerHTML = ''; syncSidebar(); };
+
+  window.demoRun = function () {
+    demoClear();
+    runJob('Converting to MKV', 'Probing duration…', 662, 19);
+  };
+
+  window.demoTwo = function () {
+    demoClear();
+    runJob('Converting to MKV', 'Starting…', 662, 19);
+    runJob('Extracting MP3', 'Starting…', 480, 26);
+    card({
+      title: 'Extracting FLAC', glyph: '⋯', cls: '',
+      sub: 'Waiting — 2 jobs already running', pct: 0
+    });
+  };
+
+  window.demoState = function (kind) {
+    demoClear();
+    if (kind === 'ok') {
+      card({
+        title: 'Converted to MKV', glyph: '✓', cls: 'ok', pct: 100,
+        sub: 'Lecture 07 — Distributed Consensus.mkv · 412 MB · stream copy, 1.8s',
+        foot: '<span class="lnk">Reveal in Finder</span><span class="lnk quiet">Open</span><span class="grow"></span><span class="lnk quiet">Dismiss</span>'
+      });
+    } else if (kind === 'err') {
+      card({
+        title: 'Couldn’t extract audio', glyph: '!', cls: 'err', pct: 100,
+        sub: 'Sound design breakdown.webm → FLAC',
+        foot: '<span class="lnk">Copy details</span><span class="lnk quiet">Try MP3 instead</span><span class="grow"></span><span class="lnk quiet">Dismiss</span>',
+        err: '[flac @ 0x14e8] Sample format s32 is not supported\nConversion failed. Partial output removed.'
+      });
+    } else if (kind === 'stall') {
+      card({
+        title: 'Converting to MP4 — not progressing', glyph: '!', cls: 'stall', pct: 41,
+        sub: '41% · no progress for 5m 12s · ffmpeg may be stuck',
+        foot: '<span class="lnk">Cancel this job</span><span class="grow"></span><span class="lnk quiet">Keep waiting</span>'
+      });
+    } else if (kind === 'indet') {
+      card({
+        title: 'Converting to MP4', glyph: '⇄', cls: 'live', indet: true,
+        sub: 'Length unknown · 2m 41s elapsed · 186 MB written · 1.2×'
+      });
+      dock.lastChild.classList.add('live');
+      syncSidebar();
+    }
+  };
+
+  demoRun();
+})();
+</script>
+</body>
+</html>

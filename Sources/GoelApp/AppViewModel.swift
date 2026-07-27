@@ -465,6 +465,7 @@ final class AppViewModel: ObservableObject {
         // window close after launch already knows whether there is a menu-bar way
         // back into the app. `update(_:)` keeps it current from here on.
         ActiveWorkGate.shared.menuBarVisible = settings.menuBarExtraEnabled
+        syncMediaJobCenter()
         // Restore each download's persisted speed-chart samples so the throughput
         // graph continues after relaunch instead of starting from scratch.
         loadPersistedSpeedHistory(await manager.loadSpeedHistory())
@@ -604,7 +605,7 @@ final class AppViewModel: ObservableObject {
                     self.fileProgress.update(with: snapshot) { [weak self] id in
                         self?.pause(id)
                     }
-                    self.dockProgress.update(with: snapshot)
+                    self.refreshDockProgress()
                     if let warning { self.persistenceWarning = warning }
                 }
             }
@@ -1091,6 +1092,10 @@ final class AppViewModel: ObservableObject {
         settings = copy
         clipboardMonitor?.isEnabled = copy.clipboardMonitorEnabled
         ActiveWorkGate.shared.menuBarVisible = copy.menuBarExtraEnabled
+        // The ffmpeg override and the concurrency cap can both be edited while a
+        // conversion is queued, so the center is re-synced on every commit rather
+        // than only at launch.
+        syncMediaJobCenter()
         Task {
             settings = await manager.apply(mutate)
             refreshAggregationState()
@@ -1238,10 +1243,9 @@ final class AppViewModel: ObservableObject {
         reducerState = output.state
         // Publish the one fact `AppDelegate` needs to refuse to quit on the last
         // window closing. Reusing the reducer's own active-work computation keeps
-        // the two from drifting; SFTP transfers are outside the queue snapshot, so
-        // they are folded in here.
-        ActiveWorkGate.shared.hasActiveWork =
-            output.state.lastHadActiveWork || sftpTransfers.contains { $0.isActive }
+        // the two from drifting; SFTP transfers and media conversions are outside
+        // the queue snapshot, so they are folded in by `refreshActiveWorkGate`.
+        refreshActiveWorkGate()
         // Drain first (it may terminate the app), then the banners — matching the
         // original checkQueueDrained → emitNotifications ordering.
         if let intent = output.drainIntent {
@@ -1867,32 +1871,119 @@ final class AppViewModel: ObservableObject {
         FFmpegService.resolutionSummary(override: settings.ffmpegPath)
     }
 
+    /// Every in-flight conversion, and the only thing that can stop one.
+    ///
+    /// Held here so a single instance outlives the views that draw it: the dock
+    /// is a child of the window, and a job must survive the panel being toggled,
+    /// the selection changing, or the list being filtered out from under it.
+    /// Not `@Published`: a nested `ObservableObject` does not forward its changes
+    /// through the object that holds it, so publishing the (never-reassigned)
+    /// reference would announce nothing and imply otherwise. Views that draw job
+    /// state observe the center directly; ``mediaLiveCount`` below is the one
+    /// summary this object republishes.
+    let mediaJobs = MediaJobCenter()
+
+    /// How many conversions are queued or running.
+    ///
+    /// A deliberately coarse mirror, updated only when live work starts or stops.
+    /// Views observing `AppViewModel` cannot see into `mediaJobs`, but relaying
+    /// *every* change out of it would redraw the whole window once per progress
+    /// sample — several times a second, for a number that changes twice a job.
+    @Published private(set) var mediaLiveCount = 0
+
+    /// Point the job center at the current ffmpeg and teach it how to report a
+    /// finished job. Called once from ``start()`` and again whenever settings
+    /// change, since the override can be edited at any time.
+    private func syncMediaJobCenter() {
+        mediaJobs.ffmpegOverride = settings.ffmpegPath
+        mediaJobs.concurrencyLimit = max(1, settings.mediaConcurrency)
+        mediaJobs.onFinish = { [weak self] job in
+            self?.announceMediaJob(job)
+        }
+        mediaJobs.onLiveWorkChanged = { [weak self] in
+            guard let self else { return }
+            self.mediaLiveCount = self.mediaJobs.liveCount
+            self.refreshActiveWorkGate()
+            self.refreshDockProgress()
+        }
+        // The Dock tile is otherwise only refreshed by the download snapshot pump,
+        // which does not tick when the queue is idle — so a conversion running on
+        // its own would never reach the icon.
+        mediaJobs.onTick = { [weak self] in
+            self?.refreshDockProgress()
+        }
+    }
+
+    /// Push the current download + conversion state onto the Dock icon.
+    private func refreshDockProgress() {
+        dockProgress.update(with: tasks,
+                            mediaBusyCount: mediaJobs.liveCount,
+                            mediaFractions: mediaJobs.runningFractions)
+    }
+
+    /// Recompute the "is anything in flight" flag `AppDelegate` reads at quit
+    /// time, from all three sources of work.
+    ///
+    /// Downloads come from the reducer's own computation (so the two can't
+    /// drift), SFTP transfers and media conversions are tracked outside the queue
+    /// snapshot and folded in here. Called both from the snapshot pump and from
+    /// the media job center, since a conversion can start while the download
+    /// queue is completely idle and never ticks.
+    private func refreshActiveWorkGate() {
+        ActiveWorkGate.shared.hasActiveWork =
+            reducerState.lastHadActiveWork
+            || sftpTransfers.contains { $0.isActive }
+            || mediaJobs.hasLiveWork
+    }
+
+    /// Shortest conversion worth a banner. Anything quicker finished while the
+    /// user was still looking at the menu they started it from, and the card in
+    /// the dock has already told them.
+    private static let mediaNotifyMinimumSeconds: TimeInterval = 20
+
+    /// Notify on a finished job, under the same three settings that govern every
+    /// other notification in the app.
+    ///
+    /// Each toggle is honoured separately — completion and failure are different
+    /// switches, and "only when I'm away" is the user's choice, not a hardcoded
+    /// `!NSApp.isActive`. Someone who turned failure notifications on and
+    /// inactive-only off asked to hear about a failed conversion while they watch.
+    private func announceMediaJob(_ job: MediaJobCenter.Job) {
+        let elapsed = (job.finishedAt ?? Date()).timeIntervalSince(job.startedAt)
+        guard elapsed >= Self.mediaNotifyMinimumSeconds else { return }
+        if settings.notifyOnlyWhenInactive, NSApp.isActive { return }
+        switch job.state {
+        case .finished(let url, _):
+            guard settings.notifyOnCompleted else { return }
+            NotificationService.notify(title: job.kind.finishedTitle,
+                                       body: url.lastPathComponent,
+                                       sound: settings.notificationSound)
+        case .failed(let message):
+            guard settings.notifyOnFailed else { return }
+            NotificationService.notify(title: "Conversion failed",
+                                       body: message, sound: settings.notificationSound)
+        default:
+            break
+        }
+    }
+
     /// Convert a finished media file into another container next to the original.
+    ///
+    /// Enqueues rather than spawning: the job center owns the process, so this
+    /// conversion can now be watched and stopped. A refusal (duplicate, missing
+    /// ffmpeg) is toasted, because there is no card to put it on.
     func convertFile(task: DownloadTask, toExtension ext: String) {
         let input = URL(fileURLWithPath: task.savePath)
-        toastNow("Converting to \(ext.uppercased())…")
-        Task {
-            let outcome = await FFmpegService.convert(input: input, toExtension: ext,
-                                                      override: settings.ffmpegPath)
-            await MainActor.run { reportFFmpeg(outcome) }
+        if let rejection = mediaJobs.enqueue(input: input, kind: .convert(ext: ext)) {
+            toastNow(rejection.message)
         }
     }
 
     /// Extract the audio track of a finished media file next to the original.
-    func extractAudio(task: DownloadTask, format: FFmpegService.AudioFormat) {
+    func extractAudio(task: DownloadTask, format: AudioExtractionFormat) {
         let input = URL(fileURLWithPath: task.savePath)
-        toastNow("Extracting \(format.rawValue.uppercased())…")
-        Task {
-            let outcome = await FFmpegService.extractAudio(input: input, format: format,
-                                                           override: settings.ffmpegPath)
-            await MainActor.run { reportFFmpeg(outcome) }
-        }
-    }
-
-    private func reportFFmpeg(_ outcome: FFmpegService.Outcome) {
-        switch outcome {
-        case .success(let url): toastNow("Saved “\(url.lastPathComponent)”")
-        case .failure(let msg): toastNow(msg)
+        if let rejection = mediaJobs.enqueue(input: input, kind: .extractAudio(format: format)) {
+            toastNow(rejection.message)
         }
     }
 

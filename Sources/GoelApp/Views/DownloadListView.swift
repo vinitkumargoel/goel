@@ -348,16 +348,7 @@ struct DownloadRow: View {
                 Button("Convert To…") { vm.toastNow(reason) }
                 Button("Extract Audio…") { vm.toastNow(reason) }
             } else {
-                Menu("Convert To") {
-                    ForEach(["mp4", "mkv", "webm", "mov"], id: \.self) { ext in
-                        Button(ext.uppercased()) { vm.convertFile(task: task, toExtension: ext) }
-                    }
-                }
-                Menu("Extract Audio") {
-                    ForEach(FFmpegService.AudioFormat.allCases, id: \.self) { fmt in
-                        Button(fmt.rawValue.uppercased()) { vm.extractAudio(task: task, format: fmt) }
-                    }
-                }
+                MediaMenuItems(task: task, vm: vm, center: vm.mediaJobs)
             }
         }
         Button("Copy source link") { vm.copyToPasteboard(task.sourceLocator) }
@@ -503,5 +494,67 @@ struct DownloadRow: View {
     private var isMagnet: Bool {
         if case .magnet = task.source { return true }
         return false
+    }
+}
+
+// MARK: - Convert / Extract Audio
+
+/// The Convert and Extract Audio section of a completed media file's menu.
+///
+/// Its own view, observing ``MediaJobCenter`` directly, for two reasons. The
+/// center is nested inside ``AppViewModel`` and SwiftUI does not propagate a
+/// nested observable's changes through the outer one, so a menu built from
+/// `vm.mediaJobs` in the row's body would show a frozen snapshot. And the row
+/// itself has no business re-rendering every time a conversion's byte count
+/// ticks.
+///
+/// Two things here that the old menu could not say: a conversion already running
+/// on this file appears at the top and can be cancelled from where it was
+/// started, and each audio format carries its estimated output size — the
+/// difference between MP3 and WAV is a factor of seven, and it used to be
+/// invisible until the file landed.
+private struct MediaMenuItems: View {
+
+    let task: DownloadTask
+    let vm: AppViewModel
+    @ObservedObject var center: MediaJobCenter
+
+    private var input: URL { URL(fileURLWithPath: task.savePath) }
+
+    var body: some View {
+        let live = center.liveJobs(input: input)
+        ForEach(live) { job in
+            Button("Cancel \(job.kind.activeTitle.lowercased())") { center.cancel(job.id) }
+        }
+        if !live.isEmpty { Divider() }
+        Menu("Convert To") {
+            ForEach(MediaContainer.convertTargets, id: \.self) { ext in
+                Button(label(for: ext)) { vm.convertFile(task: task, toExtension: ext) }
+                    .disabled(center.liveJob(input: input, outputExtension: ext) != nil)
+            }
+        }
+        Menu("Extract Audio") {
+            ForEach(AudioExtractionFormat.allCases, id: \.self) { format in
+                Button(format.displayName) { vm.extractAudio(task: task, format: format) }
+                    .disabled(center.liveJob(input: input, outputExtension: format.rawValue) != nil)
+            }
+        }
+    }
+
+    /// "MKV" or "MKV — copy, instant" once the source container is known.
+    ///
+    /// Derived from the two extensions alone, so it costs nothing and is right the
+    /// first time the menu opens. Audio formats get no equivalent size estimate:
+    /// answering "about how big" needs the source duration, the duration needs a
+    /// probe, and a probe is a process — one this would have had to spawn from
+    /// inside a menu that the user may only be passing over. The estimate still
+    /// runs where it can act on the answer: the free-space pre-flight, at start.
+    private func label(for ext: String) -> String {
+        let source = input.pathExtension
+        guard !source.isEmpty,
+              MediaContainer.likelyStreamCopy(from: source, to: ext) else {
+            return ext.uppercased()
+        }
+        return "\(ext.uppercased()) — copy, instant"
     }
 }
