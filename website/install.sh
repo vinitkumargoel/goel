@@ -27,7 +27,7 @@
 # ---------------------------------------------------------------------------
 #
 # Environment overrides (all optional):
-#   GOEL_VERSION=1.0.2     install a specific version instead of the latest
+#   GOEL_VERSION=1.0.3     install a specific version instead of the latest
 #   GOEL_TARBALL=/path.tgz  install from a local tarball (skips download; used to
 #                           test an unreleased build)
 #   GOEL_PORT=9090         portal port                       (default 8080)

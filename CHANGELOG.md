@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.0.3] — 2026-07-27
+
+**This release also carries everything listed under `1.0.2` below, which was prepared but
+never published** — no `v1.0.2` tag was ever pushed and no release was ever cut, so the
+licence change and the deployment-target fix reach users here for the first time. Upgrading
+from `v1.0.1` means taking both.
 
 ### Added
 
@@ -243,9 +248,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.2] — 2026-07-25
+## [1.0.2] — prepared 2026-07-25, never published
 
-First release under the **PolyForm Noncommercial 1.0.0** licence. If you use Goel° at work,
+No `v1.0.2` tag was pushed and no release was cut, so nothing below ever reached anyone as
+`1.0.2`. It is kept as its own section because the work is distinct and was written up at the
+time; it ships in `1.0.3` above. The date is when it was prepared, not a release date.
+
+First changes under the **PolyForm Noncommercial 1.0.0** licence. If you use Goel° at work,
 read the licence section below before upgrading past `v1.0.1`.
 
 ### Changed
@@ -407,7 +416,8 @@ native library bundled, no Homebrew required for end users.
 
 ---
 
-[Unreleased]: https://github.com/vinitkumargoel/goel/compare/v1.0.2...HEAD
-[1.0.2]: https://github.com/vinitkumargoel/goel/compare/v1.0.1...v1.0.2
+[Unreleased]: https://github.com/vinitkumargoel/goel/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/vinitkumargoel/goel/compare/v1.0.1...v1.0.3
+[1.0.2]: https://github.com/vinitkumargoel/goel/compare/v1.0.1...v1.0.3
 [1.0.1]: https://github.com/vinitkumargoel/goel/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/vinitkumargoel/goel/releases/tag/v1.0.0
