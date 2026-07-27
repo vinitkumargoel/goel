@@ -161,6 +161,26 @@ final class AppViewModel: ObservableObject {
     /// read. Internal bookkeeping — deliberately not `@Published`.
     var osProbesInFlight: Set<SFTPConnection.ID> = []
 
+    /// Server ids with a "Test connection" probe in flight. Published because the
+    /// context menu greys the item out while one is running — each probe opens a
+    /// real authenticated session, so a menu held open must not be able to stack
+    /// half a dozen of them against one host.
+    @Published var serverTestsInFlight: Set<SFTPConnection.ID> = []
+
+    /// Server ids with a credential-free host-key read in flight, so a menu held
+    /// open can't stack dialogs against one host.
+    @Published var hostKeyReadsInFlight: Set<SFTPConnection.ID> = []
+
+    /// Bumped by ``reconnectServer(_:)``. The browser view's `.id()` folds this
+    /// in, so a reconnect tears the old `SFTPBrowserModel` down and builds a new
+    /// one against a freshly resolved client — which is what actually re-reads
+    /// the Keychain and re-authenticates. Without it, re-selecting a server the
+    /// user is already on is a no-op and "Reconnect" does nothing.
+    @Published private(set) var browserGeneration: Int = 0
+
+    /// Start a new browser generation (see ``browserGeneration``).
+    func bumpBrowserGeneration() { browserGeneration &+= 1 }
+
     // MARK: SFTP transfers (app-wide center — see AppViewModel+SFTPTransfers)
 
     /// Uploads and browser-initiated downloads, owned here (not by the browser
