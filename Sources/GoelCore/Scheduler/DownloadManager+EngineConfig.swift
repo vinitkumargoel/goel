@@ -70,6 +70,8 @@ extension DownloadManager {
             includeExpensive: settings.aggregationIncludeExpensive,
             includeVPN: settings.aggregationAllowOutsideVPN
         )
+        let available = bindableAdapters(
+            settings: settings, vpnDefaultRoute: vpnDefaultRoute, all: all)
         if AggregationPolicy.shouldActivate(
             enabled: settings.aggregationEnabled,
             usableAdapterCount: usable.count,
@@ -78,12 +80,38 @@ extension DownloadManager {
             vpnDefaultRoute: vpnDefaultRoute,
             allowOutsideVPN: settings.aggregationAllowOutsideVPN
         ) != nil {
-            return .disabled
+            // No default fan-out, but a task may still pin itself to one interface.
+            return AggregationEngineConfig(
+                adapters: [],
+                available: available.map(BoundAdapter.init),
+                streamsPerAdapter: settings.aggregationStreamsPerAdapter)
         }
         return AggregationEngineConfig(
             adapters: usable.map(BoundAdapter.init),
+            available: available.map(BoundAdapter.init),
             streamsPerAdapter: settings.aggregationStreamsPerAdapter
         )
+    }
+
+    /// Interfaces a *single task* may bind to, whatever the default policy decided.
+    ///
+    /// Wider than ``AggregationPolicy/usableAdapters(all:selectedIds:includeExpensive:includeVPN:)``:
+    /// it ignores the aggregation toggle, the saved adapter selection and the
+    /// expensive filter, because all three describe a default the user is now
+    /// overriding on purpose. It does **not** ignore proxy or VPN policy — binding a
+    /// socket to a NIC bypasses both, and a leak is not a preference.
+    public static func bindableAdapters(
+        settings: AppSettings,
+        vpnDefaultRoute: Bool,
+        all: [NetworkAdapter]? = nil
+    ) -> [NetworkAdapter] {
+        if settings.proxyMode == "manual" || settings.proxyMode == "system" { return [] }
+        if vpnDefaultRoute && !settings.aggregationAllowOutsideVPN { return [] }
+        return AggregationPolicy.usableAdapters(
+            all: all ?? AdapterDirectory.enumerate(),
+            selectedIds: [],
+            includeExpensive: true,
+            includeVPN: false)
     }
 
     /// User-visible reason multi-path is inactive (nil when active).

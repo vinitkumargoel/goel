@@ -7,6 +7,242 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Linux installs in one line, and has a `goel` command.**
+
+  ```sh
+  curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh
+  ```
+
+  Before this, "installing on Linux" meant downloading a tarball, working out the runtime
+  packages for your distribution by hand, and running `./run.sh` from a shell — with no service,
+  no unattended start, and no way to configure anything except environment variables you had to
+  remember to re-set. The installer now resolves the dependencies for the distribution it finds
+  itself on, verifies the download against its published SHA-256, creates an unprivileged `goel`
+  system user, installs a hardened systemd unit, generates a portal password and prints it once.
+  Re-running it upgrades in place and keeps your configuration, queue and downloads.
+
+  The **`goel`** command manages the result: `status`, `start`/`stop`/`restart`,
+  `enable`/`disable`, `logs -f`, `config` (get/set/unset/sync), `url`, `token show|rotate`,
+  `add`, `list`, `pause`/`resume`/`retry`/`rm`, `doctor`, `uninstall [--purge]`. It drives the
+  daemon's own JSON API for queue operations, so there is one implementation of each behaviour
+  rather than two.
+
+  `goel doctor` is the notable one: it checks the shared-library closure, the config file's
+  permissions, the service state *and* whether it is enabled at boot, whether the daemon can
+  actually write to its download folder **as the `goel` user** rather than as root, whether the
+  port is held by something else, and whether the portal answers. Those are precisely the
+  failures that are otherwise silent.
+
+- **Per-download choice of network interface, configurable from the web.** A machine with more
+  than one uplink can now be told what to do with them per download, not just globally: follow
+  the server default, split one download across several interfaces, or pin it to exactly one.
+  The Add dialog in the portal offers the choice whenever two or more interfaces are eligible,
+  `goel add --net single:eth0` does it from a shell, and `POST /api/add` takes a `network` field.
+  A pinned download egresses its interface even when aggregation is switched off globally, and
+  even when the server does not support ranges — that last case previously fell back to
+  `URLSession`, which cannot bind a socket to a device, so the pin was silently ignored.
+
+  Splitting is worth measuring before trusting: two adapters behind the *same* router share one
+  pipe, and on the machine this was developed against, the two together ran at roughly half the
+  speed of the faster one alone. The portal and `goel adapters` both say so.
+
+  The policy itself is configurable three ways, and they compose rather than fight:
+  `GOEL_AGGREGATION`, `GOEL_AGGREGATION_ADAPTERS` and `GOEL_AGGREGATION_STREAMS` in
+  `/etc/goel/config` (via `goel config set aggregation …`), the new `GET`/`POST /api/network`
+  routes, and a Settings section in the portal. Leaving the environment variables unset — the
+  default — means "whatever was last saved", so a change made in the portal survives a restart;
+  setting one makes the file authoritative, and the portal then *says* that a change made there
+  is temporary rather than pretending otherwise.
+
+  Proxy and VPN policy are hard exclusions here, not preferences: binding a socket to an
+  interface bypasses both, so when a proxy is configured or a VPN holds the default route, there
+  is nothing to pin to and the UI offers nothing.
+
+- **`goel adapters`** lists what the machine actually has — interface, address, whether it can be
+  bound, and whether the current policy would use it — plus the aggregation state and, when
+  applicable, the concrete reason it is not splitting.
+
+- **One Linux tarball now works across distribution releases.** libtorrent and Boost are bundled
+  alongside the Swift runtime, because their SONAMEs encode upstream versions that change between
+  releases — Ubuntu 24.04 has `libtorrent-rasterbar.so.2.0` and 26.04 has `.so.2.1`, and Boost
+  goes 1.83 → 1.88 — so a tarball built on one could not start on the other. OpenSSL, libcurl and
+  libssh2 are deliberately *not* bundled: their SONAMEs are stable, and freezing someone else's
+  TLS stack into a release is worse than using the one the operator's distribution is patching.
+
+- **[docs/linux.md](docs/linux.md)** — the full Linux guide: installer options, every
+  configuration key, how writable paths work under `ProtectSystem=strict` and why a download can
+  otherwise fail on write, upgrading, uninstalling, running without systemd, non-Debian
+  distributions, and building from source. Several error messages already pointed at this file.
+
+- **CI now covers Linux.** The daemon and CLI are built and tested on Ubuntu 24.04, the tarball is
+  packaged and its contents asserted, and then it is *installed on a newer Ubuntu* — the
+  cross-release case that a developer's own machine never exercises and that the shipped tarball
+  would have failed. The install job exercises the CLI end to end and asserts that
+  `uninstall --purge` leaves nothing behind.
+
+- **Goel° Capture now has an icon.** The extension shipped with no `icons` and no
+  `action.default_icon` at all, so Chromium browsers drew a generic grey initial and Safari's
+  extension list showed a blank entry — for a toolbar button whose install instructions say
+  "click the toolbar button". A 16/32/48/128 px set from the app's own mark is now bundled.
+- **The extension reports what happened.** A hand-off used to be entirely silent in both
+  directions: on success nothing changed (the app may be closed or on another Space), and on
+  failure nothing changed either, which is indistinguishable from a broken extension. The
+  most common failure by far — the native-messaging helper not being installed yet — now
+  shows a red `!` on the toolbar button reading *"can't reach the app. Open Goel° ▸ Settings ▸
+  Browser and click Install Helper."* A refused URL, a cookie-less send and a successful send
+  each get their own badge and tooltip. Nothing uses system notifications, because that would
+  mean requesting a `notifications` permission purely to report errors.
+- **[docs/browser-extension.md](docs/browser-extension.md)** — the extension had no
+  documentation beyond three bullets in the FAQ. The new guide covers install per browser
+  (including which browsers want the *folder* and which want `manifest.json`), the messaging
+  helper and the two ways it silently does nothing, a capability matrix, exactly what happens
+  to forwarded cookies, troubleshooting, removal, and how to hack on it.
+- Troubleshooting now has a browser-extension section; it previously had none.
+
+### Fixed
+
+- **The Linux daemon saw zero network interfaces, and said so as "none found".** The systemd
+  unit's `RestrictAddressFamilies=` listed `AF_UNIX AF_INET AF_INET6` but not `AF_NETLINK`,
+  which is what glibc's `getifaddrs()` opens — so under systemd every adapter and
+  aggregation feature reported an empty list while working perfectly when run by hand. A
+  failed enumeration now logs the errno instead of returning an empty array in silence.
+- **Saving any setting could kill the Linux daemon minutes later.** Reconfiguring the HTTP
+  engine replaced its `URLSession` without invalidating the old one, and
+  swift-corelibs-foundation keeps a retain cycle through the session's `_MultiHandle` until
+  it is invalidated — collecting one tripped the runtime's "deallocated with non-zero retain
+  count" trap and took the process down with `SIGILL`, on an unrelated thread, long after
+  the save. Observed in production testing; the outgoing session is now retired first.
+- **Upgrading over a running daemon kept executing the old binary.** The installer used
+  `systemctl enable --now`, which starts a stopped service but leaves a running one untouched —
+  so a reinstall replaced `/opt/goel` on disk and none of it ran until the next reboot. It now
+  restarts explicitly. (Found by installing a fix and watching the bug it fixed reoccur.)
+- **A download bound to an interface reported "Could not connect to server" and nothing
+  else.** An interface can hold an address and still have no working upstream — the ordinary
+  state of a second NIC that has not been given policy routing. Transport failures now name
+  the interface they were bound to.
+- **`POST /api/network` silently ignored `streamsPerAdapter`.** The reply spells the field
+  `streamsPerAdapter` and the request accepted only `streams`, so posting back the object
+  `GET` had just returned dropped the value *and* skipped its 1–8 range check. Both
+  spellings are accepted now.
+- **Tailscale and container interfaces were offered as download uplinks on Linux.** The
+  tunnel filter matched `tun*`/`utun*`/`wg*`, which Tailscale, ZeroTier, Nebula and several
+  commercial VPNs do not use — `tailscale0` has an address and looked like an ordinary
+  adapter, so aggregation would happily route downloads through the tailnet. The virtual
+  filter has likewise grown `virbr`, `cni`, `flannel`, `cali`, `kube` and `dummy`, which a
+  box running Docker or libvirt has by the dozen and none of which reaches the internet.
+- **GoelCore did not compile on Linux at all.** Two constants that Glibc types differently from
+  Darwin — `net/if.h`'s interface flags (`Int`, not `Int32`) and `SOCK_STREAM` (`__socket_type`,
+  not `Int32`) — broke the build in July's network-aggregation work and stayed broken because
+  nothing built Linux. Normalised in `LinuxCompat.swift`, and CI now builds and tests Linux.
+- **The Linux daemon lost every translation.** SwiftPM names its generated resource bundle
+  `.resources` on Linux and `.bundle` on Darwin; the resolver only knew the second, and the
+  packager never shipped the bundle at all. Both fixed — German resolves on Linux now. This was
+  invisible because the lookup keys *are* the English text, so it read as "not localized yet".
+- **A tarball built on Ubuntu 24.04 could not start on 26.04.** `libFoundationXML.so` needs
+  `libxml2.so.2`, which is `libxml2.so.16` on 26.04 with no `libxml2` package at all — and
+  vendoring it by name would then have failed one hop later on ICU. The packager now walks
+  direct `DT_NEEDED` edges transitively and bundles everything whose SONAME is not known
+  stable, then verifies the result is self-contained before writing the tarball.
+- **Linux test coverage was zero.** `GoelCoreTests` and `GoelCLITests` were gated to macOS
+  despite not depending on the app; 680 of them now run on Linux, with the handful that need
+  `Network.framework`, `AVFoundation`, `CommonCrypto` or macOS release tooling guarded.
+- **`testPauseStopsProgress` raced the transfer it was pausing.** It slept a fixed 200 ms before
+  pausing, which a fast machine's parallel range requests finish inside — the test then failed
+  for having completed. It now pauses on observed progress instead.
+- **`goel list` hid why a download failed and that anything had finished.** The failure reason
+  was already in the API response and never printed, and completed downloads are filtered out
+  with no indication, so a download that just finished looked like it had vanished.
+- **`goel doctor` said nothing about ffmpeg**, whose absence fails HLS downloads only —
+  now a warning rather than silence.
+- **`goel uninstall --purge` claimed to delete downloads it does not touch.** A configured
+  `save-dir` outside `/var/lib/goel` is deliberately left alone; it now says so.
+- **`/Applications/Goel°.app` crashed on launch.** SwiftPM's generated `Bundle.module` accessor
+  traps with `fatalError` when it cannot find its resource bundle, and it looked in two places
+  neither of which existed in an installed app — so the app died before `main()` with
+  `could not load resource bundle`. Resource lookup now searches the places the bundle actually
+  lands and degrades (untranslated strings, no notification icon) instead of trapping, and
+  `Scripts/build_app.sh` fails the build if `Bundle.module` reappears in `Sources/` or if the
+  resource bundles do not end up inside the app.
+- **Re-running the Linux installer no longer breaks a customised install.** The installer derived
+  the download folder from `$GOEL_SAVE_DIR` while keeping the existing `/etc/goel/config`, so an
+  upgrade on a machine with a custom `save-dir` rewrote the writable-paths drop-in for the
+  *default* path — and because the unit runs `ProtectSystem=strict`, the service then started
+  perfectly and failed every download the moment it tried to write. The same overwrite silently
+  dropped the watch folder and a relocated database. The drop-in now has exactly one writer:
+  `goel config sync`, which reads the config file and therefore cannot disagree with it.
+- **The Linux installer refuses a release it cannot verify.** Its own comment said an unchecksummed
+  release was one it would "refuse to install silently", but the code warned on stderr — invisible
+  in a `curl | sudo sh` session — and installed it anyway as root. It now stops, with
+  `GOEL_INSECURE=1` as an explicit opt-out. `package_daemon.sh` generates the `.sha256`, and CI
+  asserts it exists, because until now nothing produced one and so every install was unverified.
+- **A download folder that is a symlink is now refused.** Both the installer and
+  `goel config set save-dir` ran `chown -R` on the given path, and a recursive `chown` follows a
+  symlink named on the command line. Since saving downloads under `/home` is ordinary and
+  documented, an untrusted local user could pre-create `~/downloads` as a link to `/etc` and wait
+  for an admin to point Goel° at it, handing the service account ownership of the target.
+- **`goel config set db <path>` created a directory where the database file goes**, leaving SQLite
+  unable to open it and the daemon dead on the next start with the cause nowhere in the journal.
+  It now creates the *parent* directory.
+- **A read-only `goel` command without `sudo` said Goel° was not installed.** `/etc/goel/config` is
+  `0600` root-only by design, so the commonest mistake — forgetting `sudo` on `goel status` — hit
+  a permission error that was reported as "does not look installed on this machine", complete with
+  advice to reinstall. Unreadable and absent are now told apart.
+- **`goel config` could leave the portal password world-readable and report success.** The
+  temporary file was written and then `chmod`ed, with the result discarded — so a failed `chmod`
+  renamed a readable file into place while the command printed a green "Set password". It is now
+  created `0600` and verified before the rename.
+- **`goel uninstall` printed "Removed." unconditionally.** Every teardown step is best-effort by
+  design, but their results were all discarded, so a service that would not stop or a `goel` user
+  that could not be deleted still produced a clean green success. Failures are now named.
+- **A failed `chown` no longer reports a successful configuration change.** `goel config set
+  save-dir` discarded the result, so the two lines it printed were "Set save-dir" and "Restarted"
+  while the daemon was about to fail every download writing there.
+- **Ctrl-C out of `goel logs -f` no longer reports an error.** Foundation gives the raw signal
+  number for a signalled child, not the shell's `128+n`, so an ordinary Ctrl-C surfaced as
+  `journalctl exited 2`.
+- The systemd unit now clears its capability bounding set and sets `UMask=0027`, so downloads under
+  `/home` on a shared machine are not group- and world-readable. `goel config` quotes paths in
+  `ReadWritePaths=`, which is whitespace-separated — a folder with a space in its name silently
+  became two paths that did not exist.
+- `goel config set` refuses `/`, `/etc`, `/usr`, `/home` and the like. Every accepted path is
+  created, recursively chowned to the service user and made writable to a process that parses
+  untrusted torrent metadata; a leading `/` was the only check.
+- `goel config unset save-dir|db|watch-dir` now refreshes the drop-in, and the CLI's idea of the
+  daemon's default database and download paths now matches the daemon's actual defaults — they
+  differed, so after an `unset` every authenticated command looked for the API token in a
+  directory the daemon had never written to.
+- **Safari no longer offers what it cannot do.** The "stay signed in" context-menu item and
+  the cookie preference were shown in Safari, where the handler refuses cookies by design —
+  so choosing them appeared to work and then quietly produced a login page. They are now
+  omitted there, and if a cookie is ever dropped anyway the extension says so. The toolbar
+  toggle likewise no longer badges `ON` in Safari, which has no `downloads` API and was
+  capturing nothing; clicking it now explains that and points at the right-click menu.
+- **The Safari handler's promise is now kept.** It has always answered `cookies: false` so
+  that "the extension [could] tell the user that signed-in capture needs Chrome or Firefox" —
+  but `background.js` discarded the reply entirely and told them nothing.
+- **Firefox's minimum is 128, not 115.** The manifest requires `optional_host_permissions`,
+  which Firefox only supports from 128, so the cookie grant could never succeed on 115–127
+  while the manifest claimed those versions were fine.
+- **`.gitignore` was swallowing the extension's `icons/` directory.** The macOS section used
+  the widespread `Icon?` pattern for Finder's custom-folder-icon file (`Icon` + a carriage
+  return), but `?` matches *any* single character, so `icons/` matched too and would have been
+  left out of the repository without a word. Narrowed to `Icon[[:cntrl:]]`, which still
+  catches `Icon\r` and no longer catches directories that merely start with "icon".
+- The FAQ pointed at `Resources/BrowserExtension` for the bundled extension. It is at
+  `Contents/MacOS/GoelDownloader_GoelApp.bundle/BrowserExtension` — where `Bundle.module`
+  resolves, next to the executable.
+- **Settings ▸ Browser Integration** now installs the helper *before* telling you to load the
+  extension, says to restart the browser afterwards (host manifests are only read at browser
+  startup — a step whose absence made a correct install look broken), notes that the helper
+  skips browsers that have never been launched and must be re-run if the app moves, and states
+  plainly what Safari cannot do.
+
+---
+
 ## [1.0.2] — 2026-07-25
 
 First release under the **PolyForm Noncommercial 1.0.0** licence. If you use Goel° at work,

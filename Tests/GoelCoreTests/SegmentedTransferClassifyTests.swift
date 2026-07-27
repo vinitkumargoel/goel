@@ -36,4 +36,17 @@ final class SegmentedTransferClassifyTests: XCTestCase {
         XCTAssertEqual(T.classify(400, ranged: true), .reject)
         XCTAssertEqual(T.classify(403, ranged: false), .reject)
     }
+
+    /// A NIC that holds an address but has no working upstream fails with curl's
+    /// generic connect error. Without the interface in the text there is nothing
+    /// in the UI to act on.
+    func testTransportErrorNamesTheInterfaceItWasBoundTo() {
+        let adapter = BoundAdapter(bsdName: "wlx78", displayName: "Wi‑Fi (wlx78)")
+        let bound = T.transportError(7, via: adapter)          // CURLE_COULDNT_CONNECT
+        XCTAssertTrue(bound.contains("Wi‑Fi (wlx78)"), "expected the interface: \(bound)")
+
+        let unbound = T.transportError(7, via: nil)
+        XCTAssertFalse(unbound.contains("via"), "unbound transfers gain nothing: \(unbound)")
+        XCTAssertFalse(unbound.isEmpty)
+    }
 }

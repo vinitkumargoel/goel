@@ -56,6 +56,29 @@ fi
 # Size-optimized release: -Osize favors smaller code over speed (irrelevant for
 # a UI/IO-bound downloader), -dead_strip drops unreferenced code at link time.
 BUILD_FLAGS=(-Xswiftc -Osize -Xlinker -dead_strip)
+# `Bundle.module` is unusable in a shipped .app and must never come back.
+#
+# SwiftPM's generated accessor resolves a resource bundle from exactly two
+# places: `Bundle.main.bundleURL/<name>.bundle` — which for an app is the .app
+# root, where codesign forbids anything but Contents/ — and the absolute .build
+# path of the machine that compiled the binary. Neither exists on a user's Mac,
+# and the accessor calls fatalError rather than returning nil, so the app traps
+# on the first localized string. The failure is invisible to whoever built it,
+# because on that one machine the hard-coded .build path still resolves.
+#
+# GoelCore.ResourceBundles is the supported replacement; see
+# Sources/GoelCore/ResourceBundle.swift.
+# Comment lines are excluded so the explanation above (and the one in
+# ResourceBundle.swift) does not trip the check that enforces it.
+BUNDLE_MODULE_USES="$(grep -rn --include='*.swift' 'Bundle\.module' Sources/ \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
+if [ -n "$BUNDLE_MODULE_USES" ]; then
+  echo "error: Bundle.module is used in Sources/ — it fatal-errors in a packaged .app:" >&2
+  printf '%s\n' "$BUNDLE_MODULE_USES" | sed 's/^/    /' >&2
+  echo "       Use GoelCore.ResourceBundles (.core / .app) instead." >&2
+  exit 1
+fi
+
 echo "==> swift build -c $CONFIG --arch $ARCH_ENV (size-optimized)"
 # Working files (build log, notarization payload, Gatekeeper report) all live
 # here so none of them can be mistaken for a release artifact in dist/.
@@ -303,10 +326,25 @@ else
   fi
 fi
 
-# Executable + SwiftPM resource bundles (Bundle.module resolves these next to
-# the executable, so they live in Contents/MacOS alongside the binary).
+# Executable + SwiftPM resource bundles. They live in Contents/MacOS beside the
+# binary: that keeps them inside the signed Contents/ tree (codesign rejects an
+# app with unsealed contents in the bundle root) and it is the first place
+# GoelCore.ResourceBundles looks.
 cp "$BIN/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
 for b in "$BIN"/*.bundle; do [ -e "$b" ] && cp -R "$b" "$APP/Contents/MacOS/"; done
+
+# A resource bundle that fails to land does not break the build or the launch —
+# it silently degrades into untranslated UI and a missing dock icon, which is
+# exactly the kind of defect that reaches users unnoticed. The localization
+# tables are declared in Package.swift, so their absence here means packaging
+# broke, not that the feature is optional.
+for required in GoelDownloader_GoelCore GoelDownloader_GoelApp; do
+  if [ ! -d "$APP/Contents/MacOS/$required.bundle" ]; then
+    echo "error: resource bundle $required.bundle is missing from $APP/Contents/MacOS." >&2
+    echo "       Expected it in $BIN — check the 'resources:' stanzas in Package.swift." >&2
+    exit 1
+  fi
+done
 
 # Frameworks (Sparkle) live in Contents/Frameworks; add the matching rpath so
 # the binary resolves @rpath/Sparkle.framework inside the bundle instead of

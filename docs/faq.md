@@ -92,18 +92,25 @@ in playback order.
 ### Does it support browser integration?
 
 Yes, but it is side-loaded rather than installed from a store. A WebExtension ships inside
-the app bundle (`Resources/BrowserExtension`); **Settings → Browser** reveals the folder and
-installs the native-messaging helper. What each browser does with it differs:
+the app bundle (`Contents/MacOS/GoelDownloader_GoelApp.bundle/BrowserExtension`);
+**Settings → Browser Integration** reveals the folder and installs the native-messaging
+helper. What each browser does with it differs:
 
 - **Chromium family** — Chrome, Edge, Brave, Chromium, Vivaldi, Arc. `chrome://extensions` →
   Developer mode → **Load unpacked** → that folder. It stays loaded across restarts.
-- **Firefox** — `about:debugging` → **Load Temporary Add-on**. Firefox discards temporary
-  add-ons when it quits, so this has to be repeated after every Firefox restart. A permanent
-  install needs a Mozilla-signed `.xpi`, which is not published yet.
+- **Firefox** — 128 or later. `about:debugging#/runtime/this-firefox` → **Load Temporary
+  Add-on** → the folder's `manifest.json`. Firefox discards temporary add-ons when it quits,
+  so this has to be repeated after every Firefox restart. A permanent install needs a
+  Mozilla-signed `.xpi`, which is not published yet.
 - **Safari** — the extension is an app extension inside the bundle, so Safari finds it once
   the app is in `/Applications` (quit and reopen Safari once). Enable **Goel° Capture** in
   Safari's extension list. An unsigned or ad-hoc build additionally needs Safari →
-  Develop → **Allow Unsigned Extensions**, which resets each session.
+  Develop → **Allow Unsigned Extensions**, which resets each session. Safari cannot do
+  capture mode or signed-in downloads — it has no `downloads` API, and its sandbox has no
+  channel that may carry a cookie.
+
+Full per-browser instructions, the capability matrix and troubleshooting are in
+[browser-extension.md](browser-extension.md).
 
 ### Are there speed limits and scheduling?
 
@@ -151,9 +158,22 @@ supported binary target.
 
 ### What Linux distributions are supported?
 
-Anything with a Swift 6.3 toolchain plus libtorrent-rasterbar, libssh2 and libcurl. Ubuntu
-is the tested path. Note the SQLite snapshot requirement in
-[getting-started.md](getting-started.md).
+Any glibc distribution with **systemd**, on x86_64 or aarch64. Ubuntu 22.04+ and Debian 12+ are
+the tested path, and what the one-line installer's dependency step is written for:
+
+```sh
+curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh
+```
+
+You do **not** need a Swift toolchain — the release tarball bundles the Swift runtime, libtorrent,
+Boost and the snapshot-enabled SQLite that GRDB requires, so one build works across Ubuntu
+releases. It expects libssh2, libcurl, OpenSSL 3 and ffmpeg from your distribution, which the
+installer resolves by name for whichever release it finds itself on.
+
+On a non-apt distribution, install those four yourself and pass `GOEL_SKIP_DEPS=1`. Alpine uses
+musl rather than glibc, so the prebuilt tarball will not run there — build from source. Without
+systemd (containers, WSL) run `./run.sh` from the tarball directly. All of this, plus the `goel`
+command, is in **[linux.md](linux.md)**.
 
 ---
 

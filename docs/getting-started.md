@@ -87,6 +87,23 @@ stored item. Choosing **Always Allow** stops the prompt recurring.
 
 ---
 
+## Downloading from your browser
+
+Goel° ships a browser extension, **Goel° Capture**, inside the app bundle. A toolbar toggle
+hands over every download your browser starts; right-click → **Download with Goel°** sends a
+single link. It can optionally forward your login cookies for that site, which is what makes
+files behind a sign-in download at all.
+
+Start at **Settings ▸ Browser Integration**: install the messaging helper, load the extension,
+restart the browser. It is side-loaded rather than installed from a store, so the steps differ
+per browser — and Safari is more limited than the rest. Full instructions, a capability matrix
+and troubleshooting: **[browser-extension.md](browser-extension.md)**.
+
+No extension needed for any of these: the `goeldownloader://add?url=…` URL scheme, a
+bookmarklet, the macOS Services menu, and the floating Drop Basket (⇧⌘B).
+
+---
+
 ## Remote access (Goel° Web)
 
 Goel° can serve a small control portal from your own machine so you can manage the queue
@@ -110,17 +127,21 @@ For scripting the portal, see [remote-api.md](remote-api.md).
 
 ## Headless on Linux
 
-`GoelDaemon` is the same engine with no GUI — the web portal is the interface.
+`GoelDaemon` is the same engine with no GUI — the web portal is the interface. Install it as a
+systemd service, and get the `goel` command with it:
 
 ```sh
-swift build -c release --product GoelDaemon
-./.build/release/GoelDaemon
+curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh
+sudo goel status
+sudo goel add <url>
 ```
 
-Linux builds swap in swift-crypto for CryptoKit and SwiftNIO for Network.framework, and
-link against the distro's own libtorrent-rasterbar, libssh2 and libcurl. GRDB needs a
-SQLite built with `SQLITE_ENABLE_SNAPSHOT`; point `GOEL_SQLITE_DIR` at one if your
-distro's stock `libsqlite3` does not have it.
+**[linux.md](linux.md) covers it properly**: installer options, configuration, writable paths,
+upgrading, uninstalling, running without systemd, and building from source.
+
+Under the hood, Linux builds swap in swift-crypto for CryptoKit and SwiftNIO for
+Network.framework. GRDB needs a SQLite built with `SQLITE_ENABLE_SNAPSHOT`, which the release
+tarball bundles — point `GOEL_SQLITE_DIR` at one yourself only when building from source.
 
 ---
 
@@ -148,6 +169,7 @@ that in the source.
 
 ## Next
 
+- [Browser extension](browser-extension.md)
 - [FAQ](faq.md)
 - [Troubleshooting](troubleshooting.md)
 - [Remote JSON API](remote-api.md)

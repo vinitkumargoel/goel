@@ -1,3 +1,5 @@
+// Network.framework is macOS-only, and so is the listener this exercises.
+#if !os(Linux)
 import XCTest
 import Network
 @testable import GoelCore
@@ -188,3 +190,5 @@ final class RemoteServerRestartTests: XCTestCase {
         }
     }
 }
+
+#endif

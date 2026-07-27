@@ -22,6 +22,9 @@ import Glibc   // umask, so the token file is created private from birth
 //   GOEL_DB            queue database path                (default ~/.local/share/goel-downloader/queue.sqlite)
 //   GOEL_WATCH_DIR     folder watched for .torrent files  (unset = leave as configured)
 //   GOEL_WATCH_AUTOSTART  start watched torrents without confirmation  (default false)
+//   GOEL_AGGREGATION   split downloads across interfaces  (unset = leave as configured)
+//   GOEL_AGGREGATION_ADAPTERS  comma-separated interfaces (empty = every eligible one)
+//   GOEL_AGGREGATION_STREAMS   connections per interface, 1–8    (default 2)
 // ============================================================================
 
 func env(_ key: String, _ fallback: String) -> String {
@@ -54,6 +57,25 @@ let saveDir = env("GOEL_SAVE_DIR", home.appendingPathComponent("Downloads").path
 // trimmed unit file doesn't silently switch the feature off.
 let watchDir = env("GOEL_WATCH_DIR", "")
 let watchAutoStart = envBool("GOEL_WATCH_AUTOSTART", false)
+
+// Aggregation. Same opt-in shape as the watch folder: unset means "keep whatever
+// the portal last saved", so a runtime change is not undone by the next restart.
+let aggregationEnv = ProcessInfo.processInfo.environment["GOEL_AGGREGATION"]
+let aggregationAdaptersEnv = ProcessInfo.processInfo.environment["GOEL_AGGREGATION_ADAPTERS"]
+let aggregationStreamsRaw = env("GOEL_AGGREGATION_STREAMS", "")
+if !aggregationStreamsRaw.isEmpty,
+   Int(aggregationStreamsRaw).map({ !(1...8).contains($0) }) ?? true {
+    stderrLine("GoelDaemon: fatal — GOEL_AGGREGATION_STREAMS '\(aggregationStreamsRaw)' is not 1–8")
+    exit(1)
+}
+let aggregationAdapters = (aggregationAdaptersEnv ?? "")
+    .split(separator: ",")
+    .map { $0.trimmingCharacters(in: .whitespaces) }
+    .filter { !$0.isEmpty }
+if let bad = aggregationAdapters.first(where: { !NetworkSelection.isValidInterfaceName($0) }) {
+    stderrLine("GoelDaemon: fatal — GOEL_AGGREGATION_ADAPTERS contains '\(bad)', which is not an interface name")
+    exit(1)
+}
 
 try? FileManager.default.createDirectory(
     atPath: (dbPath as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
@@ -99,6 +121,13 @@ Task {
             settings.btWatchFolderEnabled = true
             settings.btWatchStartWithoutConfirmation = watchAutoStart
         }
+        if let aggregationEnv {
+            settings.aggregationEnabled = ["1", "true", "yes", "on"].contains(aggregationEnv.lowercased())
+        }
+        // An empty (but present) GOEL_AGGREGATION_ADAPTERS means "every eligible
+        // interface" — distinct from unset, which means "leave the saved list alone".
+        if aggregationAdaptersEnv != nil { settings.aggregationAdapterIds = aggregationAdapters }
+        if let streams = Int(aggregationStreamsRaw) { settings.aggregationStreamsPerAdapter = streams }
         await manager.updateSettings(settings)
         _ = await manager.setDefaultSaveDirectory(saveDir)
 

@@ -182,8 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let preferred = isDark ? "AppIcon-Dark" : "AppIcon-Light"
         let fallback = isDark ? "AppIcon-Light" : "AppIcon-Dark"
-        let name = Bundle.module.url(forResource: preferred, withExtension: "png") != nil ? preferred : fallback
-        guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
+        let icons = ResourceBundles.app
+        let name = icons?.url(forResource: preferred, withExtension: "png") != nil ? preferred : fallback
+        guard let url = icons?.url(forResource: name, withExtension: "png"),
               let image = NSImage(contentsOf: url) else { return }
         NSApp.applicationIconImage = image
     }

@@ -46,15 +46,25 @@ public struct HTTPNetworkConfig: Sendable, Equatable {
 /// Snapshot of multi-adapter download policy pushed into ``HTTPEngine``.
 /// Built by ``DownloadManager`` from ``AppSettings`` + live adapter enumeration.
 public struct AggregationEngineConfig: Sendable, Equatable {
+    /// What the server-wide policy binds by default. Empty = follow the routing table.
     public var adapters: [BoundAdapter]
+    /// Every bindable interface, including ones the default policy declined. A task
+    /// can pin to one of these even with aggregation globally off.
+    public var available: [BoundAdapter]
     public var streamsPerAdapter: Int
 
-    public init(adapters: [BoundAdapter] = [], streamsPerAdapter: Int = 2) {
+    public init(
+        adapters: [BoundAdapter] = [],
+        available: [BoundAdapter] = [],
+        streamsPerAdapter: Int = 2
+    ) {
         self.adapters = adapters
+        self.available = available
         self.streamsPerAdapter = max(1, streamsPerAdapter)
     }
 
-    public static let disabled = AggregationEngineConfig(adapters: [], streamsPerAdapter: 2)
+    public static let disabled = AggregationEngineConfig(
+        adapters: [], available: [], streamsPerAdapter: 2)
 
     public var isActive: Bool { adapters.count >= 2 }
 }

@@ -120,7 +120,7 @@ but must pick their own name, icon and bundle identifier.
 - **HLS video** — download a finished (VOD) `.m3u8` stream to a clean `.mp4`, unencrypted or AES-128. Live streams, DRM (FairPlay/Widevine), and renditions that carry their audio as a separate track are refused with a stated reason rather than saved as a truncated or silent file.
 - **Easy adding** — clipboard auto-paste, batch add, drag & drop, a floating Drop Basket, a web-page Link Grabber, and an optional bundled `yt-dlp` resolver.
 - **Queue management** — sortable/filterable list, a detail panel with live speed graphs, and Low/Medium/High traffic profiles.
-- **Browser integration** — a WebExtension bundled inside the app and **side-loaded**, not installed from a store. Chromium-family browsers (Chrome, Edge, Brave, Chromium, Vivaldi, Arc) take it via Developer mode → **Load unpacked** and keep it. Firefox only accepts it as a **temporary add-on**, so it has to be re-loaded after every Firefox restart. Safari's version ships as an extension inside the app bundle and is switched on in Safari's own settings.
+- **Browser integration** — a WebExtension bundled inside the app and **side-loaded**, not installed from a store. A toolbar toggle hands over every download the browser starts; right-click → **Download with Goel°** sends one link, optionally carrying your login cookies so files behind a sign-in actually download. Chromium-family browsers (Chrome, Edge, Brave, Chromium, Vivaldi, Arc) take it via Developer mode → **Load unpacked** and keep it. Firefox (128+) only accepts it as a **temporary add-on**, so it has to be re-loaded after every Firefox restart. Safari's copy ships as an app extension inside the bundle and is switched on in Safari's own settings — but Safari can do neither capture mode nor signed-in downloads, because it has no `downloads` API and its sandbox has no channel that may carry a cookie. Step-by-step per browser: **[docs/browser-extension.md](docs/browser-extension.md)**.
 - **macOS native** — menu-bar extra, Dock progress, Services menu, URL scheme, AppleScript, and notifications.
 - **Automation** — a watched folder for `.torrent` files, scheduled download windows, power/network awareness (pause below a battery percentage; pause on an expensive or constrained network), and post-download actions (extract, script, antivirus scan).
 - **Remote control** — an optional token-authenticated local HTTP server to manage downloads from another device.
@@ -168,57 +168,30 @@ On Linux, Goel° runs as a headless service — **`GoelDaemon`** — with the bu
 The same engine (HTTP, FTP, SFTP, BitTorrent, HLS, scheduler, persistence) runs behind a token- or
 password-authenticated web server that you drive from any browser.
 
-### Install (prebuilt tarball)
+### Install
 
-> **Prebuilt for x86_64.** For ARM64, [build from source](#build-from-source).
-
-1. Download **`goel-daemon-<version>-linux-x86_64.tar.gz`** from
-   [Releases](https://github.com/vinitkumargoel/goel/releases) and unpack it:
-   ```bash
-   tar xzf goel-daemon-<version>-linux-x86_64.tar.gz
-   cd goel-daemon-<version>-linux-x86_64
-   ```
-2. Install the runtime libraries (Ubuntu 24.04):
-   ```bash
-   sudo apt-get install -y \
-     libtorrent-rasterbar2.0 libssh2-1 libcurl4 libssl3 libboost-system1.83.0 ffmpeg
-   ```
-3. Run it — `run.sh` bundles the Swift runtime, so **no toolchain needed**:
-   ```bash
-   GOEL_PORT=8080 \
-   GOEL_ALLOW_LAN=true \
-   GOEL_USERNAME=admin \
-   GOEL_PASSWORD='choose-a-strong-one' \    # required before it will expose over the LAN
-   GOEL_SAVE_DIR="$HOME/Downloads" \
-     ./run.sh
-   # then open http://<host>:8080, sign in, and add downloads
-   ```
-
-Config env vars: `GOEL_PORT`, `GOEL_ALLOW_LAN`, `GOEL_REQUIRE_AUTH`, `GOEL_USERNAME`, `GOEL_PASSWORD`,
-`GOEL_SAVE_DIR`, `GOEL_DB`. With sign-in enabled, LAN exposure requires `GOEL_PASSWORD` (otherwise it
-binds loopback only — the same safety rule as macOS).
-
-### Build from source
-
-You only need this to build the daemon yourself (or for ARM64). **Prerequisites** (Ubuntu 24.04):
 ```bash
-sudo apt-get install -y \
-  libtorrent-rasterbar-dev libssh2-1-dev libcurl4-openssl-dev \
-  libssl-dev libboost-dev libboost-system-dev libsqlite3-dev \
-  clang pkg-config ffmpeg
-# plus a Swift toolchain from https://swift.org/download
+curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh
 ```
 
-**Build:**
+That installs the daemon as a systemd service, creates an unprivileged `goel` user, generates a
+portal password and prints it once, and puts the **`goel`** command on your PATH:
+
 ```bash
-Scripts/linux/build-sqlite.sh            # once — snapshot-enabled SQLite that GRDB needs
-export GOEL_SQLITE_DIR="$PWD/Vendor/linux/sqlite"
-swift build -c release --product GoelDaemon
+sudo goel status          # is it running, and where
+sudo goel add <url>       # queue a download
+sudo goel config set port 9090
+sudo goel doctor          # check the whole install
+sudo goel help            # everything else
 ```
 
-Run the result the same way as above, pointing at `./.build/release/GoelDaemon` instead of `./run.sh`.
-If the Swift runtime isn't on the library path, prefix the run with
-`LD_LIBRARY_PATH=<toolchain>/usr/lib/swift/linux`.
+Prebuilt for **x86_64** and **aarch64**; needs systemd and glibc. The Swift runtime, libtorrent
+and Boost travel inside the tarball, so one build works across Ubuntu releases. Re-running the
+installer upgrades in place and keeps your config, queue and downloads.
+
+**[docs/linux.md](docs/linux.md) is the full guide** — installer options, every configuration key,
+writable-path handling under `ProtectSystem=strict`, upgrading, uninstalling, running without
+systemd, non-Debian distributions, and building from source.
 
 ---
 
@@ -295,6 +268,7 @@ library updater by design.
 ## Documentation
 
 - **[docs/getting-started.md](docs/getting-started.md)** — install, first download, the basics.
+- **[docs/browser-extension.md](docs/browser-extension.md)** — installing Goel° Capture in Chrome, Edge, Brave, Firefox and Safari.
 - **[docs/faq.md](docs/faq.md)** — the questions that actually get asked.
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** — when something goes wrong.
 - **[docs/remote-api.md](docs/remote-api.md)** — the JSON routes the remote/web UI speaks.

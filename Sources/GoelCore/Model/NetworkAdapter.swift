@@ -80,8 +80,10 @@ public struct BoundAdapter: Sendable, Hashable, Codable {
         self.isExpensive = adapter.isExpensive
     }
 
+    /// Includes the interface name on purpose: two NICs of the same kind both
+    /// render as "Wi‑Fi", and a failure report naming neither is useless.
     public var label: String {
-        displayName.isEmpty ? bsdName : displayName
+        displayName.isEmpty ? bsdName : "\(displayName) (\(bsdName))"
     }
 }
 
@@ -158,7 +160,11 @@ public enum AggregationPolicy: Sendable {
     public static func isHiddenVirtual(_ bsdName: String) -> Bool {
         let n = bsdName.lowercased()
         if n == "lo" || (n.hasPrefix("lo") && n.count <= 4) { return true }
-        let prefixes = ["awdl", "llw", "ap", "anpi", "gif", "stf", "p2p", "vmnet", "veth", "docker", "br-"]
+        let prefixes = ["awdl", "llw", "ap", "anpi", "gif", "stf", "p2p", "vmnet",
+                        // Linux container/VM plumbing. A GPU box running Docker has a
+                        // dozen of these up with addresses, and none reaches the internet.
+                        "veth", "docker", "br-", "virbr", "cni", "flannel", "cali", "kube",
+                        "dummy"]
         return prefixes.contains { n.hasPrefix($0) }
     }
 
@@ -167,6 +173,10 @@ public enum AggregationPolicy: Sendable {
         let n = bsdName.lowercased()
         return n.hasPrefix("utun") || n.hasPrefix("ipsec") || n.hasPrefix("ppp")
             || n.hasPrefix("tun") || n.hasPrefix("tap") || n.hasPrefix("wg")
+            // Linux names these plainly rather than as tun*, so a prefix sweep misses
+            // them and the tunnel gets offered as a download uplink.
+            || n.hasPrefix("tailscale") || n.hasPrefix("zt") || n.hasPrefix("nebula")
+            || n.hasPrefix("proton") || n.hasPrefix("nordlynx")
     }
 
     /// Desired segment count: `adapters × streamsPerAdapter`, clamped to `maxAllowed`.
@@ -243,7 +253,14 @@ public enum AdapterDirectory {
     /// for VPN detection even without routable addresses.
     private static func rawEnumerate(includeVPNNames: Bool) -> [NetworkAdapter] {
         var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddrPtr) == 0, let first = ifaddrPtr else { return [] }
+        guard getifaddrs(&ifaddrPtr) == 0, let first = ifaddrPtr else {
+            // Worth saying out loud: on Linux this needs AF_NETLINK, and a systemd
+            // RestrictAddressFamilies= without it turns every interface feature into
+            // a bare "none found" with no other clue.
+            GoelLog.app.error("Could not enumerate network interfaces",
+                              .detail("getifaddrs failed (errno \(errno))"))
+            return []
+        }
         defer { freeifaddrs(first) }
 
         var map: [String: NetworkAdapter] = [:]
@@ -258,8 +275,8 @@ public enum AdapterDirectory {
             }
 
             let flags = Int32(ifa.pointee.ifa_flags)
-            let isUp = (flags & IFF_UP) != 0 && (flags & IFF_RUNNING) != 0
-            if (flags & IFF_LOOPBACK) != 0 { continue }
+            let isUp = (flags & InterfaceFlag.up) != 0 && (flags & InterfaceFlag.running) != 0
+            if (flags & InterfaceFlag.loopback) != 0 { continue }
 
             var entry = map[name] ?? NetworkAdapter(
                 bsdName: name,

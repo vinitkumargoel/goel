@@ -236,7 +236,7 @@ public enum NetworkGuard {
     static func resolvedLiterals(of host: String) -> [String]? {
         var hints = addrinfo()
         hints.ai_family = AF_UNSPEC
-        hints.ai_socktype = SOCK_STREAM
+        hints.ai_socktype = PlatformSocket.stream
         var list: UnsafeMutablePointer<addrinfo>?
         guard getaddrinfo(host, nil, &hints, &list) == 0, let list else { return nil }
         defer { freeaddrinfo(list) }
@@ -265,11 +265,16 @@ public enum NetworkGuard {
     public static func fetch(url: URL, proxy: ProxySpec, userAgent: String,
                              timeout: TimeInterval = 30) async -> Data? {
         guard isAllowedAutoTarget(url) else { return nil }
-        let config = URLSessionConfiguration.ephemeral
-        config.connectionProxyDictionary = proxyDictionary(proxy)
-        let delegate = GuardedFetchDelegate()
-        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-        defer { session.finishTasksAndInvalidate() }
+        let dictionary = proxyDictionary(proxy)
+        // One session per proxy policy, kept forever — see ``SessionPool``. The
+        // delegate keys its hop counts by task, so sharing it across fetches is
+        // safe. Per-call sessions crashed the Linux daemon on teardown.
+        let session = SessionPool.session(key: "guard-fetch/" + SessionPool.proxyKey(dictionary)) {
+            let config = URLSessionConfiguration.ephemeral
+            config.connectionProxyDictionary = dictionary
+            return URLSession(configuration: config,
+                              delegate: GuardedFetchDelegate(), delegateQueue: nil)
+        }
         var req = URLRequest(url: url, timeoutInterval: timeout)
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, resp) = try? await session.data(for: req) else { return nil }

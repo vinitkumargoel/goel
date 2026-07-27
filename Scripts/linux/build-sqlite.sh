@@ -54,6 +54,11 @@ if [ ! -f sqlite3.c ]; then
     rm -f amalg.zip
 fi
 
+# Checked explicitly: without it the failure is a bare "cc: command not found"
+# several lines up, and the caller sees an unrelated link error much later.
+command -v cc >/dev/null 2>&1 \
+    || { echo "error: no C compiler on PATH. Fix: sudo apt install gcc" >&2; exit 1; }
+
 echo "compiling snapshot-enabled libsqlite3.so"
 cc -O2 -fPIC -shared \
     -DSQLITE_ENABLE_SNAPSHOT \

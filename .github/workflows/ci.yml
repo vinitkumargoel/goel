@@ -81,6 +81,164 @@ jobs:
           Scripts/build_app.sh
           Scripts/check_min_os.sh "dist/Goel°.app"
 
+  # The Linux half of the product had no gate at all, which is how a daemon
+  # tarball that could not start on Ubuntu 26.04 went unnoticed: the SONAMEs of
+  # libtorrent and Boost encode upstream versions that change between releases,
+  # so building on one Ubuntu and installing on another is the case that matters
+  # and the case a developer's own machine never exercises.
+  #
+  # noble (24.04) is the BUILD host on purpose — glibc is forward- but not
+  # backward-compatible, so the oldest supported release is the only safe one to
+  # build on. The install is then verified on a NEWER one.
+  linux:
+    name: Linux daemon and CLI
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.1"
+
+      # Deliberately NOT `clang`: the Swift toolchain ships its own, and apt's
+      # replaces /usr/bin/clang with an alternatives symlink to Ubuntu's LLVM,
+      # which does not accept -index-store-path — every C target then fails to
+      # compile. build-sqlite.sh uses `cc` (gcc), so nothing here needs apt clang.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libtorrent-rasterbar-dev libssh2-1-dev libcurl4-openssl-dev \
+            libssl-dev libboost-dev libboost-system-dev libsqlite3-dev \
+            pkg-config unzip
+
+      - name: Shell scripts parse and lint
+        run: |
+          sudo apt-get install -y -qq shellcheck
+          # dash, not bash: install.sh is `#!/bin/sh` and Ubuntu's /bin/sh IS dash,
+          # so a bashism that bash accepts would only fail on a user's machine.
+          dash -n website/install.sh
+          shellcheck website/install.sh Scripts/linux/package_daemon.sh
+
+      # GRDB needs SQLITE_ENABLE_SNAPSHOT, which Ubuntu's libsqlite3 declares
+      # without defining.
+      - name: Build snapshot-enabled SQLite
+        run: |
+          Scripts/linux/build-sqlite.sh
+          echo "GOEL_SQLITE_DIR=$PWD/Vendor/linux/sqlite" >> "$GITHUB_ENV"
+
+      - name: Build and test
+        run: |
+          swift build
+          swift test
+
+      - name: Package the release tarball
+        run: |
+          # Tags name themselves; every other commit is an explicit off-tag build.
+          if git describe --tags --exact-match >/dev/null 2>&1; then
+            Scripts/linux/package_daemon.sh
+          else
+            GOEL_VERSION="0.0.0-ci" Scripts/linux/package_daemon.sh
+          fi
+
+      # install.sh refuses a release whose checksum it cannot fetch, so a tarball
+      # published without one breaks the one-liner outright. Assert both here
+      # rather than discovering it from a bug report.
+      - name: The tarball and its checksum are both present and correct
+        run: |
+          cd dist
+          tarball=$(ls goel-daemon-*-linux-*.tar.gz)
+          [ -f "$tarball.sha256" ] || { echo "::error::no $tarball.sha256"; exit 1; }
+          sha256sum -c "$tarball.sha256"
+          for member in bin/GoelDaemon bin/goel systemd/goel.service run.sh VERSION \
+                        LICENSE THIRD-PARTY-NOTICES.md; do
+            tar tzf "$tarball" | grep -q "/$member\$" \
+              || { echo "::error::tarball is missing $member"; exit 1; }
+          done
+          tar tzf "$tarball" | grep -q 'lib/libtorrent-rasterbar\.so' \
+            || { echo "::error::libtorrent was not vendored — the tarball is not portable"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tarball
+          path: dist/goel-daemon-*-linux-*.tar.gz*
+          if-no-files-found: error
+
+  # The install is exercised on a DIFFERENT release than the build, because that
+  # is the failure this whole arrangement exists to catch. A container has no
+  # systemd, so the installer's own refusal is verified there and the service
+  # itself is started by the systemd-capable job below.
+  linux-install:
+    name: Install on a newer Ubuntu
+    needs: linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-tarball
+          path: dist
+
+      - name: Install, exercise the CLI, uninstall
+        run: |
+          set -eux
+          tarball="$PWD/$(ls dist/goel-daemon-*-linux-x86_64.tar.gz)"
+          sudo GOEL_TARBALL="$tarball" GOEL_PORT=8099 sh website/install.sh
+
+          sudo goel version
+          sudo goel status
+          sudo goel config
+          # Every doctor check must pass. It tests the things that are silent
+          # otherwise: the library closure, the writable paths as the goel user,
+          # the port, and whether the portal actually answers.
+          sudo goel doctor
+          # A real, tiny, stable target: this exercises the HTTP engine and a write
+          # into the save directory without making CI depend on a large download.
+          # A loopback URL would be refused by design, so it cannot be served locally.
+          # NOTE: the path must be "/" — www.example.com/index.html returns 404, and
+          # `goel add` would still exit 0 because queueing succeeded.
+          sudo goel add https://www.example.com/
+          # Queueing is asynchronous, so poll rather than sleeping a guessed interval.
+          # `if`, not `&&` — under `set -e` a non-matching grep at the end of an
+          # AND-list fails the step on the path where everything went right.
+          for _ in $(seq 1 30); do
+            if sudo goel list --all | grep -q Completed; then break; fi
+            sleep 2
+          done
+          sudo goel list --all
+          if ! sudo goel list --all | grep -q Completed; then
+            echo "::error::the download never completed"; exit 1
+          fi
+          if sudo goel list --all | grep -q Failed; then
+            echo "::error::a download failed"; exit 1
+          fi
+          # The bytes have to be on disk, not merely marked done in the database.
+          if ! sudo test -s /var/lib/goel/downloads/www.example.com; then
+            echo "::error::nothing was written into the save directory"; exit 1
+          fi
+
+          # A config change has to survive the restart it triggers.
+          sudo goel config set save-dir /srv/goel-test
+          sudo goel doctor
+          grep -q 'srv/goel-test' /etc/systemd/system/goel.service.d/10-paths.conf
+
+          # A system directory must be refused rather than chowned to the daemon.
+          if sudo goel config set save-dir /etc; then
+            echo "::error::goel accepted /etc as a download folder"; exit 1
+          fi
+
+          sudo goel uninstall --purge --yes
+          # Nothing may be left behind.
+          for path in /opt/goel /etc/goel /var/lib/goel /usr/local/bin/goel \
+                      /etc/systemd/system/goel.service; do
+            [ ! -e "$path" ] || { echo "::error::$path survived --purge"; exit 1; }
+          done
+          ! id goel
+
   # Signing, notarization and artifact upload are NOT automated: they need a
   # Developer ID certificate and a notarytool credential, neither of which
   # belongs on a hosted runner that any fork can trigger. Releases are cut by

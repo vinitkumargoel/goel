@@ -50,6 +50,9 @@ typedef struct GCBHTTPResult {
 
 // Perform one HTTP(S) GET with Range: bytes=start-end (inclusive).
 //
+// `range_start < 0` ⇒ send no Range header at all and stream the whole body:
+// the interface-bound path for servers that do not support ranges.
+//
 // `ifname` — interface name for egress scoping. NULL/empty ⇒ no bind.
 // Apple: IP_BOUND_IF / IPV6_BOUND_IF (fails closed if neither setsockopt works).
 // Linux: SO_BINDTODEVICE.

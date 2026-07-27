@@ -33,9 +33,28 @@ final class FakeRemoteBackend: RemoteBackend, @unchecked Sendable {
     func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {
         filePriorities.append((id, fileID, priority))
     }
+    private(set) var addedNetworks: [NetworkSelection?] = []
+    private(set) var aggregationUpdates: [(Bool?, [String]?, Int?)] = []
+    var network = RemoteNetworkState()
+
     func remoteAdd(source: DownloadSource) async { added.append(source) }
     func remoteAdd(source: DownloadSource, saveDirectory: String?,
-                   priority: FilePriority, startPaused: Bool) async { added.append(source) }
+                   priority: FilePriority, startPaused: Bool) async {
+        added.append(source)
+        addedNetworks.append(nil)
+    }
+    func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
+                   startPaused: Bool, network selection: NetworkSelection?) async {
+        added.append(source)
+        addedNetworks.append(selection)
+    }
+    func networkState() async -> RemoteNetworkState { network }
+    func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async {
+        aggregationUpdates.append((enabled, adapterIds, streams))
+        if let enabled { network.aggregation = enabled }
+        if let adapterIds { network.selected = adapterIds }
+        if let streams { network.streamsPerAdapter = streams }
+    }
     func history(limit: Int) async -> [HistoryEntry] { historyEntries }
     func removeHistoryEntry(_ id: UUID) async { historyEntries.removeAll { $0.id == id } }
     func clearHistory() async { clearedHistory = true }
@@ -122,6 +141,102 @@ final class RemoteRouterTests: XCTestCase {
             "POST /api/add?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{\"url\":\"https://e/x.bin\"}")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
         XCTAssertEqual(backend.added.first?.locator, "https://e/x.bin")
+    }
+
+    // MARK: Network
+
+    private func post(_ path: String, _ body: String) -> RemoteRequest {
+        request("POST \(path)?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n\r\n\(body)")
+    }
+
+    func testAddCarriesTheNetworkSelection() async {
+        let backend = FakeRemoteBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let out = str(await router.handle(post(
+            "/api/add", "{\"url\":\"https://e/x.bin\",\"network\":\"single:eth0\"}")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
+        XCTAssertEqual(backend.addedNetworks, [.single("eth0")])
+    }
+
+    func testAddWithoutANetworkFieldMeansAuto() async {
+        let backend = FakeRemoteBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        _ = await router.handle(post("/api/add", "{\"url\":\"https://e/x.bin\"}"))
+        XCTAssertEqual(backend.addedNetworks, [nil])
+    }
+
+    /// A typo must not silently become "use every interface".
+    func testAddWithAMalformedNetworkSpecIsRefused() async {
+        let backend = FakeRemoteBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let out = str(await router.handle(post(
+            "/api/add", "{\"url\":\"https://e/x.bin\",\"network\":\"single:\"}")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 400"))
+        XCTAssertTrue(backend.added.isEmpty, "nothing may be queued when the spec is bad")
+    }
+
+    func testNetworkStateIsServed() async {
+        let backend = FakeRemoteBackend()
+        backend.network = RemoteNetworkState(
+            aggregation: true, streamsPerAdapter: 3, selected: ["eth0"],
+            reason: nil, locked: true,
+            adapters: [.init(name: "eth0", label: "eth0", type: "wired",
+                             ipv4: "10.0.0.2", expensive: false, eligible: true)])
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let out = str(await router.handle(request("GET /api/network?token=secret HTTP/1.1\r\n\r\n")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
+        XCTAssertTrue(out.contains("\"streamsPerAdapter\":3"))
+        XCTAssertTrue(out.contains("\"locked\":true"))
+        XCTAssertTrue(out.contains("\"eth0\""))
+    }
+
+    func testAggregationUpdateAppliesAndEchoesTheResult() async {
+        let backend = FakeRemoteBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let out = str(await router.handle(post(
+            "/api/network", "{\"aggregation\":true,\"adapters\":[\"eth0\"],\"streams\":4}")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
+        XCTAssertEqual(backend.aggregationUpdates.count, 1)
+        XCTAssertEqual(backend.aggregationUpdates.first?.0, true)
+        XCTAssertEqual(backend.aggregationUpdates.first?.1, ["eth0"])
+        XCTAssertEqual(backend.aggregationUpdates.first?.2, 4)
+        XCTAssertTrue(out.contains("\"aggregation\":true"))
+    }
+
+    /// `GET` answers with `streamsPerAdapter`; posting that object back has to
+    /// work. It used to decode only `streams`, so the field — and its range
+    /// check — disappeared without a word.
+    func testAggregationUpdateAcceptsTheResponseSpellingOfStreams() async {
+        let backend = FakeRemoteBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let out = str(await router.handle(post("/api/network", "{\"streamsPerAdapter\":5}")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
+        XCTAssertEqual(backend.aggregationUpdates.first?.2, 5)
+
+        let bad = str(await router.handle(post("/api/network", "{\"streamsPerAdapter\":99}")))
+        XCTAssertTrue(bad.hasPrefix("HTTP/1.1 400"))
+        XCTAssertEqual(backend.aggregationUpdates.count, 1, "the bad one must not apply")
+    }
+
+    func testAggregationUpdateRejectsBadInputWithoutApplyingAnything() async {
+        for body in ["{\"adapters\":[\"eth0 bad\"]}", "{\"streams\":0}", "{\"streams\":99}"] {
+            let backend = FakeRemoteBackend()
+            let router = RemoteRouter(backend: backend, token: "secret")
+            let out = str(await router.handle(post("/api/network", body)))
+            XCTAssertTrue(out.hasPrefix("HTTP/1.1 400"), "\(body) should be refused")
+            XCTAssertTrue(backend.aggregationUpdates.isEmpty)
+        }
+    }
+
+    /// Every mutation is a POST, and read-only blocks POSTs — assert it covers
+    /// this one too rather than trusting the blanket rule stays blanket.
+    func testReadOnlyBlocksTheAggregationWrite() async {
+        let backend = FakeRemoteBackend()
+        let router = RemoteRouter(backend: backend, config: .init(
+            token: "secret", readOnly: true))
+        let out = str(await router.handle(post("/api/network", "{\"aggregation\":true}")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 403"))
+        XCTAssertTrue(backend.aggregationUpdates.isEmpty)
     }
 
     func testUnknownRouteIs404() async {

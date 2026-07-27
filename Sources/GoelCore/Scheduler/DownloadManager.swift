@@ -492,7 +492,9 @@ public actor DownloadManager {
         // rationale on ``DownloadTask/cookieHeader``.
         cookieHeader: String? = nil,
         cookieSource: CookieSource? = nil,
-        cookieHost: String? = nil
+        cookieHost: String? = nil,
+        /// Which interface(s) this download egresses. nil = the server-wide policy.
+        network: NetworkSelection? = nil
     ) -> DownloadTask {
         if let existingID = dedupIndex[source.dedupKey],
            let i = index(of: existingID) {
@@ -543,7 +545,10 @@ public actor DownloadManager {
             // falls back to the task's own origin, which is what a capture for
             // this exact URL means.
             cookieHost: cleanedCookie == nil ? nil : cookieHost,
-            initialSkipFileIDs: (deselectedFileIDs?.isEmpty ?? true) ? nil : deselectedFileIDs
+            initialSkipFileIDs: (deselectedFileIDs?.isEmpty ?? true) ? nil : deselectedFileIDs,
+            // `.auto` is the default in every other spelling; store nil so old and
+            // new tasks compare and serialise identically.
+            networkSelection: network == .auto ? nil : network
         )
         appendTask(task)
         persist(task)

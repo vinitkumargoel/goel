@@ -28,6 +28,30 @@ discharges the obligation.
 System libraries linked from macOS (libcurl, libsqlite3, the Swift runtime, and
 Apple frameworks) are provided by the operating system and are not redistributed here.
 
+### The Linux daemon tarball
+
+`goel-daemon-<version>-linux-<arch>.tar.gz` redistributes a **different** set, because Linux
+supplies neither the Swift runtime nor a libtorrent whose SONAME is stable across releases.
+This file travels inside that tarball, and the components in it are:
+
+| Component | License | Where it lives in the tarball |
+|---|---|---|
+| [Swift runtime](https://swift.org/) | Apache-2.0 with Runtime Library Exception | `lib/libswift*.so`, `lib/libFoundation*.so`, `lib/libdispatch.so`, `lib/libBlocksRuntime.so` — notices in `SWIFT-RUNTIME-LICENSE.txt` / `SWIFT-RUNTIME-NOTICE.txt` |
+| [libtorrent-rasterbar](https://www.libtorrent.org/) | BSD-3-Clause | `lib/libtorrent-rasterbar.so.2.x` |
+| [Boost](https://www.boost.org/) | BSL-1.0 | `lib/libboost_*.so`, when not linked statically inside libtorrent |
+| [SQLite](https://sqlite.org/) | Public domain | `lib/libsqlite3.so`, built from the amalgamation with `SQLITE_ENABLE_SNAPSHOT` |
+| [libxml2](https://gitlab.gnome.org/GNOME/libxml2) | MIT | `lib/libxml2.so.2` — required by Foundation's XML support |
+| [ICU](https://icu.unicode.org/) | Unicode-3.0 | `lib/libicuuc.so.NN`, `lib/libicudata.so.NN` — required by libxml2 |
+
+libxml2 and ICU are bundled for the same reason libtorrent is: their SONAMEs encode an
+upstream version that moves between distribution releases (libxml2 is `.so.2` on Ubuntu
+24.04 and `.so.16` on 26.04), so a tarball that left them to the distribution could not
+start on a release other than the one it was built on.
+
+OpenSSL, libcurl, libssh2 and ffmpeg are **not** redistributed in the tarball — those come
+from the operator's own distribution, which is also what keeps them patched. The
+frozen-at-build-time caveat below therefore applies to the table above, not to those.
+
 **Determining exact versions for a given build.** GRDB and Sparkle are pinned in
 `Package.resolved` and the versions above are exact. The C libraries are sourced from
 Homebrew at build time, so their precise version is a property of the build machine rather

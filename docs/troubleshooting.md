@@ -115,6 +115,64 @@ truncated or silent file with an extra click in front of it.
 
 ---
 
+## The browser extension
+
+Full install instructions and a per-browser capability matrix are in
+[browser-extension.md](browser-extension.md); this covers what goes wrong.
+
+### "Download with Goel°" appears to do nothing
+
+Hover the extension's toolbar button — it reports the outcome of the last hand-off on its
+badge and tooltip. A red `!` and *"can't reach the app"* means the native-messaging helper is
+missing or points at an old app location. Fix it in two steps:
+
+1. Goel° ▸ Settings ▸ Browser Integration ▸ **Install Helper**.
+2. **Fully quit and reopen the browser** — host manifests are read at startup.
+
+The helper only configures browsers whose support directory already exists, so if it reports
+*"No supported browsers found"*, launch the browser once and click it again. Moving or
+reinstalling `Goel°.app` also invalidates it, because the wrapper script embeds the app's
+path — re-run **Install Helper** after either.
+
+### The extension says the app refused the link
+
+Captures are restricted to `http:`, `https:` and `magnet:`, and the target may not be a
+loopback or link-local address. That is deliberate: without it, a web page could use the
+extension to make Goel° fetch a service on your machine that was never exposed to the
+browser. Such a URL can still be added by hand in the Add sheet, where you are the one
+choosing it.
+
+### Capture mode is ON but downloads still go to the browser
+
+In **Safari this never works** — Safari has no `downloads` API, so only the right-click menu
+is available there (the toolbar button says so when clicked). Elsewhere, only `http(s)`
+downloads *started after* you enabled it are captured; one already in flight is left alone.
+
+### A download behind a login comes back as a login page
+
+- An amber `!` after the send means the cookies were dropped. In **Safari that is by design**:
+  its sandbox's only route to the app is a URL, which LaunchServices logs, and a session
+  cookie must not be written anywhere that gets logged. Use Chrome or Firefox.
+- Otherwise the optional cookie permission is probably not granted for that site. Use
+  right-click → **Download with Goel° (stay signed in)** and accept the prompt.
+- If Goel° stayed closed for more than an hour after the capture, the cookie was dropped from
+  the spool on purpose and the URL queued without it. Retry with the app open.
+
+### The extension disappeared after restarting Firefox
+
+Expected — Firefox discards temporary add-ons on quit, and no signed `.xpi` is published.
+Reload it from `about:debugging#/runtime/this-firefox`, or use a Chromium-family browser,
+where it persists.
+
+### Goel° Capture is not in Safari's extension list
+
+The app must be in `/Applications`, and Safari must have been quit and reopened since it was
+installed — Safari does not scan other locations for app extensions. A self-built (ad-hoc
+signed) copy additionally needs Safari ▸ Develop ▸ **Allow Unsigned Extensions**, which
+resets every time Safari restarts.
+
+---
+
 ## SFTP and SSH
 
 ### SSH key authentication is refused
@@ -130,6 +188,76 @@ Choose **Always Allow** on the prompt. If you previously chose **Deny**, the app
 refused access permanently; open **Keychain Access**, find the Goel° item, and reset its
 access control. A refusal is reported as a plain "the Keychain refused access" message
 rather than being silently swallowed.
+
+---
+
+## Linux (the daemon and the `goel` command)
+
+**`sudo goel doctor` first.** It checks the shared-library closure, the config file's permissions,
+the service state and its boot enablement, whether the daemon can write to its download folder
+*as the `goel` user*, whether the port is free, and whether the portal answers — which is most of
+this section, run for you. Then `sudo goel logs -n 100`.
+
+### Every download fails the instant it starts
+
+Writable paths. The unit runs with `ProtectSystem=strict`, so the whole filesystem is read-only to
+the daemon except the paths in `/etc/systemd/system/goel.service.d/10-paths.conf`. If that file is
+missing or stale, the service still starts perfectly and every write is denied:
+
+```sh
+sudo goel config sync      # rewrite it from /etc/goel/config
+```
+
+`goel doctor` reports both a missing drop-in and one that no longer covers your configured paths.
+Always change a path with `sudo goel config set save-dir …` rather than by editing the config file
+— it creates the directory, gives the `goel` user ownership and updates the drop-in in one step.
+
+### `goel: this needs root`
+
+Add `sudo`. `/etc/goel/config` and the API token are root-only, deliberately, so even read-only
+commands like `goel status` need it.
+
+### `/etc/goel/config is missing — Goel° does not look installed`
+
+That one means what it says. An *unreadable* config file reports as needing root instead, so this
+is not a disguised permissions problem.
+
+### `error while loading shared libraries` / `goel doctor` says libraries are unresolved
+
+The tarball bundles the Swift runtime, libtorrent and Boost, but leaves OpenSSL, libcurl and
+libssh2 to your distribution so they keep receiving security updates. Find the package:
+
+```sh
+sudo apt install apt-file && sudo apt-file update
+apt-file search libssh2.so.1
+```
+
+then install it and re-run the installer. If one of the *bundled* libraries is the missing one, the
+release is incomplete — reinstall rather than hunt for a package.
+
+### The service won't start
+
+`sudo goel logs` has the daemon's own reason. Usually either the port is taken (`goel doctor` names
+the process holding it) or the database path is wrong — note that `db` is a *file*, and a directory
+sitting where the file should be leaves SQLite unable to open it.
+
+### It runs now but is gone after a reboot
+
+It was started but not enabled: `sudo goel enable`. `goel doctor` checks this separately from
+whether it is currently active.
+
+### The portal is unreachable but the service is active
+
+`lan` defaults to `false`, which means loopback only. From another machine you need
+`sudo goel config set lan true` — and TLS in front of it, because the portal speaks plain HTTP and
+the password and token cross the network unencrypted.
+
+### `goel uninstall` said "Mostly removed"
+
+It names which steps did not complete. The usual one is the `goel` user still being in use: check
+`pgrep -u goel`, then re-run the uninstall.
+
+Everything else Linux-specific is in [linux.md](linux.md).
 
 ---
 

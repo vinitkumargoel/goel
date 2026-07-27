@@ -169,6 +169,8 @@ struct gcb_http_ctx {
     int64_t expected_total;
     int range_total_mismatch;
     int reject_body;
+    /* 1 when no Range header was sent, so 200 (not 206) is the success status. */
+    int unranged;
     char location[2048];
 };
 
@@ -225,8 +227,11 @@ static size_t gcb_http_write_thunk(char *ptr, size_t size, size_t nmemb, void *u
         return 0; /* abort — do not write mismatched body into the segment slot */
     }
 
-    /* Drain non-206 bodies without writing (redirects, errors). */
-    if (ctx->http_status != 0 && ctx->http_status != 206) {
+    /* Drain bodies that are not the success response (redirects, errors). A 200
+       to a *ranged* request means the server ignored Range and would pour the
+       whole file into one segment's slot, so only the unranged mode accepts it. */
+    int ok_status = ctx->unranged ? 200 : 206;
+    if (ctx->http_status != 0 && ctx->http_status != ok_status) {
         return n;
     }
 
@@ -395,7 +400,9 @@ GCBHTTPResult gcb_http_range(const char *url,
                              void *userdata) {
     GCBHTTPResult result = { -1, 0, -1, 0, 0 };
     if (!url || !write_cb || !progress_cb) return result;
-    if (range_start < 0 || range_end < range_start) {
+    /* A negative start means "whole body, no Range header": the interface-bound
+       single-stream path, used when the server does not support ranges. */
+    if (range_start >= 0 && range_end < range_start) {
         result.code = (int)CURLE_BAD_FUNCTION_ARGUMENT;
         return result;
     }
@@ -407,7 +414,10 @@ GCBHTTPResult gcb_http_range(const char *url,
     int origin_https = gcb_is_https(url);
 
     char range_value[128];
-    snprintf(range_value, sizeof(range_value), "bytes=%lld-%lld", range_start, range_end);
+    range_value[0] = '\0';
+    if (range_start >= 0) {
+        snprintf(range_value, sizeof(range_value), "bytes=%lld-%lld", range_start, range_end);
+    }
 
     struct gcb_sockopt_ctx sockctx;
     memset(&sockctx, 0, sizeof(sockctx));
@@ -432,6 +442,7 @@ GCBHTTPResult gcb_http_range(const char *url,
         ctx.userdata = userdata;
         ctx.content_range_total = -1;
         ctx.expected_total = expected_total;
+        ctx.unranged = (range_start < 0);
 
         char hop_host[256];
         int hop_ok = gcb_extract_host(current, hop_host, sizeof(hop_host));

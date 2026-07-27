@@ -1,3 +1,6 @@
+// AVFoundation and CommonCrypto are both macOS-only; the HLS engine itself is
+// portable, but this file's fixtures and AES helper are not.
+#if !os(Linux)
 import XCTest
 import AVFoundation
 import CommonCrypto
@@ -294,3 +297,5 @@ final class HLSTests: XCTestCase {
         return out
     }
 }
+
+#endif

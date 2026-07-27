@@ -73,7 +73,7 @@ enum LoopbackPort {
     /// be told a port that nothing else currently holds, which is exactly the
     /// answer those options suppress.
     private static func askKernelForAFreePort() -> UInt16? {
-        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+        let descriptor = socket(AF_INET, PlatformSocket.stream, 0)
         guard descriptor >= 0 else { return nil }
         defer { close(descriptor) }
 

@@ -112,12 +112,14 @@ extension DownloadManager {
 
     static func fetchValidators(url: URL, userAgent: String,
                                 proxy: [String: Any]?) async -> RemoteValidators? {
-        let config = URLSessionConfiguration.ephemeral
-        // nil ⇒ follow the OS proxy (system); [:] ⇒ explicit direct; populated ⇒
-        // route through the configured manual/SOCKS proxy.
-        config.connectionProxyDictionary = proxy
-        let session = URLSession(configuration: config)
-        defer { session.finishTasksAndInvalidate() }
+        // One session per proxy policy, kept forever — see ``SessionPool``.
+        let session = SessionPool.session(key: "validators/" + SessionPool.proxyKey(proxy)) {
+            let config = URLSessionConfiguration.ephemeral
+            // nil ⇒ follow the OS proxy (system); [:] ⇒ explicit direct; populated ⇒
+            // route through the configured manual/SOCKS proxy.
+            config.connectionProxyDictionary = proxy
+            return URLSession(configuration: config)
+        }
         var req = URLRequest(url: url, timeoutInterval: 15)
         req.httpMethod = "HEAD"
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")

@@ -1,3 +1,6 @@
+// Exercises the DMG/notarization gates, which need vtool, codesign, hdiutil and
+// spctl — macOS-only tooling with no Linux equivalent.
+#if !os(Linux)
 import XCTest
 
 /// Regression tests for the two ways a *release artifact* could be produced
@@ -367,3 +370,5 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
         return (process.terminationStatus, String(decoding: data, as: UTF8.self))
     }
 }
+
+#endif

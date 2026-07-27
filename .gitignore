@@ -2,7 +2,11 @@
 .DS_Store
 .AppleDouble
 .LSOverride
-Icon?
+# Finder's custom-folder-icon file, which is literally "Icon" + a carriage
+# return. Matched via a control-character class rather than the more common
+# `Icon?`: `?` matches any single character, so `Icon?` also swallowed the
+# browser extension's `icons/` directory and quietly kept it out of the repo.
+Icon[[:cntrl:]]
 ._*
 .Spotlight-V100
 .Trashes

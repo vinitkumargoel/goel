@@ -111,7 +111,15 @@ final class SegmentedTransfer: Sendable {
         // `segmented` is only ever set alongside a present, non-negative
         // `totalBytes`; binding it here states that in the type system instead of
         // force-unwrapping a value parsed out of a server header.
-        guard segmented, let total = plan.totalBytes else { return try await runSingle() }
+        guard segmented, let total = plan.totalBytes else {
+            // Pinned to an interface but unable to split: URLSession cannot bind, so
+            // the whole body goes through the curl path instead of silently
+            // ignoring the pin and egressing the default route.
+            if let adapter = plan.boundAdapters.first {
+                return try await runSingleBound(adapter)
+            }
+            return try await runSingle()
+        }
         return try await runSegmented(total: total)
     }
 
@@ -152,9 +160,10 @@ final class SegmentedTransfer: Sendable {
         // Segments spread across the primary + mirrors round-robin; a mirror
         // that misbehaves is demoted and its segment retries elsewhere.
         let pool = MirrorPool(primary: plan.url, mirrors: plan.mirrors)
-        // Multi-path: pin segments to selected adapters via CurlBridge bind-if.
-        let adapterPool: AdapterPool? = plan.boundAdapters.count >= 2
-            ? AdapterPool(plan.boundAdapters) : nil
+        // Pin segments to bound adapters via CurlBridge bind-if. One adapter is a
+        // valid plan — a task pinned to a single NIC still has to egress it.
+        let adapterPool: AdapterPool? = plan.boundAdapters.isEmpty
+            ? nil : AdapterPool(plan.boundAdapters)
         if let adapterPool {
             // Seed ledger adapter labels for Connections UI before first tick.
             for i in ranges.indices {
@@ -416,8 +425,8 @@ final class SegmentedTransfer: Sendable {
                         if isMirror { await pool.demote(url) }
                         await governor.release()
                         if attempt >= settings.maxAttempts {
-                            let msg = String(cString: gcb_error_message(Int32(response.curlCode)))
-                            throw DownloadError.network(msg)
+                            throw DownloadError.network(
+                                Self.transportError(response.curlCode, via: adapter))
                         }
                         try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
                         continue
@@ -515,6 +524,100 @@ final class SegmentedTransfer: Sendable {
         // stream can end cleanly while short, and reporting that as `.completed`
         // would be silent truncation. A genuinely size-unknown stream (totalBytes
         // == nil) has nothing to check against.
+        if let total = plan.totalBytes, bytesWritten != total {
+            throw DownloadError.network("Incomplete download: wrote \(bytesWritten) of \(total) bytes")
+        }
+        return TransferOutcome(bytesWritten: bytesWritten, resumeData: nil, usedSegments: 1)
+    }
+
+    /// Single-connection download pinned to one interface.
+    ///
+    /// Used when the task names an interface but the transfer cannot be segmented
+    /// (no size, or no range support). Unlike ``runSingle`` this goes through
+    /// CurlBridge, because `URLSession` has no equivalent of `SO_BINDTODEVICE`.
+    /// The body cannot resume, so — like ``runSingle`` — only the connect/status
+    /// phase retries; once bytes are on disk a failure is terminal.
+    private func runSingleBound(_ adapter: BoundAdapter) async throws -> TransferOutcome {
+        try Data().write(to: plan.destination)
+
+        let ledger = Ledger(continuation: continuation, meta: nil,
+                            initialSegmentBytes: [0: 0], connectionCount: 1,
+                            expectedTotal: plan.totalBytes)
+        await ledger.setAdapter(segment: 0, id: adapter.bsdName, label: adapter.label)
+
+        let limiter = Self.makeLimiter(plan)
+        let settings = plan.settings
+        let handle = try FileHandle(forWritingTo: plan.destination)
+        let tally = ByteTally()
+        var attempt = 0
+
+        while true {
+            try Task.checkCancellation()
+            attempt += 1
+            let request = BoundHTTPClient.Request(
+                url: plan.url,
+                rangeStart: -1,             // no Range header — stream the whole body
+                rangeEnd: -1,
+                interfaceName: adapter.bsdName,
+                userAgent: settings.userAgent,
+                referer: settings.referer,
+                authorization: settings.authorization,
+                extraHeaders: settings.extraHeaders,
+                connectTimeout: plan.connectTimeout,
+                expectedTotal: nil          // no Content-Range to check against
+            )
+
+            // curl's write callback cannot await, so it tallies bytes and this pump
+            // folds them into the ledger — otherwise progress would jump 0 → done.
+            let pump = Task { [tally] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    let n = tally.drain()
+                    if n > 0 { await ledger.advance(segment: 0, by: n) }
+                }
+            }
+            let response = await BoundHTTPClient.downloadRange(
+                request, file: handle, fileOffset: 0, limiter: limiter,
+                onBytes: { [tally] in tally.add($0) })
+            pump.cancel()
+            _ = await pump.value
+            let trailing = tally.drain()
+            if trailing > 0 { await ledger.advance(segment: 0, by: trailing) }
+
+            if response.aborted {
+                try? handle.close()
+                throw CancellationError()
+            }
+            // Anything already written rules out a retry: restarting an unranged
+            // stream would append a second copy of the body.
+            let canRetry = response.bytesWritten == 0 && attempt < settings.maxAttempts
+
+            if response.curlCode != 0 {
+                if canRetry {
+                    try await backoff(attempt: attempt, response: nil,
+                                      retryInterval: settings.retryInterval)
+                    continue
+                }
+                try? handle.close()
+                throw DownloadError.network(
+                    Self.transportError(response.curlCode, via: adapter))
+            }
+
+            let decision = Self.classify(response.httpStatus, ranged: false)
+            if decision == .retry, canRetry {
+                try await backoff(attempt: attempt, response: nil,
+                                  retryInterval: settings.retryInterval)
+                continue
+            }
+            guard decision == .accept else {
+                try? handle.close()
+                throw DownloadError.httpStatus(response.httpStatus)
+            }
+            break
+        }
+
+        try handle.close()
+        let bytesWritten = await ledger.totalBytes()
         if let total = plan.totalBytes, bytesWritten != total {
             throw DownloadError.network("Incomplete download: wrote \(bytesWritten) of \(total) bytes")
         }
@@ -707,13 +810,20 @@ final class SegmentedTransfer: Sendable {
         // `URLSessionTask.delegate`; only a SESSION-level delegate receives
         // `didReceive(response:)` / `didReceive(data:)`. Without this the segmented
         // transfer would attach its `ChunkStreamer` to the task, get no callbacks,
-        // and write zero bytes. Drive each stream through a dedicated session whose
-        // delegate IS the streamer, then invalidate it when the body finishes so it
-        // (and the streamer) are released.
-        let streamSession = URLSession(configuration: session.configuration,
-                                       delegate: streamer, delegateQueue: nil)
+        // and write zero bytes. This used to mean a session per stream, which is
+        // one `URLSession` deallocation per segment — and freeing a corelibs
+        // session can abort the process (see ``SessionPool``). One kept-forever
+        // session carries every stream instead, with a router fanning the
+        // session-level callbacks back out to the streamer that owns each task.
+        let config = session.configuration
+        let streamSession = SessionPool.session(
+            key: "segment-stream/"
+               + SessionPool.proxyKey(config.connectionProxyDictionary as? [String: Any])
+        ) {
+            URLSession(configuration: config, delegate: StreamRouter.shared, delegateQueue: nil)
+        }
         let task = streamSession.dataTask(with: request)
-        streamer.ownedSession = streamSession
+        StreamRouter.shared.attach(streamer, to: task)
         #else
         let task = session.dataTask(with: request)
         task.delegate = streamer
@@ -743,6 +853,15 @@ final class SegmentedTransfer: Sendable {
     /// shared by the segmented and single-stream pumps so the acceptance rule
     /// cannot drift between them.
     enum StatusClass: Equatable { case accept, retry, reject }
+
+    /// Curl says "Could not connect to server" without saying through *what*. An
+    /// interface with an address but a dead upstream is a common multi-NIC state,
+    /// and naming it is the difference between a fixable report and a mystery.
+    static func transportError(_ curlCode: Int, via adapter: BoundAdapter?) -> String {
+        let message = String(cString: gcb_error_message(Int32(curlCode)))
+        guard let adapter else { return message }
+        return "\(message) (via \(adapter.label))"
+    }
 
     /// Classify a response status for the pump about to read its body. A ranged
     /// (segmented) pump accepts ONLY `206` — a `200` full body would make every
@@ -1134,6 +1253,63 @@ struct TransferProgress: Sendable {
 /// Thread-safety: delegate callbacks arrive on the session's serial delegate
 /// queue while the consumer runs on the transfer's task; the shared counters and
 /// continuations are guarded by `lock`, so this is a sound `@unchecked Sendable`.
+#if os(Linux)
+/// Fans one session's delegate callbacks out to the ``ChunkStreamer`` that owns
+/// each task.
+///
+/// swift-corelibs-foundation ignores `URLSessionTask.delegate`, so the delegate
+/// must live on the session — but a session per stream means a `URLSession`
+/// deallocation per segment, and freeing one can abort the process (see
+/// ``SessionPool``). Task identifiers are unique within a session, which is what
+/// makes a single shared session with this router equivalent.
+final class StreamRouter: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    static let shared = StreamRouter()
+
+    private let lock = NSLock()
+    private var streamers: [Int: ChunkStreamer] = [:]
+
+    /// Must run before `task.resume()`, or the first callback finds no streamer.
+    func attach(_ streamer: ChunkStreamer, to task: URLSessionTask) {
+        lock.lock(); streamers[task.taskIdentifier] = streamer; lock.unlock()
+    }
+
+    private func find(_ task: URLSessionTask) -> ChunkStreamer? {
+        lock.lock(); defer { lock.unlock() }
+        return streamers[task.taskIdentifier]
+    }
+
+    private func remove(_ task: URLSessionTask) -> ChunkStreamer? {
+        lock.lock(); defer { lock.unlock() }
+        return streamers.removeValue(forKey: task.taskIdentifier)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                    didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard let streamer = find(dataTask) else { completionHandler(.cancel); return }
+        streamer.urlSession(session, dataTask: dataTask, didReceive: response,
+                            completionHandler: completionHandler)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        find(dataTask)?.urlSession(session, dataTask: dataTask, didReceive: data)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        remove(task)?.urlSession(session, task: task, didCompleteWithError: error)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let streamer = find(task) else { completionHandler(nil); return }
+        streamer.urlSession(session, task: task, willPerformHTTPRedirection: response,
+                            newRequest: request, completionHandler: completionHandler)
+    }
+}
+#endif
+
 final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var responseCont: CheckedContinuation<HTTPURLResponse, Error>?
@@ -1142,12 +1318,6 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
     private var outstanding = 0
     private var suspended = false
     private var done = false
-
-    /// On Linux each stream gets its own `URLSession` (see `openStream`), because
-    /// per-task delegates are ignored there. We own that session and must
-    /// invalidate it on completion so it and this streamer are released; nil on
-    /// macOS, where the shared session is reused.
-    var ownedSession: URLSession?
 
     private let highWater: Int
     private let lowWater: Int
@@ -1236,11 +1406,6 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
             rcont?.resume(throwing: DownloadError.network("No HTTP response"))
             bcont?.finish()
         }
-        // Release the per-stream session on Linux (no-op on macOS where it's nil).
-        // `finishTasksAndInvalidate` lets the just-finished task drain, then breaks
-        // the session→delegate retain cycle.
-        let owned = { lock.lock(); defer { lock.unlock() }; let s = ownedSession; ownedSession = nil; return s }()
-        owned?.finishTasksAndInvalidate()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask,

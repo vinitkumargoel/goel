@@ -316,6 +316,11 @@ actor HTTPEngine: HTTPConfigurable {
         }
         #endif
 
+        // Park the outgoing session rather than letting it be deallocated: freeing a
+        // corelibs `URLSession` can abort the process (see ``SessionPool``). In-flight
+        // probes keep running on it and finish normally.
+        SessionPool.retire(session)
+
         // Rebuild the session with the SAME redirect sanitizer the initializers
         // install — a configuration copy never carries the delegate, so omitting
         // it here would silently drop cross-host `Authorization`/`Cookie`/`Referer`
@@ -487,22 +492,27 @@ actor HTTPEngine: HTTPConfigurable {
             // ranges, open enough segments that each adapter gets real work.
             // (Previously we clamped to resolveSegmentCount's 64 KiB floor first,
             // which often collapsed to 1 segment → only one NIC was used.)
-            let boundAdapters: [BoundAdapter]
-            if canSegment, aggregationConfig.isActive {
-                let adapters = aggregationConfig.adapters
+            // The task's own choice wins over the server-wide default; `.auto` (or
+            // no choice at all) resolves back to whatever the policy decided.
+            let resolution = AggregationPolicy.bindTargets(
+                for: resolved.networkSelection,
+                defaultAdapters: aggregationConfig.isActive ? aggregationConfig.adapters : [],
+                available: aggregationConfig.available)
+            if let note = resolution.note {
+                GoelLog.engineHTTP.notice("Network selection adjusted", .detail(note))
+            }
+            let boundAdapters = resolution.adapters
+            if canSegment, boundAdapters.count >= 2 {
                 let hostRoom = connectionBudget.hostRoom(
                     host: host, maxPerServer: profile.maxConnectionsPerServer)
                 let globalRoom = connectionBudget.globalRoom(
                     maxConnections: profile.maxConnections)
                 segmentCount = AggregationPolicy.multiPathSegmentCount(
                     fileBytes: probe.totalBytes!,
-                    adapters: adapters.count,
+                    adapters: boundAdapters.count,
                     streamsPerAdapter: aggregationConfig.streamsPerAdapter,
                     maxConnectionsPerServer: hostRoom,
                     globalRoom: globalRoom)
-                boundAdapters = adapters
-            } else {
-                boundAdapters = []
             }
 
             // Only the task's OWN limit rides on the plan: the profile ceiling is

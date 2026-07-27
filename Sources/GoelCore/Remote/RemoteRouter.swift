@@ -160,6 +160,15 @@ public struct RemoteRouter: Sendable {
             }
             let priority = Self.priority(payload.priority)
             let paused = payload.paused ?? false
+            // Refuse a malformed spec rather than silently downgrading to `auto`:
+            // "I picked one interface and it used both" is the wrong surprise.
+            var network: NetworkSelection?
+            if let raw = payload.network, !raw.isEmpty {
+                guard let parsed = NetworkSelection(spec: raw) else {
+                    return Self.badRequest()
+                }
+                network = parsed
+            }
             let sources = payload.url
                 .split(whereSeparator: \.isNewline)
                 .compactMap { DownloadSource.parse(String($0).trimmingCharacters(in: .whitespaces)) }
@@ -190,9 +199,30 @@ public struct RemoteRouter: Sendable {
             for source in allowed {
                 await backend.remoteAdd(source: source,
                                         saveDirectory: (folder?.isEmpty == false) ? folder : nil,
-                                        priority: priority, startPaused: paused)
+                                        priority: priority, startPaused: paused,
+                                        network: network)
             }
             return Self.json(CountRow(added: allowed.count, refused: refused))
+
+        // MARK: Network
+        case ("GET", "/api/network"):
+            return Self.json(await backend.networkState())
+
+        case ("POST", "/api/network"):
+            guard let payload = try? JSONDecoder().decode(AggregationPayload.self, from: request.body)
+            else { return Self.badRequest() }
+            if let bad = payload.adapters?.first(where: { !NetworkSelection.isValidInterfaceName($0) }) {
+                return Self.badRequest("‘\(bad)’ is not an interface name.")
+            }
+            if let streams = payload.streams, !(1...8).contains(streams) {
+                return Self.badRequest("Connections per interface must be 1–8.")
+            }
+            await backend.updateAggregation(enabled: payload.aggregation,
+                                            adapterIds: payload.adapters,
+                                            streams: payload.streams)
+            // Echo the resulting state so the UI shows what the server decided —
+            // including a reason the change did not switch aggregation on.
+            return Self.json(await backend.networkState())
 
         // MARK: History mutations
         case ("POST", "/api/history-remove"):
@@ -299,8 +329,8 @@ public struct RemoteRouter: Sendable {
         response(status: "200 OK", type: "application/json", body: Data("{\"ok\":true}".utf8))
     }
 
-    static func badRequest() -> Data {
-        response(status: "400 Bad Request", type: "text/plain", body: Data("Bad request\n".utf8))
+    static func badRequest(_ message: String = "Bad request") -> Data {
+        response(status: "400 Bad Request", type: "text/plain", body: Data("\(message)\n".utf8))
     }
 
     static func notFound() -> Data {
@@ -351,6 +381,29 @@ public struct RemoteRouter: Sendable {
         var folder: String?
         var priority: String?
         var paused: Bool?
+        /// A ``NetworkSelection`` spec ("auto", "single:eth0", "aggregate:a,b").
+        var network: String?
+    }
+
+    private struct AggregationPayload: Decodable {
+        var aggregation: Bool?
+        var adapters: [String]?
+        var streams: Int?
+
+        private enum CodingKeys: String, CodingKey {
+            case aggregation, adapters, streams, streamsPerAdapter
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            aggregation = try c.decodeIfPresent(Bool.self, forKey: .aggregation)
+            adapters = try c.decodeIfPresent([String].self, forKey: .adapters)
+            // `GET` answers with `streamsPerAdapter`, so posting that object back
+            // must work — accepting only `streams` made the field vanish silently,
+            // out-of-range value and all.
+            streams = try c.decodeIfPresent(Int.self, forKey: .streams)
+                ?? c.decodeIfPresent(Int.self, forKey: .streamsPerAdapter)
+        }
     }
     private struct CountRow: Encodable {
         var added: Int
@@ -656,10 +709,72 @@ public protocol RemoteBackend: AnyObject, Sendable {
     /// Defaulted to `true` so in-memory conformers keep compiling; the real
     /// scheduler answers with ``PathSafety/isContained(_:within:)``.
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool
+
+    /// Live interfaces plus the current aggregation policy, for `GET /api/network`.
+    func networkState() async -> RemoteNetworkState
+    /// Apply an aggregation change from the portal. nil = leave that field alone.
+    func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async
+    /// Add with a per-download interface choice.
+    func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
+                   startPaused: Bool, network: NetworkSelection?) async
 }
 
 public extension RemoteBackend {
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { true }
+    func networkState() async -> RemoteNetworkState { RemoteNetworkState() }
+    func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async {}
+    func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
+                   startPaused: Bool, network: NetworkSelection?) async {
+        await remoteAdd(source: source, saveDirectory: saveDirectory,
+                        priority: priority, startPaused: startPaused)
+    }
+}
+
+/// What the portal needs to render the network section: every interface it may
+/// bind to, which ones the current policy uses, and why it is not splitting.
+public struct RemoteNetworkState: Sendable, Codable, Equatable {
+    public struct Adapter: Sendable, Codable, Equatable {
+        public var name: String
+        public var label: String
+        public var type: String
+        public var ipv4: String?
+        public var expensive: Bool
+        /// False when the interface exists but cannot be bound right now (a proxy
+        /// or VPN policy is in force), so the UI can grey it out instead of
+        /// offering a choice that would be silently ignored.
+        public var eligible: Bool
+
+        public init(name: String, label: String, type: String, ipv4: String?,
+                    expensive: Bool, eligible: Bool) {
+            self.name = name
+            self.label = label
+            self.type = type
+            self.ipv4 = ipv4
+            self.expensive = expensive
+            self.eligible = eligible
+        }
+    }
+
+    public var aggregation: Bool
+    public var streamsPerAdapter: Int
+    public var selected: [String]
+    /// Why aggregation is not currently running, nil when it is.
+    public var reason: String?
+    /// True when `/etc/goel/config` pins `GOEL_AGGREGATION`, so a change made here
+    /// lasts only until the next restart. The portal says so rather than lying.
+    public var locked: Bool
+    public var adapters: [Adapter]
+
+    public init(aggregation: Bool = false, streamsPerAdapter: Int = 2,
+                selected: [String] = [], reason: String? = nil, locked: Bool = false,
+                adapters: [Adapter] = []) {
+        self.aggregation = aggregation
+        self.streamsPerAdapter = streamsPerAdapter
+        self.selected = selected
+        self.reason = reason
+        self.locked = locked
+        self.adapters = adapters
+    }
 }
 
 extension DownloadManager: RemoteBackend {
@@ -676,8 +791,46 @@ extension DownloadManager: RemoteBackend {
                 priority: priority, startPaused: startPaused)
     }
 
+    public func remoteAdd(source: DownloadSource, saveDirectory: String?,
+                          priority: FilePriority, startPaused: Bool,
+                          network: NetworkSelection?) async {
+        _ = add(source: source, saveDirectory: remoteSaveDirectory(saveDirectory),
+                priority: priority, startPaused: startPaused, network: network)
+    }
+
     public func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool {
         PathSafety.isContained(folder, within: settings.defaultSaveDirectory)
+    }
+
+    public func networkState() async -> RemoteNetworkState {
+        let all = AdapterDirectory.enumerate()
+        let bindable = Set(Self.bindableAdapters(
+            settings: settings, vpnDefaultRoute: vpnDefaultRouteActive, all: all)
+            .map(\.bsdName))
+        return RemoteNetworkState(
+            aggregation: settings.aggregationEnabled,
+            streamsPerAdapter: settings.aggregationStreamsPerAdapter,
+            selected: settings.aggregationAdapterIds,
+            reason: Self.aggregationSinglePathReason(
+                settings: settings, vpnDefaultRoute: vpnDefaultRouteActive, adapters: all)?.rawValue,
+            // The daemon's own environment is the authority — no plumbing needed, and
+            // it is empty on macOS, where the setting is never env-pinned.
+            locked: ProcessInfo.processInfo.environment["GOEL_AGGREGATION"] != nil,
+            adapters: all.map {
+                RemoteNetworkState.Adapter(
+                    name: $0.bsdName, label: $0.shortLabel, type: $0.type, ipv4: $0.ipv4,
+                    expensive: $0.isExpensive, eligible: bindable.contains($0.bsdName))
+            })
+    }
+
+    public func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async {
+        var updated = settings
+        if let enabled { updated.aggregationEnabled = enabled }
+        if let adapterIds {
+            updated.aggregationAdapterIds = adapterIds.filter(NetworkSelection.isValidInterfaceName)
+        }
+        if let streams { updated.aggregationStreamsPerAdapter = min(8, max(1, streams)) }
+        await updateSettings(updated)
     }
 
     /// Constrain a remote-supplied save directory to the configured downloads

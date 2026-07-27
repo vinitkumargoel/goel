@@ -163,6 +163,10 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// later resume/relaunch re-applying a stale add-time skip.
     public var initialSkipFileIDs: [Int]?
 
+    /// Which network interface(s) this download should egress through, overriding
+    /// the server-wide aggregation policy. nil/`.auto` = follow the policy.
+    public var networkSelection: NetworkSelection?
+
     public init(
         id: UUID = UUID(),
         source: DownloadSource,
@@ -203,7 +207,8 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         cookieSource: CookieSource? = nil,
         cookieHost: String? = nil,
         retryAttempt: Int? = nil,
-        initialSkipFileIDs: [Int]? = nil
+        initialSkipFileIDs: [Int]? = nil,
+        networkSelection: NetworkSelection? = nil
     ) {
         self.id = id
         self.source = source
@@ -245,6 +250,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         self.cookieHost = cookieHost
         self.retryAttempt = retryAttempt
         self.initialSkipFileIDs = initialSkipFileIDs
+        self.networkSelection = networkSelection
     }
 
     // MARK: Codable
@@ -267,7 +273,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         case uploadLimitBytesPerSec, seedRatioLimit
         case label, tags, note, referer, requestHeaders
         case cookieSource, cookieHost           // provenance only — never the value
-        case retryAttempt, initialSkipFileIDs
+        case retryAttempt, initialSkipFileIDs, networkSelection
     }
 
     /// The union of ``tags`` and any legacy ``label``, de-duplicated, order-stable.

@@ -45,7 +45,7 @@ public enum L10n {
     /// The bundle that carries the `.lproj` resource folders (the SwiftPM-generated
     /// resource bundle for this target).
     private static func lprojBundle(_ code: String) -> Bundle? {
-        guard let path = Bundle.module.path(forResource: code, ofType: "lproj") else { return nil }
+        guard let path = ResourceBundles.core?.path(forResource: code, ofType: "lproj") else { return nil }
         return Bundle(path: path)
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import GoelCore
 import UserNotifications
 
 /// Thin wrapper over `UNUserNotificationCenter` for the user-facing notifications
@@ -46,7 +47,7 @@ enum NotificationService {
     /// ownership of (moves) the file it's handed and can't move a read-only
     /// bundle resource. Returns nil (silently, no attachment) if anything fails.
     private static func iconAttachment() -> UNNotificationAttachment? {
-        guard let src = Bundle.module.url(forResource: "AppIcon-Light", withExtension: "png") else { return nil }
+        guard let src = ResourceBundles.app?.url(forResource: "AppIcon-Light", withExtension: "png") else { return nil }
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("goel-notify-\(UUID().uuidString).png")
         do {

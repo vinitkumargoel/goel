@@ -141,6 +141,34 @@ var products: [Product] = [
     .library(name: "GoelCore", targets: ["GoelCore"]),
 ]
 
+// ---- The `goel` admin CLI -------------------------------------------------
+//
+// Deliberately dependency-free: it speaks to the daemon over the portal's own
+// HTTP API and to the init system through `systemctl`, so it needs neither
+// GoelCore nor the libtorrent/libssh2/OpenSSL chain. That keeps it buildable on
+// a box where the daemon's native dependencies are awkward, and keeps `goel
+// doctor` usable when the daemon itself will not start — which is exactly when
+// an operator needs it.
+//
+// It is built on macOS too, even though systemd only exists on Linux. The CLI is
+// a Linux tool, but the only CI that runs today is macOS, and a Linux-gated
+// target would never be compiled at all.
+targets += [
+    .executableTarget(name: "GoelCLI"),
+    // Both of these were macOS-only for no reason: neither touches GoelApp, and
+    // Linux — where the daemon and the `goel` command actually ship — had no test
+    // coverage at all as a result. Files needing Network.framework or the Keychain
+    // guard themselves with `#if !os(Linux)`.
+    .testTarget(name: "GoelCoreTests", dependencies: ["GoelCore"]),
+    // `goel config set` rewrites /etc/goel/config, which systemd reads as the
+    // service's environment — a corrupted line there stops the daemon booting, so
+    // the parser and writer are tested rather than trusted.
+    .testTarget(name: "GoelCLITests", dependencies: ["GoelCLI"]),
+]
+products += [
+    .executable(name: "goel", targets: ["GoelCLI"]),
+]
+
 #if os(Linux)
 targets += [
     // Tiny OpenSSL shim for AES-128-CBC (HLS), reusing the already-linked libcrypto.
@@ -165,7 +193,6 @@ targets += [
             .process("Resources"),
         ]
     ),
-    .testTarget(name: "GoelCoreTests", dependencies: ["GoelCore"]),
     // GoelApp is an executableTarget, but its top-level `main.swift` does not
     // clash with a test host, so `@testable import GoelApp` works. Its pure
     // helpers (version comparison, row presentation, list filtering) were

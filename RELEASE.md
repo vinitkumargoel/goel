@@ -296,6 +296,36 @@ git push origin main
 git push origin v1.1.0
 ```
 
+## 10a. Build the Linux tarballs
+
+The macOS steps above cannot produce these — they need a Linux toolchain. Build one tarball per
+architecture, each on (or in a container matching) the **oldest** distribution you intend to
+support, since glibc is forward- but not backward-compatible.
+
+```bash
+# On Ubuntu 24.04 (or: docker run --rm -v "$PWD:/w" -w /w swift:6.1-noble)
+sudo apt-get install -y libtorrent-rasterbar-dev libssh2-1-dev libcurl4-openssl-dev \
+                        libssl-dev libboost-dev libboost-system-dev libsqlite3-dev \
+                        clang pkg-config curl unzip
+
+Scripts/linux/build-sqlite.sh
+export GOEL_SQLITE_DIR="$PWD/Vendor/linux/sqlite"
+Scripts/linux/package_daemon.sh          # version comes from the exact git tag
+```
+
+That writes `dist/goel-daemon-1.1.0-linux-<arch>.tar.gz` **and its `.sha256`**.
+
+- [ ] Both files exist for every architecture you are publishing.
+- [ ] `tar tzf` shows `bin/GoelDaemon`, `bin/goel`, `systemd/goel.service`, `run.sh`, `VERSION`,
+      `lib/` (including `libtorrent-rasterbar.so.*` and `libsqlite3.so`) and the licence files.
+- [ ] Install it on a **different** distribution release than you built it on, and confirm the
+      service starts:
+      ```bash
+      sudo GOEL_TARBALL="$PWD/dist/goel-daemon-1.1.0-linux-x86_64.tar.gz" sh website/install.sh
+      sudo goel doctor      # every check must pass
+      sudo goel uninstall --purge
+      ```
+
 ## 11. GitHub release
 
 ```bash
@@ -303,8 +333,20 @@ gh release create v1.1.0 \
   --title "Goel° 1.1.0" \
   --notes-file /path/to/notes.md \
   "dist/Goel-Downloader-1.1.0-macos-arm64.dmg" \
-  "dist/Goel-Downloader-1.1.0-macos-arm64.zip"
+  "dist/Goel-Downloader-1.1.0-macos-arm64.zip" \
+  "dist/goel-daemon-1.1.0-linux-x86_64.tar.gz" \
+  "dist/goel-daemon-1.1.0-linux-x86_64.tar.gz.sha256" \
+  "dist/goel-daemon-1.1.0-linux-aarch64.tar.gz" \
+  "dist/goel-daemon-1.1.0-linux-aarch64.tar.gz.sha256"
 ```
+
+- [ ] **The `.sha256` files are attached.** `website/install.sh` refuses to install a release whose
+      checksum it cannot fetch, so publishing the tarball without it breaks the one-line installer
+      for that version entirely — not subtly.
+- [ ] The one-liner works against the published release, from a machine with nothing installed:
+      ```bash
+      curl -fsSL https://goel.vinitk.dev/install.sh | sudo GOEL_VERSION=1.1.0 sh
+      ```
 
 - [ ] Download the DMG from the release page **on a different Mac** (or at least
       in a fresh folder after `xattr -w com.apple.quarantine ...`), open it, and

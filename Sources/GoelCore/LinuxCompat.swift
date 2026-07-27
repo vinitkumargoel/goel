@@ -19,6 +19,23 @@ import Foundation
 @_exported import FoundationXML
 #endif
 
+// Glibc gives these C constants types Darwin does not: net/if.h flags import as
+// `Int` and SOCK_* as the `__socket_type` enum, so expressions that compile on
+// macOS fail here. Normalising to Int32 once keeps the call sites platform-free.
+enum PlatformSocket {
+    #if os(Linux)
+    static let stream = Int32(SOCK_STREAM.rawValue)
+    #else
+    static let stream = SOCK_STREAM
+    #endif
+}
+
+enum InterfaceFlag {
+    static let up = Int32(IFF_UP)
+    static let running = Int32(IFF_RUNNING)
+    static let loopback = Int32(IFF_LOOPBACK)
+}
+
 #if os(Linux)
 
 /// Minimal stand-in for `UniformTypeIdentifiers.UTType`, covering the one use in

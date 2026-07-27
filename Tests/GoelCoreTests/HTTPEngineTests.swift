@@ -481,9 +481,12 @@ final class HTTPEngineTests: XCTestCase {
 
     func testPauseStopsProgress() async throws {
         let payload = deterministicData(512 * 1024)
+        // 64 chunks × 50ms ≈ 3.2s if served serially. `supportsRanges` lets the engine
+        // fetch ranges in parallel, so the wall-clock is that divided by however many
+        // segments the machine opens — the budget has to survive the widest split.
         StubURLProtocol.set(.init(
             data: payload, supportsRanges: true, sendContentLength: true,
-            etag: "\"v3\"", chunkSize: 16 * 1024, chunkDelayMicros: 25_000
+            etag: "\"v3\"", chunkSize: 8 * 1024, chunkDelayMicros: 50_000
         ))
         let engine = makeEngine()
         let task = makeTask(name: "pause.bin")
@@ -499,12 +502,16 @@ final class HTTPEngineTests: XCTestCase {
 
         await engine.add(task)
 
-        // Let some progress accumulate, then pause.
-        try await Task.sleep(nanoseconds: 200_000_000)
+        // Pause as soon as ANY progress is observed, rather than after a fixed sleep.
+        // A fixed sleep raced the transfer: on a fast machine the parallel segments
+        // finished inside it, and the test then failed for having completed.
+        for _ in 0..<400 where box.get() == 0 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
         await engine.pause(task.id)
 
-        // Settle, snapshot, wait again, snapshot.
-        try await Task.sleep(nanoseconds: 200_000_000)
+        // Settle past any chunk already in flight, snapshot, wait again, snapshot.
+        try await Task.sleep(nanoseconds: 400_000_000)
         let afterPause = box.get()
         try await Task.sleep(nanoseconds: 400_000_000)
         let later = box.get()

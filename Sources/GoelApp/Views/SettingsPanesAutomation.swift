@@ -454,8 +454,14 @@ struct BrowserIntegrationPane: View {
         PaneScaffold(title: "Browser Integration",
                      subtitle: "Capture downloads from your browser, or send links here by hand.") {
             SectionHeader("Chrome, Edge, Brave & Firefox")
-            SetRow(name: "1. Load the extension",
-                   desc: "Chrome/Edge/Brave: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox: about:debugging → Load Temporary Add-on.") {
+            SetRow(name: "1. Install the messaging helper",
+                   desc: installResult ?? "Lets the extension talk to this app — nothing works without it. Writes per-browser manifests in your Library; no admin needed. Open a browser at least once first, and click this again if you ever move the app.") {
+                Button("Install Helper") {
+                    installResult = BrowserIntegrationService.installHostManifests()
+                }
+            }
+            SetRow(name: "2. Load the extension",
+                   desc: "Chrome/Edge/Brave/Vivaldi/Arc: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox 128+: about:debugging → Load Temporary Add-on → the folder’s manifest.json (Firefox forgets it on quit).") {
                 Button("Show Folder") {
                     if let folder = BrowserIntegrationService.extensionFolder {
                         NSWorkspace.shared.activateFileViewerSelecting([folder])
@@ -465,29 +471,41 @@ struct BrowserIntegrationPane: View {
                     }
                 }
             }
-            SetRow(name: "2. Install the messaging helper",
-                   desc: installResult ?? "Lets the extension talk to the app. Writes per-browser manifests in your Library — no admin needed.") {
-                Button("Install Helper") {
-                    installResult = BrowserIntegrationService.installHostManifests()
-                }
+            SetRow(name: "3. Restart the browser",
+                   desc: "Browsers read the helper’s manifest only at startup, so quit and reopen the browser fully — otherwise the extension reports that it can’t reach this app.") {
+                EmptyView()
             }
-            SetRow(name: "3. Capture",
-                   desc: "Click the extension's toolbar button to toggle capture of all downloads, or right-click any link → “Download with Goel°”.") {
+            SetRow(name: "4. Capture",
+                   desc: "Click the extension’s toolbar button to toggle capture of all downloads, or right-click any link → “Download with Goel°”. For files behind a login, use “(stay signed in)” and accept the cookie prompt.") {
                 EmptyView()
             }
 
             SectionHeader("Safari")
             SetRow(name: "1. Open Safari’s extensions",
-                   desc: "Safari finds the extension bundled inside this app. If you just installed the app, quit and reopen Safari once so it appears.") {
+                   desc: "Safari finds the extension bundled inside this app — no helper and no loading needed. If you just installed the app, quit and reopen Safari once so it appears.") {
                 Button("Open Safari Extensions") { openSafariExtensionPrefs() }
             }
             SetRow(name: "2. Turn it on",
-                   desc: "Enable “Goel° Capture” in the list. An unsigned (ad-hoc) build also needs Safari → Develop menu → “Allow Unsigned Extensions” each session.") {
+                   desc: "Enable “Goel° Capture” in the list, and allow it on the sites you use. An unsigned (ad-hoc) build also needs Safari → Develop menu → “Allow Unsigned Extensions” each session.") {
                 EmptyView()
             }
             SetRow(name: "3. Capture",
                    desc: "Right-click a link → “Download with Goel°”. Safari-captured links open here with a quick confirmation.") {
                 EmptyView()
+            }
+            SetRow(name: "What Safari can’t do",
+                   desc: "No capture toggle (Safari has no downloads API) and no signed-in downloads: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for either.") {
+                EmptyView()
+            }
+
+            SectionHeader("Help")
+            SetRow(name: "Full instructions",
+                   desc: "Per-browser steps, what each browser supports, and fixes for the common failures.") {
+                Button("Open Guide") {
+                    if let url = URL(string: "https://github.com/vinitkumargoel/goel/blob/main/docs/browser-extension.md") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
             }
 
             SectionHeader("Without the extension")

@@ -38,3 +38,22 @@ actor AdapterPool {
         demoted.insert(adapter.bsdName)
     }
 }
+
+/// Byte tally written by curl's callback (any thread) and drained by the progress
+/// pump. `@unchecked Sendable`: the lock is the invariant.
+final class ByteTally: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending = 0
+
+    func add(_ n: Int) {
+        lock.lock(); pending += n; lock.unlock()
+    }
+
+    func drain() -> Int {
+        lock.lock()
+        let n = pending
+        pending = 0
+        lock.unlock()
+        return n
+    }
+}

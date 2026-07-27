@@ -1,4 +1,5 @@
 import Foundation
+import GoelCore
 
 /// Installs the native-messaging plumbing the browser extension needs:
 /// a wrapper script that relaunches this binary in host mode, plus a host
@@ -117,6 +118,6 @@ enum BrowserIntegrationService {
     /// Where the unpacked extension lives (inside the app bundle's resources),
     /// for the "reveal" button and the load-unpacked instructions.
     static var extensionFolder: URL? {
-        Bundle.module.url(forResource: "BrowserExtension", withExtension: nil)
+        ResourceBundles.app?.url(forResource: "BrowserExtension", withExtension: nil)
     }
 }

@@ -183,7 +183,8 @@ The only route with a JSON request body.
   "url": "https://example.org/a.iso\nmagnet:?xt=urn:btih:…",  // required
   "folder": "/Users/me/Downloads/isos",                        // optional
   "priority": "high",                                          // optional: skip|low|normal|high
-  "paused": false                                              // optional, default false
+  "paused": false,                                             // optional, default false
+  "network": "single:eth0"                                     // optional, default "auto"
 }
 ```
 
@@ -191,6 +192,21 @@ The only route with a JSON request body.
   download source; unparseable lines are skipped silently.
 - If no line parses into a valid source, the response is `400 Bad Request`.
 - `folder` is trimmed; empty means "use the per-source default".
+- `network` chooses the interface(s) this download egresses, overriding the server-wide
+  aggregation policy. One of:
+
+  | Value | Meaning |
+  |---|---|
+  | `auto` (or absent) | Follow the server-wide policy |
+  | `single:<iface>` | Every connection egresses that one interface |
+  | `aggregate` | Split across every eligible interface |
+  | `aggregate:<a>,<b>` | Split across exactly these |
+
+  A **malformed** value is `400 Bad Request` and adds nothing — it is not downgraded to
+  `auto`, because "I named one interface and it used all of them" is the wrong surprise.
+  An interface that is valid but *gone by the time the download starts* is a different
+  case: the download runs on the default route and the reason is logged, rather than
+  failing over a cable someone unplugged. HTTP(S) only; other protocols ignore it.
 
 Response is a pair of counts, not `{"ok":true}`. `refused` is always present:
 
@@ -217,6 +233,54 @@ Response is a pair of counts, not `{"ok":true}`. `refused` is always present:
 #### `POST /api/history-remove?id=<uuid>`
 
 Delete one history entry.
+
+#### `GET /api/network`
+
+Every interface the daemon may bind to, plus the current aggregation policy.
+
+```jsonc
+{
+  "aggregation": true,          // is splitting enabled server-wide
+  "streamsPerAdapter": 2,       // connections opened per interface, 1-8
+  "selected": ["eth0"],         // interfaces splitting may use; [] = every eligible one
+  "reason": null,               // why it is NOT splitting right now, else null
+  "locked": false,              // GOEL_AGGREGATION is set in /etc/goel/config
+  "adapters": [
+    { "name": "eth0", "label": "Ethernet (eth0)", "type": "wired",
+      "ipv4": "192.168.0.4", "expensive": false, "eligible": true }
+  ]
+}
+```
+
+`eligible` is false when the interface exists but cannot be bound right now — a proxy or a
+VPN default route is in force. Binding a socket to a NIC bypasses both, so those are hard
+exclusions, not preferences, and a `network` choice naming an ineligible interface falls
+back to the default route.
+
+`locked` is true when the environment pins `GOEL_AGGREGATION`. The setting can still be
+changed through the API, but the next service restart reverts it — so a client should say
+so rather than implying the change is permanent.
+
+#### `POST /api/network`
+
+Change the server-wide aggregation policy. Every field is optional; an absent field is
+left alone.
+
+```jsonc
+{
+  "aggregation": true,          // on/off
+  "adapters": ["eth0", "wlan0"],// [] = every eligible interface
+  "streams": 2                  // 1-8; `streamsPerAdapter` is accepted too, so the
+                                // object GET returns can be posted straight back
+}
+```
+
+`400 Bad Request` — and nothing is applied — if `adapters` holds something that is not an
+interface name, or `streams` is outside 1–8. The response is the same object `GET
+/api/network` returns, reflecting what the server actually decided (including a `reason`
+explaining why turning it on did not start any splitting).
+
+Running downloads keep the interfaces they started on; the change applies to new ones.
 
 ---
 
@@ -343,6 +407,12 @@ curl -s "${AUTH[@]}" -X POST "$GOEL/api/add" \
 # List them
 curl -s "${AUTH[@]}" "$GOEL/api/tasks" | jq -r '.[] | "\(.id)  \(.statusToken)  \(.name)"'
 
+# Pin a download to one interface (see what this machine has first)
+curl -s "${AUTH[@]}" "$GOEL/api/network" | jq -r '.adapters[] | "\(.name)  \(.ipv4)  eligible=\(.eligible)"'
+curl -s "${AUTH[@]}" -X POST "$GOEL/api/add" \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.org/big.iso","network":"single:eth0"}'
+
 # Start everything
 curl -s "${AUTH[@]}" -X POST "$GOEL/api/resume-all"
 # → {"ok":true}
@@ -359,8 +429,8 @@ curl -s "${AUTH[@]}" -X POST "$GOEL/api/remove?id=$TASK_ID"
 
 ## Notes for integrators
 
-- **`POST /api/add` is the only route with a request body.** Everything else takes query
-  parameters.
+- **`POST /api/add` and `POST /api/network` are the only routes with a request body.**
+  Everything else takes query parameters.
 - **Unknown `prio` values silently become `normal`.** Validate before sending if that
   matters to you.
 - **`data=` on remove defaults to false.** Deletion must be requested explicitly.

@@ -1,0 +1,87 @@
+[Unit]
+# Installed to /etc/systemd/system/goel.service by install.sh.
+#
+# Configuration is NOT in this file. It lives in /etc/goel/config as plain
+# KEY=value lines, which is exactly the environment the daemon already reads — so
+# `goel config set port 9090` edits that file and restarts, and nothing here has
+# to change. systemd reads EnvironmentFile as root before dropping to User=, which
+# is why that file can be 0600 root-only even though it holds the portal password.
+Description=Goel° download daemon
+Documentation=https://github.com/vinitkumargoel/goel/blob/main/docs/linux.md
+# The daemon binds a socket at startup and fails hard if it cannot, so wait for
+# real network configuration rather than merely for the network stack to exist.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=goel
+Group=goel
+EnvironmentFile=/etc/goel/config
+# run.sh puts the bundled Swift runtime on the library path, then execs the
+# daemon. Going through it (rather than naming the binary) means the tarball's own
+# lib/ directory is authoritative and no system-wide ldconfig entry is needed.
+ExecStart=/opt/goel/run.sh
+
+# Creates and owns /var/lib/goel (queue database, generated portal token,
+# downloads by default), and makes it writable without naming it in
+# ReadWritePaths. systemd also fixes its ownership on every start, which repairs
+# the most common self-inflicted breakage: chown'ing it to the wrong user.
+StateDirectory=goel
+StateDirectoryMode=0750
+
+Restart=on-failure
+RestartSec=5
+# Long-running transfers get a moment to be written out on stop; the daemon exits
+# on SIGTERM immediately, so this is a ceiling, not a delay.
+TimeoutStopSec=30
+
+# ---- Hardening -------------------------------------------------------------
+# The daemon fetches arbitrary URLs and parses untrusted torrent metadata in C++
+# (libtorrent), so it is exactly the sort of process that should be confined.
+NoNewPrivileges=yes
+# The unit already runs unprivileged, so this is belt-and-braces — but it means a
+# setuid binary reached through a compromised daemon still gains nothing.
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Downloads default under /var/lib/goel but are routinely put under /home on a
+# shared box, so don't leave them group- and world-readable.
+UMask=0027
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# EPERM rather than the default SIGSYS kill: a deliberate availability-over-strictness
+# trade, so an unexpected syscall from libtorrent or curl degrades instead of
+# crash-looping a download queue. Watch the journal for EPERM after a toolchain bump.
+SystemCallErrorNumber=EPERM
+# BitTorrent needs UDP for DHT and µTP, not just TCP. AF_NETLINK is what glibc's
+# getifaddrs() opens — without it the daemon enumerates zero interfaces and every
+# adapter/aggregation feature silently reports "none found".
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+# ProtectSystem=strict makes everything else read-only, so each writable location
+# has to be named. Which ones those are depends on configuration (the download
+# folder, the watch folder, a database moved off the default path), so they are
+# NOT listed here — `goel config sync` maintains
+# /etc/systemd/system/goel.service.d/10-paths.conf instead, and the installer calls
+# it rather than writing that file itself. `goel doctor` warns when it is missing.
+#
+# ProtectHome is deliberately NOT set: saving downloads under /home is a normal
+# thing to want, and it would fail with no useful error.
+
+[Install]
+WantedBy=multi-user.target

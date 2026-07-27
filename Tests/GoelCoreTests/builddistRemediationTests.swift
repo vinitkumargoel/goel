@@ -1,3 +1,6 @@
+// Exercises Scripts/check_min_os.sh and the app-bundle gates, which need vtool,
+// codesign and hdiutil — macOS-only tooling with no Linux equivalent.
+#if !os(Linux)
 import XCTest
 
 /// Regression tests for the build / signing / distribution scripts.
@@ -435,3 +438,5 @@ final class BuildDistRemediationTests: XCTestCase {
                       "the failure must say what is actually wrong")
     }
 }
+
+#endif
