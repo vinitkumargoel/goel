@@ -60,6 +60,20 @@
   Content-Type: text/plain; charset=utf-8
   Cache-Control: public, max-age=3600
 
+# The Linux installer, fetched as `curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh`.
+#
+# text/plain, deliberately: a Content-Type that invites the browser to run or offer
+# to run it is wrong for a file people should be able to read first, and curl
+# ignores the type either way. nosniff is already set globally.
+#
+# max-age is short because this is the one asset where a stale cached copy is a real
+# problem: it names release URLs and refuses releases whose checksum it cannot fetch,
+# so an edge holding yesterday's copy for a day can break new installs.
+/install.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300, must-revalidate
+  Content-Disposition: inline
+
 /sitemap.xml
   Content-Type: application/xml; charset=utf-8
   Cache-Control: public, max-age=3600

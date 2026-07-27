@@ -48,9 +48,15 @@ and trackers you pick.
   adapter, every adapter guaranteed at least one segment, with VPN-safety guards.
 - **Browser capture** — one WebExtension bundled inside the app and **side-loaded**, not
   store-installed: Chromium browsers (Chrome, Edge, Brave, Chromium, Vivaldi, Arc) take it via
-  Developer mode → Load unpacked and keep it; Firefox accepts it only as a *temporary* add-on
-  and discards it on quit, so it must be re-loaded after each Firefox restart; Safari finds its
-  app-extension copy inside the bundle and it is switched on in Safari's settings. Plus a
+  Developer mode → Load unpacked and keep it; Firefox 128+ accepts it only as a *temporary*
+  add-on and discards it on quit, so it must be re-loaded after each Firefox restart; Safari
+  finds its app-extension copy inside the bundle and it is switched on in Safari's settings.
+  A toolbar toggle hands over every download the browser starts, and right-click →
+  "Download with Goel°" sends one link, optionally with the browser's login cookies for that
+  origin so files behind a sign-in download at all (an *optional* permission, off by default).
+  Safari supports neither the toggle nor cookies — it has no `downloads` API, and its sandbox
+  can reach the app only through a URL, which macOS logs, so a session cookie is refused
+  rather than written there. Plus a
   clipboard watcher, a floating Drop Basket, a Link Grabber that pulls every file off a page,
   batch add with `file[01-20].zip` pattern expansion, and importers for aria2, JDownloader and IDM.
 - **macOS integration** — menu-bar extra, live Dock progress and badge, Services menu,
@@ -73,10 +79,13 @@ and trackers you pick.
 - **Goel° Web** — an optional portal serving the same queue from your own machine, token- or
   password-authenticated, with read-only mode and session timeouts. Off by default, and it
   refuses to bind to the LAN unless a password is set.
-- **Linux** — the same engine runs headless as `GoelDaemon`, configured with `GOEL_PORT`,
-  `GOEL_ALLOW_LAN`, `GOEL_REQUIRE_AUTH`, `GOEL_USERNAME`, `GOEL_PASSWORD`, `GOEL_SAVE_DIR`
-  and `GOEL_DB`. The prebuilt tarball bundles the Swift runtime, but expects libtorrent,
-  libssh2, libcurl, OpenSSL, Boost and ffmpeg from the system package manager.
+- **Linux** — the same engine runs headless as `GoelDaemon`, installed as a systemd service by a
+  one-line `curl | sudo sh` installer and managed by a **`goel`** command (`goel status`,
+  `goel add`, `goel config`, `goel doctor`, `goel logs`, `goel uninstall`). Configuration lives in
+  `/etc/goel/config` as the `GOEL_*` variables the daemon already reads. The unit runs as an
+  unprivileged `goel` user under `ProtectSystem=strict`, with a `goel config sync`-maintained
+  drop-in naming the writable paths. The prebuilt tarball bundles the Swift runtime, libtorrent
+  and Boost, and expects libssh2, libcurl, OpenSSL 3 and ffmpeg from the distribution.
 
 ## Installing
 
@@ -90,9 +99,11 @@ while the app advertises 14. dyld refuses an over-targeted library before `main(
 builds quit on launch on a Mac between Sonoma and macOS 26. `Scripts/check_min_os.sh` now gates
 both the app build and the disk image, so no later release can carry the mismatch.
 
-Linux: unpack `goel-daemon-<version>-linux-x86_64.tar.gz`, install the runtime libraries with
-apt, then run `./run.sh` with the `GOEL_*` environment variables set, and open the portal in a
-browser.
+Linux: `curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh`. That resolves the runtime
+packages for the distribution it finds itself on, verifies the release against its published
+SHA-256, installs the systemd service and the `goel` command, generates a portal password and
+prints it once. Prebuilt for x86_64 and aarch64; needs systemd and glibc. Re-running it upgrades
+in place. Without systemd, run `./run.sh` from the tarball with the `GOEL_*` variables set.
 
 ## Licensing
 
@@ -121,6 +132,9 @@ site logins and settings live on your device; saved credentials go in the macOS 
 - [Home](https://goel.vinitk.dev/): full product tour with an interactive simulation of the
   app, the menu-bar popover, the SFTP browser, the piece map, the network aggregator, the web
   portal and the Linux daemon, plus a feature grid and FAQ.
+- [Install on Linux](https://goel.vinitk.dev/cli): the one-command install, what the script does
+  step by step, the full `goel` command reference, the `GOEL_*` installer variables, requirements,
+  the paths it touches, and how to upgrade or uninstall.
 - [Privacy Policy](https://goel.vinitk.dev/privacy): what the site and the app do and do not collect.
 - [Commercial Licensing](https://goel.vinitk.dev/commercial): who needs a paid licence and who
   does not, the eligibility table, indicative pricing, what a licence includes, and an enquiry
@@ -134,6 +148,10 @@ site logins and settings live on your device; saved credentials go in the macOS 
   install and build instructions.
 - [Releases](https://github.com/vinitkumargoel/goel/releases): macOS `.dmg` (arm64, x86_64) and
   the Linux daemon tarball.
+- [Browser extension guide](https://github.com/vinitkumargoel/goel/blob/main/docs/browser-extension.md):
+  step-by-step install for Chrome, Edge, Brave, Chromium, Vivaldi, Arc, Firefox and Safari; the
+  native-messaging helper; what each browser can and cannot do; signed-in downloads and how
+  cookies are handled; troubleshooting and removal.
 - [License](https://github.com/vinitkumargoel/goel/blob/main/LICENSE): PolyForm Noncommercial
   1.0.0.
 - [Third-party notices](https://github.com/vinitkumargoel/goel/blob/main/THIRD-PARTY-NOTICES.md):

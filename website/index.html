@@ -390,6 +390,13 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
 .slice ul.ticks { margin-top: var(--space-md); list-style: none; }
 .slice ul.ticks li { padding: 5px 0 5px 22px; position: relative; color: var(--color-ink-soft); font-size: var(--text-sm); }
 .slice ul.ticks li::before { content: "▸"; position: absolute; left: 0; color: var(--color-accent); font-family: var(--font-mono); }
+/* The Linux one-liner. max-width:none because `.slice p` caps at 46ch, which is
+   8px short of the command; it wraps rather than scrolls on phones so none is hidden. */
+.slice p.install-line {
+  margin-top: var(--space-md); max-width: none; font-family: var(--font-mono);
+  font-size: 0.8rem; color: var(--color-ink-faint);
+  white-space: nowrap; overflow-x: auto;
+}
 .panel-wrap { position: relative; min-width: 0; }
 .dither { position: absolute; inset: -10% -6%; pointer-events: none; opacity: 0.5;
   background-image: radial-gradient(color-mix(in oklab, var(--color-accent) 30%, transparent) 1px, transparent 1.5px);
@@ -780,6 +787,8 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
   .app-toolbar .chip-btn, .app-search { display: none; }
   /* the portal header carries more than a phone can hold */
   .wp-search, .wp-user, .wp-tag { display: none; }
+  /* wrapping beats a hidden tail: pre-wrap breaks visually only */
+  .slice p.install-line { white-space: pre-wrap; overflow-wrap: anywhere; }
 }
 @media (max-width: 640px) {
   .fact { flex-basis: 50%; border-top: 1px solid var(--color-line); }
@@ -852,6 +861,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <a href="#web">Web</a>
       <a href="#linux">Linux</a>
       <a href="#faq">FAQ</a>
+      <a class="keep" href="/cli">Install on Linux</a>
       <a class="keep" href="/commercial">Commercial</a>
       <a class="keep" href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">GitHub</a>
     </div>
@@ -1145,6 +1155,8 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
         <li>Build from source for ARM64</li>
         <li>Queue survives restarts — tasks resume where they left off</li>
       </ul>
+      <p class="install-line">curl -fsSL goel.vinitk.dev/install.sh | sudo sh</p>
+      <a class="btn btn-accent" style="margin-top:var(--space-md)" href="/cli">The one-command install →</a>
     </div>
     <div class="panel-wrap">
       <div class="dither alt"></div>
@@ -1225,6 +1237,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
     <div class="links">
       <a href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="/cli">Install on Linux</a>
       <a href="/commercial">Commercial</a>
       <a href="https://github.com/vinitkumargoel/goel/tree/main/docs" target="_blank" rel="noopener">Docs</a>
       <a href="https://github.com/vinitkumargoel/goel/blob/main/LICENSE" target="_blank" rel="noopener">License</a>

@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-terminal">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install on Linux — one command — Goel°</title>
+<meta name="description" content="curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh — installs the Goel° download daemon as a hardened systemd service, with a web portal and the goel command. HTTP, FTP, SFTP, BitTorrent and HLS in one queue. No Docker, no Homebrew, no Python.">
+<meta name="theme-color" content="#16181d">
+<meta name="color-scheme" content="dark">
+<meta name="author" content="Vinit Kumar Goel">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://goel.vinitk.dev/cli">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta property="og:title" content="Goel° on Linux — one command to install">
+<meta property="og:description" content="A headless download daemon for HTTP, FTP, SFTP, BitTorrent and HLS. One curl command installs the systemd service, the web portal and the goel CLI.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Goel°">
+<meta property="og:url" content="https://goel.vinitk.dev/cli">
+<meta property="og:image" content="https://goel.vinitk.dev/assets/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Goel° on Linux — one command to install">
+<meta name="twitter:description" content="A headless download daemon for HTTP, FTP, SFTP, BitTorrent and HLS. One curl command installs the systemd service, the web portal and the goel CLI.">
+<meta name="twitter:image" content="https://goel.vinitk.dev/assets/og.jpg">
+<link rel="alternate" type="text/plain" title="llms.txt — plain-text site summary for language models" href="/llms.txt">
+<link rel="stylesheet" href="tokens.css">
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/inter-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/ibm-plex-mono-600-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="assets/fonts/ibm-plex-mono-400-latin.woff2" crossorigin>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://goel.vinitk.dev/cli#app",
+      "name": "Goel° for Linux",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Linux (systemd, glibc; x86_64 and aarch64)",
+      "downloadUrl": "https://github.com/vinitkumargoel/goel/releases",
+      "installUrl": "https://goel.vinitk.dev/install.sh",
+      "softwareHelp": "https://github.com/vinitkumargoel/goel/blob/main/docs/linux.md",
+      "description": "Headless download daemon for HTTP, FTP, SFTP, BitTorrent and HLS, managed with the goel command and a browser portal. Installed as a hardened systemd service by a single shell command.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "description": "Free under PolyForm Noncommercial 1.0.0 for personal, hobby, student and noncommercial-organisation use. Commercial use is licensed separately — see https://goel.vinitk.dev/commercial."
+      }
+    },
+    {
+      "@type": "HowTo",
+      "@id": "https://goel.vinitk.dev/cli#howto",
+      "name": "Install Goel° on Linux",
+      "totalTime": "PT2M",
+      "step": [
+        { "@type": "HowToStep", "name": "Run the installer", "text": "Run: curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh" },
+        { "@type": "HowToStep", "name": "Note the printed password", "text": "The installer generates a portal password and prints it once. It is stored in /etc/goel/config." },
+        { "@type": "HowToStep", "name": "Open the portal", "text": "Open http://127.0.0.1:8080/ and sign in as admin, or run sudo goel status." }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+/* Hallmark · CLI / Linux install page, terminal theme.
+ * Shares the nav, button, section and footer vocabulary with index.html and
+ * commercial.html; adds the install block, the transcript and the command tables.
+ * Tokens-only colour — no literals, same rule as every other page.
+ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { overflow-x: clip; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--color-accent); color: var(--color-paper); }
+a { color: inherit; }
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+section[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
+
+.skip {
+  position: absolute; left: var(--space-md); top: -100px; z-index: 100;
+  font-family: var(--font-mono); font-size: var(--text-sm); text-decoration: none;
+  background: var(--color-accent); color: var(--color-on-accent);
+  border-radius: var(--radius-sm); padding: 10px 16px;
+  transition: top var(--dur-fast) var(--ease-out);
+}
+.skip:focus-visible { top: var(--space-md); }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 var(--space-lg); }
+.mono { font-family: var(--font-mono); }
+
+/* ---------- nav ---------- */
+.nav {
+  position: sticky; top: 0; z-index: 50;
+  background: color-mix(in oklab, var(--color-paper) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-line);
+}
+.nav-in { display: flex; align-items: center; gap: var(--space-lg); height: 64px; }
+.brand {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono); font-weight: 600; font-size: 1.05rem;
+  letter-spacing: 0.18em; text-decoration: none; white-space: nowrap;
+}
+.brand .logo { width: 24px; height: 24px; border-radius: 6px; display: block; }
+.brand .deg { color: var(--color-accent); margin-left: -0.34em; letter-spacing: 0; }
+.nav-links { display: flex; gap: var(--space-lg); margin-left: auto; }
+.nav-links a {
+  font-size: var(--text-sm); color: var(--color-ink-soft); text-decoration: none;
+  white-space: nowrap; transition: color var(--dur-fast) var(--ease-out);
+}
+.nav-links a:hover { color: var(--color-ink); }
+.nav-links a[aria-current="page"] { color: var(--color-ink); }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 500;
+  padding: 10px 18px; border-radius: var(--radius-sm); text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.btn:active { transform: translateY(1px); }
+.btn-accent {
+  color: var(--color-accent); background: var(--color-accent-soft);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 35%, transparent);
+}
+.btn-accent:hover { background: color-mix(in oklab, var(--color-accent) 20%, transparent); }
+.btn-solid { background: var(--color-accent); color: var(--color-on-accent); font-weight: 600; border: 1px solid transparent; }
+.btn-solid:hover { background: color-mix(in oklab, var(--color-accent) 88%, var(--color-ink)); }
+.btn-ghost { border: 1px solid var(--color-line-strong); color: var(--color-ink); }
+.btn-ghost:hover { border-color: var(--color-ink-faint); }
+.nav .btn { padding: 8px 14px; }
+
+/* ---------- hero ---------- */
+.hero { padding: var(--space-2xl) 0 var(--space-xl); }
+.kicker {
+  display: inline-block; font-family: var(--font-mono); font-size: 0.72rem;
+  letter-spacing: 0.16em; color: var(--color-accent);
+  border: 1px solid var(--color-line-strong); border-radius: 999px; padding: 4px 12px;
+}
+h1 {
+  font-family: var(--font-display); font-weight: 600;
+  font-size: var(--text-display-s); line-height: 1.1; letter-spacing: -0.02em;
+  margin-top: var(--space-md); max-width: 22ch; overflow-wrap: anywhere; min-width: 0;
+}
+h1 .hl { color: var(--color-accent); }
+.lede { margin-top: var(--space-md); max-width: 64ch; color: var(--color-ink-soft); font-size: var(--text-lg); }
+
+/* ---------- the one command ---------- */
+.cmd {
+  margin-top: var(--space-xl);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 40%, transparent);
+  border-radius: var(--radius-md); background: var(--color-paper-2);
+  box-shadow: var(--shadow-panel); overflow: hidden;
+}
+.cmd-head {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 9px var(--space-md); border-bottom: 1px solid var(--color-line);
+  font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--color-ink-faint);
+}
+.tl { display: inline-flex; gap: 6px; }
+.tl i { width: 10px; height: 10px; border-radius: 50%; background: var(--color-tl-off); display: block; }
+.tl i:nth-child(1) { background: var(--color-tl-red); }
+.tl i:nth-child(2) { background: var(--color-tl-amber); }
+.tl i:nth-child(3) { background: var(--color-tl-green); }
+.cmd-body { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-lg); }
+.cmd-body code {
+  font-family: var(--font-mono); font-size: clamp(0.82rem, 2.1vw, var(--text-lg));
+  line-height: 1.5; flex: 1; min-width: 0; overflow-x: auto; white-space: pre;
+  display: block; padding-bottom: 2px;
+}
+.cmd-body code::-webkit-scrollbar { height: 6px; }
+.cmd-body .p { color: var(--color-accent); user-select: none; }
+.cmd-body .f { color: var(--color-ink-faint); }
+.copy {
+  flex: none; display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono); font-size: var(--text-sm);
+  border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm);
+  padding: 8px 14px; color: var(--color-ink-soft);
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.copy:hover { border-color: var(--color-ink-faint); color: var(--color-ink); }
+.copy[data-done="1"] { color: var(--color-good); border-color: color-mix(in oklab, var(--color-good) 45%, transparent); }
+.cmd-foot {
+  padding: var(--space-sm) var(--space-lg); border-top: 1px solid var(--color-line);
+  font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-ink-faint);
+  display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-lg);
+}
+.cmd-foot b { color: var(--color-ink-soft); font-weight: 400; }
+
+.pledge {
+  margin-top: var(--space-lg); display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-lg);
+  font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--color-ink-faint);
+}
+.pledge span::before { content: "✓ "; color: var(--color-good); }
+
+/* ---------- section scaffolding ---------- */
+section { padding: var(--space-2xl) 0; border-top: 1px solid var(--color-line); }
+.sec-num { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.16em; color: var(--color-ink-faint); text-transform: uppercase; }
+h2 {
+  font-family: var(--font-display); font-weight: 600; font-size: var(--text-2xl);
+  letter-spacing: -0.015em; margin-top: var(--space-xs); overflow-wrap: anywhere; min-width: 0;
+}
+h3 { font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); letter-spacing: -0.01em; }
+.sec-sub { margin-top: var(--space-sm); max-width: 68ch; color: var(--color-ink-soft); }
+p + p { margin-top: var(--space-sm); }
+a.link { color: var(--color-accent); }
+
+/* ---------- code blocks ---------- */
+pre {
+  margin-top: var(--space-md); background: var(--color-paper-2);
+  border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm);
+  padding: var(--space-md) var(--space-lg); overflow-x: auto;
+  font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.7;
+  color: var(--color-ink-soft);
+}
+pre .p { color: var(--color-accent); user-select: none; }
+pre .c { color: var(--color-ink-faint); }
+pre b { color: var(--color-ink); font-weight: 400; }
+
+/* ---------- steps ---------- */
+.steps { list-style: none; margin-top: var(--space-xl); display: grid; gap: var(--space-md); }
+.steps li {
+  display: grid; grid-template-columns: 2.2rem 1fr; gap: var(--space-md); align-items: baseline;
+  border-left: 1px solid var(--color-line); padding: var(--space-xs) 0 var(--space-xs) var(--space-md);
+}
+.steps .n { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-accent); }
+.steps b { font-weight: 600; }
+.steps span { color: var(--color-ink-soft); }
+
+/* ---------- feature grid ---------- */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg); margin-top: var(--space-xl); }
+.card {
+  border: 1px solid var(--color-line-strong); border-radius: var(--radius-md);
+  padding: var(--space-lg); background: var(--color-paper-2);
+}
+.card .g { font-family: var(--font-mono); font-size: var(--text-lg); color: var(--color-accent); }
+.card h3 { margin-top: var(--space-xs); }
+.card p { margin-top: var(--space-xs); color: var(--color-ink-soft); font-size: 0.95rem; }
+.card .m { display: block; margin-top: var(--space-sm); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-ink-faint); }
+
+/* ---------- transcript ---------- */
+.term {
+  margin-top: var(--space-xl); border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-md); overflow: hidden; background: var(--color-app-bg);
+  box-shadow: var(--shadow-panel);
+}
+.term-head {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 9px var(--space-md); background: var(--color-app-bar);
+  border-bottom: 1px solid var(--color-line);
+  font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-ink-faint);
+}
+.term pre {
+  margin: 0; border: none; border-radius: 0; background: transparent;
+  padding: var(--space-lg); font-size: 0.8rem; line-height: 1.75;
+}
+.term .ok { color: var(--color-good); }
+.term .k { color: var(--color-accent); }
+.term .w { color: var(--color-warn); }
+.caption { margin-top: var(--space-sm); font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-ink-faint); letter-spacing: 0.06em; }
+
+/* ---------- tables ---------- */
+.tablewrap { margin-top: var(--space-xl); overflow-x: auto; border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); }
+table { border-collapse: collapse; width: 100%; min-width: 620px; }
+th, td { text-align: left; padding: 10px var(--space-md); border-bottom: 1px solid var(--color-line); font-size: 0.92rem; vertical-align: top; }
+thead th {
+  font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--color-ink-faint); background: var(--color-paper-2); white-space: nowrap;
+}
+tbody th { font-weight: 400; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-ink); white-space: nowrap; }
+td { color: var(--color-ink-soft); }
+tbody tr:last-child th, tbody tr:last-child td { border-bottom: none; }
+.group th { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-accent); background: var(--color-paper-2); }
+
+/* ---------- release strip ---------- */
+.rel {
+  margin-top: var(--space-xl); display: grid; grid-template-columns: 1fr auto; gap: var(--space-lg);
+  align-items: center; border: 1px solid var(--color-line-strong);
+  border-left: 3px solid var(--color-accent); border-radius: var(--radius-md);
+  padding: var(--space-lg); background: var(--color-paper-2);
+}
+.rel .ctas { display: flex; gap: var(--space-sm); flex-wrap: wrap; }
+.rel p { color: var(--color-ink-soft); max-width: 62ch; }
+.note {
+  margin-top: var(--space-lg); border: 1px dashed var(--color-line-strong);
+  border-radius: var(--radius-sm); padding: var(--space-md) var(--space-lg);
+  color: var(--color-ink-soft); font-size: 0.95rem;
+}
+.note b { color: var(--color-ink); }
+
+/* ---------- footer ---------- */
+footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
+.foot { display: flex; flex-wrap: wrap; gap: var(--space-lg); align-items: center; }
+.foot .links { margin-left: auto; display: flex; gap: var(--space-lg); flex-wrap: wrap; }
+.foot a { color: var(--color-ink-soft); text-decoration: none; font-size: var(--text-sm); }
+.foot a:hover { color: var(--color-ink); }
+.foot .lic { width: 100%; font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-ink-faint); letter-spacing: 0.06em; }
+
+@media (max-width: 980px) {
+  .nav-in { flex-wrap: wrap; height: auto; padding-top: 12px; padding-bottom: 8px; gap: var(--space-md); }
+  .nav-links { order: 3; width: 100%; margin-left: 0; overflow-x: auto; gap: var(--space-md); }
+  .nav-links a { padding: 7px 0; }
+  .nav-links::-webkit-scrollbar { display: none; }
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .foot a { padding: 4px 0; }
+}
+@media (max-width: 720px) {
+  .grid { grid-template-columns: 1fr; }
+  .cmd-body { flex-direction: column; align-items: stretch; gap: var(--space-sm); }
+  /* Wrap rather than scroll: the point of the box is that you can read what you
+     are about to run. pre-wrap breaks visually only, so a copy still yields one line. */
+  .cmd-body code { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .copy { justify-content: center; }
+  .rel { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<a class="skip" href="#install">Skip to the install command</a>
+
+<nav class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/"><img class="logo" src="assets/goel-icon-128.png" alt="" width="24" height="24">GOEL<span class="deg">°</span></a>
+    <div class="nav-links">
+      <a href="#install" aria-current="page">Install</a>
+      <a href="#what">What you get</a>
+      <a href="#commands">Commands</a>
+      <a href="#options">Options</a>
+      <a href="#releases">Releases</a>
+      <a href="/">macOS app</a>
+      <a href="https://github.com/vinitkumargoel/goel/blob/main/docs/linux.md" target="_blank" rel="noopener">Docs</a>
+      <a href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases/latest" target="_blank" rel="noopener">Releases ↓</a>
+  </div>
+</nav>
+
+<header class="hero" id="install">
+  <div class="wrap">
+    <span class="kicker">Linux · headless daemon</span>
+    <h1>One command. Then it <span class="hl">just runs</span>.</h1>
+    <p class="lede">
+      Goel° on Linux is a download daemon: HTTP, FTP, SFTP, BitTorrent and HLS in one queue,
+      driven from a browser or from the <span class="mono">goel</span> command. The installer
+      puts it in as a hardened systemd service, generates a portal password, and starts it.
+    </p>
+
+    <div class="cmd">
+      <div class="cmd-head"><span class="tl" aria-hidden="true"><i></i><i></i><i></i></span> install</div>
+      <div class="cmd-body">
+        <code id="cmd"><span class="p">$ </span>curl <span class="f">-fsSL</span> https://goel.vinitk.dev/install.sh | sudo sh</code>
+        <button class="copy" id="copyBtn" type="button" data-cmd="curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh">⧉ <span id="copyLabel">Copy</span></button>
+      </div>
+      <div class="cmd-foot">
+        <span><b>~250 MB</b> on disk</span>
+        <span><b>~2 min</b> including deps</span>
+        <span><b>x86_64</b> and <b>aarch64</b></span>
+        <span><b>sudo goel uninstall</b> reverses it</span>
+      </div>
+    </div>
+
+    <p class="pledge">
+      <span>No Docker</span><span>No Homebrew</span><span>No Python</span><span>No Node</span>
+      <span>Checksum-verified</span><span>Free for personal use</span>
+    </p>
+  </div>
+</header>
+
+<section id="read-first">
+  <div class="wrap">
+    <span class="sec-num">01 — Before you pipe anything into a root shell</span>
+    <h2>Read it first. That's the right instinct.</h2>
+    <p class="sec-sub">
+      Piping a script to <span class="mono">sudo sh</span> is asking a stranger to run code as root
+      on your machine. The script is plain POSIX <span class="mono">sh</span>, about 700 lines, and
+      it is the same file this page links to — nothing is minified or fetched at runtime.
+      Download it, read it, then run it:
+    </p>
+<pre><span class="p">$ </span>curl -fsSL https://goel.vinitk.dev/install.sh -o install.sh
+<span class="p">$ </span>less install.sh
+<span class="p">$ </span>sudo sh install.sh</pre>
+    <div class="note">
+      <p><b>Two things the script does on your behalf, worth knowing before it runs.</b>
+      It refuses to install a release whose published <span class="mono">.sha256</span> it cannot
+      fetch or cannot match — because it is running as root and an unverifiable tarball is not
+      worth the risk. And every line of it lives inside one <span class="mono">main()</span> that is
+      only called on the last line, so a connection that drops halfway defines a function and does
+      nothing, instead of half-uninstalling your previous copy.</p>
+    </div>
+  </div>
+</section>
+
+<section id="does">
+  <div class="wrap">
+    <span class="sec-num">02 — What the one command actually does</span>
+    <h2>Seven steps, then a URL and a password.</h2>
+    <ol class="steps">
+      <li><span class="n">01</span><span><b>Installs runtime libraries</b> via <span class="mono">apt</span> — libssh2, libcurl, libssl and ffmpeg, picking whichever package name exists on your release. Skip it with <span class="mono">GOEL_SKIP_DEPS=1</span>.</span></li>
+      <li><span class="n">02</span><span><b>Resolves the latest release</b> from the GitHub API, or the one you pinned with <span class="mono">GOEL_VERSION</span>.</span></li>
+      <li><span class="n">03</span><span><b>Downloads and verifies</b> the tarball against its published SHA-256, and refuses to continue if it cannot.</span></li>
+      <li><span class="n">04</span><span><b>Creates a <span class="mono">goel</span> system user</b> — no login shell, no home directory. The daemon never runs as root.</span></li>
+      <li><span class="n">05</span><span><b>Unpacks into <span class="mono">/opt/goel</span></b> — the daemon, the CLI and the whole Swift runtime, self-contained. Symlinks the CLI to <span class="mono">/usr/local/bin/goel</span>.</span></li>
+      <li><span class="n">06</span><span><b>Writes <span class="mono">/etc/goel/config</span></b> at mode 0600 with a generated portal password, and installs the systemd unit plus its writable-paths drop-in.</span></li>
+      <li><span class="n">07</span><span><b>Starts the service</b> and prints the portal URL, the username and the password — once. Re-running the installer upgrades in place and touches none of it.</span></li>
+    </ol>
+
+    <div class="term">
+      <div class="term-head"><span class="tl" aria-hidden="true"><i></i><i></i><i></i></span> root@home-server</div>
+<pre><span class="k">→</span> Installing runtime libraries
+<span class="k">→</span> Checking shared libraries
+    <span class="ok">ok</span> all resolved
+<span class="k">→</span> Finding the latest release
+<span class="k">→</span> Downloading goel-daemon-1.0.2-linux-x86_64.tar.gz
+<span class="k">→</span> Verifying checksum
+    <span class="ok">ok</span> 9f2c1d…8ab4
+<span class="k">→</span> Creating the goel system user
+<span class="k">→</span> Unpacking into /opt/goel
+<span class="k">→</span> Writing /etc/goel/config
+<span class="k">→</span> Installing the systemd service
+<span class="k">→</span> Configuring writable paths
+<span class="k">→</span> Starting the service
+
+  <b style="color:var(--color-ink)">Portal</b>    http://127.0.0.1:8080/
+
+  <b style="color:var(--color-ink)">Username</b>  admin
+  <b style="color:var(--color-ink)">Password</b>  <span class="w">••••••••••••••••</span>
+
+  Generated for this machine, and stored in /etc/goel/config.
+
+  <b style="color:var(--color-ink)">Next</b>      sudo goel status        what it is doing
+            sudo goel add &lt;url&gt;    queue a download
+            sudo goel doctor       check the install
+            sudo goel help         everything else</pre>
+    </div>
+    <p class="caption">Illustrative — the step names are the real ones; the version and checksum are samples.</p>
+  </div>
+</section>
+
+<section id="what">
+  <div class="wrap">
+    <span class="sec-num">03 — What you get</span>
+    <h2>A download manager, not a wrapper around <span class="mono">wget</span>.</h2>
+    <p class="sec-sub">
+      The same engine as the macOS app, with the window taken off. Everything below is in the
+      daemon itself — there is no plugin system to assemble and nothing else to install.
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <div class="g" aria-hidden="true">⇉</div>
+        <h3>Five protocols, one queue</h3>
+        <p>HTTP/HTTPS, FTP, SFTP, BitTorrent (torrents and magnets) and HLS streams sit in the same list, with the same pause, resume, retry and priority.</p>
+      </div>
+      <div class="card">
+        <div class="g" aria-hidden="true">≣</div>
+        <h3>Segmented transfers</h3>
+        <p>Up to 16 connections per file, spread across mirrors, with Metalink failover and back-off retry. Interrupted transfers resume from where the bytes stopped.</p>
+      </div>
+      <div class="card">
+        <div class="g" aria-hidden="true">◉</div>
+        <h3>Browser portal, phone included</h3>
+        <p>The full UI at <span class="mono">http://127.0.0.1:8080/</span>. Set <span class="mono">GOEL_LAN=true</span> and drive it from your laptop or phone on the same network, behind a password and a token.</p>
+      </div>
+      <div class="card">
+        <div class="g" aria-hidden="true">⇅</div>
+        <h3>Multi-NIC aggregation</h3>
+        <p>Two uplinks? Pin a download to one interface, or split its segments across several. Per-download or as the server-wide default.</p>
+        <span class="m">goel add &lt;url&gt; --net aggregate</span>
+      </div>
+      <div class="card">
+        <div class="g" aria-hidden="true">⏻</div>
+        <h3>Survives reboots</h3>
+        <p>The queue is a database, not a process list. The service comes back at boot and picks up every unfinished task where it left off.</p>
+      </div>
+      <div class="card">
+        <div class="g" aria-hidden="true">⛨</div>
+        <h3>Hardened unit</h3>
+        <p>Runs as an unprivileged user with <span class="mono">ProtectSystem</span>, a private <span class="mono">/tmp</span>, no new privileges and an explicit writable-path list maintained from your config.</p>
+      </div>
+      <div class="card">
+        <div class="g" aria-hidden="true">▢</div>
+        <h3>Self-contained</h3>
+        <p>The Swift runtime and libtorrent ship inside the tarball. Four common system libraries come from apt. Nothing is compiled on your machine.</p>
+      </div>
+      <div class="card">
+        <div class="g" aria-hidden="true">✧</div>
+        <h3>A CLI that answers questions</h3>
+        <p><span class="mono">goel doctor</span> checks the install and tells you how to fix what is wrong, rather than printing a stack trace and stopping.</p>
+      </div>
+      <div class="card">
+        <div class="g" aria-hidden="true">↺</div>
+        <h3>Uninstalls cleanly</h3>
+        <p><span class="mono">sudo goel uninstall</span> removes the service, the binaries, the unit and the user. Add <span class="mono">--purge</span> to take the data too. Nothing is left behind to find later.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="commands">
+  <div class="wrap">
+    <span class="sec-num">04 — The <span class="mono">goel</span> command</span>
+    <h2>Everything the portal does, from a shell.</h2>
+    <p class="sec-sub">
+      Most commands need root, because the config file and the API token are readable only by root.
+      <span class="mono">goel help</span> prints this list on the machine itself.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+        <tbody>
+          <tr class="group"><th colspan="2" scope="colgroup">Service</th></tr>
+          <tr><th scope="row">goel status</th><td>Service state, portal URL, queue summary</td></tr>
+          <tr><th scope="row">goel start | stop | restart</th><td>Control the service</td></tr>
+          <tr><th scope="row">goel enable | disable</th><td>Start at boot, or not</td></tr>
+          <tr><th scope="row">goel logs [-f] [-n N]</th><td>The journal for the service</td></tr>
+
+          <tr class="group"><th colspan="2" scope="colgroup">Configuration</th></tr>
+          <tr><th scope="row">goel config</th><td>List every setting and its current value</td></tr>
+          <tr><th scope="row">goel config set &lt;key&gt; &lt;val&gt;</th><td>Change one value, then restart if running</td></tr>
+          <tr><th scope="row">goel config unset &lt;key&gt;</th><td>Revert to the daemon's default</td></tr>
+          <tr><th scope="row">goel url</th><td>Portal URL including the API token</td></tr>
+          <tr><th scope="row">goel token [show|rotate]</th><td>The API token</td></tr>
+
+          <tr class="group"><th colspan="2" scope="colgroup">Queue</th></tr>
+          <tr><th scope="row">goel add &lt;url&gt;…</th><td>Queue downloads. <span class="mono">--folder</span>, <span class="mono">--priority</span>, <span class="mono">--paused</span>, <span class="mono">--net auto|single:&lt;iface&gt;|aggregate|aggregate:&lt;a&gt;,&lt;b&gt;</span></td></tr>
+          <tr><th scope="row">goel adapters</th><td>Network interfaces and the aggregation policy</td></tr>
+          <tr><th scope="row">goel list [--all]</th><td>The queue; <span class="mono">--all</span> includes finished</td></tr>
+          <tr><th scope="row">goel pause | resume &lt;id|all&gt;</th><td>One download, or everything</td></tr>
+          <tr><th scope="row">goel retry &lt;id&gt;</th><td>Retry a failed download</td></tr>
+          <tr><th scope="row">goel rm &lt;id&gt; [--data]</th><td>Remove; <span class="mono">--data</span> deletes the files too</td></tr>
+
+          <tr class="group"><th colspan="2" scope="colgroup">Maintenance</th></tr>
+          <tr><th scope="row">goel doctor</th><td>Check the install and say how to fix what is wrong</td></tr>
+          <tr><th scope="row">goel uninstall [--purge]</th><td>Remove the service; <span class="mono">--purge</span> also deletes data</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+<pre><span class="c"># queue an ISO, split across every usable interface</span>
+<span class="p">$ </span>sudo goel add https://releases.ubuntu.com/24.04/ubuntu-24.04-desktop-amd64.iso --net aggregate
+
+<span class="c"># a magnet link, paused, into a specific folder</span>
+<span class="p">$ </span>sudo goel add 'magnet:?xt=urn:btih:…' --folder /srv/media --paused
+
+<span class="c"># what is going on right now</span>
+<span class="p">$ </span>sudo goel list</pre>
+  </div>
+</section>
+
+<section id="options">
+  <div class="wrap">
+    <span class="sec-num">05 — Installer options</span>
+    <h2>Change the defaults on the way in.</h2>
+    <p class="sec-sub">
+      Every one of these is optional, and they go <b>before</b> <span class="mono">sh</span> so that
+      <span class="mono">sudo</span> passes them through:
+    </p>
+<pre><span class="p">$ </span>curl -fsSL https://goel.vinitk.dev/install.sh | sudo <b>GOEL_PORT=9090 GOEL_LAN=true</b> sh</pre>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Effect</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">GOEL_VERSION</th><td>latest release</td><td>Install a specific version</td></tr>
+          <tr><th scope="row">GOEL_PORT</th><td>8080</td><td>Portal port</td></tr>
+          <tr><th scope="row">GOEL_LAN</th><td>false</td><td>Serve to the network rather than loopback only</td></tr>
+          <tr><th scope="row">GOEL_SAVE_DIR</th><td>/var/lib/goel/downloads</td><td>Download folder</td></tr>
+          <tr><th scope="row">GOEL_NO_START</th><td>—</td><td>Install without enabling or starting the service</td></tr>
+          <tr><th scope="row">GOEL_SKIP_DEPS</th><td>—</td><td>Don't touch apt; you are supplying the libraries</td></tr>
+          <tr><th scope="row">GOEL_TARBALL</th><td>—</td><td>Install from a local tarball instead of downloading</td></tr>
+          <tr><th scope="row">GOEL_INSECURE</th><td>—</td><td>Install even if the release publishes no checksum</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:var(--space-xl)">Requirements</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Requirement</th><th scope="col">What it has to be</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">OS</th><td>Any Linux with systemd and glibc. Tested on Ubuntu 22.04+ and Debian 12+ and their derivatives; the dependency step uses apt, and on Fedora, Arch or Alpine the installer says so and continues.</td></tr>
+          <tr><th scope="row">Architecture</th><td>x86_64 or aarch64</td></tr>
+          <tr><th scope="row">Root</th><td>Yes, for the install. The daemon itself runs as an unprivileged <span class="mono">goel</span> user.</td></tr>
+          <tr><th scope="row">Disk</th><td>~250 MB for the release, plus whatever you download</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:var(--space-xl)">What it touches</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Path</th><th scope="col">What</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">/opt/goel</th><td>The release: the daemon, the CLI and the bundled Swift runtime</td></tr>
+          <tr><th scope="row">/usr/local/bin/goel</th><td>Symlink to the CLI</td></tr>
+          <tr><th scope="row">/etc/goel/config</th><td>Configuration, mode 0600, root-only — it holds the portal password</td></tr>
+          <tr><th scope="row">/var/lib/goel</th><td>Queue database, generated API token, and downloads by default</td></tr>
+          <tr><th scope="row">/etc/systemd/system/goel.service</th><td>The unit, plus a drop-in listing the writable paths</td></tr>
+          <tr><th scope="row">a <span class="mono">goel</span> system user</th><td>No login shell, no home directory of its own</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:var(--space-xl)">Upgrading and removing</h3>
+<pre><span class="c"># upgrade in place — keeps your config, queue, downloads and password</span>
+<span class="p">$ </span>curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh
+
+<span class="c"># pin a version instead of the latest</span>
+<span class="p">$ </span>curl -fsSL https://goel.vinitk.dev/install.sh | sudo GOEL_VERSION=1.0.2 sh
+
+<span class="c"># remove the service, binaries, unit and user — data kept</span>
+<span class="p">$ </span>sudo goel uninstall
+
+<span class="c"># …and the data too</span>
+<span class="p">$ </span>sudo goel uninstall --purge</pre>
+  </div>
+</section>
+
+<section id="releases">
+  <div class="wrap">
+    <span class="sec-num">06 — Releases</span>
+    <h2>Every build, with its checksum, on GitHub.</h2>
+    <p class="sec-sub">
+      The installer downloads from the same place you would: the GitHub releases page. Each Linux
+      release publishes <span class="mono">goel-daemon-&lt;version&gt;-linux-&lt;arch&gt;.tar.gz</span>
+      alongside a <span class="mono">.sha256</span>, and the installer refuses any tarball whose
+      checksum it cannot fetch or cannot match.
+    </p>
+
+    <div class="rel">
+      <div>
+        <h3>Prefer to do it by hand?</h3>
+        <p>Download the tarball, verify it yourself, and point the installer at the local file with
+        <span class="mono">GOEL_TARBALL=/path/to.tar.gz</span> — the rest of the install is identical.</p>
+      </div>
+      <div class="ctas">
+        <a class="btn btn-solid" href="https://github.com/vinitkumargoel/goel/releases/latest" target="_blank" rel="noopener">Latest release ↗</a>
+        <a class="btn btn-ghost" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">All releases</a>
+      </div>
+    </div>
+
+    <div class="note">
+      <p><b>Not on Linux?</b> The macOS build is a native app, not a daemon — same engine, with a
+      window. It's on the <a class="link" href="/">homepage</a> and in the same releases.
+      <b>Building for another architecture</b> or running without systemd is covered in
+      <a class="link" href="https://github.com/vinitkumargoel/goel/blob/main/docs/linux.md" target="_blank" rel="noopener">docs/linux.md</a>.</p>
+    </div>
+
+    <div class="note">
+      <p><b>Licence.</b> Goel° is source-available under PolyForm Noncommercial 1.0.0 — free for
+      personal, hobby and student use, and free for charities, schools and public bodies. Running it
+      in the course of a business needs a paid licence; see
+      <a class="link" href="/commercial">commercial licensing</a>.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="/"><img class="logo" src="assets/goel-icon-128.png" alt="" width="24" height="24">GOEL<span class="deg">°</span></a>
+    <div class="links">
+      <a href="/">Home</a>
+      <a href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="/commercial">Commercial</a>
+      <a href="https://github.com/vinitkumargoel/goel/blob/main/docs/linux.md" target="_blank" rel="noopener">Linux docs</a>
+      <a href="https://github.com/vinitkumargoel/goel/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/cookies">Cookies</a>
+    </div>
+    <div class="lic">PolyForm Noncommercial 1.0.0 · free for personal use · © 2026 Vinit Kumar Goel · terminal output on this page is illustrative</div>
+  </div>
+</footer>
+
+<script>
+/* Copy button. execCommand is the fallback for non-secure contexts, where
+   navigator.clipboard is undefined — the page still works without JS. */
+(function () {
+  var btn = document.getElementById("copyBtn");
+  var label = document.getElementById("copyLabel");
+  if (!btn) return;
+  var timer;
+  btn.addEventListener("click", function () {
+    var text = btn.getAttribute("data-cmd");
+    var done = function (ok) {
+      label.textContent = ok ? "Copied" : "Select it manually";
+      btn.setAttribute("data-done", ok ? "1" : "0");
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        label.textContent = "Copy";
+        btn.removeAttribute("data-done");
+      }, 2200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+      return;
+    }
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    done(ok);
+  });
+})();
+</script>
+</body>
+</html>
