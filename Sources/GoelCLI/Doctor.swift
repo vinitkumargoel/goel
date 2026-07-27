@@ -220,24 +220,45 @@ extension GoelCLI {
     }
 
     /// Is something listening on the configured port, and is it us?
+    ///
+    /// The probe is retried for a few seconds, because the moment this check is
+    /// most often run is the moment it is least likely to be true: `goel doctor`
+    /// straight after an install. systemd reports the unit active as soon as it
+    /// has forked, so a single instantaneous probe could report "nothing is
+    /// listening" while the API check further down was about to reach that very
+    /// port — a report that contradicted itself, and a CI failure that came and
+    /// went depending on how fast the runner was.
+    ///
+    /// A daemon that is genuinely dead still fails; it just takes three seconds
+    /// to say so, which is a diagnostic worth waiting for.
     static func portCheck(_ effective: Effective) -> Check.Result {
-        // `ss` is iproute2, present on any modern Ubuntu.
-        let listening = Shell.run("ss", ["-ltnpH"])
-        guard listening.ok else { return .warn("couldn't check (ss unavailable)") }
-        let matching = listening.out.split(separator: "\n").filter {
-            $0.contains(":\(effective.port) ")
+        let deadline = Date().addingTimeInterval(3)
+        while true {
+            // `ss` is iproute2, present on any modern Ubuntu.
+            let listening = Shell.run("ss", ["-ltnpH"])
+            guard listening.ok else { return .warn("couldn't check (ss unavailable)") }
+            let matching = listening.out.split(separator: "\n").filter {
+                $0.contains(":\(effective.port) ")
+            }
+            if !matching.isEmpty {
+                guard matching.contains(where: { $0.contains("GoelDaemon") }) else {
+                    return .fail("held by another process — change it with `sudo goel config set port <n>`")
+                }
+                let boundLAN = matching.contains {
+                    $0.contains("0.0.0.0:\(effective.port)") || $0.contains("*:\(effective.port)")
+                }
+                return .pass("listening on \(boundLAN ? "0.0.0.0" : "127.0.0.1")")
+            }
+            // Re-read each time round: this also notices a daemon that starts,
+            // binds nothing and exits while we are waiting on it.
+            guard Service.isActive else {
+                return .warn("nothing listening (the service is not running)")
+            }
+            guard Date() < deadline else {
+                return .fail("nothing is listening although the service is active — `goel logs`")
+            }
+            Thread.sleep(forTimeInterval: 0.25)
         }
-        if matching.isEmpty {
-            return Service.isActive
-                ? .fail("nothing is listening although the service is active — `goel logs`")
-                : .warn("nothing listening (the service is not running)")
-        }
-        let mine = matching.contains { $0.contains("GoelDaemon") }
-        if mine {
-            let boundLAN = matching.contains { $0.contains("0.0.0.0:\(effective.port)") || $0.contains("*:\(effective.port)") }
-            return .pass("listening on \(boundLAN ? "0.0.0.0" : "127.0.0.1")")
-        }
-        return .fail("held by another process — change it with `sudo goel config set port <n>`")
     }
 
     static func report(_ checks: [Check]) {

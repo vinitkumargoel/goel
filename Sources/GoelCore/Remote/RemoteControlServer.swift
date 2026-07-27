@@ -242,7 +242,11 @@ public actor RemoteControlServer {
             }
         }
         newListener.newConnectionHandler = { [weak self] connection in
-            Task { await self?.accept(connection) }
+            // Bound before the Task — see DownloadManager.updates(). A dead
+            // server drops the connection either way; this only moves the check
+            // out of the concurrently-executing closure.
+            guard let self else { return }
+            Task { await self.accept(connection) }
         }
         newListener.start(queue: DispatchQueue(label: "goel.remote-server"))
         self.listener = newListener

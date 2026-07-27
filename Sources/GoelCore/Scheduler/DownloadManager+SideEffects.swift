@@ -62,7 +62,14 @@ extension DownloadManager {
         }
         let autoStart = settings.btWatchStartWithoutConfirmation
         await folderWatch.start(path: settings.btWatchFolderPath) { [weak self] url in
-            Task { await self?.ingestWatchedTorrent(url, autoStart: autoStart) }
+            // Bind before the `Task`, rather than `self?.` inside it. A capture
+            // list produces a *var* in the enclosing closure, and reading that
+            // var from concurrently-executing code is an error on the toolchain
+            // CI builds with — newer Swift accepts it, which is exactly why it
+            // compiled here and broke there. The strong reference lasts only for
+            // the ingest, which is the work we wanted finished anyway.
+            guard let self else { return }
+            Task { await self.ingestWatchedTorrent(url, autoStart: autoStart) }
         }
     }
 

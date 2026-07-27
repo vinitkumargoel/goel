@@ -441,7 +441,10 @@ final class SFTPBrowserModel: ObservableObject {
     /// The most a single drag-out will pull to disk before it is abandoned.
     /// Matches the browser's preview cap — both fetch a server-sized file into
     /// the temp directory on nothing more than a gesture.
-    private static let dragOutByteCap: Int64 = 512 * 1024 * 1024
+    /// `nonisolated` for the same reason as the two helpers below it: the
+    /// drag-out closure that reads it is @Sendable, and a constant needs no
+    /// actor.
+    private nonisolated static let dragOutByteCap: Int64 = 512 * 1024 * 1024
 
     private nonisolated static func tooLargeToDrag(_ name: String) -> SFTPError {
         SFTPError(kind: .io, message: "“\(name)” is too large to drag out of the browser.")

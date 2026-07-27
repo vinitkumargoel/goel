@@ -51,16 +51,42 @@ final class CoreDataPathsRemediationTests: XCTestCase {
                    isAppActive: false, autoShutdownAction: "none")
     }
 
+    /// `CustomStringConvertible`, not `LocalizedError`: XCTest renders a thrown error
+    /// with `String(describing:)`, so an `errorDescription` never reaches the log and
+    /// the reader gets a bare `PollTimeout()` to guess at.
+    private struct PollTimeout: Error, CustomStringConvertible {
+        var description: String {
+            "the wait logged above never held — assertions after it were skipped, "
+                + "not evaluated, and say nothing about this failure"
+        }
+    }
+
     /// Poll a predicate until it holds or the deadline passes — a real download's
     /// pacing is not something a fixed `sleep` can pin down.
+    ///
+    /// Throws as well as failing, so a caller stops at the timeout. Every assertion
+    /// after a wait that did not hold is reading half-finished state: the file these
+    /// tests check is preallocated to its full size before a byte of it is written,
+    /// so a content comparison against an unfinished download reports two operands of
+    /// identical length and leaves you staring at `"4194304 bytes" is not equal to
+    /// ("4194304 bytes")`. The timeout is the finding; the cascade behind it is noise.
+    ///
+    /// `describe` is sampled only on failure, and says what the predicate last saw —
+    /// a download that is merely slower than the budget and one that has wedged both
+    /// time out, and the difference is not otherwise recoverable from a CI log.
     private func poll(timeout: TimeInterval, _ predicate: @Sendable () -> Bool,
+                      describe: @Sendable () -> String = { "" },
                       file: StaticString = #filePath, line: UInt = #line) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if predicate() { return }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
-        XCTFail("Timed out waiting for condition", file: file, line: line)
+        let observed = describe()
+        XCTFail("Timed out after \(Int(timeout))s waiting for condition"
+                + (observed.isEmpty ? "" : " — last observed \(observed)"),
+                file: file, line: line)
+        throw PollTimeout()
     }
 
     private func plan(name: String, totalBytes: Int64?, acceptsRanges: Bool,
@@ -198,13 +224,23 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         // Pause on OBSERVED mid-flight progress rather than a fixed sleep, so the
         // pause can neither land before the first byte nor after the last one.
         try await poll(timeout: 10) { let n = bytes.get(); return n > 0 && n < Int64(payload.count) }
+            describe: { "\(bytes.get())/\(payload.count) bytes — never caught in flight" }
         await engine.pause(task.id)
         try await Task.sleep(nanoseconds: 150_000_000)
         await engine.resume(task.id)
         let target = tempDir.appendingPathComponent("Holiday Clip (1).mp4")
-        try await poll(timeout: 30) {
+        // Generous, because this budget is wall-clock the transfer genuinely needs
+        // rather than slack: the stub paces 256 chunks 25ms apart, so ~7s is the
+        // floor and an unloaded arm64 machine takes ~15s end to end. At 30s this
+        // failed on every CI run — a hosted runner is upwards of 2x slower and sat
+        // just the wrong side of the line. A passing run returns the moment the
+        // predicate holds and pays none of this; only a real hang waits it out.
+        try await poll(timeout: 120) {
             (try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize) == payload.count
                 && bytes.get() == Int64(payload.count)
+        } describe: {
+            "\(bytes.get())/\(payload.count) bytes reported, "
+                + "\((try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1) on disk"
         }
         consumer.cancel()
 
@@ -248,6 +284,7 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         }
         await engine.add(task)
         try await poll(timeout: 15) { bytes.get() == Int64(payload.count) }
+            describe: { "\(bytes.get())/\(payload.count) bytes reported" }
         consumer.cancel()
 
         XCTAssertEqual(try Data(contentsOf: target), payload,

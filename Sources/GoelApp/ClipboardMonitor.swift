@@ -28,7 +28,11 @@ final class ClipboardMonitor {
         // Build unscheduled and add in `.common` so it keeps firing while menus or
         // sheets track the run loop (scheduledTimer would only register `.default`).
         let timer = Timer(timeInterval: 1.2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.poll() }
+            // Bound here rather than `self?.` inside the Task: a capture list
+            // makes `self` a var, which older toolchains refuse to read from
+            // concurrent code. A dead monitor skips the tick, as before.
+            guard let self else { return }
+            Task { @MainActor in self.poll() }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer

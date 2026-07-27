@@ -378,7 +378,12 @@ extension AppViewModel {
                 try await client.upload(localURL: localURL, remote: remoteTarget, maxBytesPerSecond: cap,
                                         shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
                     guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
-                    Task { @MainActor in self?.setTransferBytes(id, sofar) }
+                    // Bound inside this callback, not the Task: the capture list
+                    // above makes `self` a var and older toolchains reject
+                    // reading one from concurrent code. Dropping the update when
+                    // the model is gone is what `self?.` did anyway.
+                    guard let self else { return }
+                    Task { @MainActor in self.setTransferBytes(id, sofar) }
                 }
             }
             settleTransfer(id, .finished)
@@ -439,18 +444,29 @@ extension AppViewModel {
                 let file = files[index]
                 let remoteFile = file.rel.reduce(remoteRoot, SFTPBrowserPaths.join)
                 group.addTask { [weak self] in
+                    // Read the capture into an immutable local once. The progress
+                    // closure below is @Sendable, and reading a capture-list var
+                    // from inside one is an error in the Swift 6 language mode —
+                    // binding here is what the two uses further down rely on.
+                    //
+                    // Deliberately not unwrapped: a view model that has gone away
+                    // must skip the progress reporting, not the upload.
+                    let model = self
                     if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
                     let coalescer = ProgressCoalescer()
                     try await client.upload(localURL: file.url, remote: remoteFile,
                                             maxBytesPerSecond: perStreamCap,
                                             shouldContinue: { !cancel.isCancelled }) { sofar, total in
                         guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
-                        Task { @MainActor in self?.setFolderFileBytes(id, index: index, bytes: sofar) }
+                        guard let model else { return }
+                        Task { @MainActor in model.setFolderFileBytes(id, index: index, bytes: sofar) }
                     }
                     // Pin this file's contribution to its full size on completion so
                     // the aggregate lands exactly on the total even if the final
                     // progress tick arrived just before EOF.
-                    await MainActor.run { self?.setFolderFileBytes(id, index: index, bytes: file.size) }
+                    if let model {
+                        await MainActor.run { model.setFolderFileBytes(id, index: index, bytes: file.size) }
+                    }
                 }
             }
             while next < parallel { submit(next); next += 1 }
@@ -475,7 +491,8 @@ extension AppViewModel {
                                             maxBytesPerSecond: cap,
                                             shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
                 guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
-                Task { @MainActor in self?.setTransferProgress(id, bytes: sofar, total: total) }
+                guard let self else { return }
+                Task { @MainActor in self.setTransferProgress(id, bytes: sofar, total: total) }
             }
             succeeded = true
             settleTransfer(id, .finished)

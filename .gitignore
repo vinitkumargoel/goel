@@ -73,6 +73,11 @@ Vendor/linux/sqlite/*.so
 Vendor/linux/sqlite/sqlite3.c
 Vendor/linux/sqlite/sqlite3.h
 
+# macOS-vendored native libraries (build with Scripts/macos/build-deps.sh).
+# Several hundred MB of source trees and build output, reproducible from the
+# pinned versions and digests in that script. Never commit one.
+Vendor/macos/
+
 # ---- Vendored ffmpeg (maintainer-staged, ~70 MB Mach-O) ----
 # Scripts/fetch_ffmpeg.sh reads an optional local binary from
 # Vendor/ffmpeg/<arch>/ffmpeg. Never commit one.
