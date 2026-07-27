@@ -14,6 +14,20 @@ enum SidebarFilter: Hashable {
     case type(FileType)
 }
 
+/// An app-owned request to open one server browser at a specific remote folder.
+/// It survives the view remount caused by switching servers.
+struct SFTPBrowserNavigationRequest: Equatable {
+    let id: UUID
+    let connectionID: SFTPConnection.ID
+    let path: String
+
+    init(id: UUID = UUID(), connectionID: SFTPConnection.ID, path: String) {
+        self.id = id
+        self.connectionID = connectionID
+        self.path = path
+    }
+}
+
 /// Columns the list can be sorted by.
 enum SortKey: String, CaseIterable, Identifiable {
     case index = "#"
@@ -129,6 +143,9 @@ final class AppViewModel: ObservableObject {
     /// The server currently being browsed. When non-nil the main pane shows the
     /// SFTP file browser instead of the download list.
     @Published var selectedServer: SFTPConnection.ID?
+
+    /// A transfer-row reveal waiting for the matching browser to mount and consume it.
+    @Published var sftpBrowserNavigation: SFTPBrowserNavigationRequest?
 
     /// The connection open in the add/edit sheet (nil when adding a new one).
     @Published var editingServer: SFTPConnection?

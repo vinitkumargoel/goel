@@ -71,7 +71,8 @@ struct SFTPBrowserView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .task(id: model.connection.id) {
-            await model.refresh()
+            await model.restore()
+            await consumeNavigationRequest(vm.sftpBrowserNavigation)
             // Piggy-back OS detection on this already-authenticated session, so it
             // never opens a connection of its own to an un-browsed server.
             vm.detectServerOSIfNeeded(connection, client: client)
@@ -87,6 +88,9 @@ struct SFTPBrowserView: View {
         // Re-list when a transfer changes the current server's contents (e.g. an
         // upload finishes) — the transfer center bumps this on completion.
         .onChange(of: vm.sftpMutationTick) { Task { await model.refresh() } }
+        .onChange(of: vm.sftpBrowserNavigation) { _, request in
+            Task { await consumeNavigationRequest(request) }
+        }
         // Clear any stale hover/drop highlight when the listing changes — SFTPEntry
         // ids are just names, so a same-named entry in the new folder must not
         // inherit the previous folder's highlight until the pointer next moves.
@@ -834,6 +838,12 @@ struct SFTPBrowserView: View {
 
     // MARK: Transfer strip
 
+    private func consumeNavigationRequest(_ request: SFTPBrowserNavigationRequest?) async {
+        guard let request, request.connectionID == model.connection.id else { return }
+        _ = await model.go(toPath: request.path)
+        vm.acknowledgeSFTPBrowserNavigation(request.id)
+    }
+
     private func transferStrip(_ transfers: [SFTPTransfer]) -> some View {
         VStack(spacing: 0) {
             HStack {
@@ -852,7 +862,8 @@ struct SFTPBrowserView: View {
                     SFTPTransferRow(
                         transfer: t, density: .full,
                         onCancel: { vm.requestCancelSFTPTransfer(t.id) },
-                        onRetry: { vm.retrySFTPTransfer(t.id) })
+                        onRetry: { vm.retrySFTPTransfer(t.id) },
+                        onShowRemoteFolder: { vm.revealSFTPTransfer(t) })
                 }
             }
         }

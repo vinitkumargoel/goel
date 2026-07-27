@@ -68,7 +68,13 @@ struct MenuBarView: View {
                         if !activeTransfers.isEmpty {
                             sectionLabel("SFTP Transfers")
                             ForEach(activeTransfers) { t in
-                                MenuBarSFTPTransferRow(transfer: t, vm: vm)
+                                MenuBarSFTPTransferRow(
+                                    transfer: t,
+                                    vm: vm,
+                                    onShowRemoteFolder: {
+                                        vm.revealSFTPTransfer(t)
+                                        activateMainWindow()
+                                    })
                                 Divider()
                             }
                         }
@@ -312,6 +318,7 @@ private struct MenuBarDownloadRow: View {
 private struct MenuBarSFTPTransferRow: View {
     let transfer: SFTPTransfer
     let vm: AppViewModel
+    let onShowRemoteFolder: () -> Void
     @State private var confirmingCancel = false
 
     var body: some View {
@@ -320,7 +327,8 @@ private struct MenuBarSFTPTransferRow: View {
             density: .full,
             serverLabel: vm.server(transfer.connectionID)?.label ?? "Server",
             onCancel: { confirmingCancel = true },
-            onRetry: { vm.retrySFTPTransfer(transfer.id) })
+            onRetry: { vm.retrySFTPTransfer(transfer.id) },
+            onShowRemoteFolder: onShowRemoteFolder)
         .confirmationDialog(
             "Cancel this \(transfer.direction == .upload ? "upload" : "download")?",
             isPresented: $confirmingCancel, titleVisibility: .visible

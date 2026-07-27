@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import GoelCore
 
 /// The accent-icon-tile + title row that heads the Add and Link-Grabber sheets.
@@ -99,6 +100,7 @@ struct SFTPTransferRow: View {
     var serverLabel: String? = nil
     var onCancel: (() -> Void)?
     var onRetry: (() -> Void)?
+    var onShowRemoteFolder: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: density == .full ? 3 : 0) {
@@ -108,19 +110,23 @@ struct SFTPTransferRow: View {
                     // The glyph encodes direction + state, both of which the
                     // grouped label below already says in words.
                     .a11yDecorative()
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(transfer.name).scaledFont(size: 12).lineLimit(1).truncationMode(.middle)
-                    if let serverLabel {
-                        Text(serverLabel)
-                            .scaledFont(size: density == .compact ? 10 : 10.5)
-                            .foregroundStyle(.tertiary).lineLimit(1)
+                if let onShowRemoteFolder {
+                    Button(action: onShowRemoteFolder) {
+                        identityContent
                     }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        (hovering ? NSCursor.pointingHand : NSCursor.arrow).set()
+                    }
+                    .accessibilityLabel(
+                        A11y.sentence(spokenDirection, transfer.name, serverLabel,
+                                      "Remote folder \(transfer.remoteFolderLabel)"))
+                    .accessibilityValue(spokenProgress)
+                    .accessibilityHint("Opens this folder in the SFTP browser.")
+                } else {
+                    identityContent
                 }
-                // The name and server together identify the transfer; the live
-                // numbers travel as the element's *value* so VoiceOver can
-                // re-read just those as they change.
-                .a11yGroup(label: A11y.sentence(spokenDirection, transfer.name, serverLabel),
-                           value: spokenProgress)
                 Spacer(minLength: density == .full ? 8 : 6)
                 trailingControls
             }
@@ -149,6 +155,33 @@ struct SFTPTransferRow: View {
         }
         .padding(.horizontal, density == .full ? 14 : 12)
         .padding(.vertical, density == .full ? 5 : 6)
+    }
+
+    private var identityContent: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(transfer.name)
+                .scaledFont(size: 12)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if let serverLabel {
+                Text(serverLabel)
+                    .scaledFont(size: density == .compact ? 10 : 10.5)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            Text("\(transfer.direction == .upload ? "To" : "From") \(transfer.remoteFolderLabel)")
+                .scaledFont(size: density == .compact ? 10 : 10.5)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // The identity and live numbers form one spoken element. Cancel/retry stay
+        // separate sibling controls so activating them never reveals the folder.
+        .a11yGroup(
+            label: A11y.sentence(spokenDirection, transfer.name, serverLabel,
+                                 "Remote folder \(transfer.remoteFolderLabel)"),
+            value: spokenProgress)
     }
 
     /// "Uploading" / "Downloading" — the arrow glyph and tint, in words.

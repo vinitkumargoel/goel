@@ -77,7 +77,11 @@ struct StatusBarView: View {
                             transfer: t, density: .compact,
                             serverLabel: vm.server(t.connectionID)?.label ?? "Server",
                             onCancel: { vm.requestCancelSFTPTransfer(t.id) },
-                            onRetry: { vm.retrySFTPTransfer(t.id) })
+                            onRetry: { vm.retrySFTPTransfer(t.id) },
+                            onShowRemoteFolder: {
+                                showTransfers = false
+                                vm.revealSFTPTransfer(t)
+                            })
                         Divider().opacity(0.3)
                     }
                 }

@@ -28,6 +28,13 @@ struct SFTPTransfer: Identifiable {
     /// The resolved remote target (upload) or remote source (download). Enough,
     /// with `connectionID`, to retry the transfer after a failure/cancel.
     let remotePath: String
+
+    /// The containing remote directory shown by transfer surfaces and used for
+    /// reveal-in-browser navigation.
+    var remoteFolder: String { SFTPBrowserPaths.parent(of: remotePath) }
+
+    /// A friendly folder label for compact transfer rows.
+    var remoteFolderLabel: String { remoteFolder == "." ? "Home" : remoteFolder }
     var bytes: Int64 = 0
     var total: Int64 = 0
     /// Live throughput in bytes/sec — a sliding-window average (see
@@ -164,8 +171,9 @@ final class SFTPBrowserModel: ObservableObject {
 
     @Published private(set) var connection: SFTPConnection
     private var client: SFTPClient?
+    private let locationStore: SFTPBrowserLocationStore
 
-    @Published var path: String
+    @Published private(set) var path: String
     @Published private(set) var entries: [SFTPEntry] = []
     @Published private(set) var isLoading = false
     @Published var error: String?
@@ -176,10 +184,13 @@ final class SFTPBrowserModel: ObservableObject {
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
 
-    init(connection: SFTPConnection, client: SFTPClient?) {
+    init(connection: SFTPConnection, client: SFTPClient?,
+         locationStore: SFTPBrowserLocationStore = .shared) {
         self.connection = connection
         self.client = client
-        self.path = connection.initialPath.isEmpty ? "." : connection.initialPath
+        self.locationStore = locationStore
+        self.path = locationStore.path(for: connection.id)
+            ?? (connection.initialPath.isEmpty ? "." : connection.initialPath)
         Self.sweepStaleDragTemps()
     }
 
@@ -201,24 +212,29 @@ final class SFTPBrowserModel: ObservableObject {
 
     // MARK: Navigation
 
-    func refresh() async {
-        guard let client else { error = "This server is misconfigured."; return }
-        isLoading = true
-        error = nil
-        do {
-            let listed = try await client.list(path)
-            entries = listed.sorted { a, b in
-                if a.isDirectory != b.isDirectory { return a.isDirectory && !b.isDirectory }
-                return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+    /// Restore the last successfully browsed folder. A stale saved folder is
+    /// discarded and retried from the connection's configured start folder.
+    func restore() async {
+        let savedPath = locationStore.path(for: connection.id)
+        let fallback = connection.initialPath.isEmpty ? "." : connection.initialPath
+        let candidate = savedPath ?? fallback
+
+        if let listed = await list(candidate) {
+            commit(path: candidate, entries: listed)
+        } else if savedPath != nil {
+            locationStore.removePath(for: connection.id)
+            backStack.removeAll()
+            forwardStack.removeAll()
+            if candidate != fallback, let listed = await list(fallback) {
+                commit(path: fallback, entries: listed)
             }
-        } catch let e as SFTPError {
-            error = e.message
-            entries = []
-        } catch {
-            self.error = error.localizedDescription
-            entries = []
         }
-        isLoading = false
+    }
+
+    /// Re-list the current directory without changing browser history.
+    func refresh() async {
+        guard !isLoading, let listed = await list(path) else { return }
+        commit(path: path, entries: listed)
     }
 
     func open(_ entry: SFTPEntry) async {
@@ -234,38 +250,71 @@ final class SFTPBrowserModel: ObservableObject {
         await navigate(to: Self.parent(of: path))
     }
 
-    /// Jump straight to a path — used by the breadcrumb bar.
-    func go(toPath newPath: String) async {
-        await navigate(to: newPath)
+    /// Jump straight to a path — used by breadcrumbs and transfer-row reveals.
+    /// Requests wait behind a listing already in flight instead of being dropped.
+    @discardableResult
+    func go(toPath newPath: String) async -> Bool {
+        while isLoading {
+            guard !Task.isCancelled else { return false }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        guard !Task.isCancelled else { return false }
+        if newPath == path { return true }
+        return await navigate(to: newPath)
     }
 
-    /// Push the current path onto the back history and list `newPath`. Ignores a
-    /// navigation fired while a listing is still in flight (re-entrancy guard:
-    /// `refresh()` sets `isLoading` synchronously before it suspends, so a
-    /// re-entrant tap would otherwise join onto the already-mutated path and race
-    /// a concurrent `refresh()`).
-    private func navigate(to newPath: String) async {
-        guard !isLoading, newPath != path else { return }
+    /// List first, then commit the path and history. A failed target leaves the
+    /// last valid folder, listing, and persisted location untouched.
+    @discardableResult
+    private func navigate(to newPath: String) async -> Bool {
+        guard !isLoading, newPath != path, let listed = await list(newPath) else { return false }
         backStack.append(path)
         forwardStack.removeAll()
-        path = newPath
-        await refresh()
+        commit(path: newPath, entries: listed)
+        return true
     }
 
     /// Step back to the previously-visited path (browser-style).
     func goBack() async {
-        guard !isLoading, let previous = backStack.popLast() else { return }
+        guard !isLoading, let previous = backStack.last,
+              let listed = await list(previous) else { return }
+        backStack.removeLast()
         forwardStack.append(path)
-        path = previous
-        await refresh()
+        commit(path: previous, entries: listed)
     }
 
     /// Step forward again after going back.
     func goForward() async {
-        guard !isLoading, let next = forwardStack.popLast() else { return }
+        guard !isLoading, let next = forwardStack.last,
+              let listed = await list(next) else { return }
+        forwardStack.removeLast()
         backStack.append(path)
-        path = next
-        await refresh()
+        commit(path: next, entries: listed)
+    }
+
+    private func list(_ target: String) async -> [SFTPEntry]? {
+        guard let client else { error = "This server is misconfigured."; return nil }
+        isLoading = true
+        error = nil
+        defer { isLoading = false }
+        do {
+            return try await client.list(target).sorted { a, b in
+                if a.isDirectory != b.isDirectory { return a.isDirectory && !b.isDirectory }
+                return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+            }
+        } catch let e as SFTPError {
+            error = e.message
+            return nil
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
+    }
+
+    private func commit(path newPath: String, entries newEntries: [SFTPEntry]) {
+        path = newPath
+        entries = newEntries
+        locationStore.setPath(newPath, for: connection.id)
     }
 
     // MARK: Mutations

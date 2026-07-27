@@ -236,7 +236,7 @@ struct SidebarView: View {
     private func item(_ label: String, _ symbol: String, _ filter: SidebarFilter) -> some View {
         let selected = vm.filter == filter && vm.selectedServer == nil
         return Button {
-            vm.selectedServer = nil
+            vm.closeServerBrowser()
             vm.filter = filter
         } label: {
             HStack(spacing: 9) {

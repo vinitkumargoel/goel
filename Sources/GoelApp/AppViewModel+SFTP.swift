@@ -44,18 +44,41 @@ extension AppViewModel {
     /// Delete a server and its stored password.
     func removeServer(_ id: SFTPConnection.ID) {
         if selectedServer == id { selectedServer = nil }
+        if sftpBrowserNavigation?.connectionID == id { sftpBrowserNavigation = nil }
+        SFTPBrowserLocationStore.shared.removePath(for: id)
         SFTPConnectionStore.shared.remove(id)
         reloadServers()
         toastNow("Server removed")
     }
 
-    /// Select a server for browsing (clears the download-list selection focus).
+    /// Select a server for browsing (clears any transfer-generated destination).
     func selectServer(_ id: SFTPConnection.ID) {
+        sftpBrowserNavigation = nil
         selectedServer = id
+    }
+
+    /// Open the remote folder containing a transfer's source/destination item.
+    func revealSFTPTransfer(_ transfer: SFTPTransfer) {
+        guard server(transfer.connectionID) != nil else {
+            toastNow("Server is no longer available")
+            return
+        }
+        sftpBrowserNavigation = SFTPBrowserNavigationRequest(
+            connectionID: transfer.connectionID,
+            path: transfer.remoteFolder)
+        selectedServer = transfer.connectionID
+    }
+
+    /// Clear only the request a browser actually finished handling. A stale task
+    /// must not erase a newer click that arrived while it was listing.
+    func acknowledgeSFTPBrowserNavigation(_ requestID: UUID) {
+        guard sftpBrowserNavigation?.id == requestID else { return }
+        sftpBrowserNavigation = nil
     }
 
     /// Leave the browser and return to the download list.
     func closeServerBrowser() {
+        sftpBrowserNavigation = nil
         selectedServer = nil
     }
 
