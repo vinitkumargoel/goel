@@ -96,6 +96,11 @@ public struct RemoteRouter: Sendable {
             return Self.response(status: "200 OK", type: "text/html; charset=utf-8",
                                  body: Data(Self.page(config: config).utf8))
 
+        // Also reachable ahead of the auth gate (see `staticAsset`); handled here
+        // too so the router is complete on its own and testable in isolation.
+        case ("GET", let path) where path.hasPrefix(Self.assetPrefix):
+            return Self.staticAsset(path: path) ?? Self.notFound()
+
         case ("GET", "/api/config"):
             return Self.json(ConfigRow(username: config.username, readOnly: config.readOnly,
                                        requireAuth: config.requireAuth, theme: config.theme))
@@ -234,6 +239,36 @@ public struct RemoteRouter: Sendable {
         }
     }
 
+    static let assetPrefix = "/assets/"
+
+    /// The compiled UI, served ahead of the auth gate.
+    ///
+    /// Returns nil when `path` is not an asset path at all, so callers can fall
+    /// through; an asset path naming something unknown yields a 404 rather than
+    /// nil, because there is nothing else it could have meant.
+    ///
+    /// **Serving these unauthenticated is deliberate.** The login page needs its
+    /// own stylesheet and script before anyone has signed in, and gating them
+    /// would render it unstyled and inert. Nothing here is a secret: the bundle
+    /// is byte-identical for every user and every deployment, and carries no
+    /// configuration — the per-session `BOOT` object lives in the page shell,
+    /// which stays behind the gate.
+    ///
+    /// Lookup is a dictionary hit on the filename and never touches a
+    /// filesystem, so there is no path traversal to defend against:
+    /// `/assets/../../etc/passwd` is simply not a key.
+    ///
+    /// Filenames carry a content hash, which is what makes the immutable
+    /// year-long cache safe — new bytes mean a new URL, so a cached copy can
+    /// never be served against a newer shell.
+    static func staticAsset(path: String) -> Data? {
+        guard path.hasPrefix(assetPrefix) else { return nil }
+        let name = String(path.dropFirst(assetPrefix.count))
+        guard let asset = PortalBundle.assets[name] else { return notFound() }
+        return response(status: "200 OK", type: asset.mime, body: Data(asset.body.utf8),
+                        extraHeaders: ["Cache-Control": "public, max-age=31536000, immutable"])
+    }
+
     /// Access check shared by the JSON API and the streaming loops. A valid
     /// session cookie (decided by the server) always passes; otherwise, an open
     /// portal (`requireAuth == false`) passes, and finally a matching bearer/query
@@ -359,12 +394,21 @@ public struct RemoteRouter: Sendable {
         var head = "HTTP/1.1 \(status)\r\n"
         head += "Content-Type: \(type)\r\n"
         head += "Content-Length: \(body.count)\r\n"
-        head += "Cache-Control: no-store\r\n"
-        // Defense-in-depth for the control page: inline script/style are ours by
-        // construction; allow same-origin fetch/SSE, streamed media, and the
-        // inline SVG/data: favicon; forms post same-origin; nothing may frame us.
-        head += "Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; "
-        head += "style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self'; "
+        // `no-store` is the right default for every dynamic response here, but
+        // the hashed bundle assets must override it — emitting both would leave
+        // the caching behaviour up to whichever header the client reads last.
+        if extraHeaders["Cache-Control"] == nil {
+            head += "Cache-Control: no-store\r\n"
+        }
+        // Defense-in-depth for the control page. Script and style come from
+        // /assets/ under content-addressed names, so 'self' is enough and inline
+        // execution can be refused outright — which matters because the portal
+        // renders download names, tracker hosts and error strings that originate
+        // off-machine. Also allowed: same-origin fetch/SSE, streamed media, and
+        // the inline SVG/data: favicon. Forms post same-origin; nothing may
+        // frame us.
+        head += "Content-Security-Policy: default-src 'none'; script-src 'self'; "
+        head += "style-src 'self'; img-src 'self' data:; media-src 'self'; "
         head += "connect-src 'self'; form-action 'self'; base-uri 'none'\r\n"
         head += "X-Content-Type-Options: nosniff\r\n"
         head += "X-Frame-Options: DENY\r\n"

@@ -67,8 +67,8 @@ Every router response carries:
 
 ```
 Cache-Control: no-store
-Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline';
-  style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self';
+Content-Security-Policy: default-src 'none'; script-src 'self';
+  style-src 'self'; img-src 'self' data:; media-src 'self';
   connect-src 'self'; form-action 'self'; base-uri 'none'
 X-Content-Type-Options: nosniff
 X-Frame-Options: DENY
@@ -291,12 +291,35 @@ of the same HTTP surface.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/` | The embedded HTML control page |
+| `GET` | `/` | The HTML shell for the control page |
+| `GET` | `/assets/<name>` | The compiled portal UI — **unauthenticated**, see below |
 | `GET` | `/login` | Login form (redirects to `/` if already signed in, or if auth is off) |
 | `POST` | `/login` | Sign in. Accepts JSON **or** `application/x-www-form-urlencoded`, so the portal works without JavaScript. Sets `goel_session` |
 | `GET`/`POST` | `/logout` | Clears the cookie and invalidates open streams |
 | `GET` | `/api/events` | Server-sent events: the full task list pushed roughly every 1.5 s |
 | `GET` | `/stream?id=<uuid>` | Byte-range media streaming of a task's file |
+
+### `GET /assets/<name>`
+
+The portal's JavaScript and CSS. Source lives in `/portal` (React + TypeScript) and is
+compiled into `Sources/GoelCore/Remote/Generated/PortalBundle.swift`, so the daemon serves
+it from memory with no filesystem access — a lookup against an unknown name is a `404`,
+and there is no path to traverse.
+
+Filenames carry a content hash (`portal-<hash>.js`), which makes them immutable:
+
+```
+Cache-Control: public, max-age=31536000, immutable
+```
+
+New bytes produce a new URL, so a cached copy can never be served against a newer shell.
+Every other response on this surface remains `no-store`.
+
+**These four files are served before the auth gate, deliberately.** The login page needs
+its own stylesheet and script before anyone has signed in; gating them would render it
+unstyled and inert. Nothing in them is a secret — the bundle is byte-identical for every
+user and every deployment and contains no configuration. The per-session values (username,
+theme, read-only) live in the page shell at `/`, which stays behind the gate.
 
 ### `GET /api/events` (SSE)
 

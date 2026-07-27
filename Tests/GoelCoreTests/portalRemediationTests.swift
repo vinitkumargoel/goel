@@ -241,22 +241,84 @@ final class PortalRemediationTests: XCTestCase {
     }
 
     /// The portal JS must strip the token from the address bar once the server has
-    /// exchanged it for a cookie. A text assertion, not a behavioural one — the JS
-    /// is an inert string constant from GoelCore's point of view.
+    /// exchanged it for a cookie. A text assertion, not a behavioural one — the
+    /// bundle is an inert string constant from GoelCore's point of view.
+    ///
+    /// The portal is now compiled from `/portal`, so these guards match only what
+    /// survives minification: property names and string literals, never function
+    /// or variable names. The behaviour itself is expressed in
+    /// `portal/src/main.tsx`; what this catches is the bundle being regenerated
+    /// without it.
     func testPortalScriptScrubsTheTokenFromTheAddressBar() {
-        XCTAssertTrue(RemotePortalAssets.js.contains("history.replaceState"),
+        XCTAssertTrue(PortalBundle.js.contains("history.replaceState"),
                       "the token must not linger in the address bar or in history")
     }
 
     // MARK: RP-07 — "Copied" must mean copied
 
-    /// Also a text guard: `navigator.clipboard` is undefined over plain HTTP, which
-    /// is the default LAN deployment, so the unconditional success toast was a lie.
-    func testPortalScriptDoesNotClaimAnUnverifiedCopy() {
-        XCTAssertFalse(RemotePortalAssets.js.contains("writeText(t).catch(()=>{});toast('Copied'"),
-                       "the copy toast must follow the copy, not precede it")
-        XCTAssertTrue(RemotePortalAssets.js.contains("function copyFallback("),
+    /// `navigator.clipboard` is undefined over plain HTTP, which is the default
+    /// LAN deployment, so an unconditional success toast was a lie. The fallback
+    /// path must still be present in the shipped bundle.
+    func testPortalScriptKeepsTheNonSecureContextCopyFallback() {
+        XCTAssertTrue(PortalBundle.js.contains("execCommand"),
                       "a non-secure context needs a selection-copy fallback")
+        XCTAssertTrue(PortalBundle.js.contains("writeText"),
+                      "the secure-context path must still be preferred when available")
+    }
+
+    // MARK: Bundle delivery
+
+    /// Every asset the shell references must actually resolve, or the portal
+    /// serves a page whose script and stylesheet both 404 — which fails as a
+    /// blank screen rather than as an error anyone would notice in testing.
+    func testPageShellReferencesOnlyServableAssets() {
+        let config = RemoteRouter.Config(token: "t", requireAuth: true, readOnly: false,
+                                         theme: "nord", username: "admin")
+        let shell = RemoteRouter.page(config: config)
+        XCTAssertTrue(shell.contains(PortalBundle.jsPath), "the shell must load the bundle")
+        XCTAssertTrue(shell.contains(PortalBundle.cssPath), "the shell must load the stylesheet")
+
+        let login = RemoteRouter.loginPage(theme: "nord", error: nil)
+        XCTAssertTrue(login.contains(PortalBundle.loginJSPath))
+        XCTAssertTrue(login.contains(PortalBundle.loginCSSPath))
+
+        for path in [PortalBundle.jsPath, PortalBundle.cssPath,
+                     PortalBundle.loginJSPath, PortalBundle.loginCSSPath] {
+            XCTAssertNotNil(RemoteRouter.staticAsset(path: path), "\(path) must be servable")
+        }
+    }
+
+    /// The bundle is content-addressed, so an unknown name is a 404 rather than
+    /// anything that could reach a filesystem.
+    func testUnknownAssetIsNotFoundAndNeverTouchesTheFilesystem() {
+        for path in ["/assets/nope.js", "/assets/../../etc/passwd", "/assets/"] {
+            let data = RemoteRouter.staticAsset(path: path)
+            let head = String(decoding: data ?? Data(), as: UTF8.self)
+            XCTAssertTrue(head.hasPrefix("HTTP/1.1 404"), "\(path) must 404, got: \(head.prefix(40))")
+        }
+    }
+
+    /// Inline script was allowed only because the old portal *was* inline. Now
+    /// that everything is served from `/assets/`, the policy must forbid it —
+    /// the portal renders download names and tracker hosts that come from off
+    /// the machine.
+    func testContentSecurityPolicyForbidsInlineScript() {
+        let head = String(decoding: RemoteRouter.notFound(), as: UTF8.self)
+        XCTAssertTrue(head.contains("script-src 'self'"), "script must come from /assets/ only")
+        XCTAssertFalse(head.contains("'unsafe-inline'"), "inline execution must not be allowed")
+    }
+
+    /// Hashed assets are immutable and must say so; everything else must not be
+    /// cached at all. Emitting both headers would leave the choice to the client.
+    func testAssetsAreImmutablyCachedAndPagesAreNot() {
+        let asset = String(decoding: RemoteRouter.staticAsset(path: PortalBundle.jsPath) ?? Data(),
+                           as: UTF8.self)
+        XCTAssertTrue(asset.contains("Cache-Control: public, max-age=31536000, immutable"))
+        XCTAssertFalse(asset.contains("Cache-Control: no-store"),
+                       "an asset must carry exactly one Cache-Control header")
+
+        let page = String(decoding: RemoteRouter.notFound(), as: UTF8.self)
+        XCTAssertTrue(page.contains("Cache-Control: no-store"))
     }
 
     // MARK: RP-09 — a no-op logout must not tear down everybody's streams

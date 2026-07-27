@@ -510,6 +510,14 @@ public actor RemoteControlServer {
     private func respond(to request: RemoteRequest, client: String) async -> Data {
         let authed = await portalAuthed(request, client: client)
         let cfg = routerConfig
+
+        // Ahead of every gate: the login page cannot style itself or run its
+        // submit handler without these, and they are the same public bytes for
+        // everyone. See `RemoteRouter.staticAsset(path:)`.
+        if request.method == "GET", let asset = RemoteRouter.staticAsset(path: request.path) {
+            return asset
+        }
+
         switch (request.method, request.path) {
         case ("GET", "/login"):
             if authed || !cfg.requireAuth { return Self.redirect(to: "/") }
