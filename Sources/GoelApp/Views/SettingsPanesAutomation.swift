@@ -435,7 +435,11 @@ struct RemoteAccessPane: View {
         URL(string: "\(scheme)://127.0.0.1:\(vm.settings.remotePort)/?token=\(vm.settings.remoteToken)")
     }
 
-    private static func newToken() -> String {
+    // `nonisolated` because it is pure — a UUID and two string operations, no
+    // view state. Without it the method inherits main-actor isolation from
+    // `View`, and both call sites invoke it from inside `update`'s @Sendable
+    // closure, which older toolchains reject.
+    private nonisolated static func newToken() -> String {
         UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
 }

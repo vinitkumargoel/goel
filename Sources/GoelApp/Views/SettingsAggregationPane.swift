@@ -299,7 +299,12 @@ private struct AdapterRow: View {
         Button {
             guard !disabled else { return }
             if vm.settings.aggregationAdapterIds.isEmpty {
-                vm.update { $0.aggregationAdapterIds = vm.networkAdapters.map(\.bsdName) }
+                // Read on the main actor, where this button action already runs.
+                // `update` takes a @Sendable closure, and reaching into
+                // main-actor state from inside one is an error on the toolchain
+                // CI builds with.
+                let ids = vm.networkAdapters.map(\.bsdName)
+                vm.update { $0.aggregationAdapterIds = ids }
             }
             vm.toggleAggregationAdapter(adapter.bsdName)
         } label: {
