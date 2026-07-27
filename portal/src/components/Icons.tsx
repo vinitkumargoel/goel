@@ -163,6 +163,23 @@ export function PlusIcon(props: IconProps) {
   )
 }
 
+export function FolderIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...props}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" {...stroke} />
+    </svg>
+  )
+}
+
+export function FolderPlusIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...props}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" {...stroke} />
+      <path d="M12 10v6M9 13h6" {...stroke} />
+    </svg>
+  )
+}
+
 export function PanelIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...props}>

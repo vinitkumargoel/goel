@@ -1,9 +1,12 @@
 import type {
   AddRequest,
   AddResult,
+  FolderListing,
   HistoryRow,
   NetworkState,
   NetworkUpdate,
+  NewFolderRequest,
+  NewFolderResult,
   TaskDetail,
   TaskRow,
 } from './types'
@@ -53,6 +56,22 @@ export function setRefusalHandler(fn: RefusalSink): void {
   onRefused = fn
 }
 
+/**
+ * The server's own words for a failure. Error bodies are `text/plain` and one
+ * short sentence; anything longer or of another type is some intermediary's
+ * error page, not ours, and is not worth showing.
+ */
+async function errorText(response: Response): Promise<string> {
+  if (!response.headers.get('Content-Type')?.startsWith('text/plain')) return ''
+  try {
+    const text = (await response.text()).trim()
+    return text.length <= 300 ? text : ''
+  } catch {
+    // The body is a nicety; the status itself is the signal.
+    return ''
+  }
+}
+
 async function request(path: string, init?: RequestInit): Promise<Response> {
   let response: Response
   try {
@@ -69,19 +88,17 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
   }
 
   if (response.status === 403) {
-    let text = ''
-    try {
-      text = (await response.text()).trim()
-    } catch {
-      // The body is a nicety; the refusal itself is the signal.
-    }
-    const message = text || 'Change blocked'
+    const message = (await errorText(response)) || 'Change blocked'
     onRefused(message)
     throw new ApiError('refused', message, 403)
   }
 
   if (!response.ok) {
-    throw new ApiError('http', `Request failed (${response.status})`, response.status)
+    // 4xx routes answer with a sentence explaining what was wrong with the
+    // request — "A folder name cannot contain /". Discarding it in favour of
+    // "Request failed (400)" would leave the user with nothing to act on.
+    const message = (await errorText(response)) || `Request failed (${response.status})`
+    throw new ApiError('http', message, response.status)
   }
 
   return response
@@ -125,6 +142,10 @@ export const api = {
       `/api/file-priority?id=${encodeURIComponent(taskId)}&file=${fileId}` +
         `&prio=${encodeURIComponent(priority)}`,
     ),
+
+  folders: (path?: string) =>
+    getJSON<FolderListing>('/api/folders' + (path ? `?path=${encodeURIComponent(path)}` : '')),
+  createFolder: (body: NewFolderRequest) => postJSON<NewFolderResult>('/api/folder', body),
 
   add: (body: AddRequest) => postJSON<AddResult>('/api/add', body),
   updateNetwork: (body: NetworkUpdate) => postJSON<NetworkState>('/api/network', body),

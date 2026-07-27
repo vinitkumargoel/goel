@@ -168,8 +168,15 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
     )
   }
 
-  const eligibleCount = net.adapters.filter((a) => a.eligible).length
-  const canSplit = eligibleCount >= 2
+  const eligibleNames = net.adapters.filter((a) => a.eligible).map((a) => a.name)
+  const canSplit = eligibleNames.length >= 2
+  // Compared by membership rather than by count: an adapter that was selected
+  // and has since become ineligible still shows ticked, so a bare count can read
+  // "all eligible" for a set that isn't.
+  const allEligibleTicked = eligibleNames.every((n) => ticked.includes(n))
+  // `[]` is the server's "every eligible adapter" sentinel, so an empty tick list
+  // would be saved as its exact opposite — and come back all-ticked on reload.
+  const nothingTicked = ticked.length === 0
 
   return (
     <div className="card pd">
@@ -298,12 +305,14 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
           <div className="sctl">
             <button
               className="btn primary"
+              disabled={nothingTicked}
+              title={nothingTicked ? 'Tick at least one interface' : undefined}
               onClick={() =>
                 void save({
                   // All-ticked is sent as the empty "every eligible adapter"
                   // sentinel, so adding a NIC later is picked up automatically
                   // instead of being silently excluded by a stale list.
-                  adapters: ticked.length === eligibleCount ? [] : ticked,
+                  adapters: allEligibleTicked ? [] : ticked,
                   streams,
                 })
               }

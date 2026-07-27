@@ -51,7 +51,7 @@ src/
   hooks/
     useTasks.ts         SSE stream with a poll fallback
     useToasts.ts
-  components/           Topbar, Sidebar, LibraryView, DetailPanel, …
+  components/           Topbar, Sidebar, LibraryView, DetailPanel, FolderPicker, …
   styles/
     themes.css          the four palettes — mirrored from Theme.swift
     portal.css          component styles
@@ -81,6 +81,16 @@ code splitting on purpose: a dynamic `import()` would need a CSP relaxation, and
 **Read-only sessions.** `BOOT.readOnly` hides controls that would be refused,
 but it is a courtesy, not a control — the server refuses every POST with a 403
 before routing. Never rely on the UI for that.
+
+**The save-folder picker is web-only.** `FolderPicker.tsx` exists because a browser has
+no native folder chooser for a *remote* filesystem. The macOS app opens a real
+`NSOpenPanel` instead — do not port this to it. Every path it shows comes from
+`GET /api/folders`; it never joins or trims one itself, so the containment rule lives in
+`SaveFolderBrowser.swift` alone and not in a weaker JavaScript copy.
+
+**The `hide-sm` / `hide-xs` classes in `LibraryView` are load-bearing.** They must match
+the narrow-viewport `grid-template-columns` in `portal.css` and be identical between a
+header cell and the row cell under it, or a column header ends up over nothing.
 
 **Adding an API route** means: the Swift route, the type in `types.ts`, the
 method in `api.ts`, then the component. The `api` layer already handles the 401

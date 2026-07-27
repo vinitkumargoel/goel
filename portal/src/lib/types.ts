@@ -157,6 +157,37 @@ export interface AddRequest {
   network?: string
 }
 
+/** One folder inside the downloads root — `GET /api/folders`. */
+export interface FolderEntry {
+  name: string
+  path: string
+}
+
+/** One level of the save-folder tree. Paths are absolute, server-side. */
+export interface FolderListing {
+  /** The downloads root; the picker cannot navigate above it. */
+  root: string
+  /** The folder being listed. Equals `root` at the top. */
+  path: string
+  /** The folder above `path`, or null at the root. */
+  parent: string | null
+  folders: FolderEntry[]
+  /** False when the folder is not writable — hide "New folder". */
+  writable: boolean
+}
+
+/** Request body for `POST /api/folder`. */
+export interface NewFolderRequest {
+  name: string
+  /** Absolute parent path. Omitted means the downloads root. */
+  parent?: string
+}
+
+/** Response from `POST /api/folder` — the absolute path that now exists. */
+export interface NewFolderResult {
+  path: string
+}
+
 /** Request body for `POST /api/network`. */
 export interface NetworkUpdate {
   aggregation?: boolean

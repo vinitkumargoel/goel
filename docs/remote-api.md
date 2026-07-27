@@ -97,7 +97,7 @@ verified for upgrades. Session IDs are 32 random bytes.
 
 ---
 
-## The 14 JSON routes
+## The 18 JSON routes
 
 All of these live in `RemoteRouter.handle(_:sessionAuthed:)`. Parameters are query-string
 parameters unless stated otherwise. `id` is always a task UUID string.
@@ -233,6 +233,56 @@ Response is a pair of counts, not `{"ok":true}`. `refused` is always present:
 #### `POST /api/history-remove?id=<uuid>`
 
 Delete one history entry.
+
+#### `GET /api/folders?path=<abs>`
+
+Subfolders of `path`, for choosing a save folder without typing one. Omit `path` for the
+downloads root.
+
+```jsonc
+{
+  "root": "/Users/me/Downloads",          // the outermost folder reachable here
+  "path": "/Users/me/Downloads/Linux",    // the folder listed; equals root at the top
+  "parent": "/Users/me/Downloads",        // null at the root
+  "folders": [
+    { "name": "ISOs", "path": "/Users/me/Downloads/Linux/ISOs" }
+  ],
+  "writable": true                        // false ⇒ `POST /api/folder` would fail here
+}
+```
+
+Only directories are listed, name-sorted, and dot-folders are omitted. `403 Forbidden` if
+`path` is outside `root` — the same boundary [`POST /api/add`](#post-apiadd) enforces on
+`folder`, so a path this route hands out is always one `add` will accept.
+
+A path that does not exist, or is a file, gets the **same** `403`. That is deliberate:
+distinguishing "refused" from "not found" would make this a probe for which paths exist on
+the machine. Do not parse the reason out of the body — treat any `403` here as "re-list
+from the root".
+
+Read-only sessions may browse; only creating is blocked.
+
+#### `POST /api/folder`
+
+Create one folder inside the downloads root and answer with its absolute path.
+
+```jsonc
+{ "name": "ISOs", "parent": "/Users/me/Downloads/Linux" }   // parent omitted ⇒ the root
+```
+
+```json
+{ "path": "/Users/me/Downloads/Linux/ISOs" }
+```
+
+`name` must be a single path component: not empty, no `/` or `\`, not starting with `.`,
+no control characters, at most 240 bytes. A name that fails is a `400 Bad Request` whose
+body is the reason — it is **not** silently repaired into something else, because creating
+a folder the user did not name is worse than refusing. `403 Forbidden` if `parent` is
+outside the root, if the result would resolve outside it (a symlinked parent), or in
+read-only mode.
+
+Creating a folder that already exists succeeds and returns it. A *file* of that name is
+a `403`.
 
 #### `GET /api/network`
 
@@ -452,8 +502,11 @@ curl -s "${AUTH[@]}" -X POST "$GOEL/api/remove?id=$TASK_ID"
 
 ## Notes for integrators
 
-- **`POST /api/add` and `POST /api/network` are the only routes with a request body.**
-  Everything else takes query parameters.
+- **`POST /api/add`, `POST /api/network` and `POST /api/folder` are the only routes with a
+  request body.** Everything else takes query parameters.
+- **Save folders are confined to the downloads root.** `GET /api/folders` is the way to
+  discover a folder `POST /api/add` will accept; there is no route that reaches anywhere
+  else on the filesystem.
 - **Unknown `prio` values silently become `normal`.** Validate before sending if that
   matters to you.
 - **`data=` on remove defaults to false.** Deletion must be requested explicitly.

@@ -122,6 +122,21 @@ textarea.finput{min-height:88px;font-family:inherit;resize:vertical}
 .fhint{font-size:11px;color:var(--text-faint);margin-top:6px;line-height:1.5}.fhint svg{width:12px;height:12px;display:inline;vertical-align:-2px;color:var(--orange)}
 .twocol{display:flex;gap:14px;margin-top:16px}.twocol .fg{flex:1}
 .btn{height:38px;padding:0 16px;border:0;border-radius:10px;background:var(--bg-control);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px}.btn:hover{background:var(--bg-control-active)}.btn.primary{background:var(--accent);color:#fff}.btn.primary:hover{background:var(--accent-press)}.btn svg{width:15px;height:15px;flex:0 0 auto}
+.btn:disabled{opacity:.45;cursor:default}.btn:disabled:hover{background:var(--bg-control)}
+.btn.ghost{background:transparent;color:var(--text-dim)}.btn.ghost:hover{background:var(--bg-control)}
+
+/* folder picker — a second layer above the Add dialog, hence the higher z */
+.picker-scrim{z-index:130}
+.modal.picker{width:460px}
+.pkpath{padding:10px 22px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pkbody{min-height:190px;max-height:44vh}
+.pkrow{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:13px;font-family:inherit;text-align:left;cursor:pointer}.pkrow:hover{background:var(--bg-control)}.pkrow svg{width:16px;height:16px;flex:0 0 auto;color:var(--accent)}.pkrow.up svg{color:var(--text-faint)}.pkrow .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pknew{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}.pknew .finput{flex:1}
+/* Overrides .finput's own padding so this row ends up the same height as the
+ * Priority select beside it — the buttons inside would otherwise make it taller. */
+.pkfield{display:flex;gap:6px;align-items:center;padding:4px 4px 4px 12px}
+.pkfield .pkval{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}.pkfield .pkval.dim{color:var(--text-faint)}
+.pkfield .btn{height:30px;padding:0 10px;font-size:12px}.pkfield .btn.pkclear{padding:0 8px}.pkfield .btn svg{width:13px;height:13px}
 .menu{position:fixed;z-index:140;min-width:210px;background:var(--bg-modal);border:1px solid var(--border-strong);border-radius:11px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:5px;font-size:12.5px}
 .mi{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;cursor:pointer;color:var(--text);white-space:nowrap}.mi:hover{background:var(--accent);color:#fff}.mi:hover svg{color:#fff}.mi svg{width:15px;height:15px;color:var(--text-dim);flex:0 0 auto}.mi .t{flex:1}
 .mi.danger{color:var(--red)}.mi.danger svg{color:var(--red)}.mi.danger:hover{background:var(--red);color:#fff}.msep{height:1px;background:var(--border);margin:4px 6px}

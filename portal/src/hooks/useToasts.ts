@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type ToastTone = 'ok' | 'warn' | 'copy' | 'trash'
 
@@ -14,9 +14,20 @@ const VISIBLE_MS = 2400
 export function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([])
   const nextId = useRef(1)
-  // Cleared on unmount so a toast scheduled just before teardown can't call
-  // setState on a dead component.
   const timers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  // Every pending dismissal is cancelled on unmount. The set was being tracked
+  // but never drained, so the timers outlived the component and each one still
+  // fired — harmless today, but only because React tolerates a setState on an
+  // unmounted component. Under StrictMode's mount/unmount/remount it also meant
+  // a second set of live timers per toast.
+  useEffect(() => {
+    const pending = timers.current
+    return () => {
+      for (const timer of pending) clearTimeout(timer)
+      pending.clear()
+    }
+  }, [])
 
   const dismiss = useCallback((id: number) => {
     setToasts((current) => current.filter((t) => t.id !== id))

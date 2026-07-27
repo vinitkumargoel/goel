@@ -20,19 +20,23 @@ const DIST = join(portalDir, 'dist')
 const OUT = join(repoRoot, 'Sources', 'GoelCore', 'Remote', 'Generated', 'PortalBundle.swift')
 
 /**
- * Swift raw string literals are delimited by N `#` characters, and the literal
- * ends at the first `"""` followed by that many `#`. Interpolation is likewise
- * `\` + N `#` + `(`. Pick the smallest N for which neither sequence occurs in
- * the payload, so no escaping of the content itself is ever needed and the
- * bytes reach the browser exactly as Vite emitted them.
+ * Swift raw string literals are delimited by N `#` characters. Inside one, two
+ * sequences are still live: `"""` + N `#` ends the literal, and `\` + N `#`
+ * begins an escape — interpolation `\#(…)` but equally `\#n`, `\#t`, `\#u{…}`,
+ * `\#0` and `\#\`. Pick the smallest N for which neither occurs in the payload,
+ * so no escaping of the content itself is ever needed and the bytes reach the
+ * browser exactly as Vite emitted them.
  *
- * A fixed N would be a latent bug: the day a bundle happens to contain `"""#`
- * inside a string constant, the Swift file would stop compiling — or worse,
- * compile with a truncated bundle.
+ * The escape check is deliberately `\` + N `#` and not `\` + N `#` + `(`.
+ * Guarding only interpolation leaves `\#n` — legal in minified JS inside a
+ * regex or string literal — to be silently rewritten into a newline, which
+ * corrupts the bundle without failing the build. The end-delimiter check has
+ * the same shape of hazard: a fixed N would break the day a bundle contains
+ * `"""#`.
  */
 function rawLiteral(content) {
   let n = 1
-  while (content.includes(`"""${'#'.repeat(n)}`) || content.includes(`\\${'#'.repeat(n)}(`)) {
+  while (content.includes(`"""${'#'.repeat(n)}`) || content.includes(`\\${'#'.repeat(n)}`)) {
     n++
     if (n > 16) throw new Error('could not find a safe raw-string delimiter')
   }

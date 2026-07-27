@@ -68,9 +68,13 @@ export function HistoryView({ canWrite, onReadd, onRemoved }: HistoryViewProps) 
           {state === 'ready' &&
             rows.map((e) => {
               const type = fileType({ name: e.name, kind: e.kind, statusToken: '' })
-              // The folder the file landed in, which is what distinguishes two
-              // entries with the same name.
-              const folder = e.savePath.split('/').slice(-1)[0] ?? ''
+              // `savePath` is the full path *including* the file name (see
+              // `DownloadTask.savePath`), so the containing folder is the
+              // second-to-last component. Taking the last one made this column
+              // repeat the name beside it, which is the one thing it must not do:
+              // it exists to tell apart two entries that share a name.
+              const parts = e.savePath.split('/').filter(Boolean)
+              const folder = parts.length >= 2 ? parts[parts.length - 2]! : ''
               return (
                 <div className="hrow" key={e.id}>
                   <div className={`hic ft-${type}`}>

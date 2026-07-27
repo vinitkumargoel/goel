@@ -31,10 +31,15 @@ export function LibraryView({
         </div>
       )}
 
+      {/* The hide-* classes must match the cells below exactly, and match the
+          narrow-viewport `grid-template-columns` in portal.css: at ≤920px the
+          grid drops to `1fr 96px 108px`, which is Status' width gone and Speed's
+          kept, so Status is the `hide-sm` column. Getting these out of step
+          leaves a header label with no column under it. */}
       <div className="lhead">
         <div>Name</div>
         <div className="r">Size</div>
-        <div className="hide-xs">Status</div>
+        <div className="hide-sm">Status</div>
         <div className="r hide-xs">↓ Speed</div>
       </div>
 
@@ -135,7 +140,7 @@ const Row = memo(function Row({
 
       <div className="c r">{fmtSize(task.totalBytes)}</div>
 
-      <div className="c hide-xs">
+      <div className="c hide-sm">
         <div className="scell">
           <span className={`sdot st-${task.statusToken}`} />
           <span className="stext">
@@ -145,7 +150,7 @@ const Row = memo(function Row({
         </div>
       </div>
 
-      <div className="c r dspd hide-sm">{task.downSpeed > 0 ? fmtSpeed(task.downSpeed) : '—'}</div>
+      <div className="c r dspd hide-xs">{task.downSpeed > 0 ? fmtSpeed(task.downSpeed) : '—'}</div>
     </div>
   )
 })
