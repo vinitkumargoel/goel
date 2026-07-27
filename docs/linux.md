@@ -261,7 +261,7 @@ and `goel doctor` afterwards.
 To pin a version, or to go back:
 
 ```sh
-curl -fsSL https://goel.vinitk.dev/install.sh | sudo GOEL_VERSION=1.0.3 sh
+curl -fsSL https://goel.vinitk.dev/install.sh | sudo GOEL_VERSION=1.0.4 sh
 ```
 
 ---

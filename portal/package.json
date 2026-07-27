@@ -1,0 +1,25 @@
+{
+  "name": "goel-portal",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The Goel° web portal UI. Built here, embedded into GoelCore as Generated/PortalBundle.swift, and served by both the macOS app and the Linux daemon.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build && node scripts/codegen.mjs",
+    "bundle": "node scripts/codegen.mjs",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
+  }
+}

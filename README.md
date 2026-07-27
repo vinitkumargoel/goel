@@ -148,7 +148,7 @@ Everything the app needs is bundled — **no Homebrew or libraries required.**
 minimum of **macOS 26.0** (libssh2 declares 15.0) even though the app advertises 14.0. dyld refuses an
 over-targeted library before `main()`, so on a Mac between Sonoma and macOS 26 those builds quit on
 launch. Check a copy you already hold with `Scripts/check_min_os.sh "/Applications/Goel°.app"`. The gate
-runs in both `Scripts/build_app.sh` and `Scripts/make_dmg.sh` from `1.0.3` onward, so no later archive can
+runs in both `Scripts/build_app.sh` and `Scripts/make_dmg.sh` from `1.0.4` onward, so no later archive can
 be produced with the mismatch.
 
 **First-launch note (Gatekeeper):** a notarized release just opens. For an un-notarized build (e.g. a

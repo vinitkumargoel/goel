@@ -112,23 +112,33 @@ struct SettingText: View {
 }
 
 /// A numeric field bound to a settings integer.
+///
+/// Grouping is off. `.number` alone inserts the locale's thousands separator,
+/// which turned port 8899 into “8,899” — wrong for a port, which is an
+/// identifier and not a quantity, and unhelpful in every other row here too:
+/// these are values you type back, and a separator you did not type is noise
+/// at best and a re-entry hazard at worst.
 struct SettingInt: View {
     @Binding var value: Int
     var width: CGFloat = 80
     @Environment(\.settingRowName) private var rowName
     var body: some View {
-        TextField("", value: $value, format: .number).textFieldStyle(.roundedBorder).frame(width: width)
+        TextField("", value: $value, format: .number.grouping(.never))
+            .textFieldStyle(.roundedBorder).frame(width: width)
             .accessibilityLabel(rowName)
     }
 }
 
 /// A numeric field bound to a settings double (timeouts, intervals, speeds, ratio).
+///
+/// Ungrouped for the same reason as `SettingInt` above.
 struct SettingDouble: View {
     @Binding var value: Double
     var width: CGFloat = 80
     @Environment(\.settingRowName) private var rowName
     var body: some View {
-        TextField("", value: $value, format: .number).textFieldStyle(.roundedBorder).frame(width: width)
+        TextField("", value: $value, format: .number.grouping(.never))
+            .textFieldStyle(.roundedBorder).frame(width: width)
             .accessibilityLabel(rowName)
     }
 }

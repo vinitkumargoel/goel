@@ -46,6 +46,36 @@ jobs:
       - name: Install native dependencies
         run: brew install libtorrent-rasterbar boost openssl@3 libssh2
 
+      # The web portal is a React app in /portal, compiled into
+      # Sources/GoelCore/Remote/Generated/PortalBundle.swift. That generated file
+      # is committed so `swift build` works on a machine with no Node — which
+      # means nothing stops someone editing the Swift copy directly, or changing
+      # the React source and forgetting to rebuild. Either way the served portal
+      # would no longer be the portal in the repository.
+      #
+      # Rebuilding here and diffing is what makes the committed file trustworthy.
+      # The codegen is deterministic: same source in, byte-identical Swift out.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+
+      - name: Build the web portal
+        working-directory: portal
+        run: |
+          npm ci
+          npm run build
+
+      - name: Fail if the committed portal bundle is stale
+        run: |
+          if ! git diff --quiet -- Sources/GoelCore/Remote/Generated/PortalBundle.swift; then
+            echo "::error::PortalBundle.swift does not match a fresh build of /portal."
+            echo "Run 'cd portal && npm run build' and commit the result."
+            git diff --stat -- Sources/GoelCore/Remote/Generated/PortalBundle.swift
+            exit 1
+          fi
+
       - name: Build
         run: |
           set -o pipefail

@@ -96,6 +96,11 @@ public struct RemoteRouter: Sendable {
             return Self.response(status: "200 OK", type: "text/html; charset=utf-8",
                                  body: Data(Self.page(config: config).utf8))
 
+        // Also reachable ahead of the auth gate (see `staticAsset`); handled here
+        // too so the router is complete on its own and testable in isolation.
+        case ("GET", let path) where path.hasPrefix(Self.assetPrefix):
+            return Self.staticAsset(path: path) ?? Self.notFound()
+
         case ("GET", "/api/config"):
             return Self.json(ConfigRow(username: config.username, readOnly: config.readOnly,
                                        requireAuth: config.requireAuth, theme: config.theme))
@@ -204,6 +209,43 @@ public struct RemoteRouter: Sendable {
             }
             return Self.json(CountRow(added: allowed.count, refused: refused))
 
+        // MARK: Save-folder picker
+        //
+        // Exists so the portal never asks anyone to type an absolute server path.
+        // A typed path is both tedious and easy to get wrong, and a wrong one is
+        // refused by `/api/add` only *after* the user has composed the whole
+        // request. Browsing makes the unsafe value unreachable instead.
+        //
+        // The listing is confined to the downloads root by the same predicate the
+        // add route enforces, so this cannot be turned into a filesystem browser
+        // for the rest of the machine. `path` omitted means the root itself.
+        case ("GET", "/api/folders"):
+            // One answer for "outside the root" and for "not there any more", on
+            // purpose: telling them apart would turn this into a probe for which
+            // paths exist on the machine. The wording says a reason without
+            // saying which one applies, rather than asserting the wrong one.
+            guard let listing = await backend.folderListing(request.query["path"]) else {
+                return Self.forbidden(
+                    "That folder is not available — it is outside the downloads folder, or no longer exists.")
+            }
+            return Self.json(listing)
+
+        case ("POST", "/api/folder"):
+            guard let payload = try? JSONDecoder().decode(NewFolderPayload.self, from: request.body)
+            else { return Self.badRequest() }
+            // Reject rather than silently sanitise. `PathSafety.sanitizedName`
+            // falls back to "download" for a hostile name, which would create a
+            // folder the user did not ask for and did not name — a confusing
+            // outcome for what is plainly a bad request.
+            let name = payload.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard Self.isPlainFolderName(name) else {
+                return Self.badRequest("A folder name cannot be empty, contain “/”, or begin with a dot.")
+            }
+            guard let created = await backend.createFolder(named: name, in: payload.parent) else {
+                return Self.forbidden("Could not create that folder inside the downloads folder.")
+            }
+            return Self.json(NewFolderRow(path: created))
+
         // MARK: Network
         case ("GET", "/api/network"):
             return Self.json(await backend.networkState())
@@ -232,6 +274,36 @@ public struct RemoteRouter: Sendable {
         default:
             return Self.response(status: "404 Not Found", type: "text/plain", body: Data("Not found\n".utf8))
         }
+    }
+
+    static let assetPrefix = "/assets/"
+
+    /// The compiled UI, served ahead of the auth gate.
+    ///
+    /// Returns nil when `path` is not an asset path at all, so callers can fall
+    /// through; an asset path naming something unknown yields a 404 rather than
+    /// nil, because there is nothing else it could have meant.
+    ///
+    /// **Serving these unauthenticated is deliberate.** The login page needs its
+    /// own stylesheet and script before anyone has signed in, and gating them
+    /// would render it unstyled and inert. Nothing here is a secret: the bundle
+    /// is byte-identical for every user and every deployment, and carries no
+    /// configuration — the per-session `BOOT` object lives in the page shell,
+    /// which stays behind the gate.
+    ///
+    /// Lookup is a dictionary hit on the filename and never touches a
+    /// filesystem, so there is no path traversal to defend against:
+    /// `/assets/../../etc/passwd` is simply not a key.
+    ///
+    /// Filenames carry a content hash, which is what makes the immutable
+    /// year-long cache safe — new bytes mean a new URL, so a cached copy can
+    /// never be served against a newer shell.
+    static func staticAsset(path: String) -> Data? {
+        guard path.hasPrefix(assetPrefix) else { return nil }
+        let name = String(path.dropFirst(assetPrefix.count))
+        guard let asset = PortalBundle.assets[name] else { return notFound() }
+        return response(status: "200 OK", type: asset.mime, body: Data(asset.body.utf8),
+                        extraHeaders: ["Cache-Control": "public, max-age=31536000, immutable"])
     }
 
     /// Access check shared by the JSON API and the streaming loops. A valid
@@ -314,6 +386,24 @@ public struct RemoteRouter: Sendable {
         return value == "1" || value == "true" || value == "yes" || value == "on"
     }
 
+    /// A single path component that names a folder and nothing else.
+    ///
+    /// Deliberately stricter than ``PathSafety/sanitizedName(_:fallback:)``: that
+    /// one repairs a bad name, which is right when a server hands us a filename
+    /// but wrong for a name a person typed — silently creating "download" because
+    /// they typed "../" is worse than saying no.
+    static func isPlainFolderName(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.utf8.count <= 240 else { return false }
+        guard !trimmed.hasPrefix(".") else { return false }
+        guard !trimmed.contains("/"), !trimmed.contains("\\") else { return false }
+        // Control characters and NUL would produce a path the user cannot read
+        // back or re-select in the picker.
+        guard trimmed.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
+        else { return false }
+        return true
+    }
+
     static func priority(_ value: String?) -> FilePriority {
         switch value?.lowercased() {
         case "skip": return .skip
@@ -359,12 +449,21 @@ public struct RemoteRouter: Sendable {
         var head = "HTTP/1.1 \(status)\r\n"
         head += "Content-Type: \(type)\r\n"
         head += "Content-Length: \(body.count)\r\n"
-        head += "Cache-Control: no-store\r\n"
-        // Defense-in-depth for the control page: inline script/style are ours by
-        // construction; allow same-origin fetch/SSE, streamed media, and the
-        // inline SVG/data: favicon; forms post same-origin; nothing may frame us.
-        head += "Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; "
-        head += "style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self'; "
+        // `no-store` is the right default for every dynamic response here, but
+        // the hashed bundle assets must override it — emitting both would leave
+        // the caching behaviour up to whichever header the client reads last.
+        if extraHeaders["Cache-Control"] == nil {
+            head += "Cache-Control: no-store\r\n"
+        }
+        // Defense-in-depth for the control page. Script and style come from
+        // /assets/ under content-addressed names, so 'self' is enough and inline
+        // execution can be refused outright — which matters because the portal
+        // renders download names, tracker hosts and error strings that originate
+        // off-machine. Also allowed: same-origin fetch/SSE, streamed media, and
+        // the inline SVG/data: favicon. Forms post same-origin; nothing may
+        // frame us.
+        head += "Content-Security-Policy: default-src 'none'; script-src 'self'; "
+        head += "style-src 'self'; img-src 'self' data:; media-src 'self'; "
         head += "connect-src 'self'; form-action 'self'; base-uri 'none'\r\n"
         head += "X-Content-Type-Options: nosniff\r\n"
         head += "X-Frame-Options: DENY\r\n"
@@ -405,6 +504,16 @@ public struct RemoteRouter: Sendable {
                 ?? c.decodeIfPresent(Int.self, forKey: .streamsPerAdapter)
         }
     }
+    private struct NewFolderPayload: Decodable {
+        var name: String
+        /// Absolute path of the folder to create it in. Omitted means the
+        /// downloads root; the backend re-checks containment either way.
+        var parent: String?
+    }
+    private struct NewFolderRow: Encodable {
+        var path: String
+    }
+
     private struct CountRow: Encodable {
         var added: Int
         /// Sources dropped by the internal-address guard, so the portal can say so
@@ -717,16 +826,66 @@ public protocol RemoteBackend: AnyObject, Sendable {
     /// Add with a per-download interface choice.
     func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
                    startPaused: Bool, network: NetworkSelection?) async
+
+    /// Subfolders of `path`, for the portal's save-folder picker. nil `path` means
+    /// the downloads root. Returns nil when the path is outside that root — the
+    /// same boundary ``remoteSaveDirectoryAllowed(_:)`` enforces.
+    func folderListing(_ path: String?) async -> RemoteFolderListing?
+    /// Create `name` inside `parent` (nil = the downloads root) and answer with the
+    /// new absolute path. nil when the parent is out of root or the create failed.
+    func createFolder(named name: String, in parent: String?) async -> String?
 }
 
 public extension RemoteBackend {
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { true }
+    func folderListing(_ path: String?) async -> RemoteFolderListing? { nil }
+    func createFolder(named name: String, in parent: String?) async -> String? { nil }
     func networkState() async -> RemoteNetworkState { RemoteNetworkState() }
     func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async {}
     func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
                    startPaused: Bool, network: NetworkSelection?) async {
         await remoteAdd(source: source, saveDirectory: saveDirectory,
                         priority: priority, startPaused: startPaused)
+    }
+}
+
+/// One level of the save-folder tree, as the portal's picker needs it.
+///
+/// Absolute paths travel on the wire because that is what `POST /api/add` takes,
+/// and because the alternative — a root-relative path the server re-joins — would
+/// need its own traversal check on the way back in. `root`/`parent` let the picker
+/// render a breadcrumb and an "up" affordance without doing path arithmetic in
+/// JavaScript, where a mistake would be a mistake about a security boundary.
+public struct RemoteFolderListing: Sendable, Codable, Equatable {
+    public struct Entry: Sendable, Codable, Equatable {
+        public var name: String
+        public var path: String
+
+        public init(name: String, path: String) {
+            self.name = name
+            self.path = path
+        }
+    }
+
+    /// The downloads root — the outermost folder the picker may reach.
+    public var root: String
+    /// The folder being listed. Equals `root` at the top.
+    public var path: String
+    /// The folder above `path`, or nil when `path` is the root.
+    public var parent: String?
+    /// Immediate subfolders, name-sorted. Files are not listed: this picker only
+    /// ever answers "where should this go".
+    public var folders: [Entry]
+    /// False when the folder cannot be written to, so the picker can refuse to
+    /// offer "New folder" rather than surfacing an error after the fact.
+    public var writable: Bool
+
+    public init(root: String, path: String, parent: String?, folders: [Entry], writable: Bool) {
+        self.root = root
+        self.path = path
+        self.parent = parent
+        self.folders = folders
+        self.writable = writable
     }
 }
 
@@ -800,6 +959,24 @@ extension DownloadManager: RemoteBackend {
 
     public func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool {
         PathSafety.isContained(folder, within: settings.defaultSaveDirectory)
+    }
+
+    // Both hop off the actor to touch the filesystem. Listing a folder stats every
+    // entry in it, and a downloads folder can be large and can live on a network
+    // mount — long enough to stall every download in the scheduler while a
+    // browser walks a directory tree. Only the root is read under isolation.
+    public func folderListing(_ path: String?) async -> RemoteFolderListing? {
+        let root = settings.defaultSaveDirectory
+        return await Task.detached(priority: .userInitiated) {
+            SaveFolderBrowser.listing(of: path, root: root)
+        }.value
+    }
+
+    public func createFolder(named name: String, in parent: String?) async -> String? {
+        let root = settings.defaultSaveDirectory
+        return await Task.detached(priority: .userInitiated) {
+            SaveFolderBrowser.create(named: name, in: parent, root: root)
+        }.value
     }
 
     public func networkState() async -> RemoteNetworkState {
