@@ -27,7 +27,7 @@
 # ---------------------------------------------------------------------------
 #
 # Environment overrides (all optional):
-#   GOEL_VERSION=1.0.3     install a specific version instead of the latest
+#   GOEL_VERSION=1.0.4     install a specific version instead of the latest
 #   GOEL_TARBALL=/path.tgz  install from a local tarball (skips download; used to
 #                           test an unreleased build)
 #   GOEL_PORT=9090         portal port                       (default 8080)
@@ -374,7 +374,7 @@ unpack() {
     fi
 
     [ -x "$INSTALL_ROOT/bin/goel" ] \
-        || die "this tarball has no bin/goel — it predates the CLI. Install 1.0.3 or later."
+        || die "this tarball has no bin/goel — it predates the CLI. Install 1.0.4 or later."
 
     # A WRAPPER, not a symlink. The CLI links against the Swift runtime bundled in
     # /opt/goel/lib, which is on no system library path — a symlink would put `goel`

@@ -7,9 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.3] — 2026-07-27
+## [1.0.4] — 2026-07-27
 
-**This release also carries everything listed under `1.0.2` below, which was prepared but
+**This release also carries `1.0.3` and `1.0.2` below, neither of which was ever published.**
+No `v1.0.2` or `v1.0.3` tag was pushed and no release was cut for either, so the last thing
+anyone actually received is `v1.0.1`. Upgrading from it means taking all three sections.
+
+### Changed
+
+- **The web portal is now React + TypeScript.** It was a vanilla-JS single-page app living
+  inside Swift string literals — 39 KB of hand-minified code with single-letter variables and
+  a 2099-character line, no build step, no types, and `\` and `#` as escaping hazards because
+  it sat inside `#"""…"""#`. It is now a real front end in `/portal`, compiled by Vite into
+  `PortalBundle.swift` and served from `/assets/portal-<hash>.js`, with the generated file
+  committed so `swift build` still works on a machine with no Node installed and CI failing on
+  drift. Nothing about the portal's behaviour changes for you; what changes is that the next
+  feature in it can be written.
+
+  Both products still share one codebase: the portal lives in `GoelCore`, and the macOS app
+  and the Linux daemon serve the identical bundle through the same router. Assets are
+  content-addressed and cached for a year; the four themes now have exactly one definition
+  rather than a Swift copy and a JavaScript copy that could drift apart.
+
+### Added
+
+- **The portal's Add dialog browses for the save folder instead of asking you to type it.** It
+  wanted an absolute server path in a free-text field, and a typo only surfaced at submit
+  time — the server refuses an out-of-root folder, so you found out after composing the whole
+  request, with nothing to correct it against. There is now a Browse button, a folder tree
+  confined to the downloads folder, and a "New folder" button. Two routes back it,
+  `GET /api/folders` and `POST /api/folder`, both confined to `settings.defaultSaveDirectory`
+  and documented in `docs/remote-api.md`.
+
+  Web only. The macOS app opens a real `NSOpenPanel`, which understands sandbox scope and
+  mounted volumes in ways a remote browser cannot; nothing there changes.
+
+### Fixed
+
+- **The SFTP browser no longer forgets where you were.** Each server now keeps its
+  last-known-good directory across sessions, held separately from the connection's configured
+  start folder so browsing somewhere else does not quietly rewrite the setting.
+
+- **An SFTP transfer will now show you where it is going.** Clicking a transfer's name opens
+  that remote folder in the browser; before, the destination path was not reachable from the
+  transfer at all.
+
+- **Numeric settings fields no longer insert a thousands separator.** The port field showed
+  `8,899` for port 8899 — wrong for a port, which is an identifier rather than a quantity, and
+  unwanted in the other numeric rows too, since those are values you type back and a separator
+  you did not type is at best noise.
+
+- **The portal's task list dropped a column header onto nothing below 920px.** The header
+  rendered four labels into a three-column grid while the rows rendered three cells, so
+  "Speed" wrapped onto a line of its own.
+
+- **The portal's History "folder" column repeated the file name beside it** — the one thing
+  that column exists not to do. It took the last path component, but the stored path is the
+  directory *plus* the file name.
+
+- **Unticking every network interface in the portal's settings selected all of them.** An
+  empty list means "every eligible adapter" to the server, so the exact opposite of the
+  request was saved and came back all-ticked on reload. Saving with nothing ticked is now
+  refused in the dialog.
+
+- **The portal codegen could have silently rewritten `\#n` into a newline.** It guarded only
+  interpolation when choosing a raw-string delimiter; a minified regex containing `\#n` is
+  legal and would have been corrupted without failing the build.
+
+---
+
+## [1.0.3] — prepared 2026-07-27, never published
+
+No `v1.0.3` tag was pushed and no release was cut, so nothing below reached anyone as `1.0.3`.
+It is kept as its own section because the work is distinct and was written up at the time; it
+ships in `1.0.4` above. The date is when it was prepared, not a release date.
+
+**This section also carries everything listed under `1.0.2` below, which was prepared but
 never published** — no `v1.0.2` tag was ever pushed and no release was ever cut, so the
 licence change and the deployment-target fix reach users here for the first time. Upgrading
 from `v1.0.1` means taking both.
@@ -252,7 +325,7 @@ from `v1.0.1` means taking both.
 
 No `v1.0.2` tag was pushed and no release was cut, so nothing below ever reached anyone as
 `1.0.2`. It is kept as its own section because the work is distinct and was written up at the
-time; it ships in `1.0.3` above. The date is when it was prepared, not a release date.
+time; it ships in `1.0.4` above. The date is when it was prepared, not a release date.
 
 First changes under the **PolyForm Noncommercial 1.0.0** licence. If you use Goel° at work,
 read the licence section below before upgrading past `v1.0.1`.
@@ -416,8 +489,9 @@ native library bundled, no Homebrew required for end users.
 
 ---
 
-[Unreleased]: https://github.com/vinitkumargoel/goel/compare/v1.0.3...HEAD
-[1.0.3]: https://github.com/vinitkumargoel/goel/compare/v1.0.1...v1.0.3
-[1.0.2]: https://github.com/vinitkumargoel/goel/compare/v1.0.1...v1.0.3
+[Unreleased]: https://github.com/vinitkumargoel/goel/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/vinitkumargoel/goel/compare/v1.0.1...v1.0.4
+[1.0.3]: https://github.com/vinitkumargoel/goel/compare/v1.0.1...v1.0.4
+[1.0.2]: https://github.com/vinitkumargoel/goel/compare/v1.0.1...v1.0.4
 [1.0.1]: https://github.com/vinitkumargoel/goel/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/vinitkumargoel/goel/releases/tag/v1.0.0
