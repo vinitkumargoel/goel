@@ -431,7 +431,11 @@ public actor DownloadManager {
         observers[key] = continuation
         continuation.yield(tasks)
         continuation.onTermination = { [weak self] _ in
-            Task { await self?.removeObserver(key) }
+            // Bound before the `Task` for the same reason as the watch-folder
+            // callback in `+SideEffects`: the capture list makes `self` a var,
+            // and CI's toolchain refuses to read one from concurrent code.
+            guard let self else { return }
+            Task { await self.removeObserver(key) }
         }
         return stream
     }
