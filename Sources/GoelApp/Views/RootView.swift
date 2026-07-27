@@ -51,10 +51,12 @@ struct RootView: View {
                 VStack(spacing: 0) {
                     if let server = vm.server(vm.selectedServer) {
                         // A server is selected — browse it instead of the list.
-                        // Keyed by id so switching servers rebuilds the browser.
+                        // Keyed by id so switching servers rebuilds the browser,
+                        // and by the generation so Reconnect rebuilds it against
+                        // a freshly resolved client even for the same server.
                         SFTPBrowserView(connection: server,
                                         client: vm.sftpClient(for: server))
-                            .id(server.id)
+                            .id("\(server.id)-\(vm.browserGeneration)")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if vm.tasks.isEmpty {
                         // A genuinely empty queue — as opposed to a filter that

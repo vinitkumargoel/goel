@@ -142,17 +142,74 @@ struct SidebarView: View {
                 meta?.os?.pretty),
             hint: "Activate to browse this server's files.")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        // The session actions live in a context menu, which is reachable but
+        // fiddly under VoiceOver — mirror the ones with no other route here, the
+        // way "Edit server" already is.
         .accessibilityAction(named: Text("Edit server")) { vm.presentEditServer(server) }
-        .contextMenu {
-            Button("Edit…") { vm.presentEditServer(server) }
-            Button("Remove", role: .destructive) {
-                vm.requestConfirm(
-                    title: "Remove “\(server.label)”?",
-                    message: "This deletes the saved connection and its Keychain password. Files on the server are not touched.",
-                    confirmTitle: "Remove",
-                    destructive: true
-                ) { vm.removeServer(server.id) }
-            }
+        .accessibilityAction(named: Text("Reconnect")) { vm.reconnectServer(server.id) }
+        .accessibilityAction(named: Text("Disconnect")) { vm.disconnectServer(server.id) }
+        .accessibilityAction(named: Text("Test connection")) { vm.testServerConnection(server) }
+        .contextMenu { serverMenu(server) }
+    }
+
+    /// The server row's context menu, in four sections: session, clipboard,
+    /// external, and the destructive pair that was already here.
+    @ViewBuilder
+    private func serverMenu(_ server: SFTPConnection) -> some View {
+        let engaged = vm.isServerEngaged(server.id)
+        let meta = vm.serverMeta[server.id]
+
+        if vm.selectedServer != server.id {
+            Button("Connect") { vm.selectServer(server.id) }
+        }
+        Button("Reconnect") { vm.reconnectServer(server.id) }
+        Button("Disconnect") { vm.disconnectServer(server.id) }
+            // Nothing is holding this server open, so there is nothing to close.
+            .disabled(!engaged)
+        Button(vm.serverTestsInFlight.contains(server.id) ? "Testing…" : "Test Connection") {
+            vm.testServerConnection(server)
+        }
+        .disabled(vm.serverTestsInFlight.contains(server.id))
+
+        Divider()
+
+        Button("Copy SFTP Address") {
+            vm.copyToPasteboard(vm.sftpLocator(for: server, remotePath: "/"))
+        }
+        Button("Copy Host") { vm.copyToPasteboard(server.host) }
+        // Only offered once the sidebar's DNS probe has actually resolved one,
+        // and never when it just echoes a host that is already an IP literal.
+        if let ip = meta?.ip, ip != server.host {
+            Button("Copy IP Address") { vm.copyToPasteboard(ip) }
+        }
+
+        Divider()
+
+        Button(vm.hostKeyReadsInFlight.contains(server.id) ? "Reading Host Key…" : "Show Host Key…") {
+            vm.showHostKey(server)
+        }
+        .disabled(vm.hostKeyReadsInFlight.contains(server.id))
+        Button("Forget Host Key") { vm.forgetHostKey(server) }
+            // Nothing pinned, nothing to forget. Deliberately still enabled when
+            // the pin record is unreadable — that is the state this clears.
+            .disabled(!vm.hasHostKeyRecord(server))
+            .help("Use only after a legitimate server rekey. Goel will ask you to confirm the new key.")
+
+        Divider()
+
+        Button("Open in Terminal") { vm.openServerInTerminal(server) }
+            .help("Opens an ssh session in your terminal, outside Goel’s host-key pinning.")
+
+        Divider()
+
+        Button("Edit…") { vm.presentEditServer(server) }
+        Button("Remove", role: .destructive) {
+            vm.requestConfirm(
+                title: "Remove “\(server.label)”?",
+                message: "This deletes the saved connection and its Keychain password. Files on the server are not touched.",
+                confirmTitle: "Remove",
+                destructive: true
+            ) { vm.removeServer(server.id) }
         }
     }
 

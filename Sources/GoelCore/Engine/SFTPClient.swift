@@ -373,7 +373,11 @@ public struct SFTPClient: Sendable {
                              _ body: @escaping @Sendable (UnsafePointer<GSBAuth>) -> GSBResult) async -> GSBResult {
         await withCheckedContinuation { (cont: CheckedContinuation<GSBResult, Never>) in
             let thread = Thread {
-                let r = SFTPSessionChannel.withAuth(self.target, expected: expected, body)
+                // A bare `Thread` has no autorelease pool of its own; give the
+                // C call one so nothing accumulates for the thread's lifetime.
+                let r = autoreleasepool {
+                    SFTPSessionChannel.withAuth(self.target, expected: expected, body)
+                }
                 cont.resume(returning: r)
             }
             thread.name = name
@@ -643,12 +647,21 @@ final class ReadErrorBox: @unchecked Sendable {
     }
 }
 
+// Every thunk below runs inside a `gsb_*` C loop that only returns to Swift once
+// the *whole* transfer is done, on a bare `Thread` — which, unlike a run-loop or
+// libdispatch thread, has no autorelease pool of its own. Without a pool per
+// callback, the autoreleased temporaries each chunk creates (Foundation's
+// FileHandle read/write bridging, `Date`, the emitted events) have nowhere to
+// drain until the transfer ends, so peak RSS grows with the size of the file
+// rather than staying at one buffer. The pools here are what keep a 20 GB
+// transfer flat; do not remove them.
+
 private func sftpWriteThunk(buf: UnsafePointer<CChar>?, len: Int,
                             ud: UnsafeMutableRawPointer?) -> Int {
     guard let buf, let ud, len > 0 else { return 0 }
     let ctx = Unmanaged<TransferContext>.fromOpaque(ud).takeUnretainedValue()
     let raw = UnsafeRawBufferPointer(start: buf, count: len)
-    return ctx.onWrite(raw) ? len : 0
+    return autoreleasepool { ctx.onWrite(raw) ? len : 0 }
 }
 
 private func sftpReadThunk(buf: UnsafeMutablePointer<CChar>?, cap: Int,
@@ -657,14 +670,14 @@ private func sftpReadThunk(buf: UnsafeMutablePointer<CChar>?, cap: Int,
     let ctx = Unmanaged<TransferContext>.fromOpaque(ud).takeUnretainedValue()
     guard let onRead = ctx.onRead else { return 0 }
     let raw = UnsafeMutableRawBufferPointer(start: buf, count: cap)
-    return onRead(raw)
+    return autoreleasepool { onRead(raw) }
 }
 
 private func sftpProgressThunk(ud: UnsafeMutableRawPointer?,
                                total: Int64, sofar: Int64) -> Int32 {
     guard let ud else { return 1 }
     let ctx = Unmanaged<TransferContext>.fromOpaque(ud).takeUnretainedValue()
-    return ctx.onProgress(total, sofar) ? 0 : 1
+    return autoreleasepool { ctx.onProgress(total, sofar) ? 0 : 1 }
 }
 
 private func sftpEntryThunk(ud: UnsafeMutableRawPointer?, name: UnsafePointer<CChar>?,
@@ -673,14 +686,16 @@ private func sftpEntryThunk(ud: UnsafeMutableRawPointer?, name: UnsafePointer<CC
                             uid: UInt, gid: UInt) {
     guard let ud, let name else { return }
     let collector = Unmanaged<ListCollector>.fromOpaque(ud).takeUnretainedValue()
-    let entry = SFTPEntry(name: String(cString: name),
-                          isDirectory: isDir != 0,
-                          size: size,
-                          modified: mtime > 0 ? Date(timeIntervalSince1970: TimeInterval(mtime)) : nil,
-                          permissions: UInt32(truncatingIfNeeded: perms),
-                          isSymlink: isLink != 0,
-                          linkTarget: linkTarget.map { String(cString: $0) } ?? "",
-                          ownerID: UInt32(truncatingIfNeeded: uid),
-                          groupID: UInt32(truncatingIfNeeded: gid))
-    collector.entries.append(entry)
+    autoreleasepool {
+        let entry = SFTPEntry(name: String(cString: name),
+                              isDirectory: isDir != 0,
+                              size: size,
+                              modified: mtime > 0 ? Date(timeIntervalSince1970: TimeInterval(mtime)) : nil,
+                              permissions: UInt32(truncatingIfNeeded: perms),
+                              isSymlink: isLink != 0,
+                              linkTarget: linkTarget.map { String(cString: $0) } ?? "",
+                              ownerID: UInt32(truncatingIfNeeded: uid),
+                              groupID: UInt32(truncatingIfNeeded: gid))
+        collector.entries.append(entry)
+    }
 }

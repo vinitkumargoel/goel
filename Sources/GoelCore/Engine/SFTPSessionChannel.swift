@@ -177,8 +177,14 @@ final class SFTPSessionChannel: @unchecked Sendable {
             let job = pending.removeFirst()
             condition.unlock()
 
-            let (handle, failure) = ensureConnected()
-            job(handle, failure)
+            // This thread lives for as long as the connection does, so without a
+            // pool here everything autoreleased by a job — and by libssh2's own
+            // callbacks between the per-chunk pools in the transfer thunks —
+            // would accumulate until the channel shut down.
+            autoreleasepool {
+                let (handle, failure) = ensureConnected()
+                job(handle, failure)
+            }
         }
     }
 
