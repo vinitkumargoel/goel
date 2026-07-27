@@ -93,6 +93,30 @@ version itself. Update the human-facing bits only:
 
 ## 3. Build and test
 
+**First, build the native dependencies against the floor.** The app advertises
+macOS 14.0, but a Homebrew bottle is built for the OS of the machine that poured
+it — on a Mac running macOS 26, `brew install openssl@3` gives you a libcrypto
+that says minos 26.0, and `Scripts/check_min_os.sh` will refuse the bundle
+because dyld would refuse those libraries at launch on anything older. This is
+not a hypothetical: it is why releases could previously only be cut from a Mac
+running the oldest supported OS, and why `GOEL_LOCAL_DEV=1` was the only way to
+get a build to finish anywhere else.
+
+```bash
+Scripts/macos/build-deps.sh                          # ~30 min the first time
+export GOEL_BREW_PREFIX="$PWD/Vendor/macos/$(uname -m)"
+```
+
+Keep `GOEL_BREW_PREFIX` exported for **every** later step in this document —
+sections 3, 5 and 7 all need it, and a build that silently falls back to
+Homebrew is exactly the failure this prevents. The script verifies every dylib
+it produced before it exits, so if it succeeded, the floor is satisfied.
+
+Note that *building* the app now requires the macOS 15 SDK or newer, regardless
+of the 14.0 floor: `RemoteControlServer` references `kSecImportToMemoryOnly`,
+which is guarded at run time with `#available` but must still exist in the SDK
+you compile against.
+
 ```bash
 swift build -c release
 swift test          # the whole suite must pass — 418 tests, ~13s
@@ -152,7 +176,8 @@ What the script does with each variable:
 | `SPARKLE_FEED_URL` | Written to `Info.plist` as `SUFeedURL`. Must be `https://`. |
 | `SPARKLE_ED_KEY` | Written to `Info.plist` as `SUPublicEDKey`. |
 | `GOEL_VERSION` / `GOEL_BUILD` | Override the tag-derived `CFBundleShortVersionString` / `CFBundleVersion`. |
-| `GOEL_ARCH` | `x86_64` (with `GOEL_BREW_PREFIX=/usr/local`) to cross-build an Intel app. |
+| `GOEL_BREW_PREFIX` | Where the native libraries come from. **Set this to `Vendor/macos/<arch>` for every release build** (section 3): the default `/opt/homebrew` yields bottles built for the build machine's OS, which fails the deployment-target gate on anything newer than the floor. `Scripts/macos/build-deps.sh` populates it. |
+| `GOEL_ARCH` | `x86_64` (with a matching `GOEL_BREW_PREFIX` — either `/usr/local` for an Intel Homebrew, or `Vendor/macos/x86_64` built by `Scripts/macos/build-deps.sh`) to cross-build an Intel app. |
 
 `SPARKLE_FEED_URL` and `SPARKLE_ED_KEY` are all-or-nothing: supply both or
 neither. The script refuses to build with only one, and

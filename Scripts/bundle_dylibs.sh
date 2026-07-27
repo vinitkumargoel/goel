@@ -33,12 +33,30 @@ EXE="$EXE_DIR/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PL
 
 mkdir -p "$FRAMEWORKS"
 
-# True if a dependency lives under a Homebrew prefix and must be vendored.
+# The prefix Scripts/macos/build-deps.sh installs into, when a build is using
+# one. It is the same variable Package.swift reads, so the linker and this
+# script cannot disagree about where the libraries came from.
+VENDOR_PREFIX="${GOEL_BREW_PREFIX:-}"
+case "$VENDOR_PREFIX" in
+  /opt/homebrew|/usr/local) VENDOR_PREFIX="" ;;  # already covered below
+esac
+
+# True if a dependency lives on this build machine rather than in the OS, and so
+# must be copied into the bundle.
 is_vendorable() {
   case "$1" in
     /opt/homebrew/*|/usr/local/Cellar/*|/usr/local/opt/*) return 0 ;;
-    *) return 1 ;;
   esac
+  # A vendored prefix is every bit as build-machine-local as a Homebrew one:
+  # Vendor/macos/arm64 does not exist on a user's Mac either. Guarded on
+  # non-empty because an unset prefix would leave the pattern as `/*`, which
+  # matches every absolute path — including /usr/lib, which must NOT be copied.
+  if [ -n "$VENDOR_PREFIX" ]; then
+    case "$1" in
+      "$VENDOR_PREFIX"/*) return 0 ;;
+    esac
+  fi
+  return 1
 }
 
 # Emit the Homebrew install-name dependencies of a Mach-O file, one per line.
@@ -111,11 +129,21 @@ echo "==> Removing stale build-machine rpaths (Homebrew, Xcode toolchain)"
 delete_stale_rpaths() {
   local file="$1" rp
   otool -l "$file" | awk '/LC_RPATH/{f=1;next} f&&/ path /{print $2;f=0}' | while read -r rp; do
+    local stale=1
     case "$rp" in
-      /opt/homebrew/*|/usr/local/*|*/Xcode.app/*)
-        install_name_tool -delete_rpath "$rp" "$file" 2>/dev/null \
-          && echo "    - $rp ($(basename "$file"))" || true ;;
+      /opt/homebrew/*|/usr/local/*|*/Xcode.app/*) stale=0 ;;
     esac
+    # Package.swift adds -rpath $GOEL_BREW_PREFIX/lib, so a vendored build
+    # leaves one of these behind too — and it would out-rank the bundled
+    # Frameworks for exactly the same reason a Homebrew rpath does.
+    if [ -n "$VENDOR_PREFIX" ]; then
+      case "$rp" in
+        "$VENDOR_PREFIX"/*) stale=0 ;;
+      esac
+    fi
+    [ "$stale" = 0 ] || continue
+    install_name_tool -delete_rpath "$rp" "$file" 2>/dev/null \
+      && echo "    - $rp ($(basename "$file"))" || true
   done
 }
 delete_stale_rpaths "$EXE"
@@ -199,12 +227,19 @@ leftover="$(
   otool -L "$EXE"
   for f in "$FRAMEWORKS"/*.dylib; do [ -e "$f" ] && otool -L "$f"; done
 )"
-if echo "$leftover" | grep -qE '/opt/homebrew|/usr/local/(Cellar|opt)'; then
-  echo "error: Homebrew paths still present after bundling:" >&2
-  echo "$leftover" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)' >&2
+remaining="$(echo "$leftover" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)' || true)"
+# -F, not -E: the vendored prefix is a filesystem path and would otherwise be
+# read as a regular expression by anyone whose checkout sits somewhere with a
+# `+` or a `.` in the name.
+if [ -n "$VENDOR_PREFIX" ]; then
+  remaining="$remaining$(echo "$leftover" | grep -F "$VENDOR_PREFIX" || true)"
+fi
+if [ -n "$remaining" ]; then
+  echo "error: build-machine paths still present after bundling:" >&2
+  echo "$remaining" >&2
   exit 1
 fi
-echo "    OK — no Homebrew paths remain. Frameworks:"
+echo "    OK — no build-machine paths remain. Frameworks:"
 ls -1 "$FRAMEWORKS" | sed 's/^/      /'
 
 # Confirm the whole bundle (exe + nested dylibs + bundles) is validly signed.

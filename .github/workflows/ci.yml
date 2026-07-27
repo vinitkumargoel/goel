@@ -30,7 +30,19 @@ concurrency:
 jobs:
   build:
     name: Build, test and gate
-    runs-on: macos-14
+    # macos-15, not macos-14, because RemoteControlServer references
+    # kSecImportToMemoryOnly. That constant is guarded at run time with
+    # `if #available(macOS 15.0, *)`, but `#available` does not conjure a symbol
+    # into an SDK that lacks it: against the macOS 14 SDK the file does not
+    # compile at all. Building here therefore needs SDK 15+.
+    #
+    # That is also why the native dependencies are vendored below rather than
+    # poured from Homebrew. A runner's bottles are built for the runner's OS, so
+    # on macos-15 `brew install openssl@3` gives a libcrypto with minos 15.0,
+    # which check_min_os.sh would rightly reject against our 14.0 floor. The two
+    # requirements — a newer SDK to compile, older libraries to link — only hold
+    # together if the libraries stop coming from the OS's package manager.
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v4
@@ -43,8 +55,35 @@ jobs:
           # producing a bad artifact.
           fetch-depth: 0
 
-      - name: Install native dependencies
-        run: brew install libtorrent-rasterbar boost openssl@3 libssh2
+      # cmake builds them; the four libraries themselves are compiled from
+      # pinned, checksummed source by the script below.
+      - name: Install build tools
+        run: brew install cmake
+
+      # Keyed on the script, because the script is where the versions and their
+      # digests live — bump a pin and the cache key changes with it. Only the
+      # installed prefix is cached, not the unpacked sources, which are an order
+      # of magnitude larger and are never read on a hit (the stamp files short
+      # out each build).
+      - name: Cache the vendored native libraries
+        id: vendored
+        uses: actions/cache@v4
+        with:
+          path: |
+            Vendor/macos/arm64/opt
+            Vendor/macos/arm64/lib
+            Vendor/macos/arm64/.stamps
+          key: macos-deps-${{ runner.os }}-arm64-${{ hashFiles('Scripts/macos/build-deps.sh') }}
+
+      # ~30 minutes on a cold cache, seconds on a warm one. The script verifies
+      # every dylib it produced against the floor before exiting, so a cache hit
+      # that somehow held the wrong thing still fails here rather than surviving
+      # to the gate.
+      - name: Build the native dependencies against the 14.0 floor
+        run: Scripts/macos/build-deps.sh
+
+      - name: Use the vendored libraries for every later step
+        run: echo "GOEL_BREW_PREFIX=$PWD/Vendor/macos/arm64" >> "$GITHUB_ENV"
 
       # The web portal is a React app in /portal, compiled into
       # Sources/GoelCore/Remote/Generated/PortalBundle.swift. That generated file
