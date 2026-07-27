@@ -85,8 +85,14 @@ before routing. Never rely on the UI for that.
 **The save-folder picker is web-only.** `FolderPicker.tsx` exists because a browser has
 no native folder chooser for a *remote* filesystem. The macOS app opens a real
 `NSOpenPanel` instead — do not port this to it. Every path it shows comes from
-`GET /api/folders`; it never joins or trims one itself, so the containment rule lives in
-`SaveFolderBrowser.swift` alone and not in a weaker JavaScript copy.
+`GET /api/folders`; it never joins or trims one itself.
+
+**The picker has no root, and permissions are not its decision.** It browses wherever the
+server process's user can browse. `readable` and `writable` on each entry are `access(2)`
+answers from the server — grey out what they say to grey out, and never infer a permission
+here. A rule invented in JavaScript about someone else's filesystem is a rule that will be
+wrong, and it would be wrong about a security boundary. `SaveFolderBrowser.swift` records
+what this reach costs.
 
 **The `hide-sm` / `hide-xs` classes in `LibraryView` are load-bearing.** They must match
 the narrow-viewport `grid-template-columns` in `portal.css` and be identical between a

@@ -4,26 +4,28 @@ import type { FolderListing } from '../lib/types'
 import { FolderIcon, FolderPlusIcon } from './Icons'
 
 /**
- * Browses the server's downloads folder so nobody has to type an absolute path
- * into the Add dialog.
+ * Browses the server's filesystem so nobody has to type an absolute path into
+ * the Add dialog.
  *
  * Web-only by design: the macOS app opens a real `NSOpenPanel`, which knows
  * about sandbox scope and mounted volumes in ways this cannot.
  *
- * The whole tree is server-supplied — `path`, `parent` and every entry's `path`
- * come back from `GET /api/folders`, which refuses anything outside the
- * downloads root. Nothing here joins or trims a path, so there is no second,
- * weaker copy of that boundary living in JavaScript.
+ * The whole tree is server-supplied — `path`, `parent`, `places` and every
+ * entry's `path` come back from `GET /api/folders`. Nothing here joins or trims
+ * a path, and nothing here decides what is reachable: `readable` and `writable`
+ * are the server's report of what its own user may do, and this only greys out
+ * what it is told to. A permission guess made in JavaScript would be a guess
+ * about someone else's filesystem.
  */
 
 interface FolderPickerProps {
-  /** Folder to open on first render; falls back to the root when unreachable. */
+  /** Folder to open on first render; falls back to the default when unreachable. */
   initialPath: string
   /** Hidden in read-only sessions, where the server would refuse the POST. */
   canCreate: boolean
-  /** `root` travels with the choice so the caller can shorten it for display
-   *  without a second request just to learn where the root is. */
-  onPick: (path: string, root: string) => void
+  /** The listing travels with the choice so the caller can shorten the path for
+   *  display, and recognise "this is just the default", without a second request. */
+  onPick: (path: string, listing: FolderListing) => void
   onClose: () => void
   onWarn: (message: string) => void
 }
@@ -52,7 +54,7 @@ export function FolderPicker({
   // Held in a ref rather than a dependency. The callers above pass a fresh arrow
   // on every render, and the whole app re-renders on every SSE tick — so a
   // `useCallback([onWarn])` would give `load` a new identity roughly once a
-  // second, and the mount effect below would yank the user back to the root
+  // second, and the mount effect below would yank the user back to the start
   // mid-browse.
   const warnRef = useRef(onWarn)
   warnRef.current = onWarn
@@ -71,11 +73,12 @@ export function FolderPicker({
       .catch((e: unknown) => {
         if (seq !== seqRef.current) return
         setLoading(false)
-        // A path that no longer exists (the folder was deleted, or the downloads
-        // root moved) should not strand the picker — fall back to the root,
-        // which the server always has.
+        // A path that no longer exists, or that this user may not read, should
+        // not strand the picker — fall back to the default folder, which the
+        // server always has.
         if (path !== undefined) {
           load(undefined)
+          warnRef.current(e instanceof Error ? e.message : 'Could not open that folder')
           return
         }
         setFailed(true)
@@ -131,8 +134,6 @@ export function FolderPicker({
       })
   }
 
-  const atRoot = listing !== null && listing.parent === null
-
   return (
     <div
       className="scrim open picker-scrim"
@@ -152,14 +153,30 @@ export function FolderPicker({
           <h3>Choose a folder</h3>
         </div>
 
+        {listing && listing.places.length > 0 && (
+          <div className="pkplaces">
+            {listing.places.map((p) => (
+              <button
+                key={p.path}
+                className={`pkplace${p.path === listing.path ? ' on' : ''}`}
+                disabled={!p.readable}
+                title={p.readable ? p.path : `${p.path} — no permission to open`}
+                onClick={() => load(p.path)}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="pkpath" title={listing?.path ?? ''}>
-          {listing ? folderLabel(listing.path, listing.root) : '…'}
+          {listing ? folderLabel(listing.path, listing.home) : '…'}
         </div>
 
         <div className="mbody pkbody">
-          {failed && <p className="fhint">Could not read the downloads folder.</p>}
+          {failed && <p className="fhint">Could not read that folder.</p>}
 
-          {!atRoot && listing && (
+          {listing?.parent && (
             <button className="pkrow up" onClick={() => load(listing.parent ?? undefined)}>
               <FolderIcon />
               <span>Up one level</span>
@@ -171,9 +188,19 @@ export function FolderPicker({
             // there is exactly one way to choose: "Use this folder" always means
             // the one named above the list. A row that both selects and drills in
             // makes "which folder am I about to save to" ambiguous.
-            <button key={f.path} className="pkrow" onClick={() => load(f.path)}>
+            //
+            // An unreadable folder stays visible but inert. Hiding it would be a
+            // worse answer to "where did my folder go" than showing why.
+            <button
+              key={f.path}
+              className={`pkrow${f.readable ? '' : ' locked'}`}
+              disabled={!f.readable}
+              title={f.readable ? f.path : `${f.path} — no permission to open`}
+              onClick={() => load(f.path)}
+            >
               <FolderIcon />
               <span className="ell">{f.name}</span>
+              {!f.readable && <span className="pkno">no access</span>}
             </button>
           ))}
 
@@ -217,8 +244,12 @@ export function FolderPicker({
           </button>
           <button
             className="btn primary"
-            disabled={!listing}
-            onClick={() => listing && onPick(listing.path, listing.root)}
+            // Not writable means the download would fail at submit time with a
+            // 403 the user could do nothing about. Refusing the choice here says
+            // the same thing while it is still fixable.
+            disabled={!listing || !listing.writable}
+            title={listing && !listing.writable ? 'No permission to write here' : undefined}
+            onClick={() => listing && onPick(listing.path, listing)}
           >
             Use this folder
           </button>
@@ -229,21 +260,24 @@ export function FolderPicker({
 }
 
 /**
- * The path as the user thinks of it: "Downloads / Linux / ISOs", not the
- * server's absolute path. Callers keep the absolute one as a `title`, because
- * that is what a support conversation needs.
+ * The path as the user thinks of it: "Home / Downloads / Linux" rather than
+ * `/Users/someone/Downloads/Linux`. Callers keep the absolute one as a `title`,
+ * because that is what a support conversation needs.
  *
- * `root` may be null when it has not been fetched yet, in which case the
+ * `home` may be empty before the first listing arrives, in which case the
  * absolute path is shown — a long true path beats a short invented one.
  */
-export function folderLabel(path: string, root: string | null): string {
-  if (!root) return path
-  const base = root.replace(/\/+$/, '')
-  const baseName = base.split('/').filter(Boolean).pop() ?? base
-  if (path === base) return baseName
-  // A prefix mismatch means a symlinked or differently-spelled path that the
-  // server nonetheless resolved inside the root. Show it as it is.
-  if (!path.startsWith(base + '/')) return path
-  const rest = path.slice(base.length + 1)
-  return [baseName, ...rest.split('/').filter(Boolean)].join(' / ')
+export function folderLabel(path: string, home: string | null): string {
+  if (path === '/') return 'Computer'
+  const parts = (rest: string) => rest.split('/').filter(Boolean)
+  if (home) {
+    const base = home.replace(/\/+$/, '')
+    if (path === base) return 'Home'
+    if (path.startsWith(base + '/')) {
+      return ['Home', ...parts(path.slice(base.length + 1))].join(' / ')
+    }
+  }
+  // Outside home — a mounted volume, or a system path. There is no shorter
+  // honest form, so show every component.
+  return parts(path).join(' / ') || path
 }

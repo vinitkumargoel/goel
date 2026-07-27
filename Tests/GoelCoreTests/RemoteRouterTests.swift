@@ -55,30 +55,36 @@ final class FakeRemoteBackend: RemoteBackend, @unchecked Sendable {
         if let adapterIds { network.selected = adapterIds }
         if let streams { network.streamsPerAdapter = streams }
     }
-    /// Save-folder picker. Leaving `folderRoot` nil keeps the protocol's default
-    /// refusal, which is what a backend with no downloads root does.
-    var folderRoot: String?
+    /// Save-folder picker. Leaving `folderHome` nil keeps the protocol's default
+    /// refusal, which is what a backend with no filesystem behind it does.
+    ///
+    /// This fake has no confinement, because the real one has none either: any
+    /// path in `subfolders` is listable, and anything absent is "not a folder".
+    var folderHome: String?
+    var folderDefault: String = "/home/goel/Downloads"
     var subfolders: [String: [String]] = [:]
     private(set) var createdFolders: [(name: String, parent: String?)] = []
 
     func folderListing(_ path: String?) async -> RemoteFolderListing? {
-        guard let folderRoot else { return nil }
-        let target = (path?.isEmpty == false) ? path! : folderRoot
-        guard target == folderRoot || target.hasPrefix(folderRoot + "/") else { return nil }
+        guard let folderHome else { return nil }
+        let target = (path?.isEmpty == false) ? path! : folderDefault
+        guard let children = subfolders[target] else { return nil }
         return RemoteFolderListing(
-            root: folderRoot,
             path: target,
-            parent: target == folderRoot ? nil : (target as NSString).deletingLastPathComponent,
-            folders: (subfolders[target] ?? []).map {
+            parent: target == "/" ? nil : (target as NSString).deletingLastPathComponent,
+            folders: children.map {
                 .init(name: $0, path: (target as NSString).appendingPathComponent($0))
             },
-            writable: true)
+            writable: true,
+            home: folderHome,
+            defaultFolder: folderDefault,
+            places: [.init(name: "Home", path: folderHome)])
     }
 
     func createFolder(named name: String, in parent: String?) async -> String? {
-        guard let folderRoot else { return nil }
+        guard folderHome != nil else { return nil }
         createdFolders.append((name, parent))
-        return ((parent ?? folderRoot) as NSString).appendingPathComponent(name)
+        return ((parent ?? folderDefault) as NSString).appendingPathComponent(name)
     }
 
     func history(limit: Int) async -> [HistoryEntry] { historyEntries }
@@ -269,47 +275,77 @@ final class RemoteRouterTests: XCTestCase {
 
     private func folderBackend() -> FakeRemoteBackend {
         let backend = FakeRemoteBackend()
-        backend.folderRoot = "/downloads"
-        backend.subfolders = ["/downloads": ["Linux"], "/downloads/Linux": ["ISOs"]]
+        backend.folderHome = "/home/goel"
+        backend.folderDefault = "/home/goel/Downloads"
+        backend.subfolders = [
+            "/": ["home"],
+            "/home": ["goel"],
+            "/home/goel": ["Downloads", "Documents"],
+            "/home/goel/Downloads": ["Linux"],
+            "/home/goel/Downloads/Linux": ["ISOs"],
+        ]
         return backend
     }
 
-    func testFolderListingDefaultsToTheRootAndHasNoParent() async throws {
+    func testFolderListingDefaultsToTheConfiguredDownloadsFolder() async throws {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
         let out = str(await router.handle(request("GET /api/folders?token=secret HTTP/1.1\r\n\r\n")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
-        XCTAssertTrue(out.contains("\"path\":\"\\/downloads\""), out)
+        XCTAssertTrue(out.contains("\"path\":\"\\/home\\/goel\\/Downloads\""), out)
         XCTAssertTrue(out.contains("\"name\":\"Linux\""), out)
-        // Encoded as an absent key by `JSONEncoder`; either way the portal must
-        // not be handed a way up out of the root.
-        XCTAssertFalse(out.contains("\"parent\":\"\\/\""), out)
+        XCTAssertTrue(out.contains("\"home\":\"\\/home\\/goel\""), out)
+    }
+
+    /// The reported bug. The downloads folder used to answer with no parent,
+    /// which is what left the picker unable to climb out of it.
+    func testTheDownloadsFolderOffersAWayUp() async {
+        let router = RemoteRouter(backend: folderBackend(), token: "secret")
+        let out = str(await router.handle(request("GET /api/folders?token=secret HTTP/1.1\r\n\r\n")))
+        XCTAssertTrue(out.contains("\"parent\":\"\\/home\\/goel\""), out)
     }
 
     func testFolderListingFollowsThePathQuery() async {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
         let out = str(await router.handle(request(
-            "GET /api/folders?token=secret&path=%2Fdownloads%2FLinux HTTP/1.1\r\n\r\n")))
+            "GET /api/folders?token=secret&path=%2Fhome%2Fgoel%2FDownloads%2FLinux HTTP/1.1\r\n\r\n")))
         XCTAssertTrue(out.contains("\"name\":\"ISOs\""), out)
-        XCTAssertTrue(out.contains("\"parent\":\"\\/downloads\""), out)
+        XCTAssertTrue(out.contains("\"parent\":\"\\/home\\/goel\\/Downloads\""), out)
     }
 
-    /// The backend answers nil for anything outside the downloads root; the route
-    /// must turn that into a refusal rather than a 200 with an empty list, which
-    /// would read as "that folder exists and is empty".
-    func testFolderListingOutsideTheRootIs403() async {
+    /// Outside the downloads folder is now ordinary browsing, not a refusal.
+    func testFolderListingReachesOutsideTheDownloadsFolder() async {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
         let out = str(await router.handle(request(
-            "GET /api/folders?token=secret&path=%2Fetc HTTP/1.1\r\n\r\n")))
-        XCTAssertTrue(out.hasPrefix("HTTP/1.1 403"), out)
+            "GET /api/folders?token=secret&path=%2Fhome%2Fgoel HTTP/1.1\r\n\r\n")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
+        XCTAssertTrue(out.contains("\"name\":\"Documents\""), out)
+    }
+
+    func testOnlyTheFilesystemRootHasNoParent() async {
+        let router = RemoteRouter(backend: folderBackend(), token: "secret")
+        let out = str(await router.handle(request(
+            "GET /api/folders?token=secret&path=%2F HTTP/1.1\r\n\r\n")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
+        XCTAssertFalse(out.contains("\"parent\""), out)
+    }
+
+    /// A nil backend answer means "not a folder", which is a 404 rather than a
+    /// 403 — there is no permission being asserted, the path simply is not there.
+    /// A 200 with an empty list would read as "that folder exists and is empty".
+    func testAMissingFolderIs404() async {
+        let router = RemoteRouter(backend: folderBackend(), token: "secret")
+        let out = str(await router.handle(request(
+            "GET /api/folders?token=secret&path=%2Fnope HTTP/1.1\r\n\r\n")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 404"), out)
     }
 
     func testCreateFolderPassesTheNameAndParentThrough() async {
         let backend = folderBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
         let out = str(await router.handle(post(
-            "/api/folder", "{\"name\":\"ISOs\",\"parent\":\"/downloads/Linux\"}")))
+            "/api/folder", "{\"name\":\"ISOs\",\"parent\":\"/home/goel/Documents\"}")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
-        XCTAssertTrue(out.contains("\"path\":\"\\/downloads\\/Linux\\/ISOs\""), out)
+        XCTAssertTrue(out.contains("\"path\":\"\\/home\\/goel\\/Documents\\/ISOs\""), out)
         XCTAssertEqual(backend.createdFolders.count, 1)
         XCTAssertEqual(backend.createdFolders.first?.name, "ISOs")
     }

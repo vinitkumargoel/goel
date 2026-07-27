@@ -157,29 +157,43 @@ export interface AddRequest {
   network?: string
 }
 
-/** One folder inside the downloads root — `GET /api/folders`. */
+/** One folder — `GET /api/folders`. */
 export interface FolderEntry {
   name: string
   path: string
+  /** False when the server user may not list it; the picker will not enter it. */
+  readable: boolean
+  /** False when the server user may not write into it; it cannot be chosen. */
+  writable: boolean
 }
 
-/** One level of the save-folder tree. Paths are absolute, server-side. */
+/**
+ * One level of the save-folder tree. Paths are absolute, server-side.
+ *
+ * There is no root: the picker reaches wherever the server process's user
+ * reaches. `readable`/`writable` are the filesystem's answers, not a policy —
+ * never re-derive them here.
+ */
 export interface FolderListing {
-  /** The downloads root; the picker cannot navigate above it. */
-  root: string
-  /** The folder being listed. Equals `root` at the top. */
+  /** The folder being listed. */
   path: string
-  /** The folder above `path`, or null at the root. */
+  /** The folder above `path`, or null at `/`. */
   parent: string | null
   folders: FolderEntry[]
   /** False when the folder is not writable — hide "New folder". */
   writable: boolean
+  /** The server user's home directory, for `~/…` labels. */
+  home: string
+  /** The configured default save directory. Choosing it means "use the default". */
+  defaultFolder: string
+  /** One-click destinations: Downloads, Home, mounted volumes, Computer. */
+  places: FolderEntry[]
 }
 
 /** Request body for `POST /api/folder`. */
 export interface NewFolderRequest {
   name: string
-  /** Absolute parent path. Omitted means the downloads root. */
+  /** Absolute parent path. Omitted means the configured downloads folder. */
   parent?: string
 }
 
