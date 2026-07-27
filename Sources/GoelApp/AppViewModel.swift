@@ -484,10 +484,16 @@ final class AppViewModel: ObservableObject {
             // VPN/tunnel iface up (utun/ipsec/…) — separate from multi-path adapter
             // list, which intentionally excludes tunnels.
             let vpnActive = AdapterDirectory.hasActiveVPNInterface()
+            // Bound out here, not read as `self?.` inside the Task. The policy
+            // calls above go through `core` and must still run when the view
+            // model has gone; only the UI refresh depends on it being alive.
+            let model = self
             Task {
                 await core.applyNetworkPolicy(expensive: expensive, constrained: constrained)
                 await core.setVPNDefaultRouteActive(vpnActive)
-                await MainActor.run { self?.refreshAggregationState() }
+                if let model {
+                    await MainActor.run { model.refreshAggregationState() }
+                }
             }
         }
         netMonitor.start(queue: DispatchQueue(label: "goel.network-path"))
