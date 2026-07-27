@@ -24,10 +24,10 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
   const [single, setSingle] = useState('')
   const [busy, setBusy] = useState(false)
   const [picking, setPicking] = useState(false)
-  // Only needed to shorten the chosen path for display. Null until the first
-  // listing arrives — and the folder field starts empty, so nothing is shown
-  // wrong in the meantime.
-  const [root, setRoot] = useState<string | null>(null)
+  // Only needed to shorten the chosen path for display (`~/…` rather than the
+  // full absolute path). Null until the first listing arrives — and the folder
+  // field starts empty, so nothing is shown wrong in the meantime.
+  const [home, setHome] = useState<string | null>(null)
   const urlRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -109,11 +109,11 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
           canCreate={!BOOT.readOnly}
           onWarn={onWarn}
           onClose={() => setPicking(false)}
-          onPick={(path, pickedRoot) => {
-            setRoot(pickedRoot)
-            // The root itself is the server's own default, so store it as
-            // "blank" — that way changing the default later still applies.
-            setFolder(path === pickedRoot ? '' : path)
+          onPick={(path, listing) => {
+            setHome(listing.home)
+            // Picking exactly the configured default is stored as "blank", so
+            // that changing the default later still applies to this download.
+            setFolder(path === listing.defaultFolder ? '' : path)
             setPicking(false)
           }}
         />
@@ -149,7 +149,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
                   composed; browsing makes the wrong value unreachable. */}
               <div className="finput pkfield">
                 <span className={`pkval${folder ? '' : ' dim'}`} title={folder || undefined}>
-                  {folder ? folderLabel(folder, root) : 'Default downloads folder'}
+                  {folder ? folderLabel(folder, home) : 'Default downloads folder'}
                 </span>
                 <button className="btn ghost pkbrowse" onClick={() => setPicking(true)}>
                   Browse…

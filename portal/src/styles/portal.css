@@ -128,9 +128,19 @@ textarea.finput{min-height:88px;font-family:inherit;resize:vertical}
 /* folder picker — a second layer above the Add dialog, hence the higher z */
 .picker-scrim{z-index:130}
 .modal.picker{width:460px}
+/* Shortcut roots. Wraps rather than scrolls: a mounted volume can have a long
+   name, and a hidden second row would look like there is nothing there. */
+.pkplaces{display:flex;flex-wrap:wrap;gap:6px;padding:10px 22px 0}
+.pkplace{padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:transparent;color:var(--text-dim);font-size:11.5px;font-family:inherit;cursor:pointer;white-space:nowrap}
+.pkplace:hover{background:var(--bg-control);color:var(--text)}
+.pkplace.on{border-color:var(--accent);color:var(--accent)}
+.pkplace:disabled{opacity:.4;cursor:default}.pkplace:disabled:hover{background:transparent;color:var(--text-dim)}
 .pkpath{padding:10px 22px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pkbody{min-height:190px;max-height:44vh}
 .pkrow{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:13px;font-family:inherit;text-align:left;cursor:pointer}.pkrow:hover{background:var(--bg-control)}.pkrow svg{width:16px;height:16px;flex:0 0 auto;color:var(--accent)}.pkrow.up svg{color:var(--text-faint)}.pkrow .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Shown but inert: the server said this uid cannot list it. */
+.pkrow.locked{cursor:default;color:var(--text-faint)}.pkrow.locked:hover{background:transparent}.pkrow.locked svg{color:var(--text-faint)}
+.pkno{margin-left:auto;flex:0 0 auto;font-size:10.5px;color:var(--text-faint)}
 .pknew{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}.pknew .finput{flex:1}
 /* Overrides .finput's own padding so this row ends up the same height as the
  * Priority select beside it — the buttons inside would otherwise make it taller. */

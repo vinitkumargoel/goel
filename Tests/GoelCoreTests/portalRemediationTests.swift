@@ -9,14 +9,14 @@ import Network
 /// Every case here fails against the behaviour that shipped before this file
 /// existed: the add route fetched any caller-supplied URL, `/logout` sat in front
 /// of the auth gate, a QR deep-link produced a page that could not talk to its own
-/// API, an out-of-root save folder was silently swapped for the default, a single
+/// API, an unusable save folder was silently swapped for the default, a single
 /// non-finite Double blanked the whole task list with a 200, and a cross-site POST
 /// to an open loopback portal was honoured.
 
 // MARK: - Fakes
 
 /// ``RemoteBackend`` that refuses every caller-supplied save folder, standing in
-/// for a scheduler whose downloads root does not contain the requested path.
+/// for a scheduler whose uid cannot write to the requested path.
 private final class FolderRefusingBackend: RemoteBackend, @unchecked Sendable {
     private(set) var added: [DownloadSource] = []
     private(set) var folders: [String?] = []
@@ -127,9 +127,9 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertTrue(NetworkGuard.isAllowedRemoteAddTarget(url("http://0x-mirror.example.com/x")))
     }
 
-    // MARK: RP-04 — an out-of-root save folder is refused, not silently swapped
+    // MARK: RP-04 — an unwritable save folder is refused, not silently swapped
 
-    func testAddRefusesOutOfRootSaveFolder() async {
+    func testAddRefusesAnUnwritableSaveFolder() async {
         let backend = FolderRefusingBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
         let body = #"{"url":"https://e/x.bin","folder":"/etc/cron.d"}"#
@@ -138,7 +138,7 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertTrue(backend.added.isEmpty, "a refused folder must not add anything")
     }
 
-    func testAddWithNoFolderIsUnaffectedByTheContainmentCheck() async {
+    func testAddWithNoFolderIsUnaffectedByTheWritabilityCheck() async {
         let backend = FolderRefusingBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
         let out = str(await router.handle(addRequest(#"{"url":"https://e/x.bin"}"#)))

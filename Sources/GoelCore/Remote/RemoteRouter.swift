@@ -156,12 +156,13 @@ public struct RemoteRouter: Sendable {
             guard let payload = try? JSONDecoder().decode(AddPayload.self, from: request.body)
             else { return Self.badRequest() }
             let folder = payload.folder?.trimmingCharacters(in: .whitespaces)
-            // Refuse an out-of-root folder instead of quietly saving somewhere else:
-            // a remote client that is told "added" has a right to assume the file
-            // landed where it asked. ``DownloadManager/remoteSaveDirectory(_:)``
-            // stays in place as the belt-and-braces check.
+            // Refuse a folder we cannot write instead of quietly saving somewhere
+            // else: a remote client that is told "added" has a right to assume the
+            // file landed where it asked.
+            // ``DownloadManager/remoteSaveDirectory(_:)`` stays in place as the
+            // belt-and-braces check.
             if let folder, !folder.isEmpty, await backend.remoteSaveDirectoryAllowed(folder) == false {
-                return Self.forbidden("That save folder is outside the downloads folder — refused. Choose a folder inside it, or leave it blank.")
+                return Self.forbidden("That save folder cannot be written to — it does not exist, is not a folder, or this user has no permission for it.")
             }
             let priority = Self.priority(payload.priority)
             let paused = payload.paused ?? false
@@ -216,17 +217,13 @@ public struct RemoteRouter: Sendable {
         // refused by `/api/add` only *after* the user has composed the whole
         // request. Browsing makes the unsafe value unreachable instead.
         //
-        // The listing is confined to the downloads root by the same predicate the
-        // add route enforces, so this cannot be turned into a filesystem browser
-        // for the rest of the machine. `path` omitted means the root itself.
+        // This *is* a filesystem browser for the machine, bounded by the server
+        // process's own uid rather than by a configured root — see
+        // ``SaveFolderBrowser`` for why, and for what it costs. `path` omitted
+        // means the configured downloads folder, which is where it opens.
         case ("GET", "/api/folders"):
-            // One answer for "outside the root" and for "not there any more", on
-            // purpose: telling them apart would turn this into a probe for which
-            // paths exist on the machine. The wording says a reason without
-            // saying which one applies, rather than asserting the wrong one.
             guard let listing = await backend.folderListing(request.query["path"]) else {
-                return Self.forbidden(
-                    "That folder is not available — it is outside the downloads folder, or no longer exists.")
+                return Self.notFound("That folder does not exist, or is not a folder.")
             }
             return Self.json(listing)
 
@@ -242,7 +239,8 @@ public struct RemoteRouter: Sendable {
                 return Self.badRequest("A folder name cannot be empty, contain “/”, or begin with a dot.")
             }
             guard let created = await backend.createFolder(named: name, in: payload.parent) else {
-                return Self.forbidden("Could not create that folder inside the downloads folder.")
+                return Self.forbidden(
+                    "Could not create that folder — this user may not have permission to write there.")
             }
             return Self.json(NewFolderRow(path: created))
 
@@ -423,8 +421,8 @@ public struct RemoteRouter: Sendable {
         response(status: "400 Bad Request", type: "text/plain", body: Data("\(message)\n".utf8))
     }
 
-    static func notFound() -> Data {
-        response(status: "404 Not Found", type: "text/plain", body: Data("Not found\n".utf8))
+    static func notFound(_ message: String = "Not found") -> Data {
+        response(status: "404 Not Found", type: "text/plain", body: Data("\(message)\n".utf8))
     }
 
     static func forbidden(_ message: String) -> Data {
@@ -814,9 +812,10 @@ public protocol RemoteBackend: AnyObject, Sendable {
     func history(limit: Int) async -> [HistoryEntry]
     func removeHistoryEntry(_ id: UUID) async
     func clearHistory() async
-    /// Whether a caller-supplied save folder is inside the allowed downloads root.
-    /// Defaulted to `true` so in-memory conformers keep compiling; the real
-    /// scheduler answers with ``PathSafety/isContained(_:within:)``.
+    /// Whether a caller-supplied save folder can actually receive a download: it
+    /// exists, it is a directory, and this uid may write to it. Defaulted to
+    /// `true` so in-memory conformers keep compiling; the real scheduler answers
+    /// with ``SaveFolderBrowser/canSave(into:)``.
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool
 
     /// Live interfaces plus the current aggregation policy, for `GET /api/network`.
@@ -828,11 +827,13 @@ public protocol RemoteBackend: AnyObject, Sendable {
                    startPaused: Bool, network: NetworkSelection?) async
 
     /// Subfolders of `path`, for the portal's save-folder picker. nil `path` means
-    /// the downloads root. Returns nil when the path is outside that root — the
-    /// same boundary ``remoteSaveDirectoryAllowed(_:)`` enforces.
+    /// the configured downloads folder, which is where the picker opens. Returns
+    /// nil only when the path does not exist or is not a directory — reach is
+    /// bounded by the server process's uid, not by a configured root.
     func folderListing(_ path: String?) async -> RemoteFolderListing?
-    /// Create `name` inside `parent` (nil = the downloads root) and answer with the
-    /// new absolute path. nil when the parent is out of root or the create failed.
+    /// Create `name` inside `parent` (nil = the configured downloads folder) and
+    /// answer with the new absolute path. nil when the create failed, which
+    /// includes having no permission to write there.
     func createFolder(named name: String, in parent: String?) async -> String?
 }
 
@@ -852,26 +853,37 @@ public extension RemoteBackend {
 /// One level of the save-folder tree, as the portal's picker needs it.
 ///
 /// Absolute paths travel on the wire because that is what `POST /api/add` takes,
-/// and because the alternative — a root-relative path the server re-joins — would
-/// need its own traversal check on the way back in. `root`/`parent` let the picker
-/// render a breadcrumb and an "up" affordance without doing path arithmetic in
-/// JavaScript, where a mistake would be a mistake about a security boundary.
+/// and because the alternative — a relative path the server re-joins — would need
+/// its own traversal check on the way back in. `parent` and `places` let the
+/// picker render an "up" affordance and its shortcuts without doing path
+/// arithmetic in JavaScript.
+///
+/// There is no root field. The picker reaches wherever the server process's uid
+/// reaches; `readable`/`writable` per entry are what the UI greys out, and they
+/// are the kernel's answers rather than a policy of ours. See
+/// ``SaveFolderBrowser`` for what that widening costs.
 public struct RemoteFolderListing: Sendable, Codable, Equatable {
     public struct Entry: Sendable, Codable, Equatable {
         public var name: String
         public var path: String
+        /// False when this uid may not list the folder — the picker shows it but
+        /// will not enter it, rather than offering a click that dead-ends.
+        public var readable: Bool
+        /// False when this uid may not write into it, so it cannot be chosen as a
+        /// destination.
+        public var writable: Bool
 
-        public init(name: String, path: String) {
+        public init(name: String, path: String, readable: Bool = true, writable: Bool = true) {
             self.name = name
             self.path = path
+            self.readable = readable
+            self.writable = writable
         }
     }
 
-    /// The downloads root — the outermost folder the picker may reach.
-    public var root: String
-    /// The folder being listed. Equals `root` at the top.
+    /// The folder being listed.
     public var path: String
-    /// The folder above `path`, or nil when `path` is the root.
+    /// The folder above `path`, or nil at `/`.
     public var parent: String?
     /// Immediate subfolders, name-sorted. Files are not listed: this picker only
     /// ever answers "where should this go".
@@ -879,13 +891,25 @@ public struct RemoteFolderListing: Sendable, Codable, Equatable {
     /// False when the folder cannot be written to, so the picker can refuse to
     /// offer "New folder" rather than surfacing an error after the fact.
     public var writable: Bool
+    /// The server user's home directory, so the picker can label paths under it
+    /// as `~/…` instead of showing the full absolute path.
+    public var home: String
+    /// The configured default save directory. Choosing exactly this means "use
+    /// the default", which the portal sends as a blank `folder`.
+    public var defaultFolder: String
+    /// One-click destinations: Downloads, Home, mounted volumes, Computer.
+    /// Shortcuts only — all of them are reachable by walking up as well.
+    public var places: [Entry]
 
-    public init(root: String, path: String, parent: String?, folders: [Entry], writable: Bool) {
-        self.root = root
+    public init(path: String, parent: String?, folders: [Entry], writable: Bool,
+                home: String, defaultFolder: String, places: [Entry]) {
         self.path = path
         self.parent = parent
         self.folders = folders
         self.writable = writable
+        self.home = home
+        self.defaultFolder = defaultFolder
+        self.places = places
     }
 }
 
@@ -958,24 +982,27 @@ extension DownloadManager: RemoteBackend {
     }
 
     public func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool {
-        PathSafety.isContained(folder, within: settings.defaultSaveDirectory)
+        await Task.detached(priority: .userInitiated) {
+            SaveFolderBrowser.canSave(into: folder)
+        }.value
     }
 
-    // Both hop off the actor to touch the filesystem. Listing a folder stats every
-    // entry in it, and a downloads folder can be large and can live on a network
-    // mount — long enough to stall every download in the scheduler while a
-    // browser walks a directory tree. Only the root is read under isolation.
+    // All three hop off the actor to touch the filesystem. Listing a folder stats
+    // every entry in it, and a folder can be large and can live on a network mount
+    // — long enough to stall every download in the scheduler while a browser walks
+    // a directory tree. Only the settings reads happen under isolation.
     public func folderListing(_ path: String?) async -> RemoteFolderListing? {
-        let root = settings.defaultSaveDirectory
+        let defaultFolder = settings.defaultSaveDirectory
         return await Task.detached(priority: .userInitiated) {
-            SaveFolderBrowser.listing(of: path, root: root)
+            SaveFolderBrowser.listing(
+                of: path, defaultFolder: defaultFolder, home: NSHomeDirectory())
         }.value
     }
 
     public func createFolder(named name: String, in parent: String?) async -> String? {
-        let root = settings.defaultSaveDirectory
+        let defaultFolder = settings.defaultSaveDirectory
         return await Task.detached(priority: .userInitiated) {
-            SaveFolderBrowser.create(named: name, in: parent, root: root)
+            SaveFolderBrowser.create(named: name, in: parent, defaultFolder: defaultFolder)
         }.value
     }
 
@@ -1010,18 +1037,20 @@ extension DownloadManager: RemoteBackend {
         await updateSettings(updated)
     }
 
-    /// Constrain a remote-supplied save directory to the configured downloads
-    /// root. The remote portal is a network-facing surface: without this, an
-    /// (authenticated) client could set `folder` to an arbitrary path such as
-    /// `~/Library/LaunchAgents` or `/etc/cron.d` and drop an attacker-chosen file
-    /// into an auto-run location. A folder outside the root is refused (→ nil, so
-    /// the safe per-source default is used instead of the client's value).
+    /// Accept a remote-supplied save directory if this uid can actually write to
+    /// it, and fall back to the per-source default otherwise (→ nil).
+    ///
+    /// The check is the filesystem's, not a root of ours: a portal session may
+    /// save anywhere the server process may. That is a real widening of a
+    /// network-facing surface — on macOS the app runs as the logged-in user, so
+    /// `~/Library/LaunchAgents` is now a writable destination like any other, and
+    /// the portal password is the whole of what guards it. It is deliberate;
+    /// ``SaveFolderBrowser`` records the reasoning.
     func remoteSaveDirectory(_ folder: String?) -> String? {
         guard let folder = folder?.trimmingCharacters(in: .whitespacesAndNewlines),
               !folder.isEmpty else { return nil }
-        let root = settings.defaultSaveDirectory
-        if PathSafety.isContained(folder, within: root) { return folder }
-        GoelLog.remote.error("Remote add: rejecting out-of-root save folder; using default",
+        if SaveFolderBrowser.canSave(into: folder) { return folder }
+        GoelLog.remote.error("Remote add: save folder is not writable; using default",
                              .path(folder))
         return nil
     }

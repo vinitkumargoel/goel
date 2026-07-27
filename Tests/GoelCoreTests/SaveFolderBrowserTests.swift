@@ -1,133 +1,227 @@
 import XCTest
 @testable import GoelCore
 
-/// The save-folder picker's boundary.
+/// The save-folder picker's reach, and what stops it.
 ///
-/// The picker exists so nobody types an absolute server path into the Add dialog,
-/// which means the server now *hands out* paths and *creates* directories on
-/// request. Both are reachable by anyone holding a session, so the tests that
-/// matter are the ones that prove neither can escape the downloads root.
+/// The picker deliberately has no configured root: it goes wherever the server
+/// process's own uid goes. That makes the permission bits the boundary, so these
+/// tests set real ones on real directories and check that the browser reports
+/// what the kernel would enforce — a picker that offers a folder the write then
+/// fails on is worse than one that never offered it.
 final class SaveFolderBrowserTests: XCTestCase {
 
-    private var root: String = ""
-    private var outside: String = ""
+    private var base: String = ""
+    private var downloads: String = ""
+    private var sibling: String = ""
 
     override func setUpWithError() throws {
-        let base = URL(fileURLWithPath: NSTemporaryDirectory())
+        base = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("goel-folders-\(UUID().uuidString)")
-        // `outside` is a sibling of `root`, not a child: the point is to have a
-        // real directory that exists and is still off-limits.
-        root = base.appendingPathComponent("downloads").path
-        outside = base.appendingPathComponent("elsewhere").path
+            .path
+        downloads = (base as NSString).appendingPathComponent("downloads")
+        // A sibling of the downloads folder. Under the old confinement this was
+        // unreachable; reaching it is now the point.
+        sibling = (base as NSString).appendingPathComponent("elsewhere")
         let fm = FileManager.default
-        try fm.createDirectory(atPath: root, withIntermediateDirectories: true)
-        try fm.createDirectory(atPath: outside, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: downloads, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: sibling, withIntermediateDirectories: true)
     }
 
     override func tearDownWithError() throws {
-        try? FileManager.default.removeItem(atPath: (root as NSString).deletingLastPathComponent)
+        // Restore anything chmod'd to unreadable, or the cleanup cannot recurse.
+        let fm = FileManager.default
+        if let walk = fm.enumerator(atPath: base) {
+            for case let name as String in walk {
+                try? fm.setAttributes([.posixPermissions: 0o755],
+                                      ofItemAtPath: (base as NSString).appendingPathComponent(name))
+            }
+        }
+        try? fm.removeItem(atPath: base)
     }
 
-    private func mkdir(_ relative: String) throws {
-        try FileManager.default.createDirectory(
-            atPath: (root as NSString).appendingPathComponent(relative),
-            withIntermediateDirectories: true)
+    private func listing(_ path: String?) -> RemoteFolderListing? {
+        SaveFolderBrowser.listing(of: path, defaultFolder: downloads, home: base)
     }
 
-    private func touch(_ relative: String) {
-        FileManager.default.createFile(
-            atPath: (root as NSString).appendingPathComponent(relative), contents: Data())
+    private func mkdir(_ absolute: String) throws {
+        try FileManager.default.createDirectory(atPath: absolute, withIntermediateDirectories: true)
     }
 
-    // MARK: Listing
+    private func under(_ parent: String, _ name: String) -> String {
+        (parent as NSString).appendingPathComponent(name)
+    }
 
-    func testRootListingNamesOnlyDirectoriesAndHasNoParent() throws {
-        try mkdir("Linux")
-        try mkdir("Music")
-        touch("notes.txt")
+    private func chmod(_ path: String, _ bits: Int) throws {
+        try FileManager.default.setAttributes([.posixPermissions: bits], ofItemAtPath: path)
+    }
 
-        let listing = try XCTUnwrap(SaveFolderBrowser.listing(of: nil, root: root))
-        XCTAssertEqual(listing.folders.map(\.name), ["Linux", "Music"])
-        XCTAssertNil(listing.parent, "the root must not offer a way up out of itself")
-        XCTAssertEqual(listing.path, listing.root)
+    /// Permission bits mean nothing to uid 0, so the tests that turn on them can
+    /// only prove something as an ordinary user.
+    private func skipIfRoot() throws {
+        try XCTSkipIf(getuid() == 0, "permission bits do not constrain root")
+    }
+
+    // MARK: Reach
+
+    func testListingOpensAtTheDefaultFolderWhenGivenNoPath() throws {
+        try mkdir(under(downloads, "Linux"))
+        let listing = try XCTUnwrap(listing(nil))
+        XCTAssertEqual(listing.path, downloads)
+        XCTAssertEqual(listing.defaultFolder, downloads)
+    }
+
+    func testBlankPathMeansTheDefaultFolder() throws {
+        XCTAssertEqual(try XCTUnwrap(listing("   ")).path, downloads)
+    }
+
+    /// The reported bug: the picker could not get above the downloads folder.
+    func testTheDefaultFolderOffersAWayUp() throws {
+        let listing = try XCTUnwrap(listing(nil))
+        XCTAssertEqual(listing.parent, base,
+                       "the downloads folder is no longer a ceiling")
+    }
+
+    func testWalkingUpAndIntoASiblingWorks() throws {
+        try mkdir(under(sibling, "Archive"))
+        let up = try XCTUnwrap(listing(try XCTUnwrap(listing(nil)).parent))
+        XCTAssertTrue(up.folders.map(\.name).contains("elsewhere"))
+
+        let across = try XCTUnwrap(listing(sibling))
+        XCTAssertEqual(across.folders.map(\.name), ["Archive"])
+    }
+
+    func testOnlyTheFilesystemRootHasNoParent() throws {
+        XCTAssertNil(try XCTUnwrap(listing("/")).parent)
+        XCTAssertNotNil(try XCTUnwrap(listing(base)).parent)
+    }
+
+    func testListingNamesOnlyDirectoriesSorted() throws {
+        try mkdir(under(downloads, "Music"))
+        try mkdir(under(downloads, "Linux"))
+        FileManager.default.createFile(atPath: under(downloads, "notes.txt"), contents: Data())
+
+        XCTAssertEqual(try XCTUnwrap(listing(downloads)).folders.map(\.name), ["Linux", "Music"])
     }
 
     func testHiddenFoldersAreNotOffered() throws {
-        try mkdir(".Trash")
-        try mkdir("Visible")
-
-        let listing = try XCTUnwrap(SaveFolderBrowser.listing(of: nil, root: root))
-        XCTAssertEqual(listing.folders.map(\.name), ["Visible"])
-    }
-
-    func testSubfolderListingCanWalkBackUp() throws {
-        try mkdir("Linux/ISOs")
-        let child = (root as NSString).appendingPathComponent("Linux")
-
-        let listing = try XCTUnwrap(SaveFolderBrowser.listing(of: child, root: root))
-        XCTAssertEqual(listing.folders.map(\.name), ["ISOs"])
-        XCTAssertEqual(listing.parent, root)
-    }
-
-    func testListingRefusesAPathOutsideTheRoot() {
-        XCTAssertNil(SaveFolderBrowser.listing(of: outside, root: root))
-    }
-
-    func testListingRefusesTraversalOutOfTheRoot() {
-        let escape = (root as NSString).appendingPathComponent("../elsewhere")
-        XCTAssertNil(SaveFolderBrowser.listing(of: escape, root: root))
+        try mkdir(under(downloads, ".Trash"))
+        try mkdir(under(downloads, "Visible"))
+        XCTAssertEqual(try XCTUnwrap(listing(downloads)).folders.map(\.name), ["Visible"])
     }
 
     func testListingRefusesAFileAndAMissingFolder() throws {
-        touch("notes.txt")
-        XCTAssertNil(SaveFolderBrowser.listing(
-            of: (root as NSString).appendingPathComponent("notes.txt"), root: root))
-        XCTAssertNil(SaveFolderBrowser.listing(
-            of: (root as NSString).appendingPathComponent("nope"), root: root))
+        FileManager.default.createFile(atPath: under(downloads, "notes.txt"), contents: Data())
+        XCTAssertNil(listing(under(downloads, "notes.txt")))
+        XCTAssertNil(listing(under(downloads, "nope")))
     }
 
-    func testBlankPathMeansTheRoot() throws {
-        let listing = try XCTUnwrap(SaveFolderBrowser.listing(of: "   ", root: root))
-        XCTAssertEqual(listing.path, root)
+    func testSymlinksAreResolvedSoTheShownPathIsTheRealOne() throws {
+        let link = under(downloads, "shortcut")
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: sibling)
+        XCTAssertEqual(try XCTUnwrap(listing(link)).path, sibling,
+                       "the breadcrumb must name where the write will actually land")
+    }
+
+    // MARK: Permissions are the boundary
+
+    func testAnUnreadableFolderIsListedButMarkedUnreadable() throws {
+        try skipIfRoot()
+        let locked = under(downloads, "locked")
+        try mkdir(locked)
+        try chmod(locked, 0o000)
+
+        let entry = try XCTUnwrap(
+            try XCTUnwrap(listing(downloads)).folders.first { $0.name == "locked" })
+        XCTAssertFalse(entry.readable)
+        XCTAssertFalse(entry.writable)
+    }
+
+    func testAReadOnlyFolderIsReadableButNotWritable() throws {
+        try skipIfRoot()
+        let readOnly = under(downloads, "readonly")
+        try mkdir(readOnly)
+        try chmod(readOnly, 0o500)
+
+        let entry = try XCTUnwrap(
+            try XCTUnwrap(listing(downloads)).folders.first { $0.name == "readonly" })
+        XCTAssertTrue(entry.readable)
+        XCTAssertFalse(entry.writable)
+        XCTAssertFalse(try XCTUnwrap(listing(readOnly)).writable)
+    }
+
+    func testCanSaveAnswersForFoldersFilesAndMissingPaths() throws {
+        try skipIfRoot()
+        XCTAssertTrue(SaveFolderBrowser.canSave(into: downloads))
+        XCTAssertFalse(SaveFolderBrowser.canSave(into: under(downloads, "nope")))
+
+        let file = under(downloads, "notes.txt")
+        FileManager.default.createFile(atPath: file, contents: Data())
+        XCTAssertFalse(SaveFolderBrowser.canSave(into: file), "a file is not a destination")
+
+        let readOnly = under(downloads, "readonly")
+        try mkdir(readOnly)
+        try chmod(readOnly, 0o500)
+        XCTAssertFalse(SaveFolderBrowser.canSave(into: readOnly))
+    }
+
+    // MARK: Places
+
+    func testPlacesOfferDownloadsHomeAndComputer() {
+        let names = SaveFolderBrowser.places(defaultFolder: downloads, home: base).map(\.name)
+        XCTAssertEqual(names.prefix(2).map { $0 }, ["Downloads", "Home"])
+        XCTAssertTrue(names.contains("Computer"))
+    }
+
+    func testPlacesDoNotRepeatAPathUnderTwoNames() {
+        // Downloads configured *as* home: one entry, not two pointing at the same
+        // folder, which would read as two different destinations.
+        let places = SaveFolderBrowser.places(defaultFolder: base, home: base)
+        XCTAssertEqual(places.filter { $0.path == base }.count, 1)
+    }
+
+    func testPlacesSkipAFolderThatDoesNotExist() {
+        let places = SaveFolderBrowser.places(
+            defaultFolder: under(base, "gone"), home: base)
+        XCTAssertFalse(places.contains { $0.name == "Downloads" })
     }
 
     // MARK: Creating
 
     func testCreateMakesTheFolderAndReturnsItsPath() throws {
-        let made = try XCTUnwrap(SaveFolderBrowser.create(named: "ISOs", in: nil, root: root))
-        XCTAssertEqual(made, (root as NSString).appendingPathComponent("ISOs"))
+        let made = try XCTUnwrap(
+            SaveFolderBrowser.create(named: "ISOs", in: nil, defaultFolder: downloads))
+        XCTAssertEqual(made, under(downloads, "ISOs"))
         var isDir: ObjCBool = false
         XCTAssertTrue(FileManager.default.fileExists(atPath: made, isDirectory: &isDir))
         XCTAssertTrue(isDir.boolValue)
     }
 
+    func testCreateWorksOutsideTheDownloadsFolder() throws {
+        XCTAssertEqual(
+            SaveFolderBrowser.create(named: "ISOs", in: sibling, defaultFolder: downloads),
+            under(sibling, "ISOs"))
+    }
+
     func testCreatingAFolderThatAlreadyExistsSucceeds() throws {
-        try mkdir("ISOs")
-        XCTAssertEqual(SaveFolderBrowser.create(named: "ISOs", in: nil, root: root),
-                       (root as NSString).appendingPathComponent("ISOs"))
+        try mkdir(under(downloads, "ISOs"))
+        XCTAssertEqual(
+            SaveFolderBrowser.create(named: "ISOs", in: nil, defaultFolder: downloads),
+            under(downloads, "ISOs"))
     }
 
     func testCreateRefusesWhenAFileAlreadyHasTheName() {
-        touch("ISOs")
-        XCTAssertNil(SaveFolderBrowser.create(named: "ISOs", in: nil, root: root))
+        FileManager.default.createFile(atPath: under(downloads, "ISOs"), contents: Data())
+        XCTAssertNil(SaveFolderBrowser.create(named: "ISOs", in: nil, defaultFolder: downloads))
     }
 
-    func testCreateRefusesAParentOutsideTheRoot() {
-        XCTAssertNil(SaveFolderBrowser.create(named: "ISOs", in: outside, root: root))
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: (outside as NSString).appendingPathComponent("ISOs")),
-            "nothing may be created outside the downloads folder")
-    }
+    func testCreateFailsWhereTheUserMayNotWrite() throws {
+        try skipIfRoot()
+        let readOnly = under(downloads, "readonly")
+        try mkdir(readOnly)
+        try chmod(readOnly, 0o500)
 
-    /// A symlink inside the root that points out of it: the parent passes the
-    /// containment check, so only the post-join check catches this.
-    func testCreateRefusesThroughASymlinkThatLeavesTheRoot() throws {
-        let link = (root as NSString).appendingPathComponent("escape")
-        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: outside)
-
-        XCTAssertNil(SaveFolderBrowser.create(named: "ISOs", in: link, root: root))
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: (outside as NSString).appendingPathComponent("ISOs")))
+        XCTAssertNil(SaveFolderBrowser.create(named: "ISOs", in: readOnly, defaultFolder: downloads))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: under(readOnly, "ISOs")))
     }
 
     // MARK: Name validation
@@ -138,9 +232,10 @@ final class SaveFolderBrowserTests: XCTestCase {
         }
     }
 
+    /// Still refused, and still refused rather than sanitised — the name is a
+    /// single component by construction, which is what lets `create` join it
+    /// without re-checking where the result landed.
     func testTraversalSlashesHiddenAndEmptyNamesAreRefused() {
-        // Not sanitised into something else — refused. Silently creating
-        // "download" because someone typed "../" would be its own surprise.
         for name in ["", "   ", ".", "..", "../etc", "a/b", #"a\b"#, ".hidden", "a\nb", "a\0b"] {
             XCTAssertFalse(RemoteRouter.isPlainFolderName(name), name)
         }

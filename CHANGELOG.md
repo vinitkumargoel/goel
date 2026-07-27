@@ -33,14 +33,30 @@ anyone actually received is `v1.0.1`. Upgrading from it means taking all three s
 
 - **The portal's Add dialog browses for the save folder instead of asking you to type it.** It
   wanted an absolute server path in a free-text field, and a typo only surfaced at submit
-  time — the server refuses an out-of-root folder, so you found out after composing the whole
-  request, with nothing to correct it against. There is now a Browse button, a folder tree
-  confined to the downloads folder, and a "New folder" button. Two routes back it,
-  `GET /api/folders` and `POST /api/folder`, both confined to `settings.defaultSaveDirectory`
-  and documented in `docs/remote-api.md`.
+  time — you found out after composing the whole request, with nothing to correct it against.
+  There is now a Browse button, a folder tree, shortcuts to Downloads, Home, mounted volumes
+  and the filesystem root, and a "New folder" button. Two routes back it, `GET /api/folders`
+  and `POST /api/folder`, documented in `docs/remote-api.md`.
 
   Web only. The macOS app opens a real `NSOpenPanel`, which understands sandbox scope and
   mounted volumes in ways a remote browser cannot; nothing there changes.
+
+### Changed — read this one before upgrading
+
+- **A portal session can now save a download anywhere the server's user can write, not only
+  inside the downloads folder.** The picker had a hard ceiling at
+  `settings.defaultSaveDirectory` and could not climb above it, which meant the portal could
+  not put a file anywhere you would reasonably want it. The boundary is now the operating
+  system's own: every folder is browsable if that user can list it and selectable if that
+  user can write to it, and the picker greys out the rest using the filesystem's answers
+  rather than a rule of its own.
+
+  **This widens what an authenticated portal session can reach.** On macOS the app runs as
+  you, so a session can now write into auto-run locations such as `~/Library/LaunchAgents`;
+  the portal password is what stands in front of that, which is a reason to set a strong one
+  and to think twice before exposing the portal beyond your LAN. On Linux the daemon runs as
+  the unprivileged `goel` system user, so its reach is whatever you granted that account —
+  which is the intended way to bound this.
 
 ### Fixed
 

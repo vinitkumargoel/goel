@@ -214,11 +214,17 @@ Response is a pair of counts, not `{"ok":true}`. `refused` is always present:
 { "added": 2, "refused": 0 }
 ```
 
-> **Path containment.** A `folder` outside the configured downloads root fails the whole
-> request with `403 Forbidden` and adds nothing — it is **not** silently redirected to the
-> default. Without the check, an authenticated client could drop a file into an auto-run
-> location such as `~/Library/LaunchAgents`; without the refusal, a client told "added"
-> could not tell where the file actually went.
+> **Save folders are bounded by the server user, not by a root.** A `folder` this
+> user cannot write to fails the whole request with `403 Forbidden` and adds nothing — it is
+> **not** silently redirected to the default, because a client told "added" should be able to
+> assume the file landed where it asked. Anything the daemon's own uid can write to is a
+> legal destination, including outside the configured downloads folder.
+>
+> Be aware of what that means for exposure. On macOS the app runs as the logged-in user, so
+> an authenticated session can write into auto-run locations such as `~/Library/LaunchAgents`;
+> the portal password is what stands in front of that. On Linux the daemon runs as the
+> unprivileged `goel` system user, so its reach is whatever you have granted that user — the
+> intended way to bound this is to bound the account, not to trust a check in the app.
 >
 > **Internal-address guard.** Every URL-bearing source is screened against loopback, the
 > link-local/cloud-metadata range and the unspecified address, **by resolved address** — a
@@ -236,38 +242,55 @@ Delete one history entry.
 
 #### `GET /api/folders?path=<abs>`
 
-Subfolders of `path`, for choosing a save folder without typing one. Omit `path` for the
-downloads root.
+Subfolders of `path`, for choosing a save folder without typing one. Omit `path` to open at
+the configured downloads folder.
+
+This is a filesystem browser for the whole machine, bounded by the server process's own uid
+rather than by a configured root — see the note under [`POST /api/add`](#post-apiadd).
 
 ```jsonc
 {
-  "root": "/Users/me/Downloads",          // the outermost folder reachable here
-  "path": "/Users/me/Downloads/Linux",    // the folder listed; equals root at the top
-  "parent": "/Users/me/Downloads",        // null at the root
+  "path": "/Users/me/Downloads/Linux",      // the folder listed
+  "parent": "/Users/me/Downloads",          // null only at "/"
   "folders": [
-    { "name": "ISOs", "path": "/Users/me/Downloads/Linux/ISOs" }
+    { "name": "ISOs", "path": "/Users/me/Downloads/Linux/ISOs",
+      "readable": true, "writable": true }
   ],
-  "writable": true                        // false ⇒ `POST /api/folder` would fail here
+  "writable": true,                         // false ⇒ `POST /api/folder` would fail here
+  "home": "/Users/me",                      // for `~/…` labels
+  "defaultFolder": "/Users/me/Downloads",   // choosing exactly this means "use the default"
+  "places": [                               // one-click shortcuts, not boundaries
+    { "name": "Downloads", "path": "/Users/me/Downloads", "readable": true, "writable": true },
+    { "name": "Home",      "path": "/Users/me",           "readable": true, "writable": true },
+    { "name": "Computer",  "path": "/",                   "readable": true, "writable": false }
+  ]
 }
 ```
 
-Only directories are listed, name-sorted, and dot-folders are omitted. `403 Forbidden` if
-`path` is outside `root` — the same boundary [`POST /api/add`](#post-apiadd) enforces on
-`folder`, so a path this route hands out is always one `add` will accept.
+Only directories are listed, name-sorted, and dot-folders are omitted from the listing —
+that is a display choice, not a rule: a dot-folder passed as `folder` to `add` is accepted
+if the uid can write it.
 
-A path that does not exist, or is a file, gets the **same** `403`. That is deliberate:
-distinguishing "refused" from "not found" would make this a probe for which paths exist on
-the machine. Do not parse the reason out of the body — treat any `403` here as "re-list
-from the root".
+`readable` and `writable` are `access(2)` answers, so they are the same answers the write
+itself would get. Show an unreadable folder rather than hiding it, and do not offer an
+unwritable one as a destination — that is the whole of the permission model, and
+re-deriving it client-side would only produce a second, wronger copy.
+
+`404 Not Found` when `path` does not exist or is not a directory. A folder you may not
+*read* still lists successfully with an empty `folders` array — it exists, and you may
+still be able to write into it.
+
+`places` are shortcuts: the configured downloads folder, home, each mounted volume, and
+`/`. Every one of them is also reachable by walking `parent` upwards.
 
 Read-only sessions may browse; only creating is blocked.
 
 #### `POST /api/folder`
 
-Create one folder inside the downloads root and answer with its absolute path.
+Create one folder and answer with its absolute path.
 
 ```jsonc
-{ "name": "ISOs", "parent": "/Users/me/Downloads/Linux" }   // parent omitted ⇒ the root
+{ "name": "ISOs", "parent": "/Users/me/Downloads/Linux" }   // omitted ⇒ the downloads folder
 ```
 
 ```json
@@ -277,9 +300,11 @@ Create one folder inside the downloads root and answer with its absolute path.
 `name` must be a single path component: not empty, no `/` or `\`, not starting with `.`,
 no control characters, at most 240 bytes. A name that fails is a `400 Bad Request` whose
 body is the reason — it is **not** silently repaired into something else, because creating
-a folder the user did not name is worse than refusing. `403 Forbidden` if `parent` is
-outside the root, if the result would resolve outside it (a symlinked parent), or in
-read-only mode.
+a folder the user did not name is worse than refusing. That single-component rule is also
+what lets the server join `name` onto `parent` without re-checking where the result landed.
+
+`403 Forbidden` when the create failed, which includes having no permission to write in
+`parent`, and in read-only mode.
 
 Creating a folder that already exists succeeds and returns it. A *file* of that name is
 a `403`.
@@ -471,7 +496,7 @@ set -euo pipefail
 GOEL="http://127.0.0.1:8899"
 AUTH=(-H "Authorization: Bearer $TOKEN")
 
-# Add two downloads, paused, into a folder inside the downloads root
+# Add two downloads, paused, into the default save folder
 curl -s "${AUTH[@]}" -X POST "$GOEL/api/add" \
   -H 'content-type: application/json' \
   -d '{"url":"https://example.org/a.iso\nhttps://example.org/b.iso","paused":true}'
@@ -504,9 +529,9 @@ curl -s "${AUTH[@]}" -X POST "$GOEL/api/remove?id=$TASK_ID"
 
 - **`POST /api/add`, `POST /api/network` and `POST /api/folder` are the only routes with a
   request body.** Everything else takes query parameters.
-- **Save folders are confined to the downloads root.** `GET /api/folders` is the way to
-  discover a folder `POST /api/add` will accept; there is no route that reaches anywhere
-  else on the filesystem.
+- **Save folders reach as far as the server's user does.** `GET /api/folders` browses the
+  whole filesystem and `POST /api/add` accepts any folder that user can write to. There is
+  no root confining either; bound the account if you need to bound the reach.
 - **Unknown `prio` values silently become `normal`.** Validate before sending if that
   matters to you.
 - **`data=` on remove defaults to false.** Deletion must be requested explicitly.
