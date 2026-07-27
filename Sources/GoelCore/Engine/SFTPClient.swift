@@ -54,25 +54,77 @@ public struct SFTPTarget: Sendable, Hashable {
     }
 }
 
-/// Interactive + streaming SFTP over the ``SSHBridge`` C shim (libssh2). Every
-/// operation opens its own session on a dedicated thread and tears it down
-/// before returning, so a libssh2 session never crosses threads. Host keys are
-/// pinned trust-on-first-use through ``HostKeyStore``.
+/// Interactive + streaming SFTP over the ``SSHBridge`` C shim (libssh2).
+///
+/// A client is a cheap value that names a server and a *role*; the connection
+/// itself lives in ``SFTPSessionPool``, keyed by both. Operations are posted to
+/// that connection's owning thread, which is what keeps a libssh2 session — not
+/// thread-safe — from ever crossing threads while still letting the handshake be
+/// paid once instead of once per operation. Host keys are pinned
+/// trust-on-first-use through ``HostKeyStore``.
 public struct SFTPClient: Sendable {
 
     public let target: SFTPTarget
     private let hostKeys: HostKeyStore
+    /// Which pooled connection this client's operations ride on. A client is
+    /// cheap and value-typed, so a caller takes a differently-roled copy rather
+    /// than re-resolving credentials — see ``onBackground()`` / ``forTransfer(_:)``.
+    public let role: SFTPSessionRole
 
-    public init(target: SFTPTarget, hostKeys: HostKeyStore = .shared) {
+    public init(target: SFTPTarget, hostKeys: HostKeyStore = .shared,
+                role: SFTPSessionRole = .interactive) {
         self.target = target
         self.hostKeys = hostKeys
+        self.role = role
+    }
+
+    /// The same server, on the connection reserved for recursive walks, sizing,
+    /// thumbnails and search — so a long scan never delays a folder click.
+    public func onBackground() -> SFTPClient {
+        SFTPClient(target: target, hostKeys: hostKeys, role: .background)
+    }
+
+    /// The same server, on a connection dedicated to one transfer job. Every file
+    /// in a folder transfer must share this client so the job pays a single
+    /// handshake rather than one per file. Release it with
+    /// ``finishTransfer(_:)`` when the job ends.
+    public func forTransfer(_ id: UUID) -> SFTPClient {
+        SFTPClient(target: target, hostKeys: hostKeys, role: .transfer(id))
+    }
+
+    /// Give back the connection a transfer job was holding.
+    public func finishTransfer(_ id: UUID) async {
+        await SFTPSessionPool.shared.releaseTransfer(id, target: target)
+    }
+
+    /// Claim `count` connection slots on this server together, waiting until
+    /// that many are free.
+    ///
+    /// A relay copy needs two connections on the same server at once — one
+    /// reading, one writing — and the reader blocks the writer. Taking them one
+    /// at a time lets two concurrent relays each hold one and wait forever for
+    /// the other's, so they are claimed as a pair. Balance with
+    /// ``releaseSlots(_:)``.
+    public func reserveSlots(_ count: Int) async {
+        await SFTPSessionPool.shared.reserve(target, count: count)
+    }
+
+    public func releaseSlots(_ count: Int) async {
+        await SFTPSessionPool.shared.release(target, count: count)
+    }
+
+    /// Drop every pooled connection to this server. Call after editing its
+    /// credentials or resetting its pinned host key.
+    public func disconnect() async {
+        await SFTPSessionPool.shared.disconnectAll(matching: target)
     }
 
     // MARK: Interactive operations
 
     /// Connect + authenticate only. Returns the server's fingerprint.
     public func probe() async throws -> String {
-        SFTPResult(try await run { auth in gsb_probe(auth) }).fingerprint
+        SFTPResult(await runOnThread(expected: try await pinnedFingerprint(),
+                                     name: "goel.sftp-probe") { auth in gsb_probe(auth) }).fingerprint
     }
 
     /// Connect far enough to read the server's host key, then hang up — no
@@ -92,29 +144,88 @@ public struct SFTPClient: Sendable {
 
     public func list(_ path: String) async throws -> [SFTPEntry] {
         let collector = ListCollector()
-        _ = try await run { auth in
+        _ = try await run { session in
             let box = Unmanaged.passRetained(collector)
             defer { box.release() }
-            return gsb_list(auth, path, sftpEntryThunk, box.toOpaque())
+            return gsb_list(session, path, sftpEntryThunk, box.toOpaque())
         }
         return collector.entries
     }
 
     public func size(_ remote: String) async throws -> Int64 {
-        try await run { auth in gsb_size(auth, remote) }.value
+        try await run { session in gsb_size(session, remote) }.value
     }
 
     public func mkdir(_ path: String) async throws {
-        _ = try await run { auth in gsb_mkdir(auth, path) }
+        _ = try await run { session in gsb_mkdir(session, path) }
     }
 
     public func remove(_ path: String, isDirectory: Bool) async throws {
-        _ = try await run { auth in gsb_remove(auth, path, isDirectory ? 1 : 0) }
+        _ = try await run { session in gsb_remove(session, path, isDirectory ? 1 : 0) }
     }
 
     /// Rename or move `from` to `to` on the server (works across directories).
     public func rename(_ from: String, to: String) async throws {
-        _ = try await run { auth in gsb_rename(auth, from, to) }
+        _ = try await run { session in gsb_rename(session, from, to) }
+    }
+
+    // MARK: Metadata
+
+    /// Full attributes of one remote item.
+    ///
+    /// `followSymlink: false` (the default) describes the *link*, not what it
+    /// points at — which is what an info panel must show, since a link's own size
+    /// and permissions are not its target's.
+    public func attributes(_ path: String, followSymlink: Bool = false) async throws -> SFTPAttributes {
+        let box = StatBox()
+        _ = try await run { session in
+            box.withPointer { out in
+                followSymlink ? gsb_stat(session, path, out) : gsb_lstat(session, path, out)
+            }
+        }
+        return box.attributes
+    }
+
+    /// Where a symbolic link points, as the server records it — which may be a
+    /// relative path, and may not exist.
+    public func linkTarget(_ path: String) async throws -> String {
+        let box = PathBox()
+        _ = try await run { session in
+            box.withBuffer { buf, cap in gsb_readlink(session, path, buf, cap) }
+        }
+        return box.value
+    }
+
+    /// Canonicalise a path server-side, resolving `..`, `.` and symlinks.
+    public func canonicalPath(_ path: String) async throws -> String {
+        let box = PathBox()
+        _ = try await run { session in
+            box.withBuffer { buf, cap in gsb_realpath(session, path, buf, cap) }
+        }
+        return box.value
+    }
+
+    /// Change an existing item's permission bits. The file-type bits are
+    /// preserved server-side, so this cannot turn a directory into a file.
+    public func setPermissions(_ path: String, _ permissions: UInt32) async throws {
+        _ = try await run { session in gsb_setstat(session, path, UInt(permissions)) }
+    }
+
+    /// Free and total bytes on the volume holding `path`.
+    ///
+    /// Returns nil rather than throwing when the server lacks the
+    /// `statvfs@openssh.com` extension: free space is a nicety, and a server
+    /// without it should simply show nothing instead of raising an error the user
+    /// can do nothing about.
+    public func freeSpace(_ path: String) async throws -> SFTPVolumeSpace? {
+        let box = SpaceBox()
+        let channel = try await channel()
+        let result = await channel.perform { session in
+            box.withPointer { out in gsb_statvfs(session, path, out) }
+        }
+        learnIfNeeded(channel: channel)
+        guard result.code == GSB_OK else { return nil }
+        return box.space
     }
 
     /// Download a remote file to a local URL, reporting (bytesSoFar, total).
@@ -134,8 +245,8 @@ public struct SFTPClient: Sendable {
             onProgress: { total, sofar in progress(sofar, total); return shouldContinue?() ?? true },
             onRead: nil)
         defer { try? handle.close() }
-        let result = try await runTransfer(ctx) { auth, box in
-            gsb_download(auth, remote, 0, maxBytesPerSecond, sftpWriteThunk, sftpProgressThunk, box)
+        let result = try await runTransfer(ctx) { session, box in
+            gsb_download(session, remote, 0, maxBytesPerSecond, sftpWriteThunk, sftpProgressThunk, box)
         }
         // The shim counts bytes handed to the write callback, not bytes that
         // reached the disk; `result.value` carries the size the server reported.
@@ -187,8 +298,8 @@ public struct SFTPClient: Sendable {
             })
         defer { try? handle.close() }
         do {
-            _ = try await runTransfer(ctx) { auth, box in
-                gsb_upload(auth, remote, total, maxBytesPerSecond, sftpReadThunk, sftpProgressThunk, box)
+            _ = try await runTransfer(ctx) { session, box in
+                gsb_upload(session, remote, total, maxBytesPerSecond, sftpReadThunk, sftpProgressThunk, box)
             }
         } catch let e as SFTPError where e.kind == .aborted {
             // Distinguish "the local file couldn't be read" from a user cancel,
@@ -201,6 +312,30 @@ public struct SFTPClient: Sendable {
         }
     }
 
+    /// Upload from a caller-supplied byte source rather than a local file.
+    ///
+    /// `read` fills the buffer and returns the count, 0 at end-of-stream, or a
+    /// negative number to abort — the same contract as the C shim's read
+    /// callback. `total` must be the exact number of bytes `read` will produce:
+    /// the shim uses it to assert the whole file arrived, and a wrong value would
+    /// let a truncated upload report success.
+    ///
+    /// This is what makes a remote→remote copy possible without spooling to disk
+    /// (see ``SFTPRelay``).
+    public func uploadStream(remote: String, total: Int64,
+                             maxBytesPerSecond: Int64 = 0,
+                             shouldContinue: (@Sendable () -> Bool)? = nil,
+                             read: @escaping @Sendable (UnsafeMutableRawBufferPointer) -> Int,
+                             progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
+        let ctx = TransferContext(
+            onWrite: { _ in true },
+            onProgress: { total, sofar in progress(sofar, total); return shouldContinue?() ?? true },
+            onRead: read)
+        _ = try await runTransfer(ctx) { session, box in
+            gsb_upload(session, remote, total, maxBytesPerSecond, sftpReadThunk, sftpProgressThunk, box)
+        }
+    }
+
     // MARK: Streaming download (for the queued-download engine)
 
     /// Low-level resumable download. The caller's `write` returns false to fail,
@@ -210,9 +345,9 @@ public struct SFTPClient: Sendable {
                                   write: @escaping @Sendable (UnsafeRawBufferPointer) -> Bool,
                                   progress: @escaping @Sendable (Int64, Int64) -> Bool) async -> SFTPResult {
         let ctx = TransferContext(onWrite: write, onProgress: progress, onRead: nil)
-        let expected: String?
+        let channel: SFTPSessionChannel
         do {
-            expected = try await pinnedFingerprint()
+            channel = try await self.channel()
         } catch let e as SFTPError {
             // This entry point reports through its result rather than throwing, so
             // a refusal has to be phrased as one.
@@ -220,23 +355,13 @@ public struct SFTPClient: Sendable {
         } catch {
             return SFTPResult(code: Int32(GSB_ERR_HOSTKEY), message: error.localizedDescription)
         }
-        let result = await withCheckedContinuation { (cont: CheckedContinuation<GSBResult, Never>) in
-            let box = Unmanaged.passRetained(ctx)
-            let thread = Thread {
-                let r = autoreleasepool {
-                    Self.withAuth(self.target, expected: expected) { auth in
-                        gsb_download(auth, remote, resumeFrom, maxBytesPerSecond,
-                                     sftpWriteThunk, sftpProgressThunk, box.toOpaque())
-                    }
-                }
-                box.release()
-                cont.resume(returning: r)
-            }
-            thread.name = "goel.sftp-transfer"
-            thread.stackSize = 1 << 20
-            thread.start()
+        let box = Unmanaged.passRetained(ctx)
+        let result = await channel.perform { session in
+            gsb_download(session, remote, resumeFrom, maxBytesPerSecond,
+                         sftpWriteThunk, sftpProgressThunk, box.toOpaque())
         }
-        learnIfNeeded(expected: expected, result: result)
+        box.release()
+        learnIfNeeded(channel: channel)
         return SFTPResult(result)
     }
 
@@ -248,7 +373,11 @@ public struct SFTPClient: Sendable {
                              _ body: @escaping @Sendable (UnsafePointer<GSBAuth>) -> GSBResult) async -> GSBResult {
         await withCheckedContinuation { (cont: CheckedContinuation<GSBResult, Never>) in
             let thread = Thread {
-                let r = autoreleasepool { Self.withAuth(self.target, expected: expected, body) }
+                // A bare `Thread` has no autorelease pool of its own; give the
+                // C call one so nothing accumulates for the thread's lifetime.
+                let r = autoreleasepool {
+                    SFTPSessionChannel.withAuth(self.target, expected: expected, body)
+                }
                 cont.resume(returning: r)
             }
             thread.name = name
@@ -257,12 +386,19 @@ public struct SFTPClient: Sendable {
         }
     }
 
-    /// Run a session-scoped op on a dedicated thread; throw on failure and pin
-    /// the host key on first successful connect.
-    private func run(_ body: @escaping @Sendable (UnsafePointer<GSBAuth>) -> GSBResult) async throws -> GSBResult {
+    /// The pooled connection this client's role maps to.
+    private func channel() async throws -> SFTPSessionChannel {
         let expected = try await pinnedFingerprint()
-        let result = await runOnThread(expected: expected, name: "goel.sftp-op", body)
-        learnIfNeeded(expected: expected, result: result)
+        return await SFTPSessionPool.shared.channel(for: target, role: role, expected: expected)
+    }
+
+    /// Run a session-scoped op on the pooled connection; throw on failure and pin
+    /// the host key on first successful connect.
+    @discardableResult
+    private func run(_ body: @escaping @Sendable (OpaquePointer) -> GSBResult) async throws -> GSBResult {
+        let channel = try await channel()
+        let result = await channel.perform(body)
+        learnIfNeeded(channel: channel)
         guard result.code == GSB_OK else {
             throw SFTPResult(result).asError(host: target.host, port: target.port,
                                              username: target.username)
@@ -270,27 +406,16 @@ public struct SFTPClient: Sendable {
         return result
     }
 
+    /// As ``run(_:)``, but hands the C call a retained context box carrying its
+    /// read/write/progress callbacks. The box outlives the call and is released
+    /// only after the session thread has finished with it.
     private func runTransfer(_ ctx: TransferContext,
-                             _ body: @escaping @Sendable (UnsafePointer<GSBAuth>, UnsafeMutableRawPointer) -> GSBResult) async throws -> GSBResult {
-        let expected = try await pinnedFingerprint()
-        let result = await withCheckedContinuation { (cont: CheckedContinuation<GSBResult, Never>) in
-            let box = Unmanaged.passRetained(ctx)
-            let thread = Thread {
-                // A bare `Thread` has no pool of its own; give the setup/teardown
-                // around the C loop one (the per-chunk pools live in the thunks).
-                let r = autoreleasepool {
-                    Self.withAuth(self.target, expected: expected) { auth in
-                        body(auth, box.toOpaque())
-                    }
-                }
-                box.release()
-                cont.resume(returning: r)
-            }
-            thread.name = "goel.sftp-transfer"
-            thread.stackSize = 1 << 20
-            thread.start()
-        }
-        learnIfNeeded(expected: expected, result: result)
+                             _ body: @escaping @Sendable (OpaquePointer, UnsafeMutableRawPointer) -> GSBResult) async throws -> GSBResult {
+        let channel = try await channel()
+        let box = Unmanaged.passRetained(ctx)
+        let result = await channel.perform { session in body(session, box.toOpaque()) }
+        box.release()
+        learnIfNeeded(channel: channel)
         guard result.code == GSB_OK else {
             throw SFTPResult(result).asError(host: target.host, port: target.port,
                                              username: target.username)
@@ -309,7 +434,7 @@ public struct SFTPClient: Sendable {
     /// is read in a credential-free pre-flight and pinned only if the user
     /// accepts it, so the password is never offered to a host whose identity the
     /// user hasn't seen. Without one — the daemon, the CLI paths, tests — the
-    /// classic trust-on-first-use applies and ``learnIfNeeded(expected:result:)``
+    /// classic trust-on-first-use applies and ``learnIfNeeded(channel:)``
     /// pins after the fact, because there is nobody to ask. A pin record we can't
     /// read refuses outright: silently re-learning would downgrade an already
     /// verified server back to first contact.
@@ -333,48 +458,20 @@ public struct SFTPClient: Sendable {
         }
     }
 
-    /// On a first, un-pinned connect (`expected == nil`) that succeeded far
-    /// enough to read the host key, remember it so later connects are pinned.
-    /// Only reachable when no approver is installed — with one,
-    /// ``pinnedFingerprint()`` has already pinned or refused.
-    private func learnIfNeeded(expected: String?, result: GSBResult) {
-        guard expected == nil else { return }
-        let fp = withUnsafeBytes(of: result.fingerprint) { raw -> String in
-            String(cString: raw.baseAddress!.assumingMemoryBound(to: CChar.self))
-        }
-        guard !fp.isEmpty, result.code != GSB_ERR_RESOLVE,
-              result.code != GSB_ERR_CONNECT, result.code != GSB_ERR_HANDSHAKE else { return }
+    /// On a first, un-pinned connect that got far enough to read the host key,
+    /// remember it so later connects are pinned. Only reachable when no approver
+    /// is installed — with one, ``pinnedFingerprint()`` has already pinned or
+    /// refused before any credential went on the wire.
+    ///
+    /// Reads the fingerprint off the live channel rather than off a result: with
+    /// pooled connections the handshake happens once, so only the operation that
+    /// happened to open the connection would carry it.
+    private func learnIfNeeded(channel: SFTPSessionChannel) {
+        guard case .none = hostKeys.lookup(host: target.host, port: target.port),
+              let fp = channel.fingerprint, !fp.isEmpty else { return }
         hostKeys.setFingerprint(fp, host: target.host, port: target.port)
     }
 
-    /// Marshal a target + optional pinned fingerprint into a `GSBAuth` with
-    /// correct C-string lifetimes, and invoke `body`.
-    private static func withAuth(_ t: SFTPTarget, expected: String?,
-                                 _ body: (UnsafePointer<GSBAuth>) -> GSBResult) -> GSBResult {
-        func withOptCString(_ s: String?, _ f: (UnsafePointer<CChar>?) -> GSBResult) -> GSBResult {
-            if let s { return s.withCString(f) }
-            return f(nil)
-        }
-        return t.host.withCString { host in
-            t.username.withCString { user in
-                withOptCString(t.password) { pass in
-                    withOptCString(expected) { fp in
-                        withOptCString(t.privateKeyPath) { keyPath in
-                            withOptCString(t.keyPassphrase) { keyPhrase in
-                                var auth = GSBAuth(host: host, port: Int32(t.port), username: user,
-                                                   password: pass, use_agent: t.useAgent ? 1 : 0,
-                                                   expected_fp: fp,
-                                                   private_key_path: keyPath,
-                                                   public_key_path: nil,
-                                                   key_passphrase: keyPhrase)
-                                return withUnsafePointer(to: &auth) { body($0) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 /// A Swift view of a `GSBResult`.
@@ -485,6 +582,54 @@ final class ListCollector: @unchecked Sendable {
     var entries: [SFTPEntry] = []
 }
 
+/// Carries a `GSBStat` out of a C call. The C shim fills it on the session
+/// thread; the awaiting task reads it only after that call has returned, so the
+/// hand-off needs no lock — the same discipline ``ListCollector`` relies on.
+final class StatBox: @unchecked Sendable {
+    private var raw = GSBStat()
+
+    func withPointer(_ body: (UnsafeMutablePointer<GSBStat>) -> GSBResult) -> GSBResult {
+        withUnsafeMutablePointer(to: &raw) { body($0) }
+    }
+
+    var attributes: SFTPAttributes {
+        SFTPAttributes(exists: raw.exists != 0,
+                       isDirectory: raw.is_dir != 0,
+                       isSymlink: raw.is_link != 0,
+                       size: raw.size,
+                       modified: raw.mtime > 0 ? Date(timeIntervalSince1970: TimeInterval(raw.mtime)) : nil,
+                       permissions: UInt32(truncatingIfNeeded: raw.perms),
+                       ownerID: UInt32(truncatingIfNeeded: raw.uid),
+                       groupID: UInt32(truncatingIfNeeded: raw.gid))
+    }
+}
+
+/// Carries a NUL-terminated path out of a C call. Sized to the shim's own path
+/// ceiling so a long `realpath` result is never silently cut short by *this*
+/// buffer.
+final class PathBox: @unchecked Sendable {
+    private var buffer = [CChar](repeating: 0, count: 4096)
+
+    func withBuffer(_ body: (UnsafeMutablePointer<CChar>, Int) -> GSBResult) -> GSBResult {
+        buffer.withUnsafeMutableBufferPointer { raw in body(raw.baseAddress!, raw.count) }
+    }
+
+    var value: String { String(cString: buffer) }
+}
+
+/// Carries a `GSBSpace` out of a C call. See ``StatBox`` for the hand-off rule.
+final class SpaceBox: @unchecked Sendable {
+    private var raw = GSBSpace()
+
+    func withPointer(_ body: (UnsafeMutablePointer<GSBSpace>) -> GSBResult) -> GSBResult {
+        withUnsafeMutablePointer(to: &raw) { body($0) }
+    }
+
+    var space: SFTPVolumeSpace {
+        SFTPVolumeSpace(totalBytes: raw.total_bytes, freeBytes: raw.free_bytes)
+    }
+}
+
 /// Captures the first local-read failure during an upload so the caller can
 /// report it, instead of the C loop mistaking the abort for a clean EOF. The
 /// read callback (C thread) writes it; the awaiting task reads it after the
@@ -536,7 +681,9 @@ private func sftpProgressThunk(ud: UnsafeMutableRawPointer?,
 }
 
 private func sftpEntryThunk(ud: UnsafeMutableRawPointer?, name: UnsafePointer<CChar>?,
-                            isDir: Int32, size: Int64, mtime: Int64, perms: UInt) {
+                            isDir: Int32, size: Int64, mtime: Int64, perms: UInt,
+                            isLink: Int32, linkTarget: UnsafePointer<CChar>?,
+                            uid: UInt, gid: UInt) {
     guard let ud, let name else { return }
     let collector = Unmanaged<ListCollector>.fromOpaque(ud).takeUnretainedValue()
     autoreleasepool {
@@ -544,7 +691,11 @@ private func sftpEntryThunk(ud: UnsafeMutableRawPointer?, name: UnsafePointer<CC
                               isDirectory: isDir != 0,
                               size: size,
                               modified: mtime > 0 ? Date(timeIntervalSince1970: TimeInterval(mtime)) : nil,
-                              permissions: UInt32(truncatingIfNeeded: perms))
+                              permissions: UInt32(truncatingIfNeeded: perms),
+                              isSymlink: isLink != 0,
+                              linkTarget: linkTarget.map { String(cString: $0) } ?? "",
+                              ownerID: UInt32(truncatingIfNeeded: uid),
+                              groupID: UInt32(truncatingIfNeeded: gid))
         collector.entries.append(entry)
     }
 }

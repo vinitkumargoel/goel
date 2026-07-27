@@ -314,6 +314,13 @@ struct SFTPConnectionEditor: View {
         }
         testResult = nil
         hostKeyReset = true
+        // Connections are pooled, and each one carries the pin it was built with
+        // for every reconnect. Without this the reset would clear the store but
+        // the live connection would keep demanding the old key, and "reset and
+        // re-verify" would appear to do nothing until the app was restarted.
+        let endpoint = SFTPTarget(host: pinnedEndpointHost, port: pinnedEndpointPort,
+                                  username: existing?.username ?? username, password: nil)
+        Task { await SFTPSessionPool.shared.disconnectAll(matching: endpoint) }
     }
 
     private func draftConnection() -> SFTPConnection {

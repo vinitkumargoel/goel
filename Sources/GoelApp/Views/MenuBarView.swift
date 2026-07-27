@@ -330,7 +330,7 @@ private struct MenuBarSFTPTransferRow: View {
             onRetry: { vm.retrySFTPTransfer(transfer.id) },
             onShowRemoteFolder: onShowRemoteFolder)
         .confirmationDialog(
-            "Cancel this \(transfer.direction == .upload ? "upload" : "download")?",
+            "Cancel this \(transfer.cancelNoun)?",
             isPresented: $confirmingCancel, titleVisibility: .visible
         ) {
             Button("Stop Transfer", role: .destructive) { vm.cancelSFTPTransfer(transfer.id) }

@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Goel° — SFTP: Finder Parity · Plan v1</title>
+<style>
+  :root {
+    --bg: #0f1218; --bg2: #161b24; --bg3: #1c2330; --border: #2a3344;
+    --text: #e8ecf4; --muted: #8b96ab; --dim: #5c677a;
+    --accent: #4ea1ff; --accent-dim: rgba(78,161,255,.12);
+    --green: #3ecf8e; --green-dim: rgba(62,207,142,.12);
+    --amber: #f0b429; --amber-dim: rgba(240,180,41,.12);
+    --red: #f07178; --red-dim: rgba(240,113,120,.12);
+    --violet: #c4a0d0; --violet-dim: rgba(196,160,208,.12);
+    --radius: 12px;
+    font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--text); line-height: 1.55; font-size: 15px;
+    background: radial-gradient(1200px 600px at 10% -10%, #1a2740 0%, transparent 55%),
+                radial-gradient(900px 500px at 100% 0%, #1a2430 0%, transparent 50%), var(--bg);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 48px 24px 96px; }
+  .hero {
+    border: 1px solid var(--border); border-radius: 18px; padding: 36px 40px; margin-bottom: 28px;
+    background: linear-gradient(180deg, var(--bg3), var(--bg2));
+    box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 12px 40px rgba(0,0,0,.35);
+  }
+  .eyebrow {
+    display: inline-flex; font-size: 12px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--accent); background: var(--accent-dim);
+    padding: 5px 10px; border-radius: 999px; margin-bottom: 14px;
+  }
+  h1 { font-size: 30px; line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .subtitle { color: var(--muted); font-size: 16px; max-width: 70ch; margin: 0 0 18px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pill {
+    font-size: 12.5px; color: var(--muted); border: 1px solid var(--border);
+    background: var(--bg); padding: 5px 11px; border-radius: 999px;
+  }
+  .pill strong { color: var(--text); }
+  .verdict {
+    margin-top: 20px; padding: 16px 18px; border-radius: 12px;
+    border: 1px solid rgba(240,180,41,.45); background: var(--amber-dim);
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .verdict .mark {
+    flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(240,180,41,.22); color: var(--amber);
+    display: grid; place-items: center; font-weight: 700;
+  }
+  .verdict h2 { margin: 0 0 4px; font-size: 15px; color: var(--amber); border: 0; padding: 0; }
+  .verdict p { margin: 0; color: var(--text); font-size: 14px; }
+  nav.toc {
+    position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px); background: rgba(15,18,24,.9);
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px;
+    margin-bottom: 32px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-height: 76px; overflow: auto;
+  }
+  nav.toc a { color: var(--muted); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+  nav.toc a:hover { color: var(--accent); text-decoration: none; }
+  section { margin-bottom: 40px; }
+  h2 {
+    font-size: 21px; letter-spacing: -0.015em; margin: 0 0 12px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 15.5px; margin: 18px 0 8px; }
+  h4 { font-size: 13.5px; margin: 12px 0 6px; }
+  p { color: var(--muted); margin: 0 0 10px; }
+  p strong, li strong { color: var(--text); }
+  ul, ol { color: var(--muted); margin: 0 0 10px; padding-left: 1.25em; }
+  li { margin-bottom: 5px; }
+  code {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+    background: var(--bg3); border: 1px solid var(--border); padding: 1px 5px;
+    border-radius: 5px; color: #c5d0e6;
+  }
+  .grid { display: grid; gap: 12px; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 800px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .hero { padding: 24px; } h1 { font-size: 24px; }
+    .phase { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 14px; }
+  .card p { margin: 0; font-size: 13px; }
+  .tag {
+    display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; padding: 2px 7px; border-radius: 5px; margin-bottom: 8px;
+  }
+  .tag.go { background: var(--green-dim); color: var(--green); }
+  .tag.warn { background: var(--amber-dim); color: var(--amber); }
+  .tag.no { background: var(--red-dim); color: var(--red); }
+  .tag.info { background: var(--accent-dim); color: var(--accent); }
+  .tag.fix { background: var(--violet-dim); color: var(--violet); }
+  .table-scroll { overflow-x: auto; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; margin: 10px 0 14px;
+  }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th {
+    background: var(--bg3); color: var(--text); font-weight: 600;
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em;
+  }
+  tr:last-child td { border-bottom: 0; }
+  td { color: var(--muted); }
+  td:first-child { color: var(--text); font-weight: 500; }
+  .badge {
+    display: inline-block; font-size: 10.5px; font-weight: 700;
+    padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  }
+  .badge.go { background: var(--green-dim); color: var(--green); }
+  .badge.warn { background: var(--amber-dim); color: var(--amber); }
+  .badge.no { background: var(--red-dim); color: var(--red); }
+  .badge.info { background: var(--accent-dim); color: var(--accent); }
+  .diagram {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.45;
+    background: #0a0d12; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 18px; color: #9db0cc; overflow-x: auto; white-space: pre; margin: 10px 0 14px;
+  }
+  .diagram .hi { color: var(--accent); }
+  .diagram .ok { color: var(--green); }
+  .diagram .warn { color: var(--amber); }
+  .diagram .bad { color: var(--red); }
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--accent-dim);
+    padding: 11px 14px; border-radius: 0 10px 10px 0; margin: 12px 0;
+    color: var(--text); font-size: 13.5px;
+  }
+  .callout.warn { border-color: var(--amber); background: var(--amber-dim); }
+  .callout.danger { border-color: var(--red); background: var(--red-dim); }
+  .callout.ok { border-color: var(--green); background: var(--green-dim); }
+  .sev {
+    display: inline-grid; place-items: center; min-width: 52px; height: 22px;
+    border-radius: 6px; font-size: 10.5px; font-weight: 800; letter-spacing: .03em;
+  }
+  .sev.p0 { background: var(--red); color: #1a0a0a; }
+  .sev.p1 { background: var(--amber); color: #1a1400; }
+  .sev.p2 { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(78,161,255,.35); }
+  .sev.p3 { background: var(--bg3); color: var(--dim); border: 1px solid var(--border); }
+  .phase {
+    display: grid; grid-template-columns: 64px 1fr; gap: 14px; padding: 16px;
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg2); margin-bottom: 10px;
+  }
+  .phase-num {
+    width: 52px; height: 52px; border-radius: 12px; display: grid; place-items: center;
+    font-weight: 700; font-size: 16px; background: var(--bg3); border: 1px solid var(--border); color: var(--accent);
+  }
+  .phase h3 { margin: 0 0 4px; font-size: 14.5px; }
+  .phase p { margin: 0 0 6px; font-size: 13px; }
+  .phase .meta { font-size: 11.5px; color: var(--dim); }
+  .phase ul { margin: 4px 0 0; font-size: 13px; }
+  details {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; margin: 8px 0;
+  }
+  details summary {
+    cursor: pointer; padding: 12px 14px; font-weight: 600; font-size: 13.5px; color: var(--text); list-style: none;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "▸ "; color: var(--accent); }
+  details[open] summary::before { content: "▾ "; }
+  details .body { padding: 0 14px 14px; }
+  details .body p, details .body li { font-size: 13px; }
+  footer {
+    margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border);
+    color: var(--dim); font-size: 12px;
+  }
+  .changelog {
+    background: var(--violet-dim); border: 1px solid rgba(196,160,208,.35);
+    border-radius: 12px; padding: 14px 16px; margin-bottom: 28px; font-size: 13.5px;
+  }
+  .changelog h3 { margin: 0 0 8px; color: var(--violet); font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+  .changelog ul { margin: 0; }
+  .decision {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg2); padding: 14px 16px; margin-bottom: 10px;
+  }
+  .decision .q { color: var(--muted); font-size: 12.5px; margin: 0 0 8px; }
+  .decision .a { color: var(--text); font-weight: 600; font-size: 14px; margin: 0 0 6px; }
+  .decision .why { color: var(--muted); font-size: 13px; margin: 0; }
+  .decision .a::before { content: "→ "; color: var(--green); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hero">
+    <div class="eyebrow">Plan v1 · SFTP</div>
+    <h1>Finder parity for the SFTP browser</h1>
+    <p class="subtitle">
+      Make Goel°'s remote file browser feel the way Finder feels — including copy, paste
+      and move, both within a server and between two servers. In-app only: no volume
+      mount, no File Provider extension.
+    </p>
+    <div class="meta-row">
+      <span class="pill">Scope <strong>In-pane Finder feel</strong></span>
+      <span class="pill">Surface <strong>~5,200 lines across 17 files</strong></span>
+      <span class="pill">libssh2 <strong>1.11.1 (vendored)</strong></span>
+      <span class="pill">Baseline <strong>main, CI green</strong></span>
+    </div>
+
+    <div class="verdict">
+      <div class="mark">!</div>
+      <div>
+        <h2>The browser is feature-rich but architecturally unable to feel like Finder</h2>
+        <p>
+          Every single SFTP operation — every folder click, every rename, every <code>stat</code> —
+          opens a fresh TCP connection, performs a full SSH key exchange, authenticates, initialises
+          an SFTP channel, and tears the whole thing down. Nothing on the feature list below is
+          worth building until that is fixed.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="changelog">
+    <h3>Framing note</h3>
+    <ul>
+      <li><strong>macOS Finder has no native SFTP support.</strong> There is no <code>sftp://</code> in Connect to Server — only SMB, AFP, NFS, WebDAV and read-only FTP. "The same experience I have in Finder" therefore means <em>the feel of Finder as a file manager</em>, reproduced inside Goel's own pane.</li>
+      <li>A literal Finder mount would need a File Provider extension, the <code>com.apple.developer.fileprovider</code> entitlement, a separate extension process, and a rewrite of <code>SFTPClient</code> into a long-lived session service. That is explicitly <strong>out of scope</strong> here.</li>
+    </ul>
+  </div>
+
+  <nav class="toc">
+    <a href="#summary">0. Summary</a>
+    <a href="#have">1. What exists</a>
+    <a href="#gap">2. The gap</a>
+    <a href="#decisions">3. Decisions</a>
+    <a href="#sessions">4. Session architecture</a>
+    <a href="#copy">5. Copy engine</a>
+    <a href="#bridge">6. Bridge API</a>
+    <a href="#phases">7. Phases</a>
+    <a href="#risks">8. Risks</a>
+    <a href="#tests">9. Tests</a>
+  </nav>
+
+  <!-- ============================================ -->
+  <section id="summary">
+    <h2>0. Executive summary</h2>
+    <p>
+      The SFTP browser already does far more than a first look suggests: grid and list views,
+      sortable listings, multi-select with modifier keys, full keyboard navigation, Quick Look,
+      lazy drag-out to Finder, recursive folder upload with a conflict sheet, a live transfer
+      strip with speed and ETA, host-key pinning with an approval sheet, and complete VoiceOver
+      labelling. The <em>feature</em> gap to Finder is narrower than expected.
+    </p>
+    <p>
+      The <em>experience</em> gap is not, and it has one dominant cause. <code>SFTPClient</code>
+      runs each operation via <code>run()</code> → <code>runOnThread()</code>, which spawns a
+      thread that calls a <code>gsb_*</code> function; every one of those functions begins with
+      <code>gsb_open()</code> (TCP connect, KEX, host-key verification, authentication,
+      <code>libssh2_sftp_init</code>) and ends with <code>gsb_teardown()</code>. There is no
+      session reuse anywhere in the codebase.
+    </p>
+    <div class="callout danger">
+      <strong>Concrete consequence.</strong> <code>uploadFolder</code> calls
+      <code>client.upload(...)</code> once per file. Uploading a folder of 500 small files
+      performs <strong>500 complete SSH handshakes</strong>. On a 100 ms-RTT host that is
+      minutes of pure cryptographic overhead moving no data.
+    </div>
+    <p>
+      The plan is therefore four phases, strictly ordered. Phase 1 introduces session reuse and
+      ships nothing user-visible except speed. Phase 2 delivers the copy/paste/move work.
+      Phases 3 and 4 close the metadata and polish gaps that only become affordable once
+      round trips are cheap.
+    </p>
+  </section>
+
+  <!-- ============================================ -->
+  <section id="have">
+    <h2>1. What the browser already does</h2>
+    <p>Audit-verified against the source, not the changelog.</p>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <span class="tag go">Navigation</span>
+        <h3>Solid</h3>
+        <p>
+          List/grid toggle persisted via <code>@AppStorage</code>, clickable breadcrumbs that
+          handle both absolute and home-relative paths, back/forward history (<code>⌘[</code>
+          <code>⌘]</code>), parent (<code>⌘↑</code>), per-connection last-path memory with
+          stale-path fallback, sort by name/size/date with folders pinned first, and a
+          show-hidden toggle.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag go">Selection</span>
+        <h3>Finder-equivalent</h3>
+        <p>
+          Plain click, <code>⌘</code>-click toggle, <code>⇧</code>-click range from the cursor,
+          <code>⌘A</code>, <code>Esc</code>. Arrow keys move a cursor with <code>⇧</code> to
+          extend and auto-scroll. Return opens or downloads, Space Quick Looks, Delete removes.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag go">Transfers</span>
+        <h3>Genuinely good</h3>
+        <p>
+          Drag-out registers a lazy file representation so nothing downloads until the drop is
+          accepted, and cancelling the drag aborts the network transfer through a shared
+          <code>CancelFlag</code>. Drops upload into the current folder or into a specific folder
+          row. Folder uploads recurse. A conflict sheet offers rename/overwrite/skip. The
+          transfer strip survives closing the browser.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag go">Safety</span>
+        <h3>Carefully built</h3>
+        <p>
+          Host keys pinned trust-on-first-use with a credential-free pre-flight so the password
+          is never offered to an unverified host. Server-supplied names are validated by
+          <code>isSafeChildName</code> before being joined onto any path. Byte caps bound
+          drag-out and preview. Download shortfall is asserted against the file actually on disk.
+          libssh2's misleading handshake strings are remapped to honest ones.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <section id="gap">
+    <h2>2. The gap, itemised</h2>
+
+    <h3>2.1 Structural</h3>
+    <div class="table-scroll">
+    <table>
+      <thead><tr><th style="width:60px">Sev</th><th style="width:26%">Gap</th><th>Evidence in the source</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="sev p0">P0</span></td>
+          <td>No session reuse</td>
+          <td>Every <code>gsb_*</code> in <code>ssh_bridge.c</code> opens with <code>gsb_open()</code> and closes with <code>gsb_teardown()</code>. <code>SFTPClient.run</code> spawns a fresh <code>Thread</code> per call. A rename costs a full SSH handshake.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p0">P0</span></td>
+          <td>Per-file handshakes in folder jobs</td>
+          <td><code>uploadFolder</code> invokes <code>client.upload</code> per file; each one reconnects.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>No folder download</td>
+          <td><code>startDownload</code> opens with <code>guard !entry.isDirectory else { return }</code>. <code>downloadTargets</code> filters directories out silently. Uploads recurse; downloads do not.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>No copy / paste</td>
+          <td>No clipboard handling anywhere in <code>SFTPBrowserView</code>. SFTP has no server-side copy primitive, and libssh2 1.11 exposes no way to send OpenSSH's <code>copy-data@openssh.com</code> extension.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>Move is barely a move</td>
+          <td><code>moveMenu</code> offers only the parent and the current folder's immediate subfolders. No drag-to-move inside the pane, no arbitrary destination, no cross-server move. <code>rename</code> has no cross-filesystem fallback, so a move between two mounts on the same server fails outright.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>Delete is non-recursive</td>
+          <td><code>gsb_remove(path, is_dir)</code> maps to <code>rmdir</code>. The confirm sheet admits it: "The folder must be empty."</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h3>2.2 Metadata</h3>
+    <div class="table-scroll">
+    <table>
+      <thead><tr><th style="width:60px">Sev</th><th style="width:26%">Gap</th><th>Evidence in the source</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="sev p1">P1</span></td>
+          <td>Symlinks are invisible</td>
+          <td><code>libssh2_sftp_readdir_ex</code> attrs only. A symlinked directory renders as a plain file, cannot be opened, and would silently break recursive walks. No <code>lstat</code>, no <code>readlink</code>, no link badge, no target display, no cycle guard.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p2">P2</span></td>
+          <td>No Get Info</td>
+          <td>No <code>⌘I</code> sheet exists. Note that <code>SFTPEntry.permissions</code> is already captured by <code>sftpEntryThunk</code> and stored on the model — and then never displayed anywhere.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p2">P2</span></td>
+          <td>No chmod</td>
+          <td>The bridge has no <code>setstat</code> call at all.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p2">P2</span></td>
+          <td>No free space</td>
+          <td>Nothing calls <code>libssh2_sftp_statvfs</code>, which libssh2 1.11 does expose. This one is nearly free.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p3">P3</span></td>
+          <td>No folder sizes</td>
+          <td>The footer sums only files in the current listing; folders contribute nothing.</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h3>2.3 Presentation &amp; interaction</h3>
+    <div class="table-scroll">
+    <table>
+      <thead><tr><th style="width:60px">Sev</th><th style="width:26%">Gap</th><th>Evidence in the source</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="sev p2">P2</span></td>
+          <td>No thumbnails</td>
+          <td><code>SFTPFileIcon</code> maps file extensions to SF Symbols. A folder of photographs is 200 identical <code>photo</code> glyphs. This is the largest single visual difference from Finder.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p2">P2</span></td>
+          <td>Search is one folder deep</td>
+          <td><code>visibleEntries</code> filters <code>model.entries</code> by substring. No recursive walk. Server-side <code>find</code> is impossible without a shell.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p2">P2</span></td>
+          <td>Rename is a modal alert</td>
+          <td><code>.alert("Rename …")</code> with a <code>TextField</code>. Finder renames in place.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p3">P3</span></td>
+          <td>Missing keyboard parity</td>
+          <td>No <code>⌘⌫</code>, <code>⌘I</code>, <code>⌘D</code>, <code>⌘⇧.</code>, <code>⌘⇧G</code>, <code>⌘↓</code>. No type-ahead selection — Finder's core muscle memory.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p3">P3</span></td>
+          <td>Sort is a menu, not headers</td>
+          <td>List view has no column headers to click or drag. No Kind sort.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p3">P3</span></td>
+          <td>No favourites</td>
+          <td><code>SFTPBrowserLocationStore</code> remembers exactly one path per connection. No bookmarks, no Recents, no tags.</td>
+        </tr>
+        <tr>
+          <td><span class="sev p3">P3</span></td>
+          <td>Caps Finder does not have</td>
+          <td><code>dragOutByteCap</code> and <code>previewByteCap</code> are both 512 MB. Interactive transfers cannot resume; only the queued engine can.</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <section id="decisions">
+    <h2>3. Decisions taken</h2>
+
+    <div class="decision">
+      <p class="q">Finder-feel in Goel's pane, or an actual Finder mount?</p>
+      <p class="a">In-pane. No File Provider extension.</p>
+      <p class="why">A mount is months of work behind an entitlement and a rewrite of the client into a session service. Every gap above can be closed in-pane and ships incrementally.</p>
+    </div>
+
+    <div class="decision">
+      <p class="q">How far does the session-reuse fix go?</p>
+      <p class="a">Full handle-based refactor of the C API.</p>
+      <p class="why">A metadata-only fix leaves folder jobs handshaking per file. Since Get Info, folder sizes, recursive delete and folder download are all N round trips, half a fix is no fix.</p>
+    </div>
+
+    <div class="decision">
+      <p class="q">One session with many channels, or many sessions?</p>
+      <p class="a">Multiple TCP sessions, one per role.</p>
+      <p class="why">Multiplexing channels over one session is kinder to the server and authenticates once, but requires driving every channel from a single thread with non-blocking I/O — which turns every blocking loop in <code>ssh_bridge.c</code> into an <code>EAGAIN</code> state machine. That is a rewrite of a working, CI-green file. Separate sessions reuse the existing blocking code almost unchanged, at the cost of a few extra authentications.</p>
+    </div>
+
+    <div class="decision">
+      <p class="q">How is a same-server copy performed with no server-side copy primitive?</p>
+      <p class="a">Relay through the local machine now; pluggable strategy so a server-side fast path can drop in later.</p>
+      <p class="why">Adding <code>libssh2_channel_exec</code> to run <code>cp -a</code> would make same-server copies instant and free — but it introduces shell execution with user-supplied paths into a codebase that currently has no such surface, and it breaks on <code>ForceCommand internal-sftp</code> accounts anyway. Ship the universal path first behind a strategy protocol.</p>
+    </div>
+
+    <div class="decision">
+      <p class="q">What does ⌘C put on the clipboard?</p>
+      <p class="a">Full parity, both directions.</p>
+      <p class="why">An internal clipboard carrying <code>(connectionID, [remotePaths], intent)</code> drives Goel→Goel across servers. An <code>NSFilePromiseProvider</code> gives Goel→Finder, and reading <code>.fileURL</code> gives Finder→Goel. Bindings match Finder: <code>⌘C</code>, <code>⌘V</code>, <code>⌘⌥V</code> to move.</p>
+    </div>
+
+    <div class="decision">
+      <p class="q">What proof is required before a move deletes the original?</p>
+      <p class="a">Stat-verify the destination byte count, then delete.</p>
+      <p class="why">Without a shell there is no cheap remote checksum — verifying content would mean reading the whole file back. A destination <code>stat</code> costs one round trip and catches truncation, short writes and out-of-space, which are the failures that actually occur. A folder's source subtree is deleted only once every file beneath it has verified.</p>
+    </div>
+
+    <div class="decision">
+      <p class="q">Where do relayed bytes meet?</p>
+      <p class="a">A bounded in-memory pipe.</p>
+      <p class="why">The chosen topology already gives both sessions their own thread. The source's write callback fills a fixed ring buffer and the destination's read callback drains it, with backpressure in both directions. No temp disk, no size ceiling, and the upload starts immediately so wall-clock is roughly halved.</p>
+    </div>
+
+    <h3>Decisions taken without asking</h3>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <span class="tag info">Cross-server UI</span>
+        <h3>Clipboard + sidebar drop. No dual pane, no tabs.</h3>
+        <p>
+          The clipboard already makes ⌘C on server A / ⌘V on server B work. One cheap visual
+          path is added: drag a selection onto another server's sidebar row to copy into its
+          last-known folder. Finder has no split view, so a dual pane would be less Finder-like,
+          not more. Tabs are deferred, not dropped.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag no">Trash</span>
+        <h3>None. Undo instead.</h3>
+        <p>
+          SFTP has no trash, and inventing a <code>~/.Trash</code> convention would be a lie that
+          breaks on read-only mounts and quota'd homes. Instead: a real <code>⌘Z</code> stack for
+          rename, move and new-folder — each reversible with a single <code>rename</code>. Delete
+          stays permanent behind a confirm sheet that says so plainly.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag fix">Recursive delete</span>
+        <h3>Yes, with a pre-scan.</h3>
+        <p>
+          The confirm sheet shows "412 items · 8.3 GB" counted over the background session before
+          you commit. Deleting blind is how people lose data.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag fix">Symlinks</span>
+        <h3>First-class, with a cycle guard.</h3>
+        <p>
+          <code>lstat</code> + <code>readlink</code> in the bridge: link badge in the listing,
+          target in Get Info, resolve-on-open. A loop guard on every recursive walk — otherwise
+          the first symlink cycle turns a folder download into an infinite one.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag fix">Get Info</span>
+        <h3>Includes chmod. Owner stays numeric.</h3>
+        <p>
+          Permissions as octal and <code>rwxr-xr-x</code>, size, dates, link target, full remote
+          path. Owner and group are shown as raw uid/gid — SFTP gives no name mapping without a
+          shell, and inventing one would be a fabrication.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag fix">Caps</span>
+        <h3>Keep for preview, raise for drag-out.</h3>
+        <p>
+          Quick Look is a peek and 512 MB is a sane ceiling. Drag-out becomes a real transfer with
+          a progress row and a cancel button, at which point an arbitrary limit stops making
+          sense. Browser downloads also route through the resumable engine path.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <section id="sessions">
+    <h2>4. Session architecture</h2>
+
+    <h3>Today</h3>
+    <div class="diagram">
+<span class="bad">every single operation</span>
+  SFTPClient.run()
+    └─ Thread { withAuth { <span class="hi">gsb_list(auth, path, …)</span> } }
+                              │
+                              ├─ gsb_open()
+                              │    ├─ TCP connect            <span class="bad">1 RTT</span>
+                              │    ├─ SSH banner + KEX       <span class="bad">2–3 RTT + crypto</span>
+                              │    ├─ host-key verify
+                              │    ├─ authenticate           <span class="bad">1–2 RTT</span>
+                              │    └─ libssh2_sftp_init()    <span class="bad">1 RTT</span>
+                              ├─ …the actual work…           <span class="ok">1 RTT</span>
+                              └─ gsb_teardown()
+
+<span class="bad">folder upload, 500 files  =  500 × the whole column above</span></div>
+
+    <h3>After Phase 1</h3>
+    <div class="diagram">
+SFTPSessionActor(connection)          <span class="hi">serial command queue per session</span>
+  │
+  ├─ <span class="ok">interactive</span>   list · stat · mkdir · rename · remove
+  │                  never blocked by a scan or a transfer
+  │
+  ├─ <span class="ok">background</span>    recursive walks · folder sizes · thumbnails
+  │                  delete pre-scans · search
+  │
+  └─ <span class="ok">transfer[job]</span> one session per JOB, not per file
+                     a 500-file folder = <span class="ok">1 handshake</span>
+
+each session: <span class="hi">one dedicated pthread</span>, owns its LIBSSH2_SESSION for life,
+              drains a command queue, reconnects transparently on drop,
+              closes after an idle timeout</div>
+
+    <div class="callout warn">
+      <strong>Server load.</strong> A busy user could hold 3–4 authenticated connections to one
+      host. OpenSSH's default <code>MaxStartups</code> (10:30:100) accommodates this comfortably,
+      but the session manager will cap concurrent sessions per server and queue beyond it, so a
+      strict server cannot be tripped by a burst of thumbnail requests.
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <section id="copy">
+    <h2>5. Copy engine</h2>
+
+    <p>
+      One engine serves same-server copy, cross-server copy, cross-filesystem move, and the
+      paste half of the clipboard. It is defined by a strategy protocol so the server-side fast
+      path can be added later without touching a single call site.
+    </p>
+
+    <div class="diagram">
+protocol CopyStrategy {
+    func canHandle(source: Endpoint, destination: Endpoint) -> Bool
+    func copy(_ item: RemoteItem, to: RemotePath, progress: …) async throws
+}
+
+<span class="ok">RelayStrategy</span>   — ships in Phase 2, handles everything
+<span class="warn">ExecStrategy</span>    — later, same-server only, requires a shell probe
+<span class="warn">NativeStrategy</span>  — later, needs copy-data@openssh.com in libssh2</div>
+
+    <h3>The relay path</h3>
+    <div class="diagram">
+ source session                bounded ring buffer              dest session
+ ──────────────                ───────────────────              ────────────
+ gsb_download  ──write cb──▶   [████████░░░░░░░░]   ──read cb──▶  gsb_upload
+   (thread A)                    <span class="hi">backpressure</span>                   (thread B)
+                                 both directions
+
+ cancel  ─▶ CancelFlag observed by BOTH progress callbacks
+ stall   ─▶ watchdog on buffer age; neither side can deadlock
+ done    ─▶ <span class="ok">stat destination · byte count must match · then delete source</span></div>
+
+    <h3>Move semantics, in order of preference</h3>
+    <ol>
+      <li><strong>Same server, same filesystem</strong> — a single <code>rename</code>. Instant, atomic, no data moves. This is what exists today.</li>
+      <li><strong>Same server, different filesystem</strong> — <code>rename</code> fails with <code>SSH_FX_FAILURE</code>; fall back to relay copy, stat-verify, delete source. <em>This case fails outright today.</em></li>
+      <li><strong>Different servers</strong> — relay copy, stat-verify, delete source. No other option without agent forwarding.</li>
+    </ol>
+
+    <div class="callout danger">
+      <strong>Partial-failure policy.</strong> A folder move interrupted halfway is <em>not</em>
+      rolled back. Both sides are left intact and the result sheet states exactly what moved and
+      what did not. Automatic rollback of a partially-completed move is how a failed operation
+      becomes a data-loss event.
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <section id="bridge">
+    <h2>6. Bridge API changes</h2>
+
+    <p>The C surface grows from 8 operations to a handle-based API plus 5 new calls.</p>
+
+    <details open>
+      <summary>New session lifecycle</summary>
+      <div class="body">
+        <div class="diagram">
+GSBSession *gsb_session_open(const GSBAuth *auth, GSBResult *r);
+void        gsb_session_close(GSBSession *s);
+int         gsb_session_alive(GSBSession *s);   <span class="hi">// keepalive probe</span></div>
+        <p>
+          Every existing <code>gsb_*</code> loses its <code>const GSBAuth *auth</code> first
+          parameter and gains <code>GSBSession *s</code>. <code>gsb_open</code> and
+          <code>gsb_teardown</code> become internal to the session lifecycle rather than being
+          run per call.
+        </p>
+      </div>
+    </details>
+
+    <details>
+      <summary>New operations</summary>
+      <div class="body">
+        <div class="diagram">
+GSBResult gsb_lstat(GSBSession *s, const char *path, GSBStat *out);
+GSBResult gsb_readlink(GSBSession *s, const char *path, char *buf, size_t cap);
+GSBResult gsb_setstat(GSBSession *s, const char *path, unsigned long perms);
+GSBResult gsb_statvfs(GSBSession *s, const char *path, GSBSpace *out);
+GSBResult gsb_realpath(GSBSession *s, const char *path, char *buf, size_t cap);</div>
+        <p>
+          All five map directly onto libssh2 1.11 functions that already exist and are already
+          linked — <code>libssh2_sftp_stat_ex</code> with <code>LIBSSH2_SFTP_LSTAT</code>,
+          <code>libssh2_sftp_symlink_ex</code> with <code>READLINK</code> and
+          <code>REALPATH</code>, <code>libssh2_sftp_setstat</code>, and
+          <code>libssh2_sftp_statvfs</code>. No libssh2 patching required.
+        </p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Extended listing callback</summary>
+      <div class="body">
+        <div class="diagram">
+typedef void (*gsb_entry_cb)(void *userdata, const char *name,
+                             int is_dir, long long size, long long mtime,
+                             unsigned long perms,
+                             <span class="ok">int is_link, const char *link_target,</span>
+                             <span class="ok">unsigned long uid, unsigned long gid</span>);</div>
+        <p>
+          <code>SFTPEntry</code> gains <code>isSymlink</code>, <code>linkTarget</code>,
+          <code>uid</code> and <code>gid</code>. Its existing <code>permissions</code> field —
+          already populated, never displayed — finally gets used by Get Info.
+        </p>
+      </div>
+    </details>
+
+    <div class="callout">
+      <strong>Blast radius.</strong> Every call site changes: <code>SFTPClient</code>,
+      <code>SFTPEngine</code>, <code>SFTPSession</code>, the CLI's doctor path, and the Linux
+      daemon. The C file itself is 548 lines and the per-call open/teardown pairs are already
+      cleanly factored, so the mechanical change is contained — but it must land in one commit
+      to keep the build green.
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <section id="phases">
+    <h2>7. Phases</h2>
+
+    <div class="phase">
+      <div class="phase-num">1</div>
+      <div>
+        <h3>Sessions <span class="badge info">no visible features</span></h3>
+        <p>
+          The handle-based C refactor, the session actor, role-based session allocation, idle
+          timeout, and transparent reconnect on drop. Ships as pure speed.
+        </p>
+        <ul>
+          <li><code>gsb_session_open</code> / <code>_close</code> / <code>_alive</code>; all ops take a handle</li>
+          <li>Dedicated pthread per session draining a serial command queue</li>
+          <li>Roles: interactive · background · one per transfer job</li>
+          <li>Folder upload rewired to reuse one session for the whole job</li>
+          <li>Per-server concurrent-session cap with queueing</li>
+        </ul>
+        <p class="meta">Cannot be parallelised. Everything else depends on it.</p>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-num">2</div>
+      <div>
+        <h3>Copy, paste, move <span class="badge go">the requested work</span></h3>
+        <p>
+          The CopyEngine and the full clipboard, same server and across servers.
+        </p>
+        <ul>
+          <li><code>CopyStrategy</code> protocol; <code>RelayStrategy</code> with the bounded pipe</li>
+          <li>Stat-verify before source deletion; cross-filesystem <code>rename</code> fallback</li>
+          <li>Recursive folder download (mirroring <code>uploadFolder</code>)</li>
+          <li>Recursive delete with a pre-scan count and size</li>
+          <li><code>⌘C</code> / <code>⌘V</code> / <code>⌘⌥V</code>; internal clipboard + <code>NSFilePromiseProvider</code> + <code>.fileURL</code> read</li>
+          <li>Drag onto a sidebar server row for cross-server copy</li>
+          <li>Undo stack for rename, move and new-folder</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-num">3</div>
+      <div>
+        <h3>Finder metadata <span class="badge warn">bridge work</span></h3>
+        <p>The five new bridge calls and the surfaces that consume them.</p>
+        <ul>
+          <li>Symlink badges, targets, resolve-on-open, and cycle guards on every walk</li>
+          <li>Get Info sheet (<code>⌘I</code>) with chmod write-back</li>
+          <li>Free space in the status footer via <code>statvfs</code></li>
+          <li>Folder size calculation on the background session</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-num">4</div>
+      <div>
+        <h3>Finder feel <span class="badge info">polish</span></h3>
+        <p>The remaining differences, each individually small.</p>
+        <ul>
+          <li>Image thumbnails, lazily fetched on the background session, LRU-cached to disk</li>
+          <li>Inline rename replacing the modal alert</li>
+          <li>Sortable, resizable column headers including Kind</li>
+          <li>Type-ahead selection; <code>⌘⇧G</code> go-to-path</li>
+          <li><code>⌘⌫</code> <code>⌘I</code> <code>⌘D</code> <code>⌘⇧.</code> <code>⌘↓</code></li>
+          <li>Remote-folder favourites in the sidebar; recursive background search</li>
+          <li>Raise the drag-out cap; route browser downloads through the resumable path</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <section id="risks">
+    <h2>8. Risks</h2>
+
+    <div class="table-scroll">
+    <table>
+      <thead><tr><th style="width:22%">Risk</th><th style="width:70px">Sev</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Relay pipe deadlock</td>
+          <td><span class="sev p0">P0</span></td>
+          <td>Two blocking C loops with mutual backpressure can wedge if either side stalls. A watchdog on buffer age aborts both; the <code>CancelFlag</code> is observed by both progress callbacks; cancellation is tested against a deliberately stalled server.</td>
+        </tr>
+        <tr>
+          <td>Session refactor regresses the queued engine</td>
+          <td><span class="sev p0">P0</span></td>
+          <td><code>SFTPEngine</code> and the resumable download path share <code>SFTPClient</code>. The existing <code>SFTPSessionTests</code>, <code>sftpRemediationTests</code> and <code>sftpFailOpenRemediationTests</code> must pass unchanged before anything else lands.</td>
+        </tr>
+        <tr>
+          <td>Symlink cycles</td>
+          <td><span class="sev p1">P1</span></td>
+          <td>Recursive download, recursive delete, folder sizing and search all walk the tree. Each carries a visited-inode set and a depth cap. Today's code cannot hit this only because it cannot see symlinks at all — making them visible creates the hazard.</td>
+        </tr>
+        <tr>
+          <td>Host-key trust across many sessions</td>
+          <td><span class="sev p1">P1</span></td>
+          <td>Opening 3–4 sessions per server must not mean 3–4 approval prompts, nor a race where two first-contact probes both pin. The approval is resolved once per server per app run, ahead of session creation, and the pin is written under a lock.</td>
+        </tr>
+        <tr>
+          <td>Reconnect during a mutation</td>
+          <td><span class="sev p1">P1</span></td>
+          <td>A dropped session that transparently reconnects must not silently replay a half-applied <code>rename</code> or <code>remove</code>. Mutations are never auto-retried across a reconnect; they surface the failure and the browser re-lists.</td>
+        </tr>
+        <tr>
+          <td>Thumbnail fetch storms</td>
+          <td><span class="sev p2">P2</span></td>
+          <td>Scrolling a 2,000-file folder must not queue 2,000 downloads. Requests are bounded, cancelled on scroll-away, size-capped, and served from the disk LRU first.</td>
+        </tr>
+        <tr>
+          <td>Pasteboard file promises</td>
+          <td><span class="sev p2">P2</span></td>
+          <td><code>NSFilePromiseProvider</code> paste into Finder has historically been unreliable. Drag-out already works and stays the primary path; if promise-paste proves flaky it degrades to a no-op with a toast rather than a hang.</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <section id="tests">
+    <h2>9. Test plan</h2>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <span class="tag info">Phase 1</span>
+        <h3>Session lifecycle</h3>
+        <p>
+          Handshake count assertions — a 50-file folder upload must perform exactly one. Idle
+          timeout closes. Reconnect after a killed connection. Serial ordering under concurrent
+          submission. Existing SFTP test suites pass unmodified.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag info">Phase 2</span>
+        <h3>Copy engine</h3>
+        <p>
+          Byte-exact relay of a file larger than the ring buffer. Cancel mid-relay leaves no
+          partial destination. Stat-verify rejects a truncated destination and refuses to delete
+          the source. Cross-filesystem rename falls back correctly. Interrupted folder move
+          reports precisely what moved.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag info">Phase 3</span>
+        <h3>Metadata</h3>
+        <p>
+          Symlink to file, to directory, dangling, and cyclic — each renders correctly and each
+          recursive walk terminates. chmod round-trips. <code>statvfs</code> against a server
+          that does not support the extension degrades silently.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag info">Throughout</span>
+        <h3>Adversarial listings</h3>
+        <p>
+          The existing <code>isSafeChildName</code> guards must extend to every new path
+          consumer: copy destinations, move targets, thumbnail fetches, recursive walk children,
+          and clipboard paste. A hostile listing must not escape the browsed tree by any of the
+          new routes.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Goel° — SFTP Finder-parity plan v1 · scope decided in session, baseline <code>main</code> with CI green (run 30287660204).
+    Companion documents: <a href="plan.html">plan.html</a> (Network Aggregation) ·
+    <a href="plan-audit.html">plan-audit.html</a>.
+  </footer>
+
+</div>
+</body>
+</html>

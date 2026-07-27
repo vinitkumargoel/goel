@@ -52,13 +52,28 @@ public struct SFTPEntry: Sendable, Identifiable, Hashable {
     public var size: Int64
     public var modified: Date?
     public var permissions: UInt32
+    /// Whether the entry ITSELF is a symbolic link. `isDirectory` still describes
+    /// what it resolves to, so a link to a folder is both — which is what lets the
+    /// browser open it like a folder while still badging it as a link.
+    public var isSymlink: Bool
+    /// Where the link points, as the server reported it. Empty for non-links and
+    /// for links whose target could not be read.
+    public var linkTarget: String
+    public var ownerID: UInt32
+    public var groupID: UInt32
 
-    public init(name: String, isDirectory: Bool, size: Int64, modified: Date?, permissions: UInt32) {
+    public init(name: String, isDirectory: Bool, size: Int64, modified: Date?,
+                permissions: UInt32, isSymlink: Bool = false, linkTarget: String = "",
+                ownerID: UInt32 = 0, groupID: UInt32 = 0) {
         self.name = name
         self.isDirectory = isDirectory
         self.size = size
         self.modified = modified
         self.permissions = permissions
+        self.isSymlink = isSymlink
+        self.linkTarget = linkTarget
+        self.ownerID = ownerID
+        self.groupID = groupID
     }
 }
 
@@ -90,17 +105,28 @@ public enum SFTPBrowserPaths {
     /// A name not present in `existing`, appending " (n)" before the extension on
     /// collision: "report.pdf" → "report (1).pdf", "archive.tar" → "archive (1).tar",
     /// "notes" → "notes (1)". Used to rename an upload rather than overwrite a
-    /// same-named remote entry. `n` climbs until a free name is found.
+    /// same-named remote entry.
+    ///
+    /// `n` is capped: `existing` can come from a directory listing a server
+    /// controls, and an unbounded search would let one that returns a long
+    /// contiguous run of "name (1)"…"name (N)" spin the caller. Past the cap the
+    /// name is disambiguated with a random suffix instead, which still cannot
+    /// collide in practice and always terminates.
     public static func uniqueName(_ name: String, existing: Set<String>) -> String {
         guard existing.contains(name) else { return name }
         let ns = name as NSString
         let ext = ns.pathExtension
         let stem = ns.deletingPathExtension
-        var n = 1
+        func candidate(_ suffix: String) -> String {
+            ext.isEmpty ? "\(stem) (\(suffix))" : "\(stem) (\(suffix)).\(ext)"
+        }
+        for n in 1...9_999 {
+            let name = candidate(String(n))
+            if !existing.contains(name) { return name }
+        }
         while true {
-            let candidate = ext.isEmpty ? "\(stem) (\(n))" : "\(stem) (\(n)).\(ext)"
-            if !existing.contains(candidate) { return candidate }
-            n += 1
+            let name = candidate(UUID().uuidString.prefix(8).lowercased())
+            if !existing.contains(name) { return name }
         }
     }
 }

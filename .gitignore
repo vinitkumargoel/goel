@@ -111,3 +111,7 @@ Vendor/ffmpeg/
 # — that file is what `swift build` needs, and it must stay tracked so the app
 # builds on a machine with no Node installed.
 /portal/dist/
+
+# ---- Claude Code ----
+# Agent scratch worktrees, created per-session.
+.claude/worktrees/

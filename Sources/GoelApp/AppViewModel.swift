@@ -189,6 +189,13 @@ final class AppViewModel: ObservableObject {
     /// popover. Mutated only through the `AppViewModel+SFTPTransfers` helpers.
     @Published var sftpTransfers: [SFTPTransfer] = []
 
+    /// Remote items copied or cut, waiting to be pasted. One slot, like Finder's.
+    @Published var sftpClipboard: SFTPClipboard?
+
+    /// What each in-flight remote copy is doing, so a failed row can be retried
+    /// after its clipboard entry is long gone.
+    var sftpRemoteCopyPlans: [UUID: RemoteCopyPlan] = [:]
+
     /// A pending name-collision prompt, raised before an upload would overwrite
     /// remote files and resolved by ``SFTPUploadConflictSheet``. `nil` when idle.
     @Published var sftpUploadConflicts: SFTPUploadConflictRequest?
