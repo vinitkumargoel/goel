@@ -23,14 +23,20 @@ final class FFmpegOverrideTests: XCTestCase {
         XCTAssertTrue(message.contains("There’s no file at the ffmpeg path"), message)
     }
 
-    func testAScriptInterpreterIsRefusedByName() throws {
-        let interpreter = try XCTUnwrap(
-            ProcessSafety.interpreterBlocklist.first { FileManager.default.fileExists(atPath: $0) },
-            "no blocklisted interpreter exists on this machine to test against")
-        let message = try XCTUnwrap(reason(interpreter))
-        XCTAssertTrue(message.contains("script interpreter"), message)
-        XCTAssertFalse(FFmpegService.isAvailable(override: interpreter),
-                       "\(interpreter) would turn Convert into arbitrary code execution")
+    /// Every blocklisted interpreter present on this machine, not an arbitrary one — the blocklist is
+    /// a Set, so picking `.first` would test a different entry on different runs.
+    func testEveryScriptInterpreterOnThisMachineIsRefusedByName() throws {
+        let present = ProcessSafety.interpreterBlocklist
+            .filter { FileManager.default.fileExists(atPath: $0) }
+            .sorted()
+        XCTAssertFalse(present.isEmpty, "no blocklisted interpreter exists here to test against")
+
+        for interpreter in present {
+            let message = try XCTUnwrap(reason(interpreter), interpreter)
+            XCTAssertTrue(message.contains("script interpreter"), "\(interpreter): \(message)")
+            XCTAssertFalse(FFmpegService.isAvailable(override: interpreter),
+                           "\(interpreter) would turn Convert into arbitrary code execution")
+        }
     }
 
     func testADirectoryIsNotAProgram() throws {
