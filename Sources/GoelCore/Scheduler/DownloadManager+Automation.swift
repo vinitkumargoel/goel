@@ -1,22 +1,13 @@
 import Foundation
 
-// MARK: - Timer-driven automation
-
-/// Download window, network awareness, scheduled starts and RSS — all (re)armed from
-/// ``DownloadManager/updateSettings(_:)``. Decisions are pure in ``AutomationCore``; only timers here.
 extension DownloadManager {
 
-    // MARK: Download window
-
-    /// Whether the download window is open at `date`. A shim over
-    /// ``AutomationCore/isWindowOpen(settings:date:calendar:)`` for the synchronous promotion gate.
     static func isWindowOpen(settings: AppSettings, date: Date,
                              calendar: Calendar = .current) -> Bool {
         AutomationCore.isWindowOpen(settings: settings, date: date, calendar: calendar)
     }
 
-    /// (Re)arm the window loop. ``scheduleWindowOpen`` is set synchronously so ``schedule()`` can't promote
-    /// into a closed window before the async tick; the same 30 s loop re-reads the battery threshold.
+    /// `scheduleWindowOpen` is set synchronously, or `schedule()` promotes into a closed window.
     func updateDownloadSchedule() {
         scheduleTask?.cancel()
         scheduleTask = nil
@@ -36,10 +27,7 @@ extension DownloadManager {
         }
     }
 
-    // MARK: The automation tick
-
-    /// Build a snapshot, ask ``AutomationCore``, apply. Each `.pause` is re-validated across the actor's
-    /// `await`s; memory is committed **before** the loop, or an overlapping tick writes back stale ledgers.
+    /// Memory is committed BEFORE the loop, or an overlapping tick writes back a stale ledger.
     func runAutomation(feeds: [AutomationCore.FeedFetch] = []) async {
         let projection = tasks.map { task in
             AutomationCore.TaskPhase(
@@ -64,8 +52,7 @@ extension DownloadManager {
             switch action {
             case .pause(let id, let ledger):
                 guard isInDownloadingPhase(id) else {
-                    // Un-record exactly this id rather than rewriting the ledger, so
-                    // entries an overlapping tick added meanwhile survive.
+                    // Un-record this id only: rewriting the ledger drops an overlapping tick's entries.
                     switch ledger {
                     case .window: automationMemory.windowPausedIDs.remove(id)
                     case .network: automationMemory.networkPausedIDs.remove(id)
@@ -75,7 +62,7 @@ extension DownloadManager {
                 }
                 await pause(id)
             case .resume(let id):
-                await resume(id)                 // resume() clears scheduledAt
+                await resume(id)
             case .activateProfile(let name):
                 await setActiveProfile(name)
             case .add(let source, let startPaused):
@@ -86,19 +73,15 @@ extension DownloadManager {
         schedule()
     }
 
-    /// Whether a status is a download phase the automation pause loops act on. Excludes seeding — these
-    /// policies restrict downloads, not uploads. Delegates to ``DownloadStatus/isDownloadingPhase``.
     static func isDownloadingPhase(_ status: DownloadStatus) -> Bool {
         status.isDownloadingPhase
     }
 
-    /// Whether the task is currently occupying a download phase.
     func isInDownloadingPhase(_ id: UUID) -> Bool {
         task(id)?.status.isDownloadingPhase ?? false
     }
 
-    /// Narrow profile switch for automation: set + persist + push to engines, bypassing the full
-    /// ``updateSettings(_:)`` cascade (it would re-arm the timers and recurse). Awaited before resumes.
+    /// Bypasses ``updateSettings(_:)`` deliberately — that cascade re-arms the timers and recurses.
     func setActiveProfile(_ name: String) async {
         var updated = storedSettings
         updated.selectedProfileName = name
@@ -107,17 +90,12 @@ extension DownloadManager {
         await applyEngineConfigs()
     }
 
-    // MARK: Per-task scheduled starts
-
-    /// Set (or clear, with nil) a one-shot start time. Setting holds the task paused until it fires,
-    /// pausing an active download first; clearing leaves the task paused — the user starts it.
     public func setScheduledStart(_ date: Date?, task id: DownloadTask.ID) async {
         guard let task = task(id), !task.status.isTerminal else { return }
         if date != nil, task.status != .paused {
             await pause(id)
         }
-        // Re-resolve after the possible suspension: pause() may have observed a
-        // terminal transition and left the status alone.
+        // Re-resolve after the suspension: pause() may have seen a terminal transition meanwhile.
         guard let i = index(of: id), !tasks[i].status.isTerminal else { return }
         tasks[i].scheduledAt = date
         persist(tasks[i])
@@ -125,8 +103,6 @@ extension DownloadManager {
         armScheduledStarts()
     }
 
-    /// (Re)arm the scheduled-start loop while any paused task carries a start time; tear it down when
-    /// none does. Idempotent and cheap to call from add/restore/setScheduledStart.
     func armScheduledStarts() {
         let pending = tasks.contains { $0.scheduledAt != nil && $0.status == .paused }
         guard pending else {
@@ -144,8 +120,6 @@ extension DownloadManager {
         }
     }
 
-    /// Run one automation tick (firing every paused task whose time has come) and report whether any
-    /// scheduled start remains — the loop stops once nothing scheduled is left.
     private func fireDueScheduledStarts() async -> Bool {
         await runAutomation()
         let stillPending = tasks.contains { $0.scheduledAt != nil && $0.status == .paused }
@@ -153,20 +127,13 @@ extension DownloadManager {
         return stillPending
     }
 
-    // MARK: Network awareness
-
-    /// Fold an `NWPathMonitor` change into the queue: an opted-out expensive/constrained network pauses
-    /// downloading-phase tasks, leaving it resumes exactly those. Decision lives in ``AutomationCore``.
     public func applyNetworkPolicy(expensive: Bool, constrained: Bool) async {
         lastPathExpensive = expensive
         lastPathConstrained = constrained
         await runAutomation()
     }
 
-    // MARK: RSS auto-download
-
-    /// (Re)arm the feed-polling loop when any feed is enabled. Interval clamped to `5…10080` minutes
-    /// before the ns conversion: it **traps** on `UInt64` overflow, and an imported backup can set it.
+    /// Clamp to 5…10080 minutes before the ns conversion: `UInt64` traps, and a backup can set it.
     func updateRSSSchedule() {
         rssTask?.cancel()
         rssTask = nil
@@ -183,8 +150,6 @@ extension DownloadManager {
         }
     }
 
-    /// Fetch, parse and title-filter every enabled feed, then hand candidates to ``runAutomation(feeds:)``
-    /// for the two-layer dedup (per-run keys ∪ queue ``DownloadSource/dedupKey``). Only fetch/parse here.
     func pollFeeds() async {
         var fetches: [AutomationCore.FeedFetch] = []
         let proxy = Self.proxySpec(from: settings)
@@ -192,8 +157,7 @@ extension DownloadManager {
             guard let url = URL(string: feed.url),
                   let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
             else { continue }
-            // Guarded auto-fetch: honours the proxy (no IP leak), bounds redirects, strips cross-host
-            // headers, refuses link-local (metadata) targets — unlike the `URLSession.shared` it replaced.
+            // Never `URLSession.shared` here: this proxies, bounds redirects and refuses link-local.
             guard let data = await NetworkGuard.fetch(url: url, proxy: proxy,
                                                       userAgent: settings.userAgent) else { continue }
             let items = RSSFeedParser.parse(data)
@@ -214,9 +178,6 @@ extension DownloadManager {
     }
 }
 
-// MARK: - Minimal RSS/Atom parsing
-
-/// One item pulled from a feed.
 struct RSSItem: Sendable {
     var title: String
     var link: String?
@@ -224,8 +185,6 @@ struct RSSItem: Sendable {
     var guid: String?
 }
 
-/// A deliberately small RSS 2.0 / Atom reader: titles, links, enclosures and
-/// guids — everything the auto-downloader needs, nothing else.
 final class RSSFeedParser: NSObject, XMLParserDelegate {
 
     static func parse(_ data: Data) -> [RSSItem] {

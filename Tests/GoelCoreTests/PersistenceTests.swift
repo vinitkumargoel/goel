@@ -3,9 +3,6 @@ import XCTest
 
 final class PersistenceTests: XCTestCase {
 
-    // MARK: Temp-file plumbing
-
-    /// Temp DB paths created during a test, removed in tearDown.
     private var tempPaths: [String] = []
 
     private func tempDBPath() -> String {
@@ -17,7 +14,6 @@ final class PersistenceTests: XCTestCase {
 
     override func tearDownWithError() throws {
         for path in tempPaths {
-            // GRDB may create -wal / -shm sidecar files; remove them too.
             for suffix in ["", "-wal", "-shm"] {
                 let p = path + suffix
                 if FileManager.default.fileExists(atPath: p) {
@@ -28,15 +24,11 @@ final class PersistenceTests: XCTestCase {
         tempPaths.removeAll()
     }
 
-    // MARK: Fixtures
-
     private func urlSource(_ s: String) -> DownloadSource { .url(URL(string: s)!) }
     private func magnetSource(_ hash: String) -> DownloadSource {
         .magnet("magnet:?xt=urn:btih:\(hash)&dn=Demo+Pack")
     }
 
-    /// A varied fixture set covering every storage-relevant shape: pre-metadata, in-progress,
-    /// paused-with-resume-data, failed, seeding (upload bytes), completed, and a multi-file torrent.
     private func sampleTasks() -> [DownloadTask] {
         let base = Date(timeIntervalSinceReferenceDate: 700_000_000)
 
@@ -104,8 +96,6 @@ final class PersistenceTests: XCTestCase {
         return [queued, downloading, failed, seeding, completed]
     }
 
-    // MARK: (a) Tasks round-trip
-
     func testTasksRoundTrip() throws {
         let store = try PersistenceStore()
         let originals = sampleTasks()
@@ -113,10 +103,8 @@ final class PersistenceTests: XCTestCase {
 
         let reloaded = try store.loadAllTasks()
 
-        // Identical set & order (loadAllTasks orders by addedAt).
         XCTAssertEqual(reloaded, originals, "every Codable field must survive the round-trip")
 
-        // Spot-check the storage-critical, requirement-driven fields.
         let byName = Dictionary(uniqueKeysWithValues: reloaded.map { ($0.name, $0) })
         XCTAssertEqual(byName["c.bin"]?.status, .failed(.diskFull(needed: 9000, available: 100)))
         XCTAssertEqual(byName["Demo Pack"]?.status, .seeding)
@@ -130,12 +118,12 @@ final class PersistenceTests: XCTestCase {
         let path = tempDBPath()
         let store = try PersistenceStore(path: path)
 
-        var task = sampleTasks()[1]   // the downloading one
+        var task = sampleTasks()[1]
         try store.upsert(task)
 
         task.bytesDownloaded = 4321
         task.status = .paused
-        try store.upsert(task)        // same id → replace, not duplicate
+        try store.upsert(task)
 
         let afterUpsert = try store.loadAllTasks()
         XCTAssertEqual(afterUpsert.count, 1)
@@ -146,11 +134,8 @@ final class PersistenceTests: XCTestCase {
         XCTAssertTrue(try store.loadAllTasks().isEmpty)
     }
 
-    // MARK: (a′) Speed-chart history round-trip
-
     func testSpeedHistoryRoundTripsThroughStore() throws {
         let store = try PersistenceStore()
-        // Absent until written.
         XCTAssertTrue(try store.loadSpeedHistory().isEmpty)
 
         let a = UUID().uuidString, b = UUID().uuidString
@@ -161,18 +146,14 @@ final class PersistenceTests: XCTestCase {
         try store.saveSpeedHistory(history)
         XCTAssertEqual(try store.loadSpeedHistory(), history)
 
-        // Second write replaces (single blob, not accumulated).
         let updated: [String: [SpeedHistoryPoint]] = [a: [SpeedHistoryPoint(down: 1, up: 1)]]
         try store.saveSpeedHistory(updated)
         XCTAssertEqual(try store.loadSpeedHistory(), updated)
     }
 
-    // MARK: (b) Settings round-trip
-
     func testSettingsRoundTrip() throws {
         let store = try PersistenceStore()
 
-        // Nothing saved yet.
         XCTAssertNil(try store.loadSettings())
 
         let settings = AppSettings(
@@ -190,8 +171,6 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(reloaded?.defaultSaveDirectory, "/Users/test/Downloads")
     }
 
-    // MARK: (c) Relaunch simulation — manager A persists, fresh manager B restores
-
     func testRelaunchRestoresTasksAndSettings() async throws {
         let path = tempDBPath()
 
@@ -202,7 +181,6 @@ final class PersistenceTests: XCTestCase {
             defaultSaveDirectory: "/tmp/relaunch"
         )
 
-        // ---- Session A: add a mix of downloads, then drive them to varied states.
         let storeA = try PersistenceStore(path: path)
         let httpA = FakeEngine(kind: .http)
         let torrentA = FakeEngine(kind: .torrent)
@@ -213,13 +191,11 @@ final class PersistenceTests: XCTestCase {
             store: storeA
         )
 
-        // A settings change is persisted through the manager (the realistic path).
         await managerA.setProfile("Low")
 
         let a = await managerA.add(source: urlSource("https://example.test/relaunch-a.bin"))
         let b = await managerA.add(source: urlSource("https://example.test/relaunch-b.bin"))
 
-        // Drive `a` to a failed terminal state; give `b` progress + resume data.
         let started = await waitUntil { httpA.added.contains(a.id) && httpA.added.contains(b.id) }
         XCTAssertTrue(started)
 
@@ -236,7 +212,6 @@ final class PersistenceTests: XCTestCase {
         }
         XCTAssertTrue(drained)
 
-        // Let the off-actor persistence writes flush.
         let persistedToDisk = await waitUntil {
             let tasks = (try? storeA.loadAllTasks()) ?? []
             guard tasks.count == 2 else { return false }
@@ -250,7 +225,6 @@ final class PersistenceTests: XCTestCase {
         }
         XCTAssertTrue(persistedToDisk)
 
-        // ---- Session B: a brand-new store + manager over the SAME file restores.
         let storeB = try PersistenceStore(path: path)
         let managerB = DownloadManager(
             httpEngine: FakeEngine(kind: .http),
@@ -265,22 +239,17 @@ final class PersistenceTests: XCTestCase {
         let rb = await managerB.task(b.id)
         let ra = await managerB.task(a.id)
 
-        // Resume-eligible `b` comes back paused, but with bytes & resume data intact.
         XCTAssertEqual(rb?.status, .paused)
         XCTAssertEqual(rb?.bytesDownloaded, 2048)
         XCTAssertEqual(rb?.resumeData, Data([0xAB, 0xCD]))
         XCTAssertEqual(rb?.downloadSpeed, 0, "transient speed is cleared on restore")
 
-        // Terminal failure is preserved verbatim, reason and all.
         XCTAssertEqual(ra?.status, .failed(.timedOut))
 
-        // Settings were restored too.
         let restoredSettings = await managerB.currentSettings
         XCTAssertEqual(restoredSettings.selectedProfileName, "Low")
         XCTAssertEqual(restoredSettings.defaultSaveDirectory, "/tmp/relaunch")
     }
-
-    // MARK: (d) Export then import yields the same list
 
     func testExportThenImportYieldsSameList() throws {
         let source = try PersistenceStore()
@@ -290,7 +259,6 @@ final class PersistenceTests: XCTestCase {
         let exported = try source.exportList()
         XCTAssertFalse(exported.isEmpty)
 
-        // Import into a completely separate store.
         let destination = try PersistenceStore()
         let imported = try destination.importList(exported)
         XCTAssertEqual(Set(imported), Set(originals))
@@ -299,9 +267,6 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(reloaded, originals, "export → import must reproduce the list exactly")
     }
 
-    // MARK: Local helper
-
-    /// Poll an async predicate until it holds or the timeout fires.
     @discardableResult
     private func waitUntil(
         timeout: TimeInterval = 5,

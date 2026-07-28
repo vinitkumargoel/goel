@@ -2,12 +2,9 @@ import Foundation
 import XCTest
 @testable import GoelCore
 
-/// Guards §4.4 (brute-force protection) of `docs/compliance/security-questionnaire.md`, the one procurement answer
-/// quoting hard numbers from code. It drifted once (claiming a global 30s lockout after it went per-IP exponential).
+/// Guards §4.4 (brute-force protection) of `docs/compliance/security-questionnaire.md`, which quotes hard numbers from code and has drifted from them once already.
 final class SecurityQuestionnaireThrottleTests: XCTestCase {
 
-    /// The document's §4.4. Skips rather than fails if the docs tree is absent,
-    /// so a source-only checkout of the package still runs green.
     private func bruteForceAnswer() throws -> String {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()   // GoelCoreTests
@@ -22,7 +19,6 @@ final class SecurityQuestionnaireThrottleTests: XCTestCase {
         return String(text[start.lowerBound..<end.lowerBound])
     }
 
-    /// The three numbers §4.4 spells out must be the ones a user actually gets.
     func testQuestionnaireStatesTheShippedThrottleDefaults() throws {
         let shipped = RemoteLoginThrottle(settings: AppSettings())
         XCTAssertEqual(shipped.freeAttempts, 5,
@@ -38,8 +34,6 @@ final class SecurityQuestionnaireThrottleTests: XCTestCase {
         XCTAssertTrue(answer.contains("fifteen-minute"), "§4.4 lost the backoff ceiling")
     }
 
-    /// The retired behaviour must not creep back into the answer, in either of
-    /// its two wrong dimensions: the fixed penalty and the global counter.
     func testQuestionnaireNoLongerDescribesTheRetiredGlobalLockout() throws {
         let answer = try bruteForceAnswer()
         XCTAssertFalse(answer.localizedCaseInsensitiveContains("30-second"),

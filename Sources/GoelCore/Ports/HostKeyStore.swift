@@ -1,11 +1,9 @@
 import Foundation
 
-/// SSH host-key SHA-256 pins keyed by `host:port` — `known_hosts` semantics: pinned on first contact
-/// (see ``HostKeyTrust``), later mismatches refused, ``reset(host:port:)`` = `ssh-keygen -R`. Fails closed.
+/// `known_hosts` semantics for SSH host keys: pin on first contact, refuse mismatches, fail closed.
 public final class HostKeyStore: @unchecked Sendable {
 
-    /// A pin lookup. A read failure must never look like "no pin": an empty store re-arms
-    /// trust-on-first-use for every server, so one unreadable record downgrades the whole list.
+    /// `.unavailable` must stay distinct from `.none`: a read failure read as "no pin" re-arms TOFU.
     public enum PinLookup: Sendable, Equatable {
         case pinned(String)
         case none
@@ -26,14 +24,12 @@ public final class HostKeyStore: @unchecked Sendable {
         "\(host.lowercased()):\(port)"
     }
 
-    /// The shape ``gsb_hex_sha256`` produces: 64 lowercase hex chars. An *empty* value is worst — the C
-    /// shim skips the comparison entirely for an empty `expected_fp`, leaving the host unverified.
+    /// The C shim skips verification entirely on an empty `expected_fp`, so reject anything malformed.
     private static func isValidFingerprint(_ fingerprint: String) -> Bool {
         fingerprint.count == 64 && fingerprint.allSatisfy { $0.isHexDigit && !$0.isUppercase }
     }
 
-    /// Every pin, or nil when the record can't be trusted (not a `[String: String]`, or an entry that
-    /// isn't a fingerprint). Only a genuinely absent key yields an empty map.
+    /// nil = untrustworthy record; only a genuinely absent key may return an empty map.
     private func all() -> [String: String]? {
         guard let raw = defaults.object(forKey: key) else { return [:] }
         guard let map = raw as? [String: String],
@@ -41,8 +37,7 @@ public final class HostKeyStore: @unchecked Sendable {
         return map
     }
 
-    /// Whether a server is pinned, unpinned, or unreadable. Callers making a
-    /// trust decision must use this rather than ``fingerprint(host:port:)``.
+    /// Every trust decision must go through this, never ``fingerprint(host:port:)``.
     public func lookup(host: String, port: Int) -> PinLookup {
         lock.lock(); defer { lock.unlock() }
         guard let map = all() else { return .unavailable }
@@ -50,15 +45,13 @@ public final class HostKeyStore: @unchecked Sendable {
         return .pinned(pinned)
     }
 
-    /// The pinned fingerprint, for display only. Collapses "never connected" and "unreadable record"
-    /// into nil, so it must not decide whether to trust a host — see ``lookup(host:port:)``.
+    /// Display only: this collapses "never connected" and "unreadable" into nil, so it cannot gate trust.
     public func fingerprint(host: String, port: Int) -> String? {
         guard case .pinned(let pinned) = lookup(host: host, port: port) else { return nil }
         return pinned
     }
 
-    /// Pin (or re-pin) a fingerprint. Returns false, writing nothing, if it is malformed or the existing
-    /// record is unreadable — writing back a map we failed to read would drop every other server's pin.
+    /// Writes nothing on an unreadable record — saving a map we failed to read drops every other pin.
     @discardableResult
     public func setFingerprint(_ fingerprint: String, host: String, port: Int) -> Bool {
         lock.lock(); defer { lock.unlock() }
@@ -68,8 +61,7 @@ public final class HostKeyStore: @unchecked Sendable {
         return true
     }
 
-    /// Forget a server's pin (e.g. after an intentional rekey). An unreadable record is discarded whole —
-    /// the only escape from a store refusing every connection; forgetting only ever re-arms first contact.
+    /// Discarding an unreadable record whole is the only escape from a store that refuses every connection.
     @discardableResult
     public func reset(host: String, port: Int) -> Bool {
         lock.lock(); defer { lock.unlock() }

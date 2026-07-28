@@ -1,13 +1,8 @@
 import Foundation
 
-// MARK: - Name & folder derivation
-
-/// Pure, source-derived naming helpers, split out of ``DownloadManager``. Every name flows through
-/// ``PathSafety/sanitizedName(_:fallback:)``, so a hostile filename can never escape the save directory.
 extension DownloadManager {
 
-    /// A **safe** initial display name derived purely from the source: every branch runs through
-    /// ``PathSafety/sanitizedName(_:fallback:)``, so a magnet `dn=../../.ssh/authorized_keys` can't escape.
+    /// Every branch must run through ``PathSafety/sanitizedName(_:fallback:)``: a magnet `dn=../../.ssh/authorized_keys` must not escape.
     static func defaultName(for source: DownloadSource) -> String {
         switch source {
         case let .url(url):
@@ -24,8 +19,6 @@ extension DownloadManager {
         }
     }
 
-    /// A coarse content category from the source's apparent file extension (torrents bucket together).
-    /// Mirrors the app's file-type buckets without importing the app layer.
     static func categoryFolder(for source: DownloadSource) -> String {
         if source.kind == .torrent { return "Torrents" }
         let name = defaultName(for: source).lowercased()
@@ -39,8 +32,6 @@ extension DownloadManager {
         return "Other"
     }
 
-    /// A `.mp4` name for an HLS stream. The playlist is usually a generic `index.m3u8`/`playlist.m3u8`,
-    /// so prefer the parent path component (the title folder), falling back to the host.
     private static func hlsDisplayName(_ url: URL) -> String {
         let generic: Set<String> = ["index", "playlist", "master", "prog_index", "chunklist", "main", "video", "stream"]
         let leaf = url.deletingPathExtension().lastPathComponent
@@ -49,8 +40,7 @@ extension DownloadManager {
         if !leaf.isEmpty, !generic.contains(leaf.lowercased()) {
             stem = leaf
         } else if !parent.isEmpty, parent != "/" {
-            // Strip a video extension the parent folder may already carry (`.../trailer.mp4/index.m3u8`),
-            // or the `.mp4` appended below doubles it into `trailer.mp4.mp4`.
+            // Strip an extension the parent already carries, or `.mp4` below doubles it: `trailer.mp4.mp4`.
             let videoExts: Set<String> = ["mp4", "mkv", "avi", "mov", "webm", "m4v", "flv", "ts", "m3u8"]
             let ext = (parent as NSString).pathExtension.lowercased()
             stem = videoExts.contains(ext) ? (parent as NSString).deletingPathExtension : parent
@@ -60,8 +50,7 @@ extension DownloadManager {
         return PathSafety.sanitizedName(stem, fallback: "video") + ".mp4"
     }
 
-    /// Apply the file-conflict policy. Fails **closed**: only an explicit `overwrite` keeps the name,
-    /// anything else appends ` (1)`, ` (2)`, … — an unknown value must not license truncating a file.
+    /// Fails closed: only an explicit `overwrite` keeps the name, so an unknown policy can't truncate a file.
     static func resolveName(_ base: String, in directory: String, policy: String) -> String {
         guard policy == "overwrite" else { return PathSafety.uniqueName(base: base, in: directory) }
         return base

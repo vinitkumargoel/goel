@@ -1,13 +1,7 @@
 import Foundation
 
-// MARK: - Engine configuration
-
-/// Pushes settings down to the concrete engines — `DownloadEngine.applyLimits` plus network/session
-/// config. Split out of ``DownloadManager`` so the scheduler proper stays focused on the queue.
 extension DownloadManager {
 
-    /// Push the current effective profile's bandwidth/connection caps to both
-    /// engines. Useful at startup and whenever the profile or snail changes.
     public func applyLimits() async {
         let profile = settings.effectiveProfile
         await httpEngine.applyLimits(profile)
@@ -17,13 +11,10 @@ extension DownloadManager {
         await sftpEngine.applyLimits(profile)
     }
 
-    /// Push limits *and* network/session config. `applyLimits` stays separate as the hot path; each engine
-    /// configures via its own typed seam (`as? HTTPConfigurable`) — no union, no concrete-type downcast.
     func applyEngineConfigs() async {
         await applyLimits()
         await (httpEngine as? HTTPConfigurable)?.configure(httpNetworkConfig())
-        // The engine re-resolves a download's name once response headers arrive, so
-        // it needs the same "when a file exists" choice `makeTask` applied.
+        // The engine re-resolves the name from headers, so it needs the same choice `makeTask` used.
         await (httpEngine as? HTTPConfigurable)?
             .configureFileConflictPolicy(settings.existingFileReaction)
         await (torrentEngine as? TorrentControlling)?.configure(torrentSessionConfig())
@@ -31,24 +22,19 @@ extension DownloadManager {
         await applyAggregationConfig()
     }
 
-    /// Public re-entry for the app layer after adapter/settings changes.
     public func reapplyEngineConfigsPublic() async {
         await applyEngineConfigs()
     }
 
-    /// Build multi-path config from settings + live interfaces and push to HTTPEngine.
     func applyAggregationConfig() async {
         let config = Self.makeAggregationConfig(settings: settings, vpnDefaultRoute: vpnDefaultRouteActive)
         await (httpEngine as? HTTPConfigurable)?.configureAggregation(config)
     }
 
-    /// Whether the system default route appears to be a VPN interface (utun/…).
-    /// Updated by the app layer via ``setVPNDefaultRouteActive``.
     public func setVPNDefaultRouteActive(_ active: Bool) {
         vpnDefaultRouteActive = active
     }
 
-    /// Pure builder for the aggregation engine snapshot (unit-testable).
     static func makeAggregationConfig(
         settings: AppSettings,
         vpnDefaultRoute: Bool,
@@ -86,8 +72,7 @@ extension DownloadManager {
         )
     }
 
-    /// Interfaces a *single task* may bind to. Ignores the aggregation toggle, saved selection and
-    /// expensive filter (defaults being overridden) but **not** proxy/VPN policy — a bind bypasses both.
+    /// Must still honour proxy/VPN policy: a bind bypasses both, leaking outside the tunnel.
     public static func bindableAdapters(
         settings: AppSettings,
         vpnDefaultRoute: Bool,
@@ -102,7 +87,6 @@ extension DownloadManager {
             includeVPN: false)
     }
 
-    /// User-visible reason multi-path is inactive (nil when active).
     public static func aggregationSinglePathReason(
         settings: AppSettings,
         vpnDefaultRoute: Bool,
@@ -152,8 +136,7 @@ extension DownloadManager {
         )
     }
 
-    /// Re-apply the per-server cap so all concurrent HTTP downloads *in aggregate* stay within the
-    /// profile's global `maxConnections`. Best-effort: running segment groups keep their governor.
+    /// Keeps all concurrent HTTP downloads within the profile's global `maxConnections` in aggregate.
     func reapplyHTTPBudget() async {
         var profile = settings.effectiveProfile
         let activeHTTP = tasks.filter { $0.source.kind == .http && $0.status.isActive }.count
@@ -161,8 +144,6 @@ extension DownloadManager {
             let perDownload = max(1, profile.maxConnections / activeHTTP)
             profile.maxConnectionsPerServer = min(profile.maxConnectionsPerServer, perDownload)
         }
-        // `applyLimits` is universal (base protocol), so the per-host budget is
-        // re-applied to the HTTP engine with no concrete-type downcast.
         await httpEngine.applyLimits(profile)
     }
 }

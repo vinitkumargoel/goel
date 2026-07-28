@@ -1,10 +1,6 @@
 import Foundation
 
-// Linux compatibility shims for GoelCore: swift-corelibs-foundation splits pieces of `Foundation`
-// into separate modules. Compiled ONLY on Linux / where a module is missing, so macOS is unaffected.
-
-// URLSession/URLRequest/HTTPURLResponse live in FoundationNetworking on Linux, XMLParser in
-// FoundationXML. Re-exported so the rest of the module sees them with only `import Foundation`.
+// corelibs splits URLSession into FoundationNetworking and XMLParser into FoundationXML.
 #if canImport(FoundationNetworking)
 @_exported import FoundationNetworking
 #endif
@@ -12,8 +8,7 @@ import Foundation
 @_exported import FoundationXML
 #endif
 
-// Glibc types these C constants differently from Darwin: net/if.h flags import as `Int`, SOCK_* as
-// the `__socket_type` enum. Normalising to Int32 once keeps the call sites platform-free.
+// Glibc imports net/if.h flags as `Int` and SOCK_* as the `__socket_type` enum, unlike Darwin.
 enum PlatformSocket {
     #if os(Linux)
     static let stream = Int32(SOCK_STREAM.rawValue)
@@ -30,8 +25,6 @@ enum InterfaceFlag {
 
 #if os(Linux)
 
-/// Minimal stand-in for `UniformTypeIdentifiers.UTType`: maps a response MIME type to a file extension.
-/// Unknown types return nil, so the HTTP engine keeps the URL-derived name exactly as it does on macOS.
 struct UTType {
     private let ext: String?
 

@@ -1,8 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Regression cover for the core data paths (CSV export, snapshot fold, segmented resume): each case
-/// guards untrusted input that used to reach trapping arithmetic or a spreadsheet as a live formula.
 final class CoreDataPathsRemediationTests: XCTestCase {
 
     private var tempDir: URL!
@@ -19,8 +17,6 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
         super.tearDown()
     }
-
-    // MARK: Helpers
 
     private func makeEngine(profile: TrafficProfile = .high) -> HTTPEngine {
         let config = URLSessionConfiguration.ephemeral
@@ -46,8 +42,7 @@ final class CoreDataPathsRemediationTests: XCTestCase {
                    isAppActive: false, autoShutdownAction: "none")
     }
 
-    /// `CustomStringConvertible`, not `LocalizedError`: XCTest renders thrown errors with
-    /// `String(describing:)`, so an `errorDescription` never reaches the log — just `PollTimeout()`.
+    /// `CustomStringConvertible`, not `LocalizedError`: XCTest logs thrown errors via `String(describing:)`.
     private struct PollTimeout: Error, CustomStringConvertible {
         var description: String {
             "the wait logged above never held — assertions after it were skipped, "
@@ -55,8 +50,7 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         }
     }
 
-    /// Poll until the predicate holds or the deadline passes, THROWING as well as failing: files are
-    /// preallocated, so later assertions compare equal-length garbage. `describe` names what was seen.
+    /// Must THROW, not just fail: files are preallocated, so later assertions compare equal-length garbage.
     private func poll(timeout: TimeInterval, _ predicate: @Sendable () -> Bool,
                       describe: @Sendable () -> String = { "" },
                       file: StaticString = #filePath, line: UInt = #line) async throws {
@@ -94,23 +88,16 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         )
     }
 
-    // MARK: CDP-1 — a duplicate task id in a snapshot must not trap
-
-    /// ``SnapshotReducer/reduce(_:_:_:)`` built carry-over state with `Dictionary(uniqueKeysWithValues:)`,
-    /// which TRAPS on a repeated key — an untrusted backup envelope with two tasks per id killed the app.
     func testDuplicateTaskIdInSnapshotFoldsLastWinsWithoutTrapping() {
         let id = UUID()
         let out = SnapshotReducer.reduce(
             ReducerState(),
             [task(id, "first", .downloading), task(id, "second", .completed)],
             env())
-        // Last-wins: the same rule the notification pass above it already reads by.
         XCTAssertEqual(out.state.lastStatuses[id], .completed)
         XCTAssertEqual(out.state.lastStatuses.count, 1)
     }
 
-    /// The verdict half of the fold trapped identically — `compactMap` does not
-    /// save it once both duplicates carry a `scanVerdict`.
     func testDuplicateTaskIdWithScanVerdictsDoesNotTrap() {
         let id = UUID()
         let seeded = SnapshotReducer.reduce(ReducerState(), [task(id, "a", .downloading)], env()).state
@@ -120,14 +107,10 @@ final class CoreDataPathsRemediationTests: XCTestCase {
             env())
         XCTAssertEqual(out.state.lastScanVerdicts[id], "flagged")
         XCTAssertEqual(out.state.lastScanVerdicts.count, 1)
-        // Next tick sees the verdict already recorded, so nothing re-fires — the
-        // flag-once rule survives a duplicated row.
         let again = SnapshotReducer.reduce(out.state, [task(id, "a", .completed, scan: "flagged")], env())
         XCTAssertTrue(again.notifications.isEmpty)
     }
 
-    /// A `nil` verdict must still REMOVE the key, exactly as the old `compactMap`
-    /// did — otherwise a cleared verdict would look like a repeat flag next tick.
     func testClearedScanVerdictRemovesTheKey() {
         let id = UUID()
         let flagged = SnapshotReducer.reduce(
@@ -136,10 +119,6 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         XCTAssertNil(cleared.state.lastScanVerdicts[id])
     }
 
-    // MARK: CDP-6 — an envelope carrying a duplicate task id must be refused
-
-    /// ``DownloadManager/importEnvelope(_:)`` deduped only on `source.dedupKey`, so two entries sharing a
-    /// task id both queued; `taskIndex` keys on id, making the first an unreachable zombie feeding CDP-1.
     func testImportEnvelopeRefusesADuplicateTaskId() async throws {
         let manager = DownloadManager(
             httpEngine: FakeEngine(kind: .http),
@@ -165,10 +144,6 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         XCTAssertNotNil(resolved, "the surviving row must stay reachable through the id index")
     }
 
-    // MARK: CDP-2 — the post-probe rename must not walk past its own partial file
-
-    /// Refining the name on EVERY run made each resume re-run `PathSafety.uniqueName`, stepping over the
-    /// task's own partial; `destinationHoldsPreallocation` then refused the cursor and restarted at zero.
     func testResumeKeepsTheNameResolvedOnTheFirstAttempt() async throws {
         let payload = deterministicData(4 * 1024 * 1024)
         StubURLProtocol.set(.init(
@@ -177,8 +152,6 @@ final class CoreDataPathsRemediationTests: XCTestCase {
             contentType: "video/mp4",
             contentDisposition: "attachment; filename=\"Holiday Clip.mp4\""
         ))
-        // An UNRELATED file already owns the server-suggested name, so the first
-        // attempt must bump to "Holiday Clip (1).mp4" — the state that used to loop.
         let decoy = tempDir.appendingPathComponent("Holiday Clip.mp4")
         try Data("unrelated".utf8).write(to: decoy)
 
@@ -196,16 +169,14 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         }
 
         await engine.add(task)
-        // Pause on OBSERVED mid-flight progress rather than a fixed sleep, so the
-        // pause can neither land before the first byte nor after the last one.
+        // Pause on OBSERVED progress: a fixed sleep lands before the first byte or after the last.
         try await poll(timeout: 10) { let n = bytes.get(); return n > 0 && n < Int64(payload.count) }
             describe: { "\(bytes.get())/\(payload.count) bytes — never caught in flight" }
         await engine.pause(task.id)
         try await Task.sleep(nanoseconds: 150_000_000)
         await engine.resume(task.id)
         let target = tempDir.appendingPathComponent("Holiday Clip (1).mp4")
-        // Generous because it is wall-clock the transfer needs: 256 chunks 25ms apart ⇒ ~7s floor,
-        // ~15s on arm64, and 30s failed on every (2x slower) CI run. A passing run returns early.
+        // Wall-clock the transfer needs: 256 chunks 25ms apart; 30s failed every CI run. Passing returns early.
         try await poll(timeout: 120) {
             (try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize) == payload.count
                 && bytes.get() == Int64(payload.count)
@@ -226,10 +197,6 @@ final class CoreDataPathsRemediationTests: XCTestCase {
                        "the unrelated file that forced the bump is never touched")
     }
 
-    // MARK: CDP-9 — the "when a file exists" picker must reach the engine's rename
-
-    /// The post-probe rename called `PathSafety.uniqueName` unconditionally, so a user who chose
-    /// **Overwrite** still got `name (1).mp4` whenever a `Content-Disposition` name collided.
     func testOverwritePolicyReachesTheEnginesPostProbeRename() async throws {
         let payload = deterministicData(64 * 1024)
         StubURLProtocol.set(.init(
@@ -264,10 +231,7 @@ final class CoreDataPathsRemediationTests: XCTestCase {
             "Overwrite must not fall back to the rename policy")
     }
 
-    // MARK: CDP-3 / CDP-8 — impossible or extreme declared sizes must not trap
-
-    /// `preallocate` converts the declared size with `UInt64(_:)`, which traps on a
-    /// negative value — and the size is a parsed `Content-Length` / `Content-Range`.
+    /// `UInt64(_:)` traps on a negative, and the size is a parsed `Content-Length` / `Content-Range`.
     func testPreallocateRefusesANegativeDeclaredSize() {
         let url = tempDir.appendingPathComponent("negative.bin")
         XCTAssertThrowsError(try SegmentedTransfer.preallocate(url, size: -1))
@@ -275,8 +239,6 @@ final class CoreDataPathsRemediationTests: XCTestCase {
                          "a genuinely zero-byte file is still legitimate")
     }
 
-    /// End-to-end: a plan built from a `-1` server size must degrade to a single
-    /// stream and finish or throw — never trap inside the range math.
     func testNegativeDeclaredSizeDegradesToASingleStream() async throws {
         StubURLProtocol.set(.init(
             data: deterministicData(8 * 1024), supportsRanges: true, sendContentLength: true,
@@ -286,13 +248,11 @@ final class CoreDataPathsRemediationTests: XCTestCase {
                                                     acceptsRanges: true, segmentCount: 8))
         XCTAssertEqual(transfer.connectionCount, 1, "an impossible size means the size is unknown")
         let consumer = Task { for await _ in transfer.progress {} }
-        // Completes or throws the size mismatch; the point is that it RETURNS.
         _ = try? await transfer.run()
         _ = await consumer.value
     }
 
-    /// `(total + minSegment - 1) / minSegment` overflows — and traps — at the top of
-    /// the `Int64` range. Both clamps were rewritten overflow-free.
+    /// `(total + minSegment - 1) / minSegment` overflows and traps near `Int64.max`.
     func testSegmentClampsSurviveExtremeAndEmptyTotals() {
         XCTAssertGreaterThanOrEqual(SegmentedTransfer.clampSegmentCount(8, total: .max), 1)
         XCTAssertEqual(SegmentedTransfer.clampSegmentCount(8, total: .max), 8,
@@ -306,10 +266,7 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         XCTAssertEqual(budget.resolveSegmentCount(total: 0, host: nil, profile: .high), 1)
     }
 
-    // MARK: CDP-7 — an untrusted resume cursor must not overflow the byte sum
-
-    /// `cursor.completed.reduce(0, +)` traps on `Int64` overflow, and the cursor arrives verbatim from an
-    /// imported backup (`sanitizedForImport` skips `resumeData`). Nonsense reports 0 → preflight full size.
+    /// The cursor arrives verbatim from an imported backup, and `reduce(0, +)` traps on `Int64` overflow.
     func testResumedBytesOnDiskRefusesAnOverflowingCursor() throws {
         let hostile = SegmentedTransfer.ResumeCursor(
             etag: nil, lastModified: nil, totalBytes: 1000,
@@ -324,8 +281,6 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         XCTAssertEqual(HTTPEngine.resumedBytesOnDisk(try JSONEncoder().encode(negative), total: 1000), 0)
     }
 
-    /// …and a well-formed cursor still reports its true sum, so a mostly-complete
-    /// resume keeps preflighting only the remainder.
     func testResumedBytesOnDiskStillSumsAWellFormedCursor() throws {
         let cursor = SegmentedTransfer.ResumeCursor(
             etag: nil, lastModified: nil, totalBytes: 1000,
@@ -334,10 +289,7 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         XCTAssertEqual(HTTPEngine.resumedBytesOnDisk(try JSONEncoder().encode(cursor), total: 1000), 500)
     }
 
-    // MARK: CDP-4 — an exported history must never carry a live spreadsheet formula
-
-    /// `field` quoted only for `,` `"` `\n` `\r`, never the first character — so a server-supplied
-    /// name evaluated as a formula in Excel/Numbers/Sheets. Quotes are stripped first, hence the apostrophe.
+    /// CSV injection: a server-supplied name led by `=+-@` runs as a live formula in Excel/Numbers/Sheets.
     func testFormulaLeadInsAreNeutralised() {
         let dangerous = ["=cmd|'/c calc'!A1", "+1+1", "-2+3+cmd|'/c calc'!A1",
                          "@SUM(1+9)", "\tsomething", "\rsomething"]
@@ -347,13 +299,10 @@ final class CoreDataPathsRemediationTests: XCTestCase {
                           "\(raw) must be marked as text, not left as a live formula")
             XCTAssertTrue(encoded.hasSuffix("\""), "…and must stay a well-formed RFC-4180 field")
         }
-        // Embedded quotes are still doubled inside the neutralised field.
         XCTAssertEqual(CSVEncoder.field("=HYPERLINK(\"http://evil\")"),
                        "\"'=HYPERLINK(\"\"http://evil\"\")\"")
     }
 
-    /// Only a LEADING character makes a cell a formula — ordinary text is untouched,
-    /// so the export stays readable.
     func testOnlyALeadingFormulaCharacterIsEscaped() {
         XCTAssertEqual(CSVEncoder.field("a=b"), "a=b")
         XCTAssertEqual(CSVEncoder.field("2 + 2"), "2 + 2")
@@ -361,10 +310,6 @@ final class CoreDataPathsRemediationTests: XCTestCase {
         XCTAssertEqual(CSVEncoder.field("1024"), "1024")
     }
 
-    // MARK: CDP-5 — the speed cap must hold across concurrent downloads
-
-    /// One ``RateLimiter`` shared by several writers paces their SUM — what `downloadPacer` relies on.
-    /// Before it, a fresh limiter per transfer let N downloads reach N × the profile cap.
     func testASharedLimiterPacesTheSumOfConcurrentWriters() async throws {
         let limiter = RateLimiter(bytesPerSecond: 100_000)
         let started = Date()
@@ -374,14 +319,11 @@ final class CoreDataPathsRemediationTests: XCTestCase {
             }
             await group.waitForAll()
         }
-        // 200 KB at 100 KB/s ≈ 2 s. Asserted as a LOWER bound only, so a slow or
-        // loaded machine cannot make this flaky.
+        // Lower bound only: an upper bound would be flaky on a slow or loaded machine.
         XCTAssertGreaterThan(Date().timeIntervalSince(started), 1.5,
                              "concurrent writers must queue on one timeline, not each get the full cap")
     }
 
-    /// An uncapped limiter still forwards to the pacer behind it — the point of the chain: a task
-    /// with no limit of its own is still bound by the engine-wide ceiling.
     func testAnUncappedLimiterStillChargesTheChainedPacer() async throws {
         let shared = RateLimiter(bytesPerSecond: 100_000)
         let perTask = RateLimiter(bytesPerSecond: 0, next: shared)
@@ -391,8 +333,7 @@ final class CoreDataPathsRemediationTests: XCTestCase {
                              "150 KB at the shared 100 KB/s must sleep, not sail through")
     }
 
-    /// A transfer with no limit of its own must pace through the engine-wide pacer ITSELF, not a copy —
-    /// that is what makes the profile cap hold in sum; a task limit is layered in front, not merged.
+    /// The engine-wide pacer must be adopted ITSELF, not copied, or the profile cap stops holding in sum.
     func testTransferAdoptsTheSharedPacerRatherThanRebuildingIt() {
         let shared = RateLimiter(bytesPerSecond: 1_000)
 
@@ -415,7 +356,6 @@ final class CoreDataPathsRemediationTests: XCTestCase {
     }
 }
 
-/// Thread-safe log of the `.nameResolved` events an engine emitted.
 private final class NameLog: @unchecked Sendable {
     private let lock = NSLock()
     private var names: [String] = []
@@ -423,7 +363,6 @@ private final class NameLog: @unchecked Sendable {
     func all() -> [String] { lock.lock(); defer { lock.unlock() }; return names }
 }
 
-/// Thread-safe holder for the latest reported byte count.
 private final class ProgressLog: @unchecked Sendable {
     private let lock = NSLock()
     private var bytes: Int64 = 0

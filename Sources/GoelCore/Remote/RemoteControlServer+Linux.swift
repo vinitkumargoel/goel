@@ -6,38 +6,26 @@ import NIOPosix
 import FoundationNetworking
 #endif
 
-// Linux transport for the remote-access server: same API/behaviour as the macOS `RemoteControlServer`,
-// but the I/O shell is SwiftNIO. Routing/auth/JSON/portal still come from the pure `RemoteRouter`.
-
 public actor RemoteControlServer {
 
     private weak var manager: RemoteBackend?
 
-    // Routing config + shared session store (identical semantics to the macOS shell).
     private var routerConfig = RemoteRouter.Config(token: "")
     private var passwordHash = ""
     private let sessionStore = RemoteSessionStore()
-    /// Login throttling and header SSO. TLS is declined here — see `start`.
     private var security = RemotePortalSecurity()
-    /// Bumped on every start/stop so long-lived SSE / streaming loops wind down.
+    /// Bumping this is what winds down every live SSE / streaming loop.
     private var generation = 0
 
-    // NIO transport handles.
     private var group: MultiThreadedEventLoopGroup?
     private var channel: Channel?
     private var gate: ConnectionGate?
     private var boundPort: UInt16?
     private var boundExposeLAN: Bool?
 
-    /// Why the last `start` left nothing listening. Shared with the macOS shell so
-    /// ``RemoteAccess`` reports the same reasons on both transports.
     public typealias StartFailure = RemotePortalStartFailure
-    /// Set on each refusal in `start`, cleared the moment a channel is bound or the
-    /// server is stopped. Read through ``lastStartFailure()``.
     private var startFailure: StartFailure?
 
-    // Concurrency caps (mirror the macOS shell). The connection cap is enforced at
-    // accept time by `gate` (see RequestAccumulator), not after buffering a request.
     private var sseConnections = 0
     private static let maxConnections = 32
     private static let maxSSEConnections = 4
@@ -48,8 +36,6 @@ public actor RemoteControlServer {
         self.manager = manager
     }
 
-    // MARK: Lifecycle
-
     public func start(port: UInt16, allowLAN: Bool, config: RemoteRouter.Config,
                       passwordHash: String, sessionMinutes: Int,
                       security: RemotePortalSecurity = RemotePortalSecurity()) async {
@@ -58,22 +44,18 @@ public actor RemoteControlServer {
             || config.token != routerConfig.token
             || passwordHash != self.passwordHash
         if credentialsChanged {
-            // Rotating the bearer token counts as a credential change too, so a
-            // leaked token's already-open stream is wound down when it's rotated.
+            // Token rotation counts too: a leaked token's open stream must be torn down.
             generation += 1
         }
         self.routerConfig = config
         self.passwordHash = passwordHash
         self.security = security
-        // Single hop: rotate credentials and drop sessions together, so no login
-        // can slip through this actor's suspension holding stale credentials.
+        // One hop: a separate rotate-then-drop would let a login slip through on stale credentials.
         await sessionStore.configure(username: config.username, passwordHash: passwordHash,
                                      sessionMinutes: sessionMinutes,
                                      invalidatingSessions: credentialsChanged)
         await sessionStore.configure(throttle: security.throttle)
         if security.sso.isEnabled && !security.sso.isEffective {
-            // Name whichever precondition is missing — proxy list, `GOEL_PORTAL_PROXY_SECRET`, or both.
-            // `isEnabled` is true here, so at least one is empty and `missing` is never blank.
             let missing = [security.sso.trustedProxies.isEmpty ? "trusted-proxies" : nil,
                            security.sso.sharedSecret.isEmpty ? "shared-secret" : nil]
                 .compactMap { $0 }.joined(separator: ",")
@@ -81,19 +63,16 @@ public actor RemoteControlServer {
                                  .state(missing, label: "missing"))
         }
 
-        // The daemon links SwiftNIO but not NIOSSL, so it can't terminate TLS: refuse to start rather
-        // than serve cleartext — put a TLS-terminating reverse proxy in front of the loopback bind.
+        // No NIOSSL on Linux: refuse to start rather than silently serve the portal in cleartext.
         if security.tlsEnabled {
             GoelLog.remote.error("Portal TLS is not supported by the Linux daemon — terminate TLS at a reverse proxy; refusing to serve cleartext")
             await stop()
-            // After `stop()`, which clears it — a deliberate stop is not a failure,
-            // but this one is, and the operator has to be told why.
+            // Must follow `stop()`, which clears `startFailure`.
             startFailure = .tlsUnsupported
             return
         }
 
-        // Never expose to the network unless sign-in is required AND a password exists: `requireAuth`
-        // alone is just the toggle, and passwordless still leaves the mutating API on the LAN by token.
+        // Both conditions are load-bearing: `requireAuth` without a password still exposes the write API.
         let exposeLAN = allowLAN && config.requireAuth && !passwordHash.isEmpty
         if allowLAN && !exposeLAN {
             let why = config.requireAuth ? "no-portal-password" : "sign-in-disabled"
@@ -122,7 +101,6 @@ public actor RemoteControlServer {
             self.channel = ch
             self.boundPort = port
             self.boundExposeLAN = exposeLAN
-            // Something is listening again — any earlier refusal is stale.
             self.startFailure = nil
         } catch {
             GoelLog.remote.error("Remote server failed to bind",
@@ -135,7 +113,6 @@ public actor RemoteControlServer {
 
     public func stop() async {
         generation += 1
-        // A deliberate stop is not a failure, and the next `start` re-decides.
         startFailure = nil
         boundPort = nil
         boundExposeLAN = nil
@@ -143,8 +120,7 @@ public actor RemoteControlServer {
         let ch = channel; channel = nil
         let g = group; group = nil
         guard ch != nil || g != nil else { return }
-        // Backstop: a hung NIO teardown must not wedge the actor forever (a later start()/dispatch
-        // would deadlock behind it), so race it against a 3s timer. Mirrors the macOS shell.
+        // Raced against a timer: a hung NIO teardown would wedge the actor and deadlock the next start().
         await withTaskGroup(of: Void.self) { tg in
             tg.addTask {
                 try? await ch?.close()
@@ -156,21 +132,14 @@ public actor RemoteControlServer {
         }
     }
 
-    /// Live bind state so the daemon can report — and act on — what actually
-    /// happened, instead of re-deriving it. `nil` when not listening.
     public func boundState() -> (port: UInt16, exposedLAN: Bool)? {
         guard channel != nil, let p = boundPort else { return nil }
         return (p, boundExposeLAN ?? false)
     }
 
-    /// Why nothing is listening after the last `start`, nil when bound. Companion to ``boundState()``:
-    /// that answers *whether* the portal is up, this answers *why not* in words a person can act on.
     public func lastStartFailure() -> StartFailure? { startFailure }
 
-    // MARK: Dispatch (called by the per-connection handler once a request is whole)
-
     func dispatch(requestData: Data, sink: ChannelSink, client: String) async {
-        // Admission is capped at accept time by `ConnectionGate`; here we just route.
         let request = RemoteRequest(raw: requestData)
         switch (request.method, request.path) {
         case ("GET", "/api/events"):
@@ -183,8 +152,6 @@ public actor RemoteControlServer {
             sink.close()
         }
     }
-
-    // MARK: Server-sent events
 
     private func serveEvents(_ sink: ChannelSink, _ request: RemoteRequest, client: String) async {
         let router = self.router
@@ -208,8 +175,7 @@ public actor RemoteControlServer {
         if await sink.send(Data(head.utf8)) {
             while generation == myGeneration, let manager {
                 guard let frame = router.eventFrame(for: await manager.taskSnapshot()) else {
-                    // Skip the tick rather than pushing an empty list, which would
-                    // blank the client's view of a queue that is still running.
+                    // Skipping the tick, not sending an empty list, which would blank a live queue.
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                     continue
                 }
@@ -221,14 +187,11 @@ public actor RemoteControlServer {
         sseConnections = max(0, sseConnections - 1)
     }
 
-    // MARK: Auth, sessions & login
-
     private func respond(to request: RemoteRequest, client: String) async -> Data {
         let authed = await portalAuthed(request, client: client)
         let cfg = routerConfig
 
-        // Ahead of every gate: the login page can't style itself or run its submit handler without
-        // these, and they're the same public bytes for everyone. See `RemoteRouter.staticAsset(path:)`.
+        // Deliberately pre-auth: the login page cannot render without them, and they are public bytes.
         if request.method == "GET", let asset = RemoteRouter.staticAsset(path: request.path) {
             return asset
         }
@@ -238,15 +201,13 @@ public actor RemoteControlServer {
             if authed || !cfg.requireAuth { return Self.redirect(to: "/") }
             return Self.htmlResponse(RemoteRouter.loginPage(theme: cfg.theme, error: nil))
         case ("POST", "/login"):
-            // A foreign page must not be able to force-log-in a victim, so the
-            // login route takes the same Origin check as every other POST.
+            // CSRF: without this a foreign page can force-log-in a victim.
             guard RemoteRouter.crossSiteWriteAllowed(request) else {
                 return RemoteRouter.forbidden("Cross-site request refused.")
             }
             return await handleLogin(request, client: client)
         case ("GET", "/logout"), ("POST", "/logout"):
-            // Logout drops the session AND bumps the generation, winding down every live stream —
-            // ungated, any unauthenticated `curl` could do that, so it takes the usual auth predicate.
+            // Gated because logout also kills every live stream — otherwise an anonymous curl could.
             guard router.authorize(request, sessionAuthed: authed) else {
                 return request.method == "GET"
                     ? Self.redirect(to: "/login")
@@ -275,8 +236,7 @@ public actor RemoteControlServer {
         await sessionStore.validSession(request)
     }
 
-    /// Session cookie, or an identity vouched for by a trusted upstream proxy.
-    /// Mirrors the macOS shell exactly so auth cannot drift between transports.
+    /// Must stay identical to the macOS shell — auth may not differ between transports.
     private func portalAuthed(_ request: RemoteRequest, client: String) async -> Bool {
         if await sessionStore.validSession(request) { return true }
         return RemoteAuthService.trustedIdentity(request, client: client,
@@ -293,8 +253,7 @@ public actor RemoteControlServer {
 
     private func handleLogout(_ request: RemoteRequest) async -> Data {
         let result = await sessionStore.handleLogout(request)
-        // Only a real sign-out needs the bump (it forces open SSE/byte-range loops to re-authenticate);
-        // bumping on a logout that dropped nothing turned one stray request into every dead stream.
+        // Only bump on a real sign-out: an unconditional bump kills every stream on any stray request.
         if result.droppedSession { generation += 1 }
         return result.response
     }
@@ -306,8 +265,6 @@ public actor RemoteControlServer {
     private static func htmlResponse(_ html: String) -> Data {
         RemoteAuthService.htmlResponse(html)
     }
-
-    // MARK: File streaming (Range support)
 
     private func serveStream(_ sink: ChannelSink, _ request: RemoteRequest, client: String) async {
         func reject(_ status: String, _ message: String) async {
@@ -332,8 +289,7 @@ public actor RemoteControlServer {
         defer { try? handle.close() }
 
         let available = plan.availableBytes
-        // Finished empty (0-byte) payload is valid — serve 200 with empty body
-        // (matches macOS RemoteControlServer; don't pretend the download isn't ready).
+        // A finished 0-byte payload is valid; do not turn this into a "not ready" error.
         if available == 0 {
             var head = "HTTP/1.1 200 OK\r\n"
             head += "Content-Type: \(Self.mimeType(forPath: plan.path))\r\n"
@@ -380,8 +336,6 @@ public actor RemoteControlServer {
         sink.close()
     }
 
-    // MARK: Stream planning — shared with macOS via ``RemoteStreamService``
-
     public typealias StreamPlan = RemoteStreamService.StreamPlan
 
     public static func streamPlan(for task: DownloadTask) -> StreamPlan? {
@@ -401,10 +355,7 @@ public actor RemoteControlServer {
     }
 }
 
-// MARK: - NIO plumbing
-
-/// Writes response bytes / SSE frames / stream chunks back to a NIO channel; `Channel` methods are
-/// thread-safe (they hop to the event loop) so the actor drives it directly. `send` awaits the flush.
+/// `@unchecked Sendable` holds only because every `Channel` method hops to the event loop itself.
 final class ChannelSink: @unchecked Sendable {
     private let channel: Channel
     init(_ channel: Channel) { self.channel = channel }
@@ -419,8 +370,7 @@ final class ChannelSink: @unchecked Sendable {
     func close() { channel.close(promise: nil) }
 }
 
-/// Tiny thread-safe counting semaphore capping concurrent connections at accept time; NIO handlers
-/// run on the event loop, so it must be usable synchronously off the actor.
+/// Must stay synchronous and lock-based: NIO handlers call it on the event loop, off the actor.
 final class ConnectionGate: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
@@ -439,8 +389,6 @@ final class ConnectionGate: @unchecked Sendable {
     }
 }
 
-/// Per-connection inbound handler: accumulates the raw HTTP request (headers + any `Content-Length`
-/// body) and hands it to the actor exactly once. An idle timeout closes a client that sends nothing.
 final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = ByteBuffer
 
@@ -450,7 +398,7 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
     private var buffer = Data()
     private var dispatched = false
     private var idleTask: Scheduled<Void>?
-    private static let maxRequestBytes = 2 * 1024 * 1024   // headers + body ceiling
+    private static let maxRequestBytes = 2 * 1024 * 1024
     private static let idleTimeout = TimeAmount.seconds(15)
 
     init(server: RemoteControlServer, gate: ConnectionGate) {
@@ -459,8 +407,7 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
     }
 
     func channelActive(context: ChannelHandlerContext) {
-        // Cap concurrent connections at accept time — before allocating a buffer or
-        // reading a byte — so a flood of idle/slow clients can't exhaust memory.
+        // Capped before a buffer is allocated: a flood of slow clients would otherwise exhaust memory.
         guard gate.tryAcquire() else { context.close(promise: nil); return }
         acquired = true
         let channel = context.channel
@@ -477,26 +424,24 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        // Once dispatched the actor/sink owns the socket (SSE/streaming may hold it open); ignore
-        // further inbound bytes so a client can't grow this buffer without bound on a duplex socket.
+        // After dispatch the sink owns the socket; without this a duplex client grows `buffer` unbounded.
         if dispatched { return }
         var incoming = unwrapInboundIn(data)
         if let bytes = incoming.readBytes(length: incoming.readableBytes) {
             buffer.append(contentsOf: bytes)
         }
         if buffer.count > Self.maxRequestBytes { context.close(promise: nil); return }
-        guard let bodyStart = Self.headerEnd(buffer) else { return }   // headers incomplete
+        guard let bodyStart = Self.headerEnd(buffer) else { return }
         let needBody = Self.contentLength(buffer.prefix(bodyStart))
-        if buffer.count - bodyStart < needBody { return }              // body incomplete
+        if buffer.count - bodyStart < needBody { return }
 
         dispatched = true
         idleTask?.cancel()
         let requestData = buffer
-        buffer = Data()   // free the accumulated request; the Task holds its own copy
+        buffer = Data()
         let sink = ChannelSink(context.channel)
         let server = self.server
-        // The peer address from the kernel, not from a header: this is what the
-        // login throttle and the trusted-proxy check key off.
+        // Kernel peer address, never a header: the throttle and trusted-proxy check key off this.
         let client = context.channel.remoteAddress?.ipAddress ?? ""
         Task { await server.dispatch(requestData: requestData, sink: sink, client: client) }
     }
@@ -505,7 +450,6 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
         context.close(promise: nil)
     }
 
-    /// Index just past the `\r\n\r\n` that ends the headers, or nil.
     private static func headerEnd(_ data: Data) -> Int? {
         guard data.count >= 4 else { return nil }
         let b = [UInt8](data)

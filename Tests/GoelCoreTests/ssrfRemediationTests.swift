@@ -1,16 +1,11 @@
 import XCTest
 @testable import GoelCore
 
-/// Regressions for four confused-deputy paths (``NetworkGuard``, `HLSPlaylist.resolve`,
-/// `RedirectSanitizer`, extension capture) that all screened an address's *spelling* at one call site.
 final class SSRFRemediationTests: XCTestCase {
 
     private func url(_ s: String) -> URL { URL(string: s)! }
 
-    // MARK: Address literals are parsed, not pattern-matched
-
-    /// The demonstrated bypasses: loopback or the metadata address spelled without `127.` or
-    /// `169.254.`, which is precisely why matching on text could never close them.
+    /// Bypasses: loopback and metadata spelled without `127.` or `169.254.` — text matching cannot close these.
     func testEveryLoopbackAndMetadataSpellingIsRefused() {
         let refused = [
             "http://127.0.0.1/x",
@@ -40,8 +35,7 @@ final class SSRFRemediationTests: XCTestCase {
         }
     }
 
-    /// A guard that refuses everything is not a guard. Public addresses, private LAN ranges (the point
-    /// of "add the file on my NAS from my phone"), and hostnames that merely *look* numeric still work.
+    /// A guard that refuses everything is not a guard: public and private LAN targets must still work.
     func testOrdinaryTargetsAreStillAccepted() {
         let allowed = [
             "https://example.com/x",
@@ -60,8 +54,6 @@ final class SSRFRemediationTests: XCTestCase {
         }
     }
 
-    /// The classifier judges the address a literal *means*. `::ffff:7f00:1` and
-    /// `127.0.0.1` are the same host; a text match sees two unrelated strings.
     func testAddressClassifierReadsEverySpellingOfTheSameAddress() {
         XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "127.0.0.1"), .loopback)
         XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "::ffff:7f00:1"), .loopback)
@@ -74,15 +66,12 @@ final class SSRFRemediationTests: XCTestCase {
         XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "fe80::1%en0"), .linkLocal)
         XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "8.8.8.8"), .other)
         XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "192.168.0.1"), .other)
-        // A name is not a literal, and must be reported as such rather than
-        // guessed at — that is what keeps `0x-mirror.example.com` working.
         XCTAssertNil(NetworkGuard.addressClass(ofLiteral: "example.com"))
         XCTAssertNil(NetworkGuard.addressClass(ofLiteral: "0x-mirror.example.com"))
         XCTAssertNil(NetworkGuard.addressClass(ofLiteral: ""))
     }
 
-    /// A hostname pointing at loopback is the same request with the digits hidden behind DNS, so
-    /// resolved addresses are screened too. `localhost`: resolves to loopback everywhere, no network.
+    /// DNS hides the digits, so resolved addresses are screened too, not just the spelling.
     func testResolvedAddressesAreScreenedNotJustTheSpelling() async {
         let addresses = NetworkGuard.resolvedLiterals(of: "localhost") ?? []
         XCTAssertFalse(addresses.isEmpty, "localhost must resolve for this test to mean anything")
@@ -95,8 +84,7 @@ final class SSRFRemediationTests: XCTestCase {
         XCTAssertFalse(allowed, "a name resolving to loopback must be refused")
     }
 
-    /// An unresolvable name is allowed through deliberately — with a SOCKS5 proxy the app never
-    /// resolves locally, so refusing unresolvable names would refuse every legitimate add via proxy.
+    /// Unresolvable names pass deliberately: under SOCKS5 the app never resolves, so refusing would break every proxied add.
     func testUnresolvableNameIsNotTreatedAsHostile() async {
         let target = url("https://\(UUID().uuidString).invalid/file.bin")
         XCTAssertNil(NetworkGuard.resolvedLiterals(of: target.host ?? ""),
@@ -105,8 +93,6 @@ final class SSRFRemediationTests: XCTestCase {
         XCTAssertTrue(allowed, "an unresolvable name must not be refused as internal")
     }
 
-    /// The resolving screen still applies the spelling screen first, so a literal
-    /// never depends on a lookup.
     func testResolvingScreenStillRefusesLiterals() async {
         for target in ["http://[::ffff:7f00:1]:8899/api/tasks",
                        "http://[::ffff:a9fe:a9fe]/latest/meta-data/",
@@ -116,10 +102,7 @@ final class SSRFRemediationTests: XCTestCase {
         }
     }
 
-    // MARK: Sub-resources — playlist children and redirect hops
-
-    /// A document's children are chosen by whoever served it. Same host is fine (reached deliberately,
-    /// and every relative URI resolves there); leaving it for loopback or metadata is the pivot.
+    /// A document's children are server-chosen: leaving the parent host for loopback or metadata is the pivot.
     func testSubresourceScreenAllowsSameHostAndRefusesAPivot() {
         let parent = url("https://cdn.example.com/video/index.m3u8")
         XCTAssertTrue(NetworkGuard.isAllowedSubresource(url("https://cdn.example.com/v/1.ts"), of: parent))
@@ -129,14 +112,11 @@ final class SSRFRemediationTests: XCTestCase {
         XCTAssertFalse(NetworkGuard.isAllowedSubresource(url("http://169.254.169.254/x"), of: parent))
         XCTAssertFalse(NetworkGuard.isAllowedSubresource(url("file:///etc/passwd"), of: parent))
 
-        // A genuinely local server keeps working: its own children name itself.
         let localParent = url("http://127.0.0.1:8080/media/index.m3u8")
         XCTAssertTrue(NetworkGuard.isAllowedSubresource(url("http://127.0.0.1:8080/media/1.ts"),
                                                         of: localParent))
     }
 
-    /// The exact playlist from the report: segments at this machine's portal, AES key URI at cloud
-    /// metadata. An unfetchable segment rejects the whole playlist — a short stream still reads "done".
     func testPlaylistCannotPointItsSegmentsAtLoopback() {
         let text = """
         #EXTM3U
@@ -168,8 +148,6 @@ final class SSRFRemediationTests: XCTestCase {
                      "a key URI aimed at the metadata service must not resolve")
     }
 
-    /// And an ordinary playlist still parses — relative URIs, and an absolute one
-    /// on a sibling CDN host.
     func testOrdinaryPlaylistStillParses() {
         let text = """
         #EXTM3U
@@ -190,8 +168,7 @@ final class SSRFRemediationTests: XCTestCase {
                        "https://cdn.example.com/video/key.bin")
     }
 
-    /// A `Location` header is server-chosen input. Following it blind turned every download URL into
-    /// an SSRF primitive, no matter how carefully the original address had been screened.
+    /// `Location` is server-chosen input — following it blind makes every download URL an SSRF primitive.
     func testRedirectToLoopbackOrMetadataIsRefusedNotJustStripped() {
         let original = url("http://attacker.example/redir")
         for hop in ["http://127.0.0.1:8899/api/tasks",
@@ -203,8 +180,6 @@ final class SSRFRemediationTests: XCTestCase {
         }
     }
 
-    /// The hop that is not an attack must still be followed, with its origin-scoped
-    /// headers stripped — that is what the sanitizer was already for.
     func testOrdinaryRedirectIsStillFollowedWithSecretsStripped() {
         let original = url("https://files.example.com/a")
         var request = URLRequest(url: url("https://mirror.example.net/b"))
@@ -216,14 +191,12 @@ final class SSRFRemediationTests: XCTestCase {
                      "the bearer token must not travel to another host")
         XCTAssertEqual(followed?.value(forHTTPHeaderField: "User-Agent"), "goel/1.0")
 
-        // A same-host hop on a local server is ordinary, not a pivot.
         let localOriginal = url("http://127.0.0.1:8080/a")
         XCTAssertNotNil(RedirectSanitizer.followed(URLRequest(url: url("http://127.0.0.1:8080/b")),
                                                    originalURL: localOriginal))
     }
 
-    /// Every redirect delegate must go through the refusing entry point; one still calling `sanitize`
-    /// directly leaves the hole open on that path, and each of the three serves different engines.
+    /// Any delegate still calling `sanitize` directly leaves the hole open on that path.
     func testEveryRedirectDelegateUsesTheRefusingEntryPoint() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -238,10 +211,7 @@ final class SSRFRemediationTests: XCTestCase {
         }
     }
 
-    // MARK: The browser-capture spool
-
-    /// The spool auto-adds with no confirmation, so a page that spools a URL makes the app fetch it
-    /// with no user in the loop. `fetchTargetURL` is what capture screens; a magnet has none.
+    /// The spool auto-adds with no confirmation, so a page can make the app fetch a URL unattended.
     func testCaptureTargetsExposeTheAddressThatMustBeScreened() {
         let loopback = DownloadSource.parse("http://127.0.0.1:8899/api/tasks")
         XCTAssertNotNil(loopback?.fetchTargetURL)
@@ -255,7 +225,6 @@ final class SSRFRemediationTests: XCTestCase {
         XCTAssertNotNil(ordinary?.fetchTargetURL)
         XCTAssertTrue(NetworkGuard.isAllowedRemoteAddTarget(ordinary!.fetchTargetURL!))
 
-        // A magnet reaches its swarm by infohash — there is no host to screen.
         let magnet = DownloadSource.parse("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567")
         XCTAssertNotNil(magnet)
         XCTAssertNil(magnet?.fetchTargetURL)

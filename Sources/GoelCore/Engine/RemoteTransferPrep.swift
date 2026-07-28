@@ -1,7 +1,5 @@
 import Foundation
 
-/// Shared single-file download prep for FTP/SFTP (and similar sequential engines):
-/// mkdir, create/open, resume-from-local with optional remote-size clamp, seek/truncate.
 enum RemoteTransferPrep {
 
     struct Opened: Sendable {
@@ -10,8 +8,6 @@ enum RemoteTransferPrep {
         let fileURL: URL
     }
 
-    /// Prepare `savePath` for a sequential byte-offset resume.
-    /// - Parameter remoteSize: when smaller than local size, restart from 0 (remote replaced/truncated).
     static func openForResume(
         saveDirectory: String,
         savePath: String,
@@ -40,7 +36,6 @@ enum RemoteTransferPrep {
         return Opened(handle: handle, resumeFrom: resumeFrom, fileURL: fileURL)
     }
 
-    /// Optional checksum then `hub.complete`, shared by FTP/SFTP finish paths.
     static func finishWithOptionalChecksum(
         hub: EventHub,
         id: UUID,

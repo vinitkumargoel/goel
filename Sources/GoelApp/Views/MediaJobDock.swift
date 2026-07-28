@@ -2,14 +2,10 @@ import AppKit
 import SwiftUI
 import GoelCore
 
-/// The stack of conversion cards docked bottom-trailing. Replaces the shared 2.4-second `toast`,
-/// which made a six-minute conversion visible for a four-hundredth of it. Not a download-list row.
 struct MediaJobDock: View {
 
     @ObservedObject var center: MediaJobCenter
 
-    /// Cards drawn at once. The stack is a window overlay, so it cannot scroll or grow — past about
-    /// five it would cover the list it reports on. Successes self-clear; the queue is summarised.
     private static let visibleLimit = 5
 
     var body: some View {
@@ -30,20 +26,17 @@ struct MediaJobDock: View {
             }
         }
         .padding(.trailing, 14)
-        .padding(.bottom, 52)   // clear of the status bar
+        .padding(.bottom, 52)
         .frame(width: 344)
         .animation(.easeInOut(duration: 0.18), value: center.jobs.map(\.id))
     }
 }
-
-// MARK: - One card
 
 private struct MediaJobCard: View {
 
     let job: MediaJobCenter.Job
     @ObservedObject var center: MediaJobCenter
 
-    /// Whether the raw ffmpeg output is expanded on a failed card.
     @State private var showsDetail = false
 
     var body: some View {
@@ -58,15 +51,10 @@ private struct MediaJobCard: View {
         .overlay(RoundedRectangle(cornerRadius: 11).stroke(accent.opacity(0.45)))
         .overlay(alignment: .topTrailing) { closeButton.padding(.top, 8).padding(.trailing, 8) }
         .shadow(radius: 10, y: 4)
-        // A *container*, not one element: collapsing the card would take the cancel, Reveal and Copy
-        // buttons out of the tree entirely, leaving it narrated but unusable.
+        // Must stay `.contain`: collapsing the card drops the buttons out of the tree.
         .accessibilityElement(children: .contain)
     }
 
-    // MARK: Pieces
-
-    /// Everything that is text rather than action: glyph, title, numbers, bar. One accessibility
-    /// element, read as a sentence and marked live so a state change is announced.
     private var summary: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
@@ -80,7 +68,7 @@ private struct MediaJobCard: View {
                     .scaledFont(size: 12, weight: .semibold)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Spacer(minLength: 24)   // room for the close button in the overlay
+                Spacer(minLength: 24)
             }
             Text(subtitle)
                 .scaledFont(size: 10.5, design: .monospaced)
@@ -93,8 +81,6 @@ private struct MediaJobCard: View {
         .accessibilityAddTraits(.updatesFrequently)
     }
 
-    /// One button with three meanings, hence the changing label: on a live job it stops the work, on
-    /// a finished one it clears the card, and on a stuck stop it lets go of the job entirely.
     private var closeButton: some View {
         Button {
             if job.isStopStuck() {
@@ -112,8 +98,7 @@ private struct MediaJobCard: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        // Disabled only during the few seconds a stop should take. Past that ``Job/isStopStuck()``
-        // re-enables it as a force-dismiss, so a cancel that never lands can't strand the card.
+        // Without the `isStopStuck()` clause a cancel that never lands strands the card.
         .disabled(job.state == .cancelling && !job.isStopStuck())
         .help(closeHelp)
         .accessibilityLabel(closeHelp)
@@ -136,8 +121,6 @@ private struct MediaJobCard: View {
             }
             .frame(height: 5)
         } else if job.state.isLive {
-            // No declared duration — say so with an indeterminate bar rather than
-            // inventing a percentage that would sit still and then jump to done.
             ProgressView()
                 .progressViewStyle(.linear)
                 .controlSize(.small)
@@ -195,8 +178,6 @@ private struct MediaJobCard: View {
             }
             .scaledFont(size: 11)
         case .cancelling where job.isStopStuck():
-            // The one card the user cannot resolve by waiting. Say what letting go does and does not do,
-            // rather than offering a button that implies the process is being killed again — it already was.
             HStack(spacing: 12) {
                 Button("Stop waiting") { center.forceDismiss(job.id) }
                     .buttonStyle(.link)
@@ -207,8 +188,6 @@ private struct MediaJobCard: View {
             EmptyView()
         }
     }
-
-    // MARK: Copy
 
     private var title: String {
         switch job.state {
@@ -224,7 +203,6 @@ private struct MediaJobCard: View {
         }
     }
 
-    /// The monospaced second line: the numbers, in the order a person scans them.
     private var subtitle: String {
         switch job.state {
         case .queued:
@@ -235,8 +213,6 @@ private struct MediaJobCard: View {
                                                           to: Date())
             return "ffmpeg hasn’t exited after \(waiting) · the file may be on a stalled disk"
         case .cancelled:
-            // Only claimed when it happened. A job cancelled while it was still
-            // queued never wrote anything to remove.
             return job.removedPartial ? "Partial file removed" : "Nothing was written"
         case .failed(let message):
             return message
@@ -263,8 +239,6 @@ private struct MediaJobCard: View {
         }
     }
 
-    /// What VoiceOver reads. Percentages are deliberately coarse: a live region
-    /// that announces "39 percent… 40 percent…" forever is hostile.
     private var spokenStatus: String {
         switch job.state {
         case .queued:     return "Waiting to start"
@@ -305,11 +279,8 @@ private struct MediaJobCard: View {
     }
 }
 
-// MARK: - Formatting
-
 extension MediaJobCenter.Job {
 
-    /// "34s" / "6m 12s" between two instants, for the elapsed and duration lines.
     static func durationText(from start: Date, to end: Date?) -> String {
         let seconds = max(0, (end ?? Date()).timeIntervalSince(start))
         if seconds < 60 { return String(format: "%.0fs", seconds) }

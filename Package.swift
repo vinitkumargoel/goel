@@ -2,13 +2,9 @@
 import PackageDescription
 import Foundation
 
-// Platform-conditional wiring: macOS builds the SwiftUI app against Homebrew libs,
-// Linux a headless daemon against distro libs. `#if os(Linux)` = the build host.
-
 #if os(Linux)
 
-// Ubuntu's `libtorrent-rasterbar.pc` emits exactly these ABI defines; libtorrent,
-// boost and libssh2 headers sit on the default include path.
+// Ubuntu's `libtorrent-rasterbar.pc` emits exactly these ABI defines.
 let torrentCxx: [CXXSetting] = [
     .unsafeFlags([
         "-fexceptions",
@@ -28,8 +24,7 @@ let sshC: [CSetting] = []
 let sshLink: [LinkerSetting] = [.unsafeFlags(["-lssh2"])]
 let curlLink: [LinkerSetting] = [.linkedLibrary("curl")]
 
-// Ubuntu's libsqlite3 declares `sqlite3_snapshot_*` but omits them, so GRDB fails
-// to link — point at a vendored SQLITE_ENABLE_SNAPSHOT build (GOEL_SQLITE_DIR).
+// Ubuntu's libsqlite3 declares but omits `sqlite3_snapshot_*`, so GRDB fails to link without this.
 let sqliteDir = ProcessInfo.processInfo.environment["GOEL_SQLITE_DIR"] ?? "Vendor/linux/sqlite"
 let linuxCoreLink: [LinkerSetting] = [
     .unsafeFlags(["-L\(sqliteDir)", "-Xlinker", "-rpath", "-Xlinker", sqliteDir]),
@@ -37,8 +32,6 @@ let linuxCoreLink: [LinkerSetting] = [
 
 #else
 
-// Homebrew prefix for the native libraries; defaults to Apple Silicon's
-// /opt/homebrew. Set GOEL_BREW_PREFIX=/usr/local for an Intel build.
 let brewPrefix = ProcessInfo.processInfo.environment["GOEL_BREW_PREFIX"] ?? "/opt/homebrew"
 
 let torrentCxx: [CXXSetting] = [
@@ -78,7 +71,6 @@ let linuxCoreLink: [LinkerSetting] = []
 
 #endif
 
-// ---- Dependencies ---------------------------------------------------------
 var dependencies: [Package.Dependency] = [
     .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
 ]
@@ -93,7 +85,6 @@ dependencies += [
 ]
 #endif
 
-// ---- GoelCore dependencies ------------------------------------------------
 var coreDeps: [Target.Dependency] = [
     .product(name: "GRDB", package: "GRDB.swift"),
     "TorrentBridge",
@@ -110,7 +101,6 @@ coreDeps += [
 ]
 #endif
 
-// ---- Targets & products ---------------------------------------------------
 var targets: [Target] = [
     .target(name: "TorrentBridge", cxxSettings: torrentCxx, linkerSettings: torrentLink),
     .target(name: "CurlBridge", linkerSettings: curlLink),
@@ -119,8 +109,6 @@ var targets: [Target] = [
         name: "GoelCore",
         dependencies: coreDeps,
         resources: [
-            // Localization tables (en + de today). `.process` treats the
-            // `.lproj` folders as localizations in the target's resource bundle.
             .process("Resources"),
         ],
         linkerSettings: linuxCoreLink
@@ -130,15 +118,10 @@ var products: [Product] = [
     .library(name: "GoelCore", targets: ["GoelCore"]),
 ]
 
-// The `goel` admin CLI: dependency-free (portal HTTP + systemctl) so `goel doctor`
-// still works when the daemon won't start. Built on macOS too — only macOS CI exists.
+// GoelCLI stays dependency-free so `goel doctor` still works when the daemon won't start.
 targets += [
     .executableTarget(name: "GoelCLI"),
-    // Not macOS-gated: Linux ships the daemon and `goel` but had no coverage. Files
-    // needing Network.framework or the Keychain guard with `#if !os(Linux)`.
     .testTarget(name: "GoelCoreTests", dependencies: ["GoelCore"]),
-    // `goel config set` rewrites /etc/goel/config, systemd's environment for the
-    // service — a corrupt line stops the daemon booting, so it is tested, not trusted.
     .testTarget(name: "GoelCLITests", dependencies: ["GoelCLI"]),
 ]
 products += [
@@ -147,7 +130,6 @@ products += [
 
 #if os(Linux)
 targets += [
-    // Tiny OpenSSL shim for AES-128-CBC (HLS), reusing the already-linked libcrypto.
     .target(name: "CryptoBridge", linkerSettings: [.linkedLibrary("crypto")]),
     .executableTarget(name: "GoelDaemon", dependencies: ["GoelCore"]),
 ]
@@ -163,14 +145,11 @@ targets += [
             .product(name: "Sparkle", package: "Sparkle"),
         ],
         resources: [
-            // The WebExtension ships as-is (a folder the user loads unpacked), so
-            // it is copied verbatim, not processed.
+            // The WebExtension is loaded unpacked, so it must be copied verbatim, not processed.
             .copy("BrowserExtension"),
             .process("Resources"),
         ]
     ),
-    // GoelApp's top-level `main.swift` doesn't clash with a test host, so `@testable
-    // import` works — its pure helpers were untested only for lack of somewhere to put them.
     .testTarget(name: "GoelAppTests", dependencies: ["GoelApp"]),
 ]
 products += [

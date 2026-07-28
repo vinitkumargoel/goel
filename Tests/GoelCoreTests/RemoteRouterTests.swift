@@ -1,8 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// In-memory ``RemoteBackend`` so the router's routing/auth/API can be exercised
-/// with no socket and no live scheduler.
 final class FakeRemoteBackend: RemoteBackend, @unchecked Sendable {
     var tasks: [DownloadTask]
     var historyEntries: [HistoryEntry] = []
@@ -55,8 +53,6 @@ final class FakeRemoteBackend: RemoteBackend, @unchecked Sendable {
         if let adapterIds { network.selected = adapterIds }
         if let streams { network.streamsPerAdapter = streams }
     }
-    /// Save-folder picker; nil `folderHome` keeps the protocol's default refusal (no filesystem behind it).
-    /// No confinement here because the real one has none: `subfolders` is listable, absent = "not a folder".
     var folderHome: String?
     var folderDefault: String = "/home/goel/Downloads"
     var subfolders: [String: [String]] = [:]
@@ -102,8 +98,6 @@ final class RemoteRouterTests: XCTestCase {
                      name: name, saveDirectory: "/tmp", status: .downloading)
     }
 
-    // MARK: Auth
-
     func testMissingTokenIs401() async {
         let router = RemoteRouter(backend: FakeRemoteBackend(), token: "secret")
         let out = str(await router.handle(request("GET /api/tasks HTTP/1.1\r\n\r\n")))
@@ -124,8 +118,6 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
         XCTAssertTrue(out.contains("application/json"))
     }
-
-    // MARK: Routes
 
     func testControlPageServedWithCSP() async {
         let router = RemoteRouter(backend: FakeRemoteBackend(), token: "secret")
@@ -171,8 +163,6 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
         XCTAssertEqual(backend.added.first?.locator, "https://e/x.bin")
     }
-
-    // MARK: Network
 
     private func post(_ path: String, _ body: String) -> RemoteRequest {
         request("POST \(path)?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n\r\n\(body)")
@@ -232,8 +222,7 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertTrue(out.contains("\"aggregation\":true"))
     }
 
-    /// `GET` answers with `streamsPerAdapter`, so posting that object back must work — it used to
-    /// decode only `streams`, silently dropping the field and its range check.
+    /// `GET` answers with `streamsPerAdapter`, so posting that object back must work — decoding only `streams` silently drops the field and its range check.
     func testAggregationUpdateAcceptsTheResponseSpellingOfStreams() async {
         let backend = FakeRemoteBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
@@ -256,8 +245,7 @@ final class RemoteRouterTests: XCTestCase {
         }
     }
 
-    /// Every mutation is a POST, and read-only blocks POSTs — assert it covers
-    /// this one too rather than trusting the blanket rule stays blanket.
+    /// Every mutation is a POST and read-only blocks POSTs, but assert it covers this one rather than trusting the blanket rule stays blanket.
     func testReadOnlyBlocksTheAggregationWrite() async {
         let backend = FakeRemoteBackend()
         let router = RemoteRouter(backend: backend, config: .init(
@@ -266,8 +254,6 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 403"))
         XCTAssertTrue(backend.aggregationUpdates.isEmpty)
     }
-
-    // MARK: Save-folder picker
 
     private func folderBackend() -> FakeRemoteBackend {
         let backend = FakeRemoteBackend()
@@ -292,8 +278,6 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertTrue(out.contains("\"home\":\"\\/home\\/goel\""), out)
     }
 
-    /// The reported bug. The downloads folder used to answer with no parent,
-    /// which is what left the picker unable to climb out of it.
     func testTheDownloadsFolderOffersAWayUp() async {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
         let out = str(await router.handle(request("GET /api/folders?token=secret HTTP/1.1\r\n\r\n")))
@@ -325,8 +309,6 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertFalse(out.contains("\"parent\""), out)
     }
 
-    /// A nil backend answer means "not a folder" → 404, not 403 (no permission is being asserted);
-    /// a 200 with an empty list would read as "that folder exists and is empty".
     func testAMissingFolderIs404() async {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
         let out = str(await router.handle(request(
@@ -396,8 +378,6 @@ final class RemoteRouterTests: XCTestCase {
         let out = str(await router.handle(request("GET /api/tasks?token=secret HTTP/1.1\r\n\r\n")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 503"))
     }
-
-    // MARK: New routes
 
     func testRemoveRouteCarriesDeleteFlag() async {
         let id = UUID()

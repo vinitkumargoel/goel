@@ -1,41 +1,27 @@
 import Foundation
 
-// Local append-only SOC 2 / ISO 27001 compliance record, JSON Lines (crash costs one line; SIEM/`jq`
-// read it). NEVER transmitted — no socket here. OFF by default. Host-only redaction at construction.
+// This log is never transmitted — there is no socket here — and every field is redacted at construction.
 
-/// One line of the audit log. Field choice is deliberately minimal: enough to answer a compliance
-/// question, not enough to reconstruct what the user was actually looking at.
 public struct AuditEvent: Codable, Sendable, Equatable {
 
-    /// The three moments worth recording. Pause/resume/queue churn is noise for
-    /// an auditor and is deliberately not logged.
     public enum Action: String, Codable, Sendable {
         case added
         case completed
         case failed
     }
 
-    /// When it happened, in UTC.
     public var timestamp: Date
     public var action: Action
-    /// The local account name. Who, not what.
     public var user: String
-    /// The remote **host only** — `releases.example.com`, never a full URL. `"magnet"` for magnets
-    /// (the info-hash identifies the content, so it is withheld); `"unknown"` when unparsable.
+    /// Host only, never a full URL; magnets record `"magnet"` because the info-hash identifies content.
     public var host: String
-    /// The URL scheme (`https`, `sftp`, `magnet`, …). A protocol fact, not identity.
     public var scheme: String
-    /// Which engine handled it (`http`, `torrent`, `hls`, `ftp`, `sftp`).
     public var kind: String
-    /// Bytes transferred at the moment of the record. `0` for `added`.
     public var bytes: Int64
-    /// The destination **directory** only. A directory answers "did it leave the approved share?";
-    /// the file name is omitted because it leaks the content.
+    /// Directory only — the file name leaks the content.
     public var destination: String
-    /// The task's UUID, so the three records for one download can be joined.
     public var taskID: String
-    /// For ``Action/failed``: a stable, non-identifying token like `http-403` or `diskFull`; `nil`
-    /// otherwise. Never a server message — those routinely echo the failing URL back.
+    /// A stable token, never a server message: those routinely echo the failing URL back.
     public var outcome: String?
 
     public init(timestamp: Date = Date(), action: Action, user: String, host: String,
@@ -53,10 +39,7 @@ public struct AuditEvent: Codable, Sendable, Equatable {
         self.outcome = outcome
     }
 
-    // MARK: Redaction
-
-    /// The host of a locator, and nothing else — all that stands between the log and a leaked
-    /// pre-signed URL. `URLComponents.host` excludes path/query/fragment/userinfo; unparsable ⇒ constant.
+    /// Host and nothing else: this is what stops a pre-signed URL's path/query/userinfo reaching the log.
     public static func redactedHost(from locator: String) -> String {
         let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.lowercased().hasPrefix("magnet:") { return "magnet" }
@@ -65,7 +48,6 @@ public struct AuditEvent: Codable, Sendable, Equatable {
         return host
     }
 
-    /// The scheme of a locator, lowercased, or `"unknown"`.
     public static func redactedScheme(from locator: String) -> String {
         let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let scheme = URLComponents(string: trimmed)?.scheme?.lowercased(),
@@ -73,8 +55,7 @@ public struct AuditEvent: Codable, Sendable, Equatable {
         return scheme
     }
 
-    /// Build a record for a task. The only entry point production code should
-    /// use — it applies the redaction rules rather than trusting the caller to.
+    /// The only initialiser production code may use: it applies the redaction rules itself.
     public init(action: Action, task: DownloadTask, at timestamp: Date = Date(),
                 user: String = AuditEvent.currentUser) {
         let locator = task.source.locator
@@ -94,16 +75,11 @@ public struct AuditEvent: Codable, Sendable, Equatable {
                   outcome: outcome)
     }
 
-    /// The local account name, or `"unknown"` in a sandbox that hides it.
     public static var currentUser: String {
         let name = NSUserName()
         return name.isEmpty ? "unknown" : name
     }
 
-    // MARK: Serialisation
-
-    /// The shared encoder: ISO-8601 timestamps (so `sort` and `jq` both behave)
-    /// and sorted keys (so a diff between two audit files is meaningful).
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -111,33 +87,22 @@ public struct AuditEvent: Codable, Sendable, Equatable {
         return encoder
     }()
 
-    /// This record as one JSON Lines row, newline included. Pure, so ``EnterpriseTests`` can assert
-    /// the redaction contract (no full URL survives) without touching the filesystem.
     public func jsonLine() throws -> String {
         let data = try Self.encoder.encode(self)
-        // A JSON string can carry an escaped `\n` but never a literal one, so the encoded form is
-        // always one line and the newline appended here is always the record separator.
+        // JSON escapes every literal newline, so the encoded form is one line and this `\n` separates records.
         return String(decoding: data, as: UTF8.self) + "\n"
     }
 }
 
-// MARK: - Writer
-
-/// The append-only writer. An actor because rotation is a read-modify-write racing concurrent
-/// appends — interleaving would lose a record. Disabled writers return before touching disk.
+/// An actor because rotation is a read-modify-write racing appends; interleaving would lose a record.
 public actor AuditLog {
 
-    /// Rotation and retention policy, mirrored from ``AppSettings``.
     public struct Configuration: Sendable, Equatable {
-        /// Master switch. Off by default — see the file header.
         public var isEnabled: Bool
-        /// Where the files live. `nil` ⇒ Application Support/GoelDownloader/Audit.
         public var directory: URL?
-        /// The live file is rotated once it passes this size.
         public var maxFileBytes: Int
-        /// How many rotated files to keep beside the live one.
         public var keepFiles: Int
-        /// Rotated files older than this are deleted. `0` disables age pruning.
+        /// `0` disables age pruning.
         public var retentionDays: Int
 
         public init(isEnabled: Bool = false, directory: URL? = nil,
@@ -150,8 +115,7 @@ public actor AuditLog {
             self.retentionDays = max(0, retentionDays)
         }
 
-        /// Build the policy from ``AppSettings``. Megabytes are re-clamped to `1…1024` even though
-        /// ``AppSettings/validated()`` did it: `megabytes * 1024 * 1024` **traps** on `Int` overflow.
+        /// Re-clamp megabytes to `1…1024` even though `validated()` did: `mb * 1024 * 1024` traps on overflow.
         public init(settings: AppSettings) {
             let directory = settings.auditLogDirectory
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -164,32 +128,26 @@ public actor AuditLog {
         }
     }
 
-    /// The live file's name. Rotated files are `goel-audit-<ISO8601>.jsonl`.
     public static let fileName = "goel-audit.jsonl"
 
     private var configuration: Configuration
-    /// Set once the destination directory has been created, so the common path
-    /// is a plain append with no `FileManager` round-trip.
     private var preparedDirectory: URL?
 
     public init(configuration: Configuration = Configuration()) {
         self.configuration = configuration
     }
 
-    /// Adopt a new policy. Turning the log off never deletes what is already on
-    /// disk — an auditor's record is not the app's to discard.
+    /// Turning the log off must never delete what is on disk — it is not the app's record to discard.
     public func configure(_ configuration: Configuration) {
         if configuration.directory != self.configuration.directory { preparedDirectory = nil }
         self.configuration = configuration
     }
 
-    /// The directory currently in use, or `nil` when logging is off.
     public func currentDirectory() -> URL? {
         configuration.isEnabled ? resolvedDirectory() : nil
     }
 
-    /// Append one record; silent no-op when disabled. Write failures are logged and swallowed: an
-    /// unwritable audit directory is an operator problem, not grounds to fail a user's download.
+    /// Write failures are swallowed on purpose: an unwritable audit directory must not fail a download.
     public func record(_ event: AuditEvent) {
         guard configuration.isEnabled else { return }
         guard let line = try? event.jsonLine() else { return }
@@ -199,14 +157,11 @@ public actor AuditLog {
         append(Data(line.utf8), to: url)
     }
 
-    /// Convenience for the scheduler: record a task transition.
     public func record(_ action: AuditEvent.Action, task: DownloadTask,
                        at timestamp: Date = Date()) {
         guard configuration.isEnabled else { return }
         record(AuditEvent(action: action, task: task, at: timestamp))
     }
-
-    // MARK: File handling
 
     private func resolvedDirectory() -> URL {
         configuration.directory
@@ -229,8 +184,7 @@ public actor AuditLog {
         return directory
     }
 
-    /// Open-append-close rather than a cached `FileHandle`: an operator may rotate/archive/`mv` this
-    /// compliance file at any moment, and a cached descriptor would write into the unlinked inode.
+    /// Never cache the `FileHandle`: if an operator archives the file, the descriptor writes to a dead inode.
     private func append(_ data: Data, to url: URL) {
         let manager = FileManager.default
         if !manager.fileExists(atPath: url.path) {
@@ -250,7 +204,6 @@ public actor AuditLog {
         }
     }
 
-    /// Rename the live file out of the way once it grows past the cap, then prune.
     private func rotateIfNeeded(at url: URL) {
         let manager = FileManager.default
         guard let attributes = try? manager.attributesOfItem(atPath: url.path),
@@ -258,8 +211,7 @@ public actor AuditLog {
               size.intValue >= configuration.maxFileBytes else { return }
         let stamp = Self.stampFormatter.string(from: Date())
         let directory = url.deletingLastPathComponent()
-        // Two rotations inside the same millisecond would otherwise collide and
-        // the second would fail, leaving the live file to grow unbounded.
+        // Two rotations in the same millisecond collide; the failed one leaves the live file growing.
         var rotated = directory.appendingPathComponent("goel-audit-\(stamp).jsonl")
         var attempt = 1
         while manager.fileExists(atPath: rotated.path), attempt < 100 {
@@ -269,8 +221,6 @@ public actor AuditLog {
         do {
             try manager.moveItem(at: url, to: rotated)
         } catch {
-            // Losing the rotation is survivable — the file simply keeps growing —
-            // so log it and carry on rather than dropping the record.
             GoelLog.persistence.error("Audit log rotation failed",
                                       .path(url.path), .detail(String(describing: error)))
             return
@@ -278,8 +228,6 @@ public actor AuditLog {
         prune(in: url.deletingLastPathComponent())
     }
 
-    /// Apply both retention rules to the rotated files: age first, then count.
-    /// The live file is never a candidate.
     private func prune(in directory: URL) {
         let manager = FileManager.default
         guard let names = try? manager.contentsOfDirectory(atPath: directory.path) else { return }
@@ -303,8 +251,7 @@ public actor AuditLog {
         }
     }
 
-    /// Filesystem-safe ISO-8601: no colons — legal on APFS, but a long-standing hazard on network
-    /// shares and when the file is copied to a Windows collector.
+    /// No colons in the stamp: legal on APFS, but they break network shares and Windows collectors.
     private static let stampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

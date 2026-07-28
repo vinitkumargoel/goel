@@ -1,7 +1,6 @@
 import Foundation
 
-/// One of the switchable Low / Medium / High traffic-limit profiles.
-/// A value of 0 for a byte/sec cap means "unlimited".
+/// A byte/sec cap of 0 means "unlimited" everywhere in this type.
 public struct TrafficProfile: Codable, Sendable, Hashable, Identifiable {
     public var id: String { name }
     public var name: String
@@ -38,8 +37,6 @@ public struct TrafficProfile: Codable, Sendable, Hashable, Identifiable {
 
     public var isDownloadUnlimited: Bool { maxDownloadBytesPerSec <= 0 }
 
-    /// Effective per-task download cap (bytes/sec): profile ceiling tightened by an optional task
-    /// limit. `0` on either side means unlimited; when both are finite the smaller wins.
     public func effectiveDownloadCap(taskLimit: Int64?) -> Int64 {
         var cap = maxDownloadBytesPerSec
         if let taskLimit, taskLimit > 0 {
@@ -64,8 +61,7 @@ public struct TrafficProfile: Codable, Sendable, Hashable, Identifiable {
 
     public static let medium = TrafficProfile(
         name: "Medium",
-        // Default profile, so this cap is what most users silently run under: 10 MiB/s (~84 Mbps)
-        // throttled modern broadband unnoticed; 50 MiB/s (~419 Mbps) still limits without doing that.
+        // This is the default profile: below ~50 MiB/s it silently throttles modern broadband.
         maxDownloadBytesPerSec: 50 * MB,
         maxUploadBytesPerSec: 1 * MB,
         maxConnections: 200,
@@ -78,7 +74,7 @@ public struct TrafficProfile: Codable, Sendable, Hashable, Identifiable {
 
     public static let high = TrafficProfile(
         name: "High",
-        maxDownloadBytesPerSec: 0, // unlimited
+        maxDownloadBytesPerSec: 0,
         maxUploadBytesPerSec: 5 * MB,
         maxConnections: 500,
         maxConnectionsPerServer: 16,

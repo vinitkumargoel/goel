@@ -2,8 +2,6 @@ import XCTest
 import GoelCore
 @testable import GoelApp
 
-/// Covers the adapter between the sidebar/sort chrome and the pure ``TaskListQuery``. The `.type`
-/// branch is the only caller of `visible(…, extraMatch:)`; regressing it silently misfills the list.
 final class ListPresentationTests: XCTestCase {
 
     private func task(_ name: String,
@@ -30,8 +28,6 @@ final class ListPresentationTests: XCTestCase {
         ]
     }
 
-    // MARK: the .type branch
-
     func testTypeFilterSelectsOnlyThatFileType() {
         let isos = ListPresentation.visible(
             tasks: sample, filter: .type(.iso), search: "", sortKey: .name, ascending: true)
@@ -42,8 +38,6 @@ final class ListPresentationTests: XCTestCase {
         XCTAssertEqual(docs.map(\.name), ["notes.txt"])
     }
 
-    /// A type filter must not quietly also filter by status: an .iso that is
-    /// paused is still an .iso.
     func testTypeFilterIgnoresStatus() {
         let paused = task("disc.iso", status: .paused)
         let done = task("other.iso", status: .completed)
@@ -74,16 +68,12 @@ final class ListPresentationTests: XCTestCase {
         XCTAssertFalse(ListPresentation.matches(iso, filter: .type(.video)))
     }
 
-    // MARK: the status branches
-
     func testStatusFiltersDelegateToTheCoreQuery() {
         XCTAssertEqual(ListPresentation.count(tasks: sample, filter: .all), 5)
         XCTAssertEqual(ListPresentation.count(tasks: sample, filter: .paused), 1)
         XCTAssertEqual(ListPresentation.count(tasks: sample, filter: .completed), 1)
         XCTAssertEqual(ListPresentation.count(tasks: sample, filter: .seeding), 1)
     }
-
-    // MARK: sorting
 
     func testCompareSortsByNameInBothDirections() {
         let a = task("alpha.bin")
@@ -99,8 +89,6 @@ final class ListPresentationTests: XCTestCase {
         XCTAssertEqual(sorted.last?.name, "ubuntu.iso")
     }
 
-    /// Every `SortKey` the UI offers must map onto a core sort key. A missing
-    /// case would silently sort by something else.
     func testEverySortKeyProducesAStableOrdering() {
         for key in SortKey.allCases {
             let ascending = ListPresentation.visible(

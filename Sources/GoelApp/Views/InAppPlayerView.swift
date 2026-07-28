@@ -1,8 +1,6 @@
 import SwiftUI
 import AVKit
 
-/// A minimal built-in media player: a titled window around AVKit's `VideoPlayer`. Playback stops
-/// when the sheet closes so audio never keeps running in the background.
 struct InAppPlayerView: View {
     let item: AppViewModel.PlayerItem
     var onClose: () -> Void

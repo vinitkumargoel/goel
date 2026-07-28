@@ -2,34 +2,23 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-/// The menu-bar dropdown: live ↓/↑ totals, active downloads as rich rows, and a footer to add,
-/// pause/start everything, or open the main window. A `.window`-style `MenuBarExtra`.
 struct MenuBarView: View {
     @EnvironmentObject private var vm: AppViewModel
 
-    /// Measured height of the row list, used to size the scroll view (see
-    /// ``listHeight`` for why this is needed).
     @State private var measuredListHeight: CGFloat = 0
 
-    /// Everything currently transferring — downloading, verifying, resolving
-    /// metadata, or seeding (the same predicate the sidebar's "Active" uses).
     private var activeTasks: [DownloadTask] {
         vm.tasks.filter { $0.status.isActive }
     }
 
-    /// The rows the popover lists: every unfinished download, transferring first then queued — so it
-    /// stays useful when the concurrency cap leaves most waiting. Capped to keep the popover compact.
     private var listedTasks: [DownloadTask] {
         let active = vm.tasks.filter { $0.status.isActive }
         let pending = vm.tasks.filter { !$0.status.isActive && !$0.status.isTerminal }
         return Array((active + pending).prefix(Self.maxListedRows))
     }
 
-    /// Upper bound on popover rows (the main window shows the rest).
     private static let maxListedRows = 8
 
-    /// In-flight SFTP uploads/downloads (browser transfer center), listed below
-    /// the download queue so a background upload is visible from the menu bar.
     private var activeTransfers: [SFTPTransfer] {
         vm.sftpTransfers.filter { $0.isActive }
     }
@@ -42,8 +31,7 @@ struct MenuBarView: View {
                 emptyState
             } else {
                 ScrollView {
-                    // A plain `VStack`, not a `LazyVStack`: the height below is derived from this stack's own
-                    // measurement, and a lazy stack asked for zero height would build no rows and report zero back.
+                    // Not a `LazyVStack`: asked for the zero height measured below it would build no rows and stay zero.
                     VStack(spacing: 0) {
                         ForEach(listedTasks) { task in
                             MenuBarDownloadRow(task: task, vm: vm)
@@ -62,8 +50,6 @@ struct MenuBarView: View {
                                 Divider()
                             }
                         }
-                        // Conversions keep the app alive after its last window closes, so they must be reachable from
-                        // the menu bar — otherwise Goel° sits in the Dock doing invisible, uncancellable work.
                         if vm.mediaLiveCount > 0 {
                             sectionLabel("Conversions")
                             MenuBarMediaSection(center: vm.mediaJobs)
@@ -84,15 +70,12 @@ struct MenuBarView: View {
         .frame(width: 340)
     }
 
-    /// Height to give the row list. A `.window` `MenuBarExtra` sizes to the content's *ideal* height,
-    /// and a `ScrollView` has none — so the measured content height (clamped) is fed back.
+    /// A `.window` `MenuBarExtra` sizes to the content's *ideal* height, which a `ScrollView` has none of.
     private var listHeight: CGFloat {
         min(max(measuredListHeight, Self.minListHeight), Self.maxListHeight)
     }
 
-    /// Enough to show one row before the first measurement lands.
     private static let minListHeight: CGFloat = 62
-    /// Past this the list scrolls; the full queue lives in the main window.
     private static let maxListHeight: CGFloat = 360
 
     private func sectionLabel(_ text: String) -> some View {
@@ -109,16 +92,11 @@ struct MenuBarView: View {
         .accessibilityAddTraits(.isHeader)
     }
 
-    // MARK: Header
-
     private var header: some View {
-        // Count what the popover actually lists (unfinished downloads + live SFTP transfers), so the
-        // header number matches the rows below rather than only the transferring subset.
         let count = listedTasks.count + activeTransfers.count + vm.mediaLiveCount
         return HStack(spacing: 12) {
             Text(count == 0 ? "Downloads" : "Downloads · \(count)")
                 .scaledFont(size: 13, weight: .semibold)
-                // "Downloads · 4" reads as "Downloads middle dot four".
                 .accessibilityLabel(count == 0 ? "Downloads" : "Downloads, \(count) in progress")
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
@@ -133,8 +111,6 @@ struct MenuBarView: View {
         SpeedStat(symbol: symbol, speed: value, color: color, size: 12, minWidth: 66)
     }
 
-    // MARK: Empty state
-
     private var emptyState: some View {
         EmptyStateView(systemImage: "arrow.down.circle", title: "No active downloads",
                        subtitle: "Add a URL or magnet link to get started.",
@@ -142,8 +118,6 @@ struct MenuBarView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 26)
     }
-
-    // MARK: Footer
 
     private var footer: some View {
         VStack(spacing: 9) {
@@ -181,16 +155,12 @@ struct MenuBarView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                // "Goel°" ends in a degree sign, which VoiceOver reads as
-                // "degrees"; and the chevron is a separate unnamed element.
                 .a11yButton("Open Goel main window")
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
     }
-
-    // MARK: Actions
 
     private func addDownload() {
         activateMainWindow()
@@ -203,19 +173,15 @@ struct MenuBarView: View {
         if activeTasks.isEmpty { vm.resumeAll() } else { vm.pauseAll() }
     }
 
-    /// Bring the app forward and surface its main downloads window. The `Settings` scene's window is
-    /// also `canBecomeMain`, so it must be excluded explicitly or it may get raised instead.
+    /// The `Settings` window is also `canBecomeMain`, so it must be excluded or it gets raised instead.
     private func activateMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
-        // SwiftUI hosts the `Settings` scene under this well-known identifier.
         let settingsID = NSUserInterfaceItemIdentifier("com_apple_SwiftUI_Settings_window")
         let window = NSApp.windows.first { $0.canBecomeMain && $0.identifier != settingsID }
         window?.makeKeyAndOrderFront(nil)
     }
 }
 
-/// Carries the measured height of the popover's row stack up to ``MenuBarView``,
-/// which needs a concrete height for the scroll view around it.
 private struct ListHeightKey: PreferenceKey {
     static var defaultValue: CGFloat { 0 }
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -223,8 +189,6 @@ private struct ListHeightKey: PreferenceKey {
     }
 }
 
-/// One rich row in the menu-bar popover, mirroring the main list row but tuned for the narrow
-/// width. Holds `vm` as a plain reference so it rebuilds only when its own `task` changes.
 private struct MenuBarDownloadRow: View {
     let task: DownloadTask
     let vm: AppViewModel
@@ -255,8 +219,6 @@ private struct MenuBarDownloadRow: View {
                     }
                 }
             }
-            // Same treatment as the main list row: everything collapses to one spoken item, the state button
-            // stays reachable, and the label carries identity only so the row doesn't re-speak every second.
             .a11yGroup(label: A11y.sentence(task.name,
                                             task.accessibilityKindName,
                                             task.accessibilityStatusName),
@@ -269,8 +231,6 @@ private struct MenuBarDownloadRow: View {
         .contentShape(Rectangle())
     }
 
-    /// The dominant per-row rate: download speed while fetching, upload while seeding, nothing when
-    /// idle. Reads the sampled display speed so the row updates on the main list's calm cadence.
     private var trailingSpeed: (text: String, color: Color)? {
         let speed = vm.displaySpeed(for: task)
         if speed.down > 0 { return (speed.down.speedString, Theme.green) }
@@ -279,8 +239,6 @@ private struct MenuBarDownloadRow: View {
     }
 }
 
-/// Menu-bar SFTP row: shared ``SFTPTransferRow`` plus a native confirm dialog
-/// (app overlay only lives on the main window, not this scene).
 private struct MenuBarSFTPTransferRow: View {
     let transfer: SFTPTransfer
     let vm: AppViewModel
@@ -307,8 +265,7 @@ private struct MenuBarSFTPTransferRow: View {
     }
 }
 
-/// Live conversions in the menu-bar popover. Its own view observing ``MediaJobCenter`` directly,
-/// because a nested `ObservableObject` read through ``AppViewModel`` never invalidates the parent.
+/// Observes ``MediaJobCenter`` directly: a nested `ObservableObject` read via ``AppViewModel`` never invalidates.
 private struct MenuBarMediaSection: View {
 
     @ObservedObject var center: MediaJobCenter
@@ -356,25 +313,20 @@ private struct MenuBarMediaSection: View {
     }
 }
 
-/// The status-item label: stacked ↓/↑ speeds while transferring, one glyph when idle. Drawn into a
-/// single template `NSImage` because the menu bar clips a two-line SwiftUI stack; fixed width.
+/// Drawn into a single template `NSImage` because the menu bar clips a two-line SwiftUI stack.
 struct MenuBarSpeedLabel: View {
     @ObservedObject var vm: AppViewModel
 
     var body: some View {
-        // The view model publishes at ~10 Hz but the label depends only on `displayedCombinedSpeed`.
-        // Gate the image-allocating redraw on an Equatable subview so it rebuilds only when that changes.
+        // `.equatable()` gates the image-allocating redraw; the view model itself publishes at ~10 Hz.
         SpeedContent(sample: vm.displayedCombinedSpeed).equatable()
     }
 
-    /// The actual label content, keyed purely on the sampled speed.
     private struct SpeedContent: View, Equatable {
         let sample: AppViewModel.SpeedSample
 
         var body: some View {
             if sample.down > 0 || sample.up > 0 {
-                // The two speed lines are drawn into a bitmap, which is completely opaque to VoiceOver — it is
-                // pixels, not text. Restate both rates as the image's label.
                 Image(nsImage: MenuBarSpeedLabel.speedImage(down: sample.down, up: sample.up))
                     .accessibilityLabel(
                         "Goel downloads. Downloading at \(A11y.speed(sample.down)), "
@@ -388,26 +340,18 @@ struct MenuBarSpeedLabel: View {
         static func == (a: SpeedContent, b: SpeedContent) -> Bool { a.sample == b.sample }
     }
 
-    /// Compact per-line speed for the cramped menu bar, e.g. "14.2 MB/s"
-    /// (or "0" at rest).
     private static func compact(_ bytesPerSec: Double) -> String {
         bytesPerSec > 0 ? Int64(bytesPerSec).byteString + "/s" : "0"
     }
 
     private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .semibold)
 
-    /// A constant width sized to a worst-case rate, so the item is rock-steady
-    /// regardless of the current speed (right-aligned within this box).
     private static let fixedWidth: CGFloat =
         ceil(("↓ 8888.88 MB/s" as NSString).size(withAttributes: [.font: labelFont]).width) + 2
 
-    /// Render "↓ <down>" over "↑ <up>", right-aligned within ``fixedWidth``, into
-    /// one menu-bar-height template image.
     static func speedImage(down: Double, up: Double) -> NSImage {
         let downText = "↓ " + compact(down)
         let upText   = "↑ " + compact(up)
-        // Template images ignore colour and are masked by alpha, so labelColor is
-        // just a legible opaque fill; AppKit picks the real menu-bar tint.
         let attrs: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: NSColor.labelColor]
 
         let lineH = ceil(("↑ 0" as NSString).size(withAttributes: attrs).height)
@@ -421,8 +365,7 @@ struct MenuBarSpeedLabel: View {
 
         let image = NSImage(size: NSSize(width: width, height: height))
         image.lockFocus()
-        // NSImage origin is bottom-left, so the upload row draws lower and the
-        // download row a line-height above it; the pair is centred vertically.
+        // NSImage origin is bottom-left, so the upload row draws lower and download a line-height above it.
         let bottomY = (height - lineH * 2) / 2
         drawRightAligned(upText,   atY: bottomY)
         drawRightAligned(downText, atY: bottomY + lineH)

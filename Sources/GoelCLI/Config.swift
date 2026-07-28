@@ -1,13 +1,10 @@
 import Foundation
 
-/// One configurable setting: the friendly name an operator types, the
-/// environment variable the daemon actually reads, and how to validate it.
 struct Setting {
     let key: String
     let env: String
     let summary: String
-    /// Secrets are accepted but never printed back — `goel config` shows `set` or `unset`, never the
-    /// value, so reading config on a shared screen can't leak the portal password or API token.
+    /// Secrets are never printed back: `goel config` may show `set`/`unset`, never the value.
     let secret: Bool
     let validate: (String) -> String?
 
@@ -38,8 +35,7 @@ enum Validators {
         return ok.contains(value.lowercased()) ? nil : "expected true or false"
     }
 
-    /// Every path accepted here is created, chowned to the service user, and made writable to a
-    /// process that parses untrusted torrent metadata — so a leading `/` is not a sufficient check.
+    /// These paths get chowned and made writable to a process parsing untrusted torrent metadata.
     private static let forbiddenRoots: Set<String> = [
         "/", "/bin", "/boot", "/dev", "/etc", "/lib", "/lib32", "/lib64", "/libx32",
         "/media", "/mnt", "/opt", "/proc", "/root", "/run", "/sbin", "/srv", "/sys",
@@ -49,7 +45,7 @@ enum Validators {
     static func absolutePath(_ value: String) -> String? {
         guard value.hasPrefix("/") else { return "must be an absolute path" }
         if value.contains("\u{0}") { return "must not contain a null byte" }
-        // Normalise first, so /etc/, //etc and /etc/. are all caught.
+        // Normalise before the check, or /etc/, //etc and /etc/. all slip past forbiddenRoots.
         let normalised = (value as NSString).standardizingPath
         if normalised.contains("..") {
             return "must not contain ‘..’ — give the real path"
@@ -62,22 +58,18 @@ enum Validators {
     }
 
     static func password(_ value: String) -> String? {
-        // The portal is LAN-reachable and its login is rate-limited but not unguessable, so refuse the
-        // passwords that make the throttle the only thing standing in the way.
+        // The portal is LAN-reachable and only rate-limited, so a trivial password is the whole defence.
         if value.count < 8 { return "too short — use at least 8 characters" }
         return nil
     }
 
-    /// Mirrors `NetworkSelection.isValidInterfaceName` in GoelCore. Duplicated rather than imported:
-    /// the CLI deliberately doesn't link GoelCore, which would drag in libtorrent and libcurl.
+    /// Duplicates `NetworkSelection.isValidInterfaceName`: importing GoelCore drags in libtorrent/libcurl.
     static func isInterfaceName(_ name: String) -> Bool {
         guard !name.isEmpty, name.count <= 15 else { return false }   // IFNAMSIZ - 1
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.:"))
         return name.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
-    /// Interface names, comma-separated. Empty is valid and means "every eligible
-    /// interface" — the daemon distinguishes that from the variable being absent.
     static func interfaceList(_ value: String) -> String? {
         let names = value.split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -86,8 +78,7 @@ enum Validators {
         return "‘\(bad)’ is not an interface name — see `goel adapters`"
     }
 
-    /// A `--net` spec. Mirrors `NetworkSelection.init(spec:)` in GoelCore; the
-    /// daemon re-parses and is the authority, this only catches typos locally.
+    /// Local typo check only — the daemon re-parses the spec and is the authority.
     static func networkSpec(_ value: String) -> String? {
         let text = value.trimmingCharacters(in: .whitespaces)
         if text.isEmpty || text.lowercased() == "auto" { return nil }
@@ -116,7 +107,6 @@ enum Validators {
     }
 }
 
-/// The settings `goel config` exposes, in the order `goel config` lists them.
 let settings: [Setting] = [
     Setting("port", "GOEL_PORT", "Port the web portal listens on", validate: Validators.port),
     Setting("lan", "GOEL_ALLOW_LAN",
@@ -149,8 +139,7 @@ func setting(named key: String) -> Setting? {
     settings.first { $0.key == key.lowercased() }
 }
 
-/// Reader/writer for `/etc/goel/config`, a systemd `EnvironmentFile`. This exists so `goel config
-/// set` cannot corrupt it, not to own it — comments, ordering and unknown keys are preserved.
+/// The operator owns this file: comments, ordering and unknown keys must survive every write.
 struct ConfigFile {
     private(set) var lines: [String]
     let path: String
@@ -158,20 +147,16 @@ struct ConfigFile {
     init(path: String = Layout.configFile) throws {
         self.path = path
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
-            // The file is 0600 root-only, so the usual way to land here is a missing
-            // `sudo` — which used to be reported as "does not look installed".
             if FileManager.default.fileExists(atPath: path) { throw CLIError.needsRoot }
             throw CLIError.notInstalled(missing: path)
         }
-        // Keep the trailing-newline behaviour stable: split, drop a single
-        // trailing empty component, and re-add exactly one newline on write.
+        // Drop exactly one trailing empty component; `save()` re-adds exactly one newline.
         var parts = text.components(separatedBy: "\n")
         if parts.last == "" { parts.removeLast() }
         self.lines = parts
     }
 
-    /// nil when the key is absent; `""` is a real, distinct value — systemd treats `KEY=` as
-    /// set-but-empty, and the daemon's `env()` falls back to its default for an empty string.
+    /// nil means absent; `""` is a distinct value — systemd reads `KEY=` as set-but-empty.
     func value(forEnv env: String) -> String? {
         for line in lines.reversed() {   // last assignment wins, as systemd does
             guard let (k, v) = Self.split(line), k == env else { continue }
@@ -185,7 +170,6 @@ struct ConfigFile {
         for index in lines.indices {
             if let (k, _) = Self.split(lines[index]), k == env {
                 lines[index] = rendered
-                // Drop any later duplicate so the file says one thing.
                 lines = lines.enumerated().filter { offset, line in
                     offset <= index || Self.split(line)?.0 != env
                 }.map(\.element)
@@ -199,14 +183,12 @@ struct ConfigFile {
         lines = lines.filter { Self.split($0)?.0 != env }
     }
 
-    /// Write via a temporary file in the same directory and `rename`, so a full disk or a crash
-    /// mid-write leaves the old config intact rather than a truncated one that stops the service booting.
+    /// Temp file + `rename`: a crash mid-write must leave the old config, not a truncated one.
     func save() throws {
         let body = lines.joined(separator: "\n") + "\n"
         let temporary = path + ".tmp.\(getpid())"
 
-        // 0600 from the start, not narrowed afterwards: a later chmod leaves a window where the plaintext
-        // password is readable, and a failed chmod used to be discarded and reported as success.
+        // 0600 at creation: narrowing later leaves a window where the plaintext password is readable.
         let descriptor = open(temporary, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0o600)
         guard descriptor >= 0 else {
             throw CLIError.message("couldn’t create \(temporary): \(String(cString: strerror(errno)))")
@@ -219,7 +201,7 @@ struct ConfigFile {
             try? FileManager.default.removeItem(atPath: temporary)
             throw CLIError.message("couldn’t write \(temporary): \(error.localizedDescription)")
         }
-        // O_CREAT honours the umask, so verify rather than assume.
+        // O_CREAT honours the umask, so the mode must be verified, never assumed.
         if chmod(temporary, 0o600) != 0 {
             let reason = String(cString: strerror(errno))
             try? FileManager.default.removeItem(atPath: temporary)
@@ -242,8 +224,7 @@ struct ConfigFile {
               let eq = trimmed.firstIndex(of: "=") else { return nil }
         let key = String(trimmed[trimmed.startIndex..<eq]).trimmingCharacters(in: .whitespaces)
         var value = String(trimmed[trimmed.index(after: eq)...])
-        // systemd strips one layer of matching quotes; mirror that so a value
-        // written quoted reads back unquoted.
+        // systemd strips one layer of matching quotes; mirror it or quoted values read back wrong.
         if value.count >= 2,
            (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
            (value.hasPrefix("'") && value.hasSuffix("'")) {
@@ -252,8 +233,7 @@ struct ConfigFile {
         return key.isEmpty ? nil : (key, value)
     }
 
-    /// systemd's EnvironmentFile parsing splits on whitespace unless quoted, and treats `#` as a
-    /// comment mid-line. Quote anything not plainly safe, and refuse what cannot be represented.
+    /// systemd splits EnvironmentFile values on whitespace and honours mid-line `#`, so quote anything else.
     private static func quote(_ value: String) -> String {
         let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./:@,+="))
         if !value.isEmpty, value.unicodeScalars.allSatisfy({ safe.contains($0) }) {
@@ -266,7 +246,6 @@ struct ConfigFile {
     }
 }
 
-/// The subset of configuration this CLI needs in order to reach the portal.
 struct Effective {
     var port: Int
     var databasePath: String
@@ -285,14 +264,13 @@ struct Effective {
             return ["1", "true", "yes", "on"].contains(raw)
         }
         port = config.value(forEnv: "GOEL_PORT").flatMap(Int.init) ?? Layout.defaultPort
-        // These fall back to what the DAEMON uses, not what a fresh install writes: after `goel config
-        // unset db`, guessing the latter would send `goel token` to a directory the daemon never wrote.
+        // Fall back to the DAEMON's paths, not a fresh install's, or unset keys point at unwritten files.
         databasePath = config.value(forEnv: "GOEL_DB").flatMap { $0.isEmpty ? nil : $0 }
             ?? Self.daemonHome + "/.local/share/goel-downloader/queue.sqlite"
         saveDir = config.value(forEnv: "GOEL_SAVE_DIR").flatMap { $0.isEmpty ? nil : $0 }
             ?? Self.daemonHome + "/Downloads"
         watchDir = config.value(forEnv: "GOEL_WATCH_DIR").flatMap { $0.isEmpty ? nil : $0 }
-        // These two mirror the daemon's own defaults in Sources/GoelDaemon/main.swift.
+        // Must stay identical to the daemon's defaults in Sources/GoelDaemon/main.swift.
         allowLAN = bool("GOEL_ALLOW_LAN", false)
         requireAuth = bool("GOEL_REQUIRE_AUTH", true)
         username = config.value(forEnv: "GOEL_USERNAME").flatMap { $0.isEmpty ? nil : $0 }
@@ -300,8 +278,6 @@ struct Effective {
         tokenFromConfig = config.value(forEnv: "GOEL_TOKEN").flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// The home the daemon's own path defaults are relative to — the `goel` user's,
-    /// from the passwd database rather than assumed.
     static let daemonHome: String = {
         if let entry = getpwnam(Layout.serviceUser), let directory = entry.pointee.pw_dir {
             let home = String(cString: directory)
@@ -310,8 +286,6 @@ struct Effective {
         return Layout.stateDir
     }()
 
-    /// The token to authenticate with: the operator's if they set one, otherwise
-    /// the one the daemon generated and wrote next to its database.
     func token() throws -> String {
         if let configured = tokenFromConfig { return configured }
         let path = Layout.tokenFile(databasePath: databasePath)

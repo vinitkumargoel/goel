@@ -42,7 +42,6 @@ final class TaskListQueryTests: XCTestCase {
         let active = TaskListQuery.visible(
             tasks: tasks, filter: .active, search: "", sortKey: .name, ascending: true)
         XCTAssertTrue(active.allSatisfy { $0.status.isActive })
-        // downloading + seeding (and other isActive statuses) — not paused/queued/completed
         XCTAssertEqual(Set(active.map(\.name)), Set(["a", "d"]))
     }
 

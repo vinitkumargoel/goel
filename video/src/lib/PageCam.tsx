@@ -1,4 +1,3 @@
-// origin: template/src/aifl/live/PageCam.tsx（模板片同源组件）
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 
 export type CamKey = {
@@ -6,33 +5,30 @@ export type CamKey = {
   cx: number;
   cy: number;
   zoom: number;
-  rotX?: number; // deg, tilt about the horizontal axis (positive = top leans away, like looking at a table)
-  rotY?: number; // deg, tilt about the vertical axis (positive = right edge recedes, i.e. seen from the LEFT)
-  rotZ?: number; // deg, in-plane roll
-  persp?: number; // px, perspective strength (default 1400; smaller = stronger)
+  rotX?: number; // deg; positive leans the top away
+  rotY?: number; // deg; positive recedes the right edge, i.e. seen from the LEFT
+  rotZ?: number;
+  persp?: number; // px; default 1400, and smaller is stronger
 };
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-/** 2.5D camera over a full-page screenshot: (cx, cy) is the page-space CSS point centered in the
- * 1920x1080 viewport, zoom is scale. Optional rotX/rotZ/persp (absent ⇒ flat, pixel-identical) + DOF. */
+/** (cx, cy) is the page-space CSS point centred in 1920x1080; absent rotX/rotZ/persp must stay pixel-flat. */
 export const PageCam: React.FC<{
   src: string; // staticFile path under textures/live/
-  pageH: number; // CSS page height
-  pageW?: number; // CSS page width (default 1920)
+  pageH: number;
+  pageW?: number;
   keys: CamKey[];
-  children?: React.ReactNode; // page-space overlays (positioned in CSS px)
+  children?: React.ReactNode; // page-space overlays, positioned in CSS px
   blur?: number;
   saturate?: number;
   ease?: (t: number) => number;
   dof?: { focusY: number; strength: number };
-  // Optional absolute-frame override: inside a <Sequence> (which rebases useCurrentFrame) the parent
-  // passes the restored absolute comp frame so CAM_KEYS keep their absolute frame refs.
+  // A <Sequence> rebases useCurrentFrame, so the parent passes the absolute frame CAM_KEYS refer to.
   frame?: number;
 }> = ({ src, pageH, pageW = 1920, keys, children, blur = 0, saturate = 1, ease = Easing.bezier(0.33, 0, 0.15, 1), dof, frame: frameProp }) => {
   const ownFrame = useCurrentFrame();
   const frame = frameProp ?? ownFrame;
-  // find segment
   let a = keys[0], b = keys[keys.length - 1];
   for (let i = 0; i < keys.length - 1; i++) {
     if (frame >= keys[i].frame && frame <= keys[i + 1].frame) { a = keys[i]; b = keys[i + 1]; break; }
@@ -48,7 +44,7 @@ export const PageCam: React.FC<{
   if (blur > 0) filters.push(`blur(${blur}px)`);
   if (saturate !== 1) filters.push(`saturate(${saturate})`);
 
-  // Does any key request 3D? If not, keep the original flat markup exactly.
+  // With no 3D key the flat markup must be emitted exactly, or every 2D shot shifts.
   const has3D = keys.some((k) => k.rotX !== undefined || k.rotY !== undefined || k.rotZ !== undefined || k.persp !== undefined);
 
   if (!has3D) {
@@ -69,8 +65,7 @@ export const PageCam: React.FC<{
     );
   }
 
-  // 3D mode: pivot rotation/scale about the focal page-point (cx, cy) so it stays centered. With
-  // rotX=rotZ=0 this reduces to the flat transform (proven identical: (960,540) + zoom*(p - (cx,cy))).
+  // Pivot about (cx, cy) so at rotX=rotZ=0 this reduces to the flat (960,540) + zoom*(p - (cx,cy)).
   const rotX = lerp(a.rotX ?? 0, b.rotX ?? 0, t);
   const rotY = lerp(a.rotY ?? 0, b.rotY ?? 0, t);
   const rotZ = lerp(a.rotZ ?? 0, b.rotZ ?? 0, t);
@@ -85,8 +80,7 @@ export const PageCam: React.FC<{
           perspectiveOrigin: '960px 540px',
         }}
       >
-        {/* CSS `zoom`, not scale(zoom): scale rasterizes the 3D layer at 1920 layout width then GPU-upscales
-            (blurry text); `zoom` enlarges the layout box. Hence Tx = 960/zoom - cx; origin (cx,cy) pins rotations. */}
+        {/* CSS `zoom`, never scale(zoom): scale rasterizes at 1920 then GPU-upscales into blurry text. */}
         <div
           style={{
             position: 'absolute', width: pageW, height: pageH,
@@ -102,8 +96,7 @@ export const PageCam: React.FC<{
         </div>
       </div>
 
-      {/* Depth-of-field approximation: a top-band gradient blur (far part of a
-          tilted page reads soft). Screen-space, over the page. */}
+      {/* Depth-of-field band: screen-space, so it stays outside the transformed page. */}
       {dof ? (
         <div
           style={{

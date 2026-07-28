@@ -1,11 +1,8 @@
 import Foundation
 
-/// The queue-promotion decision as a pure function, lifted out of the ``DownloadManager`` actor so it
-/// is testable: priority order, FIFO ties, the simultaneous cap, the metadata cap. Mutations stay there.
 enum SchedulingPolicy {
 
-    /// The IDs to promote into free slots, in start order — only `.queued`, not-already-running tasks;
-    /// caps of `0` or less mean unlimited. Empty when the window is closed, no slot is free, or none eligible.
+    /// A cap of `0` or less means unlimited, not "none".
     static func promotions(
         tasks: [DownloadTask],
         runningSlots: Set<UUID>,
@@ -13,7 +10,6 @@ enum SchedulingPolicy {
         maxMetadataResolutions: Int,
         windowOpen: Bool
     ) -> [UUID] {
-        // Outside the configured download window nothing is promoted.
         guard windowOpen else { return [] }
 
         let maxDownloads = maxSimultaneousDownloads > 0 ? maxSimultaneousDownloads : .max
@@ -28,15 +24,14 @@ enum SchedulingPolicy {
             .filter { $0.status == .queued && !runningSlots.contains($0.id) }
             .sorted { lhs, rhs in
                 lhs.priority != rhs.priority
-                    ? lhs.priority > rhs.priority      // higher priority first
-                    : lhs.addedAt < rhs.addedAt        // then FIFO
+                    ? lhs.priority > rhs.priority
+                    : lhs.addedAt < rhs.addedAt
             }
 
         var promoted: [UUID] = []
         for task in candidates {
             guard freeSlots > 0 else { break }
-            // Only a magnet that STILL lacks metadata occupies a resolution slot; charging an
-            // already-resolved (resumed) magnet would wrongly hold back one that needs to resolve.
+            // Only a magnet STILL lacking metadata takes a slot; a resumed one would block a real resolve.
             let needsMetadata = isMagnet(task.source) && !task.hasMetadata
             if needsMetadata, activeMetadata >= maxMetadata { continue }
 

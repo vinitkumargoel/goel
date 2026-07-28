@@ -1,11 +1,6 @@
 import SwiftUI
 import GoelCore
 
-// Reusable building blocks for the Preferences panes. Split out of
-// `SettingsView.swift` so each pane reads as a flat list of `SetRow`s.
-
-// MARK: - Building blocks
-
 struct PaneScaffold<Content: View>: View {
     let title: String
     let subtitle: String
@@ -13,7 +8,6 @@ struct PaneScaffold<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title).scaledFont(size: 15, weight: .semibold)
-                // Lets the VoiceOver rotor jump straight to a pane's title.
                 .accessibilityAddTraits(.isHeader)
             Text(subtitle).scaledFont(size: 12).foregroundStyle(.secondary).padding(.bottom, 16)
             content
@@ -30,8 +24,6 @@ struct SectionHeader: View {
             .foregroundStyle(.tertiary)
             .padding(.top, 16)
             .padding(.bottom, 4)
-            // Uppercased for the eye; spoken in its natural case, since some
-            // screen readers spell all-caps words out letter by letter.
             .accessibilityLabel(text)
             .accessibilityAddTraits(.isHeader)
     }
@@ -49,37 +41,27 @@ struct SetRow<Control: View>: View {
                     Text(desc).scaledFont(size: 11).foregroundStyle(.tertiary).lineLimit(2)
                 }
             }
-            // Name and explanation are one reading, not two stray strings before
-            // an unrelated control.
             .accessibilityElement(children: .combine)
             Spacer()
             control
         }
-        // Naming every settings control once: `SetRow` puts the name in a `Text` and every bound control
-        // calls `labelsHidden()`, so the row publishes its name through the environment instead.
         .environment(\.settingRowName, name)
         .padding(.vertical, 10)
         Divider()
     }
 }
 
-// MARK: - Bound controls
-
 private struct SettingRowNameKey: EnvironmentKey {
     static let defaultValue: String = ""
 }
 
 extension EnvironmentValues {
-    /// The name of the enclosing ``SetRow``, supplied so a `labelsHidden()`
-    /// control can still be announced by the label the user can see.
     var settingRowName: String {
         get { self[SettingRowNameKey.self] }
         set { self[SettingRowNameKey.self] = newValue }
     }
 }
 
-/// A switch backed by a real settings `Binding`, so its initial state reflects
-/// the persisted value and toggling commits through ``AppViewModel/update(_:)``.
 struct SettingSwitch: View {
     @Binding var isOn: Bool
     @Environment(\.settingRowName) private var rowName
@@ -89,7 +71,6 @@ struct SettingSwitch: View {
     }
 }
 
-/// A free-text field bound to a settings string.
 struct SettingText: View {
     @Binding var text: String
     var width: CGFloat = 80
@@ -100,8 +81,7 @@ struct SettingText: View {
     }
 }
 
-/// A numeric field bound to a settings integer. Grouping is off: `.number` inserts the locale's
-/// thousands separator, turning port 8899 into "8,899" — these are values you type back.
+/// Ungrouped: `.number` would render port 8899 as "8,899", which won't type back.
 struct SettingInt: View {
     @Binding var value: Int
     var width: CGFloat = 80
@@ -113,8 +93,7 @@ struct SettingInt: View {
     }
 }
 
-/// A numeric field bound to a settings double (timeouts, intervals, speeds, ratio). Ungrouped
-/// for the same reason as `SettingInt` above.
+/// Ungrouped for the same reason as `SettingInt`.
 struct SettingDouble: View {
     @Binding var value: Double
     var width: CGFloat = 80
@@ -126,17 +105,12 @@ struct SettingDouble: View {
     }
 }
 
-// MARK: - Managed (MDM) policy
-
 extension View {
 
-    /// Disable a control an administrator has *forced* through a profile, and say so on hover. Only
-    /// `isLocked` keys; a managed *default* stays editable, which is a different thing entirely.
+    /// Only `isLocked` keys disable a control; a managed *default* must stay editable.
     @ViewBuilder
     func managed(_ key: ManagedPolicy.Key, _ policy: ManagedPolicy) -> some View {
         if policy.isLocked(key) {
-            // `help` is a hover tooltip and therefore pointer-only: without the hint, a locked control is
-            // just a dimmed switch that ignores you, with no reachable explanation.
             self.disabled(true)
                 .help(AppViewModel.managedFootnote)
                 .accessibilityHint(AppViewModel.managedFootnote)
@@ -146,13 +120,10 @@ extension View {
     }
 }
 
-/// Banner shown at the top of a settings pane when anything in it is locked, so
-/// a greyed-out control has a visible explanation rather than looking broken.
 struct ManagedPolicyNotice: View {
 
     let policy: ManagedPolicy
 
-    /// The keys this pane actually renders; the notice hides when none is locked.
     let keys: [ManagedPolicy.Key]
 
     var body: some View {

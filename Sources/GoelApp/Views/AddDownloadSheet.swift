@@ -3,68 +3,44 @@ import AppKit
 import UniformTypeIdentifiers
 import GoelCore
 
-/// The Add-download flow in two steps: **Input** (drop zone + URL field, button "Continue") then
-/// **Confirm** (name, size, file list, destination, priority). A multi-line batch skips the preview.
 struct AddDownloadSheet: View {
     @EnvironmentObject private var vm: AppViewModel
     @Environment(\.dismiss) private var dismiss
 
-    /// Where we are in the two-step flow.
     private enum Phase: Equatable {
         case input
         case resolving
         case confirm(DownloadPreview)
-        /// The pasted link is a playlist/channel: let the user tick which items
-        /// to queue instead of silently taking the first video (or all of them).
         case playlist(URL)
     }
     @State private var phase: Phase = .input
-    /// Torrent file indices the user unticked on the confirm screen (skip these).
     @State private var deselectedFileIDs: Set<Int> = []
 
     @State private var text: String = ""
     @State private var priority: FilePriority = .normal
     @State private var isDropTargeted = false
-    /// Optional integrity hash; verified after a single HTTP/HLS download finishes.
     @State private var checksumText: String = ""
-    /// Optional mirror URLs (one per line); segments fail over across them.
     @State private var mirrorsText: String = ""
-    /// True while yt-dlp resolves a video-site page into its media stream.
     @State private var isResolvingMedia = false
-    /// Inline validation shown under the input field.
     @State private var inputError: String?
-    /// The in-flight metadata / yt-dlp resolution, so it can be cancelled.
     @State private var resolveTask: Task<Void, Never>?
-    /// The original page URL behind the previewed media stream, set once yt-dlp resolved it. Non-nil
-    /// means this preview *is* the chosen rendition — nothing left to pick or resolve.
     @State private var resolvedPageURL: URL?
 
-    /// When to start: "now", or a ``ScheduledStartOption`` preset id. Also where this download's
-    /// session cookies come from — never persisted, see ``pastedCookies``.
     @State private var cookieSource: CookieSource = .none
 
-    /// The raw `Cookie` header the user pasted. Deliberately plain `@State`, never `@AppStorage`:
-    /// this is a live bearer credential, and the cookie design keeps it out of every store.
+    /// A live bearer credential: plain `@State` on purpose, never `@AppStorage` or any other store.
     @State private var pastedCookies: String = ""
 
-    /// Non-nil only when the sheet was opened from a browser capture; presence
-    /// is what makes the picker's `.browser` option meaningful.
     var capturedCookies: String? = nil
 
-    /// The rendition the user picked in ``MediaFormatPicker``. nil means "best
-    /// available", where the resolver omits `-f` rather than guessing an id.
     @State private var chosenFormat: MediaFormat?
 
     @State private var startSelection: String = "now"
 
-    /// The chosen "Save to" preset, shown on the confirm screen. Defaults to
-    /// ~/Downloads per the requested behaviour.
     @State private var saveSelection: String = ("~/Downloads" as NSString).expandingTildeInPath
     @State private var previousSaveSelection: String = ("~/Downloads" as NSString).expandingTildeInPath
-    /// A folder picked through the panel, surfaced as its own picker row.
     @State private var customFolder: String?
 
-    /// Sentinel tags for the non-path picker rows.
     private enum SaveOption {
         static let automatic = "automatic"
         static let choose = "__choose__"
@@ -73,8 +49,6 @@ struct AddDownloadSheet: View {
     private var downloadsPath: String { ("~/Downloads" as NSString).expandingTildeInPath }
     private var moviesPath: String { ("~/Movies" as NSString).expandingTildeInPath }
 
-    /// The "Save to" dropdown rows: the two presets, the by-type rule, any folder
-    /// the user picked through the panel, then a separated "Choose folder…".
     private var saveOptions: [Dropdown<String>.Item] {
         var options: [Dropdown<String>.Item] = [
             .option(downloadsPath, "~/Downloads"),
@@ -108,19 +82,14 @@ struct AddDownloadSheet: View {
         }
         .frame(width: 560)
         .onAppear(perform: autoPasteFromClipboard)
-        // Closing the sheet must stop any in-flight yt-dlp work, or the subprocess
-        // keeps running headless after the user has walked away.
+        // Without this cancel the yt-dlp subprocess keeps running headless after the sheet closes.
         .onDisappear { resolveTask?.cancel() }
     }
-
-    // MARK: Header
 
     private var header: some View {
         SheetHeader(systemImage: phase == .input ? "link" : "checklist",
                     title: phase == .input ? "Add download" : "Review & start")
     }
-
-    // MARK: Step 1 — input
 
     private var inputContent: some View {
         VStack(spacing: 0) {
@@ -133,8 +102,6 @@ struct AddDownloadSheet: View {
                         .foregroundStyle(.secondary)
                     TextEditor(text: $text)
                         .font(.system(size: 12, design: .monospaced))
-                        // A `TextEditor` has no placeholder and no label of its
-                        // own; the caption above it is a separate `Text`.
                         .accessibilityLabel("URL, magnet, or m3u8 stream")
                         .accessibilityHint("Paste one link per line to add several at once.")
                         .frame(height: 90)
@@ -146,8 +113,6 @@ struct AddDownloadSheet: View {
                         Label(inputError, systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.orange)
-                            // The triangle and the orange tint are the only marks that this replaced the help text
-                            // with an error, and neither is spoken.
                             .accessibilityLabel("Error. \(inputError)")
                     } else {
                         Text("Paste several lines to add them all at once (batch). Patterns expand too: file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts.")
@@ -172,8 +137,6 @@ struct AddDownloadSheet: View {
         }
     }
 
-    // MARK: Step 1.5 — resolving spinner
-
     private var resolvingContent: some View {
         VStack(spacing: 14) {
             ProgressView()
@@ -192,8 +155,6 @@ struct AddDownloadSheet: View {
                     resolveTask?.cancel()
                     phase = .input
                 }
-                // Don't wait for the preview: queue it now and let the details
-                // resolve while it downloads (a single metadata pass, not two).
                 Button("Continue anyway") { continueWithoutPreview() }
                     .buttonStyle(.borderedProminent)
             }
@@ -209,8 +170,6 @@ struct AddDownloadSheet: View {
         .padding(.horizontal, 20)
     }
 
-    /// Skip the metadata wait: cancel the in-flight resolve and queue the source
-    /// immediately, so it resolves once — during the download — instead of twice.
     private func continueWithoutPreview() {
         resolveTask?.cancel()
         if let line = firstParseableLine() {
@@ -218,8 +177,6 @@ struct AddDownloadSheet: View {
         }
         dismiss()
     }
-
-    // MARK: Step 2 — confirm
 
     private func confirmContent(_ preview: DownloadPreview) -> some View {
         VStack(spacing: 0) {
@@ -281,16 +238,13 @@ struct AddDownloadSheet: View {
                 if preview.kind == .http {
                     mirrorsField
                 }
-                // Renders nothing when the source has no origin (a magnet), so
-                // it needs no `kind` guard of its own.
                 CookieSourcePicker(host: previewHost(preview),
                                    source: $cookieSource,
                                    pastedCookies: $pastedCookies,
                                    capturedCookies: capturedCookies)
                 if preview.kind == .http, YtDlpResolver.isAvailable {
                     ytDlpRow(preview)
-                    // The button above is opt-in; this list is not — it spawns `yt-dlp -F` on appearance. So mount
-                    // it only for something that reads as a video *page*; a direct file link already is the file.
+                    // This list spawns `yt-dlp -F` just by appearing, so mount it only for a video *page*.
                     if case .url(let pageURL) = preview.source,
                        !preview.source.looksLikeDownloadableFile,
                        resolvedPageURL == nil {
@@ -309,23 +263,19 @@ struct AddDownloadSheet: View {
                 Button("Start download") { start(preview) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
-                    // Starting can itself be a yt-dlp resolve, and a second press would queue a second copy. A
-                    // torrent with every file unticked has nothing to fetch and reports "Downloaded" with no bytes.
+                    // A second press during a resolve queues a second copy; an all-unticked torrent fetches nothing.
                     .disabled(isResolvingMedia || allFilesDeselected(preview))
             }
             .padding(14)
         }
     }
 
-    /// True when this is a torrent whose every file has been unticked — an
-    /// impossible download rather than an empty one.
     private func allFilesDeselected(_ preview: DownloadPreview) -> Bool {
         preview.kind == .torrent
             && !preview.files.isEmpty
             && deselectedFileIDs.isSuperset(of: Set(preview.files.map(\.id)))
     }
 
-    /// Name + kind badge + size header for the confirm screen.
     private func metadataSummary(_ preview: DownloadPreview) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: preview.kind.symbolName)
@@ -333,7 +283,6 @@ struct AddDownloadSheet: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 34, height: 34)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-                // The kind badge beside the name states this in words.
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 4) {
                 Text(preview.suggestedName)
@@ -357,8 +306,6 @@ struct AddDownloadSheet: View {
         }
     }
 
-    /// Scrollable list of the files inside a torrent. When `selectable`, each file gets a tick;
-    /// unticked files are recorded in `deselectedFileIDs` and skipped on add.
     private func fileList(_ files: [TransferFile], selectable: Bool) -> some View {
         let selectedCount = files.count - files.filter { deselectedFileIDs.contains($0.id) }.count
         let selectedBytes = files.filter { !deselectedFileIDs.contains($0.id) }.reduce(Int64(0)) { $0 + $1.length }
@@ -386,8 +333,6 @@ struct AddDownloadSheet: View {
                                         .foregroundStyle(wanted ? Theme.accent : Color.secondary)
                                 }
                                 .buttonStyle(.plain)
-                                // A checkbox drawn as a button: nothing states
-                                // what it selects or whether it is ticked.
                                 .a11yButton(wanted
                                     ? "Skip \((file.path as NSString).lastPathComponent)"
                                     : "Download \((file.path as NSString).lastPathComponent)")
@@ -420,8 +365,6 @@ struct AddDownloadSheet: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
         }
     }
-
-    // MARK: Shared subviews
 
     private var dropZone: some View {
         VStack(spacing: 7) {
@@ -474,8 +417,6 @@ struct AddDownloadSheet: View {
         }
     }
 
-    /// Offered only when the user has yt-dlp installed: swap a video-site page
-    /// URL for the direct media stream it plays.
     private func ytDlpRow(_ preview: DownloadPreview) -> some View {
         HStack(spacing: 8) {
             if isResolvingMedia {
@@ -499,8 +440,6 @@ struct AddDownloadSheet: View {
         isResolvingMedia = true
         resolveTask = Task { @MainActor in
             defer { isResolvingMedia = false }
-            // The outcome-returning API, not the nil-returning shim: what yt-dlp itself said is the only
-            // thing telling the user which remedy applies. A generic toast throws that away.
             switch await YtDlpResolver.resolveMedia(pageURL, formatSelector: chosenFormat?.id) {
             case .resolved(let resolved):
                 guard let mediaPreview = YtDlpResolver.preview(for: resolved) else {
@@ -508,13 +447,10 @@ struct AddDownloadSheet: View {
                     vm.toast = "yt-dlp couldn’t resolve that page"
                     return
                 }
-                // Subtitles are NOT fetched here: "Save to" is still editable on this screen, so sidecars
-                // written now would be orphaned the moment the folder changed. They are fetched in `commit`.
+                // Don't fetch subtitles here: "Save to" is still editable, so sidecars would be orphaned.
                 resolvedPageURL = pageURL
                 phase = .confirm(mediaPreview)
             case .cancelled:
-                // Sheet dismissed / Cancel: stay silent rather than toast at a
-                // screen the user has already left.
                 break
             case .failed(let reason):
                 inputError = nil
@@ -540,10 +476,6 @@ struct AddDownloadSheet: View {
         }
     }
 
-    // MARK: Actions
-
-    /// Pre-fill the field from the clipboard when it holds a downloadable link and
-    /// the field is still empty.
     private func autoPasteFromClipboard() {
         guard text.isEmpty,
               let clip = NSPasteboard.general.string(forType: .string)?
@@ -554,7 +486,6 @@ struct AddDownloadSheet: View {
         text = clip
     }
 
-    /// Continue from the input step: one link → resolve + preview; many → batch add.
     private func continueTapped() {
         let sources = vm.parsedSources(in: text)
         guard !sources.isEmpty else {
@@ -570,16 +501,12 @@ struct AddDownloadSheet: View {
             inputError = "Enter a valid URL, magnet, or .m3u8 link."
             return
         }
-        // A fresh resolution gets a clean slate: a checksum or mirror list entered for a previous link
-        // (then Back, then a different link) must never silently apply to this one.
+        // Reset every per-link field: state left from the previous link would silently apply to this one.
         checksumText = ""
         mirrorsText = ""
-        // Same rule for the yt-dlp state: a rendition picked for a previous link must never select a
-        // format — or fetch subtitles for a page — belonging to the link the user walked away from.
         chosenFormat = nil
         resolvedPageURL = nil
-        // A playlist/channel link otherwise resolves to one video, silently dropping everything the
-        // user pasted. Offer the checklist instead — only when yt-dlp is present to expand it.
+        // Without the checklist a playlist link resolves to one video and silently drops the rest.
         if YtDlpResolver.isAvailable,
            PlaylistExpander.looksLikePlaylist(line),
            let url = URL(string: line) {
@@ -591,8 +518,7 @@ struct AddDownloadSheet: View {
             let preview = await vm.resolveMetadata(for: line, saveDirectory: nil)
             if Task.isCancelled { return }
             if let preview {
-                // Pre-fill a checksum the server itself published (Digest / Content-MD5 header or a .sha256
-                // sidecar) — visible and editable, never silently applied.
+                // A server-published checksum is only ever pre-filled: visible and editable, never auto-applied.
                 if let suggested = preview.suggestedChecksum,
                    checksumText.trimmingCharacters(in: .whitespaces).isEmpty {
                     checksumText = suggested.value
@@ -605,14 +531,12 @@ struct AddDownloadSheet: View {
         }
     }
 
-    /// The "Start" dropdown rows: now, plus the scheduled presets.
     private var startOptions: [Dropdown<String>.Item] {
         [.option("now", "Now")]
             + ScheduledStartOption.presets.map { .option($0.id, $0.label) }
     }
 
-    /// Start the previewed download. A rendition picked in ``MediaFormatPicker`` is a yt-dlp format
-    /// id, so a page picked-but-not-resolved is resolved *with that id* first, not queued as HTML.
+    /// A picked-but-unresolved page must be resolved with that format id first, or the HTML gets queued.
     private func start(_ preview: DownloadPreview) {
         if let chosenFormat, resolvedPageURL == nil, case .url = preview.source {
             resolveThenCommit(preview, formatSelector: chosenFormat.id)
@@ -621,8 +545,6 @@ struct AddDownloadSheet: View {
         }
     }
 
-    /// Resolve the page into the rendition the user picked, then queue *that*. Failure leaves the
-    /// sheet on the confirm screen rather than quietly queueing the page itself.
     private func resolveThenCommit(_ preview: DownloadPreview, formatSelector: String) {
         guard case .url(let pageURL) = preview.source else { return commit(preview) }
         isResolvingMedia = true
@@ -639,7 +561,6 @@ struct AddDownloadSheet: View {
         }
     }
 
-    /// Commit the previewed download with the chosen destination/priority/checksum.
     private func commit(_ preview: DownloadPreview) {
         let startAt = ScheduledStartOption.presets
             .first { $0.id == startSelection }?
@@ -648,8 +569,7 @@ struct AddDownloadSheet: View {
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        // Only forward deselections that map to a file in this preview (guards
-        // against stale indices from a previously previewed torrent).
+        // Filter to this preview's ids: stale indices from a previously previewed torrent skip wrong files.
         let validIDs = Set(preview.files.map(\.id))
         let skip = deselectedFileIDs.filter(validIDs.contains).sorted()
         vm.confirm(preview, saveDirectory: resolvedSaveDirectory, priority: priority,
@@ -663,13 +583,10 @@ struct AddDownloadSheet: View {
         dismiss()
     }
 
-    /// Fetch subtitles for the page behind a yt-dlp-resolved download, into the folder the task was
-    /// created with. Untracked on purpose: the sheet closes next line, and yt-dlp's watchdog bounds it.
+    /// The inner Task is untracked on purpose: the sheet closes next line, yt-dlp's watchdog bounds it.
     private func fetchSubtitlesIfWanted(for preview: DownloadPreview) {
         guard vm.settings.subtitleDownloadEnabled, let pageURL = resolvedPageURL else { return }
         guard let directory = subtitleDestination else {
-            // Better to say nothing was fetched than to write sidecars into a
-            // folder the video won't be in and call that a success.
             vm.toastNow("Subtitles skipped — pick a folder under “Save to” so they land beside the video")
             return
         }
@@ -684,25 +601,22 @@ struct AddDownloadSheet: View {
             case .downloaded(let n):
                 vm.toastNow("Downloaded \(n) subtitle file\(n == 1 ? "" : "s")")
             case .none:
-                break   // no subtitles for this video — expected, stay quiet
+                break
             case .failed(let msg):
                 vm.toastNow("Subtitles: \(msg)")
             }
         }
     }
 
-    /// The folder the queued task will actually write into — the one subtitles must share. nil under
-    /// "Automatic (by type)" when only ``DownloadManager`` can compute the category subfolder.
     private var subtitleDestination: String? {
         if let resolvedSaveDirectory { return resolvedSaveDirectory }
         switch vm.settings.defaultFolderRule {
         case "byType", "automatic", "bySource": return nil
-        default: return vm.settings.defaultSaveDirectory   // "fixed"
+        default: return vm.settings.defaultSaveDirectory
         }
     }
 
-    /// The sanitised `Cookie` value to attach, or nil for an anonymous request. Mirrors
-    /// ``CookieSourcePicker/sanitizedCookieHeader`` — callers must never read ``pastedCookies``.
+    /// Callers must never read ``pastedCookies`` directly — only this sanitised value leaves the sheet.
     private var cookieHeaderToAttach: String? {
         switch cookieSource {
         case .none:    return nil
@@ -711,8 +625,6 @@ struct AddDownloadSheet: View {
         }
     }
 
-    /// The host a preview's request will hit — the cookie scope. nil for magnets
-    /// and `.torrent` files, which have no HTTP origin.
     private func previewHost(_ preview: DownloadPreview) -> String? {
         switch preview.source {
         case .url(let url), .hlsStream(let url): return url.host
@@ -721,14 +633,11 @@ struct AddDownloadSheet: View {
     }
 
     private func firstParseableLine() -> String? {
-        // Expand batch patterns first (via the same path `parsedSources` uses), so a single-line range
-        // that collapses to one URL resolves the expanded target, not the literal-bracket string.
+        // Expand patterns first, or a one-line range resolves the literal `file[01-20].zip` string.
         AppViewModel.expandedLines(text)
             .first { AppViewModel.parseSource($0) != nil }
     }
 
-    /// The directory to hand the manager. `automatic` (and the unreachable
-    /// `choose` sentinel) map to `nil` so the configured default-folder rule wins.
     private var resolvedSaveDirectory: String? {
         switch saveSelection {
         case SaveOption.automatic, SaveOption.choose: return nil
@@ -753,8 +662,7 @@ struct AddDownloadSheet: View {
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         collectDroppedURLs(providers) { urls in
             guard !urls.isEmpty else { return }
-            // Local .torrent files can't go through the text field — `DownloadSource.parse` rejects `file:`.
-            // Route them via ExternalAdd as an explicit file-open does, and append only the remote URLs.
+            // `DownloadSource.parse` rejects `file:`, so local .torrent drops must go via ExternalAdd.
             let isTorrentFile: (URL) -> Bool = { $0.isFileURL && $0.pathExtension.lowercased() == "torrent" }
             let torrentFiles = urls.filter(isTorrentFile)
             let others = urls.filter { !isTorrentFile($0) }
@@ -769,8 +677,6 @@ struct AddDownloadSheet: View {
                         ExternalAdd.post(payload)
                     }
                 }
-                // The torrent(s) are queued directly, as torrent files are everywhere
-                // else. Close the sheet when the drop carried nothing else to preview.
                 if others.isEmpty { dismiss() }
             }
         }
@@ -786,8 +692,6 @@ struct AddDownloadSheet: View {
             text += "\n" + joined
         }
     }
-
-    // MARK: Formatting helpers
 
     private func sizeText(_ preview: DownloadPreview) -> String {
         guard let bytes = preview.totalBytes else {

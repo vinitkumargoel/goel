@@ -23,7 +23,6 @@ function KV({ k, children }: { k: string; children: ReactNode }) {
   )
 }
 
-/** A long value that ellipsises, with a copy button pinned beside it. */
 function CopyableValue({ value, onCopy }: { value: string; onCopy: (text: string) => void }) {
   return (
     <>
@@ -94,8 +93,7 @@ export function GeneralPane({ detail, onCopy }: PaneProps) {
       )}
       {eta && <KV k="ETA">{eta}</KV>}
       <KV k="Speed">
-        {/* Non-breaking spaces, not literal ones: JSX collapses runs of
-            whitespace, which would push the two rates together. */}
+        {/* Non-breaking spaces: JSX collapses literal whitespace, merging the two rates. */}
         ↓ {fmtSpeed(t.downSpeed)}
         {isTorrent && <>{'  '}↑ {fmtSpeed(t.upSpeed)}</>}
       </KV>
@@ -162,8 +160,7 @@ export function ProgressPane({ detail }: { detail: TaskDetail }) {
         <div className="slbl">Piece map · {detail.pieces.length} buckets</div>
         <div className="pieces">
           {detail.pieces.map((v, i) => (
-            // Index keys are correct here: the bucket list is a fixed-length
-            // positional array, not a reorderable collection.
+            // Index keys are correct here: a fixed-length positional array, never reordered.
             <span key={i} className={v >= 1 ? 'f' : v > 0 ? 'p' : ''} />
           ))}
         </div>
@@ -219,8 +216,6 @@ interface FilesPaneProps {
 export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: FilesPaneProps) {
   const t = detail.row
 
-  // A single-file transfer has no per-file rows, so the task stands in — no checkbox, since skipping
-  // the only file would just be a slower way of pausing.
   if (detail.files.length === 0) {
     return (
       <>

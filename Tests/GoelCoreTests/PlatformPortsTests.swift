@@ -1,10 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-// MARK: - In-memory port fakes
-
-/// A controllable ``PowerControlling`` with settable battery state and a record of every
-/// ``setPreventSleep(_:)`` — tests can feed the keep-awake decision and observe it reaching the port.
 final class FakePower: PowerControlling, @unchecked Sendable {
     private let lock = NSLock()
     private var _onBattery: Bool
@@ -25,8 +21,6 @@ final class FakePower: PowerControlling, @unchecked Sendable {
     var lastPreventSleep: Bool? { preventSleepCalls.last }
 }
 
-/// A ``FolderWatching`` that captures the scheduler's callback so a test can
-/// simulate a `.torrent` appearing via ``drop(_:)`` without touching the filesystem.
 final class FakeFolderWatch: FolderWatching, @unchecked Sendable {
     private let lock = NSLock()
     private var callback: (@Sendable (URL) -> Void)?
@@ -41,7 +35,6 @@ final class FakeFolderWatch: FolderWatching, @unchecked Sendable {
         lock.lock(); _stopCount += 1; callback = nil; lock.unlock()
     }
 
-    /// Simulate a `.torrent` file appearing in the watched folder.
     func drop(_ url: URL) {
         lock.lock(); let cb = callback; lock.unlock()
         cb?(url)
@@ -51,8 +44,6 @@ final class FakeFolderWatch: FolderWatching, @unchecked Sendable {
     var stopCount: Int { lock.lock(); defer { lock.unlock() }; return _stopCount }
 }
 
-/// A ``FileScanning`` returning a canned verdict and recording the exact arguments
-/// it was handed, so tests can assert the gate fires (or doesn't) with the right path.
 final class FakeScanner: FileScanning, @unchecked Sendable {
     typealias Call = (path: String, executablePath: String, argumentTemplate: String)
 
@@ -71,13 +62,9 @@ final class FakeScanner: FileScanning, @unchecked Sendable {
     var scannedPaths: [String] { calls.map(\.path) }
 }
 
-// MARK: - Tests
-
 final class PlatformPortsTests: XCTestCase {
 
     private let saveDir = NSTemporaryDirectory()
-
-    // MARK: Helpers
 
     private func urlSource(_ s: String) -> DownloadSource {
         .url(URL(string: s)!)
@@ -87,7 +74,6 @@ final class PlatformPortsTests: XCTestCase {
         .magnet("magnet:?xt=urn:btih:\(hash)&dn=Demo+Pack")
     }
 
-    /// Poll an actor-isolated predicate until it holds or the timeout fires.
     @discardableResult
     private func waitUntil(
         timeout: TimeInterval = 5,
@@ -101,7 +87,6 @@ final class PlatformPortsTests: XCTestCase {
         return await predicate()
     }
 
-    /// Default-profile settings with the power-saving flags the matrix varies.
     private func powerSettings(
         preventSleepWhileDownloading: Bool = true,
         allowSleepIfResumable: Bool = false,
@@ -137,7 +122,6 @@ final class PlatformPortsTests: XCTestCase {
         )
     }
 
-    /// A manager with exactly one task in an active *download* phase.
     private func activeDownloadManager(_ settings: AppSettings, power: FakePower) async -> DownloadManager {
         let m = manager(settings, power: power)
         let task = await m.add(source: urlSource("https://example.test/active.bin"))
@@ -145,7 +129,6 @@ final class PlatformPortsTests: XCTestCase {
         return m
     }
 
-    /// A manager with exactly one task that is seeding and *no* active download.
     private func seedingOnlyManager(_ settings: AppSettings, power: FakePower, hash: String) async -> DownloadManager {
         let torrent = FakeEngine(kind: .torrent)
         let m = DownloadManager(
@@ -173,36 +156,26 @@ final class PlatformPortsTests: XCTestCase {
         return await m.shouldPreventSleep()
     }
 
-    // MARK: shouldPreventSleep — active download matrix
-
     func testActiveDownloadBatteryMatrix() async throws {
-        // On AC power an active download keeps the Mac awake.
         let onAC = await decideActive(powerSettings(), onBattery: false)
         XCTAssertTrue(onAC)
 
-        // On battery with no opt-out it still keeps awake.
         let onBatteryNoOptOut = await decideActive(powerSettings(), onBattery: true)
         XCTAssertTrue(onBatteryNoOptOut)
 
-        // The "resume later" opt-out releases the hold — but only while on battery.
         let resumableOnBattery = await decideActive(powerSettings(allowSleepIfResumable: true), onBattery: true)
         XCTAssertFalse(resumableOnBattery)
         let resumableOnAC = await decideActive(powerSettings(allowSleepIfResumable: true), onBattery: false)
         XCTAssertTrue(resumableOnAC)
 
-        // The battery-threshold opt-out likewise releases the hold on battery.
         let thresholdOnBattery = await decideActive(powerSettings(pauseBelowBatteryThreshold: true), onBattery: true)
         XCTAssertFalse(thresholdOnBattery)
 
-        // The master switch overrides everything.
         let masterOff = await decideActive(powerSettings(preventSleepWhileDownloading: false), onBattery: false)
         XCTAssertFalse(masterOff)
     }
 
-    // MARK: shouldPreventSleep — seeding-only matrix
-
     func testSeedingOnlyBatteryMatrix() async throws {
-        // Seeding alone keeps awake by default, on AC or battery.
         let onAC = await decideSeeding(powerSettings(), onBattery: false,
                                        hash: "1111111111111111111111111111111111111111")
         XCTAssertTrue(onAC)
@@ -210,12 +183,10 @@ final class PlatformPortsTests: XCTestCase {
                                             hash: "2222222222222222222222222222222222222222")
         XCTAssertTrue(onBattery)
 
-        // "Allow sleep while seeding" releases the hold regardless of power source.
         let allowSeedSleep = await decideSeeding(powerSettings(allowSleepWhileSeeding: true), onBattery: false,
                                                  hash: "3333333333333333333333333333333333333333")
         XCTAssertFalse(allowSeedSleep)
 
-        // "Don't seed on battery" releases it — but only while on battery.
         let noSeedOnBattery = await decideSeeding(powerSettings(dontSeedOnBattery: true), onBattery: true,
                                                   hash: "4444444444444444444444444444444444444444")
         XCTAssertFalse(noSeedOnBattery)
@@ -223,25 +194,18 @@ final class PlatformPortsTests: XCTestCase {
                                              hash: "5555555555555555555555555555555555555555")
         XCTAssertTrue(noSeedOnAC)
 
-        // The master switch overrides the seeding hold too.
         let masterOff = await decideSeeding(powerSettings(preventSleepWhileDownloading: false), onBattery: false,
                                             hash: "6666666666666666666666666666666666666666")
         XCTAssertFalse(masterOff)
     }
 
     func testIdleQueueNeverPreventsSleep() async throws {
-        // Nothing active or seeding — never hold the system awake even with the
-        // preference on.
         let m = manager(powerSettings(), power: FakePower(onBattery: false))
         let decision = await m.shouldPreventSleep()
         XCTAssertFalse(decision)
     }
 
-    // MARK: Power port wiring
-
     func testActiveDownloadDrivesPowerPort() async throws {
-        // Validates the seam itself: promoting a task refreshes the assertion
-        // through the injected port, not just the pure decision.
         let power = FakePower(onBattery: false)
         let m = manager(powerSettings(), power: power)
         let task = await m.add(source: urlSource("https://example.test/wired.bin"))
@@ -250,8 +214,6 @@ final class PlatformPortsTests: XCTestCase {
         let held = await waitUntil { power.lastPreventSleep == true }
         XCTAssertTrue(held)
     }
-
-    // MARK: Watch-folder ingest
 
     func testWatchedTorrentAutoStartsWhenConfirmationNotRequired() async throws {
         let watch = FakeFolderWatch()
@@ -269,7 +231,6 @@ final class PlatformPortsTests: XCTestCase {
 
         watch.drop(URL(fileURLWithPath: "/watch/movie.torrent"))
 
-        // The dropped torrent is added and auto-promoted (not paused).
         let added = await waitUntil { await m.snapshot.count == 1 }
         XCTAssertTrue(added)
         let started = await waitUntil { await m.snapshot.first?.status == .downloading }
@@ -291,7 +252,6 @@ final class PlatformPortsTests: XCTestCase {
 
         watch.drop(URL(fileURLWithPath: "/watch/series.torrent"))
 
-        // The dropped torrent is added but parked paused for the user to confirm.
         let added = await waitUntil { await m.snapshot.count == 1 }
         XCTAssertTrue(added)
         let paused = await waitUntil { await m.snapshot.first?.status == .paused }
@@ -311,8 +271,6 @@ final class PlatformPortsTests: XCTestCase {
         XCTAssertTrue(watch.startedPaths.isEmpty)
         XCTAssertEqual(watch.stopCount, 1)
     }
-
-    // MARK: Antivirus gate
 
     func testAntivirusScanInvokedWhenEnabledWithSavePath() async throws {
         let scanner = FakeScanner(result: true)
@@ -349,7 +307,7 @@ final class PlatformPortsTests: XCTestCase {
 
         await m.onDownloadCompleted(task)
 
-        // Give any (erroneous) detached scan a chance to run, then confirm none did.
+        // Deliberately waits for something that must NOT happen.
         let scannedAnyway = await waitUntil(timeout: 0.5) { !scanner.calls.isEmpty }
         XCTAssertFalse(scannedAnyway)
     }

@@ -2,41 +2,28 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-// Spoken-text helpers for VoiceOver. The visible UI is terse ("4.2 MB/s", "~6m") because it must
-// fit 84pt; these expand units into words so a screen reader doesn't read the abbreviations.
-
-/// Builders for the spoken half of the interface.
 enum A11y {
 
-    /// The unit words, ordered to match `byteString`'s 1024-based ladder.
     private static let byteUnitWords = ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes"]
 
-    /// "4.2 megabytes". Returns "unknown size" for a missing or zero total, which
-    /// is what the visible "—" actually means.
     static func bytes(_ value: Int64?) -> String {
         guard let value, value > 0 else { return "unknown size" }
         let amount = Double(value)
         let exp = min(Int(log(amount) / log(1024)), byteUnitWords.count - 1)
         let scaled = amount / pow(1024, Double(exp))
-        // Whole bytes never need a decimal; everything else reads better with one
-        // than with two ("four point two" beats "four point one nine").
         let number = exp == 0 ? String(format: "%.0f", scaled) : String(format: "%.1f", scaled)
         return "\(number) \(byteUnitWords[exp])"
     }
 
-    /// "4.2 megabytes per second", or "idle" at rest — "—" is silent to VoiceOver.
     static func speed(_ bytesPerSecond: Double) -> String {
         guard bytesPerSecond > 0 else { return "idle" }
         return bytes(Int64(bytesPerSecond)) + " per second"
     }
 
-    /// "62 percent" from a 0…1 fraction.
     static func percent(_ fraction: Double) -> String {
         "\(Int((max(0, min(1, fraction)) * 100).rounded())) percent"
     }
 
-    /// "about 6 minutes remaining" — the spoken form of the "~6m" chip. nil when there is no
-    /// estimate, so callers omit the clause entirely rather than speak a placeholder.
     static func eta(_ seconds: TimeInterval?) -> String? {
         guard let seconds, seconds > 0 else { return nil }
         if seconds >= 3600 {
@@ -51,19 +38,13 @@ enum A11y {
         return "about \(secs) second\(secs == 1 ? "" : "s") remaining"
     }
 
-    /// Join non-empty clauses with commas, so an omitted clause leaves no
-    /// stranded punctuation for VoiceOver to pause on.
     static func sentence(_ parts: String?...) -> String {
         parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }
 
-// MARK: - Task descriptions
-
 extension DownloadTask {
 
-    /// What the transport is, spelled out — the ear can't read a "BT" badge.
-    /// Matches ``kindBadge`` one for one.
     var accessibilityKindName: String {
         switch kind {
         case .torrent: return "BitTorrent"
@@ -74,8 +55,6 @@ extension DownloadTask {
         }
     }
 
-    /// The status as a spoken phrase, deliberately not ``statusDetailText`` (whose "·" separators
-    /// read as "middle dot"). The numbers travel in ``accessibilityProgressValue`` instead.
     var accessibilityStatusName: String {
         switch status {
         case .queued: return "Queued"
@@ -89,8 +68,7 @@ extension DownloadTask {
         }
     }
 
-    /// The spoken value of this download's progress. Speed is excluded: it is sampled twice a second
-    /// and would make VoiceOver re-announce the row continuously.
+    /// Speed is excluded: sampled twice a second, it would make VoiceOver re-announce the row continuously.
     var accessibilityProgressValue: String {
         A11y.sentence(
             A11y.percent(fractionCompleted),
@@ -98,8 +76,6 @@ extension DownloadTask {
             A11y.eta(estimatedTimeRemaining))
     }
 
-    /// The whole row as one utterance, so a download reads as a single item instead of eight
-    /// fragments. Used with `.accessibilityElement(children: .ignore)`.
     var accessibilityRowLabel: String {
         A11y.sentence(
             name,
@@ -110,8 +86,6 @@ extension DownloadTask {
             A11y.eta(estimatedTimeRemaining))
     }
 
-    /// The verb the row's state button performs right now — the same branch
-    /// ``StateButton`` uses for its symbol, so label and behaviour can't drift.
     var accessibilityStateActionName: String {
         switch status {
         case .completed: return "Show in Finder"
@@ -122,15 +96,9 @@ extension DownloadTask {
     }
 }
 
-// MARK: - Announcements
-
-/// Speaks a transient message that has no lasting place in the interface (a toast, a banner) —
-/// otherwise a screen-reader user is never told. Local only; does nothing without assistive tech.
 @MainActor
 enum A11yAnnouncer {
 
-    /// Speak `message` at high priority, interrupting lower-priority speech — these respond to a user
-    /// action, so an announcement landing ten seconds later would be worse than none.
     static func announce(_ message: String) {
         guard !message.isEmpty else { return }
         NSAccessibility.post(
@@ -143,11 +111,7 @@ enum A11yAnnouncer {
     }
 }
 
-// MARK: - Filter and sort names
-
 extension SidebarFilter {
-    /// The filter as a spoken phrase. `SidebarFilter` has no display string of its own, so the
-    /// toolbar's Filter menu had nothing to announce as its current value.
     var accessibilityName: String {
         switch self {
         case .all: return "All files"
@@ -161,7 +125,6 @@ extension SidebarFilter {
 }
 
 extension FileType {
-    /// The type category in words, matching the sidebar's visible labels.
     var accessibilityName: String {
         switch self {
         case .iso: return "Disc images"
@@ -175,16 +138,12 @@ extension FileType {
 }
 
 extension SortKey {
-    /// The sort column in words. `rawValue` is the *visible* heading, and for
-    /// ``SortKey/index`` that is the bare symbol "#".
     var accessibilityName: String {
         self == .index ? "Row number" : rawValue
     }
 }
 
 extension ServerReachability {
-    /// Reachability in words. The sidebar shows this state only as a 7pt coloured dot — invisible to
-    /// a screen reader, and colour-alone for everyone else; the tooltip is pointer-only.
     var accessibilityName: String {
         switch self {
         case .unknown: return "Checking"
@@ -194,20 +153,14 @@ extension ServerReachability {
     }
 }
 
-// MARK: - View conveniences
-
 extension View {
 
-    /// Label an icon-only control and state that it is a button, in one call. For the many
-    /// `Image(systemName:)`-in-a-`Button` controls where the glyph carries the entire meaning.
     func a11yButton(_ label: String, hint: String? = nil) -> some View {
         accessibilityLabel(label)
             .accessibilityAddTraits(.isButton)
             .accessibilityHint(hint ?? "")
     }
 
-    /// Collapse a composed group into one VoiceOver element with a single label and optional spoken
-    /// value — the fix for rows otherwise read as a stream of disconnected fragments.
     func a11yGroup(label: String, value: String? = nil, hint: String? = nil) -> some View {
         accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
@@ -215,20 +168,12 @@ extension View {
             .accessibilityHint(hint ?? "")
     }
 
-    /// Mark a purely decorative graphic as invisible to assistive technology. What it carries
-    /// visually is always also stated in a nearby label.
     func a11yDecorative() -> some View {
         accessibilityHidden(true)
     }
 }
 
-// MARK: - Dynamic Type
-
-/// A system font whose point size tracks Accessibility → Display → Text size while rendering at
-/// the design's exact size by default. `@ScaledMetric` keeps the design and gains the scaling.
 private struct ScaledSystemFont: ViewModifier {
-    /// Declared relative to `.body` so it moves with the same factor the system
-    /// applies to ordinary body copy.
     @ScaledMetric(relativeTo: .body) private var factor: CGFloat = 100
 
     let size: CGFloat
@@ -244,8 +189,6 @@ private struct ScaledSystemFont: ViewModifier {
 }
 
 extension View {
-    /// Drop-in replacement for `.font(.system(size:weight:design:))` that honours the text-size
-    /// setting. Use on body copy; leave fixed sizes on glyph-only chrome.
     func scaledFont(size: CGFloat,
                     weight: Font.Weight = .regular,
                     design: Font.Design = .default,

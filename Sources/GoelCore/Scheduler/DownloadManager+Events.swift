@@ -1,9 +1,5 @@
 import Foundation
 
-// MARK: - Engine event ingestion
-
-/// Subscribes to each engine's event stream and folds events back into the stored task, then drives
-/// status-transition bookkeeping (slot release, completion hooks, promotion of the next queued task).
 extension DownloadManager {
 
     func subscribe(_ id: UUID, to engine: any DownloadEngine) {
@@ -15,14 +11,12 @@ extension DownloadManager {
         }
     }
 
-    /// Fold a single engine event into the stored task and republish.
     private func apply(_ event: EngineEvent, to id: UUID) {
         guard let i = index(of: id) else { return }
 
         switch event {
         case let .metadataResolved(name, totalBytes, files):
-            // Adopt the engine-resolved name (DHT/Content-Disposition) while the task holds only its
-            // placeholder — `name` is never empty, so `isEmpty` left magnets stuck. A custom name wins.
+            // Compare against the placeholder, not `isEmpty`: `name` is never empty, which left magnets stuck.
             if !name.isEmpty, tasks[i].name == Self.defaultName(for: tasks[i].source) {
                 tasks[i].name = PathSafety.sanitizedName(name, fallback: tasks[i].name)
             }
@@ -30,8 +24,7 @@ extension DownloadManager {
             tasks[i].files = files
 
         case let .progress(bytesDownloaded, bytesUploaded, _, _, connectionCount):
-            // Fold byte deltas into lifetime stats against a per-task mark. A regression (retry/resume
-            // restarting lower) re-bases it so history is never subtracted — rule in ``StatsAccumulator``.
+            // A regression (retry/resume restarting lower) re-bases the mark so history is never subtracted.
             let mark = statsMarks[id]
                 ?? StatsMark(down: tasks[i].bytesDownloaded, up: tasks[i].bytesUploaded)
             let folded = StatsAccumulator.fold(previous: mark,
@@ -41,8 +34,7 @@ extension DownloadManager {
             persistStats()
             tasks[i].bytesDownloaded = bytesDownloaded
             tasks[i].bytesUploaded = bytesUploaded
-            // Stored ↓/↑ rates come from byte counters via a sliding window (``SpeedMeter``), not the
-            // event's own 100–200 ms fields which swing per TCP burst. The one point speeds enter model.
+            // Rates come from the sliding window, not the event's own fields, which swing per TCP burst.
             let now = Date()
             var meter = speedMeters[id] ?? SpeedMeter()
             meter.record(down: bytesDownloaded, up: bytesUploaded, at: now)
@@ -58,21 +50,18 @@ extension DownloadManager {
             }
 
         case let .nameResolved(name):
-            // Adopt the engine's resolved name (re-sanitize as defense-in-depth;
-            // it strips any path components so the save path stays contained).
+            // Re-sanitize as defense-in-depth: it strips path components so the save path stays contained.
             tasks[i].name = PathSafety.sanitizedName(name, fallback: tasks[i].name)
 
         case let .statusChanged(status):
-            // Guard a stale pre-pause event from resurrecting a paused task: if the manager has
-            // authoritatively paused (`.paused`, no slot), a late active-phase event must not un-pause.
+            // A stale pre-pause event must not resurrect a task the manager authoritatively paused.
             if Self.isDownloadingPhase(status),
                tasks[i].status == .paused,
                !runningSlots.contains(id) {
                 return
             }
             tasks[i].status = status
-            // A phase transferring no payload shows no rate: speeds are meter-derived (`.progress`),
-            // so without this the last average lingers; dropping the meter re-ramps a fresh window.
+            // Speeds are meter-derived, so without this the last average lingers on a non-transferring phase.
             switch status {
             case .downloading, .seeding: break
             default:
@@ -84,8 +73,7 @@ extension DownloadManager {
             break   // the subsequent .statusChanged carries the terminal/seeding state
 
         case let .failed(error):
-            // Same stale-echo guard as `.statusChanged`: an error queued just before the engine
-            // stopped must not clobber the user's pause — that would block Resume, forcing a Retry.
+            // An error queued just before the engine stopped must not clobber the user's pause and block Resume.
             if tasks[i].status == .paused, !runningSlots.contains(id) {
                 return
             }
@@ -116,11 +104,8 @@ extension DownloadManager {
             tasks[i].remoteInfo = info
         }
 
-        // P1: persist only on meaningful transitions — never raw progress (10×/sec/task is churn).
-        // `.finished` carries no state change, so it would write a stale snapshot over the terminal one.
+        // `.finished` would write a stale snapshot over the terminal one; `.resumeDataUpdated` must still persist.
         switch event {
-        // Progress/swarm/piece chatter is high-frequency — never persist those. `.resumeDataUpdated`
-        // still persists: the durable cursor + concurrent byte count would otherwise wait for pause.
         case .progress, .fileProgress, .finished, .connectionsUpdated, .swarmUpdated,
              .trackersUpdated, .piecesUpdated:
             break
@@ -128,8 +113,6 @@ extension DownloadManager {
             persist(tasks[i])
         }
 
-        // P2: coalesce high-frequency progress snapshots; publish everything else
-        // immediately so the queue visibly moves the instant status changes.
         switch event {
         case .progress, .fileProgress, .connectionsUpdated, .swarmUpdated,
              .trackersUpdated, .piecesUpdated:
@@ -139,27 +122,20 @@ extension DownloadManager {
         }
     }
 
-    /// React to a task leaving the active-download phase: free its slot, stamp a completion date, run
-    /// completion side-effects, drop the subscription if terminal, refresh power, promote the next task.
     private func handleStatusTransition(_ id: UUID, _ status: DownloadStatus) {
         switch status {
         case .completed, .failed:
             runningSlots.remove(id)
-            // Finished — stop consuming its stream so a completed download doesn't leak a live
-            // consumer Task + continuation forever. (Seeding keeps its subscription: still active.)
+            // Stop consuming, or a completed download leaks its consumer Task and continuation forever.
             consumers[id]?.cancel()
             consumers[id] = nil
             if let i = index(of: id) { tasks[i].connections = nil }
             if status == .completed, let i = index(of: id) {
-                // A clean finish ends the failure streak, so the next unrelated
-                // failure starts its auto-retry budget fresh.
                 tasks[i].retryAttempt = nil
                 if tasks[i].completedAt == nil {
                     tasks[i].completedAt = Date()
                     stats.completedCount += 1
                     persistStats(force: true)
-                    // Archive the first completion. Removing the task later never
-                    // touches this row — history outlives the queue.
                     persistHistory(HistoryEntry(task: tasks[i]))
                     recordAudit(.completed, task: tasks[i])
                 }
@@ -172,8 +148,7 @@ extension DownloadManager {
             schedule()
         case .seeding:
             runningSlots.remove(id)
-            // The payload is complete the moment seeding begins — auto-delete the consumed local
-            // `.torrent` now if asked (it never reaches `.completed` while it seeds).
+            // Must happen here: a seeding task never reaches `.completed`, so the cleanup would never run.
             if let i = index(of: id) { deleteSourceTorrentIfRequested(tasks[i]) }
             schedule()
         case .paused:

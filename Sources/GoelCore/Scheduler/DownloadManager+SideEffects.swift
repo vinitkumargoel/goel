@@ -1,21 +1,11 @@
 import Foundation
 
-// MARK: - Cross-cutting side effects
-
-/// The scheduler's side-effect integrations — power assertion, watch-folder ingestion, periodic backup,
-/// post-completion hooks. Each runs best-effort and can never stall or crash the queue.
 extension DownloadManager {
 
-    // MARK: Power management
-
-    /// Recompute and apply the "prevent idle sleep" assertion from the current
-    /// settings and active-download state. Idempotent (see ``PowerManager``).
     func updatePowerAssertion() {
         power.setPreventSleep(shouldPreventSleep())
     }
 
-    /// The keep-awake decision in isolation: pure over tasks, settings and power source. `internal` so
-    /// boundary tests can drive the battery/seeding matrix without poking IOKit.
     func shouldPreventSleep() -> Bool {
         guard settings.preventSleepWhileDownloading else { return false }
 
@@ -32,23 +22,18 @@ extension DownloadManager {
 
         let onBattery = power.isOnBattery
 
-        // Seeding only (no active download): a lighter case the user can opt out of.
         if !hasActiveDownload {
             if settings.allowSleepWhileSeeding { return false }
             if settings.dontSeedOnBattery, onBattery { return false }
             return true
         }
 
-        // Active downloads in flight; honour on-battery opt-outs. Deliberately coarser than the pause
-        // policy: any "back off on battery" opt-in releases the hold — ``AutomationCore`` does the rest.
+        // Deliberately coarser than the pause policy: any "back off on battery" opt-in releases the hold, and AutomationCore does the rest.
         if onBattery, settings.allowSleepIfResumable { return false }
         if onBattery, settings.pauseBelowBatteryThreshold { return false }
         return true
     }
 
-    // MARK: Watch folder
-
-    /// Start or stop watching the configured folder per the BitTorrent settings.
     func updateWatchFolder() async {
         guard settings.btWatchFolderEnabled, !settings.btWatchFolderPath.isEmpty else {
             await folderWatch.stop()
@@ -56,23 +41,18 @@ extension DownloadManager {
         }
         let autoStart = settings.btWatchStartWithoutConfirmation
         await folderWatch.start(path: settings.btWatchFolderPath) { [weak self] url in
-            // Bind before the `Task`, not `self?.` inside: a capture list makes a *var*, and reading it
-            // from concurrent code errors on the toolchain CI builds with (newer Swift accepts it).
+            // Bind before the `Task`, not `self?.` inside: a capture list makes a *var*, which the toolchain CI builds with refuses to read from concurrent code.
             guard let self else { return }
             Task { await self.ingestWatchedTorrent(url, autoStart: autoStart) }
         }
     }
 
-    /// Add a `.torrent` discovered in the watch folder. When confirmation is required it is *created*
-    /// paused — not add-then-pause, which can lose to the scheduler's optimistic promotion.
+    /// Created paused rather than add-then-pause, which can lose to the scheduler's optimistic promotion.
     private func ingestWatchedTorrent(_ url: URL, autoStart: Bool) async {
         add(source: .torrentFile(url), startPaused: !autoStart)
     }
 
-    // MARK: Backup
-
-    /// (Re)arm the periodic backup loop. The interval is clamped to `1…8760` hours before the nanosecond
-    /// conversion, which **traps** above ~5M hours — and an imported backup file can set that field.
+    /// Clamp to `1…8760` hours before the nanosecond conversion, which **traps** above ~5M hours — and an imported backup file can set that field.
     func updateBackupSchedule() {
         backupTask?.cancel()
         backupTask = nil
@@ -88,8 +68,6 @@ extension DownloadManager {
         }
     }
 
-    /// Write a timestamped JSON backup of the task list into a "Backups" subfolder of the default save
-    /// directory, then prune beyond ``AppSettings/backupKeepCount``. Off-actor so I/O never stalls.
     private func writeBackup() async {
         guard let store else { return }
         let snapshot = tasks
@@ -110,8 +88,7 @@ extension DownloadManager {
         }
     }
 
-    /// Delete the oldest `backup-*.json` files beyond `keep`; the timestamp format sorts
-    /// lexicographically, so name order is age order. Best-effort — the new backup was already written.
+    /// Relies on the timestamp format sorting lexicographically, so name order is age order.
     static func pruneBackups(in dir: String, keep: Int) {
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: dir) else { return }
@@ -124,8 +101,7 @@ extension DownloadManager {
         }
     }
 
-    // Read-only after construction; the toolchain treats `DateFormatter` as
-    // `Sendable`, so it's safe to read from the detached backup task.
+    // Read-only after construction; the toolchain treats `DateFormatter` as `Sendable`, so the detached backup task may read it.
     private static let backupStampFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd-HHmmss"
@@ -133,10 +109,7 @@ extension DownloadManager {
         return f
     }()
 
-    // MARK: Completion side-effects
-
-    /// React to `.completed`: optionally antivirus-screen, run post-download actions, delete a consumed
-    /// `.torrent`. Multi-file torrents scan per file — a scanner handed a folder can pass having read none.
+    /// Multi-file torrents are scanned per file: a scanner handed a folder can pass having read none of it.
     func onDownloadCompleted(_ task: DownloadTask) {
         if settings.antivirusEnabled {
             let id = task.id
@@ -144,16 +117,14 @@ extension DownloadManager {
             let template = settings.antivirusArgumentTemplate
             let scanner = self.scanner
             let paths = Self.scanTargets(for: task)
-            // Fail CLOSED: a multi-file task whose every declared path escaped the save directory
-            // leaves nothing screenable; falling back to the folder is the "scanned one thing" hole.
+            // Fail CLOSED: with every declared path escaping the save directory nothing is screenable, and falling back to the folder is the "scanned one thing" hole.
             guard !paths.isEmpty else {
                 GoelLog.scheduler.error("Antivirus found no screenable file", .path(task.savePath))
                 recordScanVerdict(id, passed: false)
                 deleteSourceTorrentIfRequested(task)
                 return
             }
-            // Separate a misconfigured scanner from a real detection: both end up `flagged`, but
-            // "your scanner can't be run" and "your download is infected" are not the same message.
+            // Separate a misconfigured scanner from a real detection: both end up `flagged`, but they are not the same message.
             if !ProcessSafety.isSafeExecutable(executable.trimmingCharacters(in: .whitespacesAndNewlines)) {
                 GoelLog.scheduler.error(
                     "Antivirus is enabled but the configured scanner cannot be run", .path(executable))
@@ -168,8 +139,7 @@ extension DownloadManager {
                     break
                 }
                 await self?.recordScanVerdict(id, passed: passed)
-                // Only hand a *clean* file to auto-extract / post-download script actions: with AV on
-                // they wait for the verdict, else a malicious archive unpacks before the scanner vetoes.
+                // Only a *clean* file reaches auto-extract / post-download actions, else a malicious archive unpacks before the scanner vetoes it.
                 if passed { await self?.runPostDownloadActions(task) }
             }
         } else {
@@ -178,8 +148,7 @@ extension DownloadManager {
         deleteSourceTorrentIfRequested(task)
     }
 
-    /// Every file the antivirus must screen for `task`. Engine-declared per-file paths are untrusted
-    /// (``DownloadTask/primaryFilePath``), so escapers are dropped — an empty result is a refusal.
+    /// Engine-declared per-file paths are untrusted, so escapers are dropped — an empty result is a refusal, not "nothing to do".
     static func scanTargets(for task: DownloadTask) -> [String] {
         guard task.isMultiFile else { return [task.savePath] }
         return task.wantedFiles.compactMap { file in
@@ -188,16 +157,11 @@ extension DownloadManager {
         }
     }
 
-    /// Fold the antivirus result back into the task so the verdict survives
-    /// relaunch and the UI can badge a flagged file.
     func recordScanVerdict(_ id: UUID, passed: Bool) {
         _ = mutateTask(id) { $0.scanVerdict = passed ? "clean" : "flagged" }
     }
 
-    // MARK: Post-download actions
-
-    /// Run post-completion actions: auto-extract archives, and/or hand the file to a user script via the
-    /// same `FileScanning` port (inherits blocklist + timeout). Every extraction outcome gets a log line.
+    /// A user script goes through the same `FileScanning` port so it inherits the blocklist and the timeout.
     func runPostDownloadActions(_ task: DownloadTask) {
         let path = task.savePath
         if settings.postDownloadExtractArchives {
@@ -212,8 +176,7 @@ extension DownloadManager {
             let template = settings.postDownloadScriptArgs
             let scanner = self.scanner
             Task.detached {
-                // A failing script never fails the task (the download succeeded) — but a script that is
-                // missing, non-executable, ``ProcessSafety``-vetoed or non-zero must not look like it ran.
+                // A failing script never fails the task, but one that is missing, non-executable, ProcessSafety-vetoed or non-zero must not look like it ran.
                 let ok = await scanner.scan(path: path, executablePath: executable,
                                             argumentTemplate: template)
                 if !ok {
@@ -224,14 +187,11 @@ extension DownloadManager {
         }
     }
 
-    /// The archive kind ``runPostDownloadActions(_:)`` can unpack, or `nil` otherwise. Pure, so the
-    /// supported set is testable without a filesystem. Only `zip` today — `ditto -x -k` does the work.
     static func extractableArchiveKind(for path: String) -> String? {
         path.lowercased().hasSuffix(".zip") ? "zip" : nil
     }
 
-    /// Unpack `path` into a sibling "… extracted" folder with `ditto`, watchdog-bounded so a zip bomb
-    /// can't park the task, then sweep escapees. macOS-only: no `/usr/bin/ditto` on the Linux daemon.
+    /// Watchdog-bounded so a zip bomb can't park the task, then escapees are swept. macOS-only: no `/usr/bin/ditto` on the Linux daemon.
     private func extractArchive(at path: String, into directory: String) {
         #if os(macOS)
         Task.detached {
@@ -243,8 +203,7 @@ extension DownloadManager {
             do {
                 try unzip.run()
             } catch {
-                // The process was never started; `waitUntilExit()` on an unlaunched
-                // `Process` is undefined on Darwin, so this must return here.
+                // Must return: `waitUntilExit()` on an unlaunched `Process` is undefined on Darwin.
                 GoelLog.scheduler.error("Auto-extract failed to launch", .path(path))
                 return
             }
@@ -267,16 +226,13 @@ extension DownloadManager {
         #endif
     }
 
-    /// Hard ceiling on an extraction, mirroring ``AntivirusScanner``'s scan watchdog. Ten minutes is
-    /// generous for a legitimate archive and finite for one designed to never finish.
+    /// Ten minutes: generous for a legitimate archive, finite for one designed never to finish.
     static let extractionTimeout: Duration = .seconds(600)
 
-    /// Defense in depth after `ditto`: if any extracted entry resolves outside the target folder (e.g. a
-    /// symlink to `/private/tmp`), remove it so "open extracted folder" can't be redirected out.
+    /// Defense in depth after `ditto`: an entry resolving outside the target (e.g. a symlink to `/private/tmp`) is removed so "open extracted folder" can't be redirected.
     static func quarantineExtractedEscapees(under target: String) {
         let fm = FileManager.default
-        // Walk the whole tree, not just the top level, so a nested symlink (`sub/evil -> /etc`) is caught.
-        // The enumerator does not descend symlinks, so an escaping link is a leaf and is removed first.
+        // Whole tree, not just the top level, so a nested symlink (`sub/evil -> /etc`) is caught; the enumerator does not descend links, so an escaper is a leaf.
         guard let en = fm.enumerator(atPath: target) else { return }
         for case let rel as String in en {
             let full = (target as NSString).appendingPathComponent(rel)
@@ -288,8 +244,6 @@ extension DownloadManager {
         }
     }
 
-    /// Delete the originating local `.torrent` once the payload is complete, when
-    /// ``AppSettings/btAutoDeleteTorrent`` is on. Only `file:` sources; remote URLs are left alone.
     func deleteSourceTorrentIfRequested(_ task: DownloadTask) {
         guard settings.btAutoDeleteTorrent,
               case let .torrentFile(url) = task.source,
@@ -301,8 +255,7 @@ extension DownloadManager {
     }
 }
 
-/// Owns an extraction's non-`Sendable` `Process` behind a lock so the watchdog can terminate it safely,
-/// and no-ops once it has exited. Like ``AntivirusScanner``'s `ScanGate`, minus the continuation.
+/// Holds the non-`Sendable` `Process` behind a lock so the watchdog can terminate it safely, and no-ops once it has exited.
 private final class ExtractionGate: @unchecked Sendable {
     private let lock = NSLock()
     private var finished = false
@@ -312,13 +265,10 @@ private final class ExtractionGate: @unchecked Sendable {
         self.process = process
     }
 
-    /// Mark the extraction done, so a watchdog that fires afterwards does nothing.
     func finish() {
         lock.lock(); finished = true; lock.unlock()
     }
 
-    /// Stop a still-running extraction. Reports whether it actually killed one, so
-    /// the caller only logs a timeout that happened.
     func timeoutKill() -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard !finished else { return false }

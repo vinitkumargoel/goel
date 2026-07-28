@@ -1,12 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// A credential store that *refuses* rather than having nothing stored — the denied-Keychain-prompt path. Collapsing
-/// refusal into "no password" sends a credential-less connection, and the user is told their password is wrong.
 final class CredentialFailureTests: XCTestCase {
 
-    /// A fake that can be told to deny reads and/or writes, mimicking a user
-    /// dismissing the macOS Keychain prompt.
     private final class DenyingCredentialStore: CredentialManaging, @unchecked Sendable {
         private let lock = NSLock()
         private var store: [String: (user: String, pass: String)] = [:]
@@ -68,8 +64,6 @@ final class CredentialFailureTests: XCTestCase {
         return dir
     }
 
-    // MARK: Reads
-
     func testDeniedReadIsNotReportedAsMissing() {
         let fake = DenyingCredentialStore()
         let store = SFTPConnectionStore(credentials: fake, directory: tempDir())
@@ -107,8 +101,6 @@ final class CredentialFailureTests: XCTestCase {
         let conn = SFTPConnection(name: "n", host: "h", username: "u")
         fake.denyReads = true
 
-        // The editor passes the typed password explicitly, so a hostile Keychain
-        // must not block testing a connection.
         guard case .ready = SFTPSession.resolve(for: conn, password: "typed", store: store) else {
             return XCTFail("an explicitly supplied password should not consult the Keychain")
         }
@@ -120,8 +112,6 @@ final class CredentialFailureTests: XCTestCase {
         let saved = SFTPConnection(name: "n", host: "old.example", username: "u")
         store.save(saved, password: "secret")
 
-        // What the editor holds after the user corrects the host but leaves the
-        // password field blank. The draft's credentialKey points at nothing.
         let draft = SFTPConnection(id: saved.id, name: "n", host: "new.example", username: "u")
         XCTAssertNil(store.password(for: draft),
                      "precondition: the draft's own key has no secret")
@@ -130,8 +120,6 @@ final class CredentialFailureTests: XCTestCase {
                                                 store: store) else {
             return XCTFail("Test must read the secret from the saved identity, not the draft")
         }
-        // Without the hint it would silently connect with no password and the
-        // server would blame the user's credentials.
         guard case .ready(let bare) = SFTPSession.resolve(for: draft, store: store) else {
             return XCTFail("unexpected resolution for the un-hinted draft")
         }
@@ -141,8 +129,6 @@ final class CredentialFailureTests: XCTestCase {
     func testPassphraseIsNotConsultedWithoutAKey() {
         let fake = DenyingCredentialStore()
         let store = SFTPConnectionStore(credentials: fake, directory: tempDir())
-        // No private key configured, so a refusal on the passphrase entry is
-        // irrelevant and must not block a password-only connection.
         let conn = SFTPConnection(name: "n", host: "h", username: "u")
         fake.seed(host: conn.credentialKey, user: "u", pass: "pw")
 
@@ -150,8 +136,6 @@ final class CredentialFailureTests: XCTestCase {
             return XCTFail("a key-less connection must not be blocked by the passphrase entry")
         }
     }
-
-    // MARK: Writes
 
     func testDeniedWriteIsReportedAndDoesNotDestroyTheStoredSecret() {
         let fake = DenyingCredentialStore()
@@ -175,7 +159,6 @@ final class CredentialFailureTests: XCTestCase {
         store.save(conn, password: "carry-me")
         let oldKey = conn.credentialKey
 
-        // Editing the username moves the Keychain key; the migration write is refused.
         fake.denyWrites = true
         conn.username = "renamed"
         let outcome = store.save(conn, password: nil)
@@ -204,8 +187,6 @@ final class CredentialFailureTests: XCTestCase {
         let conn = SFTPConnection(name: "n", host: "h", username: "u")
         store.save(conn, password: "secret")
 
-        // Documented behaviour: "" clears. The old code stored an empty string
-        // instead, leaving a useless credential that shadowed agent/key auth.
         store.save(conn, password: "")
         XCTAssertNil(fake.rawPassword(host: conn.credentialKey))
     }
@@ -236,8 +217,6 @@ final class CredentialFailureTests: XCTestCase {
                      "the passphrase must not outlive the connection it belonged to")
     }
 
-    // MARK: Model
-
     func testPrivateKeyPathSurvivesJSONRoundTrip() throws {
         let conn = SFTPConnection(name: "n", host: "h", username: "u",
                                   privateKeyPath: "/keys/id_ed25519")
@@ -247,8 +226,6 @@ final class CredentialFailureTests: XCTestCase {
     }
 
     func testConnectionsSavedBeforeKeySupportStillDecode() throws {
-        // Forward-compatibility: the stored JSON from an older build has no
-        // `privateKeyPath` key at all, and must not fail to decode.
         let legacy = """
         [{"id":"\(UUID().uuidString)","name":"old","host":"h","port":22,
           "username":"u","initialPath":".","useAgent":false}]

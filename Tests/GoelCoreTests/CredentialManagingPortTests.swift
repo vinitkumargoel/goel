@@ -1,11 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Boundary tests unlocked by the ``CredentialManaging`` port: `SFTPConnectionStore` injects the
-/// store (and its directory), so persistence/removal runs on a fake — no Keychain, no real App Support.
 final class CredentialManagingPortTests: XCTestCase {
 
-    /// A minimal in-memory ``CredentialManaging`` standing in for the Keychain.
     private final class FakeCredentialStore: CredentialManaging, @unchecked Sendable {
         private let lock = NSLock()
         private var store: [String: (user: String, pass: String)] = [:]
@@ -52,7 +49,7 @@ final class CredentialManagingPortTests: XCTestCase {
         let store = SFTPConnectionStore(credentials: fake, directory: tempDir())
         let conn = SFTPConnection(name: "home", host: "h", username: "u")
         store.save(conn, password: "keep")
-        store.save(conn, password: nil)   // edit without retyping
+        store.save(conn, password: nil)
         XCTAssertEqual(store.password(for: conn), "keep")
     }
 

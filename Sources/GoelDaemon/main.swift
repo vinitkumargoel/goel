@@ -1,11 +1,8 @@
 import Foundation
 import GoelCore
 #if canImport(Glibc)
-import Glibc   // umask, so the token file is created private from birth
+import Glibc
 #endif
-
-// GoelDaemon — the headless Linux entry point. No desktop shell, so the portal IS the UI: this boots
-// the same GoelCore DownloadManager with the remote server always on, configured from GOEL_* env vars.
 
 func env(_ key: String, _ fallback: String) -> String {
     let v = ProcessInfo.processInfo.environment[key]
@@ -24,21 +21,17 @@ guard let port = Int(portRaw), (1...65535).contains(port) else {
     stderrLine("GoelDaemon: fatal — GOEL_PORT '\(portRaw)' is not a valid port (1–65535)")
     exit(1)
 }
-// Safe default: loopback-only unless the operator explicitly opts into LAN (and
-// sets a password — the server refuses a passwordless LAN bind regardless).
+// Safe default: loopback-only unless the operator opts into LAN — and the server refuses a passwordless LAN bind regardless.
 let allowLAN = envBool("GOEL_ALLOW_LAN", false)
 let requireAuth = envBool("GOEL_REQUIRE_AUTH", true)
 let username = env("GOEL_USERNAME", "admin")
 let password = ProcessInfo.processInfo.environment["GOEL_PASSWORD"] ?? ""
 let tokenEnv = ProcessInfo.processInfo.environment["GOEL_TOKEN"] ?? ""
 let saveDir = env("GOEL_SAVE_DIR", home.appendingPathComponent("Downloads").path)
-// Watch folder, opt-in and non-destructive: unset GOEL_WATCH_DIR keeps whatever is persisted, so a
-// restart with a trimmed unit file doesn't silently switch the feature off.
+// Unset GOEL_WATCH_DIR keeps whatever is persisted, so a restart with a trimmed unit file doesn't silently switch the feature off.
 let watchDir = env("GOEL_WATCH_DIR", "")
 let watchAutoStart = envBool("GOEL_WATCH_AUTOSTART", false)
 
-// Aggregation. Same opt-in shape as the watch folder: unset means "keep whatever
-// the portal last saved", so a runtime change is not undone by the next restart.
 let aggregationEnv = ProcessInfo.processInfo.environment["GOEL_AGGREGATION"]
 let aggregationAdaptersEnv = ProcessInfo.processInfo.environment["GOEL_AGGREGATION_ADAPTERS"]
 let aggregationStreamsRaw = env("GOEL_AGGREGATION_STREAMS", "")
@@ -60,8 +53,7 @@ try? FileManager.default.createDirectory(
     atPath: (dbPath as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
 try? FileManager.default.createDirectory(atPath: saveDir, withIntermediateDirectories: true)
 
-// Manager + RemoteAccess held weakly inside the portal — keep strong refs for
-// the process lifetime so setup return doesn't deallocate them.
+// Held weakly inside the portal — keep strong refs for the process lifetime so returning from setup doesn't deallocate them.
 final class Retainer: @unchecked Sendable {
     var manager: DownloadManager?
     var remote: RemoteAccess?
@@ -72,11 +64,10 @@ Task {
     do {
         let store = try PersistenceStore(path: dbPath)
         let manager = DownloadManager(store: store)
-        retainer.manager = manager   // keep alive for the process lifetime
+        retainer.manager = manager
         await manager.restore()
 
-        // The queue DB stores the portal token + password hash; keep it private on
-        // multi-user Linux boxes (dir 0700, db + WAL/SHM sidecars 0600).
+        // The queue DB stores the portal token + password hash: keep it private on multi-user boxes (dir 0700, db + sidecars 0600).
         let dbDir = (dbPath as NSString).deletingLastPathComponent
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dbDir)
         for p in [dbPath, dbPath + "-wal", dbPath + "-shm"] where FileManager.default.fileExists(atPath: p) {
@@ -91,8 +82,6 @@ Task {
         settings.remoteUsername = username
         settings.remoteReadOnly = false
         if !password.isEmpty { settings.remotePasswordHash = RemotePassword.hash(password) }
-        // Prefer an operator-supplied token (mirrors GOEL_PASSWORD — never logged);
-        // otherwise keep any existing one, or generate a fresh one on first boot.
         if !tokenEnv.isEmpty { settings.remoteToken = tokenEnv }
         else if settings.remoteToken.isEmpty { settings.remoteToken = RemotePassword.randomHex(bytes: 24) }
         if !watchDir.isEmpty {
@@ -103,20 +92,16 @@ Task {
         if let aggregationEnv {
             settings.aggregationEnabled = ["1", "true", "yes", "on"].contains(aggregationEnv.lowercased())
         }
-        // An empty (but present) GOEL_AGGREGATION_ADAPTERS means "every eligible
-        // interface" — distinct from unset, which means "leave the saved list alone".
+        // Empty-but-present means "every eligible interface"; unset means "leave the saved list alone".
         if aggregationAdaptersEnv != nil { settings.aggregationAdapterIds = aggregationAdapters }
         if let streams = Int(aggregationStreamsRaw) { settings.aggregationStreamsPerAdapter = streams }
         await manager.updateSettings(settings)
         _ = await manager.setDefaultSaveDirectory(saveDir)
 
-        // Same lifecycle façade as the desktop app — policy, restart, bind state.
         let remote = RemoteAccess()
         retainer.remote = remote
         await remote.apply(settings: settings, backend: manager)
 
-        // Report the ACTUAL bound state: never claim "ready" on a failed bind, and read
-        // loopback-vs-LAN from what the server really did, not a guess that can drift.
         guard let bound = await remote.boundState() else {
             stderrLine("GoelDaemon: fatal — the portal failed to bind port \(port) (already in use, or a privileged port without permission)")
             exit(1)
@@ -127,8 +112,7 @@ Task {
             stderrLine("GoelDaemon: WARNING — portal is on the LAN over plain HTTP; sign-in and token cross the network unencrypted. Use a trusted network or a TLS reverse proxy (e.g. nginx/caddy).")
         }
         stderrLine("GoelDaemon: save dir \(saveDir) · db \(dbPath)")
-        // Never print the bearer token to stderr: it lands in the systemd journal and in container
-        // log drivers shipped to central logging. Write it to a private 0600 file, log only the path.
+        // Never print the bearer token to stderr: it lands in the systemd journal and container log drivers.
         if tokenEnv.isEmpty {
             let tokenFile = (dbDir as NSString).appendingPathComponent("portal-token")
             #if canImport(Glibc)
@@ -150,10 +134,7 @@ Task {
     }
 }
 
-// Clean shutdown on Ctrl-C / systemd stop.
 signal(SIGINT) { _ in exit(0) }
 signal(SIGTERM) { _ in exit(0) }
 
-// Keep the process alive; the NIO event loop and the manager run on their own
-// threads / the cooperative pool.
 dispatchMain()

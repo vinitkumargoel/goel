@@ -1,15 +1,13 @@
 import AppKit
 import GoelCore
 
-/// Asks the user to confirm a server's identity on first contact, before any credential is offered.
-/// `NSAlert`, not a SwiftUI sheet: first contact can happen from inside the connection editor.
+/// TOFU prompt: must resolve before any credential is offered to the server.
 @MainActor
 final class HostKeyApprovalPresenter: HostKeyApproving {
 
     static let shared = HostKeyApprovalPresenter()
 
-    /// One prompt per endpoint at a time. A dropped batch opens several sessions that all reach
-    /// first contact, which would otherwise stack one dialog per file; later arrivals wait.
+    /// One prompt per endpoint, else a dropped batch stacks one dialog per file.
     private var pending: [String: [CheckedContinuation<Bool, Never>]] = [:]
 
     func approveFirstContact(host: String, port: Int, fingerprint: String) async -> Bool {
@@ -39,8 +37,7 @@ final class HostKeyApprovalPresenter: HostKeyApproving {
         alert.addButton(withTitle: "Cancel")
         alert.accessoryView = Self.fingerprintView(fingerprint)
 
-        // No window at all (a connection started before the UI is up): fall back
-        // to an app-modal alert rather than skipping the question.
+        // No window yet: fall back to app-modal rather than skipping the question.
         guard let window = NSApp.keyWindow ?? NSApp.mainWindow else {
             return alert.runModal() == .alertFirstButtonReturn
         }
@@ -51,8 +48,6 @@ final class HostKeyApprovalPresenter: HostKeyApproving {
         }
     }
 
-    /// The fingerprint as selectable monospaced text. It is the whole point of the prompt, so it has
-    /// to be copyable next to the server's own output rather than eyeballed.
     private static func fingerprintView(_ fingerprint: String) -> NSView {
         let field = NSTextField(labelWithString: "SHA-256: \(fingerprint)")
         field.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -61,8 +56,7 @@ final class HostKeyApprovalPresenter: HostKeyApproving {
         field.lineBreakMode = .byCharWrapping
         field.preferredMaxLayoutWidth = 280
         field.frame = NSRect(x: 0, y: 0, width: 280, height: 46)
-        // Base64/hex read as words is unverifiable; spell it out, which is the
-        // only way to compare it against the server's output by ear.
+        // Spelled out per character: read as words the fingerprint can't be verified by ear.
         field.setAccessibilityLabel("Host key SHA-256 fingerprint")
         field.setAccessibilityValue(fingerprint.map { "\($0) " }.joined())
         return field

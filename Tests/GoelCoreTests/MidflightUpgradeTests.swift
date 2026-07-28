@@ -1,18 +1,12 @@
 import XCTest
 @testable import GoelCore
 
-/// Pure unit tests for the mid-flight single→segmented upgrade helpers: the trigger gate, the
-/// synthesized layout math, the trip-once signal, and the engine-side mid-flight grant bookkeeping.
 final class MidflightUpgradeTests: XCTestCase {
 
     private typealias R = SegmentedTransfer.Range64
 
     private let MiB: Int64 = 1024 * 1024
 
-    // MARK: Helpers
-
-    /// The layout invariant every upgrade must satisfy: ranges tile `[0, total-1]` contiguously and
-    /// gap-free, and every restored count fits inside the range it claims.
     private func assertTiles(_ layout: (ranges: [R], restored: [Int: Int64]),
                              total: Int64,
                              file: StaticString = #filePath, line: UInt = #line) {
@@ -38,32 +32,23 @@ final class MidflightUpgradeTests: XCTestCase {
         }
     }
 
-    // MARK: Trigger gate
-
     func testShouldAttemptUpgradeRequiresSizeNoRangesAndValidator() {
-        // Missing size: the layout math has no total to cut against.
         XCTAssertFalse(SegmentedTransfer.shouldAttemptUpgrade(
             totalBytes: nil, acceptsRanges: false, etag: "\"v1\"", lastModified: nil))
-        // Below the 8 MiB floor: re-segmentation costs more than it saves.
         XCTAssertFalse(SegmentedTransfer.shouldAttemptUpgrade(
             totalBytes: 8 * MiB - 1, acceptsRanges: false, etag: "\"v1\"", lastModified: nil))
-        // Ranges already accepted: the download went segmented at init.
         XCTAssertFalse(SegmentedTransfer.shouldAttemptUpgrade(
             totalBytes: 8 * MiB, acceptsRanges: true, etag: "\"v1\"", lastModified: nil))
-        // No validator: the streamed prefix cannot be proven identical to
-        // ranged bytes, so the upgrade must never fire.
+        // No validator: the streamed prefix cannot be proven identical to ranged bytes, so the upgrade must never fire.
         XCTAssertFalse(SegmentedTransfer.shouldAttemptUpgrade(
             totalBytes: 8 * MiB, acceptsRanges: false, etag: nil, lastModified: nil))
 
-        // Exactly at the floor with either validator alone: eligible.
         XCTAssertTrue(SegmentedTransfer.shouldAttemptUpgrade(
             totalBytes: 8 * MiB, acceptsRanges: false, etag: "\"v1\"", lastModified: nil))
         XCTAssertTrue(SegmentedTransfer.shouldAttemptUpgrade(
             totalBytes: 8 * MiB, acceptsRanges: false, etag: nil,
             lastModified: "Tue, 01 Jul 2025 00:00:00 GMT"))
     }
-
-    // MARK: upgradedLayout
 
     func testUpgradedLayoutPrefixPlusRemainderSplit() {
         let total = 100 * MiB, written = 10 * MiB
@@ -87,7 +72,6 @@ final class MidflightUpgradeTests: XCTestCase {
     }
 
     func testUpgradedLayoutSingleConnection() {
-        // The zero-grant upgrade: 1 tail segment still beats an unresumable stream.
         let total = 20 * MiB, written = 5 * MiB
         let layout = SegmentedTransfer.upgradedLayout(total: total, written: written, connections: 1)
 
@@ -104,7 +88,6 @@ final class MidflightUpgradeTests: XCTestCase {
 
         XCTAssertEqual(layout.ranges.count, 9, "prefix + 8 tail segments")
         XCTAssertEqual(layout.restored, [0: written])
-        // Every tail segment must clear the single-path floor.
         for tail in layout.ranges.dropFirst() {
             XCTAssertGreaterThanOrEqual(tail.end - tail.start + 1, 64 * 1024)
         }
@@ -112,8 +95,6 @@ final class MidflightUpgradeTests: XCTestCase {
     }
 
     func testUpgradedLayoutClampsByMinSegment() {
-        // Remainder 100 KiB: the 64 KiB floor admits 2 tails, the 32 KiB
-        // multi-path floor admits 4 — same clamp math as a fresh plan.
         let written = 10 * MiB
         let total = written + 100 * 1024
 
@@ -128,7 +109,6 @@ final class MidflightUpgradeTests: XCTestCase {
     }
 
     func testUpgradedLayoutRemainderSmallerThanFloor() {
-        // 1000 bytes left: one tail regardless of how many connections were granted.
         let total = 10 * MiB, written = 10 * MiB - 1000
         let layout = SegmentedTransfer.upgradedLayout(total: total, written: written, connections: 8)
 
@@ -139,7 +119,6 @@ final class MidflightUpgradeTests: XCTestCase {
     }
 
     func testUpgradedLayoutZeroRemainder() {
-        // The trip landed on the final flush: prefix-only layout, still well-formed.
         let total = 16 * MiB
         let layout = SegmentedTransfer.upgradedLayout(total: total, written: total, connections: 4)
 
@@ -151,26 +130,20 @@ final class MidflightUpgradeTests: XCTestCase {
     }
 
     func testUpgradedLayoutFloorsConnectionsAtOne() {
-        // connections is 1 + granted in production, but the pure function must
-        // not emit an empty layout if handed 0.
         let total = 9 * MiB
         let layout = SegmentedTransfer.upgradedLayout(total: total, written: 0, connections: 0)
         XCTAssertEqual(layout.ranges.count, 1)
         assertTiles(layout, total: total)
     }
 
-    // MARK: Trip-once signal
-
     func testUpgradeSignalTripIsSticky() {
         let signal = UpgradeSignal()
         XCTAssertFalse(signal.isTripped)
         signal.trip()
         XCTAssertTrue(signal.isTripped)
-        signal.trip()                                  // idempotent
+        signal.trip()
         XCTAssertTrue(signal.isTripped, "a tripped signal never resets")
     }
-
-    // MARK: Grant bookkeeping
 
     func testExtraGrantCounterAccumulatesAndIgnoresNonPositive() {
         let counter = ExtraGrantCounter()
@@ -184,7 +157,7 @@ final class MidflightUpgradeTests: XCTestCase {
 
     func testGrantExtraConnectionsClampsToHostRoomAndCharges() async {
         let config = URLSessionConfiguration.ephemeral
-        let engine = HTTPEngine(configuration: config, profile: .medium)   // per-server 8, extras on
+        let engine = HTTPEngine(configuration: config, profile: .medium)
 
         let first = await engine.grantExtraConnections(host: "h.example", wanted: 100)
         XCTAssertEqual(first, 8, "grant clamps to the per-server budget, no floor-of-1")
@@ -212,16 +185,11 @@ final class MidflightUpgradeTests: XCTestCase {
     }
 }
 
-// MARK: - Behavioural (whole-transfer) upgrade tests
-
-/// End-to-end mid-flight upgrade: a real ``SegmentedTransfer`` over ``StubURLProtocol`` (HTTPEngineTests.swift).
-/// Deterministic — the stub parks the 200 body until the test observes state; sleeps only cover the trip hop.
 final class MidflightUpgradeBehaviourTests: XCTestCase {
 
     private var tempDir: URL!
 
     private let MiB = 1024 * 1024
-    /// Covers the prober's "response read → trip()" hop only (see the note above).
     private let tripSettleNanos: UInt64 = 150_000_000
 
     override func setUp() {
@@ -233,14 +201,11 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
     }
 
     override func tearDown() {
-        // Never leave a parked body behind: a stub thread spinning on a hold that
-        // nothing releases would outlive the test.
+        // Never leave a parked body behind: a stub thread spinning on a hold that nothing releases would outlive the test.
         StubURLProtocol.releaseUnrangedBody()
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
         super.tearDown()
     }
-
-    // MARK: Helpers
 
     private func makeSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
@@ -248,8 +213,6 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         return URLSession(configuration: config)
     }
 
-    /// The other suites' `(i * 31 + 7) & 0xFF` payload, built by repeating its 256-byte period: bodies here
-    /// are multi-megabyte (the gate starts at 8 MiB) and a per-byte append of 16 MiB dominates a debug run.
     private func deterministicData(_ count: Int) -> Data {
         var period = Data(capacity: 256)
         for i in 0..<256 { period.append(UInt8((i * 31 + 7) & 0xFF)) }
@@ -259,8 +222,7 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         return data
     }
 
-    /// A single-stream plan (`acceptsRanges: false`) eligible to upgrade: prober cadence compressed to
-    /// milliseconds and the grant channel wired, since a nil `requestExtraConnections` disables it.
+    /// A nil `requestExtraConnections` disables the upgrade, so every plan under test must be handed a grant channel.
     private func upgradablePlan(name: String, totalBytes: Int, etag: String?,
                                 grants: GrantLog?) -> TransferPlan {
         var plan = TransferPlan(
@@ -282,7 +244,6 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         return plan
     }
 
-    /// The prober's midpoint probe, as it appears on the wire.
     private func midpointProbe(total: Int) -> String {
         let m = max(0, Int64(total) / 2)
         return "bytes=\(m)-\(m)"
@@ -293,8 +254,7 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         return ((attributes?[.size]) as? NSNumber)?.int64Value ?? 0
     }
 
-    /// Polls `condition` every 10 ms. Callers ALWAYS release the parked body
-    /// afterwards, so a timeout fails the assertion without hanging the transfer.
+    /// Callers must ALWAYS release the parked body afterwards, so a timeout fails the assertion without hanging the transfer.
     private func waitUntil(_ label: String, timeout: TimeInterval = 3,
                            file: StaticString = #filePath, line: UInt = #line,
                            _ condition: () -> Bool) async {
@@ -306,8 +266,6 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         XCTFail("timed out waiting for \(label)", file: file, line: line)
     }
 
-    /// Starts the transfer and collects every progress tick across BOTH phases — the single stream and
-    /// the post-upgrade segmented run share one continuation.
     private func start(_ transfer: SegmentedTransfer) -> (runner: Task<TransferOutcome, Error>, ticks: TickLog) {
         let ticks = TickLog()
         let stream = transfer.progress
@@ -315,8 +273,6 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         ticks.consumer = consumer
         return (Task { try await transfer.run() }, ticks)
     }
-
-    // MARK: (1) The upgrade completes segmented with the streamed prefix intact
 
     func testMidflightUpgradeCompletesSegmentedWithPrefixIntact() async throws {
         let total = 16 * MiB
@@ -359,13 +315,9 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         XCTAssertTrue(ticks.isMonotonic,
                       "progress must never go backwards across the single→segmented handover")
 
-        // The whole point of the feature: prefix bytes came off the stream, tail
-        // bytes off ranged GETs, and `preallocate` extended rather than truncated.
         let written = try Data(contentsOf: plan.destination)
         XCTAssertEqual(written, payload, "the stitched file must equal the source bytes end-to-end")
     }
-
-    // MARK: (2) No validator ⇒ no prober at all
 
     func testUpgradeSkippedWithoutValidator() async throws {
         let total = 16 * MiB
@@ -391,13 +343,10 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: plan.destination), payload)
     }
 
-    // MARK: (3) Probe edge of the validator triangle
-
     func testUpgradeRejectedWhenProbeValidatorsChanged() async throws {
         let total = 8 * MiB
         let payload = deterministicData(total)
-        // Ranged responses (so the probe) carry "v2", the UNRANGED stream the plan's "v1". Isolates the
-        // probe edge: the stream edge would pass, so only `probeMidpointRange`'s validator can refuse.
+        // Ranged responses carry "v2" and the UNRANGED stream the plan's "v1", so only `probeMidpointRange`'s validator can refuse.
         StubURLProtocol.set(.init(
             data: payload, supportsRanges: true, sendContentLength: true,
             etag: "\"v2\"", chunkSize: 64 * 1024, chunkDelayMicros: 500,
@@ -425,13 +374,10 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
                        "the refused upgrade leaves the single stream completing untouched")
     }
 
-    // MARK: (4) Stream edge of the validator triangle [F1]
-
     func testUpgradeDisabledWhenStreamEntityDiffers() async throws {
         let total = 8 * MiB
         let payload = deterministicData(total)
-        // Mirror of (3): the probe sees "v1" and DOES trip, but the streaming 200 is "v2" — the prefix
-        // on disk can't be proven to be the probed entity, so the pump is never armed.
+        // The probe sees "v1" and DOES trip, but the streaming 200 is "v2" — the prefix on disk can't be proven to be the probed entity, so the pump is never armed.
         StubURLProtocol.set(.init(
             data: payload, supportsRanges: true, sendContentLength: true,
             etag: "\"v1\"", chunkSize: 64 * 1024, chunkDelayMicros: 500,
@@ -460,14 +406,11 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: plan.destination), payload)
     }
 
-    // MARK: (5) Overshoot fails instead of reporting completed [F3]
-
     func testUpgradeOvershootFailsInsteadOfCompleting() async throws {
-        let total = 9 * MiB                       // what the plan and every 206 declare
+        let total = 9 * MiB
         let probed = deterministicData(total)
-        let streamed = deterministicData(12 * MiB)  // …but the 200 keeps going
-        // Ranges start UNSUPPORTED so the prober cannot trip before the stream overshoots: the flip
-        // below arms it, and by then > `total` bytes are provably on disk.
+        let streamed = deterministicData(12 * MiB)
+        // Ranges start UNSUPPORTED so the prober cannot trip before the stream overshoots; the flip below arms it, and by then > `total` bytes are provably on disk.
         StubURLProtocol.set(.init(
             data: probed, supportsRanges: false, sendContentLength: true,
             etag: "\"v1\"", chunkSize: 64 * 1024, chunkDelayMicros: 2000,
@@ -479,13 +422,10 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         let transfer = SegmentedTransfer(plan: plan)
         let (runner, ticks) = start(transfer)
 
-        // The destination file IS the flush ledger: waiting on its size proves the
-        // pump has committed more bytes than the declared total.
         await waitUntil("10 MiB of the oversized stream to be flushed") {
             self.fileSize(plan.destination) >= Int64(10 * self.MiB)
         }
-        // Now let ranges appear. `set` also clears the recorded headers, so the
-        // probe observed below is unambiguously a post-flip one.
+        // `set` also clears the recorded headers, so the probe observed below is unambiguously a post-flip one.
         StubURLProtocol.set(.init(
             data: probed, supportsRanges: true, sendContentLength: true,
             etag: "\"v1\"", chunkSize: 64 * 1024, chunkDelayMicros: 2000,
@@ -507,15 +447,12 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
             return XCTFail("expected DownloadError.network, got \(error)")
         }
         XCTAssertTrue(message.contains("wrote"), "expected the completeness message, got: \(message)")
-        // The number in the message pins WHICH guard fired: `upgradeToSegmented`'s written > total
-        // check, not `runSingle`'s end-of-stream net (which would report the full 12 MiB).
+        // The number pins WHICH guard fired: `upgradeToSegmented`'s written > total check, not `runSingle`'s end-of-stream net (which would report the full 12 MiB).
         XCTAssertTrue(message.contains("of \(Int64(total)) bytes"), message)
         XCTAssertFalse(message.contains("wrote \(Int64(12 * MiB))"),
                        "the failure must come from the upgrade guard, before the stream ended")
         XCTAssertEqual(grants.callCount, 0, "the overshoot throw precedes the budget grant")
     }
-
-    // MARK: (6) Ranged-200 flap-back inside the upgraded phase [F2]
 
     func testUpgradedPhaseRetriesRangedTwoHundredFlapback() async throws {
         let total = 8 * MiB
@@ -525,8 +462,7 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
             etag: "\"v1\"", chunkSize: 64 * 1024, chunkDelayMicros: 500,
             holdUnrangedBodyAt: 1 * MiB
         ))
-        // Two of the upgraded phase's tail segments get a full 200 instead of a
-        // 206. Single-byte ranges are exempt, so the midpoint probe still trips.
+        // Single-byte ranges are exempt from the forced 200, so the midpoint probe still trips.
         StubURLProtocol.force200ForMultiByteRangedGETs(2)
 
         let grants = GrantLog(grant: 3)
@@ -548,7 +484,6 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         XCTAssertEqual(outcome.bytesWritten, Int64(total),
                        "a ranged 200 in the upgraded phase is retried, not fatal")
         XCTAssertEqual(try Data(contentsOf: plan.destination), payload)
-        // More multi-byte ranged GETs than segments proves the two 200s were retried.
         let multiByte = StubURLProtocol.seenRangeHeaders().filter { header in
             guard let (start, end) = StubURLProtocol.parseRange(header, total: total) else { return false }
             return end > start
@@ -557,10 +492,6 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
                              "each forced 200 must have produced an extra attempt")
     }
 
-    // MARK: (7) The cross-download budget balances to zero after an upgrade
-
-    /// Drives a real upgrade through the ENGINE's ``HTTPEngine/grantExtraConnections(host:wanted:)``, then
-    /// mirrors its `defer` release (initial reservation + every grant) and asserts the budget lands at zero.
     func testConnectionBudgetBalancesToZeroAfterMidflightUpgrade() async throws {
         let total = 8 * MiB
         let payload = deterministicData(total)
@@ -611,10 +542,6 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
     }
 }
 
-// MARK: - Test doubles
-
-/// Records what the upgrade asked the budget for and answers with a fixed grant. A nil
-/// `requestExtraConnections` disables the upgrade by design, so every plan under test needs one.
 private final class GrantLog: @unchecked Sendable {
     private let lock = NSLock()
     private var calls: [Int] = []
@@ -635,8 +562,6 @@ private final class GrantLog: @unchecked Sendable {
     }
 }
 
-/// Collects every progress tick a transfer emits, across both phases of an
-/// upgrade (they share one continuation).
 private final class TickLog: @unchecked Sendable {
     private let lock = NSLock()
     private var ticks: [TransferProgress] = []
@@ -644,7 +569,6 @@ private final class TickLog: @unchecked Sendable {
 
     func add(_ tick: TransferProgress) { lock.lock(); ticks.append(tick); lock.unlock() }
 
-    /// Awaits the consumer task so every tick is in hand before asserting.
     func finish() async { await consumer?.value }
 
     var maxConnections: Int {

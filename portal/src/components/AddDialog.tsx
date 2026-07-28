@@ -24,8 +24,6 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
   const [single, setSingle] = useState('')
   const [busy, setBusy] = useState(false)
   const [picking, setPicking] = useState(false)
-  // Only needed to shorten the chosen path for display (`~/…`). Null until the first listing
-  // arrives — the folder field starts empty, so nothing is shown wrong in the meantime.
   const [home, setHome] = useState<string | null>(null)
   const urlRef = useRef<HTMLTextAreaElement>(null)
 
@@ -45,8 +43,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
         setSingle(eligible[0]?.name ?? '')
       })
       .catch(() => {
-        // The picker is an enhancement — without it the add still works and the
-        // server uses its own default route.
+        // Swallowed on purpose: without the picker the add still works on the server's default route.
       })
     return () => {
       cancelled = true
@@ -56,8 +53,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
   const eligible: NetworkAdapter[] = net?.adapters.filter((a) => a.eligible) ?? []
   const showNetworkChoice = eligible.length >= 2
 
-  /** Collapse the picker into a `NetworkSelection` spec the API understands. Returns null
-   *  when the choice is unusable, having already said why. */
+  /** Returns null when the choice is unusable, having already warned; callers must not warn again. */
   function networkSpec(): string | null {
     if (!showNetworkChoice) return 'auto'
     if (mode === 'single') return single ? `single:${single}` : 'auto'
@@ -92,8 +88,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
       const result = await api.add(body)
       onAdded(result.added, result.refused)
     } catch {
-      // `api` has already surfaced a refusal or an auth redirect. Leaving the
-      // dialog open keeps the user's typed URL rather than discarding it.
+      // `api` already surfaced the refusal; staying open keeps the user's typed URL.
       setBusy(false)
     }
   }
@@ -108,8 +103,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
           onClose={() => setPicking(false)}
           onPick={(path, listing) => {
             setHome(listing.home)
-            // Picking exactly the configured default is stored as "blank", so
-            // that changing the default later still applies to this download.
+            // Store the configured default as blank so changing it later still applies here.
             setFolder(path === listing.defaultFolder ? '' : path)
             setPicking(false)
           }}
@@ -141,8 +135,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
               <label className="flabel">
                 Save to <span className="chip chip-w">Server folder</span>
               </label>
-              {/* Read-only on purpose: a typed absolute path is refused only after the whole
-                  request is composed, so browsing makes the wrong value unreachable. */}
+              {/* Read-only on purpose: a typed absolute path is refused only after the request is composed. */}
               <div className="finput pkfield">
                 <span className={`pkval${folder ? '' : ' dim'}`} title={folder || undefined}>
                   {folder ? folderLabel(folder, home) : 'Default downloads folder'}

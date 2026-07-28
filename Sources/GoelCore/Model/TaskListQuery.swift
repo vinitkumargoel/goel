@@ -1,7 +1,5 @@
 import Foundation
 
-/// Pure filter/search/sort over ``DownloadTask`` lists — UI-agnostic so it can
-/// be unit-tested in GoelCore. App maps its sidebar/sort enums onto these.
 public enum TaskListQuery: Sendable {
 
     public enum Filter: Sendable, Equatable {
@@ -69,7 +67,6 @@ public enum TaskListQuery: Sendable {
         return ascending ? result : !result
     }
 
-    /// Filter + optional search (name / tags / note) + sort.
     public static func visible(
         tasks: [DownloadTask],
         filter: Filter,

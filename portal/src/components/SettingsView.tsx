@@ -115,8 +115,7 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
   const adopt = useCallback((n: NetworkState) => {
     setNet(n)
     setStreams(n.streamsPerAdapter)
-    // An empty `selected` means "every eligible adapter", not "none" — showing
-    // it as all-unticked would misreport the server's actual state.
+    // An empty `selected` means "every eligible adapter", not "none" — all-unticked would misreport it.
     setTicked(
       n.selected.length === 0 ? n.adapters.filter((a) => a.eligible).map((a) => a.name) : n.selected,
     )
@@ -139,8 +138,7 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
 
   async function save(body: Parameters<typeof api.updateNetwork>[0]) {
     try {
-      // The server echoes the state it actually settled on, which can differ
-      // from what was asked — adopt that, not the request.
+      // Adopt the echoed state, never `body`: the server can settle on something else.
       adopt(await api.updateNetwork(body))
       onToast('Network settings saved')
     } catch {
@@ -170,11 +168,8 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
 
   const eligibleNames = net.adapters.filter((a) => a.eligible).map((a) => a.name)
   const canSplit = eligibleNames.length >= 2
-  // Compared by membership, not count: a selected-then-ineligible adapter still shows ticked,
-  // so a bare count can read "all eligible" for a set that isn't.
+  // Membership, not count: a ticked-but-ineligible adapter makes a count read "all eligible" wrongly.
   const allEligibleTicked = eligibleNames.every((n) => ticked.includes(n))
-  // `[]` is the server's "every eligible adapter" sentinel, so an empty tick list
-  // would be saved as its exact opposite — and come back all-ticked on reload.
   const nothingTicked = ticked.length === 0
 
   return (
@@ -308,8 +303,7 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
               title={nothingTicked ? 'Tick at least one interface' : undefined}
               onClick={() =>
                 void save({
-                  // All-ticked is sent as the empty "every eligible adapter" sentinel, so a NIC
-                  // added later is picked up instead of silently excluded by a stale list.
+                  // All-ticked sends `[]` (the "every eligible" sentinel) so a NIC added later isn't excluded.
                   adapters: allEligibleTicked ? [] : ticked,
                   streams,
                 })

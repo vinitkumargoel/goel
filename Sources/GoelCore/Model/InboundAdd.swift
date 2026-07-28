@@ -1,28 +1,20 @@
 import Foundation
 
-/// Trust classifier for adds arriving from outside the in-app Add box: ``classify`` maps an ``Origin``
-/// + ``Payload`` to queue/confirm/drain/drop, so web-triggerable channels can't silently enqueue.
+/// Trust classifier: web-triggerable channels must never silently enqueue.
 public enum InboundAdd: Sendable {
 
-    /// Who initiated the add. Determines the confirmation bar, not the
-    /// content allowlist (that lives in ``DownloadSource/parse``).
     public enum Origin: Sendable, Equatable {
-        /// Services, drop basket, file open, UI paste accepted — trusted.
         case userExplicit
-        /// `goeldownloader://` — any web page can fire this → confirm.
+        /// Any web page can fire `goeldownloader://` — always confirm.
         case urlScheme
-        /// Native-messaging spool drain poke — trusted local process.
         case browserSpool
         /// Clipboard-monitor suggestion — confirm/suggest, never auto-queue.
         case clipboard
     }
 
-    /// Raw content for an inbound add. `torrentFilePath` is a path string so
-    /// the payload stays trivially `Sendable`/`Equatable` without URL quirks.
     public struct Payload: Sendable, Equatable {
         public var lines: String?
         public var torrentFilePath: String?
-        /// Content-free poke: read the on-disk browser-capture spool.
         public var drainBrowserSpool: Bool
 
         public init(lines: String? = nil, torrentFilePath: String? = nil,
@@ -32,8 +24,6 @@ public enum InboundAdd: Sendable {
             self.drainBrowserSpool = drainBrowserSpool
         }
 
-        /// True when the payload carries something queueable (text lines or a
-        /// local torrent path). Empty / whitespace-only lines count as empty.
         public var hasContent: Bool {
             let hasLines = !(lines?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
             let hasTorrent = !(torrentFilePath?.isEmpty ?? true)
@@ -41,7 +31,6 @@ public enum InboundAdd: Sendable {
         }
     }
 
-    /// What the app should do with a classified inbound add.
     public enum Disposition: Sendable, Equatable {
         case enqueue(Payload)
         case needsConfirmation(Payload)
@@ -49,12 +38,9 @@ public enum InboundAdd: Sendable {
         case ignore
     }
 
-    /// Classify trust: `browserSpool`/`drainBrowserSpool` → `drainSpool` (or `enqueue` if lines present),
-    /// `userExplicit` → `enqueue`, `urlScheme`/`clipboard` → `needsConfirmation`; no content → `ignore`.
     public static func classify(origin: Origin, payload: Payload) -> Disposition {
         if origin == .browserSpool || payload.drainBrowserSpool {
-            // Normally a content-free poke; if a reader already lifted lines out, queue them —
-            // the trust boundary was the local native-messaging host that wrote the file.
+            // Safe to enqueue unconfirmed: the trust boundary was the local host that wrote the spool.
             return payload.hasContent ? .enqueue(payload.withoutDrainFlag) : .drainSpool
         }
         switch origin {
@@ -67,8 +53,6 @@ public enum InboundAdd: Sendable {
         }
     }
 
-    /// Parse non-empty lines into ``DownloadSource`` via the same `BatchExpander` +
-    /// ``DownloadSource/parse`` path as the Add sheet. Metalink expansion stays in the app layer.
     public static func parseSources(from lines: String) -> [DownloadSource] {
         lines.split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -79,8 +63,7 @@ public enum InboundAdd: Sendable {
 }
 
 private extension InboundAdd.Payload {
-    /// Same content, with the drain flag cleared so an enqueued spool payload
-    /// doesn't re-trigger a drain loop downstream.
+    /// Drain flag cleared, or an enqueued spool payload re-triggers a drain loop downstream.
     var withoutDrainFlag: InboundAdd.Payload {
         InboundAdd.Payload(lines: lines, torrentFilePath: torrentFilePath, drainBrowserSpool: false)
     }

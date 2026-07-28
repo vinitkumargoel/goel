@@ -1,8 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Proves the L10n pipeline end-to-end: the German table resolves, English is the
-/// fallback for a language with no table, and an unknown key returns unchanged.
 final class LocalizationTests: XCTestCase {
 
     func testGermanTranslationsResolve() {
@@ -17,7 +15,6 @@ final class LocalizationTests: XCTestCase {
     }
 
     func testUnknownLanguageFallsBackToEnglish() {
-        // A language with no shipped table resolves through the English table.
         XCTAssertEqual(L10n.string("Resume", language: "Klingon"), "Resume")
     }
 

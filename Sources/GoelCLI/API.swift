@@ -3,14 +3,11 @@ import Foundation
 import FoundationNetworking   // URLSession lives here on Linux
 #endif
 
-/// Client for the daemon's own web-portal API — the same JSON routes the portal and extension use.
-/// The CLI adds no second control channel, so there is exactly one authorisation path.
 struct API {
     let port: Int
     let token: String
 
-    /// Always 127.0.0.1: the CLI runs on the daemon's host and the portal always listens on loopback,
-    /// so using the network address would send the token across the wire over plain HTTP.
+    /// Always 127.0.0.1: a network address would send the bearer token across the wire over plain HTTP.
     private var base: String { "http://127.0.0.1:\(port)" }
 
     struct TaskRow: Decodable {
@@ -67,14 +64,11 @@ struct API {
         try decode(NetworkState.self, from: get("/api/network"))
     }
 
-    /// `POST` routes that take `?id=` and answer `{"ok":true}`.
     func act(_ route: String, id: String? = nil, extra: [String: String] = [:]) throws {
         var query = extra
         if let id { query["id"] = id }
         _ = try post(route + queryString(query), body: nil)
     }
-
-    // MARK: Transport
 
     private func get(_ path: String) throws -> Data {
         try send(path: path, method: "GET", body: nil)
@@ -84,8 +78,6 @@ struct API {
         try send(path: path, method: "POST", body: body)
     }
 
-    /// Synchronous by design: this is a one-shot CLI, and a semaphore around a
-    /// single request is easier to reason about than an async main.
     private func send(path: String, method: String, body: Data?) throws -> Data {
         guard let url = URL(string: base + path) else {
             throw CLIError.message("bad request path \(path)")
@@ -112,8 +104,7 @@ struct API {
             box.error = error
             done.signal()
         }.resume()
-        // The timeout above bounds the request; this bounds the wait even if the
-        // session never calls back at all, so the CLI cannot hang forever.
+        // Bounds the wait even if the session never calls back at all, so the CLI cannot hang forever.
         if done.wait(timeout: .now() + 20) == .timedOut {
             throw CLIError.message("no response from the portal on port \(port) after 20s")
         }

@@ -3,12 +3,9 @@ import AppKit
 import QuickLook
 import GoelCore
 
-/// The center list: a sortable header and selectable rows with inline progress, type badge and
-/// per-row state button. Columns: #, Name, Size, Status, Added, ↓ Speed, ↑ Speed.
 struct DownloadListView: View {
     @EnvironmentObject private var vm: AppViewModel
 
-    /// The file being previewed with Quick Look (spacebar / context menu).
     @State private var quickLookItem: URL?
 
     var body: some View {
@@ -18,8 +15,6 @@ struct DownloadListView: View {
             if vm.visibleTasks.isEmpty {
                 emptyState
             } else {
-                // `ScrollViewReader` so keyboard navigation can bring the newly selected row into view — arrow
-                // keys that move an invisible selection are worse than no arrow keys at all.
                 ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -34,14 +29,10 @@ struct DownloadListView: View {
                             .id(task.id)
                             Divider()
                         }
-                        // Clicking the empty area below the rows clears the
-                        // selection, so the detail panel slides away.
                         Color.clear
                             .frame(maxWidth: .infinity, minHeight: 60)
                             .contentShape(Rectangle())
                             .onTapGesture { vm.selectNone() }
-                            // A deselect target with no visible content; there is
-                            // a keyboard/menu route to the same result.
                             .a11yDecorative()
                     }
                 }
@@ -53,11 +44,9 @@ struct DownloadListView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
-        // A click anywhere in the list background (not on a row) deselects.
         .contentShape(Rectangle())
         .onTapGesture { vm.selectNone() }
         .quickLookPreview($quickLookItem)
-        // Spacebar previews the primary selection, Finder-style.
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.space) {
@@ -65,11 +54,8 @@ struct DownloadListView: View {
             quickLookItem = URL(fileURLWithPath: task.savePath)
             return .handled
         }
-        // Keyboard navigation of the queue. Previously arrow keys did nothing, so a keyboard-only user
-        // could never reach a row. Selection drives the detail panel, so it must work without a pointer.
         .onKeyPress(.downArrow) { moveSelection(by: 1) }
         .onKeyPress(.upArrow) { moveSelection(by: -1) }
-        // Return performs the row's primary action, matching a double-click.
         .onKeyPress(.return) {
             guard let task = vm.selectedTask else { return .ignored }
             if task.status == .completed { vm.openFile(task) } else { vm.revealInFinder(task) }
@@ -79,8 +65,6 @@ struct DownloadListView: View {
         .accessibilityHint("Use the up and down arrow keys to move through downloads, space to preview, return to open.")
     }
 
-    /// Move the selection `offset` rows through the *visible* (filtered, sorted) order, starting at
-    /// the top when nothing is selected. Clamped rather than wrapping, so holding a key parks at an end.
     private func moveSelection(by offset: Int) -> KeyPress.Result {
         let tasks = vm.visibleTasks
         guard !tasks.isEmpty else { return .ignored }
@@ -91,8 +75,6 @@ struct DownloadListView: View {
         if !vm.detailPanelVisible { vm.detailPanelVisible = true }
         return .handled
     }
-
-    // MARK: Header
 
     private var header: some View {
         HStack(spacing: 0) {
@@ -132,8 +114,6 @@ struct DownloadListView: View {
         .frame(width: width, alignment: alignment)
         .frame(maxWidth: width == nil ? .infinity : nil)
         .padding(.horizontal, 6)
-        // Sort direction is signalled only by an 8pt chevron and its accent tint — invisible to a screen
-        // reader and to anyone who can't distinguish the tint. State it, and spell out "↓ Speed".
         .a11yButton(spokenHeader(title),
                     hint: isSortKey
                         ? "Currently sorting \(vm.sortAscending ? "ascending" : "descending"). Activate to reverse."
@@ -141,8 +121,6 @@ struct DownloadListView: View {
         .accessibilityValue(isSortKey ? (vm.sortAscending ? "Sorted ascending" : "Sorted descending") : "Not sorted")
     }
 
-    /// Column headings as words. The visible strings lean on typography the ear
-    /// can't hear: "#" is a symbol, "↓ Speed" / "↑ Speed" are arrows.
     private func spokenHeader(_ title: String) -> String {
         switch title {
         case "#": return "Row number"
@@ -152,8 +130,6 @@ struct DownloadListView: View {
         }
     }
 
-    /// Shown when the filter/search matched nothing — *not* on first run: `RootView` renders
-    /// `DownloadsEmptyState` for an empty queue, so this stays specific to "you filtered everything away".
     private var emptyState: some View {
         EmptyStateView(systemImage: "tray", title: "No downloads match",
                        subtitle: "Try a different filter or search term.")
@@ -161,8 +137,7 @@ struct DownloadListView: View {
     }
 }
 
-/// One row in the download list. `vm` is a plain (non-observed) reference and `isSelected` comes
-/// from the parent, so a row rebuilds only on its own inputs, not every other task's progress tick.
+/// `vm` is deliberately non-observed: observing it rebuilds every row on every task's progress tick.
 struct DownloadRow: View {
     let task: DownloadTask
     let displayIndex: Int
@@ -189,8 +164,6 @@ struct DownloadRow: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 6) {
-                // The dot repeats the status word beside it in colour form — exactly the colour-alone signal
-                // WCAG 1.4.1 warns about, and the text is the accessible equivalent.
                 Circle().fill(task.statusColor).frame(width: 7, height: 7)
                     .a11yDecorative()
                 Text(task.statusDetailText)
@@ -222,8 +195,7 @@ struct DownloadRow: View {
         .padding(.horizontal, 12)
         .frame(minHeight: 50)
         .background(isSelected ? Theme.accent.opacity(0.22) : (displayIndex.isMultiple(of: 2) ? Theme.rowAlt : Color.clear))
-        // One row, one element: left alone this exposes eight, so a download costs nine swipes. The label
-        // is identity only — folding the ticking percent in makes VoiceOver re-speak the row every second.
+        // Label is identity only: folding in the ticking percent makes VoiceOver re-speak the row every second.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(A11y.sentence(task.name,
                                           task.accessibilityKindName,
@@ -239,7 +211,6 @@ struct DownloadRow: View {
         .accessibilityAction(named: Text("Remove from list")) { vm.remove(task.id, deleteData: false) }
         .contentShape(Rectangle())
         .onTapGesture {
-            // ⌘-click extends the selection; a plain click replaces it.
             if NSEvent.modifierFlags.contains(.command) {
                 vm.toggleSelection(task.id)
             } else {
@@ -248,15 +219,12 @@ struct DownloadRow: View {
             if !vm.detailPanelVisible { vm.detailPanelVisible = true }
         }
         .contextMenu { contextMenu }
-        // A finished download can be dragged straight out to Finder/other apps.
         .onDrag {
             guard task.status.hasData else { return NSItemProvider() }
             return NSItemProvider(object: URL(fileURLWithPath: task.savePath) as NSURL)
         }
     }
 
-    /// The same branch ``StateButton`` takes, reused so the row's rotor action
-    /// and the visible button can never disagree about what the state means.
     private func primaryStateAction() {
         switch task.status {
         case .completed: vm.revealInFinder(task)
@@ -302,8 +270,6 @@ struct DownloadRow: View {
         if task.status.hasData {
             Button("Quick Look") { quickLook(URL(fileURLWithPath: task.savePath)) }
         }
-        // The capability stays VISIBLE when ffmpeg is missing and says why. Hiding it made "Convert"
-        // indistinguishable from a feature Goel° does not have.
         if task.status == .completed, task.isMediaFile {
             if let reason = vm.ffmpegUnavailableReason {
                 Button("Convert To…") { vm.toastNow(reason) }
@@ -316,8 +282,7 @@ struct DownloadRow: View {
         if vm.settings.remoteAccessEnabled, !vm.settings.remoteToken.isEmpty,
            RemoteStreamService.streamPlan(for: task) != nil {
             Button("Copy Stream Link") {
-                // The portal fails closed onto TLS when `remoteTLSEnabled` is set — the socket then speaks only
-                // TLS, so a hardcoded `http://` link would refuse to connect and look like a broken stream.
+                // With `remoteTLSEnabled` the socket speaks only TLS; a hardcoded http:// link cannot connect.
                 let scheme = vm.settings.remoteTLSEnabled ? "https" : "http"
                 vm.copyToPasteboard("\(scheme)://127.0.0.1:\(vm.settings.remotePort)/stream?id=\(task.id.uuidString)&token=\(vm.settings.remoteToken)")
             }
@@ -403,8 +368,6 @@ struct DownloadRow: View {
         return false
     }
 
-    /// A sequential torrent's video becomes watchable mid-download; offer the
-    /// player once a meaningful chunk exists.
     private var playableWhileDownloading: Bool {
         task.kind == .torrent
             && task.sequentialDownload == true
@@ -430,8 +393,7 @@ struct DownloadRow: View {
         return isActive ? "✓ \(name)" : name
     }
 
-    /// Menu label for one seed-ratio choice. nil is "no per-task limit", which now means the profile's
-    /// global limit applies; an explicit 0 seeds one torrent forever regardless of the profile.
+    /// nil means the profile's global limit applies; an explicit 0 seeds forever regardless of it.
     private func seedRatioLabel(_ ratio: Double?) -> String {
         let current = task.seedRatioLimit
         let isActive = ratio == nil
@@ -455,10 +417,7 @@ struct DownloadRow: View {
     }
 }
 
-// MARK: - Convert / Extract Audio
-
-/// The Convert and Extract Audio section of a completed media file's menu. Its own view observing
-/// ``MediaJobCenter`` directly, since a nested observable's changes don't propagate through the outer one.
+/// Observes ``MediaJobCenter`` directly: a nested observable's changes don't propagate through the outer one.
 private struct MediaMenuItems: View {
 
     let task: DownloadTask
@@ -487,8 +446,6 @@ private struct MediaMenuItems: View {
         }
     }
 
-    /// "MKV" or "MKV — copy, instant" once the source container is known, derived from the two
-    /// extensions alone. Audio formats get no size estimate: that needs a probe, i.e. a process.
     private func label(for ext: String) -> String {
         let source = input.pathExtension
         guard !source.isEmpty,

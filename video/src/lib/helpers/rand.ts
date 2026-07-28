@@ -1,5 +1,4 @@
-// origin: 模板片源仓库 helpers
-/** Deterministic PRNG — same seed always yields the same sequence. */
+/** Seeded on purpose: `Math.random` would jitter between Remotion's per-frame renders. */
 export const mulberry32 = (seed: number) => {
   let a = seed | 0;
   return () => {

@@ -1,7 +1,5 @@
 import Foundation
 
-/// Lightweight browser-session state kept separately from an SFTP connection's
-/// configured start folder. One last-known-good directory is retained per server.
 final class SFTPBrowserLocationStore: @unchecked Sendable {
     static let shared = SFTPBrowserLocationStore()
 
@@ -32,8 +30,6 @@ final class SFTPBrowserLocationStore: @unchecked Sendable {
         defaults.set(saved, forKey: key)
     }
 
-    /// Browser locations are disposable UI state. A malformed preference falls
-    /// back to an empty map rather than blocking access to configured servers.
     private func locations() -> [String: String] {
         guard let raw = defaults.object(forKey: key) else { return [:] }
         return raw as? [String: String] ?? [:]

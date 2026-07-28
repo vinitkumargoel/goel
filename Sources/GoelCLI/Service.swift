@@ -1,6 +1,5 @@
 import Foundation
 
-/// Result of running an external command.
 struct Ran {
     let status: Int32
     let out: String
@@ -8,8 +7,6 @@ struct Ran {
     var ok: Bool { status == 0 }
 }
 
-/// Thin `Process` wrapper. Everything this CLI does to the init system goes through
-/// `systemctl`/`journalctl` rather than D-Bus, because that is what an operator can verify by hand.
 enum Shell {
     @discardableResult
     static func run(_ executable: String, _ arguments: [String],
@@ -30,8 +27,7 @@ enum Shell {
         } catch {
             return Ran(status: 127, out: "", err: "\(executable): \(error)")
         }
-        // Read before waiting: a command that fills the 64 KiB pipe buffer would
-        // otherwise block forever while we wait for it to exit.
+        // Read before waiting: a command that fills the 64 KiB pipe buffer would otherwise block forever.
         var outData = Data(), errData = Data()
         if !passthrough {
             outData = outPipe.fileHandleForReading.readDataToEndOfFile()
@@ -43,8 +39,7 @@ enum Shell {
                    err: String(data: errData, encoding: .utf8) ?? "")
     }
 
-    /// Absolute paths only — resolving a bare name through `PATH` would let a
-    /// caller's environment decide which `systemctl` a root command runs.
+    /// Absolute paths only: resolving through `PATH` lets a caller's environment pick which `systemctl` runs as root.
     static func which(_ executable: String) -> String? {
         if executable.hasPrefix("/") {
             return FileManager.default.isExecutableFile(atPath: executable) ? executable : nil
@@ -57,13 +52,11 @@ enum Shell {
     }
 }
 
-/// systemd operations on the `goel` unit.
 enum Service {
     static var systemdAvailable: Bool {
         Shell.which("systemctl") != nil && FileManager.default.fileExists(atPath: "/run/systemd/system")
     }
 
-    /// `systemctl is-active` — "active", "inactive", "failed", "activating"…
     static var activeState: String {
         Shell.run("systemctl", ["is-active", Layout.serviceName]).out
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -93,14 +86,12 @@ enum Service {
         guard result.ok else { throw CLIError.message("systemctl daemon-reload failed: \(result.err)") }
     }
 
-    /// Last `lines` journal entries, or follow.
     static func journal(lines: Int, follow: Bool) throws {
         try requireSystemd()
         var arguments = ["-u", Layout.serviceName, "-n", "\(lines)", "--no-pager"]
         if follow { arguments.append("-f") }
         let result = Shell.run("journalctl", arguments, passthrough: true)
-        // Ctrl-C is how `-f` is meant to end. Foundation reports the RAW signal number for a signalled
-        // child, not the shell's 128+n — so checking only for 130 turned Ctrl-C into "exited 2".
+        // Foundation reports the raw signal number for a signalled child, not the shell's 128+n.
         let cleanExits: Set<Int32> = [SIGINT, SIGTERM, 128 + SIGINT, 128 + SIGTERM]
         if !result.ok && !cleanExits.contains(result.status) {
             throw CLIError.message("journalctl exited \(result.status)")
@@ -111,14 +102,11 @@ enum Service {
         guard systemdAvailable else { throw CLIError.noSystemd }
     }
 
-    /// Rewrite the drop-in listing the paths the service may write to. `ProtectSystem=strict` makes
-    /// everything else read-only, and getting this wrong is silent: every download fails to write.
+    /// `ProtectSystem=strict` makes everything unlisted read-only, and getting this wrong is silent: every download fails to write.
     static func writePathsDropIn(_ effective: Effective) throws {
         var paths = [Layout.stateDir, effective.saveDir]
         paths.append((effective.databasePath as NSString).deletingLastPathComponent)
         if let watch = effective.watchDir { paths.append(watch) }
-        // Deduplicate while keeping order, so the file is stable across runs and
-        // a diff of it means something changed.
         var seen = Set<String>()
         let unique = paths.filter { !$0.isEmpty && seen.insert($0).inserted }
 
@@ -138,8 +126,7 @@ enum Service {
         try body.write(toFile: Layout.dropInFile, atomically: true, encoding: .utf8)
     }
 
-    /// `ReadWritePaths=` is whitespace-separated, so a folder with a space in its name
-    /// silently becomes two paths that do not exist. systemd accepts double quotes.
+    /// `ReadWritePaths=` is whitespace-separated: an unquoted folder with a space silently becomes two paths that do not exist.
     private static func quoted(_ path: String) -> String {
         let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./:@,+"))
         guard !path.unicodeScalars.allSatisfy({ safe.contains($0) }) else { return path }

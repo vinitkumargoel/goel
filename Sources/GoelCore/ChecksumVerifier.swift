@@ -5,7 +5,6 @@ import CryptoKit
 import Crypto
 #endif
 
-/// A file-integrity hash algorithm the verifier understands.
 public enum ChecksumAlgorithm: String, Codable, Sendable, CaseIterable, Hashable {
     case md5
     case sha1
@@ -21,8 +20,6 @@ public enum ChecksumAlgorithm: String, Codable, Sendable, CaseIterable, Hashable
         }
     }
 
-    /// The number of hex characters a digest of this algorithm produces, used to
-    /// auto-detect the algorithm from a pasted hash.
     public var hexLength: Int {
         switch self {
         case .md5: return 32
@@ -33,11 +30,8 @@ public enum ChecksumAlgorithm: String, Codable, Sendable, CaseIterable, Hashable
     }
 }
 
-/// An expected file checksum: an algorithm plus the lowercase hex digest a
-/// finished download must match before it is marked complete.
 public struct Checksum: Codable, Sendable, Hashable {
     public var algorithm: ChecksumAlgorithm
-    /// Normalized lowercase hex digest.
     public var value: String
 
     public init(algorithm: ChecksumAlgorithm, value: String) {
@@ -45,13 +39,10 @@ public struct Checksum: Codable, Sendable, Hashable {
         self.value = Checksum.normalize(value)
     }
 
-    /// Lowercased, whitespace-trimmed hex.
     static func normalize(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    /// Parse a user-entered hash; when `algorithm` is omitted it is inferred from hex length
-    /// (32 → MD5, 40 → SHA-1, 64 → SHA-256). `nil` unless valid hex of a recognised length.
     public static func parse(_ raw: String, algorithm: ChecksumAlgorithm? = nil) -> Checksum? {
         let hex = normalize(raw)
         guard !hex.isEmpty, hex.allSatisfy(\.isHexDigit) else { return nil }
@@ -66,13 +57,9 @@ public struct Checksum: Codable, Sendable, Hashable {
     }
 }
 
-/// Streams a file through a hash function and compares it to an expected digest.
-/// Fixed windows keep multi-GiB files out of memory; cancellation is checked between chunks.
 enum ChecksumVerifier {
-    /// Read window: 1 MiB.
     static let chunkSize = 1 << 20
 
-    /// Compute the lowercase hex digest of the file at `url` using `algorithm`.
     static func digest(fileAt url: URL, algorithm: ChecksumAlgorithm) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -84,8 +71,7 @@ enum ChecksumVerifier {
         }
     }
 
-    /// Whether the file at `url` matches `expected`. Async so that, when awaited
-    /// from an actor, the CPU-bound hashing runs off the actor's executor.
+    /// `async` so the CPU-bound hashing runs off a calling actor's executor.
     static func verify(fileAt url: URL, expected: Checksum) async throws -> Bool {
         let actual = try digest(fileAt: url, algorithm: expected.algorithm)
         return constantTimeEquals(actual, expected.value)
@@ -101,7 +87,7 @@ enum ChecksumVerifier {
         return h.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Length-checked, branch-stable comparison of two normalized hex strings.
+    /// Constant-time: branch-stable, no early exit — do not replace with `==`.
     private static func constantTimeEquals(_ a: String, _ b: String) -> Bool {
         let ab = Array(a.utf8), bb = Array(b.utf8)
         guard ab.count == bb.count else { return false }

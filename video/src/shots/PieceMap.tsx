@@ -1,5 +1,3 @@
-/* Shot 8 — BitTorrent as a wall (card: wall-reveal-moves 式 A `bento-light-up`). FIRST=20, GAP=12, six
- * cells; border circuit and content pop are a RELAY — same frame would just read as the cell blinking. */
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, staticFile, useCurrentFrame } from 'remotion';
 import { C, PAGE } from '../theme';
@@ -8,25 +6,22 @@ import layout from '../layout.json';
 const cells = layout.pages.torrent.boxes.cells;
 const [head, map, rate, facts, actions] = cells;
 
-/* Capture yields seven boxes but the card fixes six cells, so `facts` swallows the action bar 20px below
-   it; each rail cell also grows to meet the next, else the gaps stay dim and read as a rendering fault. */
+/* Capture yields seven boxes but the card fixes six, so `facts` swallows the action bar and each rail cell grows to meet the next. */
 const grow = (b: typeof head, nextY: number) => ({ x: b.x, y: b.y, w: b.w, h: nextY - b.y });
 const headBlock = grow(head, map.y);
 const mapBlock = grow(map, rate.y);
 const factsBlock = grow(facts, actions.y + actions.h);
 
-/* The window's chrome as strips that TILE THE GAPS between the six cells, never overlapping one. A
-   full-window backplate doubled every list row for the 14f each cell spends rising 20px into place. */
+/* Chrome strips must tile the GAPS only: a full-window backplate doubled every list row while the cells rise. */
 const CHROME: { x: number; y: number; w: number; h: number }[] = [
-  { x: 60, y: 60, w: 1360, h: 51 }, // title bar
-  { x: 60, y: 744, w: 1360, h: 37 }, // status bar
-  { x: 1081, y: 111, w: 19, h: 633 }, // gutter between the list and the rail
-  { x: 1402, y: 111, w: 18, h: 633 }, // rail's right margin
-  { x: 1100, y: 111, w: 302, h: 16 }, // above the rail's header
-  { x: 1100, y: 728, w: 302, h: 16 }, // below the rail's action bar
+  { x: 60, y: 60, w: 1360, h: 51 },
+  { x: 60, y: 744, w: 1360, h: 37 },
+  { x: 1081, y: 111, w: 19, h: 633 },
+  { x: 1402, y: 111, w: 18, h: 633 },
+  { x: 1100, y: 111, w: 302, h: 16 },
+  { x: 1100, y: 728, w: 302, h: 16 },
 ];
 
-/** The six regions, in light-up order. Page-space CSS px. */
 const WALL: { key: string; x: number; y: number; w: number; h: number }[] = [
   { key: 'map', ...mapBlock },
   { key: 'head', ...headBlock },
@@ -36,15 +31,13 @@ const WALL: { key: string; x: number; y: number; w: number; h: number }[] = [
   { key: 'side', x: 60, y: 111, w: 200, h: 633 },
 ];
 
-/** Last cell's start, so the backplate can wait for it. */
 const LAST = 20 + 5 * 12;
 
 const FIRST = 20;
 const GAP = 12;
-const GUTTER = 3; // hairline inset so the wall reads as cells, not one slab
+const GUTTER = 3;
 const RADIUS = 10;
 
-// window (60,60,1360,721) centred and filled at 1.37x
 const ZOOM = 1.37;
 const OX = (1920 - 1360 * ZOOM) / 2 - 60 * ZOOM;
 const OY = (1080 - 721 * ZOOM) / 2 - 60 * ZOOM;
@@ -57,19 +50,16 @@ const Cell: React.FC<{ i: number; frame: number }> = ({ i, frame }) => {
   const w = c.w - GUTTER * 2;
   const h = c.h - GUTTER * 2;
 
-  // border light: one circuit in 8f
   const draw = interpolate(frame, [start, start + 8], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
     easing: Easing.out(Easing.cubic),
   });
-  // then anneal to a standing edge
   const strokeFade = interpolate(frame, [start + 12, start + 26], [1, 0.4], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
     easing: Easing.out(Easing.quad),
   });
-  // contents take over at the halfway point of the circuit
   const lit = interpolate(frame, [start + 6, start + 14], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -140,7 +130,6 @@ export const PieceMap: React.FC<{ durationInFrames: number }> = () => {
     easing: Easing.out(Easing.cubic),
   });
 
-  // whole wall eases in once every cell is lit, then holds
   const push = interpolate(frame, [96, 121], [1, 1.04], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -161,8 +150,6 @@ export const PieceMap: React.FC<{ durationInFrames: number }> = () => {
             transformOrigin: '0 0',
           }}
         >
-          {/* The window's own chrome — without it the six cells float in a void shaped like a window
-              with its edges missing. Scenery, not a seventh cell: held at 0.18 until the last lands. */}
           {CHROME.map((r, i) => (
             <div
               key={`chrome-${i}`}

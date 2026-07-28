@@ -1,9 +1,5 @@
 import Foundation
 
-// MARK: - Range-support probe & metadata preview
-
-/// Server probing: total size, range support and validators (ETag / Last-Modified) via HEAD then a
-/// one-byte ranged GET, plus the metadata preview. Split from ``HTTPEngine`` to keep parsing separate.
 extension HTTPEngine {
 
     struct ProbeResult {
@@ -11,19 +7,12 @@ extension HTTPEngine {
         var acceptsRanges: Bool
         var etag: String?
         var lastModified: String?
-        /// Filename from the `Content-Disposition` header, if the server sent one.
         var suggestedName: String?
-        /// `Content-Type` MIME, used to infer an extension when the name lacks one.
         var contentType: String?
-        /// The `Server` response header, surfaced in the Details tab.
         var server: String?
-        /// A checksum the server published via `Digest` / `Repr-Digest` /
-        /// `Content-MD5`, decoded to the verifier's hex form.
         var digest: Checksum?
     }
 
-    /// Probe for the add-confirmation preview: best filename (Content-Disposition / inferred ext),
-    /// total size and reachability. Same HEAD/ranged-GET probe as a real download, but writes nothing.
     public func resolveMetadata(for url: URL, currentName: String)
         async -> (name: String, totalBytes: Int64?, reachable: Bool, checksum: Checksum?) {
         guard let result = try? await probe(url) else {
@@ -32,8 +21,6 @@ extension HTTPEngine {
         let refined = Self.refinedName(current: currentName,
                                        suggestedName: result.suggestedName,
                                        contentType: result.contentType)
-        // Header digest wins (it describes this exact representation); otherwise
-        // look for a published `.sha256` sidecar next to the file.
         let checksum: Checksum?
         if let fromHeader = result.digest {
             checksum = fromHeader
@@ -43,8 +30,7 @@ extension HTTPEngine {
         return (refined ?? currentName, result.totalBytes, true, checksum)
     }
 
-    /// Fetch the `<url>.sha256` sidecar and parse its leading hex digest. Plain path URLs only —
-    /// appending to a signed/query URL would corrupt the token. Failures are silent: a bonus, not a step.
+    /// Plain path URLs only: appending `.sha256` to a signed or query-bearing URL would corrupt the token.
     private func sidecarChecksum(for url: URL) async -> Checksum? {
         guard url.query == nil,
               !url.lastPathComponent.isEmpty,
@@ -59,8 +45,6 @@ extension HTTPEngine {
         return Self.checksum(inSidecarBody: body)
     }
 
-    /// The first token in a checksum-file body that parses as a known digest —
-    /// handles both bare hashes and the `sha256sum` "<hex>  <filename>" layout.
     static func checksum(inSidecarBody body: String) -> Checksum? {
         for token in body.split(whereSeparator: { $0.isWhitespace }).prefix(8) {
             if let parsed = Checksum.parse(String(token)) { return parsed }
@@ -68,12 +52,9 @@ extension HTTPEngine {
         return nil
     }
 
-    /// Decode a published integrity header into the verifier's hex ``Checksum``: RFC 3230 `Digest`,
-    /// RFC 9530 `Repr-Digest` (`sha-256=:<base64>:` byte sequence), and `Content-MD5`.
     static func checksum(fromHeaders http: HTTPURLResponse) -> Checksum? {
         for name in ["Repr-Digest", "Digest"] {
             guard let raw = http.value(forHTTPHeaderField: name) else { continue }
-            // A header may list several algorithms: "md5=…, sha-256=…".
             for entry in raw.split(separator: ",") {
                 let parts = entry.split(separator: "=", maxSplits: 1)
                 guard parts.count == 2 else { continue }
@@ -97,8 +78,7 @@ extension HTTPEngine {
         return nil
     }
 
-    /// Decode a base64 digest field (optionally wrapped in RFC 9530's `:…:`
-    /// byte-sequence colons) and render it as the hex string the verifier uses.
+    /// RFC 9530 wraps the base64 in `:…:` byte-sequence colons; they must be stripped before decoding.
     private static func checksum(fromBase64Field field: String, algorithm: ChecksumAlgorithm)
         -> Checksum? {
         var value = field.trimmingCharacters(in: .whitespaces)
@@ -113,7 +93,6 @@ extension HTTPEngine {
 
     func probe(_ url: URL, referer: String? = nil,
                extraHeaders: [String: String] = [:]) async throws -> ProbeResult {
-        // Prefer a cheap HEAD.
         var head = makeRequest(url, userAgent: networkConfig.userAgent,
                                referer: referer, extraHeaders: extraHeaders)
         head.httpMethod = "HEAD"
@@ -121,20 +100,17 @@ extension HTTPEngine {
            let http = resp as? HTTPURLResponse,
            (200..<300).contains(http.statusCode) {
             let r = interpretHead(http)
-            // Short-circuit only when HEAD PROVED range support: many servers emit `Accept-Ranges`
-            // on GET only, so fall through to the ranged GET rather than drop to one connection.
+            // Short-circuit only when HEAD proved range support: many servers emit `Accept-Ranges` on GET only, and returning early there drops us to one connection.
             if r.acceptsRanges { return r }
         }
 
-        // One-byte ranged GET reveals range support (206 + Content-Range) and total size. NOT
-        // `session.data(for:)`: a server ignoring `Range` returns the whole body → OOM; stream instead.
+        // Must stream, not `session.data(for:)`: a server ignoring `Range` returns the whole body → OOM.
         var get = makeRequest(url, userAgent: networkConfig.userAgent,
                               referer: referer, extraHeaders: extraHeaders)
         get.setValue("bytes=0-0", forHTTPHeaderField: "Range")
         let (http, _, streamer) = try await SegmentedTransfer.openStream(
             session: session, request: get) { _ in }
-        // Headers are all the probe needs; stop the transfer before the body
-        // streams so an unranged 200 can't pull the file into memory.
+        // Stop before the body streams, or an unranged 200 pulls the whole file into memory.
         streamer.cancelTask()
         guard (200..<300).contains(http.statusCode) else {
             throw DownloadError.httpStatus(http.statusCode)
@@ -142,8 +118,7 @@ extension HTTPEngine {
         return interpretRangedGet(http)
     }
 
-    /// Only a real, non-negative byte count counts: a hostile `-1` would trap the `UInt64(size)`
-    /// conversion in ``SegmentedTransfer/preallocate``. `nil` = unknown size, dropping to one stream (safe).
+    /// Reject negatives: a hostile `-1` traps the `UInt64(size)` conversion in ``SegmentedTransfer/preallocate``.
     private static func declaredSize(_ raw: String?) -> Int64? {
         guard let value = raw.flatMap({ Int64($0) }), value >= 0 else { return nil }
         return value
@@ -171,7 +146,6 @@ extension HTTPEngine {
         let contentType = header(http, "Content-Type")
 
         if http.statusCode == 206 {
-            // "bytes 0-0/12345" -> 12345
             let total = Self.declaredSize(header(http, "Content-Range")
                 .flatMap { $0.split(separator: "/").last }
                 .map(String.init))
@@ -181,7 +155,6 @@ extension HTTPEngine {
                                digest: Self.checksum(fromHeaders: http))
         }
 
-        // Server ignored the Range header and returned the whole body.
         let length = Self.declaredSize(header(http, "Content-Length"))
         return ProbeResult(totalBytes: length, acceptsRanges: false, etag: etag,
                            lastModified: lastModified, suggestedName: suggestedName,

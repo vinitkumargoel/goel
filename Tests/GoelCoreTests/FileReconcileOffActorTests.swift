@@ -1,8 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// ``DownloadManager/reconcileCompletedFiles()`` snapshots on the actor, `stat`s off it, and applies
-/// back, so a slow volume can't block the actor. Pins: same verdicts as the sync prune, no stale overrule.
 final class FileReconcileOffActorTests: XCTestCase {
 
     private var tempDirs: [String] = []
@@ -37,14 +35,10 @@ final class FileReconcileOffActorTests: XCTestCase {
             settings: AppSettings(), store: store)
     }
 
-    /// The same three verdicts the startup prune makes, reached through the async
-    /// sweep: deleted → pruned, ambiguous → kept, non-completed → kept.
     func testAsyncSweepReachesTheSameVerdictsAsTheStartupPrune() async throws {
         let store = try PersistenceStore()
         let dir = makeTempDir()
 
-        // All three payloads exist at restore time, so nothing is pruned at launch
-        // and every verdict below is the async sweep's own.
         let presentPath = (dir as NSString).appendingPathComponent("present.bin")
         FileManager.default.createFile(atPath: presentPath, contents: Data("x".utf8))
         let present = completedTask(name: "present.bin", saveDirectory: dir)
@@ -53,10 +47,8 @@ final class FileReconcileOffActorTests: XCTestCase {
         FileManager.default.createFile(atPath: gonePath, contents: Data("x".utf8))
         let gone = completedTask(name: "gone.bin", saveDirectory: dir)
 
-        // Its directory is absent too → ambiguous (unmounted volume), so kept.
         let unmounted = completedTask(name: "file.bin", saveDirectory: dir + "/unmounted")
 
-        // Paused with a missing file → only completed tasks are ever probed.
         var paused = completedTask(name: "partial.bin", saveDirectory: dir)
         paused.status = .paused
 
@@ -64,12 +56,9 @@ final class FileReconcileOffActorTests: XCTestCase {
 
         let manager = makeManager(store: store)
         await manager.restore()
-        // The actor hop is hoisted out of every assertion below: XCTAssert's
-        // arguments are autoclosures, which cannot carry an `await`.
         let atLaunch = await manager.task(gone.id)
         XCTAssertNotNil(atLaunch, "precondition: nothing pruned at launch")
 
-        // The user deletes one payload in Finder; the next sweep must notice.
         try FileManager.default.removeItem(atPath: gonePath)
         await manager.reconcileCompletedFiles()
 
@@ -81,15 +70,12 @@ final class FileReconcileOffActorTests: XCTestCase {
         let pruned = await manager.task(gone.id)
         XCTAssertNil(pruned, "the deleted payload's row is dropped")
 
-        // The prune enqueues its delete on the serial persistence pipeline, which writes on a
-        // detached task. Drain it first, or this assertion races the writer and only passes idle.
+        // Drain the serial persistence pipeline first, or this assertion races its detached writer.
         await manager.shutdown()
         XCTAssertFalse(try store.loadAllTasks().contains { $0.id == gone.id },
                        "the prune is written through to disk, not just the in-memory list")
     }
 
-    /// A sweep over a queue with nothing to prune must leave the list untouched —
-    /// and must not trip over the early-out when there are no completed tasks.
     func testSweepWithNothingMissingLeavesTheQueueIntact() async throws {
         let store = try PersistenceStore()
         let dir = makeTempDir()
@@ -115,8 +101,6 @@ final class FileReconcileOffActorTests: XCTestCase {
         await manager.shutdown()
     }
 
-    /// Repeated sweeps over an already-pruned queue must be harmless: the on-demand call (app
-    /// reactivation) can overlap the periodic loop, so a stale probe may name a row already gone.
     func testRepeatedSweepsAreIdempotent() async throws {
         let store = try PersistenceStore()
         let dir = makeTempDir()
@@ -136,8 +120,7 @@ final class FileReconcileOffActorTests: XCTestCase {
 
         let survivingRow = await manager.task(gone.id)
         XCTAssertNil(survivingRow)
-        // Drain the persistence pipeline before reading the store — see the note
-        // in `testAsyncSweepReachesTheSameVerdictsAsTheStartupPrune`.
+        // Drain the persistence pipeline before reading the store.
         await manager.shutdown()
         XCTAssertTrue(try store.loadAllTasks().isEmpty,
                       "three sweeps leave exactly one delete behind, not a resurrected row")

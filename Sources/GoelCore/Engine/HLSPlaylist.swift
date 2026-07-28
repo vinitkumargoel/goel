@@ -1,32 +1,22 @@
 import Foundation
 
-/// A selectable rendition from a master playlist (`#EXT-X-STREAM-INF`).
 public struct HLSVariant: Sendable, Hashable {
     public var url: URL
-    public var bandwidth: Int        // bits/sec; 0 when unknown
+    public var bandwidth: Int
     public var height: Int?
     public var codecs: String?
-    /// The `AUDIO` rendition group this variant draws its audio from, when it
-    /// names one (`#EXT-X-STREAM-INF:AUDIO="…"`); nil when it names none.
     public var audioGroupID: String? = nil
-    /// True when that group delivers audio as its own resource rather than muxed
-    /// into this variant, so downloading the variant alone yields a silent video.
+    /// Audio arrives as its own resource — this variant alone downloads silent.
     public var hasSeparateAudio: Bool = false
 }
 
-/// Decryption parameters for a run of segments (`#EXT-X-KEY`).
 public struct HLSKey: Sendable, Hashable {
-    /// The encryption a `#EXT-X-KEY` declares. Undecryptable methods become ``unsupported``, never ``none``:
-    /// treating an unrecognised method as "unencrypted" writes ciphertext to disk and reports success.
+    /// An unrecognised method must be ``unsupported``, never ``none``, or ciphertext is written as success.
     public enum Method: Sendable, Hashable {
         case none
         case aes128
-        /// A method we can't decrypt (SAMPLE-AES, AES-256, DRM…), carrying the
-        /// playlist's own spelling of it so the refusal can name it.
         case unsupported(String)
 
-        /// Map a playlist's `METHOD` attribute onto a case, failing closed: only
-        /// the two methods the engine implements are recognised.
         public init(playlistValue: String) {
             switch playlistValue.trimmingCharacters(in: .whitespaces).uppercased() {
             case "NONE":    self = .none
@@ -36,38 +26,29 @@ public struct HLSKey: Sendable, Hashable {
         }
     }
     public var method: Method
-    public var url: URL?     // key resource URI (nil for NONE)
-    public var iv: Data?     // explicit IV, else derived from the sequence number
+    public var url: URL?
+    public var iv: Data?
 }
 
-/// A byte sub-range within a segment's resource (`#EXT-X-BYTERANGE`), used by
-/// single-file/CMAF packaging where several segments share one URI.
 public struct HLSByteRange: Sendable, Hashable {
-    public var start: Int   // first byte offset (inclusive)
-    public var length: Int  // number of bytes
+    public var start: Int
+    public var length: Int
 }
 
-/// The fMP4 init segment (`#EXT-X-MAP`): the movie-header resource plus the optional `BYTERANGE` that CMAF uses to
-/// place it inside the fragments' own resource. The range must travel with the URI, or an unranged GET pulls the whole file.
 public struct HLSInitMap: Sendable, Hashable {
     public var url: URL
-    public var byteRange: HLSByteRange? = nil  // nil = the whole resource is the init segment
-    /// The key in force where the `#EXT-X-MAP` appeared (RFC 8216 §4.3.2.5: most recent *preceding* `#EXT-X-KEY`),
-    /// not necessarily the first segment's — nil when the map precedes any key, i.e. a plaintext init header.
+    public var byteRange: HLSByteRange? = nil
     public var key: HLSKey? = nil
 }
 
-/// One media segment (`#EXTINF` + its URI).
 public struct HLSSegment: Sendable, Hashable {
     public var url: URL
     public var duration: Double
     public var sequence: Int
-    public var key: HLSKey?  // nil = unencrypted
-    public var byteRange: HLSByteRange? = nil  // nil = fetch the whole resource
+    public var key: HLSKey?
+    public var byteRange: HLSByteRange? = nil
 }
 
-/// A parsed playlist: either a master (list of variants) or a media playlist
-/// (an ordered segment list, plus an optional fMP4 init map).
 public enum HLSPlaylist: Sendable {
     case master([HLSVariant])
     case media(segments: [HLSSegment],
@@ -76,20 +57,16 @@ public enum HLSPlaylist: Sendable {
                totalDuration: Double)
 }
 
-/// Line-oriented parser for the HLS (RFC 8216) subset needed to download a VOD stream: variant selection, media
-/// segments, AES-128 keys, fMP4 init map. Pure and synchronous so it is unit-testable without a network.
 enum HLSParser {
 
     static func parse(_ text: String, baseURL: URL) -> HLSPlaylist? {
-        // Strip a leading UTF-8 BOM (U+FEFF), emitted by Windows-authored playlists and some packagers;
-        // left in place it makes the `#EXTM3U` prefix check below fail on an otherwise-valid playlist.
+        // A leading UTF-8 BOM would fail the `#EXTM3U` check on a valid Windows-authored playlist.
         let source = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
         let lines = source
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        // RFC 8216 §4.3.1.1: a playlist MUST begin with `#EXTM3U`. Requiring it
-        // rejects arbitrary text (an error page, a redirect body) outright.
+        // RFC 8216 §4.3.1.1 requires `#EXTM3U`; it also rejects an error page or redirect body.
         guard lines.first?.hasPrefix("#EXTM3U") == true else { return nil }
 
         var variants: [HLSVariant] = []
@@ -102,8 +79,8 @@ enum HLSParser {
         var pendingVariant: (bw: Int, h: Int?, codecs: String?, audio: String?)?
         var pendingDuration: Double?
         var pendingByteRange: HLSByteRange?
-        var lastByteRangeEnd = 0  // for `#EXT-X-BYTERANGE` lines that omit the offset
-        var separateAudioGroups: Set<String> = []  // `#EXT-X-MEDIA` groups with their own URI
+        var lastByteRangeEnd = 0
+        var separateAudioGroups: Set<String> = []
 
         for line in lines {
             if line.hasPrefix("#EXT-X-STREAM-INF:") {
@@ -116,8 +93,7 @@ enum HLSParser {
                     audio: attrs["AUDIO"]
                 )
             } else if line.hasPrefix("#EXT-X-MEDIA-SEQUENCE:") {
-                // Bounded at the parse boundary: `seq` increments per segment, so an unbounded start (`Int.max`)
-                // traps on network bytes. Rejected not clamped — it derives the AES-128 IV, so adjusting it breaks decryption.
+                // Reject, don't clamp: `seq` increments per segment (so `Int.max` traps) and derives the AES-128 IV.
                 guard let n = Int(value(of: line)), n >= 0, n <= maxMediaSequence else { return nil }
                 mediaSequence = n
                 seq = mediaSequence
@@ -127,49 +103,39 @@ enum HLSParser {
                 currentKey = parseKey(attributes(after: "#EXT-X-KEY:", in: line), baseURL: baseURL)
             } else if line.hasPrefix("#EXT-X-MAP:") {
                 let attrs = attributes(after: "#EXT-X-MAP:", in: line)
-                // An unaddressable init map can't be skipped: a nil `map` switches the engine from fMP4 concat to
-                // MPEG-TS remux, i.e. an unplayable file reported as success. URI is REQUIRED (RFC 8216 §4.3.2.5).
+                // A nil `map` switches the engine to MPEG-TS remux: an unplayable file reported as success.
                 guard let uri = attrs["URI"], let u = resolve(uri, baseURL) else { return nil }
-                // Keep the map's own `BYTERANGE` (RFC 8216 §4.3.2.5): in CMAF the init header is a slice at the head
-                // of the fragments' own file, so dropping (or failing to parse) the range downloads the whole stream.
+                // In CMAF the init header is a slice of the fragments' own file; losing the range fetches it all.
                 var range: HLSByteRange?
                 if let raw = attrs["BYTERANGE"] {
                     guard let parsed = parseByteRange(raw, previousEnd: lastByteRangeEnd) else { return nil }
                     range = parsed
                 }
-                // The key applying to a map is the most recent one *preceding* it, not the first segment's —
-                // carry it so the engine doesn't decrypt a plaintext header or use the wrong key on an encrypted one.
+                // A map's key is the most recent *preceding* one, not the first segment's (RFC 8216 §4.3.2.5).
                 map = HLSInitMap(url: u, byteRange: range, key: currentKey)
-                // Seed the implicit-offset chain, so a first `#EXT-X-BYTERANGE` omitting `@offset` starts
-                // after the init header rather than at byte 0 (where it would re-read the header).
+                // Seeds the implicit-offset chain; without it a first offset-less range re-reads the header.
                 if let range, let mapEnd = end(of: range) { lastByteRangeEnd = mapEnd }
             } else if line.hasPrefix("#EXTINF:") {
                 let field = value(of: line).split(separator: ",").first.map(String.init) ?? ""
-                // `Double("inf"/"nan"/"1e400")` all parse in Swift, and a non-finite duration propagates into the
-                // total the size estimate converts to `Int64` — which traps. Implausible values drop to 0.
+                // `Double("inf"/"nan"/"1e400")` all parse, and the total is later converted to `Int64` — which traps.
                 let parsed = Double(field) ?? 0
                 pendingDuration = (parsed.isFinite && parsed >= 0 && parsed <= maxSegmentDuration) ? parsed : 0
             } else if line.hasPrefix("#EXT-X-BYTERANGE:") {
-                // Same reasoning as the map's range above: a segment whose range we can't parse would be
-                // fetched unranged, pulling the whole shared resource down in place of one segment.
+                // An unparsed range means an unranged fetch of the whole shared resource, so fail instead.
                 guard let range = parseByteRange(value(of: line), previousEnd: lastByteRangeEnd) else { return nil }
                 pendingByteRange = range
             } else if line.hasPrefix("#EXT-X-MEDIA:") {
-                // Only a rendition with its OWN `URI` is a separate track; one without is already muxed into the
-                // variants naming its group (RFC 8216 §4.3.4.1). Recorded so the engine can refuse dropped audio.
+                // Only a rendition with its own `URI` is a separate track (RFC 8216 §4.3.4.1); the rest are muxed.
                 let attrs = attributes(after: "#EXT-X-MEDIA:", in: line)
                 if attrs["TYPE"]?.uppercased() == "AUDIO", attrs["URI"] != nil,
                    let group = attrs["GROUP-ID"] {
                     separateAudioGroups.insert(group)
                 }
             } else if line.hasPrefix("#") {
-                continue   // an unhandled tag/comment
+                continue
             } else {
-                // A URI line: a variant URI (after STREAM-INF) or a segment URI
-                // (after EXTINF). A bare URI with neither preceding tag is ignored.
                 if let variant = pendingVariant {
-                    // One unusable rendition still leaves the others, so an unresolvable variant URI is
-                    // skipped rather than fatal (an empty variant list is caught by the `return nil` below).
+                    // Skipped rather than fatal: one unusable rendition still leaves the others.
                     if let u = resolve(line, baseURL) {
                         variants.append(HLSVariant(url: u, bandwidth: variant.bw,
                                                    height: variant.h,
@@ -178,15 +144,13 @@ enum HLSParser {
                     }
                     pendingVariant = nil
                 } else if let duration = pendingDuration {
-                    // Reject the whole playlist: dropping an unaddressable segment would assemble a file short
-                    // by that much yet report success, and desync the sequence number AES-128 IV derivation needs.
+                    // Fatal: skipping a segment would report a short file as success and desync the IV sequence.
                     guard let u = resolve(line, baseURL) else { return nil }
                     segments.append(HLSSegment(url: u, duration: duration,
                                                sequence: seq, key: currentKey,
                                                byteRange: pendingByteRange))
                     if let br = pendingByteRange, let brEnd = end(of: br) { lastByteRangeEnd = brEnd }
-                    // Safe: `seq` starts at or below `maxMediaSequence` and rises
-                    // once per segment line, so it can't reach an overflow.
+                    // Overflow-safe only because `maxMediaSequence` bounds the start.
                     seq += 1
                     pendingDuration = nil
                     pendingByteRange = nil
@@ -195,8 +159,7 @@ enum HLSParser {
         }
 
         if !variants.isEmpty && segments.isEmpty {
-            // `#EXT-X-MEDIA` may appear after the variants that reference it, so the separate-audio
-            // flag can only be settled once the whole master playlist has been read.
+            // `#EXT-X-MEDIA` may follow the variants referencing it, so resolve the flag only now.
             return .master(variants.map { variant in
                 var resolved = variant
                 resolved.hasSeparateAudio = variant.audioGroupID.map(separateAudioGroups.contains) ?? false
@@ -209,8 +172,6 @@ enum HLSParser {
                       targetDuration: targetDuration, totalDuration: total)
     }
 
-    /// Pick the best variant: highest bandwidth at or below `maxHeight` (when
-    /// given), else the highest bandwidth overall.
     static func selectVariant(_ variants: [HLSVariant], maxHeight: Int? = nil) -> HLSVariant? {
         guard !variants.isEmpty else { return nil }
         if let cap = maxHeight {
@@ -220,8 +181,7 @@ enum HLSParser {
         return variants.max(by: { $0.bandwidth < $1.bandwidth })
     }
 
-    /// Whether a media playlist declares itself finished: `#EXT-X-ENDLIST` (RFC 8216 §4.3.3.4) or
-    /// `#EXT-X-PLAYLIST-TYPE:VOD` (§4.3.3.5). A live playlist has neither; the engine refuses rather than truncate.
+    /// A live playlist declares neither tag (RFC 8216 §4.3.3.4/§4.3.3.5) — the engine refuses rather than truncate.
     static func isFinished(_ text: String) -> Bool {
         text.split(whereSeparator: \.isNewline).contains { raw in
             let line = raw.trimmingCharacters(in: .whitespaces).uppercased()
@@ -229,8 +189,6 @@ enum HLSParser {
         }
     }
 
-    /// Whether a variant's `CODECS` list names an audio codec, i.e. it carries its own sound. One that names an
-    /// alternate `AUDIO` group but declares no audio codec has nothing to play without muxing.
     static func declaresAudioCodec(_ codecs: String?) -> Bool {
         guard let codecs else { return false }
         let audioPrefixes = ["mp4a", "ac-3", "ec-3", "ac-4", "opus", "flac", "alac", "dtsc", "dtse"]
@@ -240,36 +198,25 @@ enum HLSParser {
         }
     }
 
-    // MARK: Bounds
-
-    /// The largest offset or length a `#EXT-X-BYTERANGE` may name (1 PiB). Bounding both fields makes the
-    /// running-offset arithmetic provably overflow-free; `Int.max@Int.max` would trap on network bytes.
+    /// 1 PiB: bounding both range fields keeps the running-offset arithmetic overflow-free on network bytes.
     private static let maxByteRangeBound = 1 << 50
 
-    /// The largest `#EXT-X-MEDIA-SEQUENCE` accepted, for the same reason: the
-    /// sequence number is incremented once per segment.
+    /// Bounded for the same reason — the sequence number rises once per segment.
     private static let maxMediaSequence = 1 << 50
 
-    /// The longest `#EXTINF` duration accepted (24 h).
     private static let maxSegmentDuration = 86_400.0
 
-    /// The exclusive end offset of a byte range, or nil when the addition would overflow.
-    /// ``parseByteRange(_:previousEnd:)`` bounds both fields, so this only declines ranges built outside the parser.
     private static func end(of range: HLSByteRange) -> Int? {
         let (sum, overflow) = range.start.addingReportingOverflow(range.length)
         return overflow ? nil : sum
     }
 
-    // MARK: Line helpers
-
-    /// The text after the first `:` in a `#TAG:value` line.
     private static func value(of line: String) -> String {
         guard let colon = line.firstIndex(of: ":") else { return "" }
         return String(line[line.index(after: colon)...])
     }
 
-    /// Parse `#EXT-X-BYTERANGE` `<n>[@<o>]`; an omitted offset continues from the previous end (RFC 8216 §4.3.2.2).
-    /// Both fields are bounded here — offsets are accumulated into a `Range` header and an unbounded one traps.
+    /// An omitted offset continues from the previous end (RFC 8216 §4.3.2.2); both fields must stay bounded.
     private static func parseByteRange(_ s: String, previousEnd: Int) -> HLSByteRange? {
         let parts = s.split(separator: "@", maxSplits: 1)
         guard let first = parts.first,
@@ -277,8 +224,7 @@ enum HLSParser {
               length > 0, length <= maxByteRangeBound else { return nil }
         let start: Int
         if parts.count == 2 {
-            // An unparseable offset must NOT fall back to the running one: that
-            // would silently address a slice the playlist never asked for.
+            // Must not fall back to the running offset: that addresses a slice nobody asked for.
             guard let off = Int(parts[1].trimmingCharacters(in: .whitespaces)) else { return nil }
             start = off
         } else {
@@ -296,8 +242,7 @@ enum HLSParser {
     }
 
     private static func parseKey(_ attrs: [String: String], baseURL: URL) -> HLSKey? {
-        // A `KEYFORMAT` other than "identity" is DRM (FairPlay, Widevine, …): the URI is a licence endpoint,
-        // not 16 bytes of key material, so using the answer as a key decrypts to noise. Report unsupported.
+        // A non-"identity" `KEYFORMAT` is DRM: the URI is a licence endpoint, not 16 bytes of key material.
         let format = attrs["KEYFORMAT"] ?? "identity"
         guard format.caseInsensitiveCompare("identity") == .orderedSame else {
             return HLSKey(method: .unsupported("DRM (KEYFORMAT=\(format))"), url: nil, iv: nil)
@@ -309,8 +254,7 @@ enum HLSParser {
         return HLSKey(method: method, url: url, iv: iv)
     }
 
-    /// Resolve a possibly-relative URI against the playlist's base URL. Playlists are untrusted, so an absolute
-    /// `file:`/loopback/`169.254.169.254` URI is refused via ``NetworkGuard/isAllowedSubresource(_:of:)``; nil is fatal.
+    /// Playlists are untrusted: an absolute `file:`/loopback/`169.254.169.254` URI must stay refused (SSRF).
     private static func resolve(_ uri: String, _ baseURL: URL) -> URL? {
         let trimmed = uri.trimmingCharacters(in: CharacterSet(charactersIn: "\"")).trimmingCharacters(in: .whitespaces)
         let resolved: URL?
@@ -323,7 +267,6 @@ enum HLSParser {
         return resolved
     }
 
-    /// Parse an attribute list (`KEY=VALUE,KEY="quoted,value"`) respecting quotes.
     static func attributes(after prefix: String, in line: String) -> [String: String] {
         let body = String(line.dropFirst(prefix.count))
         var result: [String: String] = [:]
@@ -346,7 +289,6 @@ enum HLSParser {
         return result
     }
 
-    /// Decode a `0x…`/`0X…` hex string (e.g. an IV) into bytes.
     static func hexToData(_ raw: String) -> Data? {
         var hex = raw.trimmingCharacters(in: .whitespaces)
         if hex.hasPrefix("0x") || hex.hasPrefix("0X") { hex = String(hex.dropFirst(2)) }

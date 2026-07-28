@@ -34,9 +34,7 @@ import { isActive, rowAction, type RowAction } from './lib/taskKind'
 import { applyTheme, initialTheme, type Theme } from './lib/theme'
 import type { FilePriority, TaskDetail } from './lib/types'
 
-/** Heavy detail fields (peers, files) are not in the SSE snapshot; refetch them. */
 const DETAIL_POLL_MS = 4000
-/** Below this the detail panel starts closed — it would cover the whole list. */
 const PANEL_BREAKPOINT = 920
 
 export function App() {
@@ -57,8 +55,6 @@ export function App() {
 
   const canWrite = !BOOT.readOnly
 
-  // A refused request explains itself in the server's own words; route those to
-  // a toast rather than letting each call site invent its own message.
   useEffect(() => {
     setRefusalHandler((message) => toast(message, 'warn'))
   }, [toast])
@@ -78,8 +74,6 @@ export function App() {
     [toast],
   )
 
-  // ---- detail ----
-
   const loadDetail = useCallback(async (id: string) => {
     try {
       setDetail(await api.task(id))
@@ -96,8 +90,7 @@ export function App() {
     void loadDetail(selectedId)
   }, [selectedId, loadDetail])
 
-  // Keep the open detail's header row live from the SSE snapshot; without this the panel's progress
-  // bar would only move on the 4s refetch while the list behind it updates continuously.
+  // Without this the panel's progress bar only moves on the 4s refetch while the list behind it updates live.
   useEffect(() => {
     if (selectedId == null) return
     const row = tasks.find((t) => t.id === selectedId)
@@ -105,8 +98,6 @@ export function App() {
     setDetail((d) => (d && d.row.id === selectedId ? { ...d, row } : d))
   }, [tasks, selectedId])
 
-  // Refetch the fields SSE does not carry. A completed task has no moving parts
-  // left, so polling it is pure waste.
   const detailPollRef = useRef<() => void>(() => {})
   detailPollRef.current = () => {
     if (selectedId == null || view !== 'library' || !panelOpen) return
@@ -117,8 +108,6 @@ export function App() {
     const timer = setInterval(() => detailPollRef.current(), DETAIL_POLL_MS)
     return () => clearInterval(timer)
   }, [])
-
-  // ---- derived ----
 
   const counts: FilterCounts = useMemo(() => {
     const c: FilterCounts = { all: tasks.length, active: 0, paused: 0, completed: 0, seeding: 0, failed: 0 }
@@ -155,8 +144,6 @@ export function App() {
       ),
     [tasks],
   )
-
-  // ---- actions ----
 
   const runAction = useCallback(
     async (id: string, action: RowAction) => {
@@ -230,8 +217,6 @@ export function App() {
     },
     [setFilePriority],
   )
-
-  // ---- menus ----
 
   const removeEntries = useCallback(
     (id: string): MenuEntry[] => [
@@ -322,8 +307,6 @@ export function App() {
     })
   }, [])
 
-  // ---- keyboard ----
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
@@ -333,8 +316,6 @@ export function App() {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [])
-
-  // ---- render ----
 
   const selectView = useCallback((next: View) => {
     setView(next)

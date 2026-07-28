@@ -1,14 +1,11 @@
 import Foundation
 
-/// Thread-safe broadcaster of `EngineEvent`s to per-task subscribers. Shared by the HTTP and HLS engines.
-/// Held as a `nonisolated let` so sync `events(for:)` and actor-internal `emit` avoid isolation crossing.
 final class EventHub: @unchecked Sendable {
     private let lock = NSLock()
     private var subscribers: [UUID: [UUID: AsyncStream<EngineEvent>.Continuation]] = [:]
 
     func subscribe(_ id: UUID) -> AsyncStream<EngineEvent> {
-        // Unbounded is required: non-idempotent lifecycle events (statusChanged/finished/failed) must
-        // never drop — a lost `.downloading` after resume strands the task. Bounded by ~10 Hz emission.
+        // Unbounded is required: dropping a lifecycle event — a `.downloading` after resume — strands the task.
         let (stream, continuation) = AsyncStream<EngineEvent>.makeStream(bufferingPolicy: .unbounded)
         let subID = UUID()
         lock.lock()
@@ -30,15 +27,11 @@ final class EventHub: @unchecked Sendable {
         for continuation in continuations { continuation.yield(event) }
     }
 
-    /// Emit the failure doublet: `.failed` plus the `.statusChanged(.failed)` that drives the task
-    /// to its terminal failed state. Kept in one call so the two can never drift apart.
     func fail(_ id: UUID, _ error: DownloadError) {
         emit(id, .failed(error))
         emit(id, .statusChanged(.failed(error)))
     }
 
-    /// Emit the success completion doublet: `.finished` then `.statusChanged(.completed)`.
-    /// Kept in one call so the two can never drift apart (mirrors ``fail``).
     func complete(_ id: UUID) {
         emit(id, .finished)
         emit(id, .statusChanged(.completed))

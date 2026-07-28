@@ -1,14 +1,9 @@
 import XCTest
 @testable import GoelCore
 
-/// Regression cover for the SFTP fail-open paths: an overwrite guard reading a failed listing as "no conflicts", a pin
-/// store forgetting every host on one bad read, a short transfer reporting success, and unguarded path joins.
 final class SFTPRemediationTests: XCTestCase {
 
-    // MARK: Overwrite planning (SFTP-01)
-
-    /// The whole point of ``DirectoryListing``: an unreadable directory is not an empty one. Folding the failure into
-    /// an empty set made the upload skip the overwrite prompt and truncate-create over live files.
+    /// An unreadable directory folded into an empty set skipped the prompt and truncated live files.
     func testOverwriteSplitRefusesAnUnavailableListing() {
         XCTAssertNil(SFTPOverwritePlan.split(names: ["a.txt", "b.txt"], against: .unavailable))
     }
@@ -26,16 +21,13 @@ final class SFTPRemediationTests: XCTestCase {
         XCTAssertEqual(split?.colliding, [1])
     }
 
-    /// Two picked items sharing a last path component must not both be "free" —
-    /// they would race two writers onto one remote path.
+    /// Two picks sharing a last path component, both "free", would race two writers onto one remote path.
     func testOverwriteSplitFlagsARepeatWithinOneBatch() {
         let split = SFTPOverwritePlan.split(names: ["photo.jpg", "photo.jpg", "photo.jpg"],
                                             against: .names([]))
         XCTAssertEqual(split?.free, [0])
         XCTAssertEqual(split?.colliding, [1, 2])
     }
-
-    // MARK: Host-key pin store (SFTP-05, SFTP-12)
 
     private static let fingerprintA = String(repeating: "ab", count: 32)
     private static let fingerprintB = String(repeating: "cd", count: 32)
@@ -53,8 +45,7 @@ final class SFTPRemediationTests: XCTestCase {
         XCTAssertEqual(store.lookup(host: "h", port: 2222), .none)
     }
 
-    /// A record that isn't a `[String: String]` must not read as "no pins", which
-    /// would silently downgrade every saved server back to trust-on-first-use.
+    /// A non-`[String: String]` record reading as "no pins" downgrades every server to trust-on-first-use.
     func testGarbageRecordReadsAsUnavailableNotEmpty() {
         let defaults = freshDefaults()
         defaults.set(["nas.local:22": 17], forKey: key)
@@ -63,8 +54,7 @@ final class SFTPRemediationTests: XCTestCase {
         XCTAssertEqual(store.lookup(host: "other.local", port: 22), .unavailable)
     }
 
-    /// An empty stored value made the C shim skip the comparison entirely (`expected_fp[0]` is false),
-    /// leaving the host permanently unverified while still looking pinned.
+    /// An empty value makes the shim skip the comparison (`expected_fp[0]`): unverified but looking pinned.
     func testEmptyStoredFingerprintReadsAsUnavailableNotNone() {
         let defaults = freshDefaults()
         defaults.set(["nas.local:22": ""], forKey: key)
@@ -79,8 +69,7 @@ final class SFTPRemediationTests: XCTestCase {
                        .unavailable)
     }
 
-    /// The destructive half: `setFingerprint` did `var map = all()` then wrote it back, so the first connection
-    /// after a bad read replaced the whole map with one entry and erased every other server's pin.
+    /// `setFingerprint` writing back `all()` after a bad read replaced the map and erased every other pin.
     func testWriteOnAnUnreadableStoreChangesNothing() {
         let defaults = freshDefaults()
         defaults.set(["nas.local:22": 17], forKey: key)
@@ -116,8 +105,7 @@ final class SFTPRemediationTests: XCTestCase {
         XCTAssertEqual(store.lookup(host: "b.local", port: 22), .pinned(Self.fingerprintB))
     }
 
-    /// Reset is the only escape from a store that now refuses every connection,
-    /// so it has to work *especially* when the record is unreadable.
+    /// Reset is the only escape from a store that refuses every connection, so it must survive a bad record.
     func testResetClearsAnUnreadableStore() {
         let defaults = freshDefaults()
         defaults.set(["nas.local:22": 17], forKey: key)
@@ -125,8 +113,6 @@ final class SFTPRemediationTests: XCTestCase {
         XCTAssertTrue(store.reset(host: "nas.local", port: 22))
         XCTAssertEqual(store.lookup(host: "nas.local", port: 22), .none)
     }
-
-    // MARK: First-contact approval (SFTP-04)
 
     private final class RecordingApprover: HostKeyApproving, @unchecked Sendable {
         private let lock = NSLock()
@@ -141,8 +127,7 @@ final class SFTPRemediationTests: XCTestCase {
         var callCount: Int { lock.lock(); defer { lock.unlock() }; return calls }
     }
 
-    /// An already-pinned server is decided by the pin. Asking again would train
-    /// the user to click through a dialog that carries no new information.
+    /// A pinned server is decided by the pin; re-asking trains the user to click through the dialog.
     func testApproverIsNotConsultedWhenAPinExists() async {
         let defaults = freshDefaults()
         let store = HostKeyStore(defaults: defaults)
@@ -155,14 +140,12 @@ final class SFTPRemediationTests: XCTestCase {
         let client = SFTPClient(target: SFTPTarget(host: "127.0.0.1", port: 1,
                                                    username: "u", password: "p"),
                                 hostKeys: store)
-        // Nothing is listening, so this fails at the socket — the point is only
-        // which decision was reached before it got there.
+        // Nothing is listening: the socket failure is expected, only the decision before it is asserted.
         _ = try? await client.list(".")
         XCTAssertEqual(approver.callCount, 0)
     }
 
-    /// An unreadable pin record refuses before a socket is opened, rather than
-    /// re-learning the key of a server that was already verified once.
+    /// An unreadable pin refuses before the socket opens, never re-learning an already-verified server's key.
     func testUnreadablePinRecordRefusesWithoutConnecting() async {
         let defaults = freshDefaults()
         defaults.set(["127.0.0.1:1": 17], forKey: key)
@@ -197,8 +180,6 @@ final class SFTPRemediationTests: XCTestCase {
         XCTAssertEqual(store.lookup(host: "127.0.0.1", port: 1), .none)
     }
 
-    // MARK: Short-transfer detection (SFTP-07)
-
     func testShortfallReportsMissingBytes() {
         XCTAssertEqual(TransferCompletion.shortfall(expected: 1000, written: 400), 600)
         XCTAssertEqual(TransferCompletion.shortfall(expected: 1, written: 0), 1)
@@ -212,8 +193,6 @@ final class SFTPRemediationTests: XCTestCase {
         XCTAssertNil(TransferCompletion.shortfall(expected: 0, written: 0))
         XCTAssertNil(TransferCompletion.shortfall(expected: -1, written: 0))
     }
-
-    // MARK: Server-supplied names (SFTP-11)
 
     func testUnsafeChildNamesAreRejected() {
         XCTAssertFalse(SFTPBrowserPaths.isSafeChildName(".."))

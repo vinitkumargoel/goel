@@ -1,5 +1,3 @@
-/* Shot 15 — group photo (card outro-group-photo-launch, ref SceneOutroLive.tsx). Nine elements, one per film beat;
- * easing `bezier(0.34, 1.4, 0.44, 1)` — the old never crossed 1 so never bounced; glow uses `screen`, dark-invisible multiply. */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { PageCam, CamKey } from '../lib/PageCam';
@@ -26,7 +24,6 @@ type FlyEl = {
   cue: number;
 };
 
-/* render order = cue order, so later arrivals stack on top */
 const ELS: FlyEl[] = [
   { key: 'toolbar', file: 'toolbar.png', w: 1360, h: 51, cx: 960, cy: 104, scale: 0.64, rot: 0, dx: 0, dy: -120, radius: 8, cue: 4 },
   { key: 'sidebar', file: 'sidebar.png', w: 200, h: 633, cx: 214, cy: 470, scale: 0.5, rot: -3, dx: -430, dy: 0, radius: 10, cue: 7 },
@@ -39,7 +36,7 @@ const ELS: FlyEl[] = [
   { key: 'status', file: 'statusbar.png', w: 1360, h: 37, cx: 1140, cy: 1014, scale: 0.56, rot: -1.5, dx: 0, dy: 300, radius: 8, cue: 28 },
 ];
 
-/* 20 motes, every parameter derived from the index — no randomness at render */
+/* Every parameter is derived from the index — no randomness at render. */
 const DUST = Array.from({ length: 20 }, (_, i) => ({
   x: (i * 439 + 137) % 1920,
   y0: (i * 613 + 271) % 1080,
@@ -57,8 +54,6 @@ export const Outro: React.FC<{ durationInFrames: number }> = ({ durationInFrames
   const frame = useCurrentFrame();
   const duration = durationInFrames;
 
-  // 22, not the template's 14: at 14 the backdrop still reads as a legible
-  // page behind the group photo, which is a smudge rather than bokeh
   const blur = interpolate(frame, [0, 24], [0, 22], { ...CL, easing: Easing.bezier(0.4, 0, 0.4, 1) });
   const rule = interpolate(frame, [58, 70], [0, 1], { ...CL, easing: Easing.bezier(0.3, 0, 0.2, 1) });
   const tag = interpolate(frame, [68, 80], [0, 1], CL);
@@ -97,7 +92,6 @@ export const Outro: React.FC<{ durationInFrames: number }> = ({ durationInFrames
           blur={blur}
           saturate={0.85}
         />
-        {/* scrim: keeps the centre readable without washing the photo out */}
         <AbsoluteFill
           style={{
             background:
@@ -198,7 +192,6 @@ export const Outro: React.FC<{ durationInFrames: number }> = ({ durationInFrames
         </AbsoluteFill>
       </AbsoluteFill>
 
-      {/* dust drifting up in front of the photo */}
       <AbsoluteFill style={{ pointerEvents: 'none' }}>
         {DUST.map((d, i) => {
           const y = (((d.y0 - frame * d.rise) % 1080) + 1080) % 1080;

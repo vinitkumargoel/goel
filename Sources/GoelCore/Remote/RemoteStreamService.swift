@@ -1,10 +1,7 @@
 import Foundation
 
-/// Pure stream planning shared by the macOS and Linux remote-control servers: `streamPlan` /
-/// byte-range parse / MIME in one place so the two I/O shells cannot drift (e.g. empty finished files).
 public enum RemoteStreamService {
 
-    /// What (and how much) of a task can be streamed right now, or nil.
     public struct StreamPlan: Sendable, Equatable {
         public var path: String
         public var totalBytes: Int64
@@ -19,19 +16,16 @@ public enum RemoteStreamService {
 
     public static func streamPlan(for task: DownloadTask) -> StreamPlan? {
         if task.status.hasData {
-            // Finished payload; multi-file torrents stream their main file. `primaryFilePath` rejects an
-            // engine-declared path escaping the save directory — streamed out, so traversal = file read.
+            // `primaryFilePath` rejects a path escaping the save directory — this is streamed out, so traversal = file read.
             let path = task.primaryFilePath
-            // Must exist on disk, but a legitimately empty (0-byte) finished payload is still
-            // streamable — serve an empty body rather than collapsing it into the not-ready path.
+            // A legitimately empty (0-byte) finished payload is still streamable; do not collapse it into not-ready.
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else {
                 return nil
             }
             let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
             return StreamPlan(path: path, totalBytes: size, availableBytes: size)
         }
-        // In flight: only a single-file sequential torrent has a contiguous,
-        // provably-safe prefix. Stay a safety margin behind the write head.
+        // Only a single-file sequential torrent has a contiguous prefix; stay a margin behind the write head.
         guard task.sequentialDownload == true, !task.isMultiFile,
               task.status == .downloading || task.status == .verifying,
               let total = task.totalBytes, total > 0 else { return nil }
@@ -41,19 +35,16 @@ public enum RemoteStreamService {
         return StreamPlan(path: task.savePath, totalBytes: total, availableBytes: available)
     }
 
-    /// Parse `bytes=start-end` against what exists, clamping an open end.
     public static func parseByteRange(_ header: String, available: Int64) -> (Int64, Int64)? {
         let trimmed = header.trimmingCharacters(in: .whitespaces).lowercased()
         guard trimmed.hasPrefix("bytes=") else { return nil }
-        // First range only (no multipart). `bytes=` or `bytes=,,,` splits to nothing, so `.first` —
-        // subscripting would trap and kill the process on a request any client can send. Nil → 200.
+        // `.first`, never subscripting: `bytes=,,,` splits to nothing and would trap on a request any client can send.
         guard let spec = trimmed.dropFirst("bytes=".count)
             .split(separator: ",").first else { return nil }
         let parts = spec.split(separator: "-", maxSplits: 1,
                                omittingEmptySubsequences: false)
         guard parts.count == 2 else { return nil }
         if parts[0].isEmpty {
-            // Suffix form: last N bytes.
             guard let n = Int64(parts[1]), n > 0 else { return nil }
             return (max(0, available - n), available - 1)
         }
@@ -62,7 +53,6 @@ public enum RemoteStreamService {
         return (start, end)
     }
 
-    /// Just enough MIME to make media players happy.
     public static func mimeType(forPath path: String) -> String {
         switch (path as NSString).pathExtension.lowercased() {
         case "mp4", "m4v": return "video/mp4"

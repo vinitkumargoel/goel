@@ -1,16 +1,11 @@
 import XCTest
 @testable import GoelCore
 
-/// Security regression tests for the managed-policy trust boundary. The rule: *a key is enforced if
-/// and only if it arrived forced*; each case is a way that was escapable, plus policy-as-parsed-input.
+/// Managed-policy trust boundary: a key is enforced if and only if it arrived forced.
 final class ManagedPolicyRemediationTests: XCTestCase {
 
     private static let MiB = 1024 * 1024
 
-    // MARK: - Forcedness is the trust boundary
-
-    /// The core regression: a present but NOT forced value reached the app through a search chain
-    /// ending in a user-writable plist. It is at most a seeded default and must change nothing.
     func testUnforcedEntriesAreNeverApplied() {
         var settings = AppSettings()
         settings.proxyMode = "none"
@@ -30,7 +25,6 @@ final class ManagedPolicyRemediationTests: XCTestCase {
         XCTAssertTrue(policy.lockedKeys.isEmpty)
     }
 
-    /// The other half of the same rule: a profile-delivered value still lands.
     func testForcedEntriesAreStillApplied() {
         var settings = AppSettings()
         settings.proxyMode = "none"
@@ -50,8 +44,6 @@ final class ManagedPolicyRemediationTests: XCTestCase {
         XCTAssertTrue(effective.auditLogEnabled)
     }
 
-    /// A single policy carrying both kinds must apply exactly the forced half —
-    /// the two are decided per key, not per policy.
     func testMixedPolicyAppliesOnlyTheForcedHalf() {
         var settings = AppSettings()
         settings.proxyHost = "user-chosen.example.com"
@@ -67,8 +59,7 @@ final class ManagedPolicyRemediationTests: XCTestCase {
         XCTAssertTrue(effective.auditLogEnabled)
     }
 
-    /// A bandwidth ceiling reaches settings by a second route — it implies `speedLimitEnabled`. That
-    /// route must be gated on forcedness too, or an unforced value still changes engine behaviour.
+    /// A ceiling also implies `speedLimitEnabled`; that second route must be gated on forcedness too.
     func testUnforcedCeilingNeitherClampsNorEnablesTheLimiter() {
         var settings = AppSettings()
         settings.speedLimitEnabled = false
@@ -83,10 +74,7 @@ final class ManagedPolicyRemediationTests: XCTestCase {
         XCTAssertEqual(effective.profiles, settings.profiles)
     }
 
-    // MARK: - The ceiling cannot be escaped
-
-    /// ``AppSettings/selectedProfile`` falls back to the static `.medium`, which is not in `profiles`
-    /// — clamping the list alone let an empty one run at Medium's 50 MB/s under a 5 MB/s ceiling.
+    /// `selectedProfile` falls back to the static `.medium`, which is not in `profiles` — clamping the list alone left an empty one uncapped.
     func testManagedCeilingSurvivesAnEmptyProfileList() {
         var settings = AppSettings()
         settings.profiles = []
@@ -103,10 +91,7 @@ final class ManagedPolicyRemediationTests: XCTestCase {
         }
     }
 
-    // MARK: - A policy file is parsed input
-
-    /// `9e30` is valid JSON and `Int(_:)` traps outside `Int`'s range, so one bad number aborted the
-    /// daemon at construction. The key must degrade to "not managed", leaving the rest in force.
+    /// `9e30` is valid JSON and `Int(_:)` traps outside `Int`'s range; the key must degrade to "not managed", not abort the daemon.
     func testOutOfRangeNumberInAPolicyFileIsIgnoredNotFatal() throws {
         let path = try Self.writePolicyFile("""
         {"maxDownloadBytesPerSec": 9e30, "auditLogEnabled": true}
@@ -122,8 +107,6 @@ final class ManagedPolicyRemediationTests: XCTestCase {
                       "one bad key must not cost the administrator the rest of the file")
     }
 
-    /// A whole number that *is* in range still truncates exactly as it always
-    /// did — the non-trapping conversion must not change ordinary values.
     func testFractionalNumberInAPolicyFileStillTruncates() throws {
         let path = try Self.writePolicyFile("""
         {"auditLogRetentionDays": 30.7}
@@ -136,8 +119,6 @@ final class ManagedPolicyRemediationTests: XCTestCase {
         XCTAssertEqual(policy.apply(to: AppSettings()).auditLogRetentionDays, 30)
     }
 
-    /// A file that exists but does not parse is an administrator's typo: the app still runs unmanaged
-    /// (refusing to launch over a stray comma is worse), but the two outcomes are separate paths.
     func testMalformedPolicyFileMeansUnmanaged() throws {
         let path = try Self.writePolicyFile("not json")
         defer { try? FileManager.default.removeItem(atPath: path) }
@@ -145,8 +126,7 @@ final class ManagedPolicyRemediationTests: XCTestCase {
         XCTAssertNil(JSONManagedPreferenceReader(contentsOfFile: path))
     }
 
-    /// The file's authority is its permissions and nothing else: one a local user can rewrite would
-    /// grant them a fleet proxy and switch the audit log off, so it is refused rather than trusted.
+    /// The file's authority is its permissions: one a local user can rewrite would grant them a fleet proxy and disable the audit log.
     func testGroupOrWorldWritablePolicyFileIsRefused() throws {
         let path = try Self.writePolicyFile("""
         {"proxyMode": "manual", "proxyHost": "10.0.0.66"}
@@ -163,11 +143,8 @@ final class ManagedPolicyRemediationTests: XCTestCase {
         XCTAssertNil(JSONManagedPreferenceReader(contentsOfFile: path))
     }
 
-    // MARK: - The managed-preferences directory
-
     #if os(macOS)
-    /// Everything under `/Library/Managed Preferences` is forced by construction (writing there needs
-    /// root). The per-user profile overlays the device one — the precedence CoreFoundation applies.
+    /// Everything under `/Library/Managed Preferences` is forced by construction (writing there needs root); user scope overlays device.
     func testManagedPreferenceDirectoryIsForcedAndUserScopeWins() throws {
         let root = NSTemporaryDirectory() + "goel-managed-\(UUID().uuidString)"
         let user = "tester"
@@ -190,8 +167,6 @@ final class ManagedPolicyRemediationTests: XCTestCase {
         XCTAssertTrue(effective.auditLogEnabled, "device-scope keys survive the overlay")
     }
 
-    /// No profile at that path means "fall back", not "unmanaged" — so the
-    /// reader must decline rather than report an empty policy.
     func testManagedPreferenceDirectoryWithNoProfileDeclines() throws {
         let root = NSTemporaryDirectory() + "goel-managed-\(UUID().uuidString)"
         try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
@@ -202,10 +177,7 @@ final class ManagedPolicyRemediationTests: XCTestCase {
     }
     #endif
 
-    // MARK: - Import must not bake the overlay in
-
-    /// Import restores security-sensitive fields from CURRENT values, which must mean the user's own
-    /// row: the overlaid row wrote forced keys to disk, outliving the profile that imposed them.
+    /// Import restores security-sensitive fields from CURRENT values, which must be the user's own row, not the policy overlay.
     func testImportKeepsThePolicyOverlayOutOfTheUsersOwnSettings() async throws {
         var mine = AppSettings()
         mine.proxyMode = "none"
@@ -237,10 +209,7 @@ final class ManagedPolicyRemediationTests: XCTestCase {
         XCTAssertEqual(stored.proxyMode, "none")
     }
 
-    // MARK: - Helpers
-
-    /// Write `json` to a fresh temp file at the mode an administrator would install it with. Set
-    /// explicitly: the reader refuses group/world-writable files, so umask must not decide.
+    /// Mode set explicitly: the reader refuses group/world-writable files, so umask must not decide it.
     private static func writePolicyFile(_ json: String) throws -> String {
         let path = NSTemporaryDirectory() + "goel-policy-\(UUID().uuidString).json"
         try Data(json.utf8).write(to: URL(fileURLWithPath: path))
@@ -259,13 +228,10 @@ final class ManagedPolicyRemediationTests: XCTestCase {
 }
 
 private extension DownloadManager {
-    /// Install an overlay directly. Production goes through ``refreshManagedPolicy()``, but a unit
-    /// test can't enrol a Mac and the import path must be exercised with a policy in force.
     func installPolicyForTest(_ policy: ManagedPolicy) async {
         managedPolicy = policy
         await updateSettings(storedSettings)
     }
 
-    /// The user's own row — the only thing ever persisted.
     var storedSettingsForTest: AppSettings { storedSettings }
 }

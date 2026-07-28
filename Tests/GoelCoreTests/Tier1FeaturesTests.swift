@@ -1,11 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-/// Tier-1 additions: checksum verification, hash parsing, and the file-conflict
-/// naming policy.
 final class Tier1FeaturesTests: XCTestCase {
-
-    // MARK: Temp helpers
 
     private func makeTempDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
@@ -19,8 +15,6 @@ final class Tier1FeaturesTests: XCTestCase {
         try contents.data(using: .utf8)!.write(to: url)
         return url
     }
-
-    // MARK: Checksum digests (known vectors for "abc")
 
     func testDigestsMatchKnownVectors() throws {
         let dir = try makeTempDir()
@@ -67,8 +61,6 @@ final class Tier1FeaturesTests: XCTestCase {
         XCTAssertTrue(ok)
     }
 
-    // MARK: Hash parsing / auto-detection
-
     func testParseAutoDetectsAlgorithmByLength() {
         XCTAssertEqual(Checksum.parse(String(repeating: "a", count: 32))?.algorithm, .md5)
         XCTAssertEqual(Checksum.parse(String(repeating: "a", count: 40))?.algorithm, .sha1)
@@ -78,18 +70,16 @@ final class Tier1FeaturesTests: XCTestCase {
 
     func testParseNormalizesAndRejectsJunk() {
         XCTAssertEqual(Checksum.parse("  ABCDEF\(String(repeating: "0", count: 58))  ")?.value.count, 64)
-        XCTAssertNil(Checksum.parse(""))                                   // empty
-        XCTAssertNil(Checksum.parse("xyz123"))                            // non-hex / wrong length
-        XCTAssertNil(Checksum.parse(String(repeating: "a", count: 50)))   // valid hex, unknown length
-        XCTAssertNil(Checksum.parse("zz" + String(repeating: "a", count: 62))) // non-hex chars
+        XCTAssertNil(Checksum.parse(""))
+        XCTAssertNil(Checksum.parse("xyz123"))
+        XCTAssertNil(Checksum.parse(String(repeating: "a", count: 50)))
+        XCTAssertNil(Checksum.parse("zz" + String(repeating: "a", count: 62)))
     }
 
     func testParseWithExplicitAlgorithmEnforcesLength() {
         XCTAssertNotNil(Checksum.parse(String(repeating: "a", count: 64), algorithm: .sha256))
         XCTAssertNil(Checksum.parse(String(repeating: "a", count: 32), algorithm: .sha256))
     }
-
-    // MARK: File-conflict naming policy
 
     func testResolveNameRenamesAroundExistingFiles() throws {
         let dir = try makeTempDir()
@@ -99,7 +89,6 @@ final class Tier1FeaturesTests: XCTestCase {
         let renamed = DownloadManager.resolveName("movie.mp4", in: dir.path, policy: "rename")
         XCTAssertEqual(renamed, "movie (1).mp4")
 
-        // With the first alternate also taken, it advances to (2).
         _ = try writeFile("x", named: "movie (1).mp4", in: dir)
         XCTAssertEqual(DownloadManager.resolveName("movie.mp4", in: dir.path, policy: "rename"),
                        "movie (2).mp4")
@@ -128,8 +117,6 @@ final class Tier1FeaturesTests: XCTestCase {
                        "README (1)")
     }
 
-    // MARK: Status / settings plumbing
-
     func testVerifyingStatusIsActiveNonTerminal() {
         XCTAssertTrue(DownloadStatus.verifying.isActive)
         XCTAssertFalse(DownloadStatus.verifying.isTerminal)
@@ -137,12 +124,10 @@ final class Tier1FeaturesTests: XCTestCase {
     }
 
     func testNewSettingsDefaultsAndBackCompatDecode() throws {
-        // Defaults.
         let fresh = AppSettings()
         XCTAssertEqual(fresh.existingFileReaction, "rename")
         XCTAssertFalse(fresh.clipboardMonitorEnabled)
 
-        // An old blob without the new keys still decodes (decodeIfPresent fallbacks).
         let legacy = "{\"selectedProfileName\":\"Medium\"}".data(using: .utf8)!
         let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
         XCTAssertEqual(decoded.existingFileReaction, "rename")
@@ -157,8 +142,6 @@ final class Tier1FeaturesTests: XCTestCase {
         let back = try JSONDecoder().decode(DownloadTask.self, from: data)
         XCTAssertEqual(back.expectedChecksum, task.expectedChecksum)
 
-        // A task encoded without the field decodes with a nil checksum (synthesized
-        // Codable uses decodeIfPresent for optionals).
         let plain = DownloadTask(source: .url(URL(string: "https://example.test/g.bin")!),
                                  name: "g.bin", saveDirectory: "/tmp")
         let plainBack = try JSONDecoder().decode(DownloadTask.self,

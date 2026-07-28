@@ -1,10 +1,8 @@
-/* Shot 13 — the same queue, in a browser. page-turn-transitions 式 A `cube-rotate`: the two are peers.
- * `translateZ(-W/2) rotateY(theta)` scene layer, theta 0->-90/38f; mid-turn blur mounted conditionally. */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C, FONT } from '../theme';
 
-const S = 1.08; // the 1480x841 page rendered at 1598x908
+const S = 1.08;
 const W = 1480 * S;
 const H = 841 * S;
 

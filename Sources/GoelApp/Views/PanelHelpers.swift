@@ -1,10 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// Thin wrappers around the `NSOpenPanel`/`NSSavePanel` ritual so call sites state only what
-/// differs. Optional prompt/message/types apply only when supplied, so each site keeps its flags.
 enum FilePicker {
-    /// Pick a single existing directory.
     static func chooseDirectory(prompt: String? = nil, message: String? = nil) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -15,7 +12,6 @@ enum FilePicker {
         return panel.url
     }
 
-    /// Pick a single existing file, optionally constrained to `types`.
     static func openFile(types: [UTType]? = nil, message: String? = nil) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
@@ -26,7 +22,6 @@ enum FilePicker {
         return panel.url
     }
 
-    /// Pick one or more files and/or directories (multiple selection).
     static func openItems(canChooseFiles: Bool = true, canChooseDirectories: Bool = false,
                           prompt: String? = nil, message: String? = nil) -> [URL] {
         let panel = NSOpenPanel()
@@ -39,7 +34,6 @@ enum FilePicker {
         return panel.urls
     }
 
-    /// Pick a save destination, suggesting `name` and constraining to `type`.
     static func save(name: String, type: UTType) -> URL? {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [type]
@@ -49,8 +43,6 @@ enum FilePicker {
     }
 }
 
-/// Collect the URLs a drag carries and hand them to `done` on the main queue once every provider
-/// loads. `fileURLsOnly` both narrows accepted providers and discards any non-file URL.
 func collectDroppedURLs(_ providers: [NSItemProvider], fileURLsOnly: Bool = false,
                         _ done: @escaping ([URL]) -> Void) -> Bool {
     let matching = providers.filter {

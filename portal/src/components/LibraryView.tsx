@@ -31,8 +31,7 @@ export function LibraryView({
         </div>
       )}
 
-      {/* hide-* must match the cells below AND portal.css's ≤920px `1fr 96px 108px` (Status'
-          width gone, Speed's kept), or a header label ends up with no column under it. */}
+      {/* hide-* must match the cells below AND portal.css's ≤920px grid, or a label loses its column. */}
       <div className="lhead">
         <div>Name</div>
         <div className="r">Size</div>
@@ -76,8 +75,6 @@ interface RowProps {
   onContextMenu: (id: string, x: number, y: number) => void
 }
 
-/** Memoised: the SSE stream replaces the whole task array several times a second, so without this
- * every row re-renders on every snapshot; with it, only rows whose own fields moved do. */
 const Row = memo(function Row({
   task,
   selected,
@@ -105,7 +102,6 @@ const Row = memo(function Row({
             className="sbtn"
             aria-label={action}
             onClick={(e) => {
-              // The row underneath selects on click; the button must not do both.
               e.stopPropagation()
               onAction(task.id, action)
             }}

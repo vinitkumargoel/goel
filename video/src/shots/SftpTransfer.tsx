@@ -1,5 +1,3 @@
-/* Shot 9 — SFTP: browse there, land here. Card paper-plane-messenger, demo kept verbatim: 2.5D camera,
-   0.62 mid zoom (>~0.7 loses the journey), sampled-tangent flight, 320x60 chip not the illegible 17:1 row. */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C } from '../theme';
@@ -7,23 +5,18 @@ import { mulberry32 } from '../lib/helpers/rand';
 
 const CL = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 
-// ---- world ----
-const AX = 760, AY = 560; // SFTP browser window centre
-const BX = 3400, BY = 600; // download queue window centre
+const AX = 760, AY = 560;
+const BX = 3400, BY = 600;
 const WIN_W = 1360, WIN_H = 721;
 
-// the remote row that gets picked up: hotRow (260,213) on a page whose window
-// origin is (60,60), so it sits (200,153) inside window A
-const ROW_W = 579.5, ROW_H = 34; // the row it is lifted out of
+// 200/153 are hotRow (260,213) minus the texture's (60,60) window origin — re-derive if the shot changes.
+const ROW_W = 579.5, ROW_H = 34;
 const ROW_X = AX - WIN_W / 2 + 200;
 const ROW_Y = AY - WIN_H / 2 + 153;
-const CHIP_W = 320, CHIP_H = 60.5; // the card that actually flies
+const CHIP_W = 320, CHIP_H = 60.5;
 
-// flight arc: out of the remote pane, up and over, down to the queue's door
 const P0 = { x: ROW_X + ROW_W / 2, y: ROW_Y + ROW_H / 2 };
 const P1 = { x: 1560, y: -150 };
-/* P2/P3 flatten the approach so touchdown lands over the queue's LIST, not its sidebar: the demo's
-   steeper descent read as a nose-first collision with the left edge. Final tangent ~9 degrees. */
 const P2 = { x: 2500, y: 260 };
 const P3 = { x: 3380, y: 430 };
 const bez = (t: number) => {
@@ -34,7 +27,6 @@ const bez = (t: number) => {
   };
 };
 
-// ---- timeline (150f) ----
 const PICK = 12;
 const ZOOM_OUT = [16, 42] as const;
 const FLY = [34, 104] as const;
@@ -83,8 +75,7 @@ export const SftpTransfer: React.FC<{ durationInFrames: number }> = () => {
 
   const tFly = interpolate(frame, FLY, [0, 1], { ...CL, easing: Easing.bezier(0.45, 0.05, 0.25, 1) });
   const pos = bez(tFly);
-  /* Sample the tangent BACKWARD at the end of the flight: forward, at tFly === 1 the two samples
-     coincide, atan2(0, 0) returns 0, and the chip snaps from its 11-degree descent to level. */
+  /* Must sample backward at tFly === 1: forward the samples coincide and atan2(0, 0) snaps to level. */
   const dt = 0.012;
   const back = tFly + dt > 1;
   const posB = bez(back ? tFly - dt : tFly + dt);
@@ -101,8 +92,7 @@ export const SftpTransfer: React.FC<{ durationInFrames: number }> = () => {
   cx = cx * (1 - takeP) + BX * takeP;
   cy = cy * (1 - takeP) + BY * takeP;
 
-  // Three-stage zoom; zBase and zTake agree at TAKEOVER[0] so nothing jumps. Final 1.6, not the demo's
-  // 3.1, because this subject is 1.8x the demo window's width — same framing, scaled to the object.
+  // zBase and zTake must agree at TAKEOVER[0], or the camera jumps on the handover frame.
   const zBase = 1.55 + (0.62 - 1.55) * zoomOutP;
   const zTake = 0.62 + (1.6 - 0.62) * takeP;
   const z = frame < TAKEOVER[0] ? zBase : zTake;
@@ -124,7 +114,6 @@ export const SftpTransfer: React.FC<{ durationInFrames: number }> = () => {
 
   return (
     <AbsoluteFill style={{ background: `linear-gradient(165deg, ${C.canvasLift} 0%, ${C.canvas} 100%)`, overflow: 'hidden' }}>
-      {/* parallax props: far and mid, behind the world layer */}
       {PROPS.filter((p) => p.depth < 1).map((p, i) => {
         const x = camX(p.x, p.depth) + Math.sin(frame * 0.035 + p.drift) * 14;
         const y = camY(p.y, p.depth) + Math.cos(frame * 0.03 + p.drift) * 10;
@@ -150,7 +139,6 @@ export const SftpTransfer: React.FC<{ durationInFrames: number }> = () => {
         );
       })}
 
-      {/* world layer (depth 1): both windows and the messenger */}
       <div
         style={{
           position: 'absolute',
@@ -163,7 +151,6 @@ export const SftpTransfer: React.FC<{ durationInFrames: number }> = () => {
         <Win cx={AX} cy={AY} file="sftp-window.png" />
         <Win cx={BX} cy={BY} file="app-window.png" />
 
-        {/* the row being picked up: a ring pulse where the transfer starts */}
         {pickPulse > 0.01 && (
           <div
             style={{
@@ -198,8 +185,6 @@ export const SftpTransfer: React.FC<{ durationInFrames: number }> = () => {
               src={staticFile('textures/transfer-chip.png')}
               style={{ position: 'absolute', inset: 0, width: CHIP_W, height: CHIP_H, display: 'block' }}
             />
-            {/* the card's own 10%-white hairline is sub-pixel once the camera pulls back to 0.62, and
-                without an edge a dark card on a dark field reads as floating text, not as an object */}
             <div
               style={{
                 position: 'absolute',

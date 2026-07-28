@@ -4,13 +4,6 @@ import Network
 #endif
 @testable import GoelCore
 
-/// Regressions for the remote-control API and the web portal: SSRF on /api/add, `/logout` ahead of
-/// the auth gate, a tokenless QR deep-link, a swapped save folder, a NaN-blanked list, CSRF POSTs.
-
-// MARK: - Fakes
-
-/// ``RemoteBackend`` that refuses every caller-supplied save folder, standing in
-/// for a scheduler whose uid cannot write to the requested path.
 private final class FolderRefusingBackend: RemoteBackend, @unchecked Sendable {
     private(set) var added: [DownloadSource] = []
     private(set) var folders: [String?] = []
@@ -38,8 +31,6 @@ private final class FolderRefusingBackend: RemoteBackend, @unchecked Sendable {
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { false }
 }
 
-// MARK: - Tests
-
 final class PortalRemediationTests: XCTestCase {
 
     private func str(_ d: Data) -> String { String(decoding: d, as: UTF8.self) }
@@ -48,16 +39,12 @@ final class PortalRemediationTests: XCTestCase {
         RemoteRequest(raw: Data(raw.utf8))
     }
 
-    /// `POST /api/add?token=secret` carrying `body` as JSON.
     private func addRequest(_ body: String, headers: String = "") -> RemoteRequest {
         request("POST /api/add?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n"
                 + headers + "\r\n" + body)
     }
 
-    // MARK: RP-01 — SSRF: internal targets refused on /api/add
-
-    /// Loopback, the cloud-metadata address, and the legacy integer/octal spellings of 127.0.0.1
-    /// must all be refused outright — the add must not reach the backend at all.
+    /// SSRF: loopback, cloud metadata, and the integer/octal spellings of 127.0.0.1 must never reach the backend.
     func testAddRefusesInternalNetworkTargets() async throws {
         let internalTargets = [
             "http://127.0.0.1:9/x.bin",
@@ -76,8 +63,6 @@ final class PortalRemediationTests: XCTestCase {
         }
     }
 
-    /// The guard must not break the ordinary cases: a public URL, a LAN NAS (the headline "add from
-    /// my phone" scenario), an SFTP target, and a magnet — which names no fetchable host at all.
     func testAddStillAcceptsPublicLANAndMagnetSources() async throws {
         let allowed = [
             "https://e/x.bin",
@@ -94,8 +79,6 @@ final class PortalRemediationTests: XCTestCase {
         }
     }
 
-    /// A batch that mixes a good and an internal target adds the good one and
-    /// *says* how many it dropped, instead of reporting a clean success.
     func testAddReportsRefusedCountForAMixedBatch() async {
         let backend = FakeRemoteBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
@@ -119,8 +102,6 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertTrue(NetworkGuard.isAllowedRemoteAddTarget(url("http://0x-mirror.example.com/x")))
     }
 
-    // MARK: RP-04 — an unwritable save folder is refused, not silently swapped
-
     func testAddRefusesAnUnwritableSaveFolder() async {
         let backend = FolderRefusingBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
@@ -138,8 +119,6 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertEqual(backend.added.count, 1)
     }
 
-    // MARK: RP-05 — an unencodable response is a 500, not an empty 200
-
     private struct UnencodableRow: Encodable {
         var progress: Double
     }
@@ -148,7 +127,6 @@ final class PortalRemediationTests: XCTestCase {
         let out = str(RemoteRouter.json(UnencodableRow(progress: .nan)))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 500"), out)
         XCTAssertFalse(out.contains("null"), "a wiped list must not be served as success")
-        // The healthy path is unchanged.
         XCTAssertTrue(str(RemoteRouter.json(UnencodableRow(progress: 0.5))).hasPrefix("HTTP/1.1 200 OK"))
     }
 
@@ -161,8 +139,6 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertNil(router.eventFrame(for: [task]),
                      "a non-finite speed must skip the tick, not blank the client's list")
     }
-
-    // MARK: RP-06 — cross-site writes refused
 
     func testForeignOriginPOSTIsRefused() async {
         let backend = FakeRemoteBackend()
@@ -184,8 +160,7 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertTrue(backend.pausedAll)
     }
 
-    /// No `Origin` means no browser — `curl`, the extension, a script. Those were
-    /// never the threat and must keep working.
+    /// No `Origin` means no browser — `curl`, the extension, a script — which were never the CSRF threat.
     func testOriginlessPOSTIsAllowed() async {
         let backend = FakeRemoteBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
@@ -194,8 +169,6 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertTrue(backend.pausedAll)
     }
 
-    /// A reverse proxy that forwards the public hostname only in
-    /// `X-Forwarded-Host` must not have every portal action refused.
     func testForwardedHostCountsAsTheAuthority() async {
         let backend = FakeRemoteBackend()
         let config = RemoteRouter.Config(token: "", requireAuth: false)
@@ -215,8 +188,6 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertFalse(RemoteRouter.originMatchesHost("http://127.0.0.1:8899", host: nil))
     }
 
-    // MARK: RP-03 — a token deep-link becomes a real session
-
     func testTokenDeepLinkOnlyPromotesTheRootPageLoad() {
         func promotes(_ raw: String, sessionAuthed: Bool = false, tokenAuthed: Bool = true,
                       requireAuth: Bool = true) -> Bool {
@@ -232,17 +203,13 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertFalse(promotes("POST / HTTP/1.1\r\n\r\n"))
     }
 
-    /// The portal JS must strip the token from the address bar once exchanged for a cookie. A text
-    /// assertion on the compiled `portal/src/main.tsx`, matching only what survives minification.
+    /// Asserts on the compiled bundle, so it may match only text that survives minification.
     func testPortalScriptScrubsTheTokenFromTheAddressBar() {
         XCTAssertTrue(PortalBundle.js.contains("history.replaceState"),
                       "the token must not linger in the address bar or in history")
     }
 
-    // MARK: RP-07 — "Copied" must mean copied
-
-    /// `navigator.clipboard` is undefined over plain HTTP — the default LAN deployment — so an
-    /// unconditional success toast was a lie. The fallback path must stay in the shipped bundle.
+    /// `navigator.clipboard` is undefined over plain HTTP, which is the default LAN deployment.
     func testPortalScriptKeepsTheNonSecureContextCopyFallback() {
         XCTAssertTrue(PortalBundle.js.contains("execCommand"),
                       "a non-secure context needs a selection-copy fallback")
@@ -250,10 +217,6 @@ final class PortalRemediationTests: XCTestCase {
                       "the secure-context path must still be preferred when available")
     }
 
-    // MARK: Bundle delivery
-
-    /// Every asset the shell references must actually resolve, or script and stylesheet both 404 —
-    /// which fails as a blank screen rather than as an error anyone would notice in testing.
     func testPageShellReferencesOnlyServableAssets() {
         let config = RemoteRouter.Config(token: "t", requireAuth: true, readOnly: false,
                                          theme: "nord", username: "admin")
@@ -271,8 +234,7 @@ final class PortalRemediationTests: XCTestCase {
         }
     }
 
-    /// The bundle is content-addressed, so an unknown name is a 404 rather than
-    /// anything that could reach a filesystem.
+    /// The bundle is content-addressed: an unknown name must 404 rather than reach the filesystem.
     func testUnknownAssetIsNotFoundAndNeverTouchesTheFilesystem() {
         for path in ["/assets/nope.js", "/assets/../../etc/passwd", "/assets/"] {
             let data = RemoteRouter.staticAsset(path: path)
@@ -281,16 +243,13 @@ final class PortalRemediationTests: XCTestCase {
         }
     }
 
-    /// Inline script was allowed only because the old portal *was* inline; now everything is served
-    /// from `/assets/`, so forbid it — the portal renders off-machine names and tracker hosts.
+    /// The portal renders off-machine names and tracker hosts, so inline script must stay forbidden.
     func testContentSecurityPolicyForbidsInlineScript() {
         let head = String(decoding: RemoteRouter.notFound(), as: UTF8.self)
         XCTAssertTrue(head.contains("script-src 'self'"), "script must come from /assets/ only")
         XCTAssertFalse(head.contains("'unsafe-inline'"), "inline execution must not be allowed")
     }
 
-    /// Hashed assets are immutable and must say so; everything else must not be
-    /// cached at all. Emitting both headers would leave the choice to the client.
     func testAssetsAreImmutablyCachedAndPagesAreNot() {
         let asset = String(decoding: RemoteRouter.staticAsset(path: PortalBundle.jsPath) ?? Data(),
                            as: UTF8.self)
@@ -301,8 +260,6 @@ final class PortalRemediationTests: XCTestCase {
         let page = String(decoding: RemoteRouter.notFound(), as: UTF8.self)
         XCTAssertTrue(page.contains("Cache-Control: no-store"))
     }
-
-    // MARK: RP-09 — a no-op logout must not tear down everybody's streams
 
     func testLogoutReportsWhetherASessionWasActuallyDropped() async throws {
         let store = RemoteSessionStore()
@@ -321,7 +278,6 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertTrue(signOut.droppedSession, "a real sign-out must be reported as one")
     }
 
-    /// The `goel_session` value out of a `Set-Cookie` header in a raw response.
     private func sessionCookie(in response: Data) -> String? {
         for line in str(response).components(separatedBy: "\r\n") {
             guard line.lowercased().hasPrefix("set-cookie:"),
@@ -331,8 +287,6 @@ final class PortalRemediationTests: XCTestCase {
         }
         return nil
     }
-
-    // MARK: RP-08 / RP-10 — a refused start is reportable, and a bad port is refused
 
     private func portalSettings(port: Int) -> AppSettings {
         var s = AppSettings()
@@ -362,8 +316,7 @@ final class PortalRemediationTests: XCTestCase {
         XCTAssertNil(cleared, "a deliberate stop is not a failure")
     }
 
-    /// A portal refusing to start rather than serve cleartext must say so all the way up to
-    /// ``RemoteAccess``; Linux reports ``RemotePortalStartFailure/tlsUnsupported`` instead.
+    /// The portal must refuse to start rather than serve cleartext; Linux reports `tlsUnsupported` instead.
     func testUnusableTLSIdentityIsReportedThroughRemoteAccess() async {
         let manager = DownloadManager()
         let access = RemoteAccess()
@@ -383,8 +336,7 @@ final class PortalRemediationTests: XCTestCase {
         await access.stop()
     }
 
-    /// A port the kernel just said is free must not be reported unusable. A restricted environment
-    /// can still refuse the bind, so this asserts on the *reason*, not on the outcome.
+    /// Asserts on the reason, not the outcome: a restricted environment may still refuse the bind.
     func testAValidPortIsNeverReportedAsOutOfRange() async {
         let manager = DownloadManager()
         let access = RemoteAccess()
@@ -396,15 +348,9 @@ final class PortalRemediationTests: XCTestCase {
     }
 }
 
-// MARK: - Live-socket regressions
-
 #if !os(Linux)
-/// The two defects living only in the I/O shell's route table: `/logout` registered ahead of the
-/// auth gate, and a token deep-link that never became a session. Both need a real listener.
 final class PortalShellRemediationTests: XCTestCase {
 
-    /// Send `request` over a fresh loopback connection and return the whole
-    /// response head, or nil if nothing answered.
     private func send(_ request: String, port: UInt16) async -> String? {
         await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             let conn = NWConnection(host: .ipv4(.loopback),
@@ -438,7 +384,6 @@ final class PortalShellRemediationTests: XCTestCase {
         }
     }
 
-    /// Poll until the portal answers, so a test never races the listener's start.
     private func waitUntilServing(port: UInt16) async throws {
         for _ in 0..<50 {
             if let head = await send("GET /api/config?token=t HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
@@ -450,8 +395,7 @@ final class PortalShellRemediationTests: XCTestCase {
         throw XCTSkip("the portal never came up on this machine")
     }
 
-    /// RP-02: `/logout` used to sit in front of the auth gate, so an anonymous
-    /// `curl` could drop the session and wind down every live stream.
+    /// `/logout` ahead of the auth gate let an anonymous `curl` drop the session and kill every live stream.
     func testUnauthenticatedLogoutIsRefused() async throws {
         let backend = PortalProbeBackend()
         let server = RemoteControlServer(manager: backend)
@@ -478,8 +422,7 @@ final class PortalShellRemediationTests: XCTestCase {
         XCTAssertFalse(post.contains("{\"ok\":true}"))
     }
 
-    /// RP-03: `GET /?token=…` — the QR code and "Copy Link" — must hand back a
-    /// session cookie, because everything the page does next carries no token.
+    /// `GET /?token=…` must hand back a session cookie: everything the page does next carries no token.
     func testTokenDeepLinkIssuesASessionCookie() async throws {
         let backend = PortalProbeBackend()
         let server = RemoteControlServer(manager: backend)
@@ -512,8 +455,7 @@ final class PortalShellRemediationTests: XCTestCase {
     }
 }
 
-/// A do-nothing backend held strongly by the tests above; ``RemoteControlServer``
-/// keeps its manager weakly.
+/// Must be held strongly by the tests: ``RemoteControlServer`` keeps its manager weakly.
 private final class PortalProbeBackend: RemoteBackend, @unchecked Sendable {
     func taskSnapshot() async -> [DownloadTask] { [] }
     func task(_ id: UUID) async -> DownloadTask? { nil }

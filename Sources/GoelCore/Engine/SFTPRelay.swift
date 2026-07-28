@@ -1,22 +1,15 @@
 import Foundation
 import SSHBridge
 
-/// Copies remote files/folders. SFTP has no server-side copy (libssh2 1.11 can't send `copy-data@openssh.com`), so bytes
-/// relay through ``SFTPRelayPipe`` on two *different* connections — one libssh2 session is one thread, so sharing deadlocks.
+/// Source and destination must be *different* connections — one libssh2 session is one thread, sharing deadlocks.
 public enum SFTPRelay {
 
-    /// What to do when the destination path already exists.
     public enum Collision: Sendable {
-        /// Pick a free "name (2)" style name — what Finder does for a copy into
-        /// the folder the item is already in.
         case rename
-        /// Write over it.
         case overwrite
-        /// Fail without transferring anything.
         case fail
     }
 
-    /// One item to copy, resolved to absolute remote paths on each side.
     public struct Item: Sendable {
         public let sourcePath: String
         public let destinationPath: String
@@ -31,8 +24,6 @@ public enum SFTPRelay {
         }
     }
 
-    /// Copy one remote file, streaming it through this machine. `progress` reports bytes accepted by the *destination*:
-    /// with a pipe in between, source progress would race ahead then appear to stall while the buffer drained.
     public static func copyFile(from source: SFTPClient, path sourcePath: String,
                                 to destination: SFTPClient, path destinationPath: String,
                                 size: Int64,
@@ -41,8 +32,7 @@ public enum SFTPRelay {
                                 progress: @escaping @Sendable (Int64, Int64) -> Void = { _, _ in }) async throws {
         let pipe = SFTPRelayPipe()
 
-        // An empty file still has to be created; short-circuit the relay. `size` came from a possibly-stale listing and
-        // this path skips the shim's arrival check, so re-read it — an unreadable size falls through to streaming, which verifies.
+        // `size` came from a possibly-stale listing; re-read it or a stale 0 truncates the file.
         var bytes = size
         if bytes <= 0, let current = try? await source.size(sourcePath) { bytes = current }
         guard bytes > 0 else {
@@ -55,8 +45,7 @@ public enum SFTPRelay {
 
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
-                // The read half. `streamingDownload` reports through its result
-                // rather than throwing, so translate here.
+                // `streamingDownload` reports failure in its result, never by throwing.
                 let result = await source.streamingDownload(
                     remote: sourcePath, resumeFrom: 0, maxBytesPerSecond: maxBytesPerSecond,
                     write: { buf in pipe.write(buf) },
@@ -64,15 +53,13 @@ public enum SFTPRelay {
                 if result.code == GSB_OK {
                     pipe.finish()
                 } else {
-                    // Tell the writer why, then let the failure surface as a throw
-                    // so the group cancels the upload too.
+                    // Must fail the pipe before throwing, else the writer parks on it forever.
                     pipe.fail(result.message)
                     throw result.asError(host: source.target.host, port: source.target.port,
                                          username: source.target.username)
                 }
             }
             group.addTask {
-                // The write half.
                 do {
                     try await destination.uploadStream(
                         remote: destinationPath, total: bytes,
@@ -86,8 +73,6 @@ public enum SFTPRelay {
                     throw error
                 }
             }
-            // Surface the first failure and cancel the other half. Both tasks
-            // unblock because whichever failed already called `fail`.
             do {
                 try await group.waitForAll()
             } catch {
@@ -98,8 +83,7 @@ public enum SFTPRelay {
         }
     }
 
-    /// Copy a whole remote directory tree. Directories are created shallowest-first so every file has a parent by
-    /// the time it is written. `onFileProgress` receives (path, bytes copied for that file, that file's total).
+    /// Directories must be created shallowest-first so every file has a parent by the time it is written.
     public static func copyTree(from source: SFTPClient, path sourceRoot: String,
                                 to destination: SFTPClient, path destinationRoot: String,
                                 maxBytesPerSecond: Int64 = 0,
@@ -128,19 +112,13 @@ public enum SFTPRelay {
         }
     }
 
-    /// The total byte count of a remote tree — what a copy's progress bar needs
-    /// before the first byte moves.
     public static func treeSize(_ client: SFTPClient, path root: String,
                                 shouldContinue: @escaping @Sendable () -> Bool = { true }) async throws -> Int64 {
         try await walk(client, root: root, shouldContinue: shouldContinue)
             .files.reduce(0) { $0 + $1.size }
     }
 
-    // MARK: Walking
-
     public struct FileEntry: Sendable {
-        /// Path components from the walk root, so a plan can be replayed against
-        /// either a remote or a local destination.
         public let relative: [String]
         public let size: Int64
     }
@@ -148,18 +126,15 @@ public enum SFTPRelay {
     public struct TreePlan: Sendable {
         public let directories: [[String]]   // shallowest first
         public let files: [FileEntry]
-        /// Names the walk refused to include because they carried path structure. Surfaced rather than dropped:
-        /// a copy that quietly omits part of the tree and reports success is the failure mode worth avoiding.
+        /// Names refused for carrying path structure — surfaced, never dropped, or a partial copy reports success.
         public let skipped: [String]
     }
 
-    /// Ceilings on a walk, because the tree is described entirely by an untrusted server: a crafted listing
-    /// (100k levels deep, or millions of entries) can exhaust memory and CPU before a single byte is copied.
+    /// Ceilings against an untrusted server's listing: a crafted tree exhausts memory/CPU before a byte moves.
     public static let maxWalkEntries = 500_000
     public static let maxWalkDepth = 128
 
-    /// `mkdir` where only "it already exists" may fail. The blanket `try?` this replaces also swallowed permission-denied,
-    /// quota and name-collision. Existence is re-checked, not inferred: the shim reports every mkdir failure the same way.
+    /// Existence is re-checked, not inferred — the shim reports permission/quota/collision mkdir failures identically.
     public static func makeDirectory(_ path: String, on client: SFTPClient) async throws {
         do {
             try await client.mkdir(path)
@@ -171,8 +146,7 @@ public enum SFTPRelay {
         }
     }
 
-    /// Enumerate a remote tree breadth-first. Symlinks are copied as *files* but never descended into: a link back
-    /// up the tree would turn a copy into an unbounded walk duplicating half the filesystem.
+    /// Symlinks are copied as files, never descended into: a link back up the tree makes the walk unbounded.
     public static func walk(_ client: SFTPClient, root: String,
                             shouldContinue: @escaping @Sendable () -> Bool) async throws -> TreePlan {
         var directories: [[String]] = []
@@ -211,8 +185,6 @@ public enum SFTPRelay {
         return TreePlan(directories: directories, files: files, skipped: skipped)
     }
 
-    /// Fail if a walk had to leave anything out, so a partial result is never presented as a complete
-    /// one — the same policy the local folder scanner applies.
     public static func requireComplete(_ plan: TreePlan) throws {
         guard let first = plan.skipped.first else { return }
         let others = plan.skipped.count - 1
@@ -220,10 +192,6 @@ public enum SFTPRelay {
                         message: "The server listed an item named “\(first)”\(others > 0 ? " and \(others) more" : "") that Goel can’t handle safely, so nothing was transferred.")
     }
 
-    // MARK: Destination naming
-
-    /// Resolve `name` against what already exists in `directory`, per `policy`.
-    /// Returns nil when the policy is `.fail` and the name is taken.
     public static func resolvedName(_ name: String, in directory: String,
                                     on client: SFTPClient,
                                     policy: Collision) async throws -> String? {

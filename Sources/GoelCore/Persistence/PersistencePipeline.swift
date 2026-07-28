@@ -1,8 +1,5 @@
 import Foundation
 
-// MARK: - PersistOp
-
-/// A single on-disk mutation, funnelled through the serial ``PersistencePipeline``.
 public enum PersistOp: Sendable {
     case saveTask(DownloadTask)
     case deleteTask(UUID)
@@ -14,12 +11,8 @@ public enum PersistOp: Sendable {
     case saveSpeedHistory([String: [SpeedHistoryPoint]])
 }
 
-// MARK: - Error bridge
-
-/// Forwards persistence failures off the detached writer without capturing the owning actor in
-/// ``PersistencePipeline/init(store:errorHandler:)``. `onError` is set-once under a lock.
 public final class PersistenceErrorHandler: @unchecked Sendable {
-    /// Set-once box: sync install/snapshot never holds a lock across `await`.
+    /// Sync install/snapshot: never hold this lock across an `await`.
     private final class Box: @unchecked Sendable {
         private let lock = NSLock()
         private var handler: (@Sendable (Error) async -> Void)?
@@ -36,7 +29,7 @@ public final class PersistenceErrorHandler: @unchecked Sendable {
 
     public init() {}
 
-    /// Install the failure bridge. No-op if already set (first writer wins).
+    /// No-op if already set — first writer wins.
     public func install(_ handler: @escaping @Sendable (Error) async -> Void) {
         box.install(handler)
     }
@@ -51,14 +44,10 @@ public final class PersistenceErrorHandler: @unchecked Sendable {
     }
 }
 
-// MARK: - Pipeline
-
-/// Serial on-disk persistence pipeline: one ordered stream so a stale snapshot never overtakes a newer
-/// one (e.g. `.finished` clobbering `.completed`). I/O is detached; ``enqueue`` is a `nonisolated` yield.
+/// One ordered stream, so a stale snapshot never overtakes a newer one (`.finished` over `.completed`).
 public actor PersistencePipeline {
 
-    /// Holds the write-side continuation + worker handle outside actor isolation so ``enqueue`` stays
-    /// `nonisolated`. `yield` is thread-safe; the worker Task is only mutated from ``shutdown()``.
+    /// Outside actor isolation so ``enqueue`` stays `nonisolated`; `worker` is mutated only in `shutdown()`.
     private final class State: @unchecked Sendable {
         let continuation: AsyncStream<PersistOp>.Continuation
         var worker: Task<Void, Never>?
@@ -80,8 +69,6 @@ public actor PersistencePipeline {
         let state = State(continuation: continuation)
         self.state = state
 
-        // Start the single serial worker immediately. Same ordering guarantee as
-        // the old lazy-start path: stream is unbounded, empty until first yield.
         state.worker = Task.detached {
             for await op in stream {
                 do {
@@ -102,12 +89,11 @@ public actor PersistencePipeline {
         }
     }
 
-    /// Enqueue one mutation. Sync yield — ordered when called serially from one actor.
+    /// Ordered only when called serially from one actor.
     nonisolated public func enqueue(_ op: PersistOp) {
         state.continuation.yield(op)
     }
 
-    /// Finish the stream and wait until every enqueued write has landed (or failed).
     public func shutdown() async {
         state.continuation.finish()
         await state.worker?.value

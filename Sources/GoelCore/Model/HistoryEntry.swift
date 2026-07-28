@@ -1,16 +1,11 @@
 import Foundation
 
-/// One finished download, archived when it first completed. History outlives the queue: removing or
-/// clearing tasks never touches its row. Small on purpose — only what re-downloading/finding needs.
 public struct HistoryEntry: Codable, Sendable, Identifiable, Hashable {
-    /// The task's id at completion time (also the archive row's identity).
     public let id: UUID
     public var name: String
-    /// The re-addable source locator (URL / magnet link / torrent-file URL).
     public var locator: String
     public var kind: DownloadKind
     public var totalBytes: Int64?
-    /// Where the payload landed. The file may have moved since — treat as a hint.
     public var savePath: String
     public var completedAt: Date
 
@@ -25,7 +20,6 @@ public struct HistoryEntry: Codable, Sendable, Identifiable, Hashable {
         self.completedAt = completedAt
     }
 
-    /// Build the archive row for a task that just completed.
     public init(task: DownloadTask, completedAt: Date = Date()) {
         self.init(id: task.id, name: task.name, locator: task.source.locator,
                   kind: task.kind, totalBytes: task.totalBytes,

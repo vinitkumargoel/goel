@@ -1,8 +1,6 @@
 import Foundation
 import SafariServices
 
-/// Native half of the Safari Web Extension. Sandboxed, so a captured link reaches
-/// the app via `goeldownloader://add`; cookies are dropped (LaunchServices logs URLs).
 @objc(SafariWebExtensionHandler)
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
@@ -13,8 +11,6 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         respond(context, ok: ok)
     }
 
-    /// Pull the URL out of the JS message, keep only web/magnet links, and open
-    /// the app's add scheme. Returns whether we accepted the link.
     private func route(_ message: [String: Any]?) -> Bool {
         guard let raw = message?["url"] as? String,
               let target = URL(string: raw),
@@ -23,18 +19,14 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
               var components = URLComponents(string: "goeldownloader://add") else {
             return false
         }
-        // Only the URL goes in the query, never `message["cookie"]` — this scheme is
-        // world-triggerable and logged by LaunchServices, so it can't carry a credential.
+        // Never put `message["cookie"]` here: this scheme is world-triggerable and LaunchServices-logged.
         components.queryItems = [URLQueryItem(name: "url", value: raw)]
         guard let appURL = components.url else { return false }
-        // LaunchServices open of the app's registered scheme — permitted from a
-        // sandboxed extension (it's brokered), unlike direct file/spool writes.
+        // Brokered scheme open is the only handoff a sandboxed extension gets; direct file writes fail.
         NSWorkspace.shared.open(appURL)
         return true
     }
 
-    /// Always `cookies: false`: this path cannot carry them, and the extension says so
-    /// rather than leaving the user wondering why capture returned a login page.
     private func respond(_ context: NSExtensionContext, ok: Bool) {
         let response = NSExtensionItem()
         response.userInfo = [SFExtensionMessageKey: ["ok": ok, "cookies": false]]

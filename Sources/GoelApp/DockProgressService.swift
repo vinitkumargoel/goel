@@ -1,8 +1,6 @@
 import AppKit
 import GoelCore
 
-/// Mirrors the queue onto the Dock icon: a badge with the active count and an aggregate
-/// progress bar. Edge-triggered — redraws only on badge change or a ≥0.5% fraction move.
 @MainActor
 final class DockProgressService {
 
@@ -11,8 +9,7 @@ final class DockProgressService {
     private var lastBadge: String?
     private var lastFraction: Double = -1
 
-    /// Refresh the tile. `mediaFractions` holds only jobs whose length is known, since one with no
-    /// declared duration must not fold in as a zero. Conversions count too — the Dock asks "busy?".
+    /// `mediaFractions` must exclude jobs of unknown length; a 0 would drag the bar down.
     func update(with tasks: [DownloadTask],
                 mediaBusyCount: Int = 0,
                 mediaFractions: [Double] = []) {
@@ -32,8 +29,6 @@ final class DockProgressService {
         let sized = active.filter { ($0.totalBytes ?? 0) > 0 }
         let total = sized.reduce(Int64(0)) { $0 + ($1.totalBytes ?? 0) }
         let done = sized.reduce(Int64(0)) { $0 + min($1.bytesDownloaded, $1.totalBytes ?? 0) }
-        // Downloads are weighted by bytes; each conversion counts as one equal unit. Mixing bytes and
-        // seconds can't be exact, and pretending otherwise is worse than a bar that just advances.
         let downloadWeight = total > 0 ? 1.0 : 0
         let downloadProgress = total > 0 ? Double(done) / Double(total) : 0
         let units = downloadWeight + Double(mediaFractions.count)
@@ -63,8 +58,6 @@ final class DockProgressService {
     }
 }
 
-/// The dock tile's content while downloading: the normal app icon with a
-/// rounded progress bar across its lower edge.
 private final class DockProgressView: NSView {
 
     var fraction: Double = 0

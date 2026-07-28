@@ -4,8 +4,6 @@ import CurlBridge
 
 final class NetworkAggregationTests: XCTestCase {
 
-    // MARK: - AggregationPolicy
-
     func testShouldActivateRequiresEnabledAndTwoAdapters() {
         XCTAssertEqual(
             AggregationPolicy.shouldActivate(
@@ -39,7 +37,6 @@ final class NetworkAggregationTests: XCTestCase {
                 enableExtraConnections: true, proxyMode: "manual",
                 vpnDefaultRoute: false, allowOutsideVPN: false),
             .proxy)
-        // System/PAC proxy must also disable multi-path (bound path bypasses it).
         XCTAssertEqual(
             AggregationPolicy.shouldActivate(
                 enabled: true, usableAdapterCount: 2,
@@ -79,7 +76,6 @@ final class NetworkAggregationTests: XCTestCase {
             selectedIds: ["en0", "en1", "bridge100", "utun3", "lo0", "en9"],
             includeExpensive: false,
             includeVPN: false)
-        // bridge (tether) is expensive → excluded; utun/vpn excluded; lo hidden.
         XCTAssertEqual(Set(usable.map(\.bsdName)), Set(["en0", "en1"]))
 
         let withExpensive = AggregationPolicy.usableAdapters(
@@ -91,22 +87,17 @@ final class NetworkAggregationTests: XCTestCase {
     }
 
     func testPreferredSegmentCountHonoursStreamsPerAdapter() {
-        // 2 adapters × 2 streams = 4, cap 8 → 4
         XCTAssertEqual(
             AggregationPolicy.preferredSegmentCount(adapters: 2, streamsPerAdapter: 2, maxAllowed: 8), 4)
-        // 2 × 4 = 8, cap 8 → 8
         XCTAssertEqual(
             AggregationPolicy.preferredSegmentCount(adapters: 2, streamsPerAdapter: 4, maxAllowed: 8), 8)
-        // 3 × 4 = 12, cap 6 → 6
         XCTAssertEqual(
             AggregationPolicy.preferredSegmentCount(adapters: 3, streamsPerAdapter: 4, maxAllowed: 6), 6)
-        // Floor: at least one per adapter when budget allows
         XCTAssertEqual(
             AggregationPolicy.preferredSegmentCount(adapters: 3, streamsPerAdapter: 1, maxAllowed: 8), 3)
     }
 
     func testMultiPathSegmentCountAtLeastOnePerAdapter() {
-        // 10 MB file, 2 adapters × 2 streams → 4 segments (not 1).
         let n = AggregationPolicy.multiPathSegmentCount(
             fileBytes: 10 * 1024 * 1024,
             adapters: 2,
@@ -115,7 +106,6 @@ final class NetworkAggregationTests: XCTestCase {
             globalRoom: 200)
         XCTAssertEqual(n, 4)
 
-        // Floor: even streams=1, still 2 segments for 2 adapters.
         let floor = AggregationPolicy.multiPathSegmentCount(
             fileBytes: 5 * 1024 * 1024,
             adapters: 2,
@@ -124,16 +114,14 @@ final class NetworkAggregationTests: XCTestCase {
             globalRoom: 200)
         XCTAssertEqual(floor, 2)
 
-        // Tiny file: only as many as size allows (32 KiB floor).
         let tiny = AggregationPolicy.multiPathSegmentCount(
             fileBytes: 40 * 1024,
             adapters: 2,
             streamsPerAdapter: 2,
             maxConnectionsPerServer: 8,
             globalRoom: 200)
-        XCTAssertEqual(tiny, 2) // 40KB / 32KB = 2 chunks
+        XCTAssertEqual(tiny, 2)
 
-        // Single 20KB blob cannot usefully multi-path.
         let tiny2 = AggregationPolicy.multiPathSegmentCount(
             fileBytes: 20 * 1024,
             adapters: 2,
@@ -146,9 +134,7 @@ final class NetworkAggregationTests: XCTestCase {
     func testHiddenVirtualDoesNotHideBridgeOrUtun() {
         XCTAssertTrue(AggregationPolicy.isHiddenVirtual("lo0"))
         XCTAssertTrue(AggregationPolicy.isHiddenVirtual("awdl0"))
-        // utun is VPN-classified, not "hidden virtual" for enumeration policy
         XCTAssertFalse(AggregationPolicy.isHiddenVirtual("utun2"))
-        // bridge is tether — must remain visible for multi-path selection
         XCTAssertFalse(AggregationPolicy.isHiddenVirtual("bridge100"))
         XCTAssertFalse(AggregationPolicy.isHiddenVirtual("en0"))
         XCTAssertTrue(AggregationPolicy.isVPNInterfaceName("utun3"))
@@ -160,8 +146,6 @@ final class NetworkAggregationTests: XCTestCase {
         XCTAssertTrue(AdapterDirectory.looksExpensive("wwan0"))
         XCTAssertFalse(AdapterDirectory.looksExpensive("en1"))
     }
-
-    // MARK: - AdapterPool
 
     func testAdapterPoolRoundRobinAndDemote() async {
         let pool = AdapterPool([
@@ -180,8 +164,6 @@ final class NetworkAggregationTests: XCTestCase {
         let usable = await pool.usableCount
         XCTAssertEqual(usable, 1)
     }
-
-    // MARK: - AppSettings Codable
 
     func testAggregationSettingsRoundTrip() throws {
         var s = AppSettings()
@@ -212,8 +194,6 @@ final class NetworkAggregationTests: XCTestCase {
         XCTAssertEqual(decoded.aggregationStreamsPerAdapter, 2)
     }
 
-    // MARK: - TaskConnection adapter fields
-
     func testTaskConnectionAdapterCodable() throws {
         let c = TaskConnection(id: "seg-0", label: "Segment 1", detail: "0–1 MB",
                                downloadSpeed: 100, progress: 0.5,
@@ -223,8 +203,6 @@ final class NetworkAggregationTests: XCTestCase {
         XCTAssertEqual(decoded.adapterId, "en0")
         XCTAssertEqual(decoded.adapterLabel, "Wi‑Fi")
     }
-
-    // MARK: - makeAggregationConfig
 
     func testMakeAggregationConfigDisabledByDefault() {
         let adapters = [
@@ -277,12 +255,9 @@ final class NetworkAggregationTests: XCTestCase {
         XCTAssertFalse(cfg.isActive)
     }
 
-    // MARK: - Host extraction (redirect secret strip)
-
     func testExtractHostSkipsUserinfoAttack() {
         var buf = [CChar](repeating: 0, count: 256)
-        // Classic open-redirect credential-theft vector `https://files.example.com:x@evil.example/`:
-        // naive parsers read the host as files.example.com, while curl connects to evil.example.
+        // Attack vector: naive parsers read files.example.com, curl connects to evil.example.
         XCTAssertEqual(
             gcb_extract_host("https://files.example.com:x@evil.example/path", &buf, buf.count), 1)
         XCTAssertEqual(String(cString: buf), "evil.example")
@@ -303,12 +278,9 @@ final class NetworkAggregationTests: XCTestCase {
     func testExtractHostFailsClosedOnGarbage() {
         var buf = [CChar](repeating: 0, count: 256)
         XCTAssertEqual(gcb_extract_host("", &buf, buf.count), 0)
-        XCTAssertEqual(gcb_extract_host("not-a-url", &buf, buf.count), 1) // host = "not-a-url" until /
-        // Empty authority after scheme
+        XCTAssertEqual(gcb_extract_host("not-a-url", &buf, buf.count), 1)
         XCTAssertEqual(gcb_extract_host("https://", &buf, buf.count), 0)
     }
-
-    // MARK: - Content-Range helper
 
     func testContentRangeTotalParse() {
         let header = "bytes 0-99/12345"

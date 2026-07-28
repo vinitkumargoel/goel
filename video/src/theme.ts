@@ -1,6 +1,3 @@
-/* Film tokens. Colour from Sources/GoelApp/Theme.swift (AppTheme.frostDark) and website/tokens.css;
- * motion from DESIGN-SPEC.md §3. Nothing invented — the spec table gives each value's origin. */
-
 export const C = {
   canvas: '#0b0c10',
   canvasLift: '#12141a',
@@ -27,7 +24,6 @@ export const C = {
   inkDim: '#515660',
 } as const;
 
-/* Named theme window tints, for the theme-sweep shot */
 export const THEME_TINT = {
   'frost-dark': '#191b21',
   'frost-light': '#eceef2',
@@ -40,8 +36,6 @@ export const FONT = {
   mono: '"IBM Plex Mono", ui-monospace, monospace',
 } as const;
 
-/* Motion tokens — DESIGN-SPEC §3. Things that merely move use `entry`/`camera`; things that LAND use
- * `land` (y1 > 1 per the library's hard ruling, overriding the "professional trust = no bounce" preset). */
 export const M = {
   dur: 21,
   entry: [0, 0, 0.2, 1] as const,
@@ -52,7 +46,5 @@ export const M = {
   staggerCard: 6,
 } as const;
 
-/** Page geometry of the captured UI replica, in CSS px. */
 export const PAGE = { w: 1480, h: 841 } as const;
-/** The app window inside that page. */
 export const WIN = { x: 60, y: 60, w: 1360, h: 721 } as const;

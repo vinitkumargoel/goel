@@ -1,8 +1,6 @@
 import SwiftUI
 import GoelCore
 
-/// The page link grabber: fetch a web page, list every downloadable-looking
-/// link it references (grouped by type), pick some, queue them.
 struct LinkGrabberSheet: View {
     @EnvironmentObject private var vm: AppViewModel
     @Environment(\.dismiss) private var dismiss
@@ -26,8 +24,6 @@ struct LinkGrabberSheet: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12, design: .monospaced))
                         .onSubmit(fetch)
-                        // The placeholder vanishes as soon as there is text, so
-                        // it cannot be the field's only name.
                         .accessibilityLabel("Page URL")
                     Button(isFetching ? "Fetching…" : "Fetch") { fetch() }
                         .disabled(isFetching || pageText.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -36,7 +32,6 @@ struct LinkGrabberSheet: View {
                     Label(fetchError, systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.orange)
-                        // Triangle + orange are the only "this failed" cues.
                         .accessibilityLabel("Error. \(fetchError)")
                 }
                 if !links.isEmpty {
@@ -75,14 +70,11 @@ struct LinkGrabberSheet: View {
         return links.filter { $0.category == categoryFilter }
     }
 
-    /// True when every currently-visible (filtered) link is already selected.
     private var allVisibleSelected: Bool {
         let visible = visibleLinks
         return !visible.isEmpty && visible.allSatisfy { selected.contains($0.url) }
     }
 
-    /// Select/deselect only the visible (filtered) subset, leaving selections made
-    /// under a different category filter untouched.
     private func toggleVisibleSelection() {
         let visibleURLs = visibleLinks.map(\.url)
         if allVisibleSelected {
@@ -122,8 +114,6 @@ struct LinkGrabberSheet: View {
                 .foregroundStyle(active ? Theme.accent : .secondary)
         }
         .buttonStyle(.plain)
-        // Which chip is active shows as an accent fill and a heavier weight —
-        // both purely visual. Carry it as a selection trait.
         .accessibilityLabel(label)
         .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
     }
@@ -141,8 +131,6 @@ struct LinkGrabberSheet: View {
                         ))
                         .labelsHidden()
                         .toggleStyle(.checkbox)
-                        // `labelsHidden()` leaves a column of anonymous
-                        // checkboxes; name each by the link it selects.
                         .accessibilityLabel(link.displayName)
                         Text(link.displayName)
                             .font(.system(size: 11.5))
@@ -206,9 +194,6 @@ struct LinkGrabberSheet: View {
     }
 }
 
-// MARK: - Extraction
-
-/// One link found on a page.
 struct GrabbedLink: Hashable {
     enum Category: Hashable {
         case archive, video, audio, image, software, document, other
@@ -245,8 +230,6 @@ enum LinkExtractor {
         (["iso", "img", "bin", "torrent"], .other),
     ]
 
-    /// Pull every href/src target out of the HTML, absolutize against the
-    /// page URL, and keep the ones that look like downloadable payloads.
     static func extract(from html: String, baseURL: URL) -> [GrabbedLink] {
         var seen = Set<String>()
         var results: [GrabbedLink] = []
@@ -268,7 +251,6 @@ enum LinkExtractor {
         return Array(results.prefix(500))
     }
 
-    /// The category for a URL with a downloadable-looking extension, else nil.
     private static func category(for url: URL) -> GrabbedLink.Category? {
         let ext = url.pathExtension.lowercased()
         guard !ext.isEmpty else { return nil }

@@ -2,11 +2,8 @@ import Foundation
 import ServiceManagement
 import GoelCore
 
-/// Registers/removes GoelDownloader as a login item via `SMAppService.mainApp` (macOS 13+);
-/// no-ops on older systems. Failures are logged and swallowed — never take down the app.
 enum LoginItemService {
 
-    /// Enables or disables launch-at-login for the running app bundle.
     static func setEnabled(_ enabled: Bool) {
         if #available(macOS 13.0, *) {
             do {
@@ -21,6 +18,5 @@ enum LoginItemService {
                                   .detail(String(describing: error)))
             }
         }
-        // macOS 12 and earlier: SMAppService is unavailable, so this is a no-op.
     }
 }

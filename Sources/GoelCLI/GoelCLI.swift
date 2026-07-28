@@ -3,9 +3,6 @@ import Foundation
 import Glibc
 #endif
 
-// `goel` — the admin CLI for the headless Linux daemon. Two backends, no third control channel:
-// systemctl + /etc/goel/config for the service, and the portal's JSON API over loopback for the queue.
-
 @main
 struct GoelCLI {
 
@@ -57,8 +54,6 @@ struct GoelCLI {
         }
     }
 
-    // MARK: - Service
-
     static func status() throws {
         let config = try ConfigFile()
         let effective = Effective(config)
@@ -102,8 +97,6 @@ struct GoelCLI {
             ("downloads", effective.saveDir),
         ])
 
-        // The queue is only reachable when the daemon is actually up; a stopped
-        // service is a normal state, not an error, so say so and stop there.
         guard Service.isActive || !Service.systemdAvailable else {
             Out.line()
             Out.line(Out.dim("Queue unavailable — the service is not running. `goel start` to start it."))
@@ -128,8 +121,7 @@ struct GoelCLI {
     static func controlService(_ verb: String) throws {
         try requireRoot()
         try Service.control(verb)
-        // `systemctl start` returns as soon as the unit is spawned, so a bare "started" would be an
-        // unchecked claim. Give the daemon a moment to bind (or die) and report what happened.
+        // `systemctl start` returns as soon as the unit is spawned, before it binds or dies.
         if verb != "stop" {
             waitForState(seconds: 5)
             let state = Service.activeState
@@ -174,8 +166,6 @@ struct GoelCLI {
         }
         try Service.journal(lines: lines, follow: follow)
     }
-
-    // MARK: - Configuration
 
     static func config(_ arguments: [String]) throws {
         let action = arguments.first ?? "list"
@@ -242,8 +232,7 @@ struct GoelCLI {
             var config = try ConfigFile()
             config.unset(env: setting.env)
             try config.save()
-            // Unsetting moves the path too, to the daemon's default, so the drop-in
-            // has to follow — a stale one leaves that directory unwritable.
+            // Unsetting moves the path to the daemon's default; a stale drop-in leaves it unwritable.
             if ["save-dir", "db", "watch-dir"].contains(setting.key) {
                 try syncPaths(Effective(config))
             }
@@ -251,8 +240,7 @@ struct GoelCLI {
             try restartIfRunning(reason: "for \(setting.key) to take effect")
 
         case "sync":
-            // The installer calls this rather than writing the drop-in itself: when
-            // the two disagreed, the service started cleanly and every write failed.
+            // The installer must call this, not write the drop-in itself: a mismatch starts cleanly, then every write fails.
             try requireRoot()
             try syncPaths(Effective(try ConfigFile()))
             Out.line(Out.green("Writable paths synchronised") + Out.dim(" — \(Layout.dropInFile)"))
@@ -262,12 +250,9 @@ struct GoelCLI {
         }
     }
 
-    /// Bring the `ReadWritePaths` drop-in and the directories it names in line with
-    /// the config file; `ProtectSystem=strict` makes everything else read-only.
     static func syncPaths(_ effective: Effective) throws {
         try Service.writePathsDropIn(effective)
-        // The database is a FILE — creating a directory at its path, which is what
-        // this used to do, leaves SQLite unable to open it and the daemon dead.
+        // The database path is a FILE: creating a directory there leaves SQLite unable to open it.
         try ensureDirectory((effective.databasePath as NSString).deletingLastPathComponent,
                             owner: Layout.serviceUser)
         try ensureDirectory(effective.saveDir, owner: Layout.serviceUser)
@@ -285,8 +270,6 @@ struct GoelCLI {
             """)
     }
 
-    /// A configuration change only reaches the daemon on restart. Doing it silently would surprise;
-    /// not doing it leaves the operator believing a setting applied when it has not.
     static func restartIfRunning(reason: String) throws {
         guard Service.systemdAvailable, Service.isActive else {
             Out.line(Out.dim("The service is not running; the change applies on next start."))
@@ -309,12 +292,10 @@ struct GoelCLI {
     static func printURL() throws {
         let effective = Effective(try ConfigFile())
         let token = try effective.token()
-        // A token in a URL is a password in a URL. Print it, because pairing a
-        // phone or a script is the entire point of the command, but say so.
+        // This URL embeds an API token — a password in a URL.
         let host = effective.allowLAN ? (primaryIPv4() ?? "127.0.0.1") : "127.0.0.1"
         Out.line("http://\(host):\(effective.port)/?token=\(token)")
-        // stderr, and not conditional on colour: redirecting this into a file or a
-        // chat message is exactly when the warning matters, and used to suppress it.
+        // Warning goes to stderr unconditionally: it matters most when stdout is redirected.
         Out.note("This link contains your API token — treat it as a password.")
     }
 
@@ -339,8 +320,6 @@ struct GoelCLI {
             throw CLIError.usage("`goel token [show|rotate]`")
         }
     }
-
-    // MARK: - Queue
 
     static func api() throws -> (API, Effective) {
         let effective = Effective(try ConfigFile())
@@ -398,8 +377,7 @@ struct GoelCLI {
         if result.added > 0 {
             Out.line(Out.green("Added \(result.added)") + (result.added == 1 ? " download" : " downloads"))
         }
-        // `refused` is the portal's internal-address guard rejecting a URL — a deliberate refusal, not an
-        // error — but it must be visible, or a batch quietly does less than asked.
+        // `refused` is the portal's internal-address (SSRF) guard, not an error — but it must stay visible.
         if result.refused > 0 {
             Out.line(Out.amber("Refused \(result.refused)") +
                      " — not a supported download URL, or it resolves to a loopback/metadata address.")
@@ -426,8 +404,7 @@ struct GoelCLI {
                     a.type,
                     a.ipv4 ?? "—",
                     a.eligible ? Out.green("yes") : Out.amber("no"),
-                    // An empty selection means "every eligible interface", so an
-                    // empty list must not read as "none of them".
+                    // An empty selection means "every eligible interface", not "none of them".
                     (selected.isEmpty || selected.contains(a.name)) && a.eligible ? "yes" : "—",
                 ]
             },
@@ -475,18 +452,13 @@ struct GoelCLI {
             maxWidths: [8, 40, 8, 12, 8, 12, 10, 10]
         )
         Out.line()
-        // A red status with no reason is a dead end on a headless box, and the
-        // reason is already in the response.
         for row in rows {
             guard let reason = row.error, !reason.isEmpty else { continue }
             Out.line(Out.red("\(row.id.prefix(8)) failed") + " — \(reason)")
         }
-        // Without this, a download that just finished looks like it vanished.
         if hidden > 0 {
             Out.line(Out.dim("\(hidden) finished download\(hidden == 1 ? "" : "s") not shown — `goel list --all` includes them."))
         }
-        // IDs are UUIDs and the table shows a prefix, so say what the other
-        // commands will accept rather than leaving the operator to guess.
         Out.line(Out.dim("Pass the short ID to pause/resume/rm/retry."))
     }
 
@@ -524,8 +496,6 @@ struct GoelCLI {
                  + (withData ? " and its downloaded files" : " (files kept on disk)"))
     }
 
-    /// Accept the short ID `goel list` prints, and reject a prefix that matches
-    /// more than one task rather than acting on an arbitrary one of them.
     static func resolve(_ partial: String, _ client: API) throws -> String {
         if partial.count == 36 { return partial }   // already a full UUID
         let matches = try client.tasks().map(\.id).filter { $0.hasPrefix(partial) }
@@ -536,8 +506,6 @@ struct GoelCLI {
         }
     }
 
-    // MARK: - Helpers
-
     static func requireRoot() throws {
         if geteuid() != 0 { throw CLIError.needsRoot }
     }
@@ -545,8 +513,7 @@ struct GoelCLI {
     static func ensureDirectory(_ path: String, owner: String) throws {
         let manager = FileManager.default
 
-        // A recursive chown follows a symlink NAMED on the command line (`-h` only covers links inside
-        // the tree), so a planted ~/downloads → /etc would hand the service account /etc. Refuse links.
+        // `chown -Rh` still follows a symlink NAMED on the command line: a planted link would hand over /etc.
         var isSymlink = false
         if let type = try? manager.attributesOfItem(atPath: path)[.type] as? FileAttributeType {
             isSymlink = (type == .typeSymbolicLink)
@@ -570,8 +537,6 @@ struct GoelCLI {
             throw CLIError.message("\(path) exists but is not a directory.")
         }
 
-        // A directory the daemon cannot write is the commonest cause of "every
-        // download fails instantly", so a failed chown must not report success.
         let chown = Shell.run("chown", ["-Rh", "\(owner):\(owner)", path])
         guard chown.ok else {
             throw CLIError.message("""
@@ -594,8 +559,7 @@ struct GoelCLI {
         var buffer = [UInt8](repeating: 0, count: count)
         guard let file = FileHandle(forReadingAtPath: "/dev/urandom"),
               let data = try? file.read(upToCount: count), data.count == count else {
-            // No fallback to a weak generator: this value authenticates the API,
-            // and a predictable token is worse than a failed command.
+            // Never fall back to a weak generator: this value authenticates the API.
             Out.error("couldn’t read /dev/urandom — refusing to invent a token")
             exit(1)
         }
@@ -603,8 +567,6 @@ struct GoelCLI {
         return buffer.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// First non-loopback IPv4, for printing a LAN URL. Best-effort: `hostname -I`
-    /// is present on Ubuntu and Debian, and a missing address is not an error.
     static func primaryIPv4() -> String? {
         let result = Shell.run("hostname", ["-I"])
         guard result.ok else { return nil }

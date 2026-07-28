@@ -1,5 +1,3 @@
-/* Capture the Goel° UI replica into film textures (`node capture/capture.mjs`): full-page 2x PNGs and
- * element cutouts → public/textures, plus src/layout.json bboxes. All file://, frozen fixture, no net. */
 import puppeteer from 'puppeteer';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,12 +11,11 @@ const PAGE_URL = pathToFileURL(path.join(HERE, 'index.html')).href;
 
 const VIEWPORT = { width: 1480, height: 841, deviceScaleFactor: 2 };
 
-/** Every capture job. `cutouts` are element screenshots; `boxes` record bbox only. */
 const JOBS = [
   {
     name: 'app',
     query: { page: 'app' },
-    window: 'app-window', // transparent cutout of .win alone
+    window: 'app-window',
     cutouts: [
       { name: 'sidebar', sel: '[data-cap="sidebar"]' },
       { name: 'toolbar', sel: '[data-cap="toolbar"]' },
@@ -26,7 +23,7 @@ const JOBS = [
       { name: 'statusbar', sel: '[data-cap="statusbar"]' },
       { name: 'ring', sel: '[data-cap="ring"]', transparent: true },
       { name: 'ud-tiles', sel: '[data-cap="ud-tiles"]', transparent: true },
-      { name: 'row', sel: '.row', all: true, max: 8 }, // row1..row8
+      { name: 'row', sel: '.row', all: true, max: 8 },
       { name: 'list', sel: '[data-cap="list"]' },
     ],
     boxes: [
@@ -128,7 +125,6 @@ const JOBS = [
       { key: 'rows', sel: '.row', all: true },
     ],
   },
-  // the four named themes, same view, for the theme-sweep shot
   ...['frost-dark', 'frost-light', 'dracula', 'nord'].map((t) => ({
     name: `theme-${t}`,
     query: { page: 'app', theme: t === 'frost-dark' ? '' : t },
@@ -181,12 +177,10 @@ async function run() {
     await page.waitForFunction(() => document.documentElement.dataset.ready === '1', {
       timeout: 15000,
     });
-    await sleep(600); // settle per pipeline stage 4
+    await sleep(600);
 
-    // 1. full page
     await page.screenshot({ path: path.join(OUT, `${job.name}-full.png`), fullPage: false });
 
-    // 1b. the window alone, transparent background, for compositing over the film canvas
     if (job.window) {
       const el = await page.$('[data-cap="window"]');
       if (el) {
@@ -194,7 +188,6 @@ async function run() {
       }
     }
 
-    // 2. element cutouts
     for (const c of job.cutouts) {
       const els = await page.$$(c.sel);
       if (!els.length) {
@@ -211,7 +204,6 @@ async function run() {
       }
     }
 
-    // 3. layout boxes
     const boxes = {};
     for (const b of job.boxes) {
       const v = await bbox(page, b.sel, b.all);

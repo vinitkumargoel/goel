@@ -2,11 +2,7 @@ import XCTest
 import Foundation
 @testable import GoelCore
 
-/// Parsing tests for the media workflows: playlist/channel URL expansion and the `yt-dlp -F` table.
-/// All fixture strings — no process, no network — since a test needing yt-dlp would be skipped on CI.
 final class MediaWorkflowTests: XCTestCase {
-
-    // MARK: - Playlist URL recognition
 
     func testPlaylistURLsAreRecognised() {
         let playlistLike = [
@@ -39,16 +35,10 @@ final class MediaWorkflowTests: XCTestCase {
         }
     }
 
-    /// An empty `list=` is what a stripped share link leaves behind; it is not a
-    /// playlist and must not trigger a pointless yt-dlp run.
     func testEmptyListParameterIsNotAPlaylist() {
         XCTAssertFalse(PlaylistExpander.looksLikePlaylist("https://www.youtube.com/watch?v=abc&list="))
     }
 
-    // MARK: - Flat playlist JSON
-
-    /// Shape of `yt-dlp --flat-playlist -J <playlist>`, trimmed to the keys the
-    /// parser reads.
     private let flatPlaylistJSON = """
     {
       "_type": "playlist",
@@ -72,15 +62,11 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertEqual(expansion.items[0].url, "https://example.com/watch?v=aaa111")
     }
 
-    /// Positions are 1-based and follow the site's own ordering — the checklist
-    /// shows them, so an off-by-one is user-visible.
     func testFlatPlaylistNumbersItemsFromOne() throws {
         let expansion = try XCTUnwrap(PlaylistExpander.parseFlatPlaylist(flatPlaylistJSON))
         XCTAssertEqual(expansion.items.map(\.index), [1, 2, 3])
     }
 
-    /// Durations arrive as an int or a double depending on the extractor; a
-    /// missing one must stay nil rather than collapse to 0:00.
     func testFlatPlaylistDurations() throws {
         let items = try XCTUnwrap(PlaylistExpander.parseFlatPlaylist(flatPlaylistJSON)).items
         XCTAssertEqual(items[0].durationSeconds, 754)
@@ -91,8 +77,6 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertNil(items[2].durationText)
     }
 
-    /// Deleted/private videos come through as `null` or without a URL. They are
-    /// not downloadable, so they must not become checklist rows.
     func testUnavailableEntriesAreSkipped() throws {
         let json = """
         {"_type": "playlist", "title": "Mixed", "entries": [
@@ -107,7 +91,6 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertEqual(expansion.items.map(\.index), [1, 2])
     }
 
-    /// `webpage_url` is the canonical page and wins over the flat `url` field.
     func testWebpageURLPreferredOverFlatURL() throws {
         let json = """
         {"_type": "playlist", "title": "T", "entries": [
@@ -119,8 +102,6 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertEqual(items.first?.url, "https://example.com/watch?v=x")
     }
 
-    /// A channel URL expands into tab playlists that themselves hold the videos.
-    /// One level of nesting must be flattened, not shown as two unusable rows.
     func testNestedChannelTabsAreFlattened() throws {
         let json = """
         {"_type": "playlist", "title": "Some Channel", "entries": [
@@ -139,8 +120,6 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertEqual(expansion.items.map(\.index), [1, 2, 3])
     }
 
-    /// A single-video page is a plain info dict. Returning nil lets the caller
-    /// fall back to the ordinary add path instead of showing an empty checklist.
     func testSingleVideoJSONIsNotAPlaylist() {
         let json = """
         {"id": "abc", "title": "Just one video", "ext": "mp4",
@@ -155,8 +134,6 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertNil(PlaylistExpander.parseFlatPlaylist("[1, 2, 3]"))
     }
 
-    /// A big channel must stop at the cap AND admit it — silently showing 1 000 of 4 000 items and
-    /// calling it "everything" is the failure mode this flag exists to prevent.
     func testOverCapListingIsTruncatedAndSaysSo() throws {
         let entries = (1...(PlaylistExpander.cap + 50)).map {
             ["id": "v\($0)", "title": "Video \($0)", "url": "https://example.com/v\($0)"]
@@ -167,8 +144,6 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertEqual(expansion.items.count, PlaylistExpander.cap)
         XCTAssertTrue(expansion.truncated)
     }
-
-    // MARK: - Streaming --print listing
 
     func testPrintListingParsesTabSeparatedRows() {
         let text = """
@@ -183,8 +158,6 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertEqual(items.map(\.index), [1, 2])
     }
 
-    /// yt-dlp writes the literal `NA` for a field it has no value for. Treating
-    /// that as content would produce rows titled "NA" pointing at nothing.
     func testPrintListingHandlesNAAndShortRows() {
         let text = """
         aaa111\tNA\thttps://example.com/a\tNA
@@ -199,10 +172,6 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertEqual(items[1].id, "https://example.com/c", "a missing id falls back to the URL")
     }
 
-    // MARK: - yt-dlp -F table (modern layout)
-
-    /// Captured from `yt-dlp -F` on a normal YouTube page: log preamble, column header, rule, storyboard,
-    /// audio-only, muxed and video-only rows — every shape the parser must handle.
     private let modernTable = """
     [youtube] Extracting URL: https://www.youtube.com/watch?v=dQw4w9WgXcQ
     [info] Available formats for dQw4w9WgXcQ:
@@ -262,14 +231,11 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertNil(m4a.fps, "the CH column must not be mistaken for a frame rate")
         XCTAssertEqual(m4a.note, "low, m4a_dash")
 
-        // A dotless codec name (opus, vp9, …) is still a codec, not a note.
         let opus = try XCTUnwrap(formats.first { $0.id == "251" })
         XCTAssertEqual(opus.acodec, "opus")
         XCTAssertEqual(opus.note, "medium")
     }
 
-    /// yt-dlp marks a size it derived from the bitrate with `~`. Showing that as
-    /// an exact figure would be a small lie the user notices when the file lands.
     func testApproximateSizeIsFlagged() throws {
         let estimated = try XCTUnwrap(MediaFormatTable.parse(modernTable).first { $0.id == "303" })
         XCTAssertTrue(estimated.isApproximateSize)
@@ -294,10 +260,6 @@ final class MediaWorkflowTests: XCTestCase {
         """).isEmpty)
     }
 
-    // MARK: - yt-dlp -F table (legacy youtube-dl layout)
-
-    /// An older yt-dlp/youtube-dl in /usr/local/bin emits the pipe-less layout; supporting it costs
-    /// twenty lines and avoids an empty picker that looks like a bug.
     private let legacyTable = """
     [info] Available formats for BaW_jenozKc:
     format code  extension  resolution note
@@ -325,8 +287,6 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertNil(best.fileSizeBytes, "this layout lists no size for muxed rows")
     }
 
-    // MARK: - Size units
-
     func testByteCountUnits() {
         XCTAssertEqual(MediaFormatTable.byteCount("1.29MiB"), Int64(1.29 * 1_048_576))
         XCTAssertEqual(MediaFormatTable.byteCount("~50.85MiB"), Int64(50.85 * 1_048_576))
@@ -336,8 +296,6 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertEqual(MediaFormatTable.byteCount("512B"), 512)
     }
 
-    /// A bare number is a bitrate or a column index. Reading it as a byte count
-    /// would invent file sizes out of the FPS column.
     func testByteCountRejectsNonSizes() {
         XCTAssertNil(MediaFormatTable.byteCount("1955"))
         XCTAssertNil(MediaFormatTable.byteCount("1955k"))

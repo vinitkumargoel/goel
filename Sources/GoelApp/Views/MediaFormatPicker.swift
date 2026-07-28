@@ -1,19 +1,13 @@
 import SwiftUI
 import GoelCore
 
-/// Lets the user pick WHICH rendition of a video-site page to download. Shows the same table
-/// `yt-dlp -F` prints; a standalone child view that hands a `MediaFormat?` back via `onSelect`.
 struct MediaFormatPicker: View {
 
-    /// The page whose renditions are being listed.
     let pageURL: URL
 
-    /// Called whenever the selection changes. `nil` means "Best available" — the
-    /// caller should then omit `-f` entirely rather than guess a format id.
+    /// `nil` means "Best available" — the caller must then omit `-f`, not guess a format id.
     var onSelect: (MediaFormat?) -> Void
 
-    /// Pre-supplied rows. When non-nil no yt-dlp process is started at all, which is what makes the
-    /// SwiftUI preview work offline and lets a caller reuse a listing it already has.
     var preloadedFormats: [MediaFormat]?
 
     init(pageURL: URL,
@@ -24,7 +18,6 @@ struct MediaFormatPicker: View {
         self.onSelect = onSelect
     }
 
-    /// What the body is currently showing.
     private enum Phase: Equatable {
         case loading
         case loaded
@@ -33,9 +26,7 @@ struct MediaFormatPicker: View {
 
     @State private var phase: Phase = .loading
     @State private var formats: [MediaFormat] = []
-    /// The chosen format id; nil is the "Best available" row.
     @State private var selectedID: String?
-    /// Reveals video-only / audio-only tracks, which need a merge step.
     @State private var showSeparateTracks = false
     @State private var loadTask: Task<Void, Never>?
 
@@ -60,8 +51,6 @@ struct MediaFormatPicker: View {
         .task(id: pageURL) { await load() }
         .onDisappear { loadTask?.cancel() }
     }
-
-    // MARK: Header
 
     private var header: some View {
         HStack(spacing: 8) {
@@ -92,8 +81,6 @@ struct MediaFormatPicker: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
-        // An indeterminate spinner plus a sentence is one status, and it replaces
-        // the list — say it, since nothing else announces the wait.
         .a11yGroup(label: "Asking yt-dlp what’s available")
     }
 
@@ -102,12 +89,8 @@ struct MediaFormatPicker: View {
             .scaledFont(size: 11)
             .foregroundStyle(Theme.orange)
             .fixedSize(horizontal: false, vertical: true)
-            // The warning triangle is the only thing marking this as a failure
-            // rather than a note; say so in words too.
             .accessibilityLabel("Couldn’t load quality options. \(message)")
     }
-
-    // MARK: List
 
     private var formatList: some View {
         ScrollView {
@@ -161,16 +144,10 @@ struct MediaFormatPicker: View {
             .background(isSelected ? Theme.accent.opacity(0.10) : .clear)
         }
         .buttonStyle(.plain)
-        // A hand-drawn radio button: the filled-vs-empty circle and accent wash are the whole selection
-        // signal. Collapse the row and carry the choice as a trait so it is announced, not merely tinted.
         .a11yGroup(label: quality, value: A11y.sentence(detail, trailing))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
-    // MARK: Row content
-
-    /// `mp4 · avc1 + aac · 1080p` — codec/container facts in the order a person
-    /// scans them, with empty pieces dropped rather than shown as blanks.
     private func detailText(for format: MediaFormat) -> String {
         var pieces: [String] = [format.ext]
         let codecs = [format.vcodec, format.acodec]
@@ -188,18 +165,13 @@ struct MediaFormatPicker: View {
         return (format.isApproximateSize ? "~" : "") + bytes.byteString
     }
 
-    // MARK: Ordering and filtering
-
-    /// Single-file renditions, highest quality first. These are the safe default:
-    /// picking a video-only track without a merge yields a silent file.
+    /// The safe default: a video-only track picked without a merge step yields a silent file.
     private var selfContainedFormats: [MediaFormat] {
         formats.filter(\.isSelfContained).sorted { ($0.height ?? 0) > ($1.height ?? 0) }
     }
 
-    /// Video-only and audio-only tracks, which yt-dlp must merge with ffmpeg.
     private var separateTrackFormats: [MediaFormat] {
         formats.filter { !$0.isSelfContained }.sorted {
-            // Video tracks (tallest first) above audio tracks.
             if $0.hasVideo != $1.hasVideo { return $0.hasVideo }
             return ($0.height ?? 0) > ($1.height ?? 0)
         }
@@ -209,10 +181,6 @@ struct MediaFormatPicker: View {
         showSeparateTracks ? selfContainedFormats + separateTrackFormats : selfContainedFormats
     }
 
-    // MARK: Loading
-
-    /// Ask yt-dlp for the format table. `force` re-runs after a failure; the
-    /// normal path short-circuits on `preloadedFormats` and skips the process.
     private func load(force: Bool = false) async {
         if let preloadedFormats {
             formats = preloadedFormats
@@ -230,8 +198,6 @@ struct MediaFormatPicker: View {
             switch outcome {
             case .formats(let listed):
                 formats = listed
-                // Every listed format needing a merge is worth surfacing up front
-                // rather than hiding behind a checkbox the user never ticks.
                 if listed.allSatisfy({ !$0.isSelfContained }) { showSeparateTracks = true }
                 phase = .loaded
             case .failed(let message):
@@ -244,18 +210,12 @@ struct MediaFormatPicker: View {
     }
 }
 
-// MARK: - Playlist checklist
-
-/// Lists every item behind a playlist/channel URL so the user ticks what they want, instead of
-/// queueing all 400 or none. Parsing lives in ``PlaylistExpander``; this only runs and renders.
 struct PlaylistChecklistView: View {
 
     let playlistURL: URL
 
-    /// Called with the ticked items, in playlist order, when the user confirms.
     var onConfirm: ([PlaylistItem]) -> Void
 
-    /// Pre-supplied expansion — skips the yt-dlp run (preview / reuse).
     var preloadedExpansion: PlaylistExpansion?
 
     init(playlistURL: URL,
@@ -334,8 +294,6 @@ struct PlaylistChecklistView: View {
                         ))
                         .labelsHidden()
                         .toggleStyle(.checkbox)
-                        // `labelsHidden()` leaves a column of anonymous checkboxes; the title beside each one is what it
-                        // actually ticks, so make it the checkbox's own name.
                         .accessibilityLabel("\(item.index). \(item.title)")
                         Text("\(item.index).")
                             .scaledFont(size: 10, design: .monospaced)
@@ -367,8 +325,6 @@ struct PlaylistChecklistView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // A truncated listing must say so — showing 1 000 of a 4 000-video channel and calling it
-            // "everything" is a lie the user only finds out about later.
             if expansion.truncated {
                 Text("Only the first \(PlaylistExpander.cap) items are shown.")
                     .scaledFont(size: 10)
@@ -382,8 +338,6 @@ struct PlaylistChecklistView: View {
                 Text("\(selected.count) selected")
                     .scaledFont(size: 11)
                     .foregroundStyle(.secondary)
-                    // A bare count next to two buttons. Say what it counts, and
-                    // mark it live so ticking a box is confirmed out loud.
                     .accessibilityLabel("\(selected.count) of \(expansion.items.count) items selected")
                 Button("Add Selected") {
                     onConfirm(expansion.items.filter { selected.contains($0.id) })
@@ -415,8 +369,6 @@ struct PlaylistChecklistView: View {
             switch outcome {
             case .expanded(let result):
                 expansion = result
-                // Everything ticked by default: the user pasted a playlist, so "all of it" is the likely intent,
-                // and unticking is easier than hunting for the ones you want.
                 selected = Set(result.items.map(\.id))
                 phase = .loaded
             case .notAPlaylist:
@@ -431,7 +383,6 @@ struct PlaylistChecklistView: View {
 }
 
 #if DEBUG
-/// Fixture-backed previews — no network, no yt-dlp, no app state.
 private let previewFormatTable = """
 [info] Available formats for dQw4w9WgXcQ:
 ID  EXT   RESOLUTION FPS CH |   FILESIZE   TBR PROTO | VCODEC        VBR ACODEC      ABR ASR MORE INFO

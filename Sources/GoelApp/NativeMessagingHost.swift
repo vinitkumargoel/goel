@@ -1,15 +1,12 @@
 import Foundation
 import GoelCore
 
-/// The browser side of the extension bridge (4-byte length + JSON over stdio). URLs are
-/// allowlisted and spooled to a 0700 dir; cookies are sanitised, 0600, expiring, deleted on read.
+/// Trust boundary: browser input. URLs are allowlisted and spooled to a 0700 dir; cookies are sanitised, 0600, expiring, deleted on read.
 enum NativeMessagingHost {
 
-    /// Longest message we'll read. Native messaging caps host-bound messages at 4 GB, but ours are
-    /// one URL plus a cookie header, so anything huge is garbage.
+    /// 1 MiB, not the protocol's 4 GB: ours are one URL plus a cookie header, so anything larger is hostile or garbage.
     private static let maxMessageBytes: UInt32 = 1 << 20
 
-    /// Serve messages until the browser closes the pipe. Never returns early.
     static func runLoop() {
         while let message = readMessage() {
             handle(message)
@@ -19,17 +16,14 @@ enum NativeMessagingHost {
     private static func handle(_ message: [String: Any]) {
         guard let raw = message["url"] as? String,
               let source = DownloadSource.parse(raw),
-              // The spool auto-adds with no confirmation, so it must only carry credential-free web-download
-              // schemes — never an `sftp:`/`ftp:` link a page could use to trigger an authenticated connection.
+              // The spool auto-adds with no confirmation: web-download schemes only, never an `sftp:`/`ftp:` link a page could use to trigger an authenticated connection.
               source.isBrowserCaptureSafe,
-              // …and only at a host a *web page* may steer this app at. Without this a page could spool
-              // `http://127.0.0.1:<port>/…` and have the app fetch a service never exposed to the browser.
+              // SSRF: without this a page could spool `http://127.0.0.1:<port>/…` and have the app fetch a service never exposed to the browser.
               Self.captureTargetAllowed(source) else {
             writeMessage(["ok": false, "error": "unsupported url"])
             return
         }
-        // Cookies only ride with an http(s) capture — a magnet has no origin to
-        // scope them to, so there is nothing they could safely be sent to.
+        // Cookies only ride with an http(s) capture: a magnet has no origin to scope them to.
         let scope: String? = URL(string: source.locator).flatMap(CookieHeader.scope(for:))
         let cookie = scope == nil ? nil : (message["cookie"] as? String).flatMap(CookieHeader.sanitized)
         let capture = BrowserCapture(
@@ -41,23 +35,20 @@ enum NativeMessagingHost {
         do {
             try BrowserSpool.enqueue(capture)
             pokeApp()
-            // Report only *whether* cookies were accepted. Echoing the value or the names back would hand
-            // a compromised extension a read-back oracle for HttpOnly cookies.
+            // Report only *whether* cookies were accepted: echoing values or names would give a compromised extension a read-back oracle for HttpOnly cookies.
             writeMessage(["ok": true, "cookies": cookie != nil])
         } catch {
             writeMessage(["ok": false, "error": "spool write failed"])
         }
     }
 
-    /// Whether a capture's target is a host a page may point this app at — the same rule the portal
-    /// applies. Spelling-only; the app re-screens against resolved addresses when it drains.
+    /// Spelling-only screen; the app re-screens against resolved addresses when it drains.
     private static func captureTargetAllowed(_ source: DownloadSource) -> Bool {
         guard let url = source.fetchTargetURL else { return true }
         return NetworkGuard.isAllowedRemoteAddTarget(url)
     }
 
-    /// Keep a browser-supplied referrer only if it is a plain web URL of sane length with no
-    /// header-splitting characters. The engine sends this verbatim as `Referer`.
+    /// The engine sends this verbatim as `Referer`: reject header-splitting characters and non-web schemes.
     private static func sanitizedReferer(_ raw: String?) -> String? {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty, trimmed.utf8.count <= 2048,
@@ -68,8 +59,7 @@ enum NativeMessagingHost {
         return trimmed
     }
 
-    /// Ask the running app (launching it if needed) to drain the spool. The
-    /// URL carries nothing — see the trust-boundary note above.
+    /// The URL carries no data; the 0700 spool is the only channel.
     private static func pokeApp() {
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -77,8 +67,6 @@ enum NativeMessagingHost {
         try? open.run()
         open.waitUntilExit()
     }
-
-    // MARK: Wire format
 
     private static func readMessage() -> [String: Any]? {
         guard let lengthData = readExactly(4) else { return nil }
@@ -106,14 +94,10 @@ enum NativeMessagingHost {
     }
 }
 
-/// One capture handed over by the browser: the URL plus the request context the page needed.
 /// ``cookieHeader`` is a bearer credential — one 0600 spool file, deleted on read, never logged.
 struct BrowserCapture: Sendable, Equatable {
     var locator: String
-    /// The page the download was started from, for hosts that gate on `Referer`.
     var referer: String?
-    /// A sanitised `Cookie` header value, or nil when the user hasn't granted the
-    /// extension's optional cookie permission (the common case).
     var cookieHeader: String?
     /// The host ``cookieHeader`` was captured for; cookies go nowhere else.
     var cookieHost: String?
@@ -127,16 +111,12 @@ struct BrowserCapture: Sendable, Equatable {
     }
 }
 
-/// The on-disk handoff between the native-messaging host process and the GUI
-/// app (they are separate processes of the same binary).
 enum BrowserSpool {
 
-    /// Most spooled adds consumed per drain — a runaway feeder can't flood the
-    /// queue in one tick; leftovers drain on the next poke or launch.
+    /// Caps one tick so a runaway feeder can't flood the queue; leftovers drain on the next poke.
     private static let drainCap = 100
 
-    /// How long a spooled cookie stays usable. The URL keeps forever, but the credential is dropped
-    /// once this old, so a laptop shut for a week doesn't wake with a stale session cookie on disk.
+    /// Credential expiry: the URL keeps forever, the cookie is dropped once this old so a machine shut for a week doesn't wake with a live session cookie on disk.
     static let cookieMaxAge: TimeInterval = 60 * 60
 
     static var directory: URL {
@@ -150,8 +130,7 @@ enum BrowserSpool {
 
     static func enqueue(_ capture: BrowserCapture) throws {
         let fm = FileManager.default
-        // Restrict the spool to the owner (0700): this directory is a no-confirmation command channel,
-        // so it must not be group/world-writable on a shared machine.
+        // 0700: this directory is a no-confirmation command channel and must not be group/world-writable.
         try fm.createDirectory(at: directory, withIntermediateDirectories: true,
                                attributes: [.posixPermissions: 0o700])
         try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
@@ -162,19 +141,15 @@ enum BrowserSpool {
         if let host = capture.cookieHost { object["cookieHost"] = host }
         let data = try JSONSerialization.data(withJSONObject: object)
         try data.write(to: file, options: .atomic)
-        // The file can hold a session cookie, so tighten past the process umask. The enclosing
-        // directory is already 0700, so this is the second lock, not the only one.
+        // The file can hold a session cookie: tighten past the process umask.
         try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
 
-    /// Read, delete, and return the spooled locators (oldest first, capped). Compatibility shim: it
-    /// **discards** referer and cookies, so a logged-in download added through it fails. Prefer ``drainCaptures()``.
+    /// Shim: **discards** referer and cookies, so a logged-in download added through it fails — prefer ``drainCaptures()``.
     static func drain() -> [String] {
         drainCaptures().map(\.locator)
     }
 
-    /// Read, delete, and return the spooled captures (oldest first, capped).
-    /// Cookies older than ``cookieMaxAge`` are stripped, the URL kept.
     static func drainCaptures() -> [BrowserCapture] {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(
@@ -195,8 +170,7 @@ enum BrowserSpool {
                 let written = (try? file.resourceValues(forKeys: [.creationDateKey]).creationDate)
                     ?? .distantPast
                 let cookieIsFresh = Date().timeIntervalSince(written) <= cookieMaxAge
-                // Re-sanitise on the way out: the spool file is only as trustworthy
-                // as its 0700 directory, and re-validating is cheap.
+                // Re-sanitise on the way out: the spool file is only as trustworthy as its 0700 directory.
                 let cookie = cookieIsFresh
                     ? (object["cookie"] as? String).flatMap(CookieHeader.sanitized) : nil
                 captures.append(BrowserCapture(

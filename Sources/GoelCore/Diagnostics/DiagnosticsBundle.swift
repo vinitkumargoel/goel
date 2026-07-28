@@ -1,21 +1,13 @@
 import Foundation
 
-// DiagnosticsBundle — a support report the USER sends, not the app ("no telemetry"): built in memory,
-// never written or transmitted. Sanitisation is an ALLOW-LIST; a deny-list would leak each new field.
+// Built in memory, never written or transmitted; sanitisation is an ALLOW-LIST, because a deny-list leaks every new field.
 
-/// In-memory support report, ready to copy or save: build via ``make(settings:tasks:runningEngineKinds:…)``,
-/// render via ``plainText`` or ``jsonData()``. `Codable` so JSON round-trips, making redaction testable.
 public struct DiagnosticsBundle: Codable, Sendable, Equatable {
 
-    /// One engine's liveness plus how much work it currently owns.
     public struct EngineState: Codable, Sendable, Equatable {
-        /// The engine's `DownloadKind` raw value (`http`, `torrent`, …).
         public let kind: String
-        /// Whether the app currently has this engine instantiated and started.
         public let isRunning: Bool
-        /// Tasks of this kind in an active state (downloading/verifying/seeding/…).
         public let activeTaskCount: Int
-        /// Tasks of this kind in the queue at all, in any state.
         public let totalTaskCount: Int
 
         public init(kind: String, isRunning: Bool, activeTaskCount: Int, totalTaskCount: Int) {
@@ -26,41 +18,28 @@ public struct DiagnosticsBundle: Codable, Sendable, Equatable {
         }
     }
 
-    /// When the report was assembled (UTC when rendered).
     public let generatedAt: Date
 
-    /// Marketing version, e.g. `1.4.2`. `"unknown"` outside an app bundle.
     public let appVersion: String
 
-    /// Build number, e.g. `412`. `"unknown"` outside an app bundle.
     public let buildNumber: String
 
-    /// OS name and version, e.g. `macOS 14.5.0`.
     public let systemVersion: String
 
-    /// CPU architecture the binary was compiled for (`arm64` / `x86_64`).
     public let architecture: String
 
-    /// Per-engine liveness, in a stable order.
     public let engineStates: [EngineState]
 
-    /// How many tasks the queue holds in total.
     public let totalTaskCount: Int
 
-    /// Task counts keyed by status name (`queued`, `downloading`, `failed`, …).
-    /// Only states that occur are present.
     public let taskCountsByStatus: [String: Int]
 
-    /// Failure counts keyed by the error's *case name* (`network`, `http-404`, `timedOut`, …) — never
-    /// its message, which routinely contains the URL that failed.
+    /// Keyed by the error's *case name*, never its message, which routinely contains the URL that failed.
     public let failureCountsByStatus: [String: Int]
 
-    /// The sanitised settings dump: allow-listed keys plus derived "is it
-    /// configured?" booleans standing in for the fields that are withheld.
     public let settings: [String: String]
 
-    /// Names — never values — of the deliberately withheld `AppSettings` fields, so a maintainer can
-    /// see that a proxy *is* configured without learning where it points.
+    /// Names — never values — of the withheld `AppSettings` fields: a maintainer sees a proxy is configured, not where it points.
     public let withheldSettingKeys: [String]
 
     public init(
@@ -90,12 +69,9 @@ public struct DiagnosticsBundle: Codable, Sendable, Equatable {
     }
 }
 
-// MARK: - Assembly
-
 public extension DiagnosticsBundle {
 
-    /// Assembles a report. `settings` yields allow-listed keys only; `tasks` yields *counts* only (no
-    /// name/URL/path); `runningEngineKinds` is caller-supplied since Core cannot see engines. All injectable.
+    /// `settings` yields allow-listed keys only and `tasks` yields *counts* only — no name, URL or path.
     static func make(
         settings: AppSettings,
         tasks: [DownloadTask],
@@ -146,8 +122,7 @@ public extension DiagnosticsBundle {
         )
     }
 
-    /// Stable, non-localised status token — deliberately not ``DownloadStatus/displayName``, which is
-    /// user-facing text localisation may change out from under a log parser.
+    /// Not ``DownloadStatus/displayName``: that is user-facing text localisation may change out from under a log parser.
     static func statusLabel(_ status: DownloadStatus) -> String {
         switch status {
         case .queued:             return "queued"
@@ -161,21 +136,15 @@ public extension DiagnosticsBundle {
         }
     }
 
-    // MARK: Host facts
-
-    /// `CFBundleShortVersionString`, or `"unknown"` when there is no bundle
-    /// (SwiftPM test runs, the Linux daemon).
     static var hostAppVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
     }
 
-    /// `CFBundleVersion`, or `"unknown"` outside a bundle.
     static var hostBuildNumber: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
     }
 
-    /// OS name + version. `operatingSystemVersionString` is debug-only on Apple platforms, so the
-    /// numeric version is used and the name prefixed explicitly.
+    /// `operatingSystemVersionString` is debug-only on Apple platforms, so build the string from the numeric version.
     static var hostSystemVersion: String {
         let v = ProcessInfo.processInfo.operatingSystemVersion
         let number = "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
@@ -188,8 +157,7 @@ public extension DiagnosticsBundle {
         #endif
     }
 
-    /// Architecture this binary was *compiled* for — read from the compiler, not `uname`, so a
-    /// Rosetta-translated build reports the slice that is actually executing.
+    /// Read from the compiler, not `uname`, so a Rosetta-translated build reports the slice actually executing.
     static var hostArchitecture: String {
         #if arch(arm64)
         return "arm64"
@@ -201,12 +169,8 @@ public extension DiagnosticsBundle {
     }
 }
 
-// MARK: - Rendering
-
 public extension DiagnosticsBundle {
 
-    /// A human-readable report — the form the Settings pane shows and the user
-    /// copies into an email.
     var plainText: String {
         var out = ""
         out += "Goel° diagnostics report\n"
@@ -256,8 +220,6 @@ public extension DiagnosticsBundle {
         return out
     }
 
-    /// The machine-readable form, for a user who prefers to attach a file.
-    /// Sorted keys and ISO-8601 dates so two reports diff cleanly.
     func jsonData() throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -273,78 +235,56 @@ public extension DiagnosticsBundle {
 }
 
 private extension String {
-    /// Left-aligned column padding for the plain-text report.
     func padded(to width: Int) -> String {
         count >= width ? self : self + String(repeating: " ", count: width - count)
     }
 }
 
-// MARK: - Redaction
-
-/// Allow-list ``safeSettingsKeys`` (emitted, still scrubbed) vs ``withheldSettingsKeys`` (summarised as a
-/// `…Configured` bool). A key in neither is dropped fail-closed *and* trips the `DiagnosticsTests` check.
+/// Allow-list vs withheld (summarised as a `…Configured` bool); a key in neither is dropped fail-closed and trips the `DiagnosticsTests` check.
 public enum DiagnosticsRedaction {
 
-    /// Reviewed as non-identifying: booleans, enum tokens, numeric limits, and paths — paths only after
-    /// ``scrub(_:)`` rewrites home to `~`, since a raw home path carries the account name.
+    /// Non-identifying only: booleans, enum tokens, numeric limits, and paths — paths only because ``scrub(_:)`` rewrites home to `~`.
     public static let safeSettingsKeys: Set<String> = [
-        // Traffic
         "speedLimitEnabled", "defaultSaveDirectory",
-        // General
         "theme", "language", "launchAtLogin", "launchMinimized", "menuBarExtraEnabled",
         "defaultFolderRule", "existingFileReaction", "clipboardMonitorEnabled",
         "hlsMaxHeight", "detailPanelPosition",
-        // Network
         "proxyMode", "proxyType", "proxyAllProtocols", "connectionTimeout",
         "retryCount", "retryInterval", "autoRetryEnabled", "autoRetryMaxAttempts",
         "cookieAuthEnabled",
-        // Network aggregation
         "aggregationEnabled", "aggregationIncludeExpensive", "aggregationAllowOutsideVPN",
         "aggregationStreamsPerAdapter", "aggregationStrategy", "aggregationPathDiversityProbe",
-        // BitTorrent
         "btMakeDefaultClient", "btAutoDeleteTorrent", "btWatchFolderEnabled",
         "btWatchFolderPath", "btWatchStartWithoutConfirmation", "btEncryptionMode",
         "btEnableDHT", "btEnablePeX", "btEnableLPD", "btEnableUTP",
-        // Notifications
         "notifyOnAdded", "notifyOnCompleted", "notifyOnFailed",
         "notifyOnlyWhenInactive", "notificationSound",
-        // Power
         "preventSleepWhileDownloading", "allowSleepIfResumable", "allowSleepWhileSeeding",
         "pauseBelowBatteryThreshold", "batteryThresholdPercent", "dontSeedOnBattery",
-        // Backup
         "backupEnabled", "backupIntervalHours", "backupKeepCount",
-        // Antivirus
         "antivirusEnabled", "antivirusScanner", "antivirusExecutablePath",
-        // Queue automation
         "autoShutdownAction", "scheduleEnabled", "scheduleStartMinute",
         "scheduleEndMinute", "scheduleDays",
-        // Network awareness
         "pauseOnExpensiveNetwork", "pauseOnConstrainedNetwork",
-        // Post-download actions
         "postDownloadExtractArchives", "postDownloadScriptEnabled", "postDownloadScriptPath",
-        // Media tools
         "autoRedownloadOnRemoteChange", "subtitleDownloadEnabled",
         "subtitleLanguages", "subtitleIncludeAutoGenerated", "ffmpegPath",
         "mediaConcurrency",
-        // Remote access (the switches, never the credentials)
+        // Remote access: the switches, never the credentials.
         "remoteAccessEnabled", "remotePort", "remoteAllowLAN", "remoteRequireAuth",
         "remoteReadOnly", "remoteSessionMinutes", "remoteTheme",
-        // Portal hardening: booleans, numeric limits, a header name, and one
-        // path that scrub() already rewrites. None of them name a person.
+        // Portal hardening: booleans, numeric limits, a header name, and one path scrub() rewrites — none name a person.
         "remoteTLSEnabled", "remoteTLSIdentityPath",
         "remoteLoginMaxAttempts", "remoteLoginBackoffSeconds",
         "remoteTrustedHeaderAuthEnabled", "remoteTrustedHeaderName",
         // Audit log: switches, retention limits, and a path scrub() rewrites.
         "auditLogEnabled", "auditLogDirectory", "auditLogRetentionDays",
         "auditLogKeepFiles", "auditLogMaxFileMegabytes",
-        // RSS
         "rssPollIntervalMinutes",
-        // Updates
         "autoCheckUpdates",
     ]
 
-    /// Never emitted verbatim: secrets, identities, network locations (a proxy or feed address routinely
-    /// names the employer), and free-form text a user could have pasted an API key or own label into.
+    /// Never emitted verbatim: secrets, identities, network locations (a proxy or feed address names the employer), and free-form text.
     public static let withheldSettingsKeys: Set<String> = [
         "profiles", "selectedProfileName",
         "proxyHost", "proxyPort",
@@ -356,21 +296,16 @@ public enum DiagnosticsRedaction {
         "remoteToken", "remoteUsername", "remotePasswordHash",
         "rssFeeds",
         "updateFeedURL",
-        // A list of internal IPs/CIDRs is a network location, withheld for the
-        // same reason as `proxyHost`: it identifies the user's employer.
+        // A list of internal IPs/CIDRs is a network location, withheld for the same reason as `proxyHost`: it identifies the employer.
         "remoteTrustedProxies",
     ]
 
-    /// Every consciously classified `AppSettings` key. The coverage test diffs this against the type's
-    /// real encoded keys, so a field added without a privacy class fails the suite instead of leaking.
+    /// The coverage test diffs this against the type's real encoded keys, so a field added without a privacy class fails the suite instead of leaking.
     public static var reviewedSettingsKeys: Set<String> {
         safeSettingsKeys.union(withheldSettingsKeys)
     }
 
-    // MARK: Scrubbing
-
-    /// Known home dirs (incl. the App Sandbox container) → `~`, then leftover `/Users/<name>`, `/home/<name>`
-    /// → `<user>`, then the bare account name at word boundaries — skipped under 3 chars (false positives).
+    /// Home dirs → `~`, leftover `/Users/<name>` and `/home/<name>` → `<user>`, then the bare account name — skipped under 3 chars (false positives).
     public static func scrub(_ value: String) -> String {
         var scrubbed = value
 
@@ -396,17 +331,13 @@ public enum DiagnosticsRedaction {
         return scrubbed
     }
 
-    /// Longest-first so `/Users/me/Library/Containers/app/Data` is matched
-    /// before the plain `/Users/me` that is a prefix of it.
+    /// Longest-first so `/Users/me/Library/Containers/app/Data` is matched before the plain `/Users/me` that prefixes it.
     private static var homeDirectoryCandidates: [String] {
         let paths = [NSHomeDirectory(), FileManager.default.homeDirectoryForCurrentUser.path]
         return Array(Set(paths)).sorted { $0.count > $1.count }
     }
 
-    // MARK: Settings projection
-
-    /// Sanitised settings dump: allow-listed keys read out of the type's *own* `Codable` encoding (so it
-    /// cannot drift) then scrubbed; withheld keys become "is this configured?" facts, never "as what?".
+    /// Allow-listed keys read out of the type's *own* `Codable` encoding (so it cannot drift) then scrubbed; withheld keys become "is this configured?" only.
     public static func sanitisedSettings(_ settings: AppSettings) -> [String: String] {
         var dump: [String: String] = [:]
 
@@ -414,8 +345,7 @@ public enum DiagnosticsRedaction {
             dump[key] = scrub(value.displayText)
         }
 
-        // Derived stand-ins for the withheld fields. Booleans and counts only —
-        // never a length or a prefix, which would narrow a secret's search space.
+        // Stand-ins for the withheld fields: booleans and counts only, never a length or a prefix, which would narrow a secret's search space.
         let profile = settings.effectiveProfile
         dump["profileCount"] = String(settings.profiles.count)
         dump["effectiveMaxDownloadBytesPerSec"] = String(profile.maxDownloadBytesPerSec)
@@ -442,8 +372,6 @@ public enum DiagnosticsRedaction {
         return dump
     }
 
-    /// Keys actually present in the encoded form of `AppSettings`. Exposed so the coverage test asserts
-    /// against the real type instead of a hand-maintained copy of it.
     public static func encodedSettingsKeys(of settings: AppSettings = AppSettings()) -> Set<String> {
         Set(encodedFields(of: settings).keys)
     }
@@ -458,8 +386,7 @@ public enum DiagnosticsRedaction {
     }
 }
 
-/// Minimal JSON value used to read `AppSettings` back out of its own encoding. Not `JSONSerialization`:
-/// it bridges JSON booleans to `NSNumber`, so `true` and `1` collapse and every flag prints as a digit.
+/// Not `JSONSerialization`: it bridges JSON booleans to `NSNumber`, so `true` and `1` collapse and every flag prints as a digit.
 private enum DiagnosticsJSONValue: Decodable {
     case bool(Bool)
     case integer(Int)
@@ -481,8 +408,7 @@ private enum DiagnosticsJSONValue: Decodable {
         throw DecodingError.dataCorruptedError(in: container, debugDescription: "unsupported JSON value")
     }
 
-    /// Report-friendly rendering. Nested objects collapse to `{…}` — no allow-listed key is an object
-    /// today, and one that becomes one must be reviewed field by field rather than dumped wholesale.
+    /// Nested objects collapse to `{…}`: an allow-listed key that becomes an object must be reviewed field by field, not dumped wholesale.
     var displayText: String {
         switch self {
         case .bool(let v):    return v ? "true" : "false"

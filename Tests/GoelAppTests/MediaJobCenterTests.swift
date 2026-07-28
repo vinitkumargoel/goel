@@ -2,8 +2,6 @@ import XCTest
 import GoelCore
 @testable import GoelApp
 
-/// Pure derivations the card reads off a `Job` — no process, no ffmpeg. Each was once an unchecked UI
-/// claim, and two ("Partial file removed", "Stopping…") could be false.
 @MainActor
 final class MediaJobTests: XCTestCase {
 
@@ -16,8 +14,6 @@ final class MediaJobTests: XCTestCase {
         return job
     }
 
-    // MARK: Progress
-
     func testFractionIsNilWithoutADeclaredLength() {
         var j = job(total: nil)
         j.processedSeconds = 42
@@ -26,13 +22,10 @@ final class MediaJobTests: XCTestCase {
 
     func testFractionNeverExceedsOne() {
         var j = job(total: 100)
-        // ffmpeg reports past the banner's duration on VFR sources routinely.
         j.processedSeconds = 140
         XCTAssertEqual(j.fraction, 1)
     }
 
-    /// An ETA on a job that is not running is a number about nothing — the card
-    /// would say "~4m left" under the word "Cancelled".
     func testEtaOnlyExistsWhileRunning() {
         for state in [MediaJobCenter.Job.State.queued, .cancelling, .cancelled] {
             var j = job(state, total: 100)
@@ -45,8 +38,6 @@ final class MediaJobTests: XCTestCase {
         running.speed = 2
         XCTAssertNotNil(running.eta)
     }
-
-    // MARK: Stall
 
     func testStallIsOnlyEverFlaggedOnARunningJob() {
         let longAgo = Date().addingTimeInterval(-MediaStall.threshold - 60)
@@ -61,10 +52,6 @@ final class MediaJobTests: XCTestCase {
         XCTAssertTrue(running.isStalled())
     }
 
-    // MARK: Stuck cancel
-
-    /// The card offers force-dismiss only once a cancel has demonstrably not worked; offering it sooner
-    /// would train people to use it on the perfectly normal one-second stop.
     func testStopIsNotStuckDuringTheNormalGrace() {
         var j = job(.cancelling)
         j.cancelRequestedAt = Date()
@@ -87,10 +74,6 @@ final class MediaJobTests: XCTestCase {
         }
     }
 
-    // MARK: Dedupe identity
-
-    /// Same source, same target ⇒ the same job. Same source, *different* target
-    /// ⇒ two legitimate jobs, which is why the key is not the input path alone.
     func testDedupeKeyIsSourceAndTarget() {
         let input = URL(fileURLWithPath: "/tmp/talk.mp4")
         let mkv = MediaJobCenter.Job(input: input, kind: .convert(ext: "mkv"))
@@ -113,8 +96,6 @@ final class MediaJobTests: XCTestCase {
             .finished(URL(fileURLWithPath: "/tmp/a.mkv"), usedStreamCopy: true).isLive)
     }
 
-    // MARK: Copy
-
     func testDurationTextSwitchesToMinutesPastSixty() {
         let start = Date()
         XCTAssertEqual(MediaJobCenter.Job.durationText(from: start,
@@ -123,8 +104,6 @@ final class MediaJobTests: XCTestCase {
                                                        to: start.addingTimeInterval(372)), "6m 12s")
     }
 
-    /// A clock that went backwards (NTP correction mid-conversion) must not
-    /// produce "-3s elapsed".
     func testDurationTextNeverGoesNegative() {
         let start = Date()
         XCTAssertEqual(MediaJobCenter.Job.durationText(from: start,
@@ -144,10 +123,7 @@ final class MediaJobTests: XCTestCase {
     }
 }
 
-// MARK: - Queue behaviour
-
-/// The center's queueing decisions, exercised synchronously: `enqueue` is main-actor and starts an
-/// unawaited `Task`, so a test body that never suspends sees the queue before any process can run.
+/// `enqueue` is main-actor and starts an unawaited `Task`, so only a test body that never suspends sees the queue before any process runs.
 @MainActor
 final class MediaJobCenterQueueTests: XCTestCase {
 
@@ -155,8 +131,6 @@ final class MediaJobCenterQueueTests: XCTestCase {
     private var center: MediaJobCenter!
 
     override func setUpWithError() throws {
-        // These need a real ffmpeg: `enqueue` correctly refuses everything without one, since a queue
-        // that can never run is worse than an error. Naming/parsing tests carry no-ffmpeg coverage.
         try XCTSkipIf(FFmpegService.unavailableReason() != nil,
                       "no ffmpeg on this machine")
         directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -177,8 +151,6 @@ final class MediaJobCenterQueueTests: XCTestCase {
         return url
     }
 
-    /// The bug that made clicking Convert twice the obvious thing to do: with no feedback at all, a
-    /// second click used to start a second ffmpeg racing the first for the same output name.
     func testASecondIdenticalRequestIsRefused() {
         let input = source("talk.mp4")
         XCTAssertNil(center.enqueue(input: input, kind: .convert(ext: "mkv")))
@@ -211,8 +183,6 @@ final class MediaJobCenterQueueTests: XCTestCase {
         XCTAssertTrue(center.hasLiveWork)
     }
 
-    /// Raising the cap has to release the backlog immediately — otherwise the
-    /// setting appears to do nothing until the next job happens to finish.
     func testRaisingTheCapStartsWaitingJobs() {
         center.concurrencyLimit = 1
         for index in 0..<3 {
@@ -223,8 +193,6 @@ final class MediaJobCenterQueueTests: XCTestCase {
         XCTAssertEqual(center.jobs.filter { $0.state == .running }.count, 3)
     }
 
-    /// Cancelling something that never launched must not claim a cleanup that
-    /// did not happen — the card reads this flag verbatim.
     func testCancellingAQueuedJobReportsThatNothingWasWritten() throws {
         center.concurrencyLimit = 1
         center.enqueue(input: source("first.mp4"), kind: .convert(ext: "mkv"))
@@ -249,8 +217,6 @@ final class MediaJobCenterQueueTests: XCTestCase {
         XCTAssertNotNil(after.cancelRequestedAt, "without this the card can never say a stop is stuck")
     }
 
-    /// The ✕ on a live card cancels; it must never silently drop the row and
-    /// leave an ffmpeg running with nothing pointing at it.
     func testDismissRefusesToDropALiveJob() throws {
         center.enqueue(input: source("talk.mp4"), kind: .convert(ext: "mkv"))
         let job = try XCTUnwrap(center.jobs.first)
@@ -270,8 +236,6 @@ final class MediaJobCenterQueueTests: XCTestCase {
         XCTAssertTrue(center.jobs.isEmpty)
     }
 
-    /// The queue slot has to come back when a stuck job is abandoned, or the
-    /// force-dismiss would clear the card and still wedge the queue.
     func testForceDismissReleasesTheSlot() throws {
         center.concurrencyLimit = 1
         center.enqueue(input: source("first.mp4"), kind: .convert(ext: "mkv"))
@@ -279,7 +243,6 @@ final class MediaJobCenterQueueTests: XCTestCase {
         let running = try XCTUnwrap(center.jobs.first { $0.state == .running })
 
         center.cancel(running.id)
-        // A cancel alone already frees the slot: `.cancelling` is not counted.
         XCTAssertEqual(center.jobs.filter { $0.state == .running }.count, 1)
         center.forceDismiss(running.id)
         XCTAssertEqual(center.jobs.count, 1)

@@ -1,17 +1,10 @@
 import Foundation
 
-// MARK: - Auto re-download on remote change
-
-/// Opt-in sweep (``AppSettings/autoRedownloadOnRemoteChange``) that `HEAD`s finished HTTP downloads and
-/// re-queues one whose validators (`ETag`/size) *provably* changed — never on a missing/transient one.
 extension DownloadManager {
 
-    /// Seconds between remote-change sweeps (6 hours).
     static let remoteChangeInterval: UInt64 = 6 * 60 * 60
-    /// Delay before the first sweep after arming (2 minutes) so launch isn't noisy.
     static let remoteChangeInitialDelay: UInt64 = 120
 
-    /// (Re)arm the remote-change sweep when the setting is on; tear it down when off.
     func updateRedownloadSchedule() {
         redownloadTask?.cancel()
         redownloadTask = nil
@@ -26,18 +19,14 @@ extension DownloadManager {
         }
     }
 
-    /// HEAD every completed HTTP download and re-queue the ones whose remote
-    /// resource changed. Best-effort — a failed probe leaves the task untouched.
     func sweepFinishedForRemoteChanges() async {
-        // Snapshot the candidates up front; each probe awaits, so re-resolve by id
-        // before mutating (the user may have removed/changed a task meanwhile).
+        // Each probe awaits, so these are a snapshot — re-resolve by id before mutating.
         let candidates = tasks.filter {
             $0.status == .completed && $0.kind == .http
         }
         guard !candidates.isEmpty else { return }
 
-        // Build the probe session once, honouring the user's manual/SOCKS proxy so
-        // the sweep never leaks the real IP of someone who configured a proxy.
+        // Must honour the user's proxy, or the sweep leaks their real IP.
         let proxy = Self.proxyDictionary(from: settings)
         for candidate in candidates {
             guard case .url(let url) = candidate.source else { continue }
@@ -48,7 +37,6 @@ extension DownloadManager {
                 oldETag: candidate.remoteInfo?.etag, oldSize: candidate.totalBytes,
                 newETag: validators.etag, newSize: validators.size)
             guard changed else { continue }
-            // Re-resolve: the task must still be the same completed download.
             guard let i = index(of: candidate.id),
                   tasks[i].status == .completed,
                   tasks[i].remoteInfo?.etag == candidate.remoteInfo?.etag,
@@ -57,8 +45,7 @@ extension DownloadManager {
         }
     }
 
-    /// Reset a completed task to `.queued` for a fresh fetch (engine re-probes, overwrites the old file).
-    /// Clears the resume cursor so it starts from zero instead of resuming against changed bytes.
+    /// Must clear the resume cursor, else the refetch resumes against the changed bytes.
     private func requeueForRedownload(at i: Int) {
         tasks[i].status = .queued
         tasks[i].bytesDownloaded = 0
@@ -66,18 +53,15 @@ extension DownloadManager {
         tasks[i].resumeData = nil
         tasks[i].completedAt = nil
         tasks[i].scanVerdict = nil
-        // Drop the stale stats mark: its `down` is the OLD file's full size, so StatsAccumulator would
-        // re-base the from-zero re-download against it and report deltaDown == 0, lost from lifetime stats.
+        // A stale mark holds the OLD size, so StatsAccumulator would report deltaDown == 0 and lose the run.
         statsMarks[tasks[i].id] = nil
-        // Same for the speed meter: the re-download's counters restart at zero.
         speedMeters[tasks[i].id] = nil
         persist(tasks[i])
         publish()
         schedule()
     }
 
-    /// Pure decision: did a validator definitively change? Prefers `ETag` (both present, non-empty,
-    /// differing), else size. A missing side is "unknown" → not changed, so a dropped validator is safe.
+    /// A missing side is "unknown" → not changed, so a dropped validator never triggers a re-download.
     static func remoteResourceChanged(oldETag: String?, oldSize: Int64?,
                                       newETag: String?, newSize: Int64?) -> Bool {
         if let o = oldETag, let n = newETag, !o.isEmpty, !n.isEmpty {
@@ -89,17 +73,12 @@ extension DownloadManager {
         return false
     }
 
-    /// Remote validators from a cheap `HEAD`, or nil if the probe failed. The `proxy` dict (from
-    /// ``proxyDictionary(from:)``) keeps the probe on the same proxy policy as real downloads.
     struct RemoteValidators: Sendable { var etag: String?; var size: Int64? }
 
     static func fetchValidators(url: URL, userAgent: String,
                                 proxy: [String: Any]?) async -> RemoteValidators? {
-        // One session per proxy policy, kept forever — see ``SessionPool``.
         let session = SessionPool.session(key: "validators/" + SessionPool.proxyKey(proxy)) {
             let config = URLSessionConfiguration.ephemeral
-            // nil ⇒ follow the OS proxy (system); [:] ⇒ explicit direct; populated ⇒
-            // route through the configured manual/SOCKS proxy.
             config.connectionProxyDictionary = proxy
             return URLSession(configuration: config)
         }
@@ -114,15 +93,12 @@ extension DownloadManager {
         return RemoteValidators(etag: etag, size: size)
     }
 
-    /// A `Sendable` snapshot of the user's proxy settings, for handing across
-    /// actor boundaries (e.g. into the torrent engine's `.torrent`-file fetch).
     static func proxySpec(from settings: AppSettings) -> NetworkGuard.ProxySpec {
         NetworkGuard.ProxySpec(mode: settings.proxyMode, type: settings.proxyType,
                                host: settings.proxyHost, port: settings.proxyPort)
     }
 
-    /// Proxy settings → `connectionProxyDictionary`: nil = follow OS, empty dict = direct, keys = manual.
-    /// Mirrors the HTTP engine's handling so background probes don't bypass the user's proxy.
+    /// Mirrors the HTTP engine's handling so background probes never bypass the user's proxy.
     static func proxyDictionary(from settings: AppSettings) -> [String: Any]? {
         NetworkGuard.proxyDictionary(proxySpec(from: settings))
     }

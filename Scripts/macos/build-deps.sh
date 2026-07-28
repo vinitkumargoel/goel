@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Build the app's native deps from source with MACOSX_DEPLOYMENT_TARGET pinned, so the
-# advertised floor is a decision, not whichever Homebrew bottles the build Mac had.
 set -euo pipefail
 
-# ---- pins ------------------------------------------------------------------
 OPENSSL_VERSION="${OPENSSL_VERSION:-3.6.2}"
 OPENSSL_SHA256="${OPENSSL_SHA256:-aaf51a1fe064384f811daeaeb4ec4dce7340ec8bd893027eee676af31e83a04f}"
 
@@ -16,8 +13,7 @@ BOOST_SHA256="${BOOST_SHA256:-9e6bee9ab529fb2b0733049692d57d10a72202af085e553539
 LIBTORRENT_VERSION="${LIBTORRENT_VERSION:-2.0.13}"
 LIBTORRENT_SHA256="${LIBTORRENT_SHA256:-892cb75c06318e2420de0faf9f63a908069d3d237676e2459fd30abe0cb3b1bf}"
 
-# The floor the app advertises. Must agree with LSMinimumSystemVersion in build_app.sh
-# and platforms: [.macOS(...)] in Package.swift — all three state the same promise.
+# Must agree with LSMinimumSystemVersion in build_app.sh and platforms: in Package.swift.
 MIN_MACOS="${GOEL_MIN_MACOS:-14.0}"
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -31,8 +27,6 @@ export MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS"
 
 mkdir -p "$PREFIX/lib" "$PREFIX/opt" "$SRC" "$STAMPS"
 
-# Prerequisites checked by name up front: otherwise the first failure is a bare
-# "command not found" tens of lines into an unrelated build.
 for tool in curl shasum tar cmake clang vtool install_name_tool; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "error: '$tool' is not on PATH." >&2
@@ -52,10 +46,7 @@ case "$ARCH" in
   *) echo "error: unsupported architecture '$ARCH'" >&2; exit 1 ;;
 esac
 
-# ---- helpers ---------------------------------------------------------------
-
-# fetch <url> <sha256> <filename> — download once and verify. A mismatch deletes the
-# file rather than leaving a poisoned cache for the next run to "resume" from.
+# A checksum mismatch must delete the file, or the poisoned cache is reused next run.
 fetch() {
   local url="$1" want="$2" file="$SRC/$3"
   if [ -f "$file" ]; then
@@ -77,7 +68,6 @@ fetch() {
 done_with() { [ -f "$STAMPS/$1" ]; }
 mark_done() { touch "$STAMPS/$1"; }
 
-# ---- OpenSSL ---------------------------------------------------------------
 if done_with "openssl-$OPENSSL_VERSION"; then
   echo "==> OpenSSL $OPENSSL_VERSION already built"
 else
@@ -88,21 +78,17 @@ else
   tar -xzf "$SRC/openssl-$OPENSSL_VERSION.tar.gz" -C "$SRC"
   (
     cd "$SRC/openssl-$OPENSSL_VERSION"
-    # no-tests skips a suite we don't run; -mmacosx-version-min is explicit because OpenSSL
-    # doesn't always thread MACOSX_DEPLOYMENT_TARGET through to every compiler invocation.
+    # -mmacosx-version-min is explicit: OpenSSL does not thread MACOSX_DEPLOYMENT_TARGET everywhere.
     ./Configure "$OPENSSL_TARGET" shared no-tests \
       --prefix="$PREFIX/opt/openssl@3" \
       --openssldir="$PREFIX/opt/openssl@3/ssl" \
       "-mmacosx-version-min=$MIN_MACOS"
     make -j"$JOBS"
-    # install_sw: libraries, headers and nothing else. `install` additionally
-    # writes a man page tree we would only delete.
     make install_sw
   )
   mark_done "openssl-$OPENSSL_VERSION"
 fi
 
-# ---- libssh2 ---------------------------------------------------------------
 if done_with "libssh2-$LIBSSH2_VERSION"; then
   echo "==> libssh2 $LIBSSH2_VERSION already built"
 else
@@ -126,8 +112,6 @@ else
   mark_done "libssh2-$LIBSSH2_VERSION"
 fi
 
-# Boost: libtorrent's CMake asks find_package for the `system` component even though it
-# has been header-only since 1.69. Building the stub is quicker than fighting the module.
 if done_with "boost-$BOOST_VERSION"; then
   echo "==> Boost $BOOST_VERSION already built"
 else
@@ -149,7 +133,6 @@ else
   mark_done "boost-$BOOST_VERSION"
 fi
 
-# ---- libtorrent-rasterbar --------------------------------------------------
 if done_with "libtorrent-$LIBTORRENT_VERSION"; then
   echo "==> libtorrent-rasterbar $LIBTORRENT_VERSION already built"
 else
@@ -158,8 +141,7 @@ else
         "$LIBTORRENT_SHA256" "libtorrent-rasterbar-$LIBTORRENT_VERSION.tar.gz"
   rm -rf "$SRC/libtorrent-rasterbar-$LIBTORRENT_VERSION"
   tar -xzf "$SRC/libtorrent-rasterbar-$LIBTORRENT_VERSION.tar.gz" -C "$SRC"
-  # The defines mirror what Package.swift passes when compiling TorrentBridge; a libtorrent
-  # built with a different ABI switch than its caller is a run-time crash, not a link error.
+  # Must match the defines Package.swift passes for TorrentBridge: an ABI mismatch crashes at run time.
   cmake -S "$SRC/libtorrent-rasterbar-$LIBTORRENT_VERSION" -B "$SRC/libtorrent-build" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$PREFIX/opt/libtorrent-rasterbar" \
@@ -179,18 +161,14 @@ else
   mark_done "libtorrent-$LIBTORRENT_VERSION"
 fi
 
-# Package.swift links -L$PREFIX/lib and adds it as an rpath, mirroring Homebrew's layout.
 # Symlinks, not copies, so install_name_tool sees exactly one file per library.
 echo "==> Linking dylibs into $PREFIX/lib"
 find "$PREFIX/lib" -maxdepth 1 -type l -delete
-# `-type l` as well as `-type f`: a library installs both the real file and the versioned
-# alias its SONAME names. Linking only real files builds fine but loads nothing.
+# `-type l` too: skipping the SONAME aliases still builds, but loads nothing at run time.
 while IFS= read -r dylib; do
   ln -sf "$dylib" "$PREFIX/lib/$(basename "$dylib")"
 done < <(find "$PREFIX/opt" \( -type f -o -type l \) -name '*.dylib')
 
-# The point of this script: a library whose minos exceeds the floor is the defect it
-# exists to prevent, so check here rather than after a full app build.
 echo "==> Verifying every dylib targets macOS $MIN_MACOS or older"
 fail=0
 count=0
@@ -202,7 +180,6 @@ while IFS= read -r dylib; do
     fail=1
     continue
   fi
-  # Sorts as versions: the lower of (minos, floor) must be minos itself.
   if [ "$(printf '%s\n%s\n' "$minos" "$MIN_MACOS" | sort -V | head -1)" != "$minos" ]; then
     echo "    ✗  $(basename "$dylib") — minos $minos exceeds $MIN_MACOS"
     fail=1

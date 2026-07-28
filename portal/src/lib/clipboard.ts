@@ -1,13 +1,11 @@
-/** Copy to clipboard, resolving to whether it actually landed — a "Copied" toast over an empty clipboard
- * is a lie. `navigator.clipboard` is undefined in a non-secure context (plain-HTTP LAN), hence selection. */
+/** `navigator.clipboard` is undefined in a non-secure context (plain-HTTP LAN), hence the selection fallback. */
 export async function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text)
       return true
     } catch {
-      // Permission denied, or a non-secure context that advertises the API
-      // anyway. Fall through to the selection path.
+      // Permission denied, or a non-secure context that advertises the API anyway — fall through.
     }
   }
   return selectionCopy(text)

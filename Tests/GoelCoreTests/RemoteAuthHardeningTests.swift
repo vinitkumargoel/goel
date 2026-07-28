@@ -1,8 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Regressions for two ways the portal could authenticate someone it should not: a login that
-/// outlives the credentials it was judged against, and header SSO trusting a peer address alone.
 final class RemoteAuthHardeningTests: XCTestCase {
 
     private func request(headers: [String: String], body: String = "") -> RemoteRequest {
@@ -12,20 +10,14 @@ final class RemoteAuthHardeningTests: XCTestCase {
         return RemoteRequest(raw: Data(raw.utf8))
     }
 
-    // MARK: - Credential rotation during PBKDF2
-
-    /// The whole point of the epoch: a login that entered the slow password verification before the
-    /// admin rotated the password must not come back and mint a session for the revoked credential.
+    /// A login already inside PBKDF2 when the password rotates must not mint a session.
     func testLoginThatRacesACredentialRotationIsRefused() async {
         let store = RemoteSessionStore()
-        // Both hashes up front: deriving the replacement mid-race would let the login finish before
-        // the rotation lands. ``PortalTestCredentials`` so the suite pays per derivation, not per test.
+        // Both hashes derived up front: deriving mid-race lets the login finish before the rotation lands.
         let oldHash = PortalTestCredentials.hash
         let newHash = PortalTestCredentials.rotatedHash
         await store.configure(username: "admin", passwordHash: oldHash, sessionMinutes: 120)
 
-        // Start the login, pause long enough to reach the detached PBKDF2 run (210,000 iterations —
-        // far longer than this), then rotate underneath it. Assertions hold either way, so non-flaky.
         async let response = store.handleLogin(
             request(headers: ["Content-Type": "application/json"],
                     body: #"{"username":"admin","password":"\#(PortalTestCredentials.password)"}"#),
@@ -42,8 +34,7 @@ final class RemoteAuthHardeningTests: XCTestCase {
                        "no session cookie may be issued for a revoked password")
     }
 
-    /// Re-applying identical credentials through `configure` must not move the epoch, or every settings
-    /// save would randomly fail an in-flight sign-in. Also the happy path: 200 with a cookie.
+    /// Re-applying identical credentials must not move the epoch, or any settings save kills an in-flight login.
     func testUnchangedCredentialsDoNotDisturbAnInFlightLogin() async {
         let store = RemoteSessionStore()
         let hash = PortalTestCredentials.hash
@@ -62,10 +53,7 @@ final class RemoteAuthHardeningTests: XCTestCase {
         XCTAssertTrue(text.contains("goel_session="))
     }
 
-    // MARK: - Trusted-header SSO needs more than a peer address
-
-    /// The documented deployment is a same-host reverse proxy, so `127.0.0.1` identifies every local
-    /// process equally. Without the shared secret the header must buy nothing at all.
+    /// `127.0.0.1` identifies every local process equally, so the header alone must buy nothing.
     func testLoopbackPeerWithoutTheSharedSecretIsNotTrusted() {
         let policy = TrustedIdentityHeaderPolicy(isEnabled: true, trustedProxies: ["127.0.0.1"])
         XCTAssertFalse(policy.isEffective)

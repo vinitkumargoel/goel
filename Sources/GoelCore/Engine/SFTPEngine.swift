@@ -1,7 +1,6 @@
 import Foundation
 
-/// SFTP over libssh2 (``SFTPClient``/``SSHBridge``); twin of ``FTPEngine``: one blocking transfer per task,
-/// offset resume, serialized jobs (no double writer). Creds: userinfo or Keychain; TOFU ``HostKeyStore``.
+/// Jobs are serialized per task: two concurrent writers on one file would corrupt it.
 actor SFTPEngine: DownloadEngine {
 
     public nonisolated let kind: DownloadKind = .sftp
@@ -17,8 +16,6 @@ actor SFTPEngine: DownloadEngine {
     init(profile: TrafficProfile) {
         self.profile = profile
     }
-
-    // MARK: DownloadEngine
 
     public nonisolated func canHandle(_ source: DownloadSource) -> Bool { source.kind == .sftp }
 
@@ -62,8 +59,6 @@ actor SFTPEngine: DownloadEngine {
         let size = try? await client.size(url.path)
         return EngineMetadata(name: name, totalBytes: size, reachable: size != nil)
     }
-
-    // MARK: Transfer
 
     private func startJob(_ id: UUID) {
         states[id]?.abort()
@@ -137,8 +132,7 @@ actor SFTPEngine: DownloadEngine {
     private nonisolated func emit(_ id: UUID, _ event: EngineEvent) { hub.emit(id, event) }
 }
 
-/// Per-transfer state the SFTP callbacks reach: output handle, abort flag, ``TransferProgressMeter``.
-/// Callbacks run on the transfer thread; `abort()` comes from the engine actor — hence the lock.
+/// Callbacks run on the transfer thread while `abort()` comes from the engine actor — hence the lock.
 final class SFTPDownloadState: @unchecked Sendable {
     private let hub: EventHub
     private let id: UUID
@@ -176,8 +170,7 @@ final class SFTPDownloadState: @unchecked Sendable {
         }
     }
 
-    /// libssh2 progress: `sofar` is absolute (starts at `resumeFrom`). The meter announces the total
-    /// once and throttles; this emits only what it returns and honours the abort flag.
+    /// libssh2 `sofar` is absolute (it starts at `resumeFrom`), not a delta.
     func progress(total: Int64, sofar: Int64) -> Bool {
         lock.lock()
         let tick = meter.step(total: total, sofar: sofar, now: Date())

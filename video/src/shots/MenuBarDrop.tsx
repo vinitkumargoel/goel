@@ -1,5 +1,3 @@
-/* Shot 12 — menu bar (card: command-palette-summon). World dims to 45% + blur 10px over f12→22; the
- * panel drops with a real overshoot (9f out-cubic to +8px, 6f inOut back) or it just reads as a fade. */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C, PAGE } from '../theme';
@@ -11,16 +9,15 @@ const DIM0 = 12;
 const DIM1 = 22;
 const PANEL_IN = 18;
 const ROWS_START = 32;
-const SEL = 60; // the first row takes selection
+const SEL = 60;
 
-const POP = layout.pages.menubar.boxes.popover; // 570,36 340x377.5
+const POP = layout.pages.menubar.boxes.popover;
 const POP_ROWS = layout.pages.menubar.boxes.popRows;
-const HEAD_H = POP_ROWS[0].y - POP.y; // 41
-const ROWS_H = POP_ROWS.length * POP_ROWS[0].h; // 254
-const EMPTY_H = layout.pages['menubar-norows'].boxes.popover.h; // 123.5
+const HEAD_H = POP_ROWS[0].y - POP.y;
+const ROWS_H = POP_ROWS.length * POP_ROWS[0].h;
+const EMPTY_H = layout.pages['menubar-norows'].boxes.popover.h;
 const FOOT_H = EMPTY_H - HEAD_H;
 
-// page (1480x841) scaled up to fill the 1920x1080 frame
 const ZOOM = 1920 / PAGE.w;
 const OY = (1080 - PAGE.h * ZOOM) / 2;
 
@@ -51,7 +48,6 @@ export const MenuBarDrop: React.FC<{ durationInFrames: number }> = () => {
           transformOrigin: '0 0',
         }}
       >
-        {/* the desktop: menu bar plus the running app, making way */}
         <div style={{ filter: frame < DIM0 ? undefined : `blur(${blur}px)` }}>
           <Img
             src={staticFile('textures/desktop-full.png')}
@@ -77,7 +73,6 @@ export const MenuBarDrop: React.FC<{ durationInFrames: number }> = () => {
               overflow: 'hidden',
             }}
           >
-            {/* header, cropped from the row-less capture of the same popover */}
             <div
               style={{
                 position: 'absolute',
@@ -90,7 +85,6 @@ export const MenuBarDrop: React.FC<{ durationInFrames: number }> = () => {
                 backgroundPosition: '0 0',
               }}
             />
-            {/* the four live transfers, staggering up */}
             {POP_ROWS.map((r, i) => {
               const inStart = ROWS_START + i * 4;
               const op = interpolate(frame, [inStart, inStart + 8], [0, 1], CL);
@@ -121,7 +115,6 @@ export const MenuBarDrop: React.FC<{ durationInFrames: number }> = () => {
                 </div>
               );
             })}
-            {/* footer, cropped from the same row-less capture */}
             <div
               style={{
                 position: 'absolute',

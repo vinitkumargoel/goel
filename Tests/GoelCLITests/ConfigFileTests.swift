@@ -1,8 +1,6 @@
 import XCTest
 @testable import GoelCLI
 
-/// `/etc/goel/config` is a systemd `EnvironmentFile`: a mangled line means a wrong value or a refused
-/// file, so the service stops booting on the restart `goel config set` triggers immediately.
 final class ConfigFileTests: XCTestCase {
 
     private var path = ""
@@ -24,8 +22,6 @@ final class ConfigFileTests: XCTestCase {
         try String(contentsOfFile: path, encoding: .utf8)
     }
 
-    // MARK: Reading
-
     func testReadsPlainAssignment() throws {
         try write("GOEL_PORT=9090\n")
         let config = try ConfigFile(path: path)
@@ -39,8 +35,7 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertNil(config.value(forEnv: "# a comment"))
     }
 
-    /// systemd strips one layer of matching quotes, so a quoted value must read back unquoted —
-    /// otherwise `goel config get save-dir` shows `"/mnt/x"` and a later `set` re-quotes the quotes.
+    /// systemd strips one layer of matching quotes, so a quoted value must read back unquoted.
     func testStripsOneLayerOfQuotes() throws {
         try write("GOEL_SAVE_DIR=\"/mnt/my downloads\"\nGOEL_USERNAME='ad min'\n")
         let config = try ConfigFile(path: path)
@@ -48,8 +43,7 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertEqual(config.value(forEnv: "GOEL_USERNAME"), "ad min")
     }
 
-    /// systemd lets the last assignment win. Reading the first one would report a
-    /// value the daemon is not actually running with.
+    /// systemd lets the last assignment win; reading the first reports a value the daemon is not using.
     func testLastAssignmentWins() throws {
         try write("GOEL_PORT=1\nGOEL_PORT=2\n")
         XCTAssertEqual(try ConfigFile(path: path).value(forEnv: "GOEL_PORT"), "2")
@@ -71,8 +65,6 @@ final class ConfigFileTests: XCTestCase {
         }
     }
 
-    /// The file is 0600 root-only, so an unreadable one means "you forgot sudo",
-    /// not "Goel° is not installed" — which is what it used to say.
     func testUnreadableFileThrowsNeedsRootNotNotInstalled() throws {
         try XCTSkipIf(geteuid() == 0, "root can read anything, so there is nothing to test")
         try write("GOEL_PORT=8080\n")
@@ -83,8 +75,6 @@ final class ConfigFileTests: XCTestCase {
             }
         }
     }
-
-    // MARK: Writing
 
     func testSetReplacesInPlaceAndPreservesComments() throws {
         try write("# keep me\nGOEL_PORT=8080\nGOEL_USERNAME=admin\n")
@@ -106,8 +96,6 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertTrue(try read().contains("GOEL_SAVE_DIR=/srv/dl"))
     }
 
-    /// A duplicate left behind would mean the file says two things and systemd
-    /// silently picks the later one — so `set` must collapse them.
     func testSetCollapsesDuplicates() throws {
         try write("GOEL_PORT=1\nGOEL_PORT=2\nGOEL_PORT=3\n")
         var config = try ConfigFile(path: path)
@@ -128,8 +116,7 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertTrue(contents.contains("GOEL_PORT=1"))
     }
 
-    /// systemd splits unquoted values on whitespace and treats `#` as a comment even mid-line, so a
-    /// spaced path or a `#` password MUST come back intact or the daemon boots with a truncated value.
+    /// systemd splits unquoted values on whitespace and treats `#` as a comment even mid-line.
     func testQuotesValuesSystemdWouldOtherwiseSplit() throws {
         try write("GOEL_PORT=8080\n")
         var config = try ConfigFile(path: path)
@@ -139,7 +126,6 @@ final class ConfigFileTests: XCTestCase {
 
         let reread = try ConfigFile(path: path)
         XCTAssertEqual(reread.value(forEnv: "GOEL_SAVE_DIR"), "/mnt/my downloads")
-        // The quoting must survive a full round trip, escapes and all.
         XCTAssertTrue(try read().contains("GOEL_SAVE_DIR=\"/mnt/my downloads\""))
         XCTAssertTrue(try read().contains("\\\""), "embedded quotes must be escaped")
     }
@@ -154,7 +140,6 @@ final class ConfigFileTests: XCTestCase {
         let mode = (attributes[.posixPermissions] as? NSNumber)?.uint16Value ?? 0
         XCTAssertEqual(mode & 0o777, 0o600,
                        "the file holds the portal password in plaintext")
-        // No temporary file may be left behind next to it.
         let siblings = try FileManager.default.contentsOfDirectory(
             atPath: (path as NSString).deletingLastPathComponent)
         let base = (path as NSString).lastPathComponent
@@ -175,10 +160,7 @@ final class ConfigFileTests: XCTestCase {
         }
     }
 
-    // MARK: Effective values
-
-    /// These defaults have to match Sources/GoelDaemon/main.swift, or the CLI
-    /// reports a port and a database the daemon is not using.
+    /// These defaults must match Sources/GoelDaemon/main.swift or the CLI reports what the daemon is not using.
     func testEffectiveMirrorsDaemonDefaults() throws {
         try write("")
         let effective = Effective(try ConfigFile(path: path))
@@ -187,15 +169,12 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertFalse(effective.allowLAN, "the daemon defaults GOEL_ALLOW_LAN to false")
         XCTAssertTrue(effective.requireAuth, "the daemon defaults GOEL_REQUIRE_AUTH to true")
         XCTAssertNil(effective.watchDir)
-        // The daemon's own fallbacks are relative to its HOME, not to /var/lib/goel
-        // directly — asserting the wrong ones here is how the divergence survived.
+        // The daemon's fallbacks are relative to its HOME, not to /var/lib/goel directly.
         let home = Effective.daemonHome
         XCTAssertEqual(effective.databasePath, home + "/.local/share/goel-downloader/queue.sqlite")
         XCTAssertEqual(effective.saveDir, home + "/Downloads")
     }
 
-    /// The token lives next to the database, so a wrong database default sends every
-    /// authenticated command looking in a directory the daemon never wrote to.
     func testTokenFileFollowsTheDatabase() throws {
         try write("GOEL_DB=/srv/goel/queue.sqlite\n")
         let effective = Effective(try ConfigFile(path: path))
@@ -219,15 +198,12 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertEqual(try Effective(try ConfigFile(path: path)).token(), "from-config")
     }
 
-    // MARK: Validation
-
     func testPortValidationRejectsWhatTheUnitCannotBind() {
         XCTAssertNil(Validators.port("8080"))
         XCTAssertNotNil(Validators.port("0"))
         XCTAssertNotNil(Validators.port("70000"))
         XCTAssertNotNil(Validators.port("http"))
-        // The unit grants no CAP_NET_BIND_SERVICE, so 80 would fail at start —
-        // catching it here beats a service that refuses to boot.
+        // The unit grants no CAP_NET_BIND_SERVICE, so 80 would fail at start.
         XCTAssertNotNil(Validators.port("80"))
     }
 
@@ -242,8 +218,7 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertNotNil(Validators.username("two\nlines"))
     }
 
-    /// Whatever this accepts gets created, recursively chowned to the service user
-    /// and added to ReadWritePaths — so `/` and `/etc` must not get that far.
+    /// Whatever this accepts gets recursively chowned to the service user — `/` and `/etc` must not pass.
     func testAbsolutePathRefusesSystemDirectories() {
         for path in ["/", "/etc", "/etc/", "/usr", "/home", "//etc", "/etc/."] {
             XCTAssertNotNil(Validators.absolutePath(path), "\(path) should be refused")

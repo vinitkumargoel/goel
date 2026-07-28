@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
-# Populates video/public/audio/, which is intentionally not committed.
-# See video/AUDIO.md for what each file is and where it came from.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DEST=public/audio
 mkdir -p "$DEST"
 
-# Files with recorded upstream URLs are fetched directly.
-fetch() { # fetch <dest-name> <url>
+fetch() {
   [ -f "$DEST/$1" ] && { echo "have  $1"; return; }
   echo "fetch $1"
   curl -fsSL "$2" -o "$DEST/$1"
@@ -23,7 +20,6 @@ fetch sweep-scifi-fast.mp3     https://assets.mixkit.co/active_storage/sfx/3114/
 fetch impact-zoom-quick.mp3    https://assets.mixkit.co/active_storage/sfx/772/772-preview.mp3
 fetch riser-trailer.mp3        https://assets.mixkit.co/active_storage/sfx/790/790-preview.mp3
 
-# The rest have no recorded URL; copy them from the local shot library.
 LIB="${VIDEO_SHOTCRAFT:-$HOME/.claude/skills/video-shotcraft}/assets/audio"
 for f in click-camera impact-cine pop riser-cine sparkle swoosh-quick \
          transition-snap transition-soft whoosh-big whoosh-fast; do

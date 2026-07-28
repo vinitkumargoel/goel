@@ -1,13 +1,8 @@
 import Foundation
 
-// MARK: - Request building
-
-/// Request construction for the engine's own traffic; retry/backoff and classifiers moved with the
-/// byte pumps to ``SegmentedTransfer/makeRequest(_:userAgent:)``. Kept for ``HTTPEngine/probe(_:)``.
 extension HTTPEngine {
 
-    /// `User-Agent` on every outbound request (none may be UA-less), plus preemptive Basic `Authorization`
-    /// when credentials are stored — HTTPS only, since Basic over plain `http://` leaks the password.
+    /// Basic `Authorization` is HTTPS-only: over plain `http://` it leaks the password.
     nonisolated func makeRequest(_ url: URL, userAgent: String,
                                  referer: String? = nil,
                                  extraHeaders: [String: String] = [:]) -> URLRequest {
@@ -26,8 +21,7 @@ extension HTTPEngine {
         return req
     }
 
-    /// Task-aware form: adds `Referer` and in-scope cookies — paywalled file vs. login page. Never hand-roll
-    /// from `task.requestHeaders`; use ``DownloadTask/outboundHeaders(for:)`` (host-exact scope). Not logged.
+    /// Never hand-roll from `task.requestHeaders` — ``DownloadTask/outboundHeaders(for:)`` scopes cookies host-exact.
     nonisolated func makeRequest(_ url: URL, userAgent: String,
                                  task: DownloadTask) -> URLRequest {
         makeRequest(url, userAgent: userAgent,

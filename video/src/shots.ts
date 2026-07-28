@@ -1,5 +1,4 @@
-/* Frame-level timeline — DESIGN-SPEC.md §5, locked before implementation. Every downstream frame reference (captions,
- * SFX pins, QA stills) is written `S.<name>.from + offset`, never a bare number, so shifting one shot shifts the rest. */
+/* Every downstream frame reference must be `S.<name>.from + offset`, never a bare number, or shifting one shot desyncs the rest. */
 
 type Shot = { from: number; dur: number; note: string };
 
@@ -33,7 +32,6 @@ export const S = seq([
 
 export const TOTAL = Object.values(S).reduce((n, s) => Math.max(n, s.from + s.dur), 0);
 
-/** Bottom-strip narration. Every claim in the film has one — it plays muted. */
 export const CAPTIONS: { from: number; dur: number; text: string; sub?: string }[] = [
   { from: S.appDebut.from + 40, dur: 68, text: 'One native app. Five protocols.' },
   { from: S.queue.from + 22, dur: 88, text: 'One queue, every protocol', sub: 'http · ftp · sftp · bittorrent · hls' },

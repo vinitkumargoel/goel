@@ -2,45 +2,32 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-// Settings ▸ Licence. INFORMATIONAL ONLY: it never verifies a key, counts days, hides a feature,
-// nags, or sends a byte anywhere. Compliance is honour-based — see LICENSE-COMMERCIAL.md.
-
-/// Local, user-owned licensing notes. Deliberately outside ``AppSettings`` so the engine, the
-/// backup export and ``DiagnosticsBundle`` structurally cannot see them.
+/// Kept outside ``AppSettings`` so backup export and ``DiagnosticsBundle`` cannot see these.
 enum LicenseNotes {
 
     private static let referenceKey = "licence.commercialReference"
     private static let holderKey = "licence.commercialHolder"
 
-    /// The commercial licence reference an administrator chose to record. Purely
-    /// a note to themselves — no format, no validation, no meaning to the app.
     static var reference: String {
         get { UserDefaults.standard.string(forKey: referenceKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: referenceKey) }
     }
 
-    /// The legal entity the licence was issued to, for the same reason.
     static var holder: String {
         get { UserDefaults.standard.string(forKey: holderKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: holderKey) }
     }
 
-    /// Licensing contact, kept in step with LICENSE-COMMERCIAL.md.
     static let contactEmail = "licensing@vinitk.dev"
 }
 
-/// The Licence pane: what the terms are, who needs to pay, and how to ask.
 struct LicensePane: View {
 
     @EnvironmentObject private var vm: AppViewModel
 
-    /// Mirrors ``LicenseNotes/reference``. Written straight back on every edit —
-    /// there is no Save button because there is nothing to validate.
     @State private var reference: String = LicenseNotes.reference
     @State private var holder: String = LicenseNotes.holder
 
-    /// Whether the "who needs one" detail is expanded. Collapsed by default so a personal user — the
-    /// overwhelming majority — sees one short answer rather than a wall of legal text.
     @State private var showsDetail = false
 
     var body: some View {
@@ -55,8 +42,6 @@ struct LicensePane: View {
             recordsPanel
         }
     }
-
-    // MARK: Current licence
 
     private var currentLicence: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -96,8 +81,6 @@ struct LicensePane: View {
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.hairline))
     }
-
-    // MARK: At work
 
     private var atWorkPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -151,10 +134,7 @@ struct LicensePane: View {
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.25)))
     }
 
-    // MARK: The guarantees
-
-    /// The other half of honour-based licensing: stating plainly what the app will never do to you.
-    /// These are product guarantees, and the code has to keep matching them.
+    /// These are product guarantees — the code has to keep matching them.
     private var neverPanel: some View {
         VStack(alignment: .leading, spacing: 7) {
             ForEach(Self.guarantees, id: \.self) { line in
@@ -168,8 +148,6 @@ struct LicensePane: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
-                // A green ✗ is a deliberately odd pairing — it means "this never happens", which is good news.
-                // Read as a bare symbol name it is actively misleading, so state the sense in words.
                 .a11yGroup(label: "Guarantee, never: \(line)")
             }
         }
@@ -184,8 +162,6 @@ struct LicensePane: View {
         "Diagnostics are only ever sent by you, by hand, from Settings ▸ Advanced.",
     ]
 
-    // MARK: Records
-
     private var recordsPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Bought a commercial licence? You can note the details here so they travel with the "
@@ -199,8 +175,6 @@ struct LicensePane: View {
                 TextField("", text: $holder)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
-                    // A raw `TextField` doesn't pick up `SetRow`'s environment
-                    // name the way the `Setting*` wrappers do.
                     .accessibilityLabel("Licensed to")
                     .onChange(of: holder) { _, new in LicenseNotes.holder = new }
             }
@@ -215,10 +189,6 @@ struct LicensePane: View {
         }
     }
 
-    // MARK: Actions
-
-    /// A pre-addressed enquiry. `mailto:` hands off to the user's mail client —
-    /// the app itself sends nothing.
     private func composeLicensingEmail() {
         var components = URLComponents()
         components.scheme = "mailto"
@@ -230,8 +200,6 @@ struct LicensePane: View {
         NSWorkspace.shared.open(url)
     }
 
-    /// Third-party notices ship beside the licence in the packaged app. In a dev
-    /// build the resource is absent, so say so rather than doing nothing.
     private func openThirdPartyNotices() {
         if let url = Self.bundledText(named: "THIRD-PARTY-NOTICES") {
             NSWorkspace.shared.open(url)
@@ -242,8 +210,6 @@ struct LicensePane: View {
         }
     }
 
-    /// A legal text copied into `Contents/Resources` by the build script. Both `.txt` and `.md` are
-    /// tried, and nil simply hides the button — a missing file is never an error.
     private static func bundledText(named name: String) -> URL? {
         for ext in ["txt", "md"] {
             if let url = Bundle.main.url(forResource: name, withExtension: ext) {
@@ -254,8 +220,6 @@ struct LicensePane: View {
     }
 }
 
-/// A titled bullet list. Its own type so the two lists in the "at work" panel
-/// cannot drift apart on spacing or bullet treatment.
 private struct LicenceList: View {
     let title: String
     let tint: Color

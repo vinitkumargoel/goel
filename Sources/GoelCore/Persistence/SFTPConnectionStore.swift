@@ -1,13 +1,9 @@
 import Foundation
 
-/// Persists the user's saved SFTP servers: the list (minus secrets) as JSON in
-/// Application Support, and each password in the Keychain. Thread-safe.
 public final class SFTPConnectionStore: @unchecked Sendable {
 
     public static let shared = SFTPConnectionStore()
 
-    /// Injected credential store (``CredentialManaging``) and a test-override base directory; both
-    /// default to production behaviour so `SFTPConnectionStore()` and `.shared` are unchanged.
     private let keychain: any CredentialManaging
     private let directoryOverride: URL?
     private let lock = NSLock()
@@ -26,7 +22,6 @@ public final class SFTPConnectionStore: @unchecked Sendable {
         self.directoryOverride = directory
     }
 
-    /// All saved connections, newest first is not implied — insertion order.
     public func load() -> [SFTPConnection] {
         lock.lock(); defer { lock.unlock() }
         guard let data = try? Data(contentsOf: fileURL),
@@ -36,8 +31,7 @@ public final class SFTPConnectionStore: @unchecked Sendable {
         return list
     }
 
-    /// Insert or replace a connection; nil `password` keeps the stored secret, "" clears it. Returns
-    /// what happened to the *secrets* — only the Keychain half can be refused, and refusal is retryable.
+    /// nil `password` keeps the stored secret; "" clears it. Same rule for `keyPassphrase`.
     @discardableResult
     public func save(_ connection: SFTPConnection, password: String?,
                      keyPassphrase: String? = nil) -> CredentialWrite {
@@ -55,12 +49,9 @@ public final class SFTPConnectionStore: @unchecked Sendable {
         }
         lock.unlock()
 
-        // Keychain is keyed by `credentialKey` (user@host:port) from mutable fields, so an edit moves
-        // the key: migrate then delete, or blank-password edits orphan the secret and break the login.
+        // `credentialKey` is built from mutable fields, so an edit moves it — migrate or orphan the secret.
         let keyChanged = previous.map { $0.credentialKey != connection.credentialKey } ?? false
 
-        // Worst outcome across every secret written, preferring `denied` — it is
-        // the retryable one, so it is what the UI should offer to repeat.
         var deniedStatus: Int32?
         var failedStatus: Int32?
         func note(_ write: CredentialWrite) {
@@ -71,8 +62,7 @@ public final class SFTPConnectionStore: @unchecked Sendable {
             }
         }
 
-        /// Write `secret` under the connection's key, dropping the stale entry only once the new one
-        /// is in place — deleting first means a refused Keychain prompt destroys the only copy.
+        /// Store then delete, never the reverse: a refused Keychain prompt would destroy the only copy.
         func migrate(secret: String?, newKey: String, oldKey: String?) {
             if let secret {
                 let write = keychain.storeCredential(username: connection.username,
@@ -83,7 +73,6 @@ public final class SFTPConnectionStore: @unchecked Sendable {
                 }
                 return
             }
-            // Secret untouched but its key moved: carry the stored value over.
             guard let oldKey, oldKey != newKey else { return }
             switch keychain.lookupCredential(forHost: oldKey) {
             case .found(_, let stored):
@@ -93,8 +82,7 @@ public final class SFTPConnectionStore: @unchecked Sendable {
                 if write.didStore { keychain.removeCredential(host: oldKey) }
             case .notFound:
                 break
-            // Can't read the old secret, so we cannot migrate it — but crucially
-            // we also do NOT delete it. Report so the user can retry.
+            // Old secret unreadable: report it, but do NOT delete — it is the only copy.
             case .denied(let s): deniedStatus = deniedStatus ?? s
             case .failed(let s): failedStatus = failedStatus ?? s
             }
@@ -108,8 +96,6 @@ public final class SFTPConnectionStore: @unchecked Sendable {
                     oldKey: keyChanged ? previous?.credentialKey : nil)
         }
 
-        // Key passphrase follows the password rules: nil keeps what is stored, "" clears it, and a
-        // moved credentialKey migrates it so an edited host/user doesn't orphan the secret.
         if let keyPassphrase, keyPassphrase.isEmpty {
             keychain.removeCredential(host: connection.keyPassphraseKey)
             if keyChanged, let previous { keychain.removeCredential(host: previous.keyPassphraseKey) }
@@ -139,30 +125,23 @@ public final class SFTPConnectionStore: @unchecked Sendable {
         }
     }
 
-    /// The stored password, if any. A Keychain refusal is indistinguishable from "none stored" — use
-    /// ``passwordLookup(for:)`` when that matters (it does before reporting an auth failure).
+    /// A Keychain refusal is indistinguishable from "none stored" — use ``passwordLookup(for:)``.
     public func password(for connection: SFTPConnection) -> String? {
         passwordLookup(for: connection).password
     }
 
-    /// The stored passphrase for the connection's private key, if any.
     public func keyPassphrase(for connection: SFTPConnection) -> String? {
         keyPassphraseLookup(for: connection).password
     }
 
-    /// The stored password including *why* it is missing, so a denied Keychain prompt can be reported
-    /// and retried instead of being mistaken for a wrong password.
     public func passwordLookup(for connection: SFTPConnection) -> CredentialLookup {
         keychain.lookupCredential(forHost: connection.credentialKey)
     }
 
-    /// The key passphrase including *why* it is missing. See ``passwordLookup(for:)``.
     public func keyPassphraseLookup(for connection: SFTPConnection) -> CredentialLookup {
         keychain.lookupCredential(forHost: connection.keyPassphraseKey)
     }
 
-    /// Password lookup by the `user@host:port` key (used by the engine when it
-    /// only has an `sftp://` URL to work from).
     public func password(user: String, host: String, port: Int) -> String? {
         keychain.credential(forHost: "\(user)@\(host):\(port)")?.password
     }

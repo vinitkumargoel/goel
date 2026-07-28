@@ -1,10 +1,7 @@
 import AppKit
 
-/// Watches the pasteboard (polling `changeCount` on a 1.2s timer, as macOS has no notification)
-/// and reports newly-copied text. The baseline is seeded at init, so launch contents never fire.
 @MainActor
 final class ClipboardMonitor {
-    /// Whether copies should be reported. Synced from the user setting.
     var isEnabled: Bool
 
     private let onText: (String) -> Void
@@ -19,11 +16,9 @@ final class ClipboardMonitor {
 
     func start() {
         guard timer == nil else { return }
-        // Build unscheduled and add in `.common` so it keeps firing while menus or
-        // sheets track the run loop (scheduledTimer would only register `.default`).
+        // Added in `.common` so it keeps firing while menus or sheets track the run loop; scheduledTimer registers only `.default`.
         let timer = Timer(timeInterval: 1.2, repeats: true) { [weak self] _ in
-            // Bound here rather than `self?.` inside the Task: a capture list makes `self` a var, which
-            // older toolchains refuse to read from concurrent code.
+            // Bound here rather than `self?.` inside the Task: a capture list makes `self` a var, which older toolchains refuse to read from concurrent code.
             guard let self else { return }
             Task { @MainActor in self.poll() }
         }

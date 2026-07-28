@@ -3,15 +3,12 @@ import Network
 import SwiftUI
 import GoelCore
 
-// Server-status diagnostics go through ``GoelLog/app``: a failure here is non-fatal, so the
-// "why" goes to the unified log — and the hostname travels as a `.private` field.
+// Hostnames reach the unified log only as `.private` fields.
 
-/// Live reachability + lightweight metadata for a saved SFTP server. Reachability and IP are
-/// deliberately unauthenticated (TCP connect + DNS); only OS detection authenticates, and lazily.
 enum ServerReachability: Equatable {
-    case unknown   // not yet probed
-    case online    // TCP connect to the SSH port succeeded
-    case offline   // connect failed / timed out
+    case unknown
+    case online
+    case offline
 
     var tint: Color {
         switch self {
@@ -30,30 +27,18 @@ enum ServerReachability: Equatable {
     }
 }
 
-/// Everything the sidebar knows about one server beyond its saved fields.
 struct ServerMeta: Equatable {
     var reachability: ServerReachability = .unknown
-    /// The resolved numeric address, e.g. "192.168.1.20".
     var ip: String?
-    /// Round-trip time of the last successful TCP connect, in milliseconds.
     var latencyMS: Int?
-    /// Why the last probe read as offline (e.g. "Connection refused", "Timed
-    /// out"), for the sidebar tooltip. Nil when online or not yet probed.
     var offlineDetail: String?
-    /// The detected operating system, once a browser session has read it.
     var os: ServerOS?
 }
 
-/// A detected server OS, parsed from `/etc/os-release`. Real distro logos would need bundled
-/// assets; for now the common ones map to a tint + generic SF Symbol plus the `pretty` name.
 struct ServerOS: Equatable {
-    /// The `os-release` `ID`, lowercased — "ubuntu", "debian", "alpine", …
     var id: String
-    /// `PRETTY_NAME` when present, e.g. "Ubuntu 22.04.3 LTS"; else a titrecased id.
     var pretty: String
 
-    /// A short chip label: the pretty name with the "GNU/Linux" token dropped (Debian/Kali carry it
-    /// mid-string) and doubled spaces collapsed, so the sidebar chip stays compact.
     var label: String {
         pretty
             .replacingOccurrences(of: "GNU/Linux ", with: "")
@@ -85,8 +70,6 @@ struct ServerOS: Equatable {
         }
     }
 
-    /// Parse the contents of an `/etc/os-release` file. Returns nil when neither an
-    /// `ID` nor a `PRETTY_NAME` is present (so a wrong/empty file isn't shown).
     static func parse(osRelease text: String) -> ServerOS? {
         var values: [String: String] = [:]
         for rawLine in text.split(whereSeparator: \.isNewline) {
@@ -94,16 +77,14 @@ struct ServerOS: Equatable {
             guard !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { continue }
             let key = String(line[line.startIndex..<eq]).trimmingCharacters(in: .whitespaces)
             var value = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
-            // Strip one layer of surrounding quotes (os-release quotes values with spaces). A file
-            // truncated mid-value may lack the closing quote, so drop a dangling opener rather than render it.
+            // The else branch catches a truncated os-release whose closing quote is missing.
             if value.count >= 2, let first = value.first, (first == "\"" || first == "'"),
                value.last == first {
                 value = String(value.dropFirst().dropLast())
             } else if let first = value.first, first == "\"" || first == "'" {
                 value = String(value.dropFirst())
             }
-            // Untrusted, server-supplied text rendered in the sidebar — cap it so a
-            // malformed/hostile os-release can't produce an absurdly long chip.
+            // Untrusted server-supplied text rendered in the sidebar — cap the length.
             values[key] = String(value.prefix(200))
         }
         let id = (values["ID"] ?? "").lowercased()
@@ -114,14 +95,9 @@ struct ServerOS: Equatable {
     }
 }
 
-// MARK: - Unauthenticated reachability + DNS
-
-/// A one-shot TCP reachability + DNS-resolution probe for the sidebar's live indicator. No SSH
-/// handshake, no auth — just "is the port answering, and what does the host resolve to".
 enum SFTPReachability {
 
-    /// Connect to `host:port` over TCP and report whether it became ready within
-    /// `timeout`, plus the round-trip time on success. Never authenticates.
+    /// Never authenticates — TCP connect only.
     static func probe(host: String, port: Int, timeout: TimeInterval = 4) async
         -> (reachable: Bool, latencyMS: Int?, detail: String?) {
         guard !host.isEmpty else { return (false, nil, "No host") }
@@ -145,21 +121,18 @@ enum SFTPReachability {
                 switch state {
                 case .ready: finish(true, nil)
                 case .failed(let error): finish(false, reason(error))
-                case .cancelled: finish(false, nil)   // our own cancel loses the claim race
+                case .cancelled: finish(false, nil)
                 default: break
                 }
             }
             conn.start(queue: .global(qos: .utility))
-            // A hard deadline: `NWConnection` can sit in `.preparing` for a long
-            // time behind a black-hole firewall, so cap the wait ourselves.
+            // `NWConnection` sits in `.preparing` forever behind a black-hole firewall.
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
                 finish(false, "No response (timed out)")
             }
         }
     }
 
-    /// A short, human reason for a failed TCP connect, so the sidebar can tell a
-    /// refused port apart from an unreachable host apart from a DNS failure.
     private static func reason(_ error: NWError) -> String {
         switch error {
         case .posix(let code):
@@ -174,13 +147,10 @@ enum SFTPReachability {
         }
     }
 
-    /// Resolve `host` to a numeric address string (IPv4 preferred); the input unchanged if already
-    /// an IP literal, nil if unresolvable. Runs the blocking `getaddrinfo` off the calling actor.
     static func resolveIP(host: String, timeout: TimeInterval = 4) async -> String? {
         guard !host.isEmpty else { return nil }
         let once = OnceFlag()
-        // Race the blocking lookup against a deadline: `getaddrinfo` has no timeout, so a hung resolver
-        // would pin a thread and stall the 20s sweep. On timeout the caller keeps its last good IP.
+        // `getaddrinfo` has no timeout; without this deadline a hung resolver pins a thread.
         return await withCheckedContinuation { cont in
             Task.detached(priority: .utility) {
                 let ip = blockingResolveIP(host)
@@ -192,8 +162,7 @@ enum SFTPReachability {
         }
     }
 
-    /// The blocking `getaddrinfo` lookup (IPv4 preferred). Returns the input unchanged for an IP
-    /// literal, or nil if the host can't resolve. Must run off the calling actor.
+    /// Blocking — must run off the calling actor.
     private static func blockingResolveIP(_ host: String) -> String? {
         var hints = addrinfo(ai_flags: 0, ai_family: AF_UNSPEC, ai_socktype: SOCK_STREAM,
                              ai_protocol: 0, ai_addrlen: 0, ai_canonname: nil,
@@ -214,8 +183,8 @@ enum SFTPReachability {
             if getnameinfo(current.pointee.ai_addr, current.pointee.ai_addrlen,
                            &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) == 0 {
                 let ip = String(cString: buffer)
-                if current.pointee.ai_family == AF_INET { return ip }  // prefer IPv4
-                if best == nil { best = ip }                            // keep an IPv6 fallback
+                if current.pointee.ai_family == AF_INET { return ip }
+                if best == nil { best = ip }
             }
             node = current.pointee.ai_next
         }
@@ -223,12 +192,9 @@ enum SFTPReachability {
     }
 }
 
-/// A thread-safe "resume exactly once" latch for a `withCheckedContinuation` whose
-/// completion can arrive from several callbacks (state handler + timeout).
 private final class OnceFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var done = false
-    /// True the first time it's called, false every time after.
     func claim() -> Bool {
         lock.lock(); defer { lock.unlock() }
         if done { return false }

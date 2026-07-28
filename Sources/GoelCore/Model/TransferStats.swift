@@ -1,7 +1,5 @@
 import Foundation
 
-/// Lifetime and per-day transfer accounting, persisted alongside the settings. Fed by the manager from engine
-/// progress deltas, rendered by the Statistics window; days beyond the retention horizon are pruned on write.
 public struct TransferStats: Codable, Sendable, Equatable {
 
     public struct DayTotals: Codable, Sendable, Equatable {
@@ -17,7 +15,6 @@ public struct TransferStats: Codable, Sendable, Equatable {
     public var totalUploadedBytes: Int64
     public var completedCount: Int
 
-    /// Daily totals keyed "yyyy-MM-dd" (local calendar), last ``retentionDays``.
     public var perDay: [String: DayTotals]
 
     public static let retentionDays = 30
@@ -30,7 +27,6 @@ public struct TransferStats: Codable, Sendable, Equatable {
         self.perDay = perDay
     }
 
-    /// Fold a transfer delta into the lifetime and daily buckets.
     public mutating func record(down: Int64, up: Int64, date: Date = Date()) {
         guard down > 0 || up > 0 else { return }
         totalDownloadedBytes += max(0, down)
@@ -43,13 +39,10 @@ public struct TransferStats: Codable, Sendable, Equatable {
         prune(reference: date)
     }
 
-    /// Today's totals (zero when nothing moved yet).
     public func today(_ date: Date = Date()) -> DayTotals {
         perDay[Self.dayKey(for: date)] ?? DayTotals()
     }
 
-    /// The last `count` days as (dayKey, totals), oldest first, including empty
-    /// days — a ready-to-render series for the mini chart.
     public func lastDays(_ count: Int, endingAt date: Date = Date()) -> [(day: String, totals: DayTotals)] {
         let calendar = Calendar.current
         return (0..<count).reversed().compactMap { offset in

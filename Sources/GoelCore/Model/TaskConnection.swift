@@ -1,30 +1,20 @@
 import Foundation
 
-/// One live connection in a task — HTTP segment or torrent peer — as reported for the detail panel's
-/// Connections/Progress tabs. Purely observational: rendered verbatim, nothing schedules off them.
 public struct TaskConnection: Codable, Sendable, Equatable, Hashable, Identifiable {
-    /// Stable identity within one task (segment index, or peer "ip:port").
     public var id: String
 
-    /// Primary label — "Segment 3" for HTTP, "185.21.216.4:51413" for a peer.
     public var label: String
 
-    /// Secondary detail — a byte range ("512 MB – 1.0 GB") or a peer's client
-    /// ("qBittorrent 4.6.2").
     public var detail: String
 
     public var downloadSpeed: Double   // bytes/sec
     public var uploadSpeed: Double     // bytes/sec
 
-    /// Fraction of this connection's work completed (segment progress, or the
-    /// remote peer's own completeness). 0…1.
     public var progress: Double
 
-    /// Network adapter carrying this connection (multi-path HTTP), e.g. `en0`.
     /// Optional for backward-compatible decode of older snapshots.
     public var adapterId: String?
 
-    /// Display label for the adapter (e.g. `Wi‑Fi`).
     public var adapterLabel: String?
 
     public init(id: String, label: String, detail: String,
@@ -43,19 +33,13 @@ public struct TaskConnection: Codable, Sendable, Equatable, Hashable, Identifiab
     }
 }
 
-/// Facts about the remote HTTP server, captured from the probe/first response
-/// so the Details tab shows real headers instead of placeholders.
 public struct RemoteInfo: Codable, Sendable, Equatable, Hashable {
-    /// The `Server` response header, if the server sent one.
     public var server: String?
 
-    /// The entity tag validating resumes, if any.
     public var etag: String?
 
-    /// Whether the server advertised `Accept-Ranges: bytes` (segmentation works).
     public var acceptRanges: Bool?
 
-    /// The `Content-Type` the server reported.
     public var mimeType: String?
 
     public init(server: String? = nil, etag: String? = nil,

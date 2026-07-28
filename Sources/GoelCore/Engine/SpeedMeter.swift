@@ -1,11 +1,7 @@
 import Foundation
 
-/// Sliding-window average behind every displayed transfer rate: fed *monotonic byte counters*, not the
-/// jittery 100–200 ms `EngineEvent.progress` rates, and averaged over ``defaultWindow`` seconds.
 public struct SpeedMeter: Sendable {
 
-    /// A ↓/↑ rate pair in bytes/sec. Single-direction transfers (SFTP browser
-    /// uploads/downloads) use the `down` channel and ignore `up`.
     public struct Reading: Equatable, Sendable {
         public var down: Double
         public var up: Double
@@ -16,12 +12,8 @@ public struct SpeedMeter: Sendable {
         }
     }
 
-    /// Averaging horizon: long enough to flatten burst noise, short enough that a real rate
-    /// change shows within a couple of display refreshes.
     public static let defaultWindow: TimeInterval = 3
 
-    /// Below this much elapsed history a rate is not yet meaningful — report
-    /// zero rather than extrapolate a single burst into a headline number.
     static let minimumSpan: TimeInterval = 0.5
 
     private struct Sample: Sendable {
@@ -37,24 +29,21 @@ public struct SpeedMeter: Sendable {
         self.window = window
     }
 
-    /// Record the latest **absolute** byte counters. A counter drop or wall-clock rewind means a
-    /// restart — the window resets so the rate never reads negative or spans two attempts.
+    /// Takes **absolute** counters; a drop or clock rewind resets the window so rates never go negative.
     public mutating func record(down: Int64, up: Int64 = 0, at now: Date) {
         if let last = samples.last,
            down < last.down || up < last.up || now < last.time {
             samples.removeAll(keepingCapacity: true)
         }
         samples.append(Sample(time: now, down: down, up: up))
-        // Trim to the window, always keeping one sample at/behind the boundary
-        // so the average spans the full window once enough history exists.
+        // Keep one sample at/behind the boundary, else the average spans less than the full window.
         let cutoff = now.addingTimeInterval(-window)
         while samples.count > 2, samples[1].time <= cutoff {
             samples.removeFirst()
         }
     }
 
-    /// Average rate over the retained window; `.zero` until ``minimumSpan`` of history exists. The span
-    /// runs to `now`, so a caller polling through a stall sees the rate decay rather than freeze.
+    /// Span runs to `now`, not `newest.time` — deliberate, so a stall decays instead of freezing.
     public func reading(at now: Date) -> Reading {
         guard let oldest = samples.first, let newest = samples.last else { return .zero }
         let span = now.timeIntervalSince(oldest.time)

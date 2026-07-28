@@ -1,22 +1,13 @@
 import Foundation
 
-/// Pure decision core of the remote-access server: ``RemoteRequest`` → HTTP response, **no socket, no
-/// FileHandle**, so it is unit-testable. ``RemoteControlServer`` owns I/O, sessions and `sessionAuthed`.
 public struct RemoteRouter: Sendable {
 
-    /// Everything the router needs to render and gate a request, snapshotted from
-    /// ``AppSettings`` when the server (re)starts.
     public struct Config: Sendable {
-        /// Bearer/query token for scripts and the browser extension.
         public var token: String
-        /// When false, the portal is open (no login) — only sane on a loopback bind.
+        /// When false the portal is open (no login) — only sane on a loopback bind.
         public var requireAuth: Bool
-        /// Serve view/stream only; every mutating route returns 403.
         public var readOnly: Bool
-        /// The portal's default theme token (e.g. `"frost-dark"`). A browser may
-        /// override it locally; this is the first-load default.
         public var theme: String
-        /// Login username, echoed to the portal so it can greet the user.
         public var username: String
 
         public init(token: String, requireAuth: Bool = true, readOnly: Bool = false,
@@ -29,12 +20,9 @@ public struct RemoteRouter: Sendable {
         }
     }
 
-    /// The narrow seam onto the scheduler — exactly the calls the remote API makes.
-    /// ``DownloadManager`` conforms with a tiny adapter (see below).
     public let backend: RemoteBackend?
     public let config: Config
 
-    /// Convenience token accessor (several sites and tests still think in "token").
     public var token: String { config.token }
 
     public init(backend: RemoteBackend?, config: Config) {
@@ -42,14 +30,11 @@ public struct RemoteRouter: Sendable {
         self.config = config
     }
 
-    /// Back-compat init used by tests and any token-only caller. Defaults to
-    /// `requireAuth: true` so a non-empty token still gates every request.
+    /// Must default to `requireAuth: true`, or a token-only caller gets an ungated router.
     public init(backend: RemoteBackend?, token: String) {
         self.init(backend: backend, config: Config(token: token))
     }
 
-    /// Exact HTTP response bytes for every non-streaming, non-login route. `sessionAuthed` is the
-    /// server's verdict on the session cookie; login/logout and the cookie stay with the server.
     public func handle(_ request: RemoteRequest, sessionAuthed: Bool = false) async -> Data {
         guard authorize(request, sessionAuthed: sessionAuthed) else {
             return Self.response(status: "401 Unauthorized", type: "text/plain",
@@ -60,26 +45,23 @@ public struct RemoteRouter: Sendable {
                                  body: Data("Shutting down\n".utf8))
         }
 
-        // Cross-site write protection: SameSite=Strict covers signed-in sessions, but an open portal
-        // authorises everyone, so a present-but-foreign `Origin` is refused. No defence vs DNS rebinding.
+        // SameSite=Strict covers sessions, but an open portal authorises everyone — refuse foreign Origins.
         guard Self.crossSiteWriteAllowed(request) else {
             return Self.forbidden("Cross-site request refused.")
         }
 
-        // Read-only mode disables every state change (all mutations are POSTs).
+        // Read-only relies on every mutation being a POST.
         if config.readOnly, request.method == "POST" {
             return Self.forbidden("Read-only mode — changes are disabled from the web.")
         }
 
         switch (request.method, request.path) {
 
-        // MARK: Pages & meta
         case ("GET", "/"):
             return Self.response(status: "200 OK", type: "text/html; charset=utf-8",
                                  body: Data(Self.page(config: config).utf8))
 
-        // Also reachable ahead of the auth gate (see `staticAsset`); handled here
-        // too so the router is complete on its own and testable in isolation.
+        // Assets are also served ahead of the auth gate — see `staticAsset`.
         case ("GET", let path) where path.hasPrefix(Self.assetPrefix):
             return Self.staticAsset(path: path) ?? Self.notFound()
 
@@ -87,7 +69,6 @@ public struct RemoteRouter: Sendable {
             return Self.json(ConfigRow(username: config.username, readOnly: config.readOnly,
                                        requireAuth: config.requireAuth, theme: config.theme))
 
-        // MARK: Reads
         case ("GET", "/api/tasks"):
             let rows = await backend.taskSnapshot().map(TaskRow.init)
             return Self.json(rows)
@@ -101,7 +82,6 @@ public struct RemoteRouter: Sendable {
             let rows = await backend.history(limit: 500).map(HistoryRow.init)
             return Self.json(rows)
 
-        // MARK: Queue mutations
         case ("POST", "/api/pause-all"):
             await backend.pauseAll(); return Self.ok()
 
@@ -138,15 +118,13 @@ public struct RemoteRouter: Sendable {
             guard let payload = try? JSONDecoder().decode(AddPayload.self, from: request.body)
             else { return Self.badRequest() }
             let folder = payload.folder?.trimmingCharacters(in: .whitespaces)
-            // Refuse an unwritable folder rather than quietly saving elsewhere: a client told "added"
-            // may assume it landed where asked. ``DownloadManager/remoteSaveDirectory(_:)`` backstops.
+            // Refuse an unwritable folder rather than quietly saving elsewhere.
             if let folder, !folder.isEmpty, await backend.remoteSaveDirectoryAllowed(folder) == false {
                 return Self.forbidden("That save folder cannot be written to — it does not exist, is not a folder, or this user has no permission for it.")
             }
             let priority = Self.priority(payload.priority)
             let paused = payload.paused ?? false
-            // Refuse a malformed spec rather than silently downgrading to `auto`:
-            // "I picked one interface and it used both" is the wrong surprise.
+            // Refuse a malformed spec rather than silently downgrading to `auto`.
             var network: NetworkSelection?
             if let raw = payload.network, !raw.isEmpty {
                 guard let parsed = NetworkSelection(spec: raw) else {
@@ -158,8 +136,7 @@ public struct RemoteRouter: Sendable {
                 .split(whereSeparator: \.isNewline)
                 .compactMap { DownloadSource.parse(String($0).trimmingCharacters(in: .whitespaces)) }
             guard !sources.isEmpty else { return Self.badRequest() }
-            // SSRF guard: a caller-supplied URL must not steer this host at loopback or cloud-metadata.
-            // Screened by resolved address, not spelling (`localtest.me`); magnets have no fetchable host.
+            // SSRF guard, by resolved address not spelling: no steering this host at loopback/metadata.
             var refused = 0
             var allowed: [DownloadSource] = []
             for source in sources {
@@ -183,8 +160,6 @@ public struct RemoteRouter: Sendable {
             }
             return Self.json(CountRow(added: allowed.count, refused: refused))
 
-        // MARK: Save-folder picker
-        // Browsing beats a typed absolute path; bounded by the server uid — see ``SaveFolderBrowser``.
         case ("GET", "/api/folders"):
             guard let listing = await backend.folderListing(request.query["path"]) else {
                 return Self.notFound("That folder does not exist, or is not a folder.")
@@ -194,8 +169,7 @@ public struct RemoteRouter: Sendable {
         case ("POST", "/api/folder"):
             guard let payload = try? JSONDecoder().decode(NewFolderPayload.self, from: request.body)
             else { return Self.badRequest() }
-            // Reject rather than silently sanitise: `PathSafety.sanitizedName` falls back to "download",
-            // creating a folder the user did not ask for or name, for what is plainly a bad request.
+            // Reject, never sanitise: `PathSafety.sanitizedName` would repair a typed "../" into "download".
             let name = payload.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard Self.isPlainFolderName(name) else {
                 return Self.badRequest("A folder name cannot be empty, contain “/”, or begin with a dot.")
@@ -206,7 +180,6 @@ public struct RemoteRouter: Sendable {
             }
             return Self.json(NewFolderRow(path: created))
 
-        // MARK: Network
         case ("GET", "/api/network"):
             return Self.json(await backend.networkState())
 
@@ -222,11 +195,8 @@ public struct RemoteRouter: Sendable {
             await backend.updateAggregation(enabled: payload.aggregation,
                                             adapterIds: payload.adapters,
                                             streams: payload.streams)
-            // Echo the resulting state so the UI shows what the server decided —
-            // including a reason the change did not switch aggregation on.
             return Self.json(await backend.networkState())
 
-        // MARK: History mutations
         case ("POST", "/api/history-remove"):
             guard let id = queryID(request) else { return Self.badRequest() }
             await backend.removeHistoryEntry(id); return Self.ok()
@@ -238,8 +208,7 @@ public struct RemoteRouter: Sendable {
 
     static let assetPrefix = "/assets/"
 
-    /// Compiled UI, deliberately served ahead of the auth gate: the login page needs its styles, and the
-    /// bundle is secret-free. Dict lookup, so no traversal; hashed names make the year-long cache safe.
+    /// Deliberately ahead of the auth gate (the login page needs styles); dict lookup, so no traversal.
     static func staticAsset(path: String) -> Data? {
         guard path.hasPrefix(assetPrefix) else { return nil }
         let name = String(path.dropFirst(assetPrefix.count))
@@ -248,8 +217,7 @@ public struct RemoteRouter: Sendable {
                         extraHeaders: ["Cache-Control": "public, max-age=31536000, immutable"])
     }
 
-    /// Access check shared by the JSON API and the streaming loops: a valid session cookie (the server's
-    /// verdict) passes, else an open portal (`requireAuth == false`), else a matching bearer/query token.
+    /// Auth order: session cookie, then open portal, then constant-time bearer/query token.
     public func authorize(_ request: RemoteRequest, sessionAuthed: Bool = false) -> Bool {
         if sessionAuthed { return true }
         if !config.requireAuth { return true }
@@ -260,16 +228,14 @@ public struct RemoteRouter: Sendable {
         return Self.constantTimeEquals(query, config.token)
     }
 
-    /// Whether a POST may proceed given its `Origin`: absent = no browser (scripts/extension), foreign =
-    /// cross-site write. `X-Forwarded-Host` counts too (proxies leave `Host` upstream); no preflight, so safe.
+    /// Absent `Origin` = no browser; foreign = cross-site write. `X-Forwarded-Host` counts (proxies keep `Host`).
     static func crossSiteWriteAllowed(_ request: RemoteRequest) -> Bool {
         guard request.method == "POST", let origin = request.headers["origin"] else { return true }
         return originMatchesHost(origin, host: request.headers["host"])
             || originMatchesHost(origin, host: request.headers["x-forwarded-host"])
     }
 
-    /// Whether `origin` names the same authority the request was addressed to. Scheme is ignored: the
-    /// `Host` header carries none, and the socket only ever speaks one scheme.
+    /// Scheme is deliberately ignored: `Host` carries none and the socket speaks only one scheme.
     static func originMatchesHost(_ origin: String, host: String?) -> Bool {
         guard let host = host?.trimmingCharacters(in: .whitespaces).lowercased(), !host.isEmpty,
               let url = URL(string: origin.trimmingCharacters(in: .whitespaces)),
@@ -278,8 +244,6 @@ public struct RemoteRouter: Sendable {
         return originHost == host
     }
 
-    /// One SSE frame (`data: <json>\n\n`) for the live event stream, or nil when the snapshot could not
-    /// be encoded — see ``json(_:)`` for why that is not downgraded into an empty list.
     public func eventFrame(for tasks: [DownloadTask]) -> Data? {
         let rows = tasks.map(TaskRow.init)
         guard let json = try? JSONEncoder().encode(rows) else { return nil }
@@ -289,8 +253,7 @@ public struct RemoteRouter: Sendable {
         return frame
     }
 
-    /// Length-leaking-only comparison: every byte is examined regardless of the first mismatch, so
-    /// response timing can't be used to guess the token/hash prefix-by-prefix.
+    /// Every byte is examined regardless of mismatch — response timing must not leak the token prefix.
     public static func constantTimeEquals(_ a: String, _ b: String) -> Bool {
         let lhs = Array(a.utf8)
         let rhs = Array(b.utf8)
@@ -299,8 +262,6 @@ public struct RemoteRouter: Sendable {
         for i in 0..<lhs.count { difference |= lhs[i] ^ rhs[i] }
         return difference == 0
     }
-
-    // MARK: Query helpers
 
     private func queryID(_ request: RemoteRequest) -> UUID? {
         request.query["id"].flatMap(UUID.init(uuidString:))
@@ -315,15 +276,13 @@ public struct RemoteRouter: Sendable {
         return value == "1" || value == "true" || value == "yes" || value == "on"
     }
 
-    /// A single path component that names a folder and nothing else — stricter than
-    /// ``PathSafety/sanitizedName(_:fallback:)``: repairing a typed "../" into "download" is worse than no.
+    /// One path component only — deliberately stricter than ``PathSafety/sanitizedName(_:fallback:)``.
     static func isPlainFolderName(_ name: String) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.utf8.count <= 240 else { return false }
         guard !trimmed.hasPrefix(".") else { return false }
         guard !trimmed.contains("/"), !trimmed.contains("\\") else { return false }
-        // Control characters and NUL would produce a path the user cannot read
-        // back or re-select in the picker.
+        // Control characters and NUL would produce a path the user cannot read back or re-select.
         guard trimmed.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
         else { return false }
         return true
@@ -337,8 +296,6 @@ public struct RemoteRouter: Sendable {
         default: return .normal
         }
     }
-
-    // MARK: Response building
 
     static func ok() -> Data {
         response(status: "200 OK", type: "application/json", body: Data("{\"ok\":true}".utf8))
@@ -358,8 +315,7 @@ public struct RemoteRouter: Sendable {
 
     static func json<T: Encodable>(_ value: T) -> Data {
         guard let body = try? JSONEncoder().encode(value) else {
-            // Only fails on a non-finite Double from an engine bridge. `null` with a 200 made an empty
-            // library indistinguishable from a wiped one, so say it failed instead.
+            // Never downgrade to `null` + 200: that made an empty library look like a wiped one.
             GoelLog.remote.error("Remote API response could not be encoded")
             return response(status: "500 Internal Server Error", type: "text/plain",
                             body: Data("Could not encode the response\n".utf8))
@@ -372,13 +328,11 @@ public struct RemoteRouter: Sendable {
         var head = "HTTP/1.1 \(status)\r\n"
         head += "Content-Type: \(type)\r\n"
         head += "Content-Length: \(body.count)\r\n"
-        // `no-store` is the right default for dynamic responses, but hashed assets must override it —
-        // emitting both would leave caching up to whichever header the client reads last.
+        // Emit only one Cache-Control: with both, caching is up to whichever header the client reads last.
         if extraHeaders["Cache-Control"] == nil {
             head += "Cache-Control: no-store\r\n"
         }
-        // CSP defense-in-depth: /assets/ is content-addressed so 'self' suffices and inline execution is
-        // refused outright — the portal renders download names, tracker hosts and errors from off-machine.
+        // CSP: the portal renders download names, tracker hosts and errors that came from off-machine.
         head += "Content-Security-Policy: default-src 'none'; script-src 'self'; "
         head += "style-src 'self'; img-src 'self' data:; media-src 'self'; "
         head += "connect-src 'self'; form-action 'self'; base-uri 'none'\r\n"
@@ -390,14 +344,11 @@ public struct RemoteRouter: Sendable {
         return Data(head.utf8) + body
     }
 
-    // MARK: Wire models
-
     private struct AddPayload: Decodable {
         var url: String
         var folder: String?
         var priority: String?
         var paused: Bool?
-        /// A ``NetworkSelection`` spec ("auto", "single:eth0", "aggregate:a,b").
         var network: String?
     }
 
@@ -414,16 +365,13 @@ public struct RemoteRouter: Sendable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             aggregation = try c.decodeIfPresent(Bool.self, forKey: .aggregation)
             adapters = try c.decodeIfPresent([String].self, forKey: .adapters)
-            // `GET` answers with `streamsPerAdapter`, so posting that object back must work —
-            // accepting only `streams` made the field vanish silently, out-of-range value and all.
+            // `GET` answers with `streamsPerAdapter`, so posting that object back must also work.
             streams = try c.decodeIfPresent(Int.self, forKey: .streams)
                 ?? c.decodeIfPresent(Int.self, forKey: .streamsPerAdapter)
         }
     }
     private struct NewFolderPayload: Decodable {
         var name: String
-        /// Absolute path of the folder to create it in. Omitted means the
-        /// downloads root; the backend re-checks containment either way.
         var parent: String?
     }
     private struct NewFolderRow: Encodable {
@@ -432,8 +380,6 @@ public struct RemoteRouter: Sendable {
 
     private struct CountRow: Encodable {
         var added: Int
-        /// Sources dropped by the internal-address guard, so the portal can say so
-        /// rather than reporting a partial batch as a clean success.
         var refused: Int
     }
     private struct ConfigRow: Encodable {
@@ -444,13 +390,12 @@ public struct RemoteRouter: Sendable {
         var appName = "Goel°"
     }
 
-    /// Compact per-task row for the live list.
     struct TaskRow: Encodable {
         var id: String
         var name: String
-        var status: String        // display name ("Downloading")
-        var statusToken: String   // stable token ("downloading")
-        var kind: String          // "http" | "torrent" | "hls" | "ftp" | "sftp"
+        var status: String
+        var statusToken: String
+        var kind: String
         var progress: Double
         var downSpeed: Double
         var upSpeed: Double
@@ -493,7 +438,6 @@ public struct RemoteRouter: Sendable {
         }
     }
 
-    /// The full detail for the selected task (files, trackers, peers, pieces).
     struct TaskDetail: Encodable {
         var row: TaskRow
         var savePath: String
@@ -596,8 +540,6 @@ public struct RemoteRouter: Sendable {
         }
     }
 
-    // MARK: Enum → token helpers
-
     static func statusToken(_ status: DownloadStatus) -> String {
         switch status {
         case .queued: return "queued"
@@ -626,10 +568,6 @@ public struct RemoteRouter: Sendable {
     }
 }
 
-// MARK: - Request parsing
-
-/// A parsed-enough HTTP request: method, path, query, headers, body. Built from
-/// the raw connection bytes, so parsing is testable without a socket.
 public struct RemoteRequest: Sendable {
     public var method = ""
     public var path = ""
@@ -666,8 +604,7 @@ public struct RemoteRequest: Sendable {
         }
     }
 
-    /// Index just past the `\r\n\r\n` ending the headers, or nil if they haven't all arrived: lets a
-    /// socket shell keep reading until a whole request is in hand (a POST body can trail in a segment).
+    /// nil until the whole header block has arrived — a POST body can trail in a later segment.
     static func headerEnd(_ data: Data) -> Int? {
         guard data.count >= 4 else { return nil }
         let b = [UInt8](data)
@@ -679,7 +616,6 @@ public struct RemoteRequest: Sendable {
         return nil
     }
 
-    /// The `Content-Length` declared in a header block (0 if absent/malformed).
     static func contentLength(_ header: Data) -> Int {
         for line in String(decoding: header, as: UTF8.self).split(separator: "\r\n") {
             let kv = line.split(separator: ":", maxSplits: 1)
@@ -690,8 +626,6 @@ public struct RemoteRequest: Sendable {
         return 0
     }
 
-    /// Value of one cookie from the `Cookie:` header, or `nil`. Cookies are
-    /// `name=value` pairs separated by `; `.
     public func cookie(_ name: String) -> String? {
         guard let raw = headers["cookie"] else { return nil }
         for pair in raw.split(separator: ";") {
@@ -705,10 +639,6 @@ public struct RemoteRequest: Sendable {
     }
 }
 
-// MARK: - Backend port
-
-/// The set of scheduler calls the remote API needs. ``DownloadManager`` conforms
-/// via the adapter below; tests inject an in-memory fake.
 public protocol RemoteBackend: AnyObject, Sendable {
     func taskSnapshot() async -> [DownloadTask]
     func task(_ id: UUID) async -> DownloadTask?
@@ -727,23 +657,16 @@ public protocol RemoteBackend: AnyObject, Sendable {
     func history(limit: Int) async -> [HistoryEntry]
     func removeHistoryEntry(_ id: UUID) async
     func clearHistory() async
-    /// Whether a caller-supplied save folder exists, is a directory, and this uid may write to it.
-    /// Defaults to `true` for in-memory conformers; the scheduler uses ``SaveFolderBrowser/canSave(into:)``.
+    /// The default implementation returns `true` — a conformer that forgets this allows every folder.
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool
 
-    /// Live interfaces plus the current aggregation policy, for `GET /api/network`.
     func networkState() async -> RemoteNetworkState
-    /// Apply an aggregation change from the portal. nil = leave that field alone.
     func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async
-    /// Add with a per-download interface choice.
     func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
                    startPaused: Bool, network: NetworkSelection?) async
 
-    /// Subfolders of `path` for the picker; nil `path` = the configured downloads folder. Returns nil
-    /// only when the path is missing or not a directory — reach is bounded by the server uid, not a root.
+    /// Reach is bounded by the server uid, not by a root of ours.
     func folderListing(_ path: String?) async -> RemoteFolderListing?
-    /// Create `name` inside `parent` (nil = configured downloads folder), answering the new absolute
-    /// path. nil when the create failed, including having no permission to write there.
     func createFolder(named name: String, in parent: String?) async -> String?
 }
 
@@ -760,17 +683,11 @@ public extension RemoteBackend {
     }
 }
 
-/// One level of the save-folder tree for the portal's picker. Absolute paths on the wire: that is what
-/// `POST /api/add` takes. No root field — reach is the server uid's; see ``SaveFolderBrowser`` for cost.
 public struct RemoteFolderListing: Sendable, Codable, Equatable {
     public struct Entry: Sendable, Codable, Equatable {
         public var name: String
         public var path: String
-        /// False when this uid may not list the folder — the picker shows it but
-        /// will not enter it, rather than offering a click that dead-ends.
         public var readable: Bool
-        /// False when this uid may not write into it, so it cannot be chosen as a
-        /// destination.
         public var writable: Bool
 
         public init(name: String, path: String, readable: Bool = true, writable: Bool = true) {
@@ -781,24 +698,12 @@ public struct RemoteFolderListing: Sendable, Codable, Equatable {
         }
     }
 
-    /// The folder being listed.
     public var path: String
-    /// The folder above `path`, or nil at `/`.
     public var parent: String?
-    /// Immediate subfolders, name-sorted. Files are not listed: this picker only
-    /// ever answers "where should this go".
     public var folders: [Entry]
-    /// False when the folder cannot be written to, so the picker can refuse to
-    /// offer "New folder" rather than surfacing an error after the fact.
     public var writable: Bool
-    /// The server user's home directory, so the picker can label paths under it
-    /// as `~/…` instead of showing the full absolute path.
     public var home: String
-    /// The configured default save directory. Choosing exactly this means "use
-    /// the default", which the portal sends as a blank `folder`.
     public var defaultFolder: String
-    /// One-click destinations: Downloads, Home, mounted volumes, Computer.
-    /// Shortcuts only — all of them are reachable by walking up as well.
     public var places: [Entry]
 
     public init(path: String, parent: String?, folders: [Entry], writable: Bool,
@@ -813,8 +718,6 @@ public struct RemoteFolderListing: Sendable, Codable, Equatable {
     }
 }
 
-/// What the portal needs to render the network section: every interface it may
-/// bind to, which ones the current policy uses, and why it is not splitting.
 public struct RemoteNetworkState: Sendable, Codable, Equatable {
     public struct Adapter: Sendable, Codable, Equatable {
         public var name: String
@@ -822,8 +725,6 @@ public struct RemoteNetworkState: Sendable, Codable, Equatable {
         public var type: String
         public var ipv4: String?
         public var expensive: Bool
-        /// False when the interface exists but cannot be bound now (proxy/VPN policy), so the UI greys
-        /// it out instead of offering a choice that would be silently ignored.
         public var eligible: Bool
 
         public init(name: String, label: String, type: String, ipv4: String?,
@@ -840,10 +741,8 @@ public struct RemoteNetworkState: Sendable, Codable, Equatable {
     public var aggregation: Bool
     public var streamsPerAdapter: Int
     public var selected: [String]
-    /// Why aggregation is not currently running, nil when it is.
     public var reason: String?
-    /// True when `/etc/goel/config` pins `GOEL_AGGREGATION`, so a change made here
-    /// lasts only until the next restart. The portal says so rather than lying.
+    /// `/etc/goel/config` pins `GOEL_AGGREGATION` — a change made here lasts only until the next restart.
     public var locked: Bool
     public var adapters: [Adapter]
 
@@ -860,8 +759,6 @@ public struct RemoteNetworkState: Sendable, Codable, Equatable {
 }
 
 extension DownloadManager: RemoteBackend {
-    /// `snapshot` is a property and `add(source:…)` returns a task, so both need adapting; every other
-    /// requirement is already witnessed by the actor's own isolated method.
     public func taskSnapshot() async -> [DownloadTask] { snapshot }
     public func remoteAdd(source: DownloadSource) async { _ = add(source: source, saveDirectory: nil) }
     public func remoteAdd(source: DownloadSource, saveDirectory: String?,
@@ -883,8 +780,7 @@ extension DownloadManager: RemoteBackend {
         }.value
     }
 
-    // All three hop off the actor to touch the filesystem: stat-ing a large or network-mounted folder
-    // would stall every download in the scheduler. Only the settings reads happen under isolation.
+    // These must hop off the actor: stat-ing a network-mounted folder would stall every download.
     public func folderListing(_ path: String?) async -> RemoteFolderListing? {
         let defaultFolder = settings.defaultSaveDirectory
         return await Task.detached(priority: .userInitiated) {
@@ -911,8 +807,6 @@ extension DownloadManager: RemoteBackend {
             selected: settings.aggregationAdapterIds,
             reason: Self.aggregationSinglePathReason(
                 settings: settings, vpnDefaultRoute: vpnDefaultRouteActive, adapters: all)?.rawValue,
-            // The daemon's own environment is the authority — no plumbing needed, and
-            // it is empty on macOS, where the setting is never env-pinned.
             locked: ProcessInfo.processInfo.environment["GOEL_AGGREGATION"] != nil,
             adapters: all.map {
                 RemoteNetworkState.Adapter(
@@ -931,8 +825,7 @@ extension DownloadManager: RemoteBackend {
         await updateSettings(updated)
     }
 
-    /// Accept a remote save directory if this uid can write to it, else nil (per-source default).
-    /// The check is the filesystem's, not a root of ours — a real widening; see ``SaveFolderBrowser``.
+    /// The check is the filesystem's, not a root of ours — a real widening of what a remote add may write.
     func remoteSaveDirectory(_ folder: String?) -> String? {
         guard let folder = folder?.trimmingCharacters(in: .whitespacesAndNewlines),
               !folder.isEmpty else { return nil }

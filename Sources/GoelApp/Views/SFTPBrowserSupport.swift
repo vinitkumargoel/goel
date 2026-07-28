@@ -3,10 +3,6 @@ import AppKit
 import Quartz
 import GoelCore
 
-// MARK: - File-type icons
-
-/// An SF Symbol + tint for a remote entry, chosen by extension so a listing is
-/// scannable at a glance (instead of one generic doc icon for every file).
 enum SFTPFileIcon {
     enum Category { case image, video, audio, archive, code, pdf, text, disk, app, other }
 
@@ -55,10 +51,6 @@ enum SFTPFileIcon {
     }
 }
 
-// MARK: - Quick Look
-
-/// Presents a downloaded temp file in the system Quick Look panel. One shared presenter drives
-/// `QLPreviewPanel` directly, so Space peeks a remote file once it's fetched.
 final class QuickLookPresenter: NSObject, QLPreviewPanelDataSource {
     static let shared = QuickLookPresenter()
     private var url: URL?

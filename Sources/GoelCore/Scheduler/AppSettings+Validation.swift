@@ -1,13 +1,8 @@
 import Foundation
 
-// MARK: - Settings validation
-
-/// ``AppSettings/validated()`` is the single clamp on every settings value before it reaches an engine,
-/// timer, or arithmetic site: nothing else validates, so a `0` limit reads *unlimited*, 13 digits trap.
+/// The only clamp before settings reach an engine or arithmetic site — a `0` limit reads *unlimited*.
 public extension AppSettings {
 
-    /// Every numeric field clamped to the ranges spelled out below (empty `scheduleDays` becomes every
-    /// day); `language` coerces to a shipped strings table or English, bad reactions to `rename`.
     func validated() -> AppSettings {
         var s = self
         s.profiles = s.profiles.map { $0.validated() }
@@ -33,8 +28,7 @@ public extension AppSettings {
         s.auditLogRetentionDays = s.auditLogRetentionDays.clamped(to: 0...3650)
         s.auditLogKeepFiles = s.auditLogKeepFiles.clamped(to: 0...1000)
         s.auditLogMaxFileMegabytes = s.auditLogMaxFileMegabytes.clamped(to: 1...1024)
-        // Upper bound as well as lower: ffmpeg already spreads across all cores, so a hand-edited 64
-        // would spawn 64 processes that fight each other and finish the batch no sooner.
+        // Capped at 8: ffmpeg already uses every core, so more processes just fight each other.
         s.mediaConcurrency = s.mediaConcurrency.clamped(to: 1...8)
         s.language = Self.supportedLanguageName(s.language)
         if s.existingFileReaction != "rename", s.existingFileReaction != "overwrite" {
@@ -43,8 +37,6 @@ public extension AppSettings {
         return s
     }
 
-    /// The supported-language *name* a stored value resolves to: kept verbatim if in
-    /// ``L10n/supportedLanguages``, else via ``L10n/languageCode(for:)`` aliases, defaulting to English.
     private static func supportedLanguageName(_ stored: String) -> String {
         if L10n.supportedLanguages.contains(where: { $0.name == stored }) { return stored }
         let code = L10n.languageCode(for: stored)
@@ -54,8 +46,7 @@ public extension AppSettings {
 
 public extension TrafficProfile {
 
-    /// Every limit clamped: byte caps `≥ 0` (0 = unlimited, the `High` profile relies on it), seedRatio
-    /// `0…1000` with NaN/∞ → 0, and `maxSimultaneousDownloads` `1…100` so a `0` can't reach the policy.
+    /// Byte caps floor at 0 = unlimited (the `High` profile relies on it); download count floors at 1, never 0.
     func validated() -> TrafficProfile {
         var p = self
         p.maxDownloadBytesPerSec = max(0, p.maxDownloadBytesPerSec)
@@ -70,15 +61,13 @@ public extension TrafficProfile {
 }
 
 private extension Comparable {
-    /// `self` pulled into `range`. Total — no trapping, no optionals.
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
     }
 }
 
 private extension Double {
-    /// `self` pulled into `range`, substituting `fallback` for NaN/±∞ — a non-finite value has no
-    /// meaningful clamp and would poison every arithmetic site downstream.
+    /// NaN/±∞ has no meaningful clamp and would poison every arithmetic site downstream — hence `fallback`.
     func clamped(to range: ClosedRange<Double>, fallback: Double) -> Double {
         guard isFinite else { return fallback }
         return Swift.min(Swift.max(self, range.lowerBound), range.upperBound)

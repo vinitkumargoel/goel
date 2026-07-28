@@ -1,7 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Real BitTorrent engine: hermetic priority mapping + a gated live swarm test.
 final class TorrentEngineTests: XCTestCase {
 
     private var tempDir: URL!
@@ -15,8 +14,6 @@ final class TorrentEngineTests: XCTestCase {
     override func tearDownWithError() throws {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
     }
-
-    // MARK: Hermetic
 
     func testPriorityMappingRoundTrips() {
         XCTAssertEqual(TorrentEngine.toLibtorrentPriority(.skip), 0)
@@ -37,10 +34,6 @@ final class TorrentEngineTests: XCTestCase {
         XCTAssertFalse(engine.canHandle(.url(URL(string: "https://x/y.bin")!)))
     }
 
-    // MARK: Live swarm (gated)
-
-    /// Download real bytes via libtorrent: resolve metadata, connect, transfer a few MB. Gated on
-    /// `GOEL_LIVE_NET=1`. Uses Debian netinst — heavily seeded, plus an HTTP webseed for off-peak.
     func testLiveTorrentDownloadsRealBytes() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GOEL_LIVE_NET"] == "1",
                           "set GOEL_LIVE_NET=1 to run the live network test")
@@ -82,15 +75,11 @@ final class TorrentEngineTests: XCTestCase {
                                     "must transfer real bytes from the swarm/webseed (got \(maxBytes))")
     }
 
-    /// Resolve torrent metadata for the add-confirmation preview without committing a download:
-    /// name, total size, non-empty file list, no handle left behind. Gated on `GOEL_LIVE_NET=1`.
     func testResolveMetadataLive() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GOEL_LIVE_NET"] == "1",
                           "set GOEL_LIVE_NET=1 to run the live network test")
         let torrentURL = try await discoverDebianTorrent()
         let engine = TorrentEngine(profile: .high)
-        // The preview probes into a throwaway directory of its own — there is no
-        // save directory to pass, by construction.
         let meta = try await engine.resolveMetadata(for: .torrentFile(torrentURL), timeout: 60)
         let resolved = try XCTUnwrap(meta, "metadata must resolve from the .torrent")
         XCTAssertGreaterThan(resolved.totalBytes, 0)
@@ -98,8 +87,6 @@ final class TorrentEngineTests: XCTestCase {
         XCTAssertFalse(resolved.name.isEmpty)
     }
 
-    /// Scrape the current Debian netinst `.torrent` URL from the cdimage listing,
-    /// so the test survives Debian point releases.
     private func discoverDebianTorrent() async throws -> URL {
         let dir = URL(string: "https://cdimage.debian.org/debian-cd/current/amd64/bt-cd/")!
         let (data, _) = try await URLSession.shared.data(from: dir)

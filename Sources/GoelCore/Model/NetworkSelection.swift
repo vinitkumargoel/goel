@@ -1,24 +1,18 @@
 import Foundation
 
-// MARK: - Per-download network selection
-
-/// How ONE download uses the machine's interfaces, overriding ``AppSettings/aggregationEnabled``.
-/// One string grammar for JSON / `/api/add` / `--net`: `auto`, `single:wlp13s0`, `aggregate[:a,b]`.
 public enum NetworkSelection: Sendable, Equatable, Hashable {
     case auto
     case single(String)
     case aggregate([String])
 
-    /// Interface names go to `SO_BINDTODEVICE` / `IP_BOUND_IF` as C strings, so validate here, not
-    /// at the syscall: `IFNAMSIZ` is 16 including the terminator, and only these chars appear.
+    /// 15 because these names go to `SO_BINDTODEVICE` / `IP_BOUND_IF` as C strings and `IFNAMSIZ` is 16 including the terminator.
     public static func isValidInterfaceName(_ name: String) -> Bool {
         guard !name.isEmpty, name.count <= 15 else { return false }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.:"))
         return name.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
-    /// Parse the wire/CLI form; nil for anything malformed so callers report rather than silently
-    /// falling back to `auto` — "I asked for one interface and got all of them" is worth refusing.
+    /// nil for anything malformed: never silently fall back to `auto`, or a request for one interface quietly becomes all of them.
     public init?(spec raw: String) {
         let text = raw.trimmingCharacters(in: .whitespaces)
         if text.isEmpty || text.caseInsensitiveCompare("auto") == .orderedSame {
@@ -43,8 +37,6 @@ public enum NetworkSelection: Sendable, Equatable, Hashable {
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
             guard !names.isEmpty, names.allSatisfy(Self.isValidInterfaceName) else { return nil }
-            // One interface named under `aggregate` is a pin, not a fan-out. Normalising
-            // here means the engine never has to special-case a one-element "spread".
             self = names.count == 1 ? .single(names[0]) : .aggregate(names)
         default:
             return nil
@@ -61,7 +53,6 @@ public enum NetworkSelection: Sendable, Equatable, Hashable {
         }
     }
 
-    /// What to show a human.
     public var summary: String {
         switch self {
         case .auto: return "Automatic (server default)"
@@ -73,15 +64,11 @@ public enum NetworkSelection: Sendable, Equatable, Hashable {
     }
 }
 
-// MARK: - Resolving a selection against what actually exists
-
 extension AggregationPolicy {
 
     public struct NetworkResolution: Sendable, Equatable {
         /// Interfaces to bind. Empty means "do not bind" — the OS routing table decides.
         public var adapters: [BoundAdapter]
-        /// Set when the request could not be honoured verbatim. Surfaced to the user;
-        /// a cable pulled between queueing and starting must not fail the download.
         public var note: String?
 
         public init(adapters: [BoundAdapter], note: String? = nil) {
@@ -90,8 +77,6 @@ extension AggregationPolicy {
         }
     }
 
-    /// Turn a per-download `selection` into bind targets: nil/`.auto` defers to `defaultAdapters`
-    /// (what the server-wide policy would use); `available` is every currently bindable interface.
     public static func bindTargets(
         for selection: NetworkSelection?,
         defaultAdapters: [BoundAdapter],

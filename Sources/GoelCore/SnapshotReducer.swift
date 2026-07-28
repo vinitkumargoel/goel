@@ -1,17 +1,13 @@
 import Foundation
 
-/// Pure fold of a task snapshot into notifications plus the one-shot queue-drain intent. Replaces two
-/// order-dependent `@MainActor` passes whose hazard guarded a shutdown; effects go via ``SystemActions``.
 public enum SnapshotReducer {
 
     public static func reduce(_ prev: ReducerState,
                               _ snapshot: [DownloadTask],
                               _ env: ReducerEnv) -> ReducerOutput {
-        // MARK: Queue-drain edge — reads the PRE-overwrite statuses.
-        // Seeding never counts as active work (it can run indefinitely).
+        // Seeding never counts as active work — it can run indefinitely.
         let hasActiveWork = snapshot.contains { $0.status.isActiveWork }
-        // A task must have transitioned INTO `.completed` on this tick — an old completed download
-        // sitting in the list must not turn a manual "Pause All" into a system shutdown.
+        // Must be a transition INTO `.completed`, or an old finished task turns Pause All into shutdown.
         let completedThisTick = snapshot.contains { task in
             task.status == .completed && prev.lastStatuses[task.id] != .completed
         }
@@ -21,13 +17,10 @@ public enum SnapshotReducer {
             drainIntent = DrainIntent(action: env.autoShutdownAction)
         }
 
-        // MARK: Notifications — diff against the previous snapshot.
-        // First snapshot only seeds the baseline (restored tasks never fire "added"); state updates anyway.
+        // The first snapshot only seeds the baseline, or restored tasks all fire "added".
         var notifications: [AppNotification] = []
         let suppressed = env.notify.onlyWhenInactive && env.isAppActive
         if prev.hasSeenFirstSnapshot, !suppressed {
-            // A flagged antivirus verdict warrants a banner regardless of the
-            // added/completed/failed preferences — the user enabled scanning.
             for task in snapshot where task.scanVerdict == "flagged" {
                 if prev.lastScanVerdicts[task.id] != "flagged" {
                     notifications.append(.scanFlagged(task.name))
@@ -50,10 +43,8 @@ public enum SnapshotReducer {
             }
         }
 
-        // MARK: Next state — always refreshed, even when suppressed / first tick.
         var state = prev
-        // Explicit last-wins loop, never `Dictionary(uniqueKeysWithValues:)`: that TRAPS on a repeated
-        // id, and untrusted `importEnvelope` input can carry two. Mirrors `rebuildTaskIndex()`.
+        // Never `Dictionary(uniqueKeysWithValues:)`: it TRAPS on a repeated id, and imports carry those.
         var statuses: [UUID: DownloadStatus] = [:]
         var verdicts: [UUID: String] = [:]
         statuses.reserveCapacity(snapshot.count)
@@ -70,18 +61,10 @@ public enum SnapshotReducer {
     }
 }
 
-// MARK: - Value types
-
-/// The carry-over state the pump threads across ticks — the four fields the view
-/// model used to keep as separate mutable properties, now one round-tripped value.
 public struct ReducerState: Equatable, Sendable {
-    /// Per-task status from the previous snapshot (added/completed/failed edges).
     public var lastStatuses: [UUID: DownloadStatus]
-    /// Per-task antivirus verdicts from the previous snapshot (flag-once).
     public var lastScanVerdicts: [UUID: String]
-    /// Whether the previous snapshot had downloads in flight — the drain edge.
     public var lastHadActiveWork: Bool
-    /// Whether any snapshot has been seen (the first only seeds the baseline).
     public var hasSeenFirstSnapshot: Bool
 
     public init(lastStatuses: [UUID: DownloadStatus] = [:],
@@ -95,7 +78,6 @@ public struct ReducerState: Equatable, Sendable {
     }
 }
 
-/// The notification preferences the reducer gates on (mirrors `AppSettings`).
 public struct NotifyPrefs: Equatable, Sendable {
     public var onAdded, onCompleted, onFailed, onlyWhenInactive: Bool
     public init(onAdded: Bool, onCompleted: Bool, onFailed: Bool, onlyWhenInactive: Bool) {
@@ -104,7 +86,6 @@ public struct NotifyPrefs: Equatable, Sendable {
     }
 }
 
-/// The ambient, non-snapshot facts read once per tick.
 public struct ReducerEnv: Sendable {
     public var notify: NotifyPrefs
     public var isAppActive: Bool
@@ -116,8 +97,6 @@ public struct ReducerEnv: Sendable {
     }
 }
 
-/// A user notification the view model should post. The body carries the task name;
-/// the title (a UI string) is supplied by the ``SystemActions`` implementation.
 public enum AppNotification: Equatable, Sendable {
     case added(String)
     case completed(String)
@@ -125,11 +104,9 @@ public enum AppNotification: Equatable, Sendable {
     case scanFlagged(String)
 }
 
-/// The one-shot action taken when the last download finishes.
 public enum DrainIntent: Equatable, Sendable {
     case quit, sleep, shutdown
 
-    /// Map the persisted `autoShutdownAction` string; `nil` for "none"/unknown.
     public init?(action: String) {
         switch action {
         case "quit": self = .quit
@@ -142,7 +119,6 @@ public enum DrainIntent: Equatable, Sendable {
 
 public struct ReducerOutput: Equatable, Sendable {
     public let notifications: [AppNotification]
-    /// Non-nil only on the true drain edge — the reducer *decides*, the port *acts*.
     public let drainIntent: DrainIntent?
     public let state: ReducerState
 
@@ -153,10 +129,6 @@ public struct ReducerOutput: Equatable, Sendable {
     }
 }
 
-// MARK: - The one OS boundary
-
-/// The only side-effecting boundary the pump needs mocked: posting banners and the irreversible drain
-/// action, so a test can assert the shutdown edge without a real `NSApp.terminate` / `pmset`.
 public protocol SystemActions: Sendable {
     func post(_ notifications: [AppNotification], sound: Bool)
     func perform(_ intent: DrainIntent)

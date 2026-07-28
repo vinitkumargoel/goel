@@ -16,33 +16,24 @@
 #include <netinet/in.h>
 #include <pthread.h>
 
-// Per-transfer buffer. libssh2 ≥1.11 keeps packets in flight up to this size, so it is the main lever
-// against the round-trip that caps non-LAN SFTP. 256 KiB fits inside the 1 MiB transfer-thread stack.
+// libssh2 ≥1.11 keeps this much in flight; 256 KiB also fits the 1 MiB transfer-thread stack.
 #define GSB_XFER_BUF_SIZE (256 * 1024)
 
-// Longest remote path this shim will assemble. Server-supplied names are bounded
-// by the listing buffer below; the join guards against overflowing this.
+// Bound for paths built from server-supplied names — the join must never overflow it.
 #define GSB_PATH_MAX 4096
-
-// ---- one-time libssh2 init ------------------------------------------------
 
 static pthread_once_t g_once = PTHREAD_ONCE_INIT;
 static int g_init_rc = 0;
 
 static void gsb_do_init(void) { g_init_rc = libssh2_init(0); }
 
-// ---- session --------------------------------------------------------------
-
-// One authenticated connection with its SFTP channel already open. Only ever touched from a single
-// thread — libssh2 sessions are not thread-safe, and the Swift layer pins each to a dedicated thread.
+// Single-threaded by contract: libssh2 sessions are not thread-safe, Swift pins each to one thread.
 struct GSBSession {
     LIBSSH2_SESSION *session;
     LIBSSH2_SFTP    *sftp;
     int              sock;
     char             fingerprint[80];
 };
-
-// ---- small helpers --------------------------------------------------------
 
 static void gsb_set(GSBResult *r, int code, const char *msg) {
     r->code = code;
@@ -52,8 +43,6 @@ static void gsb_set(GSBResult *r, int code, const char *msg) {
     }
 }
 
-// Set an error and append libssh2's own explanation when it has one. Without this a dropped session
-// surfaces as a bare "Could not open directory", which reads as a permissions problem, not a dead link.
 static void gsb_set_detailed(GSBResult *r, LIBSSH2_SESSION *s, int code, const char *what) {
     char *e = NULL;
     if (s) libssh2_session_last_error(s, &e, NULL, 0);
@@ -63,8 +52,7 @@ static void gsb_set_detailed(GSBResult *r, LIBSSH2_SESSION *s, int code, const c
     gsb_set(r, code, msg);
 }
 
-// Guard every session operation: a NULL or half-torn-down handle must fail
-// cleanly rather than dereference.
+// Every session operation must call this: a half-torn-down handle would otherwise be dereferenced.
 static int gsb_usable(GSBSession *s, GSBResult *r) {
     if (!s || !s->session || !s->sftp) {
         gsb_set(r, GSB_ERR_SFTP, "The connection to this server is no longer open.");
@@ -84,8 +72,7 @@ static void gsb_hex_sha256(const char *raw, size_t len, char *out, size_t out_ca
     out[n] = '\0';
 }
 
-// Join a directory path and a child name into `out`. Returns 0 when the result
-// would not fit, so a pathological name can never overflow the buffer.
+// Returns 0 when the result would not fit — a hostile name must never overflow `out`.
 static int gsb_join(const char *dir, const char *name, char *out, size_t cap) {
     if (!dir || !name) return 0;
     int n;
@@ -99,7 +86,6 @@ static int gsb_join(const char *dir, const char *name, char *out, size_t cap) {
     return (n > 0 && (size_t)n < cap);
 }
 
-// Non-blocking connect with a bounded timeout. Returns a connected socket or -1.
 static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
     char portstr[16];
     snprintf(portstr, sizeof(portstr), "%d", port > 0 ? port : 22);
@@ -116,7 +102,7 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
     }
 
     int sock = -1;
-    int last_errno = 0;   // why the final candidate address failed, for the message
+    int last_errno = 0;
     for (ai = res; ai; ai = ai->ai_next) {
         sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (sock < 0) { last_errno = errno; continue; }
@@ -127,14 +113,14 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
         int rc = connect(sock, ai->ai_addr, ai->ai_addrlen);
         if (rc == 0) {
             fcntl(sock, F_SETFL, flags);
-            break;  // immediate connect
+            break;
         }
         last_errno = errno;
         if (errno == EINPROGRESS) {
             fd_set wset;
             FD_ZERO(&wset);
             FD_SET(sock, &wset);
-            struct timeval tv = { 15, 0 };  // 15s connect timeout
+            struct timeval tv = { 15, 0 };
             rc = select(sock + 1, NULL, &wset, NULL, &tv);
             if (rc > 0) {
                 int soerr = 0;
@@ -142,7 +128,7 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
                 getsockopt(sock, SOL_SOCKET, SO_ERROR, &soerr, &l);
                 if (soerr == 0) {
                     fcntl(sock, F_SETFL, flags);
-                    break;  // connected
+                    break;
                 }
                 last_errno = soerr;
             } else {
@@ -154,8 +140,7 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
     }
     freeaddrinfo(res);
     if (sock < 0) {
-        // Carry the OS reason: "no route to host" on a LAN address is how macOS reports a missing Local
-        // Network permission. strerror_r, not strerror — sessions are per-thread, strerror is static.
+        // strerror_r, not strerror: sessions run per-thread and strerror's buffer is static.
         char reason[96] = {0};
         if (last_errno && strerror_r(last_errno, reason, sizeof(reason)) != 0) {
             snprintf(reason, sizeof(reason), "errno %d", last_errno);
@@ -168,8 +153,7 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
     return sock;
 }
 
-// Connect + handshake + host-key check only — everything BEFORE a credential is offered, split out so
-// `gsb_hostkey` can learn the fingerprint and hang up. Returns a blocking session; caller owns *sock_out.
+// Everything BEFORE a credential is offered — nothing here may authenticate. Caller owns *sock_out.
 static LIBSSH2_SESSION *gsb_connect_verified(const GSBAuth *a, int *sock_out, GSBResult *r) {
     pthread_once(&g_once, gsb_do_init);
     if (g_init_rc != 0) { gsb_set(r, GSB_ERR_INIT, "libssh2 init failed"); return NULL; }
@@ -180,13 +164,10 @@ static LIBSSH2_SESSION *gsb_connect_verified(const GSBAuth *a, int *sock_out, GS
     LIBSSH2_SESSION *session = libssh2_session_init();
     if (!session) { gsb_set(r, GSB_ERR_INIT, "session init failed"); close(sock); return NULL; }
     libssh2_session_set_blocking(session, 1);
-    // Bound every blocking op so a stalled peer can't hang the owning thread forever — the abort flag is
-    // only observed on progress ticks, which stop arriving if no data moves. 60s of no progress = fail.
+    // Without a bound a stalled peer hangs the thread forever: the abort flag rides on progress ticks.
     libssh2_session_set_timeout(session, 60000);
 
     if (libssh2_session_handshake(session, sock) != 0) {
-        // libssh2 reports most handshake faults as KEY_EXCHANGE_FAILURE ("Unable to exchange encryption
-        // keys"), even a peer vanishing mid-handshake — so keep its text but anchor it to the endpoint.
         char *err = NULL; libssh2_session_last_error(session, &err, NULL, 0);
         char msg[256];
         snprintf(msg, sizeof(msg), "SSH handshake with %s:%d failed%s%s",
@@ -196,7 +177,6 @@ static LIBSSH2_SESSION *gsb_connect_verified(const GSBAuth *a, int *sock_out, GS
         libssh2_session_free(session); close(sock); return NULL;
     }
 
-    // Host-key fingerprint (SHA-256), trust-on-first-use vs. pinned.
     const char *hash = libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA256);
     if (!hash) {
         gsb_set(r, GSB_ERR_HOSTKEY, "Server did not present a host key");
@@ -216,15 +196,12 @@ static LIBSSH2_SESSION *gsb_connect_verified(const GSBAuth *a, int *sock_out, GS
     return session;
 }
 
-// Full connect + host-key check + auth. On success returns a blocking session
-// with `*sock_out` owned by the caller (tear down via gsb_teardown).
+// On success the caller owns `*sock_out` and must tear it down via gsb_teardown.
 static LIBSSH2_SESSION *gsb_open(const GSBAuth *a, int *sock_out, GSBResult *r) {
     int sock = -1;
     LIBSSH2_SESSION *session = gsb_connect_verified(a, &sock, r);
     if (!session) return NULL;
 
-    // Auth order: password (if given), private key file, then optionally ssh-agent. `tried` records what
-    // was attempted so a failure names which credential the server refused, not a bare "auth failed".
     int authed = 0;
     char tried[128] = {0};
     char detail[160] = {0};
@@ -247,8 +224,6 @@ static LIBSSH2_SESSION *gsb_open(const GSBAuth *a, int *sock_out, GSBResult *r) 
                                                    pub, a->private_key_path, pass) == 0) {
             authed = 1;
         } else {
-            // Distinguishes "wrong passphrase / unreadable key" from "server
-            // rejected this key", which are very different fixes for the user.
             char *e = NULL; libssh2_session_last_error(session, &e, NULL, 0);
             if (e && *e) snprintf(detail, sizeof(detail), "%s", e);
         }
@@ -295,21 +270,17 @@ static void gsb_teardown(LIBSSH2_SESSION *session, int sock) {
     if (sock >= 0) close(sock);
 }
 
-// Sleep to keep the running average under `max_bps`. `start` is when the
-// transfer began; `sofar` the bytes moved in that window.
 static void gsb_throttle(long long max_bps, long long sofar, struct timespec *start) {
     if (max_bps <= 0) return;
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     double elapsed = (now.tv_sec - start->tv_sec) + (now.tv_nsec - start->tv_nsec) / 1e9;
-    double target = (double)sofar / (double)max_bps;  // seconds this many bytes *should* take
+    double target = (double)sofar / (double)max_bps;
     if (target > elapsed) {
         double sleep_s = target - elapsed;
         if (sleep_s > 0 && sleep_s < 5.0) usleep((useconds_t)(sleep_s * 1e6));
     }
 }
-
-// ---- session lifecycle ----------------------------------------------------
 
 GSBSession *gsb_session_open(const GSBAuth *auth, GSBResult *r) {
     if (!auth || !r) return NULL;
@@ -334,8 +305,6 @@ GSBSession *gsb_session_open(const GSBAuth *auth, GSBResult *r) {
     out->session = s;
     out->sftp = sftp;
     out->sock = sock;
-    // `r->fingerprint` was filled during the host-key check; keep a copy on the
-    // session so the caller can pin it at any point in the session's life.
     strncpy(out->fingerprint, r->fingerprint, sizeof(out->fingerprint) - 1);
     return out;
 }
@@ -356,12 +325,10 @@ const char *gsb_session_fingerprint(const GSBSession *s) {
 
 int gsb_session_alive(GSBSession *s) {
     if (!s || !s->session || !s->sftp || s->sock < 0) return 0;
-    // Local check only (MSG_PEEK): a peer close reads 0, a live idle socket gives EAGAIN, anything else
-    // is dead. No round trip on purpose — paying an RTT before reusing a pooled session defeats pooling.
+    // Local MSG_PEEK only: a round trip here would defeat the point of pooling sessions.
     char b;
     ssize_t n;
-    // A signal delivered mid-peek is not evidence of anything; treating EINTR as death would throw
-    // away a healthy session and pay a full handshake to rebuild it.
+    // EINTR is not death — treating it as death discards a healthy session for a full handshake.
     do {
         n = recv(s->sock, &b, 1, MSG_PEEK | MSG_DONTWAIT);
     } while (n < 0 && errno == EINTR);
@@ -369,8 +336,6 @@ int gsb_session_alive(GSBSession *s) {
     if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) return 0;
     return 1;
 }
-
-// ---- one-shot operations --------------------------------------------------
 
 GSBResult gsb_probe(const GSBAuth *auth) {
     GSBResult r = { GSB_OK, 0, {0}, {0} };
@@ -384,18 +349,14 @@ GSBResult gsb_probe(const GSBAuth *auth) {
 GSBResult gsb_hostkey(const GSBAuth *auth) {
     GSBResult r = { GSB_OK, 0, {0}, {0} };
     int sock = -1;
-    // Deliberately gsb_connect_verified, not gsb_open: learn who we are talking to while offering no
-    // credential to a host we have not yet decided to trust.
+    // Must stay gsb_connect_verified, not gsb_open: no credential goes to an untrusted host.
     LIBSSH2_SESSION *s = gsb_connect_verified(auth, &sock, &r);
     if (!s) return r;
     gsb_teardown(s, sock);
     return r;
 }
 
-// ---- listing --------------------------------------------------------------
-
-// Fill a GSBStat from libssh2 attributes. `is_link` cannot be derived from a
-// followed stat, so the caller supplies it.
+// `is_link` cannot be derived from a followed stat, so the caller must supply it.
 static void gsb_fill_stat(GSBStat *out, const LIBSSH2_SFTP_ATTRIBUTES *a, int is_link) {
     out->exists  = 1;
     out->is_dir  = (a->flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) &&
@@ -422,8 +383,7 @@ GSBResult gsb_list(GSBSession *s, const char *path,
     char name[1024];
     LIBSSH2_SFTP_ATTRIBUTES attrs;
     int n;
-    // n < 0 is a read/protocol error, not end-of-directory (that is n == 0). Treating it as EOF reported
-    // a TRUNCATED listing as complete, so the upload path saw names as free and overwrote unprompted.
+    // n < 0 is an error, not EOF (that is n == 0): as EOF a truncated listing reads as complete and uploads overwrite.
     while ((n = libssh2_sftp_readdir_ex(dir, name, sizeof(name) - 1, NULL, 0, &attrs)) != 0) {
         if (n < 0) {
             gsb_set_detailed(&r, s->session, GSB_ERR_IO, "Directory listing ended early");
@@ -433,8 +393,7 @@ GSBResult gsb_list(GSBSession *s, const char *path,
         if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
 
         int has_perms = (attrs.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) != 0;
-        // readdir reports the entry itself (lstat semantics), so a symlink is
-        // visible here rather than being silently reported as its target.
+        // readdir has lstat semantics, so a symlink stays visible instead of posing as its target.
         int is_link = has_perms && LIBSSH2_SFTP_S_ISLNK(attrs.permissions);
         int is_dir  = has_perms && LIBSSH2_SFTP_S_ISDIR(attrs.permissions);
         long long size = (attrs.flags & LIBSSH2_SFTP_ATTR_SIZE) ? (long long)attrs.filesize : 0;
@@ -446,8 +405,6 @@ GSBResult gsb_list(GSBSession *s, const char *path,
         char target[GSB_PATH_MAX];
         target[0] = '\0';
         if (is_link) {
-            // Two extra round trips, but only for links (rare in a typical listing). Without them a
-            // symlinked directory is indistinguishable from a file and cannot be opened.
             char full[GSB_PATH_MAX];
             if (gsb_join(path, name, full, sizeof(full))) {
                 int tn = libssh2_sftp_symlink_ex(s->sftp, full, (unsigned int)strlen(full),
@@ -455,8 +412,6 @@ GSBResult gsb_list(GSBSession *s, const char *path,
                                                  LIBSSH2_SFTP_READLINK);
                 target[(tn > 0 && (size_t)tn < sizeof(target)) ? tn : 0] = '\0';
 
-                // Follow the link to learn whether it lands on a directory, so the
-                // browser can offer to open it. A dangling link simply stays a file.
                 LIBSSH2_SFTP_ATTRIBUTES tattrs;
                 if (libssh2_sftp_stat_ex(s->sftp, full, (unsigned int)strlen(full),
                                          LIBSSH2_SFTP_STAT, &tattrs) == 0 &&
@@ -488,8 +443,6 @@ GSBResult gsb_size(GSBSession *s, const char *remote) {
     return r;
 }
 
-// ---- transfers ------------------------------------------------------------
-
 GSBResult gsb_download(GSBSession *s, const char *remote,
                        long long resume_from, long long max_bps,
                        gsb_write_cb write_cb, gsb_progress_cb progress_cb,
@@ -514,8 +467,7 @@ GSBResult gsb_download(GSBSession *s, const char *remote,
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    // Heap, not stack: a 256 KiB frame is a large share of the 1 MiB thread
-    // stack, and the session thread now also runs listings and metadata calls.
+    // Heap, not stack: 256 KiB is a large share of the 1 MiB thread stack.
     char *buf = (char *)malloc(GSB_XFER_BUF_SIZE);
     if (!buf) {
         gsb_set(&r, GSB_ERR_IO, "Out of memory starting the download");
@@ -524,10 +476,10 @@ GSBResult gsb_download(GSBSession *s, const char *remote,
     }
 
     long long sofar = resume_from;
-    long long window = 0;  // bytes since `start`, for throttling
+    long long window = 0;
     for (;;) {
         ssize_t got = libssh2_sftp_read(h, buf, GSB_XFER_BUF_SIZE);
-        if (got == 0) break;                 // EOF
+        if (got == 0) break;
         if (got < 0) { gsb_set_detailed(&r, s->session, GSB_ERR_IO, "Read error"); break; }
 
         if (write_cb && write_cb(buf, (long)got, userdata) != (long)got) {
@@ -544,8 +496,7 @@ GSBResult gsb_download(GSBSession *s, const char *remote,
     }
     free(buf);
 
-    // EOF ≠ "the whole file arrived": the Swift side treats a clean return as "every byte moved" and
-    // snaps to 100%. `total` is 0 when the size was unknown; `<` not `!=` so a file that grew is ok.
+    // EOF ≠ whole file: without this check Swift reads a clean return as 100%.
     if (r.code == GSB_OK && total > 0 && sofar < total) {
         char m[160];
         snprintf(m, sizeof(m), "Transfer ended early — received %lld of %lld bytes", sofar, total);
@@ -585,10 +536,10 @@ GSBResult gsb_upload(GSBSession *s, const char *remote, long long total,
     long long sofar = 0;
     for (;;) {
         long got = read_cb ? read_cb(buf, (long)GSB_XFER_BUF_SIZE, userdata) : 0;
-        if (got == 0) break;                 // EOF
+        if (got == 0) break;
         if (got < 0) { gsb_set(&r, GSB_ERR_ABORTED, "Aborted"); break; }
 
-        // sftp_write can accept a partial buffer; loop until the chunk is flushed.
+        // sftp_write can accept a partial buffer; the loop is not optional.
         char *p = buf;
         long remaining = got;
         int failed = 0;
@@ -611,8 +562,7 @@ GSBResult gsb_upload(GSBSession *s, const char *remote, long long total,
     }
     free(buf);
 
-    // Same assertion as the download side: read_cb returning 0 means "no more bytes", which equals
-    // "the file is sent" only when the count matches. Guarded on GSB_OK so a cancel still reads aborted.
+    // read_cb returning 0 means "no more bytes", which is "sent" only if the count matches.
     if (r.code == GSB_OK && total > 0 && sofar < total) {
         char m[160];
         snprintf(m, sizeof(m), "Upload ended early — sent %lld of %lld bytes", sofar, total);
@@ -622,8 +572,6 @@ GSBResult gsb_upload(GSBSession *s, const char *remote, long long total,
     libssh2_sftp_close(h);
     return r;
 }
-
-// ---- mutations ------------------------------------------------------------
 
 GSBResult gsb_mkdir(GSBSession *s, const char *path) {
     GSBResult r = { GSB_OK, 0, {0}, {0} };
@@ -653,9 +601,6 @@ GSBResult gsb_rename(GSBSession *s, const char *from, const char *to) {
     return r;
 }
 
-// ---- metadata -------------------------------------------------------------
-
-// Shared body for lstat/stat. `follow` picks which libssh2 mode to use.
 static GSBResult gsb_stat_impl(GSBSession *s, const char *path, GSBStat *out, int follow) {
     GSBResult r = { GSB_OK, 0, {0}, {0} };
     if (!gsb_usable(s, &r)) return r;
@@ -683,7 +628,6 @@ GSBResult gsb_stat(GSBSession *s, const char *path, GSBStat *out) {
     return gsb_stat_impl(s, path, out, 1);
 }
 
-// Shared body for readlink/realpath — libssh2 exposes both through symlink_ex.
 static GSBResult gsb_symlink_query(GSBSession *s, const char *path,
                                    char *buf, size_t cap, int mode, const char *what) {
     GSBResult r = { GSB_OK, 0, {0}, {0} };
@@ -698,7 +642,7 @@ static GSBResult gsb_symlink_query(GSBSession *s, const char *path,
         buf[0] = '\0';
         return r;
     }
-    // libssh2 does not NUL-terminate; it returns the length it wrote.
+    // libssh2 does not NUL-terminate: it returns the length it wrote.
     buf[((size_t)n < cap) ? (size_t)n : (cap - 1)] = '\0';
     r.value = n;
     return r;
@@ -718,8 +662,7 @@ GSBResult gsb_setstat(GSBSession *s, const char *path, unsigned long perms) {
     GSBResult r = { GSB_OK, 0, {0}, {0} };
     if (!gsb_usable(s, &r)) return r;
 
-    // Read-modify-write the permission bits only: the mode must keep the file-type bits or some servers
-    // reject it. Zeroed first, flag checked after — a STAT omitting permissions would send stack junk.
+    // Keep the file-type bits (servers reject otherwise) and zero first — a STAT without perms sends stack junk.
     LIBSSH2_SFTP_ATTRIBUTES cur;
     memset(&cur, 0, sizeof(cur));
     if (libssh2_sftp_stat_ex(s->sftp, path, (unsigned int)strlen(path),
@@ -762,18 +705,13 @@ GSBResult gsb_statvfs(GSBSession *s, const char *path, GSBSpace *out) {
     memset(&st, 0, sizeof(st));
     const char *p = (path && path[0]) ? path : ".";
     if (libssh2_sftp_statvfs(s->sftp, p, (unsigned int)strlen(p), &st) != 0) {
-        // Very common: the statvfs@openssh.com extension is optional and plenty
-        // of servers omit it. The caller is expected to show nothing, not error.
         gsb_set_detailed(&r, s->session, GSB_ERR_SFTP,
                          "This server does not report free space");
         return r;
     }
-    // f_frsize is the fragment size the block counts are expressed in. Guard the
-    // multiply so a server reporting nonsense cannot overflow into a negative.
+    // The multiply must be guarded: a server reporting nonsense would overflow into a negative.
     unsigned long long frsize = st.f_frsize ? st.f_frsize : st.f_bsize;
     if (frsize == 0) frsize = 512;
-    // Checked BEFORE multiplying: a wrapped product looks like a small disk rather than an overflow,
-    // so saturating afterwards would never see it.
     out->total_bytes = gsb_scale_blocks(st.f_blocks, frsize);
     out->free_bytes  = gsb_scale_blocks(st.f_bavail, frsize);
     return r;

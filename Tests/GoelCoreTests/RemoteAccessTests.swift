@@ -1,7 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Pure policy for when the remote portal should run / reconfigure.
 final class RemoteAccessTests: XCTestCase {
 
     private func settings(
@@ -63,7 +62,6 @@ final class RemoteAccessTests: XCTestCase {
     }
 
     func testNeedsRestartIgnoresEnabledFlag() {
-        // enabled is handled by shouldRun; comparison is for reconfigure-while-on.
         let a = settings(enabled: true)
         let b = settings(enabled: false)
         XCTAssertFalse(RemoteAccessPolicy.needsRestart(previous: a, next: b))
@@ -72,8 +70,7 @@ final class RemoteAccessTests: XCTestCase {
     func testApplyStartsAndStops() async {
         let manager = DownloadManager()
         let access = RemoteAccess()
-        // Kernel-reserved ports so a concurrent test process can't hold either — with
-        // `allowLocalEndpointReuse` a collision silently shares the socket. See ``LoopbackPort``.
+        // Kernel-reserved: with `allowLocalEndpointReuse` a port collision silently shares the socket.
         let port = Int(LoopbackPort.reserve())
         let port2 = Int(LoopbackPort.reserve())
         var running = await access.isRunning
@@ -81,17 +78,15 @@ final class RemoteAccessTests: XCTestCase {
 
         await access.apply(settings: settings(enabled: true, port: port), backend: manager)
         running = await access.isRunning
-        // Bind may fail in restricted CI; only assert stop path when start worked.
+        // Bind can fail in restricted CI, so these assertions stay conditional.
         if running {
             let bound = await access.boundState()
             XCTAssertNotNil(bound)
 
-            // No-op when nothing relevant changed.
             await access.apply(settings: settings(enabled: true, port: port), backend: manager)
             let stillRunning = await access.isRunning
             XCTAssertTrue(stillRunning)
 
-            // Port change should reconfigure while staying enabled.
             await access.apply(settings: settings(enabled: true, port: port2), backend: manager)
             let afterRestart = await access.isRunning
             if afterRestart {

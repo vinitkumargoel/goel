@@ -1,7 +1,5 @@
-/** Per-session values inlined as `<script id="goel-boot" type="application/json">` — the portal CSP is
- * `script-src 'self'`, so inert JSON needs no nonce. `bootJSON(config:)` builds it and escapes `<`. */
+/** Inert JSON under CSP `script-src 'self'`; `bootJSON(config:)` must escape `<`. */
 export interface BootConfig {
-  /** One of the four known theme tokens; `AppThemeToken.sanitize` guarantees it. */
   theme: string
   username: string
   readOnly: boolean
@@ -15,8 +13,7 @@ const FALLBACK: BootConfig = {
   requireAuth: true,
 }
 
-/** Never throws: with no boot data the portal still renders and the API's 401 pushes the user to `/login`.
- * `readOnly` defaults `false`: the server refuses every POST with 403 anyway, so a wrong guess is no bypass. */
+/** `readOnly` is UI chrome only — the server, not this default, enforces the 403. */
 export function readBoot(): BootConfig {
   const raw = document.getElementById('goel-boot')?.textContent
   if (!raw) return FALLBACK

@@ -1,14 +1,9 @@
 import XCTest
 @testable import GoelCore
 
-/// Privacy tests enforcing the shipped "no telemetry" guarantee: plant secrets in every
-/// credential-bearing ``AppSettings`` field and assert none survives into the diagnostics bundle.
 final class DiagnosticsTests: XCTestCase {
 
-    // MARK: Fixtures
-
-    /// Unique, unmistakable needles chosen so a substring search can't match by accident; none is a
-    /// settings *key* name, since key names legitimately appear in the report's "withheld" list.
+    /// No needle may be a settings *key* name: key names legitimately appear in the report's "withheld" list.
     private enum Secret {
         static let token          = "TOKEN-b7f3d9e1c4a24f8e9d0c1b2a3e4f5061"
         static let passwordHash   = "v2$SALT99CAFEBABE$HASH99DEADBEEF"
@@ -24,7 +19,6 @@ final class DiagnosticsTests: XCTestCase {
         static let updateFeed     = "https://updates.invalid/appcast.xml?tenant=TENANT99VICTOR"
         static let adapterID      = "utun99secret"
 
-        /// Everything that must never appear in any rendering of the bundle.
         static let all: [String] = [
             token, passwordHash, remoteUser, proxyHost, String(proxyPort), userAgent,
             avArguments, scriptArgs, profileLabel, scheduleLabel, rssFeed, updateFeed,
@@ -32,7 +26,6 @@ final class DiagnosticsTests: XCTestCase {
         ]
     }
 
-    /// An `AppSettings` with a planted secret in every withheld field.
     private func settingsFullOfSecrets() -> AppSettings {
         var settings = AppSettings()
         settings.profiles = [
@@ -65,8 +58,6 @@ final class DiagnosticsTests: XCTestCase {
         return settings
     }
 
-    /// Every textual form the bundle can take, so a leak in one renderer cannot
-    /// hide behind a clean one.
     private func allRenderings(of bundle: DiagnosticsBundle) throws -> [(label: String, text: String)] {
         let json = try XCTUnwrap(String(data: bundle.jsonData(), encoding: .utf8))
         let settingsText = bundle.settings
@@ -79,8 +70,6 @@ final class DiagnosticsTests: XCTestCase {
             ("settings", settingsText),
         ]
     }
-
-    // MARK: The core requirement — no secret survives
 
     func testBundleContainsNoneOfThePlantedSecrets() throws {
         let bundle = DiagnosticsBundle.make(settings: settingsFullOfSecrets(), tasks: [])
@@ -99,7 +88,6 @@ final class DiagnosticsTests: XCTestCase {
     func testWithheldFieldsAreReplacedByBooleanFactsOnly() {
         let dump = DiagnosticsRedaction.sanitisedSettings(settingsFullOfSecrets())
 
-        // The fact of configuration is diagnostically useful; the value is not.
         XCTAssertEqual(dump["remoteTokenConfigured"], "true")
         XCTAssertEqual(dump["remotePasswordConfigured"], "true")
         XCTAssertEqual(dump["remoteUsernameConfigured"], "true")
@@ -113,7 +101,6 @@ final class DiagnosticsTests: XCTestCase {
         XCTAssertEqual(dump["rssFeedEnabledCount"], "1")
         XCTAssertEqual(dump["aggregationAdapterCount"], "1")
 
-        // …and no key at all carries the withheld value itself.
         for key in DiagnosticsRedaction.withheldSettingsKeys {
             XCTAssertNil(dump[key], "\(key) is withheld and must not appear as a key in the dump")
         }
@@ -129,10 +116,7 @@ final class DiagnosticsTests: XCTestCase {
         XCTAssertEqual(dump["rssFeedCount"], "0")
     }
 
-    // MARK: The guard against future leaks
-
-    /// Fails when an `AppSettings` field is added without anyone deciding it is safe for a support
-    /// bundle. Without it the allow-list rots and a later `sftpPassphrase`/`apiKey` leaks silently.
+    /// Without this the allow-list rots and a later `sftpPassphrase`/`apiKey` leaks silently.
     func testEverySettingsFieldHasBeenClassified() {
         let actual = DiagnosticsRedaction.encodedSettingsKeys()
         let reviewed = DiagnosticsRedaction.reviewedSettingsKeys
@@ -153,8 +137,6 @@ final class DiagnosticsTests: XCTestCase {
         )
     }
 
-    /// A key whose *name* looks sensitive must never be in the allow-list, even
-    /// if today's value happens to be harmless.
     func testNoSensitiveLookingKeyIsAllowListed() {
         let sensitiveFragments = [
             "token", "password", "passwd", "passphrase", "secret", "credential",
@@ -173,7 +155,6 @@ final class DiagnosticsTests: XCTestCase {
         }
     }
 
-    /// The fields the brief names explicitly must be withheld, permanently.
     func testMandatorySecretsAreWithheld() {
         for key in ["remoteToken", "remotePasswordHash", "remoteUsername", "proxyHost", "proxyPort"] {
             XCTAssertTrue(
@@ -184,8 +165,6 @@ final class DiagnosticsTests: XCTestCase {
         }
     }
 
-    /// Any emitted key that *reads* as sensitive (the derived stand-ins do:
-    /// `remoteTokenConfigured`) must carry a boolean or a count, never a payload.
     func testDerivedStandInsCarryNoPayload() {
         let dump = DiagnosticsRedaction.sanitisedSettings(settingsFullOfSecrets())
         let sensitiveFragments = ["token", "password", "username", "proxy"]
@@ -201,8 +180,6 @@ final class DiagnosticsTests: XCTestCase {
             )
         }
     }
-
-    // MARK: Path scrubbing
 
     func testHomeDirectoryPrefixBecomesTilde() {
         var settings = AppSettings()
@@ -238,8 +215,6 @@ final class DiagnosticsTests: XCTestCase {
                        "the account short name identifies the user and must not survive scrubbing")
     }
 
-    // MARK: Task and engine facts (counts only — never identities)
-
     private func sampleTasks() -> [DownloadTask] {
         [
             DownloadTask(source: .url(URL(string: "https://cdn.invalid/PAYROLL99ALPHA.zip")!),
@@ -273,8 +248,7 @@ final class DiagnosticsTests: XCTestCase {
         XCTAssertEqual(bundle.failureCountsByStatus["http-404"], 1)
         XCTAssertEqual(bundle.failureCountsByStatus["network"], 1)
 
-        // `DownloadError.network(_)` embeds the failing URL in its message; the
-        // bundle must report only the case name.
+        // `DownloadError.network(_)` embeds the failing URL, so the bundle must carry the case name only.
         for (_, text) in try allRenderings(of: bundle) {
             XCTAssertFalse(text.contains("PAYROLL99ALPHA"))
             XCTAssertFalse(text.contains("cdn.invalid"))
@@ -310,8 +284,6 @@ final class DiagnosticsTests: XCTestCase {
         }
     }
 
-    // MARK: Shape
-
     func testBundleRoundTripsThroughJSON() throws {
         let original = DiagnosticsBundle.make(
             settings: settingsFullOfSecrets(),
@@ -343,8 +315,6 @@ final class DiagnosticsTests: XCTestCase {
         XCTAssertFalse(bundle.systemVersion.isEmpty)
         XCTAssertTrue(["arm64", "x86_64", "unknown"].contains(bundle.architecture))
     }
-
-    // MARK: GoelLog
 
     func testCategoriesMatchTheArchitecture() {
         XCTAssertEqual(
@@ -379,8 +349,6 @@ final class DiagnosticsTests: XCTestCase {
         XCTAssertFalse(GoelLogField.kind(.torrent).isPrivate)
     }
 
-    /// `DownloadError.message` embeds the failing URL, so the log's error field
-    /// must expose the case name only.
     func testErrorKindFieldDropsTheErrorMessage() {
         let error = DownloadError.network("could not reach https://cdn.invalid/x?token=TOK99")
         let field = GoelLogField.errorKind(error)
@@ -435,8 +403,6 @@ final class DiagnosticsTests: XCTestCase {
         XCTAssertNil(GoelLogLevel.named("chatty"))
     }
 
-    /// Smoke test only: the emit path must not trap on any level or on an empty
-    /// field list. What the sink *does* with the line is the platform's business.
     func testEmittingEveryLevelIsSafe() {
         for level in GoelLogLevel.allCases {
             GoelLog.app.log(level, "Diagnostics self-test", fields: [])

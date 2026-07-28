@@ -1,13 +1,8 @@
 import Foundation
 
-// MARK: - Scheduling
-
-/// Promotes queued tasks into free download slots and performs the async engine hand-off; the
-/// synchronous cap decision stays atomic before any `await`.
 extension DownloadManager {
 
-    /// Promote queued tasks honouring the simultaneous cap, metadata-resolution cap and priority order.
-    /// ``SchedulingPolicy`` decides the order; slot/status bookkeeping is synchronous so the cap is atomic.
+    /// Slot/status bookkeeping must stay synchronous (no `await`) so the cap decision is atomic.
     func schedule() {
         let profile = settings.selectedProfile
         let promoted = SchedulingPolicy.promotions(
@@ -36,8 +31,7 @@ extension DownloadManager {
         Task { await self.reapplyHTTPBudget() }
     }
 
-    /// Set status before the engine's own event so observers see the queue move. An already-complete
-    /// torrent goes straight to `.seeding` rather than falsely showing `.downloading` and holding a slot.
+    /// A complete torrent must go straight to `.seeding`, else it shows `.downloading` and holds a slot.
     private func setOptimisticStatus(_ id: UUID) {
         guard let i = index(of: id) else { return }
         if Self.isMagnet(tasks[i].source), !tasks[i].hasMetadata {
@@ -51,18 +45,15 @@ extension DownloadManager {
         }
     }
 
-    /// Perform the actual (async) engine hand-off for a promoted task.
     private func launch(_ id: UUID, resume: Bool) async {
-        // The promotion may have been cancelled between `schedule()` and this hand-off; a fresh start
-        // must undo `engineStarted`, or a later resume calls `engine.resume` on a task never added.
+        // A cancelled promotion must undo `engineStarted`, or a later resume hits a never-added task.
         guard let task = task(id), task.status != .paused, !task.status.isTerminal else {
             if !resume { engineStarted.remove(id) }
             runningSlots.remove(id)
             return
         }
         let engine = engine(for: task.source)
-        // Ensure a live event subscription: a resume after a terminal state tore the consumer down,
-        // so it must be re-established before the engine starts emitting again.
+        // A terminal state tore the consumer down; re-subscribe before the engine emits again.
         if consumers[id] == nil { subscribe(id, to: engine) }
         if resume {
             await engine.resume(id)

@@ -1,13 +1,8 @@
-/** Marketing-site Worker for the one dynamic route, `POST /api/enquiry` (rest → `env.ASSETS`). No
- *  analytics, no DB, no IP forwarded. OWNER: set `ENQUIRY_WEBHOOK_URL` or add a provider in `deliver()`. */
-
-/** Where the mailto fallback on the page points. Kept in sync by hand. */
 const FALLBACK_MAILBOX = "licensing@vinitk.dev";
 
-/** Fields the form sends. `message` and `website` (honeypot) are optional. */
 const REQUIRED_FIELDS = ["company", "email", "seats", "country", "useCase"];
 
-/** Cheap per-field ceiling so a bot cannot post a novel through the form. */
+/** Abuse ceiling: without it a bot can post an unbounded body through the form. */
 const MAX_FIELD_LENGTH = 4000;
 
 export default {
@@ -22,14 +17,10 @@ export default {
       return handleEnquiry(request, env, ctx);
     }
 
-    // Everything else is a static file. `run_worker_first` in wrangler.jsonc limits
-    // this Worker to /api/*, so in practice we rarely get here at all.
     return env.ASSETS.fetch(request);
   },
 };
 
-/** Validate and forward one licensing enquiry. Accepts JSON (JS path) or x-www-form-urlencoded (the
- *  form is a real `<form method="post">`); the no-JS path gets an HTML thank-you, not a JSON blob. */
 async function handleEnquiry(request, env, ctx) {
   const contentType = request.headers.get("content-type") || "";
   const wantsHTML = !contentType.includes("application/json");
@@ -46,8 +37,7 @@ async function handleEnquiry(request, env, ctx) {
     return reply(wantsHTML, "Could not read that form submission.", 400);
   }
 
-  // Honeypot: the field is off-screen and aria-hidden, so only a bot fills it.
-  // Answer 200 so the bot believes it succeeded and does not retry.
+  // Honeypot must answer 200: an error tells the bot it was detected and it retries.
   if (typeof fields.website === "string" && fields.website.trim() !== "") {
     return reply(wantsHTML, "Thanks — we'll be in touch.", 200);
   }
@@ -69,14 +59,11 @@ async function handleEnquiry(request, env, ctx) {
   const payload = {
     kind: "goel-commercial-enquiry",
     receivedAt: new Date().toISOString(),
-    // Cloudflare gives us the country for free from the edge; it costs no extra data
-    // collection and catches the case where someone mistypes the country field.
     edgeCountry: request.cf?.country ?? null,
     enquiry,
   };
 
-  // Deliver out of band: the buyer should never wait on a third-party webhook, and a
-  // slow Slack should never turn into a failed submission.
+  // Must stay out of band: awaiting the webhook turns a slow third party into a failed submission.
   ctx.waitUntil(deliver(payload, env));
 
   return reply(
@@ -86,13 +73,10 @@ async function handleEnquiry(request, env, ctx) {
   );
 }
 
-/** Forward the enquiry to the owner's destination. OWNER: swap in your provider here. Failures are
- *  logged rather than thrown — the buyer already has their acknowledgement. */
 async function deliver(payload, env) {
   const webhook = env.ENQUIRY_WEBHOOK_URL;
 
   if (!webhook) {
-    // No destination configured yet — visible in `wrangler tail`, and nowhere else.
     console.log("[enquiry] no ENQUIRY_WEBHOOK_URL set; not delivered:", JSON.stringify(payload));
     return;
   }
@@ -111,9 +95,6 @@ async function deliver(payload, env) {
   }
 }
 
-// ── response helpers ────────────────────────────────────────────────────────────
-
-/** JSON for the fetch() path, a minimal HTML page for the no-JavaScript path. */
 function reply(wantsHTML, message, status) {
   return wantsHTML ? html(message, status) : json({ ok: status < 400, message }, status);
 }
@@ -155,8 +136,7 @@ function html(message, status) {
   });
 }
 
-/** The form is same-origin so CORS is unneeded; this only gives a mirror/staging preflight a coherent
- *  answer instead of a bare 405 — it grants nothing beyond the one endpoint. */
+/** The wildcard grants nothing: this endpoint is unauthenticated and reads no cookie or credential. */
 function preflight() {
   return new Response(null, {
     status: 204,

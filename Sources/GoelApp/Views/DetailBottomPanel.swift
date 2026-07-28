@@ -1,8 +1,6 @@
 import SwiftUI
 import GoelCore
 
-/// The detail panel docked to the **bottom** edge — the "Command Center" layout: identity +
-/// actions, live telemetry, and the five tabs, side by side across the width a bottom dock gives.
 struct DetailBottomPanel: View {
     @EnvironmentObject private var vm: AppViewModel
 
@@ -28,13 +26,10 @@ struct DetailBottomPanel: View {
         }
     }
 
-    /// Last-N download samples from the VM history (already sampled ~1 Hz).
     private func downSamples(for task: DownloadTask, cap: Int = 60) -> [Double] {
         let pts = vm.taskSpeedHistory[task.id]?.map(\.down) ?? []
         return pts.count > cap ? Array(pts.suffix(cap)) : pts
     }
-
-    // MARK: - Zone 1 · identity + actions
 
     private func summaryZone(for task: DownloadTask) -> some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -65,8 +60,6 @@ struct DetailBottomPanel: View {
                     .padding(9)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-                    // Red on a red wash is the only thing marking this as an
-                    // error — colour alone. Say so.
                     .accessibilityLabel("Download failed. \(error.message)")
             }
 
@@ -76,8 +69,6 @@ struct DetailBottomPanel: View {
         }
         .padding(16)
     }
-
-    // MARK: - Zone 2 · live telemetry
 
     private func telemetryZone(for task: DownloadTask) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -89,7 +80,6 @@ struct DetailBottomPanel: View {
                 .accessibilityAddTraits(.isHeader)
 
             HStack(spacing: 12) {
-                // Drive sparkline from VM history — no local Timer.publish.
                 ThroughputGraph(samples: downSamples(for: task))
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
@@ -122,7 +112,6 @@ struct DetailBottomPanel: View {
         .padding(16)
     }
 
-    /// A small stacked "LABEL / value" cell for the telemetry strip.
     private func telStat<Content: View>(_ label: String,
                                         @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -130,16 +119,11 @@ struct DetailBottomPanel: View {
                 .scaledFont(size: 10, weight: .bold)
                 .tracking(0.7)
                 .foregroundStyle(.tertiary)
-                // Uppercased and letter-spaced for the eye; some screen readers
-                // spell all-caps words out letter by letter.
                 .accessibilityLabel(label)
             content()
         }
-        // A caption over a figure is one reading — "ETA, 6 minutes" — not two.
         .accessibilityElement(children: .combine)
     }
-
-    // MARK: - Zone 3 · tabbed detail
 
     private func detailZone(for task: DownloadTask) -> some View {
         VStack(spacing: 0) {
@@ -152,7 +136,6 @@ struct DetailBottomPanel: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(maxWidth: 440)
-                // `labelsHidden()` hides the name from VoiceOver too.
                 .accessibilityLabel("Detail section")
                 Spacer(minLength: 8)
                 PanelDockToggle()
@@ -169,8 +152,6 @@ struct DetailBottomPanel: View {
         }
     }
 
-    /// *General* is a compact headline over the key facts, since zones 1–2 already carry identity,
-    /// progress and live speed. The other four reuse the shared tab bodies at a comfortable width.
     @ViewBuilder
     private func tabBody(for task: DownloadTask) -> some View {
         switch vm.detailTab {
@@ -209,14 +190,10 @@ struct DetailBottomPanel: View {
             KVRow(key: "Save path", value: task.savePath, copyable: true)
             KVRow(key: "Source", value: task.sourceLocator, copyable: true)
 
-            // The overlaid download + upload speed history. Self-hiding until it has enough samples, so it
-            // only appears for actively-transferring tasks with an accumulated history.
             TaskSpeedGraph(taskID: task.id)
                 .padding(.top, 14)
         }
     }
-
-    // MARK: - Empty
 
     private var emptyState: some View {
         VStack(spacing: 0) {
@@ -235,8 +212,6 @@ struct DetailBottomPanel: View {
     }
 }
 
-/// The right/bottom dock toggle shared by both detail panels. The icon previews the *destination*
-/// dock; the choice is persisted, so it survives relaunch until flipped again.
 struct PanelDockToggle: View {
     @EnvironmentObject private var vm: AppViewModel
 
@@ -252,8 +227,6 @@ struct PanelDockToggle: View {
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .help(vm.detailPanelPosition == .right ? "Dock panel to bottom" : "Dock panel to right")
-        // A single unlabelled glyph, and one that previews the *destination*
-        // rather than the current state — so the label has to say both.
         .a11yButton(vm.detailPanelPosition == .right
                     ? "Dock detail panel to the bottom"
                     : "Dock detail panel to the right")

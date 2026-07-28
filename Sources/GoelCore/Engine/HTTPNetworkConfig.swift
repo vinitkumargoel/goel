@@ -1,9 +1,5 @@
 import Foundation
 
-// MARK: - Network configuration
-
-/// Network settings pushed into the engine from preferences: timeout, proxy, User-Agent, cookies,
-/// retry budget. The bandwidth cap lives on `TrafficProfile`; engine defaults hold until `applyNetworkConfig`.
 public struct HTTPNetworkConfig: Sendable, Equatable {
     public var timeout: Double
     public var retryCount: Int
@@ -38,15 +34,9 @@ public struct HTTPNetworkConfig: Sendable, Equatable {
     }
 }
 
-// MARK: - Network aggregation (multi-path)
-
-/// Snapshot of multi-adapter download policy pushed into ``HTTPEngine``.
-/// Built by ``DownloadManager`` from ``AppSettings`` + live adapter enumeration.
 public struct AggregationEngineConfig: Sendable, Equatable {
-    /// What the server-wide policy binds by default. Empty = follow the routing table.
+    /// Empty means follow the routing table, not "bind nothing".
     public var adapters: [BoundAdapter]
-    /// Every bindable interface, including ones the default policy declined. A task
-    /// can pin to one of these even with aggregation globally off.
     public var available: [BoundAdapter]
     public var streamsPerAdapter: Int
 

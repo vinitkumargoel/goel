@@ -16,7 +16,6 @@ interface TopbarProps {
   onSearch: (value: string) => void
   downSpeed: number
   upSpeed: number
-  /** Hidden outside the library view, where there is no panel to toggle. */
   showPanelToggle: boolean
   panelOpen: boolean
   onTogglePanel: () => void
@@ -77,8 +76,7 @@ export function Topbar({
         </span>
       </div>
 
-      {/* Read-only sessions get no Add button: the server refuses the POST anyway, and
-          offering it invites composing a request that cannot succeed. */}
+      {/* Cosmetic only — the server, not this flag, is what refuses a read-only session's POST. */}
       {canWrite && (
         <button className="add-btn" onClick={onAdd}>
           <PlusIcon />

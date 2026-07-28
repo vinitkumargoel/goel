@@ -3,11 +3,6 @@ import AppKit
 import SafariServices
 import GoelCore
 
-// The automation/integration settings panes (Scheduler, RSS, Remote Access, Browser, per-host
-// credentials). Standalone views, so they share the free `setting(_:_:)` helper below.
-
-/// A two-way binding into `AppSettings` committing through `vm.update`. Shared
-/// by these panes and by `SettingsView.binding` so the get/set lives once.
 @MainActor
 func setting<T>(_ vm: AppViewModel, _ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {
     Binding(
@@ -15,8 +10,6 @@ func setting<T>(_ vm: AppViewModel, _ keyPath: WritableKeyPath<AppSettings, T>) 
         set: { newValue in vm.update { $0[keyPath: keyPath] = newValue } }
     )
 }
-
-// MARK: - Scheduler pane
 
 struct SchedulerPane: View {
     @EnvironmentObject private var vm: AppViewModel
@@ -64,13 +57,11 @@ struct SchedulerPane: View {
         }
     }
 
-    /// Hourly options for the window pickers, "00:00" … "23:00".
     private static let timeOptions: [Dropdown<Int>.Item] =
         stride(from: 0, to: 1440, by: 60).map { minutes in
             .option(minutes, String(format: "%02d:%02d", minutes / 60, minutes % 60))
         }
 
-    /// The day set as a coarse preset (every day / weekdays / weekends).
     private var daysBinding: Binding<String> {
         Binding(
             get: {
@@ -92,8 +83,6 @@ struct SchedulerPane: View {
         )
     }
 }
-
-// MARK: - RSS pane
 
 struct RSSPane: View {
     @EnvironmentObject private var vm: AppViewModel
@@ -136,8 +125,6 @@ struct RSSPane: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .help("Remove feed")
-                        // Name the feed: a list of these is otherwise a column
-                        // of identical unlabelled destructive buttons.
                         .a11yButton("Remove feed \(feed.url)")
                     }
                 }
@@ -186,16 +173,11 @@ struct RSSPane: View {
     }
 }
 
-// MARK: - Web Access pane
-
 struct RemoteAccessPane: View {
     @EnvironmentObject private var vm: AppViewModel
-    /// Local scratch for the password field — never bound to settings (the
-    /// plaintext is hashed on "Set" and only the hash is persisted).
+    /// Never bind the plaintext to settings — only the hash computed on "Set" is persisted.
     @State private var newPassword = ""
 
-    /// Every policy key this pane renders a control for, so the notice appears
-    /// whenever any one of them is locked rather than only for the obvious ones.
     private static let managedKeys: [ManagedPolicy.Key] = [
         .remoteAccessEnabled, .remoteAllowLAN, .remoteRequireAuth, .remoteReadOnly,
         .remoteTLSEnabled, .remoteTLSIdentityPath,
@@ -234,8 +216,6 @@ struct RemoteAccessPane: View {
                             SecureField("", text: $newPassword)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 150)
-                                // `SetRow`'s environment name only reaches the four `Setting*` wrappers; a raw `SecureField`
-                                // with an empty prompt is an anonymous field.
                                 .accessibilityLabel("New portal password")
                             Button("Set") {
                                 vm.setRemotePassword(newPassword)
@@ -281,8 +261,6 @@ struct RemoteAccessPane: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .frame(maxWidth: 150)
-                            // Visually truncated in the middle, so the *visible* string isn't the token. Give the element
-                            // the whole value spelled character by character — a 32-hex token read as words is unusable.
                             .accessibilityLabel("API token")
                             .accessibilityValue(vm.settings.remoteToken.map { "\($0) " }.joined())
                         Button("Regenerate") {
@@ -368,8 +346,6 @@ struct RemoteAccessPane: View {
         }
     }
 
-    /// Whole seconds onto the stored `Double`. The backoff is configured in
-    /// seconds by an operator; sub-second precision would be noise.
     private var backoffSecondsBinding: Binding<Int> {
         Binding(
             get: { Int(vm.settings.remoteLoginBackoffSeconds.rounded()) },
@@ -379,8 +355,7 @@ struct RemoteAccessPane: View {
         )
     }
 
-    /// A comma-separated view onto the stored list. Blank entries are dropped so a trailing comma
-    /// can't become an empty — and therefore never-matching — entry that looks configured.
+    /// Blank entries must be dropped: a trailing comma would look configured but match nothing.
     private var trustedProxiesBinding: Binding<String> {
         Binding(
             get: { vm.settings.remoteTrustedProxies.joined(separator: ", ") },
@@ -393,20 +368,17 @@ struct RemoteAccessPane: View {
         )
     }
 
-    /// The scheme the portal is actually listening with. `RemoteControlServer` fails closed onto TLS
-    /// when enabled, so handing out an `http://` link would make a working portal look broken.
+    /// Must track the server, which fails closed onto TLS; an `http://` link would just not connect.
     private var scheme: String {
         vm.settings.remoteTLSEnabled ? "https" : "http"
     }
 
-    /// The LAN-reachable control URL, when a LAN address exists.
     private var lanURL: URL? {
         guard let ip = LANAddress.primaryIPv4() else { return nil }
         return URL(string: "\(scheme)://\(ip):\(vm.settings.remotePort)/?token=\(vm.settings.remoteToken)")
     }
 
-    /// Enabling generates a token on first use, so the server never starts
-    /// unauthenticated.
+    /// Mints the token on first enable, so the server never starts unauthenticated.
     private var enabledBinding: Binding<Bool> {
         Binding(
             get: { vm.settings.remoteAccessEnabled },
@@ -419,20 +391,15 @@ struct RemoteAccessPane: View {
         )
     }
 
-    /// The loopback control URL. Optional because the port field accepts any
-    /// `Int` (including negatives), which makes `URL(string:)` return nil.
     private var controlURL: URL? {
         URL(string: "\(scheme)://127.0.0.1:\(vm.settings.remotePort)/?token=\(vm.settings.remoteToken)")
     }
 
-    // `nonisolated` because it is pure — a UUID and two string operations. Without it the method
-    // inherits main-actor isolation from `View`, which older toolchains reject inside `update`.
+    // `nonisolated`: without it this inherits `View`'s main-actor isolation and won't compile inside `update`.
     private nonisolated static func newToken() -> String {
         UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
 }
-
-// MARK: - Browser pane
 
 struct BrowserIntegrationPane: View {
     @EnvironmentObject private var vm: AppViewModel
@@ -519,16 +486,12 @@ struct BrowserIntegrationPane: View {
             }
             SetRow(name: "Drop basket",
                    desc: "A small always-on-top target for dragging links out of the browser (⌘⇧B).") {
-                // "Show" alone names nothing; there are three other buttons in
-                // this pane and a screen reader lists them out of context.
                 Button("Show") { DropBasketController.shared.toggle() }
                     .accessibilityLabel("Show drop basket")
             }
         }
     }
 
-    /// Jump straight to this app's entry in Safari's extension settings. Only works from the packaged
-    /// signed `.app`; from a dev build it fails, so surface that rather than leave the button dead.
     private func openSafariExtensionPrefs() {
         SFSafariApplication.showPreferencesForExtension(
             withIdentifier: "com.goel.downloader.SafariExtension") { error in
@@ -540,8 +503,6 @@ struct BrowserIntegrationPane: View {
         }
     }
 }
-
-// MARK: - Per-host credentials (Network pane section)
 
 struct CredentialsSection: View {
     @EnvironmentObject private var vm: AppViewModel
@@ -612,10 +573,6 @@ struct CredentialsSection: View {
     }
 }
 
-// MARK: - Audit log
-
-/// The compliance-log pane. Deliberately blunt: the log is strictly local, off by default, and
-/// never transmits. An audit feature is exactly where "no telemetry" would be feared walked back.
 struct AuditLogPane: View {
     @EnvironmentObject private var vm: AppViewModel
 

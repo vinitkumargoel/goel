@@ -1,5 +1,4 @@
-// The sign-in form, served as a static asset from /assets/ so the portal's CSP can forbid inline
-// script everywhere. Plain ES5, no build step or React — the bundle would slow the first screen.
+// Served as a static asset so the portal's CSP can forbid inline script everywhere.
 ;(function () {
   const form = document.getElementById('f')
   if (!form) return
@@ -29,8 +28,6 @@
     button.disabled = false
   })
 
-  // Reuses the server-rendered .err element when there is one, so a failed
-  // retry replaces the message instead of stacking a second banner.
   function show(message) {
     let el = document.querySelector('.err')
     if (!el) {

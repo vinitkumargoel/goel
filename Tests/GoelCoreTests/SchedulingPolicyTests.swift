@@ -1,15 +1,11 @@
 import XCTest
 @testable import GoelCore
 
-/// Boundary tests for ``SchedulingPolicy``, the pure queue-promotion decision lifted out of
-/// `DownloadManager.schedule()`: priority, FIFO ties, both caps, and the window / free-slot gates.
 final class SchedulingPolicyTests: XCTestCase {
 
     private let url = DownloadSource.url(URL(string: "https://example.com/file.bin")!)
     private func magnet() -> DownloadSource { .magnet("magnet:?xt=urn:btih:abcdef0123456789") }
 
-    /// A queued HTTP task by default; `totalBytes: nil` + a magnet source models a
-    /// magnet that still needs metadata (`hasMetadata == totalBytes != nil`).
     private func task(
         status: DownloadStatus = .queued,
         priority: FilePriority = .normal,
@@ -32,9 +28,9 @@ final class SchedulingPolicyTests: XCTestCase {
     }
 
     func testPriorityDescThenFIFO() {
-        let a = task(priority: .normal, addedAt: 10)   // normal, later
-        let b = task(priority: .high,   addedAt: 20)   // high — first regardless of time
-        let c = task(priority: .normal, addedAt: 5)    // normal, earliest
+        let a = task(priority: .normal, addedAt: 10)
+        let b = task(priority: .high,   addedAt: 20)
+        let c = task(priority: .normal, addedAt: 5)
         XCTAssertEqual(promote([a, b, c]), [b.id, c.id, a.id],
                        "high first; normals in FIFO (addedAt) order")
     }
@@ -71,7 +67,7 @@ final class SchedulingPolicyTests: XCTestCase {
     func testMetadataCapHoldsBackExtraMagnets() {
         let m1 = task(priority: .high, addedAt: 1, source: magnet(), totalBytes: nil)
         let m2 = task(priority: .high, addedAt: 2, source: magnet(), totalBytes: nil)
-        let http = task(priority: .low, addedAt: 3)  // regular download, never charged
+        let http = task(priority: .low, addedAt: 3)
         let out = promote([m1, m2, http], maxMetadata: 1)
         XCTAssertEqual(out, [m1.id, http.id],
                        "one metadata slot → m1 resolves, m2 held back; the HTTP task promotes freely")
@@ -79,8 +75,6 @@ final class SchedulingPolicyTests: XCTestCase {
     }
 
     func testResolvedMagnetNotChargedAgainstMetadataCap() {
-        // Two magnets that already HAVE metadata (resumed) — neither occupies a
-        // metadata slot, so both promote even though maxMetadata is 1.
         let m1 = task(addedAt: 1, source: magnet(), totalBytes: 500)
         let m2 = task(addedAt: 2, source: magnet(), totalBytes: 500)
         XCTAssertEqual(promote([m1, m2], maxMetadata: 1), [m1.id, m2.id],

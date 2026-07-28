@@ -1,5 +1,3 @@
-/* Shot 5 — throughput (card: odometer-digit-roll). Digit i decelerates 16f from 20+i*7, overshoots half a
- * row, springs back 6f; reels read 4,3 (shot 4's 43 MB/s). Lock pulse goes ink→white: dark field. */
 import React from 'react';
 import {
   AbsoluteFill,
@@ -13,19 +11,18 @@ import { PageCam, CamKey } from '../lib/PageCam';
 import { FlashCut } from '../lib/FlashCut';
 import { C, FONT, PAGE } from '../theme';
 
-const ROW = 210; // digit row height (the overflow box height)
-const DW = 128; // digit box width
+const ROW = 210;
+const DW = 128;
 const FS = 190;
-const SPIN = 0.85; // rows per frame while free-spinning
-const DIGITS = [4, 3]; // the digits of "43 MB/s"
+const SPIN = 0.85;
+const DIGITS = [4, 3];
 
-const ODO = 26; // frame the odometer's own clock starts
-const CUT = 22; // seam the FlashCut straddles
+const ODO = 26;
+const CUT = 22;
 
-/** Strip position of digit i, in rows. Pure function of the frame. */
 const posAt = (f: number, i: number): number => {
   const d = DIGITS[i];
-  const s = 20 + i * 7; // deceleration start
+  const s = 20 + i * 7;
   const p0 = SPIN * s;
   // travel at least 6 more rows, then land on the nearest integer ending in d
   const T = Math.ceil((p0 + 6 - d) / 10) * 10 + d;
@@ -81,7 +78,6 @@ const Strip: React.FC<{ pos: number; color: string; opacity?: number; dy?: numbe
   </div>
 );
 
-/** One digit box: the reel plus two speed-gated ghost copies. */
 const DigitReel: React.FC<{ frame: number; i: number; color: string }> = ({ frame, i, color }) => {
   const pos = posAt(frame, i);
   const speed = Math.abs(pos - posAt(frame - 1, i));
@@ -102,9 +98,7 @@ const DigitReel: React.FC<{ frame: number; i: number; color: string }> = ({ fram
   );
 };
 
-/* Camera push: the whole page, driving into the status-bar readout. */
-/* The push ACCELERATES into the cut instead of easing out: an ease-out parks on the real "43 MB/s"
-   status bar for ~10f, giving the answer away before the odometer rolls. FlashCut at 22 absorbs the stop. */
+/* The push ACCELERATES into the cut: easing out parks on the real "43 MB/s" readout and gives the answer away. */
 const CAM: CamKey[] = [
   { frame: 0, cx: 740, cy: 610, zoom: 1.12 },
   { frame: 24, cx: 205, cy: 763, zoom: 4.6 },
@@ -112,7 +106,7 @@ const CAM: CamKey[] = [
 
 export const Throughput: React.FC<{ durationInFrames: number }> = () => {
   const frame = useCurrentFrame();
-  const f = frame - ODO; // odometer-local frame
+  const f = frame - ODO;
 
   const inkNow = interpolateColors(f, [49, 53, 57], [C.ink, '#ffffff', C.ink]);
   const pulseScale = interpolate(f, [49, 53, 57], [1, 1.035, 1], {
@@ -138,8 +132,6 @@ export const Throughput: React.FC<{ durationInFrames: number }> = () => {
         />
       ) : (
         <AbsoluteFill style={{ background: C.canvas }}>
-          {/* a single low pool of accent light under the number — the one light
-              effect in this shot, per the "one high-quality point source" rule */}
           <AbsoluteFill
             style={{
               background: `radial-gradient(760px 420px at 50% 46%, rgba(138,162,255,0.16), transparent 72%)`,
@@ -175,7 +167,6 @@ export const Throughput: React.FC<{ durationInFrames: number }> = () => {
               MB/s
             </div>
           </div>
-          {/* label bar: only after every reel has locked */}
           <div
             style={{
               position: 'absolute',

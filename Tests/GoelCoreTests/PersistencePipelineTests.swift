@@ -1,7 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Serial order + drain guarantees for ``PersistencePipeline``.
 final class PersistencePipelineTests: XCTestCase {
 
     private var tempPaths: [String] = []
@@ -44,7 +43,6 @@ final class PersistencePipelineTests: XCTestCase {
         second.status = .completed
         second.completedAt = base.addingTimeInterval(10)
 
-        // Stale "still downloading" then authoritative completed — completed must win.
         pipeline.enqueue(.saveTask(first))
         pipeline.enqueue(.saveTask(second))
         await pipeline.shutdown()
@@ -88,7 +86,6 @@ final class PersistencePipelineTests: XCTestCase {
     }
 }
 
-/// Actor counter so install handlers stay Sendable.
 private actor Counter {
     private var first = 0
     private var second = 0

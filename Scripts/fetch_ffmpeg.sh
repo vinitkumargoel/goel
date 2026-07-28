@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# fetch_ffmpeg.sh — stage a static ffmpeg into the bundle. MUST be LGPL: Goel°'s
-# PolyForm licence is GPL-incompatible, so the banner is checked and --enable-gpl refused.
 
 set -euo pipefail
 
@@ -8,8 +6,7 @@ DEST="${1:?usage: fetch_ffmpeg.sh <destination-file>}"
 ARCH="${FFMPEG_ARCH:-$(uname -m)}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Pinned remote assets, filled in when a checksummed LGPL build is chosen. `unpinned`
-# means no vetted asset yet — never a URL without its digest.
+# `unpinned` means no vetted asset yet — never a URL without its digest.
 case "$ARCH" in
   arm64)
     PINNED_URL="unpinned"
@@ -27,11 +24,8 @@ esac
 
 mkdir -p "$(dirname "$DEST")"
 
-# --- helpers -----------------------------------------------------------------
-
 sha256_of() { shasum -a 256 "$1" | awk '{print $1}'; }
 
-# Fail the build, unless the caller opted into a converter-less .app.
 give_up() {
   if [ "${FFMPEG_OPTIONAL:-0}" = "1" ]; then
     echo "warning: $1" >&2
@@ -46,8 +40,7 @@ give_up() {
   exit 1
 }
 
-# Everything a candidate binary must satisfy before entering the .app. Runs against the
-# staged $DEST and removes it on any failure, so a bad copy can't be reused later.
+# Removes the staged $DEST on any failure, so a bad copy can't be reused later.
 verify() {
   local expected_sha="${1:-}"
 
@@ -68,8 +61,6 @@ verify() {
     echo "    checksum OK ($expected_sha)"
   fi
 
-  # Arch: a bundle built for arm64 must not carry an x86_64-only ffmpeg. Universal
-  # binaries list both and pass either way.
   local archs; archs="$(lipo -archs "$DEST" 2>/dev/null || echo unknown)"
   echo "    ffmpeg archs: $archs   (target: $ARCH)"
   case " $archs " in
@@ -78,8 +69,6 @@ verify() {
        give_up "the ffmpeg binary ($archs) does not include the target arch $ARCH" ;;
   esac
 
-  # Licence gate. `ffmpeg -version` prints the exact configure line it was built
-  # with, so this is a fact about the binary rather than a promise about the URL.
   local banner licence="LGPL"
   if ! banner="$("$DEST" -hide_banner -version 2>/dev/null)"; then
     rm -f "$DEST"
@@ -107,16 +96,13 @@ verify() {
   echo "    OK — ffmpeg ${version:-?} runs, $licence-configured"
 }
 
-# A rebuild should not re-download 70 MB. An existing copy is re-verified rather than
-# trusted — it may be left over from a run with different settings or another arch.
+# An existing copy is re-verified, not trusted: it may be from another arch or settings.
 if [ -x "$DEST" ] && file "$DEST" | grep -q "Mach-O"; then
   echo "==> ffmpeg already bundled ($DEST) — verifying in place"
   verify ""
   echo "==> Bundled ffmpeg -> $DEST"
   exit 0
 fi
-
-# --- source selection --------------------------------------------------------
 
 VENDORED="$REPO_ROOT/Vendor/ffmpeg/$ARCH/ffmpeg"
 
@@ -149,11 +135,8 @@ else
   echo "==> Downloading ffmpeg for $ARCH (~40-80 MB)"
   echo "    $URL"
   TMP="$(mktemp -t goel-ffmpeg)"
-  # -L follow redirects, -f fail on HTTP error, --retry for flaky networks.
-  # Mirrors fetch_ytdlp.sh so both vendoring steps behave identically.
   curl -fL --retry 3 --retry-delay 2 -o "$TMP" "$URL"
-  # The digest is checked against the asset as published, and checked HERE — before
-  # the branches below hand unverified bytes to unzip/tar.
+  # Digest checked HERE — before the branches below hand unverified bytes to unzip/tar.
   ACTUAL="$(sha256_of "$TMP")"
   if [ "$ACTUAL" != "$SHA" ]; then
     rm -f "$TMP"
@@ -163,8 +146,6 @@ else
     exit 1
   fi
   echo "    checksum OK ($SHA)"
-  # Some publishers ship the binary inside a .zip/.tar.xz; unwrap those so the
-  # caller never has to care which layout an asset happens to use.
   case "$URL" in
     *.zip)
       WORK="$(mktemp -d -t goel-ffmpeg-unpack)"
@@ -187,8 +168,7 @@ else
       cp "$TMP" "$DEST"
       ;;
   esac
-  # The digest belonged to the archive, which has already been verified above, so
-  # verify() is handed only the non-checksum checks.
+  # Archive digest already verified above, so verify() runs only the non-checksum checks.
   rm -f "$TMP"
   chmod +x "$DEST"
   verify ""

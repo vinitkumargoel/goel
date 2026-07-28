@@ -1,11 +1,8 @@
 import Foundation
 
-/// Thin HTML shells for `/` and `/login`; the UI is the React app in `/portal`, served via ``PortalBundle``. Only
-/// server-only state stays here (theme, user, read-only, login error). Themes live once in `portal/src/styles/themes.css`.
 extension RemoteRouter {
 
-    /// The full control portal. Auth is by session cookie (or `?token=` for scripts); the page embeds no secret. `BOOT`
-    /// seeds theme/username/read-only so it paints without hitting `/api/config`; `bootJSON` neutralises `<` in it.
+    /// Auth is by session cookie (or `?token=` for scripts) — this page must embed no secret.
     static func page(config: Config) -> String {
         let boot = bootJSON(config: config)
         let theme = AppThemeToken.sanitize(config.theme)
@@ -24,8 +21,6 @@ extension RemoteRouter {
         """#
     }
 
-    /// The login page (`/login`): a themed form POSTing JSON credentials; on success the server sets the session cookie.
-    /// Deliberately not React — waiting on the 233 kB app bundle would slow the first screen every user meets.
     static func loginPage(theme: String, error: String?) -> String {
         let themeAttr = AppThemeToken.sanitize(theme)
         let errHTML = error.map { #"<div class="err">\#(htmlEscape($0))</div>"# } ?? ""
@@ -49,8 +44,6 @@ extension RemoteRouter {
         """#
     }
 
-    // MARK: Bootstrap
-
     private static func bootJSON(config: Config) -> String {
         let theme = AppThemeToken.sanitize(config.theme)
         // JSON, with `<` neutralised so a username can't break out of <script>.
@@ -72,15 +65,12 @@ extension RemoteRouter {
             .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
-    // MARK: Brand assets
-
     static let logoSVG = ##"<svg viewBox="0 0 48 48"><defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5db4f5"/><stop offset="1" stop-color="#2f83e6"/></linearGradient></defs><rect width="48" height="48" rx="10.8" fill="url(#lg)"/><g stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="24" cy="21" r="8.5"/><path d="M32.5 12.5 L32.5 32 Q32.5 36 27 36"/></g><circle cx="38.2" cy="11" r="3.1" fill="#fff"/></svg>"##
 
     static let faviconDataURI = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cdefs%3E%3ClinearGradient id='s' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%235db4f5'/%3E%3Cstop offset='1' stop-color='%232f83e6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='48' height='48' rx='10.8' fill='url(%23s)'/%3E%3Cg stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round' fill='none'%3E%3Ccircle cx='24' cy='21' r='8.5'/%3E%3Cpath d='M32.5 12.5 L32.5 32 Q32.5 36 27 36'/%3E%3C/g%3E%3Ccircle cx='38.2' cy='11' r='3.1' fill='%23fff'/%3E%3C/svg%3E"
 }
 
-/// A tiny, dependency-free sanitizer for the theme token embedded into the page, so a corrupt/unknown persisted value
-/// can never inject markup or select a missing theme. Kept in Core (the app's `AppTheme` lives in the app layer).
+/// Allowlists the theme token embedded into the page so a persisted value can't inject markup.
 enum AppThemeToken {
     static let known: Set<String> = ["frost-light", "frost-dark", "dracula", "nord"]
     static func sanitize(_ token: String) -> String {

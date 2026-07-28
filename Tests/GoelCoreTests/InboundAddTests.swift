@@ -1,11 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-/// Trust-rule cases for ``InboundAdd/classify`` — origin decides confirmation, content decides ignore
-/// vs act. Parse coverage is thin (reuses BatchExpander + DownloadSource); metalink stays in the app.
 final class InboundAddTests: XCTestCase {
-
-    // MARK: classify — urlScheme
 
     func testURLSchemeWithLinesNeedsConfirmation() {
         let d = InboundAdd.classify(
@@ -39,8 +35,6 @@ final class InboundAddTests: XCTestCase {
         )
     }
 
-    // MARK: classify — userExplicit
-
     func testUserExplicitWithLinesEnqueues() {
         let d = InboundAdd.classify(
             origin: .userExplicit,
@@ -70,8 +64,6 @@ final class InboundAddTests: XCTestCase {
         )
     }
 
-    // MARK: classify — clipboard
-
     func testClipboardWithContentNeedsConfirmation() {
         let d = InboundAdd.classify(
             origin: .clipboard,
@@ -89,8 +81,6 @@ final class InboundAddTests: XCTestCase {
         )
     }
 
-    // MARK: classify — browserSpool / drain
-
     func testBrowserSpoolContentFreeDrains() {
         XCTAssertEqual(
             InboundAdd.classify(origin: .browserSpool, payload: .init(drainBrowserSpool: true)),
@@ -103,8 +93,7 @@ final class InboundAddTests: XCTestCase {
     }
 
     func testDrainFlagAloneDrainsEvenOnOtherOrigin() {
-        // A content-free drain poke must drain regardless of how it was labeled —
-        // the flag itself is the signal (native host / url-scheme poke).
+        // The drain flag itself is the signal, whatever origin claims to have sent it.
         XCTAssertEqual(
             InboundAdd.classify(
                 origin: .urlScheme,
@@ -126,8 +115,6 @@ final class InboundAddTests: XCTestCase {
         XCTAssertFalse(p.drainBrowserSpool, "enqueued spool payload must not re-trigger drain")
         XCTAssertEqual(p.lines, "https://a.example/x.zip\nhttps://b.example/y.zip")
     }
-
-    // MARK: parseSources
 
     func testParseSourcesExpandsAndFilters() {
         let raw = """

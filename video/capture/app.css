@@ -1,6 +1,3 @@
-/* Goel° UI replica for the keynote film: pixel-faithful to Assets/screenshots/desktop.png (1480x841,
- * window 1360x721 at 60,60, dSF 2). Palette from GoelApp/Theme.swift; UI font -apple-system = SF Pro. */
-
 @font-face {
   font-family: 'Inter';
   font-style: normal;
@@ -23,7 +20,6 @@
 :root {
   color-scheme: dark;
 
-  /* semantic palette — AppTheme.frostDark.colors */
   --accent: #8AA2FF;
   --accent-press: #738FF5;
   --green: #4ADE80;
@@ -34,7 +30,6 @@
   --teal: #7FDBE8;
   --indigo: #A5B8FF;
 
-  /* surfaces — sampled from desktop.png */
   --canvas: #0b0c10;
   --app-bar: #22252e;
   --app-side: #191b21;
@@ -52,7 +47,6 @@
   --hairline-soft: rgba(255, 255, 255, 0.055);
   --track: #2f333d;
 
-  /* FileType.gradient — Theme.swift */
   --kind-iso: linear-gradient(160deg, #FF9F0A, #FF6A00);
   --kind-video: linear-gradient(160deg, #BF5AF2, #8A3FFC);
   --kind-archive: linear-gradient(160deg, #64D2FF, #0A84FF);
@@ -64,7 +58,6 @@
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
 }
 
-/* ---- named themes (Theme.swift AppTheme) ---- */
 :root[data-theme='frost-light'] {
   color-scheme: light;
   --accent: #4F6EF0; --accent-press: #3F58D6;
@@ -106,15 +99,12 @@ html, body {
   text-rendering: geometricPrecision;
 }
 
-/* the page backdrop only exists so the full-page texture has the same wash the
-   screenshot has; the film composites its own canvas behind cutouts */
 body.on-canvas {
   background:
     radial-gradient(120% 90% at 50% 0%, #1a1f2b 0%, var(--canvas) 62%),
     var(--canvas);
 }
 
-/* ---------------- window shell ---------------- */
 .win {
   position: absolute;
   left: 60px; top: 60px;
@@ -126,7 +116,6 @@ body.on-canvas {
   display: flex; flex-direction: column;
 }
 
-/* ---------------- title bar ---------------- */
 .bar {
   height: 51px; flex: 0 0 51px;
   background: var(--app-bar);
@@ -145,7 +134,6 @@ body.on-canvas {
   height: 28px; padding: 0 13px;
   border-radius: 7px; border: 0;
   background: var(--accent);
-  /* White in every theme, as the app draws it. */
   color: #fff;
   font: 600 13px/28px var(--ui);
   letter-spacing: -0.01em;
@@ -162,8 +150,6 @@ body.on-canvas {
   display: inline-flex; align-items: center; gap: 6px;
 }
 .chip svg { color: var(--ink-soft); flex: none; }
-/* `chevron.down` is a thin open caret, not a filled triangle — the solid ▾ was
-   the difference the eye caught first in the toolbar comparison. */
 .chip .car { display: inline-flex; color: var(--ink-faint); margin-left: 1px; }
 
 .spacer { flex: 1; }
@@ -188,10 +174,8 @@ body.on-canvas {
   display: grid; place-items: center;
 }
 
-/* ---------------- body split ---------------- */
 .body { flex: 1; display: flex; min-height: 0; }
 
-/* ---------------- sidebar ---------------- */
 .side {
   width: 200px; flex: 0 0 200px;
   background: var(--app-side);
@@ -219,15 +203,12 @@ body.on-canvas {
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--ink-faint);
 }
-/* The counts are chips in the app, not loose numerals. */
 .si .n {
   margin-left: auto;
   font: 500 11px/1 var(--ui); color: var(--ink-dim);
   background: rgba(255, 255, 255, 0.07);
   border-radius: 5px; padding: 3px 6px;
 }
-/* The selected row prints WHITE on the accent in every theme — the dark-navy ink that stood here
-   read as a different, flatter component next to the real pill. */
 .si.on { background: var(--accent); color: #fff; font-weight: 500; }
 .si.on .g { color: rgba(255, 255, 255, 0.92); }
 .si.on .n { color: #fff; background: rgba(0, 0, 0, 0.18); }
@@ -238,18 +219,15 @@ body.on-canvas {
 }
 .srv-add { margin-left: auto; color: var(--ink-dim); font-size: 14px; }
 
-/* ---------------- list ---------------- */
 .list { flex: 1; min-width: 0; background: var(--app-list); display: flex; flex-direction: column; }
 
-/* Column geometry measured off Assets/screenshots/desktop.png: the list is 820px wide, and every
-   track below is the real pixel distance between the corresponding text edges. */
 .list { --cols: 22px 36px 233px 84px 143px 98px 77px 84px; }
 
 .lhead {
   height: 28px; flex: 0 0 28px;
   border-bottom: 1px solid var(--hairline);
   display: grid;
-  /* the header merges the pause column into Name, as the app does */
+  /* Deliberately not --cols: the header merges the pause column into Name, as the app does. */
   grid-template-columns: 22px 269px 84px 143px 98px 77px 84px;
   align-items: center;
   font: 400 11.5px/1 var(--ui);
@@ -259,7 +237,6 @@ body.on-canvas {
 .lhead .nm-h { color: var(--accent); }
 .lhead .r, .row .r { text-align: right; }
 .lhead .st-h, .row .st-c { padding-left: 13px; }
-/* the status column truncates rather than running into Added */
 .row .st-c { min-width: 0; padding-right: 10px; }
 .row .st-c .st { max-width: 100%; }
 .row .st-c .st .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -299,7 +276,6 @@ body.on-canvas {
 .fico.magnet { background: var(--kind-magnet); }
 .fico.doc { background: var(--kind-doc); }
 
-/* fixed 192px, the measured span of the row progress bar */
 .nmwrap { width: 192px; flex: 0 0 192px; display: flex; flex-direction: column; gap: 7px; }
 .nmline { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .nm {
@@ -342,13 +318,11 @@ body.on-canvas {
 .st.fail { --sc: var(--red); }
 .st.pause { --sc: var(--ink-dim); }
 
-/* speeds set in the UI face in the app, not mono — matches the screenshot */
 .spd { font: 400 12.5px/1 var(--ui); }
 .spd.d { color: var(--green); }
 .spd.u { color: var(--teal); }
 .spd.none { color: var(--ink-dim); }
 
-/* ---------------- detail panel ---------------- */
 .detail {
   width: 339px; flex: 0 0 339px;
   background: var(--surface);
@@ -367,8 +341,6 @@ body.on-canvas {
   display: grid; place-items: center; color: var(--ink-faint); font-size: 11px;
 }
 
-/* The app's detail tabs are a segmented control — selected tab is a filled accent pill, white ink.
-   The underline this used to draw is a web idiom and read as a different framework on sight. */
 .tabs {
   display: flex; gap: 2px; margin: 13px 0 0;
   padding-bottom: 6px;
@@ -432,7 +404,6 @@ body.on-canvas {
 .d-acts .b.pri { background: var(--accent); border-color: transparent; color: #fff; }
 .d-acts .b svg { flex: none; }
 
-/* ---------------- status bar ---------------- */
 .status {
   height: 37px; flex: 0 0 37px;
   background: var(--status-bar);
@@ -457,7 +428,6 @@ body.on-canvas {
 .prof b.on { background: var(--accent); color: #14172a; font-weight: 500; }
 :root[data-theme='frost-light'] .prof b.on { color: #fff; }
 
-/* ---------------- piece map (torrent detail) ---------------- */
 .pmap {
   display: grid;
   grid-template-columns: repeat(24, 1fr);
@@ -476,7 +446,6 @@ body.on-canvas {
 }
 .pmap-legend b { color: var(--ink); font: 500 10.5px/1 var(--mono); }
 
-/* ---------------- SFTP browser ---------------- */
 .sftp-panes { flex: 1; display: flex; min-height: 0; }
 .pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .pane + .pane { border-left: 1px solid var(--hairline); }
@@ -501,7 +470,6 @@ body.on-canvas {
 .frow .sz { margin-left: auto; font: 400 11px/1 var(--mono); color: var(--ink-faint); }
 .frow.dir .fg { color: var(--yellow); }
 
-/* ---------------- menu bar popover ---------------- */
 .menubar {
   position: absolute; left: 0; top: 0; width: 1480px; height: 26px;
   background: rgba(22, 25, 33, 0.86);
@@ -558,7 +526,6 @@ body.on-canvas {
   font: 600 12.5px/1 var(--ui);
 }
 
-/* ---------------- web portal ---------------- */
 .chrome {
   position: absolute; left: 40px; top: 40px;
   width: 1400px; height: 761px;
@@ -607,7 +574,6 @@ body.on-canvas {
   display: grid; place-items: center; font: 600 11px/1 var(--ui);
 }
 
-/* ---- transfer chip (shot 9's messenger) ---------------------------------- */
 .tchip {
   position: absolute; left: 40px; top: 40px;
   display: flex; align-items: center; gap: 11px;

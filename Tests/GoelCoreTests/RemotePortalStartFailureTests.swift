@@ -2,8 +2,6 @@
 import XCTest
 @testable import GoelCore
 
-/// A refused portal start must be *reportable*, not just logged — a silent fail-closed looks like
-/// success, which let the UI offer "Open" for a dead portal. Pins ``RemoteControlServer/lastStartFailure()``.
 final class RemotePortalStartFailureTests: XCTestCase {
 
     private func config() -> RemoteRouter.Config {
@@ -11,8 +9,6 @@ final class RemotePortalStartFailureTests: XCTestCase {
                             theme: "frost-dark", username: "admin")
     }
 
-    /// TLS on with an identity that cannot be loaded: nothing listens, and the
-    /// reason names the certificate path so the message can point at the typo.
     func testUnloadableTLSIdentityIsReported() async {
         let manager = DownloadManager()
         let server = RemoteControlServer(manager: manager)
@@ -25,15 +21,11 @@ final class RemotePortalStartFailureTests: XCTestCase {
         XCTAssertNil(bound)
         let failure = await server.lastStartFailure()
         XCTAssertEqual(failure, .tlsIdentityUnavailable(path: missing))
-        // The text is what the UI shows, so it must name both the path and the
-        // passphrase variable — the two things that are actually wrong.
         XCTAssertTrue(failure?.message.contains(missing) == true)
         XCTAssertTrue(failure?.message.contains("GOEL_PORTAL_TLS_PASSPHRASE") == true)
         await server.stop()
     }
 
-    /// A successful bind clears any earlier refusal, and an explicit stop is not
-    /// itself reported as a failure.
     func testSuccessfulStartAndStopClearTheFailure() async {
         let manager = DownloadManager()
         let server = RemoteControlServer(manager: manager)
@@ -46,8 +38,6 @@ final class RemotePortalStartFailureTests: XCTestCase {
         var failure = await server.lastStartFailure()
         XCTAssertNotNil(failure)
 
-        // A kernel-reserved port, so no concurrent test holds it; a restricted CI that still refuses
-        // must report *that* instead of the stale TLS reason — the property under test either way.
         let port = LoopbackPort.reserve()
         await server.start(port: port, allowLAN: false, config: cfg,
                            passwordHash: hash, sessionMinutes: 120)

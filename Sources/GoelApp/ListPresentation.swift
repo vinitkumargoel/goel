@@ -1,8 +1,6 @@
 import Foundation
 import GoelCore
 
-/// App-layer adapter over ``TaskListQuery`` — maps sidebar/sort chrome enums
-/// onto the pure core query (including the `.type` file-kind filter).
 enum ListPresentation {
 
     static func visible(

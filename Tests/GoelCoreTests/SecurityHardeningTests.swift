@@ -1,11 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-/// Regression tests for the security-audit hardening pass: credential stripping, path containment,
-/// cross-host header stripping, PBKDF2 KDF upgrade, SSRF filtering, export stripping, tool vetting.
 final class SecurityHardeningTests: XCTestCase {
-
-    // MARK: H4 — FTP inline credentials are stripped from the persisted locator
 
     func testFTPInlinePasswordStrippedFromLocator() {
         let source = DownloadSource.parse("ftp://user:s3cret@ftp.example.com/file.zip")
@@ -28,8 +24,6 @@ final class SecurityHardeningTests: XCTestCase {
         XCTAssertEqual(source?.locator, "ftp://ftp.gnu.org/gnu/x.tar.gz")
     }
 
-    // MARK: H1 / #19 — path containment
-
     func testIsContainedRejectsTraversalAndAbsolute() {
         let root = "/Users/me/Downloads"
         XCTAssertTrue(PathSafety.isContained("/Users/me/Downloads/movie.mp4", within: root))
@@ -48,14 +42,11 @@ final class SecurityHardeningTests: XCTestCase {
         ]
         let task = DownloadTask(source: .magnet("magnet:?xt=urn:btih:abc"),
                                 name: "t", saveDirectory: dir, files: files)
-        // Largest wanted file declares a traversing path → falls back to savePath,
-        // never a path outside the save directory.
+        // A traversing torrent path must fall back to savePath, never escape the save directory.
         XCTAssertTrue(PathSafety.isContained(task.primaryFilePath, within: dir)
                         || task.primaryFilePath == task.savePath)
         XCTAssertFalse(task.primaryFilePath.contains("/etc/passwd"))
     }
-
-    // MARK: H3 — cross-host redirect header stripping
 
     private func request(_ urlString: String, headers: [String: String]) -> URLRequest {
         var r = URLRequest(url: URL(string: urlString)!)
@@ -94,8 +85,7 @@ final class SecurityHardeningTests: XCTestCase {
     }
 
     func testRedirectKeepsHeadersOnSameHostPlainHTTPHop() {
-        // An http-only host redirecting within itself is not a downgrade — nothing leaks that the first
-        // request didn't. Stripping would send the hop unauthenticated and quietly save a login page.
+        // Same-host http→http is not a downgrade; stripping here saves a login page instead of the file.
         let orig = URL(string: "http://files.corp.local/download?id=5")!
         let redirect = request("http://files.corp.local/store/report.zip",
                                headers: ["Cookie": "session=1", "Authorization": "Basic x"])
@@ -105,16 +95,13 @@ final class SecurityHardeningTests: XCTestCase {
     }
 
     func testRedirectStripsOnCrossHostPlainHTTPHop() {
-        // Plain http is only forgiven within one host: a hop to a *different* host
-        // is still a cross-origin leak regardless of scheme.
+        // Plain http is forgiven only within one host: a cross-host hop still leaks the secret.
         let orig = URL(string: "http://files.corp.local/a")!
         let redirect = request("http://attacker.example.net/collect",
                                headers: ["Cookie": "session=1"])
         let out = RedirectSanitizer.sanitize(redirect, originalURL: orig)
         XCTAssertNil(out.value(forHTTPHeaderField: "Cookie"))
     }
-
-    // MARK: #21 — PBKDF2 KDF upgrade (v2) with legacy (v1) verification
 
     func testPasswordHashIsV2AndVerifies() {
         let hash = RemotePassword.hash("correct horse")
@@ -129,8 +116,6 @@ final class SecurityHardeningTests: XCTestCase {
                           "each hash uses a fresh random salt")
     }
 
-    // MARK: #17 — SSRF auto-fetch target filtering
-
     func testAutoFetchBlocksLinkLocalAndNonWeb() {
         XCTAssertFalse(NetworkGuard.isAllowedAutoTarget(URL(string: "http://169.254.169.254/latest/meta-data/")!))
         XCTAssertFalse(NetworkGuard.isAllowedAutoTarget(URL(string: "http://[fe80::1]/x")!))
@@ -139,8 +124,6 @@ final class SecurityHardeningTests: XCTestCase {
         // A self-hosted LAN server is deliberately still allowed.
         XCTAssertTrue(NetworkGuard.isAllowedAutoTarget(URL(string: "http://192.168.1.10/feed")!))
     }
-
-    // MARK: #14 — export strips secrets
 
     func testExportSanitizedSettingsStripsSecrets() {
         var s = AppSettings()
@@ -151,14 +134,11 @@ final class SecurityHardeningTests: XCTestCase {
         XCTAssertEqual(out.remotePasswordHash, "")
     }
 
-    // MARK: #18 — external-tool vetting
-
     func testProcessSafetyRejectsInterpretersAndRelative() {
         XCTAssertFalse(ProcessSafety.isSafeExecutable("/bin/sh"))
         XCTAssertFalse(ProcessSafety.isSafeExecutable("ffmpeg"), "relative $PATH name refused")
         XCTAssertFalse(ProcessSafety.isSafeExecutable(""), "empty refused")
         XCTAssertFalse(ProcessSafety.isSafeExecutable("/nonexistent/tool"))
-        // A real absolute executable present on every macOS/Linux host passes.
         XCTAssertTrue(ProcessSafety.isSafeExecutable("/bin/ls"))
     }
 }

@@ -1,17 +1,13 @@
 import Foundation
 import GRDB
 
-/// GRDB persistence so the queue and ``AppSettings`` survive quit & relaunch; `DatabaseQueue`
-/// serializes access (hence `@unchecked Sendable`). Tasks: JSON blob + promoted `id`/`addedAt`/`status`.
+/// `@unchecked Sendable` rests entirely on `DatabaseQueue` serializing every access.
 public final class PersistenceStore: @unchecked Sendable {
 
     private let dbQueue: DatabaseQueue
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    // MARK: Init
-
-    /// Open (creating if needed) the database file at `path`.
     public init(path: String) throws {
         self.dbQueue = try DatabaseQueue(path: path)
         self.encoder = Self.makeEncoder()
@@ -19,7 +15,6 @@ public final class PersistenceStore: @unchecked Sendable {
         try Self.migrator.migrate(dbQueue)
     }
 
-    /// Open a private in-memory database. Used by tests and ephemeral sessions.
     public init() throws {
         self.dbQueue = try DatabaseQueue()
         self.encoder = Self.makeEncoder()
@@ -29,12 +24,9 @@ public final class PersistenceStore: @unchecked Sendable {
 
     private static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
-        // Stable, sortable key order makes exported JSON diff-friendly.
         encoder.outputFormatting = [.sortedKeys]
         return encoder
     }
-
-    // MARK: Schema
 
     private static let migrator: DatabaseMigrator = {
         var migrator = DatabaseMigrator()
@@ -60,12 +52,8 @@ public final class PersistenceStore: @unchecked Sendable {
         return migrator
     }()
 
-    /// The fixed primary-key under which the singleton ``AppSettings`` is stored.
     private static let settingsKey = "app"
 
-    // MARK: Tasks
-
-    /// Insert or replace a single task. (Alias: ``upsert(_:)``.)
     public func saveTask(_ task: DownloadTask) throws {
         let data = try encoder.encode(task)
         try dbQueue.write { db in
@@ -73,12 +61,10 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
-    /// Insert or replace a single task. Synonym for ``saveTask(_:)``.
     public func upsert(_ task: DownloadTask) throws {
         try saveTask(task)
     }
 
-    /// Insert or replace several tasks in one transaction.
     public func saveTasks(_ tasks: [DownloadTask]) throws {
         let encoded = try tasks.map { ($0, try encoder.encode($0)) }
         try dbQueue.write { db in
@@ -88,15 +74,13 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
-    /// Delete a task by id. No-op if it is not present.
     public func deleteTask(_ id: DownloadTask.ID) throws {
         _ = try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM task WHERE id = ?", arguments: [id.uuidString])
         }
     }
 
-    /// Load every persisted task, ordered by `addedAt` (oldest first). An undecodable row (foreign schema,
-    /// corruption) is skipped, like ``loadHistory(limit:)``, so one bad task can't wipe the whole queue.
+    /// Undecodable rows are skipped on purpose: one corrupt task must not take the whole queue with it.
     public func loadAllTasks() throws -> [DownloadTask] {
         try dbQueue.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT data FROM task ORDER BY addedAt ASC")
@@ -136,9 +120,6 @@ public final class PersistenceStore: @unchecked Sendable {
         )
     }
 
-    // MARK: Settings
-
-    /// Persist the user settings (active profile, snail flag, default folder, …).
     public func saveSettings(_ settings: AppSettings) throws {
         try upsertBlob(key: Self.settingsKey, data: encoder.encode(settings))
     }
@@ -155,7 +136,6 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
-    /// Load the persisted settings, or `nil` if none were ever saved.
     public func loadSettings() throws -> AppSettings? {
         try dbQueue.read { db in
             guard let row = try Row.fetchOne(
@@ -168,18 +148,12 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
-    // MARK: Transfer statistics
-
-    /// The fixed key under which the singleton ``TransferStats`` blob is stored
-    /// (same key/value table as the settings).
     private static let statsKey = "stats"
 
-    /// Persist the lifetime/per-day transfer statistics.
     public func saveStats(_ stats: TransferStats) throws {
         try upsertBlob(key: Self.statsKey, data: encoder.encode(stats))
     }
 
-    /// Load the persisted statistics, or `nil` if none were ever saved.
     public func loadStats() throws -> TransferStats? {
         try dbQueue.read { db in
             guard let row = try Row.fetchOne(
@@ -192,20 +166,12 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
-    // MARK: Speed-chart history
-
-    /// The fixed key under which the per-task speed-chart samples are stored
-    /// (same key/value table as the settings and stats).
     private static let speedHistoryKey = "speedHistory"
 
-    /// Persist the per-task speed-chart samples (task-id string → sample ring),
-    /// so a download's throughput chart survives quit & relaunch.
     public func saveSpeedHistory(_ history: [String: [SpeedHistoryPoint]]) throws {
         try upsertBlob(key: Self.speedHistoryKey, data: encoder.encode(history))
     }
 
-    /// Load the persisted per-task speed-chart samples, or an empty map if none
-    /// were saved (or the blob is from an incompatible schema).
     public func loadSpeedHistory() throws -> [String: [SpeedHistoryPoint]] {
         try dbQueue.read { db in
             guard let row = try Row.fetchOne(
@@ -218,9 +184,6 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
-    // MARK: Download history
-
-    /// Archive (or refresh) one completed download.
     public func saveHistoryEntry(_ entry: HistoryEntry) throws {
         let data = try encoder.encode(entry)
         try dbQueue.write { db in
@@ -238,7 +201,6 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
-    /// The archived downloads, newest first, capped at `limit`.
     public func loadHistory(limit: Int = 1000) throws -> [HistoryEntry] {
         try dbQueue.read { db in
             let rows = try Row.fetchAll(
@@ -253,36 +215,27 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
-    /// Remove one archived entry.
     public func deleteHistoryEntry(_ id: UUID) throws {
         _ = try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM history WHERE id = ?", arguments: [id.uuidString])
         }
     }
 
-    /// Wipe the archive.
     public func clearHistory() throws {
         _ = try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM history")
         }
     }
 
-    // MARK: Export / Import
-
-    /// Export the full download list as a self-contained JSON array.
     public func exportList() throws -> Data {
         let tasks = try loadAllTasks()
         return try encoder.encode(tasks)
     }
 
-    /// Encode an explicit task list to self-contained JSON — periodic backups of the live in-memory
-    /// queue, without round-tripping through the database the way ``exportList()`` does.
     public func exportTasks(_ tasks: [DownloadTask]) throws -> Data {
         try encoder.encode(tasks)
     }
 
-    /// Import a JSON array previously produced by ``exportList()``, upserting each
-    /// task. Returns the decoded tasks.
     @discardableResult
     public func importList(_ data: Data) throws -> [DownloadTask] {
         let decoded = try decoder.decode([DownloadTask].self, from: data)
@@ -291,8 +244,7 @@ public final class PersistenceStore: @unchecked Sendable {
         return tasks
     }
 
-    /// Security: imported files are untrusted. Re-sanitize `name` against path traversal and reject any
-    /// non-absolute or `..`-laden `saveDirectory` (arbitrary writes); those fall back to Downloads.
+    /// Imported files are untrusted: sanitize `name` and reject `..`/relative `saveDirectory` (arbitrary write).
     public static func sanitizedForImport(_ task: DownloadTask) -> DownloadTask {
         var t = task
         t.name = PathSafety.sanitizedName(t.name, fallback: "download")
@@ -303,9 +255,6 @@ public final class PersistenceStore: @unchecked Sendable {
         return t
     }
 
-    // MARK: Helpers
-
-    /// A stable discriminator string for the promoted `status` column.
     private static func statusKey(_ status: DownloadStatus) -> String {
         switch status {
         case .queued: return "queued"

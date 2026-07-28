@@ -1,18 +1,15 @@
-/* Shot 14 — four themes. Card `theme-sweep-toggle` verbatim: 15° clip-path swept past 1920+SLANT+40 on
- * Easing.out(poly(3)), 4px boundary unmounted after. Each theme is a real capture, never a filter. */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C, FONT, PAGE } from '../theme';
 
 const CL = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 
-const SLANT = 1080 * Math.tan((15 * Math.PI) / 180); // ~289px
+const SLANT = 1080 * Math.tan((15 * Math.PI) / 180);
 const END = 1920 + SLANT + 40;
 
 const ZOOM = 1920 / PAGE.w;
-const PH = PAGE.h * ZOOM; // 1091 — taller than the frame, so it fills
+const PH = PAGE.h * ZOOM;
 
-/** [sweep start, sweep end]; each sweep runs 30f with a 12f settle after. */
 const SWEEPS: [number, number][] = [
   [12, 42],
   [54, 84],
@@ -55,10 +52,7 @@ export const ThemeSweep: React.FC<{ durationInFrames: number }> = () => {
   return (
     <AbsoluteFill style={{ background: C.canvas, overflow: 'hidden' }}>
       {THEMES.map((t, i) => {
-        // layer 0 is the ground; layer i>0 is revealed by sweep i-1
         if (i === 0) {
-          // once sweep 1 has fully covered it, drop it — nothing under a full
-          // cover can change, and unmounting keeps the tail literally static
           if (frame > SWEEPS[0][1] + 2) return null;
           return <Layer key={i} i={i} label={t.name} file={t.file} dark />;
         }
@@ -67,8 +61,7 @@ export const ThemeSweep: React.FC<{ durationInFrames: number }> = () => {
         if (i < THEMES.length - 1 && frame > SWEEPS[i][1] + 2) return null;
 
         const p = interpolate(frame, [s0, s1], [-20, END], { ...CL, easing: Easing.out(Easing.poly(3)) });
-        /* The settle overshoots OUTWARD (1.015 -> 1), not inward: on a full-bleed page the demo's 0.985
-           shrink exposed a 14px near-black strip down both edges of the white Frost Light frame. */
+        /* Must overshoot OUTWARD: a sub-1 settle exposes a near-black strip down both edges. */
         const settle = interpolate(frame, [s1, s1 + 1, s1 + 12], [1, 1.015, 1], {
           ...CL,
           easing: Easing.out(Easing.cubic),
@@ -89,7 +82,6 @@ export const ThemeSweep: React.FC<{ durationInFrames: number }> = () => {
         );
       })}
 
-      {/* boundary line — one per sweep, unmounted the moment its sweep is done */}
       {SWEEPS.map(([s0, s1], i) => {
         if (frame < s0 || frame >= s1 + 2) return null;
         const p = interpolate(frame, [s0, s1], [-20, END], { ...CL, easing: Easing.out(Easing.poly(3)) });

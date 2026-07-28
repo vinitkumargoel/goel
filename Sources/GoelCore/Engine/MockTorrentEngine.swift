@@ -1,39 +1,19 @@
 import Foundation
 
-/// **Simulated** BitTorrent `actor` for every `.torrent` source — no networking, just a deterministic
-/// injectable ``Simulation``: metadata, up/down progress, `.finished`, then seeding to `seedRatioLimit`.
 actor MockTorrentEngine: TorrentControlling {
-
-    // MARK: Identity
-
     public nonisolated let kind: DownloadKind = .torrent
 
-    /// Mirrors ``TorrentEngine``: the mock synthesises a file list up front and
-    /// honours per-file priority, but emits no resume-data blobs.
     nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .perFilePriority] }
 
-    /// Lock-based event fan-out, outside actor isolation so the synchronous `events(for:)` requirement
-    /// can be met by a `nonisolated` method. Shared ``EventHub`` — the broadcaster every engine holds.
+    /// Must stay outside actor isolation: `events(for:)` is a synchronous `nonisolated` requirement.
     private nonisolated let hub = EventHub()
 
-    // MARK: Tunables
-
-    /// Knobs controlling the pace and shape of the simulation.
     struct Simulation: Sendable, Hashable {
-        /// Wall-clock seconds between simulation ticks. `0` ticks as fast as the
-        /// cooperative scheduler allows (used for instant tests).
         var tickInterval: TimeInterval
-        /// Simulated bytes downloaded per tick (before any profile cap).
         var bytesPerTick: Int64
-        /// Simulated bytes uploaded per tick, both while downloading (tit-for-tat)
-        /// and while seeding.
         var uploadBytesPerTick: Int64
-        /// How many `.requestingMetadata` ticks a magnet waits before its metadata
-        /// resolves. Ignored for `.torrentFile` sources (metadata is immediate).
         var metadataDelayTicks: Int
-        /// Lower bound of the simulated peer count.
         var minPeers: Int
-        /// Upper bound of the simulated peer count.
         var maxPeers: Int
 
         init(
@@ -52,45 +32,30 @@ actor MockTorrentEngine: TorrentControlling {
             self.maxPeers = maxPeers
         }
 
-        /// Pleasant defaults for a live demo (~32 MB/s, 1.5 s to resolve a magnet).
         static let demo = Simulation()
     }
 
-    // MARK: Dependencies
-
     private let sim: Simulation
 
-    /// The active traffic profile. Drives the seed-ratio cutoff and the bandwidth
-    /// / connection caps.
     private var profile: TrafficProfile
-
-    // MARK: Per-task state
 
     private var tasks: [UUID: DownloadTask] = [:]
     private var jobs: [UUID: Task<Void, Never>] = [:]
     private var states: [UUID: SimState] = [:]
 
-    /// Per-task last `.progress`/`.fileProgress` emit, throttling to ~12 Hz (lifecycle beats stay
-    /// unthrottled): state advances every tick, but a fast sim must not back the event stream up.
+    /// Progress beats are throttled (lifecycle beats are not): a fast sim would back the stream up.
     private var lastProgressEmit: [UUID: Date] = [:]
     private static let progressEmitInterval: TimeInterval = 0.08
 
-    // MARK: Init
-
-    /// - Parameter simulation: pace/shape of the simulation. Defaults to `.demo`.
-    /// - Parameter profile: traffic profile; its `seedRatioLimit` ends seeding. Defaults to `.high`.
     init(simulation: Simulation = .demo, profile: TrafficProfile = .high) {
         self.sim = simulation
         self.profile = profile
     }
 
-    // MARK: DownloadEngine
-
     func add(_ task: DownloadTask) async {
         guard tasks[task.id] == nil else { return }
         tasks[task.id] = task
-        // Seed from persisted progress so a disk-restored torrent doesn't replay finished phases:
-        // known metadata skips "requesting info"; fully downloaded jumps straight to the seeding loop.
+        // Seed from persisted progress, or a disk-restored torrent replays phases it already finished.
         var state = SimState()
         if task.totalBytes != nil { state.metadataResolved = true }
         if let total = task.totalBytes, total > 0, task.bytesDownloaded >= total {
@@ -108,16 +73,13 @@ actor MockTorrentEngine: TorrentControlling {
         tasks[id]?.status = .paused
         tasks[id]?.downloadSpeed = 0
         tasks[id]?.uploadSpeed = 0
-        tasks[id]?.connectionCount = 0   // a paused torrent has no live peers
-        // The manager owns the .paused transition; no .statusChanged(.paused) echo — a stale one
-        // arriving after a later resume would flip the task back to paused and strand it.
+        tasks[id]?.connectionCount = 0
+        // Never echo .statusChanged(.paused): a stale one landing after a resume strands the task.
     }
 
     func resume(_ id: DownloadTask.ID) async {
         guard tasks[id] != nil, jobs[id] == nil else { return }
         if states[id] == nil { states[id] = SimState() }
-        // run() re-emits the appropriate status (downloading or seeding) for the
-        // phase it resumes into.
         jobs[id] = Task { await self.run(id) }
     }
 
@@ -135,7 +97,6 @@ actor MockTorrentEngine: TorrentControlling {
         lastProgressEmit[id] = nil
     }
 
-    /// Whether a progress beat should be emitted now (rate-limited per task).
     private func shouldEmitProgress(_ id: UUID) -> Bool {
         let now = Date()
         if now.timeIntervalSince(lastProgressEmit[id] ?? .distantPast) >= Self.progressEmitInterval {
@@ -149,24 +110,16 @@ actor MockTorrentEngine: TorrentControlling {
         self.profile = profile
     }
 
-    /// Adopts new session-level BitTorrent settings. The mock does no real
-    /// networking, so this is a no-op passthrough (protocol surface only).
     func applySessionConfig(_ config: TorrentSessionConfig) async {}
 
-    /// Apply the session-level BitTorrent settings (no-op passthrough — the mock
-    /// does no real networking). PeX still rides through the shared config type.
     func configure(_ session: TorrentSessionConfig) async {
         await applySessionConfig(session)
     }
 
-    /// Record the sequential-download preference for a task. The mock has no wire
-    /// protocol, so this only updates the tracked task's flag.
     func setSequential(_ sequential: Bool, task id: DownloadTask.ID) async {
         tasks[id]?.sequentialDownload = sequential
     }
 
-    // Torrent maintenance/seeding controls — the mock records the caps and treats
-    // the recheck/reannounce as no-ops (no real session to drive).
     func setUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {
         tasks[id]?.uploadLimitBytesPerSec = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
     }
@@ -176,8 +129,6 @@ actor MockTorrentEngine: TorrentControlling {
     func forceRecheck(_ id: DownloadTask.ID) async {}
     func forceReannounce(_ id: DownloadTask.ID) async {}
 
-    /// Metadata for the add-confirmation preview via the engine-agnostic seam. No real network: returns
-    /// the same synthesised multi-file payload the run loop would produce, exercising the preview path.
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         let meta = Self.synthesizeMetadata(name: "")
         return EngineMetadata(name: meta.name, totalBytes: meta.total, files: meta.files)
@@ -189,15 +140,13 @@ actor MockTorrentEngine: TorrentControlling {
         task.files[idx].priority = priority
         tasks[id] = task
 
-        // Un-skipping adds wanted bytes after the run loop passed its download gate (the seeding loop
-        // never re-checks downloadComplete), so re-arm it; .paused is left to resume() to re-derive.
+        // Un-skipping adds bytes after the download gate closed, and the seeding loop never re-checks it.
         guard priority != .skip,
               wantedRemaining(id) > 0,
               tasks[id]?.status != .paused
         else { return }
         jobs[id]?.cancel()
         jobs[id] = nil
-        // Allow the closing .finished to re-emit once the newly-wanted bytes land.
         states[id]?.finishedEmitted = false
         jobs[id] = Task { await self.run(id) }
     }
@@ -206,22 +155,14 @@ actor MockTorrentEngine: TorrentControlling {
         hub.subscribe(id)
     }
 
-    // MARK: Inspection (additive, used by tests / the manager)
-
-    /// A snapshot of the engine's current view of a task, or `nil` if unknown.
     func snapshot(_ id: DownloadTask.ID) -> DownloadTask? {
         tasks[id]
     }
 
-    // MARK: Driver
-
-    /// The full simulated lifecycle. Re-entrant: on `resume` it inspects stored
-    /// state and continues from the metadata, downloading, or seeding phase.
     private func run(_ id: UUID) async {
         guard tasks[id] != nil else { return }
         if states[id] == nil { states[id] = SimState() }
 
-        // 1. Metadata.
         if states[id]?.metadataResolved == false {
             if case .magnet = tasks[id]!.source {
                 tasks[id]?.status = .requestingMetadata
@@ -239,7 +180,6 @@ actor MockTorrentEngine: TorrentControlling {
             emit(id, .metadataResolved(name: tasks[id]!.name, totalBytes: meta.total, files: tasks[id]!.files))
         }
 
-        // 2. Downloading.
         if !downloadComplete(id) {
             tasks[id]?.status = .downloading
             emit(id, .statusChanged(.downloading))
@@ -249,7 +189,6 @@ actor MockTorrentEngine: TorrentControlling {
             }
         }
 
-        // 3. 100% reached: finish, then begin seeding (never .completed directly).
         if states[id]?.finishedEmitted == false {
             finalizeDownload(id)
             states[id]?.finishedEmitted = true
@@ -259,10 +198,8 @@ actor MockTorrentEngine: TorrentControlling {
             emit(id, .statusChanged(.seeding))
         }
 
-        // 4. Seeding: keep uploading until the share ratio hits the limit.
         if !seedRatioReached(id) {
             if tasks[id]?.status != .seeding {
-                // Resumed straight into the seeding phase.
                 tasks[id]?.status = .seeding
                 emit(id, .statusChanged(.seeding))
             }
@@ -272,7 +209,6 @@ actor MockTorrentEngine: TorrentControlling {
             }
         }
 
-        // 5. Seed ratio satisfied: the torrent is done.
         guard tasks[id] != nil else { return }
         tasks[id]?.status = .completed
         tasks[id]?.completedAt = Date()
@@ -283,9 +219,6 @@ actor MockTorrentEngine: TorrentControlling {
         emit(id, .statusChanged(.completed))
     }
 
-    // MARK: Ticking
-
-    /// Advances the simulated clock by one tick, honouring cancellation.
     private func tick(_ id: UUID) async throws {
         if sim.tickInterval > 0 {
             try await Task.sleep(nanoseconds: UInt64((sim.tickInterval * 1_000_000_000).rounded()))
@@ -296,7 +229,6 @@ actor MockTorrentEngine: TorrentControlling {
         states[id]?.tick += 1
     }
 
-    /// A pre-metadata progress beat: 0 bytes, a handful of peers connecting.
     private func emitConnecting(_ id: UUID) {
         let peers = peerCount(id)
         tasks[id]?.connectionCount = peers
@@ -309,8 +241,6 @@ actor MockTorrentEngine: TorrentControlling {
         ))
     }
 
-    /// Distributes this tick's download budget across the wanted, incomplete files
-    /// in order, accrues some upload, and broadcasts progress.
     private func applyDownloadTick(_ id: UUID) {
         guard var task = tasks[id] else { return }
         let emitNow = shouldEmitProgress(id)
@@ -350,7 +280,6 @@ actor MockTorrentEngine: TorrentControlling {
         }
     }
 
-    /// Settles the final downloaded byte count and emits a closing progress beat.
     private func finalizeDownload(_ id: UUID) {
         guard var task = tasks[id] else { return }
         let downloaded = task.files.reduce(0) { $0 + $1.bytesCompleted }
@@ -367,7 +296,6 @@ actor MockTorrentEngine: TorrentControlling {
         ))
     }
 
-    /// One seeding beat: upload only, download speed pinned at 0.
     private func applySeedTick(_ id: UUID) {
         guard var task = tasks[id] else { return }
         let emitNow = shouldEmitProgress(id)
@@ -388,9 +316,6 @@ actor MockTorrentEngine: TorrentControlling {
         }
     }
 
-    // MARK: Phase predicates
-
-    /// Bytes still owed across the wanted (non-skipped) files.
     private func wantedRemaining(_ id: UUID) -> Int64 {
         guard let task = tasks[id] else { return 0 }
         return task.files.reduce(0) { acc, file in
@@ -405,15 +330,11 @@ actor MockTorrentEngine: TorrentControlling {
 
     private func seedRatioReached(_ id: UUID) -> Bool {
         guard let task = tasks[id] else { return true }
-        // A per-task limit (set via `setSeedRatioLimit`) overrides the engine-wide
-        // profile default, matching the real `TorrentEngine`'s behaviour.
         let limit = task.seedRatioLimit ?? profile.seedRatioLimit
-        if limit <= 0 { return true }      // no seeding requested
-        if task.bytesDownloaded <= 0 { return true }        // nothing to seed
+        if limit <= 0 { return true }
+        if task.bytesDownloaded <= 0 { return true }
         return task.shareRatio >= limit
     }
-
-    // MARK: Profile-aware rates
 
     private func effectiveDownloadBytesPerTick() -> Int64 {
         let base = max(1, sim.bytesPerTick)
@@ -428,19 +349,16 @@ actor MockTorrentEngine: TorrentControlling {
         let cap = profile.maxUploadBytesPerSec
         guard cap > 0, sim.tickInterval > 0 else { return base }
         let perTick = Int64(Double(cap) * sim.tickInterval)
-        // Floor at 1: a tiny upload cap plus a short tick can truncate `perTick` to 0, stalling
-        // upload accounting so the seed phase loops forever (shareRatio never rises).
+        // Floor at 1: a `perTick` truncated to 0 stalls shareRatio and the seed phase loops forever.
         return max(1, min(base, perTick))
     }
 
     private func speed(_ bytesThisTick: Int64) -> Double {
         guard bytesThisTick > 0 else { return 0 }
         if sim.tickInterval > 0 { return Double(bytesThisTick) / sim.tickInterval }
-        return Double(bytesThisTick) * 60 // nominal display rate when ticking instantly
+        return Double(bytesThisTick) * 60
     }
 
-    /// A deterministic, gently fluctuating peer count within the configured range
-    /// and the profile's connection cap.
     private func peerCount(_ id: UUID) -> Int {
         let t = states[id]?.tick ?? 0
         let lo = max(0, sim.minPeers)
@@ -451,8 +369,6 @@ actor MockTorrentEngine: TorrentControlling {
         return min(raw, maxConn)
     }
 
-    // MARK: Metadata
-
     private func resolveMetadata(for task: DownloadTask) -> (name: String, total: Int64, files: [TransferFile]) {
         if !task.files.isEmpty {
             let total = task.totalBytes ?? task.files.reduce(0) { $0 + $1.length }
@@ -461,8 +377,6 @@ actor MockTorrentEngine: TorrentControlling {
         return Self.synthesizeMetadata(name: task.name)
     }
 
-    /// Builds a realistic multi-file payload (a season pack: several episodes plus
-    /// a sample, an `.nfo` and a poster) so the multi-file model is exercised.
     static func synthesizeMetadata(name: String) -> (name: String, total: Int64, files: [TransferFile]) {
         let mb: Int64 = 1024 * 1024
         let kb: Int64 = 1024
@@ -483,15 +397,10 @@ actor MockTorrentEngine: TorrentControlling {
         return (base, total, files)
     }
 
-    // MARK: Events
-
     private nonisolated func emit(_ id: UUID, _ event: EngineEvent) {
         hub.emit(id, event)
     }
 
-    // MARK: Supporting types
-
-    /// Mutable per-task simulation bookkeeping.
     private struct SimState {
         var tick: Int = 0
         var metadataResolved: Bool = false

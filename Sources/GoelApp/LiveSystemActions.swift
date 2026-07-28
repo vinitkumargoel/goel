@@ -2,8 +2,6 @@ import AppKit
 import Foundation
 import GoelCore
 
-/// The production ``SystemActions``: posts banners and performs the irreversible drain action
-/// (quit / sleep / shutdown). Stateless, so the pure reducer's decision is testable without it.
 struct LiveSystemActions: SystemActions {
 
     func post(_ notifications: [AppNotification], sound: Bool) {
@@ -20,8 +18,6 @@ struct LiveSystemActions: SystemActions {
         }
     }
 
-    // Both drain actions were asked for hours earlier and then walked away from. Discarding the
-    // failure left the Mac awake with nothing saying why; a banner is imperfect but beats silence.
     func perform(_ intent: DrainIntent) {
         switch intent {
         case .quit:
@@ -53,8 +49,6 @@ struct LiveSystemActions: SystemActions {
             var failure: NSDictionary?
             script.executeAndReturnError(&failure)
             if failure != nil {
-                // Overwhelmingly this is a declined (or never-granted) Automation
-                // permission, and the user can only fix it in one place.
                 NotificationService.notify(
                     title: "Couldn’t shut this Mac down",
                     body: "Downloads finished, but macOS blocked the request. "

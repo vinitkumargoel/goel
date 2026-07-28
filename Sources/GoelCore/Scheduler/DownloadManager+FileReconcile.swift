@@ -1,24 +1,15 @@
 import Foundation
 
-// MARK: - Reconcile completed downloads with the filesystem
-
-/// Removes rows whose finished payload the user deleted/moved in Finder. Only `.completed` tasks, and only
-/// when the *containing directory still exists* — an unmounted volume is ambiguous, so the row is kept.
 extension DownloadManager {
 
-    /// Seconds between filesystem-reconciliation sweeps. The `stat` calls run off the actor
-    /// (``reconcileCompletedFiles()``) so a short interval is fine; it publishes only on a change.
     static let fileReconcileInterval: UInt64 = 5
 
-    /// One completed task's identity plus the two paths a sweep needs to `stat`.
-    /// Snapshotted on the actor so the probing itself can happen off it.
     private struct PayloadProbe: Sendable {
         let id: DownloadTask.ID
         let saveDirectory: String
         let savePath: String
     }
 
-    /// (Re)start the periodic sweep. Idempotent — cancels any prior loop first.
     func startFileReconcile() {
         fileReconcileTask?.cancel()
         fileReconcileTask = Task { [weak self] in
@@ -31,8 +22,7 @@ extension DownloadManager {
         }
     }
 
-    /// Prune completed downloads whose payload is gone. Snapshot on the actor, `stat` off it, apply back:
-    /// a `stat` on an unresponsive SMB/NFS share would otherwise stall every engine event. Results rechecked.
+    /// `stat` must stay off the actor: one unresponsive SMB/NFS share would stall every engine event.
     public func reconcileCompletedFiles() async {
         let probes = tasks.compactMap { task -> PayloadProbe? in
             guard task.status == .completed else { return nil }
@@ -42,8 +32,7 @@ extension DownloadManager {
         }
         guard !probes.isEmpty else { return }
 
-        // A private `FileManager` rather than `.default`, so the off-actor probing
-        // shares no instance state with callers on other threads.
+        // A private `FileManager`, not `.default`: no instance state shared with other threads.
         let missing = await Task.detached(priority: .utility) {
             let fm = FileManager()
             return probes.filter {
@@ -56,8 +45,7 @@ extension DownloadManager {
         schedule()
     }
 
-    /// Drop rows a probe found missing, skipping any task since removed, restarted or re-targeted — the
-    /// probe is a snapshot and must not overrule newer state. Returns whether anything was pruned.
+    /// Recheck each row: the probe is a stale snapshot and must not overrule newer state.
     private func pruneConfirmedMissing(_ probes: [PayloadProbe]) -> Bool {
         var pruned = false
         for probe in probes {
@@ -70,8 +58,7 @@ extension DownloadManager {
         return pruned
     }
 
-    /// Remove completed tasks whose payload is gone; returns whether anything was pruned, never publishes.
-    /// Blocking, so reserved for `restore()` at launch; the sweep uses ``reconcileCompletedFiles()``.
+    /// Blocking — only safe from `restore()` at launch; the periodic sweep uses the async variant.
     @discardableResult
     func pruneMissingCompletedFiles() -> Bool {
         let fm = FileManager.default
@@ -83,21 +70,16 @@ extension DownloadManager {
         return true
     }
 
-    /// Whether a completed task's payload was deleted/moved out from under us. Conservative: an absent
-    /// *containing directory* means "unknown" (unmounted volume, moved folder), not "deleted".
     static func completedPayloadIsMissing(_ task: DownloadTask, fileManager fm: FileManager) -> Bool {
         payloadIsMissing(saveDirectory: task.saveDirectory, savePath: task.savePath, fileManager: fm)
     }
 
-    /// The same rule expressed over bare paths, so the off-actor sweep can apply
-    /// it to a ``PayloadProbe`` snapshot without carrying a whole `DownloadTask`.
+    /// An absent containing directory means "unknown" (unmounted volume), never "deleted".
     static func payloadIsMissing(saveDirectory: String, savePath: String, fileManager fm: FileManager) -> Bool {
         guard fm.fileExists(atPath: saveDirectory) else { return false }
         return !fm.fileExists(atPath: savePath)
     }
 
-    /// Tear a task out of the queue and store without touching the filesystem (the payload is already
-    /// gone). ``remove(_:deleteData:)``'s bookkeeping minus the engine call — a completed task has none.
     private func dropTaskLocally(_ id: DownloadTask.ID) {
         clearLocalState(id, removeFromList: true)
         persistRemoval(id)

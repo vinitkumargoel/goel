@@ -1,15 +1,10 @@
-// Network.framework is macOS-only, and so is the listener this exercises.
 #if !os(Linux)
 import XCTest
 import Network
 @testable import GoelCore
 
-/// Integration regression: every settings change stops/starts ``RemoteControlServer`` on the *same*
-/// port. Before `allowLocalEndpointReuse` that rebind failed EADDRINUSE silently — UI "enabled", no socket.
 final class RemoteServerRestartTests: XCTestCase {
 
-    /// Raw `GET /api/config?token=t` over a fresh loopback TCP connection → the HTTP status line, or nil
-    /// on refusal/timeout. `NWConnection` directly, so it doesn't depend on URLSession/ATS behaviour.
     private func probe(port: UInt16) async -> String? {
         await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             let conn = NWConnection(host: .ipv4(.loopback),
@@ -37,20 +32,17 @@ final class RemoteServerRestartTests: XCTestCase {
                 case .failed, .cancelled:
                     finish(nil)
                 case .waiting:
-                    // Refused / not listening yet — NWConnection retries in .waiting rather than
-                    // failing. Treat as "not up" so the caller's poll loop retries instead of hanging.
+                    // A refused connection stays in `.waiting` forever; without this the poll loop hangs.
                     finish(nil)
                 default:
                     break
                 }
             }
-            // Hard backstop so a stuck connection can never hang the test.
             done.asyncAfter(deadline: .now() + 0.5) { finish(nil) }
             conn.start(queue: done)
         }
     }
 
-    /// Poll `port` until it serves `200`, or fail after ~5s.
     private func expectServes(port: UInt16, _ message: String) async throws {
         var status: String?
         for _ in 0..<50 {
@@ -64,8 +56,6 @@ final class RemoteServerRestartTests: XCTestCase {
         XCTAssertTrue(line.contains("200"), "\(message) — got: \(line)")
     }
 
-    /// The user's exact scenario: enable the portal, then change a *non-bind* setting (a password). The
-    /// port must keep serving — this is where a rebind used to silently kill the socket.
     func testConfigChangeOnSamePortKeepsServing() async throws {
         let manager = DownloadManager()               // held strongly: server keeps it weak
         let server = RemoteControlServer(manager: manager)
@@ -76,7 +66,6 @@ final class RemoteServerRestartTests: XCTestCase {
                            passwordHash: "", sessionMinutes: 120)
         try await expectServes(port: port, "portal should serve right after enabling")
 
-        // Set a password (credentials change) — same port, so no rebind.
         await server.start(port: port, allowLAN: false,
                            config: RemoteRouter.Config(token: "t", requireAuth: true, username: "admin"),
                            passwordHash: PortalTestCredentials.hash, sessionMinutes: 120)
@@ -85,14 +74,11 @@ final class RemoteServerRestartTests: XCTestCase {
         await server.stop()
     }
 
-    /// A genuine bind change (new port) must tear down the old socket and rebind
-    /// cleanly — exercising the awaited teardown in stop().
     func testPortChangeRebindsCleanly() async throws {
         let manager = DownloadManager()               // held strongly: server keeps it weak
         let server = RemoteControlServer(manager: manager)
         let config = RemoteRouter.Config(token: "t")
-        // Two independently reserved ports: the second must be one the first listener never held, or
-        // "rebound cleanly" would be indistinguishable from "never moved".
+        // Two independently reserved ports: reusing/incrementing one makes "rebound" indistinguishable from "never moved".
         let firstPort = LoopbackPort.reserve()
         let secondPort = LoopbackPort.reserve()
 
@@ -107,8 +93,6 @@ final class RemoteServerRestartTests: XCTestCase {
         await server.stop()
     }
 
-    /// Regression: a POST body arriving in a *separate* TCP segment from its headers must still be read
-    /// in full. The old single un-re-armed `receive` parsed a truncated body and `/api/add` 400'd.
     func testSplitPostBodyIsReadInFull() async throws {
         let manager = DownloadManager()
         let server = RemoteControlServer(manager: manager)
@@ -127,8 +111,6 @@ final class RemoteServerRestartTests: XCTestCase {
                       "a POST body split across TCP segments must be read in full — got: \(line)")
     }
 
-    /// Open a loopback connection, send `POST /api/add`'s headers, pause, then send
-    /// the body in a second write. Returns the response status line, or nil.
     private func splitPostAddStatus(port: UInt16) async -> String? {
         await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             let conn = NWConnection(host: .ipv4(.loopback),

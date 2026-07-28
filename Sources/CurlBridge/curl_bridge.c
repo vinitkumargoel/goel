@@ -16,10 +16,6 @@
 #endif
 #endif
 
-/* -------------------------------------------------------------------------- */
-/* Shared FTP path                                                            */
-/* -------------------------------------------------------------------------- */
-
 struct gcb_ctx {
     gcb_write write_cb;
     gcb_progress progress_cb;
@@ -109,10 +105,6 @@ const char *gcb_error_message(int code) {
     return curl_easy_strerror((CURLcode)code);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Host extraction (userinfo-safe, IPv6-aware) — used for redirect strip     */
-/* -------------------------------------------------------------------------- */
-
 int gcb_extract_host(const char *url, char *out, size_t out_sz) {
     if (!out || out_sz == 0) return 0;
     out[0] = '\0';
@@ -121,12 +113,11 @@ int gcb_extract_host(const char *url, char *out, size_t out_sz) {
     const char *p = strstr(url, "://");
     p = p ? p + 3 : url;
 
-    /* Authority ends at / ? # */
     const char *auth_end = p;
     while (*auth_end && *auth_end != '/' && *auth_end != '?' && *auth_end != '#')
         auth_end++;
 
-    /* Skip userinfo: last '@' within authority */
+    /* Skip userinfo at the LAST '@' in the authority — the first would let a URL spoof the host. */
     const char *at = NULL;
     for (const char *q = p; q < auth_end; q++) {
         if (*q == '@') at = q;
@@ -135,7 +126,6 @@ int gcb_extract_host(const char *url, char *out, size_t out_sz) {
 
     if (p >= auth_end) return 0;
 
-    /* IPv6 literal: [2001:db8::1] */
     if (*p == '[') {
         p++;
         size_t i = 0;
@@ -146,7 +136,6 @@ int gcb_extract_host(const char *url, char *out, size_t out_sz) {
         return i > 0 ? 1 : 0;
     }
 
-    /* Hostname or IPv4 — stop before port */
     size_t i = 0;
     while (p < auth_end && *p != ':' && i + 1 < out_sz) {
         out[i++] = (char)tolower((unsigned char)*p++);
@@ -154,10 +143,6 @@ int gcb_extract_host(const char *url, char *out, size_t out_sz) {
     out[i] = '\0';
     return i > 0 ? 1 : 0;
 }
-
-/* -------------------------------------------------------------------------- */
-/* HTTP range + interface-scoped egress                                       */
-/* -------------------------------------------------------------------------- */
 
 struct gcb_http_ctx {
     gcb_write write_cb;
@@ -215,7 +200,6 @@ static size_t gcb_http_write_thunk(char *ptr, size_t size, size_t nmemb, void *u
     struct gcb_http_ctx *ctx = (struct gcb_http_ctx *)ud;
     size_t n = size * nmemb;
 
-    /* Require Content-Range total when caller supplied expected_total. */
     if (ctx->expected_total > 0 && ctx->http_status == 206 && !ctx->range_total_mismatch) {
         if (ctx->content_range_total < 0) {
             ctx->range_total_mismatch = 1;
@@ -230,15 +214,13 @@ static size_t gcb_http_write_thunk(char *ptr, size_t size, size_t nmemb, void *u
         return 0; /* abort — do not write mismatched body into the segment slot */
     }
 
-    /* A final 200 to a *ranged* request means Range was ignored, so abort on the first byte
-    rather than drain a whole body. Returns 0 => CURLE_WRITE_ERROR, never "aborted". */
+    /* 200 to a ranged request = Range ignored; writing it would corrupt the segment slot. */
     if (!ctx->unranged && ctx->http_status == 200) {
         ctx->range_ignored = 1;
         return 0;
     }
 
-    /* Drain bodies that are not the success response (redirects, errors). A 200 to a ranged
-    request means Range was ignored, so only the unranged mode accepts it. */
+    /* Returning n drains non-success bodies (redirects, errors) without writing them. */
     int ok_status = ctx->unranged ? 200 : 206;
     if (ctx->http_status != 0 && ctx->http_status != ok_status) {
         return n;
@@ -303,7 +285,6 @@ static size_t gcb_http_header_thunk(char *buffer, size_t size, size_t nitems, vo
                 }
             }
         } else if (ctx->expected_total > 0) {
-            /* Content-Range present but unusable — treat as mismatch for multi-path. */
             ctx->range_total_mismatch = 1;
             ctx->reject_body = 1;
         }
@@ -424,8 +405,7 @@ GCBHTTPResult gcb_http_range(const char *url,
                              void *userdata) {
     GCBHTTPResult result = { -1, 0, -1, 0, 0 };
     if (!url || !write_cb || !progress_cb) return result;
-    /* A negative start means "whole body, no Range header": the interface-bound
-       single-stream path, used when the server does not support ranges. */
+    /* range_start < 0 is the sentinel for "whole body, send no Range header". */
     if (range_start >= 0 && range_end < range_start) {
         result.code = (int)CURLE_BAD_FUNCTION_ARGUMENT;
         return result;
@@ -512,7 +492,6 @@ GCBHTTPResult gcb_http_range(const char *url,
         curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &status);
         if (ctx.http_status == 0 && status > 0) ctx.http_status = (int)status;
 
-        /* Only credit body bytes from non-mismatch attempts. */
         if (!ctx.range_total_mismatch) total_written += ctx.bytes_written;
         result.code = (int)rc;
         result.http_status = ctx.http_status;
@@ -524,7 +503,6 @@ GCBHTTPResult gcb_http_range(const char *url,
         snprintf(result.last_modified, sizeof(result.last_modified), "%s", ctx.last_modified);
 
         if (ctx.range_total_mismatch) {
-            /* Force a distinct failure surface for Swift. */
             if (rc == CURLE_OK || rc == CURLE_WRITE_ERROR || rc == CURLE_ABORTED_BY_CALLBACK) {
                 result.code = (int)CURLE_WRITE_ERROR;
             }

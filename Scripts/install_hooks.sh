@@ -1,6 +1,4 @@
 #!/bin/bash
-# Point git at the repo's versioned hooks (Scripts/git-hooks). Run once per clone.
-# Undo with: git config --unset core.hooksPath
 set -euo pipefail
 
 ROOT=$(git rev-parse --show-toplevel)

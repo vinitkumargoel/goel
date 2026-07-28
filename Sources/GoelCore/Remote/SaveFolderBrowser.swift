@@ -1,22 +1,16 @@
 import Foundation
 
-/// Folders for the portal's save-folder picker. **The boundary is the OS's, not ours**: no configured root
-/// — uid permissions (`access(2)`) decide, so on macOS the portal password guards `~/Library/LaunchAgents`.
+/// **The boundary is the OS's, not ours**: there is no configured root — uid permissions decide, so the portal password is the guard.
 enum SaveFolderBrowser {
 
-    /// One level of the tree, or nil when `path` is missing/not a directory. `defaultFolder` is where a
-    /// nil `path` opens, `home` anchors the `~/…` labels; neither constrains anything.
     static func listing(of path: String?, defaultFolder: String, home: String) -> RemoteFolderListing? {
         let target = normalize(resolve(path, default: defaultFolder))
         let fm = FileManager.default
         guard isDirectory(target, fm) else { return nil }
 
-        // An unreadable folder is not worth failing the request over — the picker
-        // still has to show where you are and let you go back up.
         let names = (try? fm.contentsOfDirectory(atPath: target)) ?? []
         let folders = names
-            // Hidden the way Finder hides them (listing dot-folders invites picking `.Trash`).
-            // Display choice, not a boundary: a typed dot-folder is accepted if the uid can write it.
+            // A display choice, not a boundary: a typed dot-folder is still accepted if the uid can write it.
             .filter { !$0.hasPrefix(".") }
             .map { (name: $0, path: (target as NSString).appendingPathComponent($0)) }
             .filter { isDirectory($0.path, fm) }
@@ -30,8 +24,6 @@ enum SaveFolderBrowser {
 
         return RemoteFolderListing(
             path: target,
-            // "/" is the only folder with nothing above it. Everywhere else the
-            // picker offers Up, and permission decides whether it lands.
             parent: target == "/" ? nil : (target as NSString).deletingLastPathComponent,
             folders: folders,
             writable: fm.isWritableFile(atPath: target),
@@ -40,7 +32,6 @@ enum SaveFolderBrowser {
             places: places(defaultFolder: defaultFolder, home: home))
     }
 
-    /// Creates `name` inside `parent`, returning its absolute path or nil (e.g. uid may not write there).
     /// `name` must have passed ``RemoteRouter/isPlainFolderName(_:)`` so the join cannot walk elsewhere.
     static func create(named name: String, in parent: String?, defaultFolder: String) -> String? {
         let base = normalize(resolve(parent, default: defaultFolder))
@@ -49,13 +40,10 @@ enum SaveFolderBrowser {
         let fm = FileManager.default
         var isDir: ObjCBool = false
         if fm.fileExists(atPath: target, isDirectory: &isDir) {
-            // Already there: succeed if it is a folder — failing would only push the user to
-            // invent a second name for a folder they already have.
             return isDir.boolValue ? target : nil
         }
         do {
-            // No intermediates: `name` is a single validated component, so allowing them would
-            // quietly accept a name with a separator if that validation ever loosened.
+            // No intermediates: allowing them would quietly accept a name with a separator if validation loosened.
             try fm.createDirectory(atPath: target, withIntermediateDirectories: false)
             return target
         } catch {
@@ -64,7 +52,6 @@ enum SaveFolderBrowser {
         }
     }
 
-    /// Whether `folder` can receive a download: exists, is a directory, and this uid may write it.
     /// Re-asked at submit time because permissions (or the folder itself) can change after picking.
     static func canSave(into folder: String) -> Bool {
         let fm = FileManager.default
@@ -72,8 +59,6 @@ enum SaveFolderBrowser {
         return isDirectory(path, fm) && fm.isWritableFile(atPath: path)
     }
 
-    /// Shortcut destinations: downloads folder, home, filesystem root, mounted volumes. Shortcuts,
-    /// not boundaries — all are reachable by walking Up anyway; this just saves clicks.
     static func places(defaultFolder: String, home: String) -> [RemoteFolderListing.Entry] {
         let fm = FileManager.default
         var out: [RemoteFolderListing.Entry] = []
@@ -96,8 +81,6 @@ enum SaveFolderBrowser {
         return out
     }
 
-    /// Mounted volumes by their `/Volumes` names. Read from the directory, not `mountedVolumeURLs`,
-    /// which also returns boot/system data volumes; anything resolving to `/` is dropped ("Computer").
     private static func mountedVolumes() -> [(name: String, path: String)] {
         let fm = FileManager.default
         let names = (try? fm.contentsOfDirectory(atPath: "/Volumes")) ?? []
@@ -113,8 +96,7 @@ enum SaveFolderBrowser {
         return trimmed.isEmpty ? fallback : trimmed
     }
 
-    /// Resolve symlinks and collapse `..` first, so the path the picker shows is the path the write
-    /// uses — otherwise the breadcrumb could say one thing while the file landed somewhere else.
+    /// Resolve symlinks and collapse `..` first, or the path shown is not the path written to.
     private static func normalize(_ path: String) -> String {
         let expanded = (path as NSString).expandingTildeInPath
         return ((expanded as NSString).resolvingSymlinksInPath as NSString).standardizingPath
