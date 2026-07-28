@@ -22,12 +22,12 @@ struct AppToolbar: View {
                 .button(L10n.t("Select none")) { vm.selectNone() },
                 .button(L10n.t("Select completed")) { vm.selectCompleted() },
             ]) { open in
-                ToolbarMenuLabel(title: "Select", systemImage: "checkmark.circle", active: open)
+                ToolbarMenuLabel(title: L10n.t("Select"), systemImage: "checkmark.circle", active: open)
             }
             .accessibilityValue(L10n.t("%d selected", vm.selection.count))
 
             ActionMenu(items: sortItems) { open in
-                ToolbarMenuLabel(title: "Sort", systemImage: "arrow.up.arrow.down", active: open)
+                ToolbarMenuLabel(title: L10n.t("Sort"), systemImage: "arrow.up.arrow.down", active: open)
             }
             .accessibilityValue(L10n.t("%1$@, %2$@", L10n.t(vm.sortKey.accessibilityName),
                                       vm.sortAscending ? L10n.t("ascending") : L10n.t("descending")))
@@ -39,7 +39,7 @@ struct AppToolbar: View {
                 .button(L10n.t("Completed")) { vm.filter = .completed },
                 .button(L10n.t("Seeding")) { vm.filter = .seeding },
             ]) { open in
-                ToolbarMenuLabel(title: "Filter", systemImage: "line.3.horizontal.decrease.circle", active: open)
+                ToolbarMenuLabel(title: L10n.t("Filter"), systemImage: "line.3.horizontal.decrease.circle", active: open)
             }
             .accessibilityValue(vm.filter.accessibilityName)
 

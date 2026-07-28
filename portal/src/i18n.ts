@@ -20,7 +20,7 @@ export const FALLBACK_LANGUAGE: Language = 'en'
  * `/locales/*` route — an HTTP backend would 404 in production while working in
  * `npm run dev`.
  */
-void i18n.use(initReactI18next).init({
+i18n.use(initReactI18next).init({
   resources,
   lng: FALLBACK_LANGUAGE,
   fallbackLng: FALLBACK_LANGUAGE,
@@ -29,6 +29,10 @@ void i18n.use(initReactI18next).init({
   returnNull: false,
   // Keeps i18next's vendor notice out of the user's browser console and the CI log.
   showSupportNotice: false,
+  // Static resources cannot fail to load, so this only fires on a malformed catalogue —
+  // where a silent rejection would leave every `t()` returning its own key.
+}).catch((error: unknown) => {
+  console.error('i18next failed to initialise; the UI will render raw keys.', error)
 })
 
 /** Compile-time key checking: `t('nope')` is a type error, so `tsc` is the missing-key gate. */

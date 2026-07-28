@@ -102,7 +102,7 @@ struct DetailBottomPanel: View {
                     Text(task.etaText ?? "—")
                         .scaledFont(size: 12.5, weight: .semibold, monospacedDigit: true)
                 }
-                telStat(L10n.t(task.swarmSummary.label)) {
+                telStat(task.swarmSummary.label) {
                     Text(task.swarmSummary.value)
                         .scaledFont(size: 12.5, weight: .semibold, monospacedDigit: true)
                         .lineLimit(1)

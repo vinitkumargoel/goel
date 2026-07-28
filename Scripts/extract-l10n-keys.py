@@ -57,8 +57,14 @@ def swift_string_literals(text, index):
                 closing = lines[-1]
                 indent = closing[: len(closing) - len(closing.lstrip())]
                 lines = lines[:-1]
-            stripped = [ln[len(indent):] if ln.startswith(indent) else ln for ln in lines]
-            joined = "\n".join(stripped)
+            def dedent(ln):
+                if ln.startswith(indent):
+                    return ln[len(indent):]
+                # A short line that is all whitespace collapses to empty in Swift; a short line
+                # with content is a compile error, so it can never reach us.
+                return "" if ln.strip() == "" else ln
+
+            joined = "\n".join(dedent(ln) for ln in lines)
             # A trailing backslash in a multi-line literal continues the line, as in source.
             while "\\\n" in joined:
                 joined = joined.replace("\\\n", "")

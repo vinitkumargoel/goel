@@ -52,6 +52,16 @@ public enum L10n {
         String(format: string(key, language: currentLanguage), arguments: arguments)
     }
 
+    /// Lowercases a translated fragment being dropped into the middle of a sentence — "Cancel
+    /// download", not "Cancel Download". German capitalizes every noun, so doing this
+    /// unconditionally would produce "Warten auf konvertierung"; there it is left alone.
+    public static func midSentence(_ value: String) -> String {
+        languagesCapitalizingNouns.contains(languageCode(for: currentLanguage))
+            ? value : value.lowercased()
+    }
+
+    private static let languagesCapitalizingNouns: Set<String> = ["de"]
+
     private static let languageLock = NSLock()
     private static var storedLanguage = "English"
 

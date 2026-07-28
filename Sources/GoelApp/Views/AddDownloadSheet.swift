@@ -184,7 +184,8 @@ struct AddDownloadSheet: View {
                 metadataSummary(preview)
 
                 if let duplicate = vm.existingDuplicate(of: preview.source) {
-                    Label(L10n.t("Already in your list (%@) — starting it again won’t add a second copy.", duplicate.status.displayName.lowercased()),
+                    Label(L10n.t("Already in your list (%@) — starting it again won’t add a second copy.",
+                               L10n.midSentence(L10n.t(duplicate.status.displayName))),
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.orange)

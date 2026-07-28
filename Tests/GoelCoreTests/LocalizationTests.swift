@@ -62,6 +62,60 @@ final class LocalizationTests: XCTestCase {
             """)
     }
 
+    /// The audit above only proves that keys which reached `L10n.t` reached the table. It says
+    /// nothing about text that never went through `L10n.t` at all, which is the easier mistake to
+    /// make. These AppKit setters have no legitimate raw-literal use — every one is prose a user
+    /// reads — so a literal here is always an oversight.
+    func testUserFacingAppKitSettersAreLocalized() throws {
+        let sinks = ["addButton(withTitle: \"", "messageText = \"", "informativeText = \"",
+                     "setAccessibilityLabel(\"", "NSTextField(labelWithString: \""]
+        var raw: [String] = []
+        for url in try swiftSources() {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            for (offset, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated()
+            where sinks.contains(where: line.contains) {
+                raw.append("\(url.lastPathComponent):\(offset + 1) \(line.trimmingCharacters(in: .whitespaces))")
+            }
+        }
+        XCTAssert(raw.isEmpty, """
+            \(raw.count) user-facing AppKit string(s) bypass L10n.t entirely:
+            \(raw.sorted().joined(separator: "\n"))
+            """)
+    }
+
+    /// Every translation is keyed by English text, so a key the English table doesn't have is one
+    /// whose English copy was edited or deleted — the translation is dead and nothing else notices.
+    func testTranslationsHaveNoKeysTheBaseTableLacks() throws {
+        let base = try baseTable()
+        let core = try XCTUnwrap(ResourceBundles.core)
+        var orphans: [String] = []
+        for code in L10n.supportedLanguages.map(\.code) where code != "en" {
+            guard let lproj = core.path(forResource: code, ofType: "lproj") else { continue }
+            let data = try Data(contentsOf: URL(fileURLWithPath: lproj + "/Localizable.strings"))
+            let table = try XCTUnwrap(PropertyListSerialization
+                .propertyList(from: data, format: nil) as? [String: String])
+            XCTAssertFalse(table.isEmpty, "\(code).lproj parsed to nothing.")
+            orphans += table.keys.filter { base[$0] == nil }.map { "\(code): \"\($0)\"" }
+        }
+        XCTAssert(orphans.isEmpty, """
+            \(orphans.count) translation(s) are keyed to English text that no longer exists. \
+            Re-key them against en.lproj or delete them.
+            \(orphans.sorted().joined(separator: "\n"))
+            """)
+    }
+
+    /// `Scripts/extract-l10n-keys.py` reimplements Swift's `"""` dedent rules, and the audit above
+    /// skips those literals, so nothing else would notice the reimplementation drifting. Checking
+    /// the *shape* of the result catches the two ways it can drift without repeating its logic.
+    func testMultilineKeysWereDedentedAndJoined() throws {
+        for key in try baseTable().keys {
+            XCTAssertFalse(key.contains("\\\n"), "A line continuation survived into \"\(key)\".")
+            for line in key.split(separator: "\n") where line.hasPrefix("    ") {
+                XCTFail("Source indentation survived into \"\(key)\" on the line \"\(line)\".")
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     /// Reads the shipped table rather than the file in `Sources/`, so a resource-bundle wiring

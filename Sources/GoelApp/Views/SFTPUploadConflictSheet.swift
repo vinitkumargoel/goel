@@ -111,7 +111,7 @@ struct SFTPUploadConflictSheet: View {
         var counts: [Policy: Int] = [:]
         for item in request.colliding { counts[decisions[item.id] ?? .rename, default: 0] += 1 }
         return Policy.allCases
-            .compactMap { p in (counts[p] ?? 0) > 0 ? L10n.t("%1$@ %2$@", String(counts[p]!), L10n.t(p.rawValue).lowercased()) : nil }
+            .compactMap { p in (counts[p] ?? 0) > 0 ? L10n.t("%1$@ %2$@", String(counts[p]!), L10n.midSentence(L10n.t(p.rawValue))) : nil }
             .joined(separator: " · ")
     }
 

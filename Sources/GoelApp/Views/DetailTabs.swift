@@ -27,7 +27,7 @@ struct KVRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .a11yButton(L10n.t("Copy %@", key.lowercased()))
+                .a11yButton(L10n.t("Copy %@", L10n.midSentence(L10n.t(key))))
             }
         }
         .accessibilityElement(children: .contain)

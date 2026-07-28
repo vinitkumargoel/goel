@@ -346,7 +346,7 @@ struct DownloadRow: View {
         if task.status == .paused || task.status == .queued || task.status.isActive {
             Menu(L10n.t("Schedule Start")) {
                 ForEach(ScheduledStartOption.presets) { preset in
-                    Button(L10n.t(preset.label)) { vm.setScheduledStart(preset.date(), task: task.id) }
+                    Button(preset.label) { vm.setScheduledStart(preset.date(), task: task.id) }
                 }
                 if task.scheduledAt != nil {
                     Divider()
@@ -432,7 +432,7 @@ private struct MediaMenuItems: View {
     var body: some View {
         let live = center.liveJobs(input: input)
         ForEach(live) { job in
-            Button(L10n.t("Cancel %@", L10n.t(job.kind.activeTitle).lowercased())) { center.cancel(job.id) }
+            Button(L10n.t("Cancel %@", L10n.midSentence(job.kind.activeTitle))) { center.cancel(job.id) }
         }
         if !live.isEmpty { Divider() }
         Menu(L10n.t("Convert To")) {

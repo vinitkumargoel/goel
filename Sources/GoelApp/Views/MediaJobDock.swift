@@ -105,7 +105,9 @@ private struct MediaJobCard: View {
     }
 
     private var closeHelp: String {
-        if job.isStopStuck() { return L10n.t("Stop waiting for %@", L10n.t(job.kind.activeTitle).lowercased()) }
+        if job.isStopStuck() {
+            return L10n.t("Stop waiting for %@", L10n.midSentence(job.kind.activeTitle))
+        }
         return job.state.isLive ? L10n.t("Cancel this conversion") : L10n.t("Dismiss")
     }
 
@@ -192,13 +194,14 @@ private struct MediaJobCard: View {
     private var title: String {
         switch job.state {
         case .cancelling:
-            return job.isStopStuck() ? L10n.t("%@ — won’t stop", L10n.t(job.kind.activeTitle))
-                                     : L10n.t(job.kind.activeTitle)
+            return job.isStopStuck() ? L10n.t("%@ — won’t stop", job.kind.activeTitle)
+                                     : job.kind.activeTitle
         case .queued, .running:
-            return job.isStalled() ? L10n.t("%@ — not progressing", L10n.t(job.kind.activeTitle))
-                                   : L10n.t(job.kind.activeTitle)
-        case .finished:  return L10n.t(job.kind.finishedTitle)
-        case .failed:    return L10n.t("Couldn’t finish %@", L10n.t(job.kind.activeTitle).lowercased())
+            return job.isStalled() ? L10n.t("%@ — not progressing", job.kind.activeTitle)
+                                   : job.kind.activeTitle
+        case .finished:  return job.kind.finishedTitle
+        case .failed:    return L10n.t("Couldn’t finish %@",
+                                       L10n.midSentence(job.kind.activeTitle))
         case .cancelled: return L10n.t("Cancelled")
         }
     }

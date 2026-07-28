@@ -272,9 +272,9 @@ export function AdapterLine({ adapter }: { adapter: NetworkAdapter }) {
     <span>
       {adapter.label}{' '}
       <span style={{ color: 'var(--text-faint)' }}>
-        {adapter.ipv4 ?? t('network.noAddress')}
+        {adapter.ipv4 ?? t('adapter.noAddress')}
       </span>
-      {adapter.expensive && <span className="chip chip-d">{t('network.metered')}</span>}
+      {adapter.expensive && <span className="chip chip-d">{t('adapter.metered')}</span>}
     </span>
   )
 }

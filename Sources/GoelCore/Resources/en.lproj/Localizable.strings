@@ -40,6 +40,7 @@
 "%@ mismatch" = "%@ mismatch";
 "%@ pending" = "%@ pending";
 "%@ per second" = "%@ per second";
+"%@ ship translations today." = "%@ ship translations today.";
 "%@ speed profile" = "%@ speed profile";
 "%@ verified" = "%@ verified";
 "%@ — copy, instant" = "%@ — copy, instant";
@@ -148,6 +149,7 @@
 "Advanced" = "Advanced";
 "Advertised via Bonjour. No LAN address detected right now." = "Advertised via Bonjour. No LAN address detected right now.";
 "Aggregation" = "Aggregation";
+"Aggregation disabled in Settings" = "Aggregation disabled in Settings";
 "Alias" = "Alias";
 "Alias to folder" = "Alias to folder";
 "All %d are already in your list" = "All %d are already in your list";
@@ -162,6 +164,7 @@
 "Already in your list (%@) — starting it again won’t add a second copy." = "Already in your list (%@) — starting it again won’t add a second copy.";
 "Also try the SSH agent" = "Also try the SSH agent";
 "Alternative URLs for the same file — segments spread across them and fail over automatically." = "Alternative URLs for the same file — segments spread across them and fail over automatically.";
+"An HTTP proxy can only carry tracker traffic — peer connections go out directly." = "An HTTP proxy can only carry tracker traffic — peer connections go out directly.";
 "An append-only record of downloads added, completed, and failed — written to a file on this Mac and nowhere else." = "An append-only record of downloads added, completed, and failed — written to a file on this Mac and nowhere else.";
 "An end before the start wraps past midnight." = "An end before the start wraps past midnight.";
 "An executable script; %path% in the arguments becomes the finished file." = "An executable script; %path% in the arguments becomes the finished file.";
@@ -210,6 +213,7 @@
 "BitTorrent over UDP for better congestion control." = "BitTorrent over UDP for better congestion control.";
 "Bookmarklet" = "Bookmarklet";
 "Bought a commercial licence? You can note the details here so they travel with the install for your own audit or asset records. Goel° never reads these fields, never checks them, and never sends them anywhere — leaving them blank changes nothing." = "Bought a commercial licence? You can note the details here so they travel with the install for your own audit or asset records. Goel° never reads these fields, never checks them, and never sends them anywhere — leaving them blank changes nothing.";
+"Browser" = "Browser";
 "Browser Extension" = "Browser Extension";
 "Browser Integration" = "Browser Integration";
 "Browser extension" = "Browser extension";
@@ -334,6 +338,7 @@
 "Copy source link for %@" = "Copy source link for %@";
 "Copy tracker URL" = "Copy tracker URL";
 "Copy web portal link" = "Copy web portal link";
+"Copying" = "Copying";
 "Could not reach the server" = "Could not reach the server";
 "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app." = "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app.";
 "Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@" = "Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@";
@@ -397,6 +402,7 @@
 "Deselect All" = "Deselect All";
 "Detail panel" = "Detail panel";
 "Detail section" = "Detail section";
+"Details" = "Details";
 "Diagnostics" = "Diagnostics";
 "Diagnostics are only ever sent by you, by hand, from Settings ▸ Advanced." = "Diagnostics are only ever sent by you, by hand, from Settings ▸ Advanced.";
 "Diagnostics copied — paste it into your bug report" = "Diagnostics copied — paste it into your bug report";
@@ -456,6 +462,7 @@
 "Downloads finished, but the sleep command didn’t run." = "Downloads finished, but the sleep command didn’t run.";
 "Downloads it contains are added paused; ones already in your list are skipped.\n\nSecurity-sensitive settings are never taken from a backup: your proxy, the remote portal’s access, credentials and trusted-header (SSO) sign-in, your save and watch folders, RSS feeds, update feed, and any script or antivirus paths all stay as they are." = "Downloads it contains are added paused; ones already in your list are skipped.\n\nSecurity-sensitive settings are never taken from a backup: your proxy, the remote portal’s access, credentials and trusted-header (SSO) sign-in, your save and watch folders, RSS feeds, update feed, and any script or antivirus paths all stay as they are.";
 "Downloads, %d in progress" = "Downloads, %d in progress";
+"Dracula" = "Dracula";
 "Drag a .torrent or a link onto this window" = "Drag a .torrent or a link onto this window";
 "Drag a URL or " = "Drag a URL or ";
 "Drag links or torrent files here to queue them." = "Drag links or torrent files here to queue them.";
@@ -495,24 +502,26 @@
 "Encryption" = "Encryption";
 "Encryption mode" = "Encryption mode";
 "End" = "End";
-"English and Deutsch ship translations today." = "English and Deutsch ship translations today.";
 "Enter a URL or magnet link first" = "Enter a URL or magnet link first";
 "Enter a full http(s) page URL." = "Enter a full http(s) page URL.";
 "Enter a host and username first." = "Enter a host and username first.";
 "Enter a valid URL, magnet, or .m3u8 link." = "Enter a valid URL, magnet, or .m3u8 link.";
 "Enter three or four digits, 0–7." = "Enter three or four digits, 0–7.";
 "Entry removed" = "Entry removed";
+"Error" = "Error";
 "Error. %@" = "Error. %@";
 "Every action and settings pane in one search field." = "Every action and settings pane in one search field.";
 "Every day" = "Every day";
 "Every download goes here." = "Every download goes here.";
 "Every item" = "Every item";
+"Everyone" = "Everyone";
 "Everything you queue lands in one place unless you say otherwise. You can still pick a different folder for any individual download." = "Everything you queue lands in one place unless you say otherwise. You can still pick a different folder for any individual download.";
 "Exchange peers with other clients." = "Exchange peers with other clients.";
 "Executable path" = "Executable path";
 "Execute" = "Execute";
 "Existing portal links and the paired browser extension stop working until you copy the new token to them." = "Existing portal links and the paired browser extension stop working until you copy the new token to them.";
 "Expected checksum" = "Expected checksum";
+"Expensive adapters excluded" = "Expensive adapters excluded";
 "Export Backup (JSON)…" = "Export Backup (JSON)…";
 "Export CSV…" = "Export CSV…";
 "Export Download List…" = "Export Download List…";
@@ -523,6 +532,7 @@
 "Extract Audio…" = "Extract Audio…";
 "Extracted %@" = "Extracted %@";
 "Extracting %@" = "Extracting %@";
+"Failed" = "Failed";
 "Failed sign-ins before backoff" = "Failed sign-ins before backoff";
 "Failed, %@" = "Failed, %@";
 "Failed. %@" = "Failed. %@";
@@ -536,10 +546,12 @@
 "Fetching details" = "Fetching details";
 "Fetching details…" = "Fetching details…";
 "Fetching…" = "Fetching…";
+"Fewer than 2 selected adapters are up" = "Fewer than 2 selected adapters are up";
 "File" = "File";
 "File #" = "File #";
 "Files" = "Files";
 "Files, peers, trackers, and per-task limits" = "Files, peers, trackers, and per-task limits";
+"Filter" = "Filter";
 "Filter this folder" = "Filter this folder";
 "Find peers on the local network." = "Find peers on the local network.";
 "Find peers without a tracker." = "Find peers without a tracker.";
@@ -565,6 +577,9 @@
 "Free for personal use. Commercial and business use requires a paid licence.\nLicensed under PolyForm Noncommercial 1.0.0 — see Settings ▸ Licence." = "Free for personal use. Commercial and business use requires a paid licence.\nLicensed under PolyForm Noncommercial 1.0.0 — see Settings ▸ Licence.";
 "Free for personal use. Commercial use requires a licence — " = "Free for personal use. Commercial use requires a licence — ";
 "Free for personal use. Commercial use requires a licence. Learn more." = "Free for personal use. Commercial use requires a licence. Learn more.";
+"From" = "From";
+"Frost Dark" = "Frost Dark";
+"Frost Light" = "Frost Light";
 "Full instructions" = "Full instructions";
 "General" = "General";
 "Get Info" = "Get Info";
@@ -590,6 +605,7 @@
 "Grab Links from Page…" = "Grab Links from Page…";
 "Grab links from a page" = "Grab links from a page";
 "Grid" = "Grid";
+"Group" = "Group";
 "Group this download under a category. Leave empty to remove." = "Group this download under a category. Leave empty to remove.";
 "Guarantee, never: %@" = "Guarantee, never: %@";
 "HLS stream" = "HLS stream";
@@ -628,6 +644,7 @@
 "Hourly" = "Hourly";
 "How many times to retry before leaving it failed for a manual retry." = "How many times to retry before leaving it failed for a manual retry.";
 "Identity (.p12) path" = "Identity (.p12) path";
+"Idle" = "Idle";
 "If Goel° is used in the course of a business — even by one person, on one laptop, for internal work — that is commercial use and needs a paid licence. Personal downloads, study, charities, schools and public research bodies do not." = "If Goel° is used in the course of a business — even by one person, on one laptop, for internal work — that is commercial use and needs a paid licence. Personal downloads, study, charities, schools and public research bodies do not.";
 "Images" = "Images";
 "Import" = "Import";
@@ -778,6 +795,7 @@
 "No — single connection" = "No — single connection";
 "None" = "None";
 "None — password or agent only" = "None — password or agent only";
+"Nord" = "Nord";
 "Normal" = "Normal";
 "Not a valid MD5 / SHA-1 / SHA-256 hex digest" = "Not a valid MD5 / SHA-1 / SHA-256 hex digest";
 "Not enough disk space — this needs about %1$@ and there is %2$@ free." = "Not enough disk space — this needs about %1$@ and there is %2$@ free.";
@@ -902,6 +920,7 @@
 "Piece map" = "Piece map";
 "Piece map · %1$@/%2$@ complete" = "Piece map · %1$@/%2$@ complete";
 "Piece order" = "Piece order";
+"Pinned" = "Pinned";
 "Pinned key cleared — Goel will ask you to confirm the key on the next connection." = "Pinned key cleared — Goel will ask you to confirm the key on the next connection.";
 "Plain HTTP — use only on a trusted network or behind TLS." = "Plain HTTP — use only on a trusted network or behind TLS.";
 "Play in Goel°" = "Play in Goel°";
@@ -933,6 +952,7 @@
 "Protocol, privacy, and watch-folder behavior." = "Protocol, privacy, and watch-folder behavior.";
 "Proxy" = "Proxy";
 "Proxy host" = "Proxy host";
+"Proxy mode blocks multi-path" = "Proxy mode blocks multi-path";
 "Proxy port" = "Proxy port";
 "Proxy type" = "Proxy type";
 "Proxy, timeouts, retries, and authentication." = "Proxy, timeouts, retries, and authentication.";
@@ -1006,6 +1026,7 @@
 "Request a Commercial Licence" = "Request a Commercial Licence";
 "Request options for “%@”" = "Request options for “%@”";
 "Request options saved" = "Request options saved";
+"Requesting info" = "Requesting info";
 "Requesting information" = "Requesting information";
 "Requesting info…" = "Requesting info…";
 "Require" = "Require";
@@ -1080,6 +1101,7 @@
 "Seeds" = "Seeds";
 "Segment" = "Segment";
 "Segments" = "Segments";
+"Select" = "Select";
 "Select All" = "Select All";
 "Select None" = "Select None";
 "Select a download to see its details, progress, and live throughput." = "Select a download to see its details, progress, and live throughput.";
@@ -1102,7 +1124,10 @@
 "Server" = "Server";
 "Server added" = "Server added";
 "Server browser toolbar" = "Server browser toolbar";
+"Server does not support multi-path ranges" = "Server does not support multi-path ranges";
 "Server is no longer available" = "Server is no longer available";
+"Server now" = "Server now";
+"Server rejected multi-path" = "Server rejected multi-path";
 "Server removed" = "Server removed";
 "Server saved" = "Server saved";
 "Servers" = "Servers";
@@ -1112,6 +1137,7 @@
 "Set" = "Set";
 "Set an update feed URL in Settings → Advanced first" = "Set an update feed URL in Settings → Advanced first";
 "Set portal password" = "Set portal password";
+"Settings" = "Settings";
 "Settings: %@" = "Settings: %@";
 "Setup progress" = "Setup progress";
 "Share ratio" = "Share ratio";
@@ -1149,6 +1175,7 @@
 "Sleep" = "Sleep";
 "Software" = "Software";
 "Some settings here are managed by your organisation and can’t be changed." = "Some settings here are managed by your organisation and can’t be changed.";
+"Sort" = "Sort";
 "Sort & display options" = "Sort & display options";
 "Sort and display options" = "Sort and display options";
 "Sort by %@" = "Sort by %@";
@@ -1234,6 +1261,7 @@
 "The key this server is presenting does NOT match the one Goel pinned, so connections are being refused.\n\nIf you rekeyed this server yourself, use “Forget Host Key” and confirm the new key on the next connection. If you did not, do not connect — something is answering in this server’s place." = "The key this server is presenting does NOT match the one Goel pinned, so connections are being refused.\n\nIf you rekeyed this server yourself, use “Forget Host Key” and confirm the new key on the next connection. If you did not, do not connect — something is answering in this server’s place.";
 "The legal entity named on your licence." = "The legal entity named on your licence.";
 "The live file is rotated once it passes this size." = "The live file is rotated once it passes this size.";
+"The manual proxy is missing a host or port, so the swarm goes out directly." = "The manual proxy is missing a host or port, so the swarm goes out directly.";
 "The notices file ships inside the packaged app. In a source build, read THIRD-PARTY-NOTICES.md in the repository." = "The notices file ships inside the packaged app. In a source build, read THIRD-PARTY-NOTICES.md in the repository.";
 "The page couldn’t be loaded." = "The page couldn’t be loaded.";
 "The portal's look. Independent of the app theme — the desktop and the browser each keep their own." = "The portal's look. Independent of the app theme — the desktop and the browser each keep their own.";
@@ -1245,6 +1273,7 @@
 "The servers for this copy are no longer set up." = "The servers for this copy are no longer set up.";
 "The source file is missing." = "The source file is missing.";
 "The stored username and password are deleted from your Keychain." = "The stored username and password are deleted from your Keychain.";
+"The system proxy isn’t applied to the torrent swarm — choose a manual SOCKS5 proxy to route peers through it." = "The system proxy isn’t applied to the torrent swarm — choose a manual SOCKS5 proxy to route peers through it.";
 "The update feed didn’t contain a release." = "The update feed didn’t contain a release.";
 "The update feed gave a version this app can’t read." = "The update feed gave a version this app can’t read.";
 "Theme" = "Theme";
@@ -1260,6 +1289,7 @@
 "This permanently deletes the file from disk and can’t be undone." = "This permanently deletes the file from disk and can’t be undone.";
 "This permanently removes the file from the server." = "This permanently removes the file from the server.";
 "This permanently removes them from the server." = "This permanently removes them from the server.";
+"This protocol does not support aggregation yet" = "This protocol does not support aggregation yet";
 "This removes every archived entry. Files on disk are not touched." = "This removes every archived entry. Files on disk are not touched.";
 "This server is misconfigured." = "This server is misconfigured.";
 "This server's saved secret couldn't be read from your Keychain." = "This server's saved secret couldn't be read from your Keychain.";
@@ -1270,6 +1300,7 @@
 "Timed out" = "Timed out";
 "Title contains" = "Title contains";
 "Titles containing “%@”" = "Titles containing “%@”";
+"To" = "To";
 "Today ↑" = "Today ↑";
 "Today ↓" = "Today ↓";
 "Toggle Detail Panel" = "Toggle Detail Panel";
@@ -1289,6 +1320,7 @@
 "Trackers · %d" = "Trackers · %d";
 "Traffic Limits" = "Traffic Limits";
 "Traffic Profile: %@" = "Traffic Profile: %@";
+"Traffic profile forbids extra connections" = "Traffic profile forbids extra connections";
 "Transfer cancelled" = "Transfer cancelled";
 "Transfer progress" = "Transfer progress";
 "Transferring" = "Transferring";
@@ -1315,6 +1347,7 @@
 "Up to date — version %@" = "Up to date — version %@";
 "Update check failed: %@" = "Update check failed: %@";
 "Updates" = "Updates";
+"Updating" = "Updating";
 "Upload" = "Upload";
 "Upload Limit" = "Upload Limit";
 "Upload files or folders" = "Upload files or folders";
@@ -1324,6 +1357,7 @@
 "Upload to %@" = "Upload to %@";
 "Uploaded" = "Uploaded";
 "Uploaded today" = "Uploaded today";
+"Uploading" = "Uploading";
 "Uploading to “%@”" = "Uploading to “%@”";
 "Upload…" = "Upload…";
 "Use Folder" = "Use Folder";
@@ -1336,6 +1370,7 @@
 "Using Goel° at work?" = "Using Goel° at work?";
 "Using all eligible" = "Using all eligible";
 "Using temporary storage — downloads won’t survive relaunch." = "Using temporary storage — downloads won’t survive relaunch.";
+"VPN policy blocks multi-path" = "VPN policy blocks multi-path";
 "Verify a checksum" = "Verify a checksum";
 "Verifying" = "Verifying";
 "Verifying (%@)…" = "Verifying (%@)…";
@@ -1346,6 +1381,7 @@
 "Versions, engine states, task counts, and a redacted settings dump — no URLs, file names, paths, or credentials. Nothing is ever sent automatically." = "Versions, engine states, task counts, and a redacted settings dump — no URLs, file names, paths, or credentials. Nothing is ever sent automatically.";
 "Video" = "Video";
 "Video, archives, disc images and documents each get their own subfolder." = "Video, archives, disc images and documents each get their own subfolder.";
+"View" = "View";
 "View style" = "View style";
 "Waiting for metadata…" = "Waiting for metadata…";
 "Waiting to start" = "Waiting to start";
@@ -1376,6 +1412,7 @@
 "When a file exists" = "When a file exists";
 "When downloads finish" = "When downloads finish";
 "Where" = "Where";
+"Where is…" = "Where is…";
 "Where should downloads land?" = "Where should downloads land?";
 "While downloading, open the Connections tab to see which adapter each segment uses." = "While downloading, open the Connections tab to see which adapter each segment uses.";
 "Who needs one, exactly?" = "Who needs one, exactly?";
@@ -1385,6 +1422,7 @@
 "Withheld from every report: %@." = "Withheld from every report: %@.";
 "Without the extension" = "Without the extension";
 "Work is still in progress." = "Work is still in progress.";
+"Working" = "Working";
 "Write" = "Write";
 "Wrong passwords from one address are slowed exponentially. The delay is per-address, so one attacker can’t lock everybody else out." = "Wrong passwords from one address are slowed exponentially. The delay is per-address, so one attacker can’t lock everybody else out.";
 "Wrong username or password" = "Wrong username or password";
@@ -1414,12 +1452,16 @@
 "bytes" = "bytes";
 "complete" = "complete";
 "copied, no re-encode" = "copied, no re-encode";
+"copy" = "copy";
 "descending" = "descending";
 "done" = "done";
+"download" = "download";
 "downloaded %@" = "downloaded %@";
 "e.g. Episode #" = "e.g. Episode #";
+"e.g. Movies, Linux ISOs" = "e.g. Movies, Linux ISOs";
 "e.g. X-Forwarded-User." = "e.g. X-Forwarded-User.";
 "e.g. files.example.com" = "e.g. files.example.com";
+"execute" = "execute";
 "expensive" = "expensive";
 "ffmpeg already uses every core for one job, so running more at the same time makes each one slower without finishing the batch sooner." = "ffmpeg already uses every core for one job, so running more at the same time makes each one slower without finishing the batch sooner.";
 "ffmpeg hasn’t exited after %@ · the file may be on a stalled disk" = "ffmpeg hasn’t exited after %@ · the file may be on a stalled disk";
@@ -1439,15 +1481,27 @@
 "peak download %@" = "peak download %@";
 "ratio %.1f · %d%%" = "ratio %.1f · %d%%";
 "re-encoded" = "re-encoded";
+"read" = "read";
 "seed to %@×" = "seed to %@×";
 "soon" = "soon";
 "terabytes" = "terabytes";
 "uid %1$@ · gid %2$@" = "uid %1$@ · gid %2$@";
 "unknown size" = "unknown size";
+"upload" = "upload";
 "upload %@" = "upload %@";
 "uploaded %@" = "uploaded %@";
 "user" = "user";
+"write" = "write";
+"yt-dlp couldn’t fetch subtitles." = "yt-dlp couldn’t fetch subtitles.";
+"yt-dlp couldn’t read that page." = "yt-dlp couldn’t read that page.";
+"yt-dlp couldn’t read that playlist." = "yt-dlp couldn’t read that playlist.";
 "yt-dlp couldn’t resolve that page" = "yt-dlp couldn’t resolve that page";
+"yt-dlp couldn’t resolve that page." = "yt-dlp couldn’t resolve that page.";
+"yt-dlp didn’t report a single downloadable stream for that page." = "yt-dlp didn’t report a single downloadable stream for that page.";
+"yt-dlp didn’t report any downloadable formats for that page." = "yt-dlp didn’t report any downloadable formats for that page.";
+"yt-dlp isn’t available, so Goel° can’t list the available qualities." = "yt-dlp isn’t available, so Goel° can’t list the available qualities.";
+"yt-dlp isn’t available, so Goel° can’t list what’s in that playlist." = "yt-dlp isn’t available, so Goel° can’t list what’s in that playlist.";
+"yt-dlp isn’t available, so Goel° can’t resolve that page." = "yt-dlp isn’t available, so Goel° can’t resolve that page.";
 "~%@ left" = "~%@ left";
 "“%@” already exists here." = "“%@” already exists here.";
 "“%@” is a folder on the server now — nothing was uploaded." = "“%@” is a folder on the server now — nothing was uploaded.";

@@ -1200,8 +1200,8 @@ final class AppViewModel: ObservableObject {
         if let value = Self.promptText(
             title: L10n.t("Label for “%@”", task.name),
             message: L10n.t("Group this download under a category. Leave empty to remove."),
-            confirm: "Save", initial: task.label ?? "",
-            placeholder: "e.g. Movies, Linux ISOs", width: 240) {
+            confirm: L10n.t("Save"), initial: task.label ?? "",
+            placeholder: L10n.t("e.g. Movies, Linux ISOs"), width: 240) {
             setLabel(value, task: task.id)
         }
     }
@@ -1210,7 +1210,7 @@ final class AppViewModel: ObservableObject {
         guard let newName = Self.promptText(
             title: L10n.t("Rename “%@”", task.name),
             message: L10n.t("Renames the download and its file on disk."),
-            confirm: "Rename", initial: task.name) else { return }
+            confirm: L10n.t("Rename"), initial: task.name) else { return }
         Task {
             let result = await manager.rename(task.id, to: newName)
             await MainActor.run {
@@ -1282,8 +1282,8 @@ final class AppViewModel: ObservableObject {
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
         alert.accessoryView = scroll
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.t("Save"))
+        alert.addButton(withTitle: L10n.t("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         Task { await manager.setNote(text.string, task: task.id) }
         toastNow(text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L10n.t("Note removed") : L10n.t("Note saved"))
@@ -1321,8 +1321,8 @@ final class AppViewModel: ObservableObject {
         scroll.widthAnchor.constraint(equalToConstant: 340).isActive = true
         scroll.heightAnchor.constraint(equalToConstant: 84).isActive = true
         alert.accessoryView = container
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.t("Save"))
+        alert.addButton(withTitle: L10n.t("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let headers = PromptParsing.requestHeaders(from: headersView.string)
         Task {

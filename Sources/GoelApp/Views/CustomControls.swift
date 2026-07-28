@@ -233,7 +233,7 @@ struct ToolbarMenuLabel: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .a11yGroup(label: title,
-                   hint: L10n.t("Activate to open the %@ menu.", L10n.t(title).lowercased()))
+                   hint: L10n.t("Activate to open the %@ menu.", L10n.midSentence(title)))
         .accessibilityAddTraits(.isButton)
     }
 }

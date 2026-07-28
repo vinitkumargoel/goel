@@ -279,7 +279,7 @@ private struct MenuBarMediaSection: View {
                     .frame(width: 18)
                     .a11yDecorative()
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(L10n.t(job.kind.activeTitle))
+                    Text(job.kind.activeTitle)
                         .scaledFont(size: 12, weight: .medium)
                         .lineLimit(1)
                     Text(job.sourceName)
@@ -304,7 +304,7 @@ private struct MenuBarMediaSection: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .disabled(job.state == .cancelling && !job.isStopStuck())
-                .accessibilityLabel(L10n.t("Cancel %@", L10n.t(job.kind.activeTitle)))
+                .accessibilityLabel(L10n.t("Cancel %@", L10n.midSentence(job.kind.activeTitle)))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)

@@ -104,6 +104,7 @@ jobs:
         working-directory: portal
         run: |
           npm ci
+          npm test
           npm run build
 
       - name: Fail if the committed portal bundle is stale

@@ -203,7 +203,9 @@ struct SettingsView: View {
                 .accessibilityLabel(L10n.t("Theme"))
             }
             // Only languages that ship a strings table: anything else silently resolves to English.
-            SetRow(name: L10n.t("Language"), desc: L10n.t("English and Deutsch ship translations today.")) {
+            SetRow(name: L10n.t("Language"),
+                   desc: L10n.t("%@ ship translations today.",
+                                L10n.supportedLanguages.map(\.name).joined(separator: ", "))) {
                 Dropdown(selection: binding(\.language),
                          items: L10n.supportedLanguages.map { .option($0.name, $0.name) },
                          width: 150)

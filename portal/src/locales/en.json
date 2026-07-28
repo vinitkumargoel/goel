@@ -39,7 +39,7 @@
     }
   },
 
-  "network": {
+  "adapter": {
     "noAddress": "no address",
     "metered": "Metered"
   },
@@ -96,7 +96,7 @@
     "added_one": "Added to queue",
     "added_other": "Added {{count}} downloads",
     "refused_one": "{{count}} refused — internal network address",
-    "refused_other": "{{count}} refused — internal network address"
+    "refused_other": "{{count}} refused — internal network addresses"
   },
 
   "history": {
