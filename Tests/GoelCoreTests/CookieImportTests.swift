@@ -1,15 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-/// Tests for browser cookie import: the ``CookieHeader`` parser/sanitiser, the
-/// host scoping that decides whether a captured session may ride on a request,
-/// and the guarantee that a cookie never reaches persisted JSON.
-///
-/// All pure — no network, no browser, no engine. The live capture path is the
-/// extension + native-messaging host, which these rules sit underneath.
 final class CookieImportTests: XCTestCase {
-
-    // MARK: Parsing
 
     func testParsesPairsInOrder() {
         let pairs = CookieHeader.pairs(in: "sid=abc; csrf=def; theme=dark")
@@ -22,8 +14,6 @@ final class CookieImportTests: XCTestCase {
     }
 
     func testKeepsEmptyValuedCookie() {
-        // Servers really do issue `name=` to clear a slot; dropping it changes
-        // the request the browser would have made.
         XCTAssertEqual(CookieHeader.sanitized("sid=abc; cleared="), "sid=abc; cleared=")
     }
 
@@ -41,11 +31,8 @@ final class CookieImportTests: XCTestCase {
         XCTAssertNil(CookieHeader.sanitized("nothing-here"))
     }
 
-    // MARK: Injection resistance
-
     func testRejectsHeaderSplittingValue() {
-        // The classic CRLF smuggle: everything after the injected newline must
-        // not survive, and neither must the pair carrying it.
+        // The classic CRLF smuggle: nothing after the injected newline may survive, and neither may the pair carrying it.
         let raw = "sid=abc\r\nX-Evil: 1; csrf=def"
         let cleaned = CookieHeader.sanitized(raw)
         XCTAssertEqual(cleaned, "csrf=def", "the CR/LF-bearing pair is dropped whole")
@@ -68,8 +55,6 @@ final class CookieImportTests: XCTestCase {
                      "a value we cannot encode the way the browser did is dropped, not mangled")
     }
 
-    // MARK: Size caps
-
     func testCapsPairCount() {
         let raw = (0..<(CookieHeader.maxPairs + 40)).map { "c\($0)=v" }.joined(separator: "; ")
         XCTAssertEqual(CookieHeader.count(in: raw), CookieHeader.maxPairs)
@@ -85,15 +70,11 @@ final class CookieImportTests: XCTestCase {
         XCTAssertTrue(cleaned!.hasPrefix("cookie0="), "the cap drops the tail, keeping the earliest pairs")
     }
 
-    // MARK: Names-only surface
-
     func testNamesExposeNoValues() {
         let names = CookieHeader.names(in: "sid=SECRET; csrf=ALSOSECRET")
         XCTAssertEqual(names, ["sid", "csrf"])
         XCTAssertFalse(names.joined().contains("SECRET"))
     }
-
-    // MARK: Host scoping
 
     func testScopeIsLowercasedHost() {
         XCTAssertEqual(CookieHeader.scope(for: URL(string: "https://Files.Example.com/a.zip")!),
@@ -109,8 +90,6 @@ final class CookieImportTests: XCTestCase {
         XCTAssertFalse(CookieHeader.matches(cookieHost: nil, url: url))
         XCTAssertFalse(CookieHeader.matches(cookieHost: "   ", url: url))
     }
-
-    // MARK: Attachment to a request
 
     private func task(cookie: String?, cookieHost: String? = nil,
                       headers: [String: String]? = nil,
@@ -130,13 +109,11 @@ final class CookieImportTests: XCTestCase {
     }
 
     func testFallsBackToTheTaskOwnHostWhenNoScopeStored() {
-        // The manual-paste case: the user pasted cookies *for this download*.
         let url = URL(string: "https://files.example.com/a.zip")!
         XCTAssertEqual(task(cookie: "sid=abc").outboundHeaders(for: url)["Cookie"], "sid=abc")
     }
 
     func testNeverSendsCookiesToAnotherHost() {
-        // The mirror case — the reason the scope is stored at all.
         let mirror = URL(string: "https://mirror.other.net/a.zip")!
         let headers = task(cookie: "sid=abc", cookieHost: "files.example.com").outboundHeaders(for: mirror)
         XCTAssertNil(headers["Cookie"])
@@ -150,8 +127,7 @@ final class CookieImportTests: XCTestCase {
     }
 
     func testCapturedCookieReplacesAUserTypedOne() {
-        // Two Cookie headers on one request is a protocol violation; the captured
-        // (host-scoped) one wins over whatever was typed into the header editor.
+        // Two Cookie headers on one request is a protocol violation, so the captured host-scoped one wins over the header editor's.
         let url = URL(string: "https://files.example.com/a.zip")!
         let headers = task(cookie: "sid=real", cookieHost: "files.example.com",
                            headers: ["cookie": "sid=typed", "X-Api-Key": "k"])
@@ -169,8 +145,6 @@ final class CookieImportTests: XCTestCase {
         XCTAssertFalse(magnet.sendsCookies(to: URL(string: "https://files.example.com/a.zip")!))
     }
 
-    // MARK: Persistence exclusion — the storage guarantee
-
     func testCookieValueIsNeverEncoded() throws {
         let encoded = try JSONEncoder().encode(
             task(cookie: "sid=SUPERSECRET", cookieHost: "files.example.com"))
@@ -178,8 +152,6 @@ final class CookieImportTests: XCTestCase {
         XCTAssertFalse(json.contains("SUPERSECRET"),
                        "a session cookie must never reach the plaintext task store or the JSON export")
         XCTAssertFalse(json.contains("cookieHeader"))
-        // Provenance is not a secret and must survive, so the UI can explain the
-        // empty jar after a relaunch.
         XCTAssertTrue(json.contains("cookieHost"))
         XCTAssertTrue(json.contains("browser"))
     }
@@ -195,8 +167,7 @@ final class CookieImportTests: XCTestCase {
     }
 
     func testUnrelatedFieldsStillRoundTrip() throws {
-        // The hand-written CodingKeys is the risk this guards: forget a case and a
-        // field silently stops persisting.
+        // Guards the hand-written CodingKeys: forget a case and a field silently stops persisting.
         var original = task(cookie: nil, headers: ["X-Api-Key": "k"])
         original.referer = "https://example.com/page"
         original.tags = ["work"]

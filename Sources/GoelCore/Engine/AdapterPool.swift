@@ -1,10 +1,5 @@
 import Foundation
 
-/// Assigns network adapters to HTTP segments (round-robin) and demotes flaky
-/// ones — mirrors ``MirrorPool`` but for egress interfaces.
-///
-/// Weighted rebalance is intentionally **not** here: ``ConnectionGovernor`` is
-/// monotonic-decreasing; adaptive weights are a separate Phase‑3 mechanism.
 actor AdapterPool {
     private let adapters: [BoundAdapter]
     private var demoted: Set<String> = []
@@ -18,8 +13,7 @@ actor AdapterPool {
         return live.isEmpty ? 0 : live.count
     }
 
-    /// Round-robin among non-demoted adapters. If everything is demoted, clears
-    /// the slate once so the pool never goes empty mid-download.
+    /// If everything is demoted, clear the slate once so the pool never goes empty mid-download.
     func assign(segment index: Int) -> BoundAdapter? {
         var live = adapters.filter { !demoted.contains($0.bsdName) }
         if live.isEmpty {
@@ -39,8 +33,7 @@ actor AdapterPool {
     }
 }
 
-/// Byte tally written by curl's callback (any thread) and drained by the progress
-/// pump. `@unchecked Sendable`: the lock is the invariant.
+/// Written from curl's callback on any thread — the `@unchecked Sendable` holds only because of the lock.
 final class ByteTally: @unchecked Sendable {
     private let lock = NSLock()
     private var pending = 0

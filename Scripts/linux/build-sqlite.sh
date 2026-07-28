@@ -1,24 +1,5 @@
 #!/usr/bin/env bash
-# Build a snapshot-enabled SQLite for the Linux build of GoelDownloader.
-#
-# GRDB references `sqlite3_snapshot_*`, which Ubuntu's stock libsqlite3 declares
-# in its header but omits from the shared object (it's built without
-# SQLITE_ENABLE_SNAPSHOT). This compiles the SQLite amalgamation with that flag
-# (plus the features GRDB expects) into Vendor/linux/sqlite/libsqlite3.so, which
-# Package.swift links against on Linux (see GOEL_SQLITE_DIR).
-#
-# The amalgamation is PINNED, not scraped. This .so is linked into the shipped
-# Linux daemon, so "whatever sqlite.org's download page links to today" is an
-# unverified third party deciding what goes in the release. Bumping SQLite is a
-# TWO-LINE edit — the version and its digest belong together:
-#
-#   curl -fsSL -o /tmp/amalg.zip https://sqlite.org/<year>/sqlite-amalgamation-<n>.zip
-#   sha256sum /tmp/amalg.zip
-#
-# SQLITE_VERSION=latest re-enables the scrape, and still refuses to build
-# without a SQLITE_SHA256 to check the result against.
-#
-# Usage:  Scripts/linux/build-sqlite.sh
+# Ubuntu's stock libsqlite3 omits the `sqlite3_snapshot_*` symbols GRDB needs, hence this build.
 set -euo pipefail
 
 SQLITE_YEAR="${SQLITE_YEAR:-2026}"
@@ -32,7 +13,7 @@ cd "$out_dir"
 
 if [ ! -f sqlite3.c ]; then
     if [ "$SQLITE_VERSION" = "latest" ]; then
-        # -f so an HTTP error page is a failure rather than something grep reads.
+        # Keep curl -f: without it grep parses an HTTP error page instead of failing.
         url_path="$(curl -fsSL https://sqlite.org/download.html | grep -oE '20[0-9][0-9]/sqlite-amalgamation-[0-9]+\.zip' | head -1)"
         [ -n "$url_path" ] || { echo "could not locate the SQLite amalgamation URL"; exit 1; }
         if [ -z "${SQLITE_SHA256:-}" ]; then
@@ -54,8 +35,6 @@ if [ ! -f sqlite3.c ]; then
     rm -f amalg.zip
 fi
 
-# Checked explicitly: without it the failure is a bare "cc: command not found"
-# several lines up, and the caller sees an unrelated link error much later.
 command -v cc >/dev/null 2>&1 \
     || { echo "error: no C compiler on PATH. Fix: sudo apt install gcc" >&2; exit 1; }
 

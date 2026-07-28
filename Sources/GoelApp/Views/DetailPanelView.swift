@@ -1,10 +1,6 @@
 import SwiftUI
 import GoelCore
 
-/// The right detail panel — the "Hero Ring" layout. A narrow, tall column, so
-/// the progress is expressed as a big circular gauge you can read at a glance,
-/// with the live ↓/↑ rate beneath it, the essential facts as a short list, and a
-/// pinned action bar (pause/resume/retry, reveal, copy) that never scrolls away.
 struct DetailPanelView: View {
     @EnvironmentObject private var vm: AppViewModel
 
@@ -18,7 +14,6 @@ struct DetailPanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.regularMaterial)
-        // Never let the panel's content bleed past its 340pt frame.
         .clipped()
     }
 
@@ -27,9 +22,6 @@ struct DetailPanelView: View {
             header(for: task)
             Divider()
 
-            // The tabs — `.small` keeps all five segments legible in the narrow
-            // 340pt column. *General* is the hero-ring overview; the rest are the
-            // same deep views as before.
             Picker("", selection: $vm.detailTab) {
                 ForEach(DetailTab.allCases) { tab in
                     Text(tab.rawValue).tag(tab)
@@ -40,8 +32,6 @@ struct DetailPanelView: View {
             .labelsHidden()
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            // `labelsHidden()` removes the name from assistive technology as
-            // well as from the screen, leaving an anonymous segmented control.
             .accessibilityLabel("Detail section")
             Divider()
 
@@ -74,8 +64,6 @@ struct DetailPanelView: View {
         }
     }
 
-    // MARK: - Header
-
     private func header(for task: DownloadTask) -> some View {
         HStack(spacing: 11) {
             FileTypeIcon(type: task.fileType, size: 38)
@@ -97,8 +85,6 @@ struct DetailPanelView: View {
         .padding(16)
     }
 
-    // MARK: - Hero ring
-
     private func hero(for task: DownloadTask) -> some View {
         VStack(spacing: 14) {
             ZStack {
@@ -113,10 +99,6 @@ struct DetailPanelView: View {
                 }
             }
             .padding(.top, 4)
-            // The panel's centrepiece: a 132pt gauge that, untreated, is two
-            // unnamed `Circle` shapes plus the strings "62%" and "complete".
-            // Collapse the whole assembly into one progress element carrying the
-            // percent, the byte counts and the estimate.
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits(.updatesFrequently)
             .accessibilityLabel("Download progress")
@@ -130,8 +112,6 @@ struct DetailPanelView: View {
             Text(sizeAndETA(for: task))
                 .scaledFont(size: 11.5, monospacedDigit: true)
                 .foregroundStyle(.secondary)
-                // "244.50 MB of 770.31 MB · ~6m" — the "·" and "~" are visual
-                // shorthand the ring's value already states properly.
                 .accessibilityLabel(A11y.sentence(
                     "\(A11y.bytes(task.bytesDownloaded)) of \(A11y.bytes(task.totalBytes))",
                     A11y.eta(task.estimatedTimeRemaining)))
@@ -144,8 +124,6 @@ struct DetailPanelView: View {
                     .padding(10)
                     .frame(maxWidth: .infinity)
                     .background(Theme.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
-                    // The warning triangle is decoration on top of the word
-                    // "Failed"; announce the failure, not the glyph.
                     .accessibilityLabel("Download failed. \(error.message)")
             }
         }
@@ -154,13 +132,10 @@ struct DetailPanelView: View {
         .padding(.bottom, 16)
     }
 
-    /// "244.50 MB of 770.31 MB · ~6m" — size with the ETA appended when known.
     private func sizeAndETA(for task: DownloadTask) -> String {
         if let eta = task.etaText { return "\(task.sizeProgressText) · \(eta)" }
         return task.sizeProgressText
     }
-
-    // MARK: - Facts
 
     private func facts(for task: DownloadTask) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -193,9 +168,7 @@ struct DetailPanelView: View {
             if let headers = task.requestHeaders, !headers.isEmpty {
                 KVRow(key: "Headers", value: "\(headers.count) custom")
             }
-            // Cookie STATE only — never the value, and deliberately not
-            // `copyable`. After a relaunch the value is gone by design, so this
-            // row's job is to make that absence explainable and fixable.
+            // Cookie STATE only — never the value, and never `copyable`.
             if let cookieSource = task.cookieSource, cookieSource != .none {
                 KVRow(key: "Cookies",
                       value: task.cookieHeader.map { "\(CookieHeader.count(in: $0)) attached · \(cookieSource.displayName)" }
@@ -210,12 +183,8 @@ struct DetailPanelView: View {
         .padding(.bottom, 14)
     }
 
-    // MARK: - Empty
-
     private var emptyState: some View {
         VStack(spacing: 0) {
-            // Keep the dock toggle reachable even with nothing selected, so the
-            // panel can be moved back without first picking a download.
             HStack {
                 Spacer(minLength: 0)
                 PanelDockToggle()

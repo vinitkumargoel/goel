@@ -1,7 +1,6 @@
 import SwiftUI
 import GoelCore
 
-/// Dedicated Settings sidebar tab for multi-path network aggregation.
 struct AggregationSettingsPane: View {
     @EnvironmentObject private var vm: AppViewModel
 
@@ -31,8 +30,6 @@ struct AggregationSettingsPane: View {
         .onDisappear { vm.endAggregationLiveUpdates() }
     }
 
-    // MARK: - Header
-
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
@@ -54,8 +51,6 @@ struct AggregationSettingsPane: View {
             .padding(.bottom, 14)
         }
     }
-
-    // MARK: - Status
 
     private var statusBanner: some View {
         let active = enabled && inactiveReason == nil && usableCount >= 2
@@ -107,8 +102,6 @@ struct AggregationSettingsPane: View {
         return "\(usableCount) adapters will share ranged HTTP segments · \(vm.settings.aggregationStreamsPerAdapter) stream(s) each."
     }
 
-    // MARK: - Master toggle
-
     private var masterToggleCard: some View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
@@ -132,8 +125,6 @@ struct AggregationSettingsPane: View {
                 .stroke(enabled ? Theme.accent.opacity(0.35) : Theme.hairline, lineWidth: 1)
         )
     }
-
-    // MARK: - Adapters
 
     private var adaptersSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -197,8 +188,6 @@ struct AggregationSettingsPane: View {
         )
     }
 
-    // MARK: - Options
-
     private var optionsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("OPTIONS")
@@ -224,10 +213,6 @@ struct AggregationSettingsPane: View {
                         }
                     ), in: 1...8)
                     .labelsHidden()
-                    // `labelsHidden()` strips the name from VoiceOver too, and a
-                    // `Stepper`'s value lives in a separate `Text` beside it —
-                    // so unlabelled it is an anonymous pair of arrows with no
-                    // readable value at all.
                     .accessibilityLabel("Streams per adapter")
                     .accessibilityValue("\(vm.settings.aggregationStreamsPerAdapter)")
                     Text("\(vm.settings.aggregationStreamsPerAdapter)")
@@ -242,8 +227,6 @@ struct AggregationSettingsPane: View {
             }
         }
     }
-
-    // MARK: - Tips
 
     private var tipsFooter: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -273,12 +256,9 @@ struct AggregationSettingsPane: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        // A bullet glyph in front of a sentence. The sentence is the content.
         .a11yGroup(label: text)
     }
 }
-
-// MARK: - Adapter row
 
 private struct AdapterRow: View {
     @EnvironmentObject private var vm: AppViewModel
@@ -299,10 +279,7 @@ private struct AdapterRow: View {
         Button {
             guard !disabled else { return }
             if vm.settings.aggregationAdapterIds.isEmpty {
-                // Read on the main actor, where this button action already runs.
-                // `update` takes a @Sendable closure, and reaching into
-                // main-actor state from inside one is an error on the toolchain
-                // CI builds with.
+                // Read here on the main actor: `update` takes a @Sendable closure, and touching main-actor state inside one is a toolchain error.
                 let ids = vm.networkAdapters.map(\.bsdName)
                 vm.update { $0.aggregationAdapterIds = ids }
             }
@@ -367,9 +344,6 @@ private struct AdapterRow: View {
         .help(disabled
               ? "Enable “Include expensive networks” to use this adapter"
               : "Click to include or exclude from multi-path")
-        // A hand-drawn checkbox: participation shows as a filled circle glyph
-        // plus an accent wash and border, none of which is spoken. Collapse the
-        // row and carry inclusion as an explicit value.
         .a11yGroup(
             label: A11y.sentence("Network adapter",
                                  adapter.displayName.isEmpty ? adapter.bsdName : adapter.displayName,

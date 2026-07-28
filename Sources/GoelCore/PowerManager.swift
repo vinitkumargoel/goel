@@ -5,42 +5,23 @@ import IOKit.pwr_mgt
 import IOKit.ps
 #endif
 
-/// Keeps the machine awake while transfers run and reports whether we're on
-/// battery. macOS uses IOKit power assertions; Linux uses `systemd-inhibit`
-/// (sleep block) plus the sysfs power-supply tree. Both expose the same API, so
-/// the scheduler is unchanged.
-///
-/// `DownloadManager` (an `actor`) keeps a reference to this object, so it must be
-/// `Sendable`. Its only mutable state is guarded by an internal lock; hence the
-/// `@unchecked Sendable` conformance.
+/// `@unchecked Sendable`: every mutable field below must stay behind `lock`.
 public final class PowerManager: @unchecked Sendable {
 
-    // MARK: State
-
-    /// Serializes access to the platform handle so the manager can be touched
-    /// from any isolation domain.
     private let lock = NSLock()
 
     #if canImport(IOKit)
-    /// The id of the outstanding "prevent idle sleep" assertion, or `nil`.
     private var assertionID: IOPMAssertionID?
     #else
-    /// The running `systemd-inhibit` process holding the sleep lock, or `nil`.
     private var inhibitor: Process?
     #endif
 
     public init() {}
 
     deinit {
-        // Drop any hold on the way out so we never leave the system pinned awake.
         setPreventSleep(false)
     }
 
-    // MARK: Sleep prevention
-
-    /// Create or release the single "prevent idle sleep" hold. Passing the same
-    /// value repeatedly is safe: a second `true` keeps the existing hold, and
-    /// `false` with nothing held is a no-op.
     public func setPreventSleep(_ on: Bool) {
         lock.lock()
         defer { lock.unlock() }
@@ -75,9 +56,8 @@ public final class PowerManager: @unchecked Sendable {
             ]
             p.standardOutput = FileHandle.nullDevice
             p.standardError = FileHandle.nullDevice
-            // Best-effort: on a box without systemd-inhibit this simply does
-            // nothing (a headless server rarely idle-sleeps anyway).
-            do { try p.run(); inhibitor = p } catch { /* not available — ignore */ }
+            // Deliberately swallowed: a box without systemd-inhibit simply never idle-sleeps.
+            do { try p.run(); inhibitor = p } catch { }
         } else {
             inhibitor?.terminate()
             inhibitor = nil
@@ -85,24 +65,17 @@ public final class PowerManager: @unchecked Sendable {
         #endif
     }
 
-    // MARK: Power source
-
-    /// Whether the machine is currently drawing from a battery rather than AC.
-    /// Desktops/servers (AC online or no battery) report `false`.
     public var isOnBattery: Bool {
         #if canImport(IOKit)
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
             return false
         }
-        // `IOPSGetProvidingPowerSourceType` follows the "Get" convention, so the
-        // returned string is not owned by us — take it unretained.
+        // "Get" convention: the string is not ours, so it must be taken unretained.
         guard let providing = IOPSGetProvidingPowerSourceType(snapshot)?.takeUnretainedValue() else {
             return false
         }
         return (providing as String) == kIOPMBatteryPowerKey
         #else
-        // Read the sysfs power-supply tree. AC online → not on battery; a battery
-        // reporting "Discharging" → on battery.
         let base = "/sys/class/power_supply"
         guard let entries = try? FileManager.default.contentsOfDirectory(atPath: base) else {
             return false
@@ -117,7 +90,7 @@ public final class PowerManager: @unchecked Sendable {
             switch read(dir + "/type") {
             case "Mains", "USB":
                 sawMains = true
-                if read(dir + "/online") == "1" { return false }  // AC connected
+                if read(dir + "/online") == "1" { return false }
             case "Battery":
                 if read(dir + "/status") == "Discharging" { return true }
             default:
@@ -129,20 +102,14 @@ public final class PowerManager: @unchecked Sendable {
         #endif
     }
 
-    /// Remaining battery charge as a whole percentage, `0…100`, or `nil` on a
-    /// machine with no battery (or when the level can't be read).
-    ///
-    /// Backs the "pause downloads below battery threshold" policy. `nil` is
-    /// deliberately *not* zero: a desktop must never look like a nearly-flat
-    /// laptop, so the automation reads a missing level as "full" and leaves the
-    /// queue alone.
+    /// `nil` is deliberately not zero: a desktop must not look like a flat laptop and pause the queue.
     public var batteryPercent: Int? {
         #if canImport(IOKit)
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
         else { return nil }
         for source in sources {
-            // "Get" convention again — the description dictionary is not ours.
+            // "Get" convention: the description dictionary is not ours to retain.
             guard let description = IOPSGetPowerSourceDescription(snapshot, source)?
                     .takeUnretainedValue() as? [String: Any],
                   let current = description[kIOPSCurrentCapacityKey as String] as? Int,
@@ -153,7 +120,6 @@ public final class PowerManager: @unchecked Sendable {
         }
         return nil
         #else
-        // sysfs reports the level directly as a percentage.
         let base = "/sys/class/power_supply"
         guard let entries = try? FileManager.default.contentsOfDirectory(atPath: base) else {
             return nil

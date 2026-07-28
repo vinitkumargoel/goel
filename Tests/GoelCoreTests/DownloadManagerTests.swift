@@ -1,13 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-// MARK: - In-test fake engine
-
-/// A controllable, networking-free ``DownloadEngine`` for driving the scheduler
-/// deterministically. It records calls and lets the test inject events at will.
-///
-/// Events emitted before a subscriber attaches are buffered per task and replayed
-/// on subscription, so tests never race the scheduler's (async) subscribe step.
+/// Events emitted pre-subscribe are buffered and replayed, so tests never race the async subscribe.
 final class FakeEngine: FilePrioritizing, @unchecked Sendable {
 
     let kind: DownloadKind
@@ -26,8 +20,6 @@ final class FakeEngine: FilePrioritizing, @unchecked Sendable {
     init(kind: DownloadKind) {
         self.kind = kind
     }
-
-    // DownloadEngine
 
     func add(_ task: DownloadTask) async {
         lock.lock(); _added.append(task.id); lock.unlock()
@@ -70,9 +62,6 @@ final class FakeEngine: FilePrioritizing, @unchecked Sendable {
         return stream
     }
 
-    // Test driving / inspection
-
-    /// Emit an event for a task; buffered until a subscriber attaches.
     func emit(_ event: EngineEvent, for id: UUID) {
         lock.lock()
         if let continuation = continuations[id] {
@@ -92,13 +81,9 @@ final class FakeEngine: FilePrioritizing, @unchecked Sendable {
     var filePriorities: [(FilePriority, Int, UUID)] { lock.lock(); defer { lock.unlock() }; return _filePriorities }
 }
 
-// MARK: - Tests
-
 final class DownloadManagerTests: XCTestCase {
 
     private let saveDir = NSTemporaryDirectory()
-
-    // MARK: Helpers
 
     private func urlSource(_ s: String) -> DownloadSource {
         .url(URL(string: s)!)
@@ -108,7 +93,6 @@ final class DownloadManagerTests: XCTestCase {
         .magnet("magnet:?xt=urn:btih:\(hash)&dn=Demo+Pack")
     }
 
-    /// A profile identical to `.medium` but with overridable queue caps.
     private func profile(
         maxSimultaneousDownloads: Int,
         maxMetadataResolutions: Int = 99
@@ -135,7 +119,6 @@ final class DownloadManagerTests: XCTestCase {
         )
     }
 
-    /// Poll an actor-isolated predicate until it holds or the timeout fires.
     @discardableResult
     private func waitUntil(
         timeout: TimeInterval = 5,
@@ -153,8 +136,6 @@ final class DownloadManagerTests: XCTestCase {
         await manager.snapshot.filter { $0.status == status }.count
     }
 
-    // MARK: (a) Routing — a task is added and routed to the correct engine
-
     func testAddRoutesToCorrectEngineAndAppears() async throws {
         let http = FakeEngine(kind: .http)
         let torrent = FakeEngine(kind: .torrent)
@@ -167,11 +148,9 @@ final class DownloadManagerTests: XCTestCase {
         let httpTask = await manager.add(source: urlSource("https://example.test/file.bin"))
         let torrentTask = await manager.add(source: magnetSource("aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"))
 
-        // Both tasks appear in the unified list.
         let ids = await manager.snapshot.map(\.id)
         XCTAssertEqual(Set(ids), Set([httpTask.id, torrentTask.id]))
 
-        // Each was handed to exactly the right engine.
         let httpRouted = await waitUntil { http.added == [httpTask.id] }
         let torrentRouted = await waitUntil { torrent.added == [torrentTask.id] }
         XCTAssertTrue(httpRouted)
@@ -181,17 +160,10 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertTrue(torrent.added.contains(torrentTask.id))
         XCTAssertFalse(torrent.added.contains(httpTask.id))
 
-        // Name derivation: HTTP from the path, magnet from the dn= parameter.
         XCTAssertEqual(httpTask.name, "file.bin")
         XCTAssertEqual(torrentTask.name, "Demo Pack")
     }
 
-    // MARK: (a′) Metadata resolved on the add screen seeds the task
-
-    /// The add-confirmation screen already resolved the name, size and file list;
-    /// `add` must carry them onto the created task so the download doesn't re-show
-    /// a "gathering details" state for facts we already have (the redundancy the
-    /// Add flow used to have — it discarded the preview and re-derived everything).
     func testAddSeedsResolvedPreviewMetadata() async throws {
         let http = FakeEngine(kind: .http)
         let torrent = FakeEngine(kind: .torrent)
@@ -212,20 +184,15 @@ final class DownloadManagerTests: XCTestCase {
             files: files
         )
 
-        // The resolved name wins over the URL-derived fallback, and the size and
-        // file list are present immediately — no second resolution needed.
         XCTAssertEqual(task.name, "Album.zip")
         XCTAssertEqual(task.totalBytes, 75_000_000)
         XCTAssertEqual(task.files.map(\.id), [0, 1])
         XCTAssertEqual(task.files.map(\.path), ["disc/track1.flac", "disc/track2.flac"])
 
-        // And it survives into the published snapshot the UI renders.
         let snap = await manager.snapshot.first { $0.id == task.id }
         XCTAssertEqual(snap?.totalBytes, 75_000_000)
         XCTAssertEqual(snap?.name, "Album.zip")
     }
-
-    // MARK: (b) Duplicate sources are rejected
 
     func testDuplicateSourceIsRejected() async throws {
         let http = FakeEngine(kind: .http)
@@ -244,8 +211,6 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(all.count, 1, "no duplicate task should be created")
     }
 
-    // MARK: (c) The simultaneous-download cap is respected
-
     func testSimultaneousDownloadCapIsRespected() async throws {
         let http = FakeEngine(kind: .http)
         let torrent = FakeEngine(kind: .torrent)
@@ -260,7 +225,6 @@ final class DownloadManagerTests: XCTestCase {
             _ = await manager.add(source: urlSource("https://example.test/f\(i).bin"))
         }
 
-        // Exactly `cap` downloading, the remainder queued.
         let reached = await waitUntil {
             await self.count(manager, status: .downloading) == cap
         }
@@ -270,11 +234,8 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(downloading, cap)
         XCTAssertEqual(queued, 5 - cap)
 
-        // Only `cap` tasks were ever handed to the engine.
         XCTAssertEqual(http.added.count, cap)
     }
-
-    // MARK: (d) Completing/seeding a task promotes a queued one
 
     func testCompletionPromotesQueuedTask() async throws {
         let http = FakeEngine(kind: .http)
@@ -288,13 +249,11 @@ final class DownloadManagerTests: XCTestCase {
         let a = await manager.add(source: urlSource("https://example.test/a.bin"))
         let b = await manager.add(source: urlSource("https://example.test/b.bin"))
 
-        // Only the first runs; the second waits.
         let firstStarted = await waitUntil { http.added == [a.id] }
         XCTAssertTrue(firstStarted)
         let bQueued = await manager.task(b.id)?.status
         XCTAssertEqual(bQueued, .queued)
 
-        // Finish the first; its slot frees and the second is promoted.
         http.emit(.statusChanged(.completed), for: a.id)
 
         let secondStarted = await waitUntil { http.added.contains(b.id) }
@@ -304,8 +263,6 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(aStatus, .completed)
         XCTAssertEqual(bStatus, .downloading)
     }
-
-    // MARK: (d') Seeding (not only completion) also frees a slot
 
     func testSeedingFreesSlotAndPromotes() async throws {
         let http = FakeEngine(kind: .http)
@@ -324,7 +281,6 @@ final class DownloadManagerTests: XCTestCase {
         let bQueued = await manager.task(b.id)?.status
         XCTAssertEqual(bQueued, .queued)
 
-        // First torrent reaches seeding — slot frees even though it's still active.
         torrent.emit(.statusChanged(.seeding), for: a.id)
 
         let secondStarted = await waitUntil { torrent.added.contains(b.id) }
@@ -332,12 +288,9 @@ final class DownloadManagerTests: XCTestCase {
         let aStatus = await manager.task(a.id)?.status
         let bStatus = await manager.task(b.id)?.status
         XCTAssertEqual(aStatus, .seeding)
-        // A magnet that has just been promoted is resolving metadata (an active,
-        // slot-occupying phase) — the point is it was promoted off the queue.
+        // A just-promoted magnet is resolving metadata — still an active, slot-occupying phase.
         XCTAssertEqual(bStatus, .requestingMetadata)
     }
-
-    // MARK: (d2) A stale engine event never resurrects a paused task
 
     func testStaleDownloadingEventDoesNotUnpause() async throws {
         let http = FakeEngine(kind: .http)
@@ -346,25 +299,19 @@ final class DownloadManagerTests: XCTestCase {
             settings: settings(profile(maxSimultaneousDownloads: 5)))
 
         let task = await manager.add(source: urlSource("https://example.test/hold.bin"))
-        _ = await waitUntil { http.added == [task.id] }        // promoted + handed to the engine
+        _ = await waitUntil { http.added == [task.id] }
         await manager.pause(task.id)
         _ = await waitUntil { await manager.task(task.id)?.status == .paused }
 
-        // A "downloading" event buffered before the engine stopped arrives late.
         http.emit(.statusChanged(.downloading), for: task.id)
-        // Order-preserving sentinel: events fold in order, so once the name updates
-        // the stale status event has already been processed (and, per the guard,
-        // ignored) — no timing assumption needed.
+        // Order-preserving sentinel: once the name updates, the stale status event was already folded.
         http.emit(.nameResolved("SENTINEL"), for: task.id)
         let sawSentinel = await waitUntil { await manager.task(task.id)?.name == "SENTINEL" }
         XCTAssertTrue(sawSentinel)
 
-        // The user's pause survived the stale event.
         let finalStatus = await manager.task(task.id)?.status
         XCTAssertEqual(finalStatus, .paused)
     }
-
-    // MARK: (e) Switching profile / toggling the snail re-applies limits
 
     func testProfileSwitchAndSnailReapplyLimits() async throws {
         let http = FakeEngine(kind: .http)
@@ -375,19 +322,16 @@ final class DownloadManagerTests: XCTestCase {
             settings: settings(profile(maxSimultaneousDownloads: 5))
         )
 
-        // Switching profile applies the new limits to BOTH engines.
         await manager.setProfile("Low")
         XCTAssertEqual(http.applyLimitsCalls.last?.name, "Low")
         XCTAssertEqual(torrent.applyLimitsCalls.last?.name, "Low")
         XCTAssertGreaterThan(http.applyLimitsCalls.last?.maxDownloadBytesPerSec ?? 0, 0)
 
-        // Turning the snail OFF lifts the byte caps (unlimited) on both engines.
         await manager.setSpeedLimitEnabled(false)
         XCTAssertEqual(http.applyLimitsCalls.last?.maxDownloadBytesPerSec, 0)
         XCTAssertEqual(http.applyLimitsCalls.last?.maxUploadBytesPerSec, 0)
         XCTAssertEqual(torrent.applyLimitsCalls.last?.maxDownloadBytesPerSec, 0)
 
-        // Turning it back ON restores the selected profile's caps.
         await manager.setSpeedLimitEnabled(true)
         XCTAssertEqual(http.applyLimitsCalls.last?.maxDownloadBytesPerSec, TrafficProfile.low.maxDownloadBytesPerSec)
     }
@@ -401,11 +345,8 @@ final class DownloadManagerTests: XCTestCase {
             settings: settings(profile(maxSimultaneousDownloads: 5))
         )
 
-        // The deep apply() commits the change AND returns the stored result, so a
-        // caller never needs a separate read-after-write to learn what was saved…
         let committed = await manager.apply { $0.selectedProfileName = "Low" }
         XCTAssertEqual(committed.selectedProfileName, "Low")
-        // …and the same change cascaded down to BOTH engines via applyLimits.
         XCTAssertEqual(http.applyLimitsCalls.last?.name, "Low")
         XCTAssertEqual(torrent.applyLimitsCalls.last?.name, "Low")
     }
@@ -419,8 +360,6 @@ final class DownloadManagerTests: XCTestCase {
             settings: settings(profile(maxSimultaneousDownloads: 5))
         )
 
-        // Disabling the speed limit through apply() reports unlimited (0) caps on
-        // the committed settings and pushes those same zero caps to the engines.
         let committed = await manager.apply { $0.speedLimitEnabled = false }
         XCTAssertFalse(committed.speedLimitEnabled)
         XCTAssertEqual(committed.effectiveProfile.maxDownloadBytesPerSec, 0)
@@ -428,8 +367,6 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(http.applyLimitsCalls.last?.maxUploadBytesPerSec, 0)
         XCTAssertEqual(torrent.applyLimitsCalls.last?.maxDownloadBytesPerSec, 0)
     }
-
-    // MARK: (f) Engine events update the stored task
 
     func testEngineEventsUpdateStoredTask() async throws {
         let http = FakeEngine(kind: .http)
@@ -444,7 +381,6 @@ final class DownloadManagerTests: XCTestCase {
         let started = await waitUntil { http.added.contains(task.id) }
         XCTAssertTrue(started)
 
-        // Metadata, progress and a file update flow in from the engine.
         http.emit(.metadataResolved(
             name: "big.bin",
             totalBytes: 1000,
@@ -459,8 +395,7 @@ final class DownloadManagerTests: XCTestCase {
         ), for: task.id)
         http.emit(.fileProgress(fileID: 0, bytesCompleted: 400), for: task.id)
 
-        // Wait on the file update (the last of the three events) so all earlier
-        // events are guaranteed applied before we snapshot.
+        // Wait on the file update, the last of the three, so all earlier events are already applied.
         let progressed = await waitUntil {
             await manager.task(task.id)?.files.first?.bytesCompleted == 400
         }
@@ -468,16 +403,12 @@ final class DownloadManagerTests: XCTestCase {
         let snap = await manager.task(task.id)
         XCTAssertEqual(snap?.totalBytes, 1000)
         XCTAssertEqual(snap?.bytesDownloaded, 400)
-        // The stored speed is meter-derived from byte-counter deltas (a ~3 s
-        // sliding window, see ``SpeedMeter``), never copied from the event — a
-        // single progress report has no window yet, so it reads 0. The window
-        // math itself is covered by `SpeedMeterTests`.
+        // Stored speed comes from ``SpeedMeter`` deltas, not the event: one report has no window yet.
         XCTAssertEqual(snap?.downloadSpeed, 0)
         XCTAssertEqual(snap?.connectionCount, 4)
         XCTAssertEqual(snap?.files.first?.bytesCompleted, 400)
         XCTAssertEqual(snap?.fractionCompleted ?? 0, 0.4, accuracy: 0.0001)
 
-        // A terminal status flows through and stamps the completion date.
         http.emit(.statusChanged(.completed), for: task.id)
         let completed = await waitUntil {
             await manager.task(task.id)?.status == .completed
@@ -487,8 +418,6 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(done?.status, .completed)
         XCTAssertNotNil(done?.completedAt)
     }
-
-    // MARK: Pause / resume against a real engine (integration)
 
     func testPauseAndResumeWithMockTorrentEngine() async throws {
         let http = FakeEngine(kind: .http)
@@ -509,7 +438,6 @@ final class DownloadManagerTests: XCTestCase {
 
         let task = await manager.add(source: magnetSource("3333333333333333333333333333333333333333"))
 
-        // It starts downloading via the real engine.
         let downloading = await waitUntil {
             await manager.task(task.id)?.status == .downloading
         }
@@ -519,7 +447,6 @@ final class DownloadManagerTests: XCTestCase {
         let paused = await manager.task(task.id)?.status
         XCTAssertEqual(paused, .paused)
 
-        // Resume puts it back to work.
         await manager.resume(task.id)
         let resumed = await waitUntil(timeout: 10) {
             let s = await manager.task(task.id)?.status

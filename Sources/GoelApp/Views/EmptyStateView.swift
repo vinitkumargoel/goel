@@ -2,33 +2,11 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-// ============================================================================
-// The genuinely-empty download list.
-//
-// This is a different situation from "your filter matched nothing", which
-// ``DownloadListView`` already handles with the shared ``EmptyStateView`` chrome
-// in `SharedViews.swift`. That case wants a quiet dead end. *This* case is the
-// first thing a new user sees, and a symbol plus the words "no downloads" tells
-// them something they can already see.
-//
-// So it offers the three ways in instead — paste, drop, grab — as real controls
-// that do the thing, not as instructions to go and find a menu. The quieter row
-// underneath names the surfaces that are otherwise invisible from here.
-//
-// The type is `DownloadsEmptyState`, not `EmptyStateView`: that name is already
-// taken by the shared symbol-and-caption block, and the two are used side by
-// side within the same file.
-// ============================================================================
-
-/// The affordance-first placeholder shown when the queue is completely empty.
 struct DownloadsEmptyState: View {
 
     @EnvironmentObject private var vm: AppViewModel
     @Environment(\.openSettings) private var openSettingsWindow
 
-    /// A link sitting on the pasteboard right now, if it is something we could
-    /// actually download. Re-read on appear and whenever the app is reactivated,
-    /// because the interesting case is "user copied a link, switched back".
     @State private var clipboardLink: String?
 
     var body: some View {
@@ -64,13 +42,6 @@ struct DownloadsEmptyState: View {
                     title: "Drop a file",
                     detail: "Drag a .torrent or a link onto this window",
                     isPrimary: false,
-                    // The visible copy teaches the pointer gesture, but the
-                    // click does something else: it toggles the floating Drop
-                    // Basket panel. Spoken as written, the only description a
-                    // non-pointer user would get is an instruction they cannot
-                    // follow — and a second activation would silently close a
-                    // window they were never told had opened. So the spoken
-                    // pair names the button's actual effect instead.
                     a11yLabel: "Show or hide the Drop Basket",
                     a11yHint: "Opens a small floating window that accepts dragged links and torrent files. Activating again closes it.",
                     action: { DropBasketController.shared.toggle() })
@@ -91,14 +62,10 @@ struct DownloadsEmptyState: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
         .onAppear(perform: refreshClipboard)
-        // A link copied in the browser is only interesting once the user comes
-        // back to this window, which is exactly when this fires.
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in refreshClipboard() }
     }
 
-    /// The quieter second tier: surfaces that exist but that nothing on this
-    /// screen would otherwise reveal.
     private var hints: some View {
         VStack(spacing: 5) {
             HStack(spacing: 14) {
@@ -117,18 +84,10 @@ struct DownloadsEmptyState: View {
         .padding(.top, 2)
     }
 
-    // MARK: Actions
-
-    /// Open the add sheet. The sheet already auto-pastes a downloadable link
-    /// from the clipboard, so this is the same gesture whether or not one is
-    /// there — no second, subtly-different paste path to keep in sync.
     private func pasteLink() {
         vm.isAddSheetPresented = true
     }
 
-    /// Open the Settings window already on the relevant pane. The pane travels
-    /// through ``SettingsRoute``; opening the window is a separate call because
-    /// `openSettings` only exists inside a view's environment.
     private func showSettings(_ pane: SettingsView.Pane) {
         SettingsRoute.shared.request(pane)
         openSettingsWindow()
@@ -144,28 +103,17 @@ struct DownloadsEmptyState: View {
         clipboardLink = clip
     }
 
-    /// Middle-truncate a locator so a long URL still shows both its host and
-    /// its file name in a narrow card.
     private static func shorten(_ locator: String) -> String {
         guard locator.count > 44 else { return locator }
         return locator.prefix(24) + "…" + locator.suffix(16)
     }
 }
 
-// MARK: - Pieces
-
-/// One of the three big affordances: a bordered, hoverable card that performs
-/// its action on click.
 private struct EmptyStateAction: View {
     let symbol: String
     let title: String
     let detail: String
-    /// Tints the card when it is the obvious next move (a link is on the
-    /// clipboard). Purely visual — every card stays equally clickable.
     let isPrimary: Bool
-    /// Spoken label and hint, for the case where the visible copy describes a
-    /// gesture rather than what clicking the card does. They default to
-    /// `title`/`detail`, which is correct whenever the two agree.
     var a11yLabel: String? = nil
     var a11yHint: String? = nil
     let action: () -> Void
@@ -199,9 +147,6 @@ private struct EmptyStateAction: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        // This is the first screen a new user meets, and each card is a symbol
-        // over two lines of text — three elements for one button. One element,
-        // with the detail line as its hint since it explains rather than names.
         .a11yGroup(label: a11yLabel ?? title, hint: a11yHint ?? detail)
         .accessibilityAddTraits(.isButton)
     }
@@ -212,7 +157,6 @@ private struct EmptyStateAction: View {
     }
 }
 
-/// A small text-and-symbol link in the second tier.
 private struct EmptyStateHint: View {
     let symbol: String
     let text: String
@@ -231,8 +175,6 @@ private struct EmptyStateHint: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        // "Press ⌘K for everything" contains a glyph the ear can't parse; these
-        // are links, and nothing but hover colour marks them as clickable.
         .a11yGroup(label: text.replacingOccurrences(of: "⌘K", with: "Command K"))
         .accessibilityAddTraits(.isButton)
     }

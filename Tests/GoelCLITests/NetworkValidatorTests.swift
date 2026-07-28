@@ -1,16 +1,11 @@
 import XCTest
 @testable import GoelCLI
 
-/// The CLI validates interface names locally so a typo is caught before it is
-/// written into `/etc/goel/config` (where the daemon would refuse to boot on it)
-/// or sent to the API. These mirror `NetworkSelection` in GoelCore — the two
-/// grammars are duplicated on purpose, so a test that they agree is the only
-/// thing keeping them from drifting.
 final class NetworkValidatorTests: XCTestCase {
 
     func testInterfaceNamesFollowIFNAMSIZ() {
         XCTAssertTrue(Validators.isInterfaceName("wlp13s0"))
-        XCTAssertTrue(Validators.isInterfaceName("wlx782051ac86ae"))     // 15 characters
+        XCTAssertTrue(Validators.isInterfaceName("wlx782051ac86ae"))
         XCTAssertTrue(Validators.isInterfaceName("br-1a2b"))
         XCTAssertFalse(Validators.isInterfaceName(""))
         XCTAssertFalse(Validators.isInterfaceName(String(repeating: "a", count: 16)))
@@ -45,8 +40,6 @@ final class NetworkValidatorTests: XCTestCase {
         }
     }
 
-    /// The three new keys have to be reachable by name, or `goel config set
-    /// aggregation on` reports "unknown setting" and the feature is unusable.
     func testTheAggregationSettingsAreRegistered() throws {
         for key in ["aggregation", "aggregation-adapters", "aggregation-streams"] {
             let entry = try XCTUnwrap(setting(named: key), "‘\(key)’ is not registered")

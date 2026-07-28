@@ -2,9 +2,6 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// The floating "drop basket": a small always-on-top panel that accepts link /
-/// file drags from any app (browsers especially) and queues them without the
-/// main window needing to be visible. Toggled from the View menu.
 @MainActor
 final class DropBasketController {
 
@@ -30,7 +27,6 @@ final class DropBasketController {
         panel.isReleasedWhenClosed = false
         panel.contentView = content
         panel.center()
-        // Park it near the top-right corner, clear of the menu bar.
         if let screen = NSScreen.main {
             let frame = screen.visibleFrame
             panel.setFrameOrigin(NSPoint(x: frame.maxX - 200, y: frame.maxY - 170))
@@ -45,8 +41,6 @@ final class DropBasketController {
     }
 }
 
-/// The basket's content: a dashed drop target that forwards dropped links /
-/// .torrent files to the shared external-add channel.
 private struct DropBasketView: View {
     @State private var isTargeted = false
 
@@ -60,9 +54,6 @@ private struct DropBasketView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
-        // The basket only accepts pointer drags, so it cannot be operated
-        // without a pointer at all — but it should at least identify itself
-        // rather than appearing as an unnamed region in an unnamed panel.
         .a11yGroup(label: "Drop basket",
                    hint: "Drag links or torrent files here to queue them.")
         .frame(maxWidth: .infinity, maxHeight: .infinity)

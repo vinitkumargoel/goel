@@ -1,13 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-// MARK: - An engine whose first pause parks the caller
-
-/// A networking-free engine whose **first** ``pause(_:)`` suspends until the test
-/// releases it. That parks one automation tick inside ``DownloadManager/pause(_:)``
-/// — the actor is released at that `await` — so a second tick can be driven
-/// through the actor while the first is mid-flight, which is exactly the
-/// interleaving ``DownloadManager/runAutomation(feeds:)`` has to survive.
 private final class GatedPauseEngine: DownloadEngine, @unchecked Sendable {
 
     let kind: DownloadKind
@@ -22,8 +15,6 @@ private final class GatedPauseEngine: DownloadEngine, @unchecked Sendable {
     init(kind: DownloadKind) {
         self.kind = kind
     }
-
-    // DownloadEngine
 
     func add(_ task: DownloadTask) async {}
 
@@ -63,12 +54,8 @@ private final class GatedPauseEngine: DownloadEngine, @unchecked Sendable {
         return stream
     }
 
-    // Test driving / inspection
-
-    /// True once a caller has parked inside the first ``pause(_:)``.
     var pauseEntered: Bool { lock.lock(); defer { lock.unlock() }; return entered }
 
-    /// Let the parked caller (and every later one) through.
     func releasePause() {
         lock.lock()
         released = true
@@ -79,11 +66,8 @@ private final class GatedPauseEngine: DownloadEngine, @unchecked Sendable {
     }
 }
 
-// MARK: - Tests
-
 final class AutomationTickMemoryTests: XCTestCase {
 
-    /// Poll an actor-isolated predicate until it holds or the timeout fires.
     private func waitUntil(timeout: TimeInterval = 5,
                            _ predicate: @escaping () async -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
@@ -94,17 +78,7 @@ final class AutomationTickMemoryTests: XCTestCase {
         return await predicate()
     }
 
-    /// Two automation ticks overlapping across the `await` inside `pause(_:)` must
-    /// not clobber each other's ``AutomationCore/Memory``.
-    ///
-    /// `runAutomation` used to store the memory *after* applying the actions, so a
-    /// tick that suspended in `pause(_:)` resumed last and wrote back a value
-    /// computed from its pre-overlap snapshot. Here the network tick parks in
-    /// `pause(_:)` while an RSS tick records a feed key; if the network tick's
-    /// stale memory wins, `rssSeenKeys` is wiped and the next poll re-queues an
-    /// item the user already dealt with (symmetrically, an RSS tick winning would
-    /// wipe `networkPausedIDs` and strand the paused task with no `.resume` on
-    /// recovery). Both ledgers must survive.
+    /// Ticks overlapping across the `await` in `pause(_:)` must not clobber each other's memory: a stale write-back wipes `rssSeenKeys` or `networkPausedIDs`.
     func testOverlappingTicksPreserveBothMemoryLedgers() async throws {
         let http = GatedPauseEngine(kind: .http)
         let torrent = GatedPauseEngine(kind: .torrent)
@@ -120,13 +94,10 @@ final class AutomationTickMemoryTests: XCTestCase {
         let started = await waitUntil { await manager.task(task.id)?.status == .downloading }
         XCTAssertTrue(started)
 
-        // Tick A: the path went metered. It decides to pause the task, records it
-        // in `networkPausedIDs`, then parks inside the engine's pause.
         let tickA = Task { await manager.applyNetworkPolicy(expensive: true, constrained: false) }
         let parked = await waitUntil { http.pauseEntered }
         XCTAssertTrue(parked, "the network tick should be suspended inside pause()")
 
-        // Tick B: an RSS poll lands mid-flight and records a feed key.
         let feedURL = "https://example.test/episode.bin"
         let source = DownloadSource.url(URL(string: feedURL)!)
         let key = "feed|\(feedURL)"
@@ -135,7 +106,6 @@ final class AutomationTickMemoryTests: XCTestCase {
                   candidates: [.init(key: key, source: source, dedupKey: source.dedupKey)])
         ])
 
-        // Tick A now finishes, last.
         http.releasePause()
         await tickA.value
 

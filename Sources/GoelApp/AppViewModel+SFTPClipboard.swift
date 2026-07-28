@@ -1,20 +1,9 @@
 import Foundation
 import GoelCore
 
-/// Copy / cut / paste of remote items — within one server and between two.
-///
-/// The bytes always travel through this machine (see ``SFTPRelay`` for why), with
-/// one exception that matters a great deal in practice: a *move* inside a single
-/// server is a `RENAME`, which is one round trip regardless of how large the item
-/// is. So cutting and pasting a 40 GB folder into a sibling directory on the same
-/// server is instant, while copying it is a 40 GB transfer in each direction.
 @MainActor
 extension AppViewModel {
 
-    // MARK: Clipboard
-
-    /// Put items on the remote clipboard. Replaces whatever was there — the same
-    /// single-slot behaviour Finder has.
     func copySFTPItems(_ entries: [SFTPEntry], from connection: SFTPConnection,
                        directory: String, operation: SFTPClipboard.Operation) {
         let safe = entries.filter { SFTPBrowserPaths.isSafeChildName($0.name) }
@@ -27,27 +16,18 @@ extension AppViewModel {
 
     func clearSFTPClipboard() { sftpClipboard = nil }
 
-    /// Whether a paste into this folder would do anything.
     func canPasteSFTP(into connection: SFTPConnection, directory: String) -> Bool {
         guard let clip = sftpClipboard, !clip.isEmpty else { return false }
         return !clip.isSelfMove(toConnection: connection.id, directory: directory)
     }
 
-    // MARK: Paste
-
-    /// Paste the clipboard into `directory` on `connection`.
-    ///
-    /// A cut is cleared once started, because the source is about to stop
-    /// existing and a second paste would then fail on every item. A copy stays,
-    /// so it can be pasted into several places — again matching Finder.
     func pasteSFTPClipboard(into connection: SFTPConnection, directory: String) {
         guard let clip = sftpClipboard, !clip.isEmpty else { return }
         guard !clip.isSelfMove(toConnection: connection.id, directory: directory) else { return }
         guard let source = server(clip.connectionID) else {
             toastNow("The server those items came from is no longer set up."); return
         }
-        // Resolved once per paste, not per item, so a multi-item paste raises at
-        // most one Keychain prompt per server.
+        // Resolve clients once per paste, not per item: otherwise one Keychain prompt per item.
         guard let sourceClient = sftpClientReportingFailure(for: source) else { return }
         let destinationClient: SFTPClient
         if clip.connectionID == connection.id {
@@ -71,8 +51,6 @@ extension AppViewModel {
         if clip.operation == .cut { sftpClipboard = nil }
     }
 
-    /// Duplicate items in place — Finder's ⌘D. A copy into the folder the item is
-    /// already in, so it always collides and always lands on a "name copy" name.
     func duplicateSFTPItems(_ entries: [SFTPEntry], on connection: SFTPConnection, directory: String) {
         guard let client = sftpClientReportingFailure(for: connection) else { return }
         let clip = SFTPClipboard(operation: .copy, connectionID: connection.id,
@@ -83,8 +61,6 @@ extension AppViewModel {
                             directory: directory, isMove: false, sameServer: true)
         }
     }
-
-    // MARK: One item
 
     private func startRemoteCopy(entry: SFTPEntry, clip: SFTPClipboard,
                                  sourceClient: SFTPClient, destination: SFTPConnection,
@@ -113,8 +89,7 @@ extension AppViewModel {
         sftpTransferTasks[id] = (task, cancel)
     }
 
-    /// Replay a failed remote copy. Re-resolves both clients, because the row
-    /// may have outlived an edit to either server's credentials.
+    /// Re-resolves both clients: the row may have outlived an edit to either server's credentials.
     func runRemoteCopy(id: UUID, cancel: CancelFlag) async {
         guard let plan = sftpRemoteCopyPlans[id],
               let sourceConnection = server(plan.sourceConnectionID),
@@ -137,16 +112,7 @@ extension AppViewModel {
                                    source sourceClient: SFTPClient,
                                    destination destinationClient: SFTPClient,
                                    cancel: CancelFlag) async {
-        // Read and write halves must never share a connection: one libssh2
-        // session is one thread, and the download blocks waiting for the upload
-        // to drain the pipe. Two transfer roles guarantee two threads even when
-        // both sides are the same server.
-        //
-        // On one server those two connections come from the same pool budget, so
-        // they are reserved together *before* either is opened. Opening them one
-        // at a time would let two concurrent copies each take one half and then
-        // wait forever for the other's — a hang the Cancel button cannot reach,
-        // because both threads are parked inside blocking C calls.
+        // Read and write halves must never share a connection (one libssh2 session is one thread — deadlock); on one server reserve both slots together or two copies hang.
         let readJob = UUID(), writeJob = UUID()
         let reader = sourceClient.forTransfer(readJob)
         let writer = destinationClient.forTransfer(writeJob)
@@ -155,15 +121,11 @@ extension AppViewModel {
         if plan.sameServer {
             await sourceClient.reserveSlots(2)
         } else {
-            // Different servers draw on different budgets, so neither half can be
-            // starved by the other.
             await sourceClient.reserveSlots(1)
             await destinationClient.reserveSlots(1)
         }
 
         do {
-            // A rename is the whole operation when moving inside one server, so
-            // check for that before doing anything that costs bytes.
             let name = try await SFTPRelay.resolvedName(plan.entry.name,
                                                         in: plan.destinationDirectory,
                                                         on: writer,
@@ -173,9 +135,6 @@ extension AppViewModel {
             renameTransferRow(id, to: name)
 
             if plan.isMove && plan.sameServer {
-                // One round trip regardless of size. A server that refuses (the
-                // two paths are on different filesystems) falls through to the
-                // relay below, which is the only way across a mount boundary.
                 do {
                     try await writer.rename(plan.sourcePath, to: target)
                     setTransferProgress(id, bytes: plan.entry.size, total: plan.entry.size)
@@ -186,7 +145,7 @@ extension AppViewModel {
                     bumpMutation()
                     return
                 } catch {
-                    // Fall through and copy instead.
+                    // Rename fails across mount boundaries; fall through to the byte copy.
                 }
             }
 
@@ -217,14 +176,7 @@ extension AppViewModel {
                     })
             }
 
-            // Only now is the source safe to remove: a move must never delete
-            // what it hasn't finished writing.
-            //
-            // A failure here is not the same failure as a copy that didn't land:
-            // every byte arrived, so the destination is complete and only the
-            // source's deletion is outstanding. Reporting a bare "failed" would
-            // invite the person to run the move again and end up with two copies,
-            // so say what actually happened instead.
+            // Delete the source only after every byte landed, and report a failure here as "copied but not deleted" — otherwise a re-run duplicates.
             if plan.isMove {
                 do {
                     try await reader.remove(plan.sourcePath, isDirectory: plan.entry.isDirectory)
@@ -248,8 +200,6 @@ extension AppViewModel {
         bumpMutation()
     }
 
-    /// Hand back both halves of a relay: the channels themselves, and then the
-    /// paired reservation that admitted them.
     private func releaseCopyConnections(plan: RemoteCopyPlan,
                                         reader: SFTPClient, readJob: UUID,
                                         writer: SFTPClient, writeJob: UUID,
@@ -264,14 +214,12 @@ extension AppViewModel {
         }
     }
 
-    /// Point a row at the name it actually landed on, after collision renaming.
     private func renameTransferRow(_ id: UUID, to name: String) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
         sftpTransfers[i].name = name
     }
 }
 
-/// Everything needed to replay one remote copy after a failure.
 struct RemoteCopyPlan {
     let entry: SFTPEntry
     let sourcePath: String
@@ -282,26 +230,19 @@ struct RemoteCopyPlan {
     let sameServer: Bool
 }
 
-/// The running byte total of a tree copy, accumulated across files.
-///
-/// `SFTPRelay.copyTree` reports each file's own progress, so the row needs to
-/// add up finished files and the current one. Copied files run one at a time, so
-/// a single "current file" slot is enough.
-///
 /// `@unchecked Sendable`: both fields are only touched under `lock`.
 final class CopiedBytes: @unchecked Sendable {
     private let lock = NSLock()
     private var completed: Int64 = 0
     private var current: Int64 = 0
 
-    /// A new file has started; bank the previous one's final count.
     func startFile() {
         lock.lock(); defer { lock.unlock() }
         completed += current
         current = 0
     }
 
-    /// Absorb the current file's absolute byte count and return the tree total.
+    /// `bytes` is the current file's absolute count, not a delta.
     func progress(_ bytes: Int64) -> Int64 {
         lock.lock(); defer { lock.unlock() }
         current = bytes

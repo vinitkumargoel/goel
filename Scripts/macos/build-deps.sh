@@ -1,51 +1,6 @@
 #!/usr/bin/env bash
-# Build the native dependencies of the macOS app against a pinned deployment
-# target.
-#
-# ## Why this exists
-#
-# The app advertises LSMinimumSystemVersion 14.0. Its native dependencies come
-# from Homebrew, and a Homebrew bottle is built for the OS of the machine that
-# poured it: on a Mac running macOS 26, `brew install openssl@3` yields a
-# libcrypto whose LC_BUILD_VERSION says minos 26.0. Link that into the app and
-# Scripts/check_min_os.sh correctly refuses the bundle — dyld would refuse those
-# libraries at launch on any Mac older than the build machine.
-#
-# The consequence was that the floor the product advertises depended on which
-# bottles a developer's machine happened to have, and a release could only be
-# cut from a Mac running the oldest supported OS. This builds the same four
-# libraries from source with MACOSX_DEPLOYMENT_TARGET pinned, so the floor is a
-# decision rather than an accident.
-#
-# This is the macOS counterpart of Scripts/linux/build-sqlite.sh, and it follows
-# the same rule: versions are PINNED with their digests, never scraped. These
-# libraries are linked into a signed, notarized application; "whatever upstream
-# publishes today" is an unverified third party choosing what ships.
-#
-# The pins below match the Homebrew formulae the app was developed against, so
-# this changes where the libraries come from and not which ones they are. Each
-# digest is upstream's, copied from the formula that built the local copy —
-# verify a bump against the formula or the project's own announcement:
-#
-#   /opt/homebrew/Cellar/<formula>/<version>/.brew/<formula>.rb
-#
-# ## Usage
-#
-#   Scripts/macos/build-deps.sh                 # build into Vendor/macos/<arch>
-#   GOEL_BREW_PREFIX="$PWD/Vendor/macos/arm64" swift build
-#   GOEL_BREW_PREFIX="$PWD/Vendor/macos/arm64" Scripts/build_app.sh
-#
-# The output directory mirrors a Homebrew prefix (opt/<formula>/{include,lib}
-# plus a top-level lib/) because that is the shape Package.swift already knows
-# how to consume through GOEL_BREW_PREFIX. Nothing else had to learn a new
-# layout.
-#
-# Expect 20-40 minutes on first run; libtorrent is most of it. Completed
-# components are stamped and skipped, so a re-run after a failure resumes rather
-# than starting over. Delete Vendor/macos/<arch> to force a clean rebuild.
 set -euo pipefail
 
-# ---- pins ------------------------------------------------------------------
 OPENSSL_VERSION="${OPENSSL_VERSION:-3.6.2}"
 OPENSSL_SHA256="${OPENSSL_SHA256:-aaf51a1fe064384f811daeaeb4ec4dce7340ec8bd893027eee676af31e83a04f}"
 
@@ -58,9 +13,7 @@ BOOST_SHA256="${BOOST_SHA256:-9e6bee9ab529fb2b0733049692d57d10a72202af085e553539
 LIBTORRENT_VERSION="${LIBTORRENT_VERSION:-2.0.13}"
 LIBTORRENT_SHA256="${LIBTORRENT_SHA256:-892cb75c06318e2420de0faf9f63a908069d3d237676e2459fd30abe0cb3b1bf}"
 
-# The floor the app advertises. Kept in step with LSMinimumSystemVersion in
-# Scripts/build_app.sh and platforms: [.macOS(...)] in Package.swift — all three
-# describe the same promise and must agree.
+# Must agree with LSMinimumSystemVersion in build_app.sh and platforms: in Package.swift.
 MIN_MACOS="${GOEL_MIN_MACOS:-14.0}"
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -74,9 +27,6 @@ export MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS"
 
 mkdir -p "$PREFIX/lib" "$PREFIX/opt" "$SRC" "$STAMPS"
 
-# ---- prerequisites ---------------------------------------------------------
-# Checked by name up front: without this the first failure is a bare "command
-# not found" tens of lines into an unrelated build.
 for tool in curl shasum tar cmake clang vtool install_name_tool; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "error: '$tool' is not on PATH." >&2
@@ -96,11 +46,7 @@ case "$ARCH" in
   *) echo "error: unsupported architecture '$ARCH'" >&2; exit 1 ;;
 esac
 
-# ---- helpers ---------------------------------------------------------------
-
-# fetch <url> <sha256> <filename>
-# Downloads once and verifies. A mismatch deletes the file rather than leaving a
-# poisoned cache for the next run to "resume" from.
+# A checksum mismatch must delete the file, or the poisoned cache is reused next run.
 fetch() {
   local url="$1" want="$2" file="$SRC/$3"
   if [ -f "$file" ]; then
@@ -122,7 +68,6 @@ fetch() {
 done_with() { [ -f "$STAMPS/$1" ]; }
 mark_done() { touch "$STAMPS/$1"; }
 
-# ---- OpenSSL ---------------------------------------------------------------
 if done_with "openssl-$OPENSSL_VERSION"; then
   echo "==> OpenSSL $OPENSSL_VERSION already built"
 else
@@ -133,22 +78,17 @@ else
   tar -xzf "$SRC/openssl-$OPENSSL_VERSION.tar.gz" -C "$SRC"
   (
     cd "$SRC/openssl-$OPENSSL_VERSION"
-    # no-tests skips a large test suite we do not run; the -mmacosx-version-min
-    # is explicit because OpenSSL's own build does not always thread
-    # MACOSX_DEPLOYMENT_TARGET through to every compiler invocation.
+    # -mmacosx-version-min is explicit: OpenSSL does not thread MACOSX_DEPLOYMENT_TARGET everywhere.
     ./Configure "$OPENSSL_TARGET" shared no-tests \
       --prefix="$PREFIX/opt/openssl@3" \
       --openssldir="$PREFIX/opt/openssl@3/ssl" \
       "-mmacosx-version-min=$MIN_MACOS"
     make -j"$JOBS"
-    # install_sw: libraries, headers and nothing else. `install` additionally
-    # writes a man page tree we would only delete.
     make install_sw
   )
   mark_done "openssl-$OPENSSL_VERSION"
 fi
 
-# ---- libssh2 ---------------------------------------------------------------
 if done_with "libssh2-$LIBSSH2_VERSION"; then
   echo "==> libssh2 $LIBSSH2_VERSION already built"
 else
@@ -172,10 +112,6 @@ else
   mark_done "libssh2-$LIBSSH2_VERSION"
 fi
 
-# ---- Boost -----------------------------------------------------------------
-# libtorrent needs Boost's headers, and its CMake asks find_package for the
-# `system` component even though Boost.System has been header-only since 1.69.
-# Building that one stub library is quicker than arguing with the find module.
 if done_with "boost-$BOOST_VERSION"; then
   echo "==> Boost $BOOST_VERSION already built"
 else
@@ -197,7 +133,6 @@ else
   mark_done "boost-$BOOST_VERSION"
 fi
 
-# ---- libtorrent-rasterbar --------------------------------------------------
 if done_with "libtorrent-$LIBTORRENT_VERSION"; then
   echo "==> libtorrent-rasterbar $LIBTORRENT_VERSION already built"
 else
@@ -206,9 +141,7 @@ else
         "$LIBTORRENT_SHA256" "libtorrent-rasterbar-$LIBTORRENT_VERSION.tar.gz"
   rm -rf "$SRC/libtorrent-rasterbar-$LIBTORRENT_VERSION"
   tar -xzf "$SRC/libtorrent-rasterbar-$LIBTORRENT_VERSION.tar.gz" -C "$SRC"
-  # The defines mirror the ones Package.swift passes when compiling
-  # TorrentBridge; a libtorrent built with a different ABI switch than its
-  # caller assumes is a crash at run time, not a link error.
+  # Must match the defines Package.swift passes for TorrentBridge: an ABI mismatch crashes at run time.
   cmake -S "$SRC/libtorrent-rasterbar-$LIBTORRENT_VERSION" -B "$SRC/libtorrent-build" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$PREFIX/opt/libtorrent-rasterbar" \
@@ -228,25 +161,14 @@ else
   mark_done "libtorrent-$LIBTORRENT_VERSION"
 fi
 
-# ---- assemble the prefix ---------------------------------------------------
-# Package.swift links with -L$PREFIX/lib and adds it as an rpath, mirroring how
-# Homebrew exposes every keg's dylibs under one lib/. Symlinks, not copies, so
-# there is exactly one file per library for install_name_tool to reason about.
+# Symlinks, not copies, so install_name_tool sees exactly one file per library.
 echo "==> Linking dylibs into $PREFIX/lib"
 find "$PREFIX/lib" -maxdepth 1 -type l -delete
-# `-type l` as well as `-type f`: a library installs both a real file
-# (libssh2.1.0.1.dylib) and the versioned alias its SONAME actually names
-# (libssh2.1.dylib). Linking only the real files leaves the linker recording
-# @rpath/libssh2.1.dylib against a name that is not in lib/, and everything
-# builds but nothing loads.
+# `-type l` too: skipping the SONAME aliases still builds, but loads nothing at run time.
 while IFS= read -r dylib; do
   ln -sf "$dylib" "$PREFIX/lib/$(basename "$dylib")"
 done < <(find "$PREFIX/opt" \( -type f -o -type l \) -name '*.dylib')
 
-# ---- verify ----------------------------------------------------------------
-# The entire point of this script. A library whose minos exceeds the floor is
-# the defect it exists to prevent, so it is checked here rather than being
-# discovered by check_min_os.sh after a full app build.
 echo "==> Verifying every dylib targets macOS $MIN_MACOS or older"
 fail=0
 count=0
@@ -258,7 +180,6 @@ while IFS= read -r dylib; do
     fail=1
     continue
   fi
-  # Sorts as versions: the lower of (minos, floor) must be minos itself.
   if [ "$(printf '%s\n%s\n' "$minos" "$MIN_MACOS" | sort -V | head -1)" != "$minos" ]; then
     echo "    ✗  $(basename "$dylib") — minos $minos exceeds $MIN_MACOS"
     fail=1

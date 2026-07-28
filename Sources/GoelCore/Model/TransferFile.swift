@@ -1,10 +1,8 @@
 import Foundation
 
-/// One file inside a transfer. A plain HTTP download is the one-file case;
-/// a torrent is often many files with per-file selection and priority.
 public struct TransferFile: Identifiable, Codable, Sendable, Hashable {
-    public var id: Int               // stable index within the task
-    public var path: String          // relative path within the save folder
+    public var id: Int
+    public var path: String
     public var length: Int64
     public var bytesCompleted: Int64
     public var priority: FilePriority
@@ -23,7 +21,6 @@ public struct TransferFile: Identifiable, Codable, Sendable, Hashable {
         self.priority = priority
     }
 
-    /// Whether the user wants this file (skip = deselected).
     public var isWanted: Bool { priority != .skip }
 
     public var fractionCompleted: Double {
@@ -31,7 +28,6 @@ public struct TransferFile: Identifiable, Codable, Sendable, Hashable {
         return min(1, Double(bytesCompleted) / Double(length))
     }
 
-    /// The file's display name (last path component).
     public var name: String {
         (path as NSString).lastPathComponent
     }

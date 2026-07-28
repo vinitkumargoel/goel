@@ -1,12 +1,10 @@
-// AVFoundation and CommonCrypto are both macOS-only; the HLS engine itself is
-// portable, but this file's fixtures and AES helper are not.
+// AVFoundation and CommonCrypto are macOS-only, so these fixtures cannot build on Linux.
 #if !os(Linux)
 import XCTest
 import AVFoundation
 import CommonCrypto
 @testable import GoelCore
 
-/// HLS parsing, AES-128 decryption, IV derivation, source detection, and naming.
 final class HLSTests: XCTestCase {
 
     private let base = URL(string: "https://cdn.example.com/video/index.m3u8")!
@@ -22,14 +20,9 @@ final class HLSTests: XCTestCase {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
     }
 
-    /// End-to-end: download a real (small) public HLS stream through the live
-    /// engine and confirm it produces a playable MP4 with a video track. Gated on
-    /// `GOEL_LIVE_NET=1` so the normal suite stays hermetic.
     func testLiveHLSDownloadProducesPlayableMP4() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GOEL_LIVE_NET"] == "1",
                           "set GOEL_LIVE_NET=1 to run the live network test")
-        // Apple's BipBop sample, lowest-bitrate TS rendition (~9 MB) — exercises
-        // the full segment-download + TS→MP4 remux path.
         let url = URL(string: "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/gear1/prog_index.m3u8")!
         let engine = HLSEngine(profile: .high)
         let task = DownloadTask(source: .hlsStream(url), name: "bipbop.mp4", saveDirectory: tempDir.path)
@@ -58,8 +51,6 @@ final class HLSTests: XCTestCase {
         XCTAssertFalse(tracks.isEmpty, "remuxed MP4 must contain a video track")
     }
 
-    // MARK: Master playlist
-
     func testParseMasterPlaylistVariants() {
         let text = """
         #EXTM3U
@@ -74,7 +65,7 @@ final class HLSTests: XCTestCase {
         XCTAssertEqual(variants.count, 2)
         XCTAssertEqual(variants[0].bandwidth, 800_000)
         XCTAssertEqual(variants[0].height, 360)
-        XCTAssertEqual(variants[0].codecs, "avc1.4d401e,mp4a.40.2") // quoted comma preserved
+        XCTAssertEqual(variants[0].codecs, "avc1.4d401e,mp4a.40.2")
         XCTAssertEqual(variants[1].height, 720)
         XCTAssertEqual(variants[0].url.absoluteString, "https://cdn.example.com/video/360/index.m3u8")
     }
@@ -90,8 +81,6 @@ final class HLSTests: XCTestCase {
         XCTAssertEqual(HLSParser.selectVariant(v, maxHeight: 240)?.height, 1080,
                        "no variant under the cap → fall back to highest bandwidth")
     }
-
-    // MARK: Media playlist
 
     func testParseMediaPlaylistSegments() {
         let text = """
@@ -115,7 +104,7 @@ final class HLSTests: XCTestCase {
         XCTAssertEqual(segs[0].sequence, 0)
         XCTAssertEqual(segs[1].sequence, 1)
         XCTAssertEqual(segs[0].url.absoluteString, "https://cdn.example.com/video/seg0.ts")
-        XCTAssertEqual(segs[2].url.absoluteString, "https://other.cdn/seg2.ts") // absolute kept
+        XCTAssertEqual(segs[2].url.absoluteString, "https://other.cdn/seg2.ts")
         XCTAssertEqual(total, 9.009 + 9.009 + 3.003, accuracy: 0.001)
     }
 
@@ -169,10 +158,7 @@ final class HLSTests: XCTestCase {
         XCTAssertNil(map?.byteRange, "a map without BYTERANGE covers the whole resource")
     }
 
-    /// Single-file/CMAF packaging puts the init header and every fragment in one
-    /// resource. The map's `BYTERANGE` must survive parsing, or the init fetch
-    /// degrades to an unranged GET of the entire (here 400 MB) stream file, which
-    /// then gets concatenated in front of the fragments into an unplayable result.
+    /// Losing the map's `BYTERANGE` turns the init fetch into an unranged GET of the whole file.
     func testParseFMP4InitMapKeepsByteRange() {
         let text = """
         #EXTM3U
@@ -190,12 +176,10 @@ final class HLSTests: XCTestCase {
         XCTAssertEqual(map?.url.absoluteString, "https://cdn.example.com/video/stream.mp4")
         XCTAssertEqual(map?.byteRange, HLSByteRange(start: 0, length: 1184))
         XCTAssertEqual(segs[0].byteRange, HLSByteRange(start: 1184, length: 501760))
-        // The second segment omits `@offset`, so it continues from the previous end.
         XCTAssertEqual(segs[1].byteRange, HLSByteRange(start: 1184 + 501760, length: 498688))
     }
 
-    /// A first segment with an implicit offset must start after the map's
-    /// sub-range, not at byte 0 — otherwise it re-reads the init header.
+    /// An implicit offset must start after the map's sub-range, not at byte 0, or the init header is re-read.
     func testImplicitSegmentOffsetFollowsInitMapRange() {
         let text = """
         #EXTM3U
@@ -215,13 +199,11 @@ final class HLSTests: XCTestCase {
         XCTAssertNil(HLSParser.parse("", baseURL: base))
     }
 
-    // MARK: Attribute / hex helpers
-
     func testHexToDataParsesIV() {
         XCTAssertEqual(HLSParser.hexToData("0x0102")!, Data([0x01, 0x02]))
         XCTAssertEqual(HLSParser.hexToData("ABCD")!, Data([0xAB, 0xCD]))
-        XCTAssertNil(HLSParser.hexToData("0x123"))   // odd length
-        XCTAssertNil(HLSParser.hexToData("zz"))      // non-hex
+        XCTAssertNil(HLSParser.hexToData("0x123"))
+        XCTAssertNil(HLSParser.hexToData("zz"))
     }
 
     func testIVFromSequence() {
@@ -230,8 +212,6 @@ final class HLSTests: XCTestCase {
         XCTAssertEqual(Array(iv), [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,5])
         XCTAssertEqual(Array(HLSEngine.iv(forSequence: 256)).suffix(2), [1, 0])
     }
-
-    // MARK: AES-128-CBC decryption round-trip
 
     func testAES128CBCDecryptRoundTrip() throws {
         let key = Data((0..<16).map { UInt8($0) })
@@ -253,8 +233,6 @@ final class HLSTests: XCTestCase {
                                                 iv: Data(repeating: 0, count: 8)))
     }
 
-    // MARK: Source detection + naming
-
     func testParseDetectsM3U8AsHLS() {
         XCTAssertEqual(DownloadSource.parse("https://x.com/a/index.m3u8")?.kind, .hls)
         XCTAssertEqual(DownloadSource.parse("https://x.com/a/playlist.m3u8?token=abc123")?.kind, .hls,
@@ -264,17 +242,12 @@ final class HLSTests: XCTestCase {
     }
 
     func testHLSDefaultNameDerivation() {
-        // Generic leaf → use the parent folder, append .mp4.
         XCTAssertEqual(DownloadManager.defaultName(for: .hlsStream(URL(string: "https://c/MyShow_S01E02/index.m3u8")!)),
                        "MyShow_S01E02.mp4")
-        // Descriptive leaf → keep it.
         XCTAssertEqual(DownloadManager.defaultName(for: .hlsStream(URL(string: "https://c/path/lecture5.m3u8")!)),
                        "lecture5.mp4")
     }
 
-    // MARK: Test crypto helper
-
-    /// AES-128-CBC encrypt with PKCS7 padding (mirror of the engine's decrypt).
     private static func aes128CBCEncrypt(_ data: Data, key: Data, iv: Data) throws -> Data {
         let capacity = data.count + kCCBlockSizeAES128
         var out = Data(count: capacity)

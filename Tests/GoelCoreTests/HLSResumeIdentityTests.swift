@@ -1,11 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Two HLS regressions that both end in a silently wrong download:
-///  * a resumed work directory reusing segment files fetched for a *different*
-///    rendition (segments are keyed only by playlist position), and
-///  * outbound requests dropping the task's captured cookies, `Referer` and
-///    custom headers, which the Add Download sheet promises are attached.
 final class HLSResumeIdentityTests: XCTestCase {
 
     private var workDir: URL!
@@ -22,8 +17,6 @@ final class HLSResumeIdentityTests: XCTestCase {
     private func identity(_ url: String, bandwidth: Int, height: Int?) -> String {
         HLSEngine.renditionIdentity(URL(string: url)!, bandwidth: bandwidth, height: height)
     }
-
-    // MARK: Work-directory reuse
 
     func testResumeKeepsSegmentsOfTheSameRendition() throws {
         let same = identity("https://cdn.example.com/720/index.m3u8", bandwidth: 2_400_000, height: 720)
@@ -42,9 +35,6 @@ final class HLSResumeIdentityTests: XCTestCase {
         let segment = workDir.appendingPathComponent("seg-000000.bin")
         try Data([1, 2, 3]).write(to: segment)
 
-        // The user lowered the maximum video height between pause and resume, so
-        // the next start selects a different variant. Splicing the two renditions
-        // would break the remux (or the video at the join) and still report success.
         try HLSEngine.prepareWorkDir(workDir, identity: identity(
             "https://cdn.example.com/720/index.m3u8", bandwidth: 2_400_000, height: 720))
         XCTAssertFalse(FileManager.default.fileExists(atPath: segment.path),
@@ -52,8 +42,6 @@ final class HLSResumeIdentityTests: XCTestCase {
     }
 
     func testUnstampedWorkDirIsDiscarded() throws {
-        // A work directory left by a build that predates the stamp: its rendition
-        // is unknowable, so it is not safe to resume into.
         try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
         let segment = workDir.appendingPathComponent("seg-000000.bin")
         try Data([1, 2, 3]).write(to: segment)
@@ -63,11 +51,7 @@ final class HLSResumeIdentityTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: segment.path))
     }
 
-    // MARK: Rendition identity
-
     func testIdentityIgnoresARotatingSignedQuery() {
-        // Signed CDN URLs re-issue their token on every fetch; folding the query in
-        // would make every resume look like a new rendition and discard everything.
         XCTAssertEqual(
             identity("https://cdn.example.com/720/index.m3u8?token=aaa&exp=1", bandwidth: 2_400_000, height: 720),
             identity("https://cdn.example.com/720/index.m3u8?token=bbb&exp=2", bandwidth: 2_400_000, height: 720))
@@ -77,8 +61,6 @@ final class HLSResumeIdentityTests: XCTestCase {
         XCTAssertNotEqual(identity("https://cdn.example.com/index.m3u8", bandwidth: 6_000_000, height: 1080),
                           identity("https://cdn.example.com/index.m3u8", bandwidth: 2_400_000, height: 720))
     }
-
-    // MARK: Outbound headers
 
     private func authenticatedTask() -> DownloadTask {
         DownloadTask(source: .hlsStream(URL(string: "https://media.example.com/private/stream.m3u8")!),
@@ -102,8 +84,7 @@ final class HLSResumeIdentityTests: XCTestCase {
     }
 
     func testCookieIsWithheldFromAThirdPartySegmentHost() {
-        // Segments commonly live on a different CDN host; the host-exact scope in
-        // `outboundHeaders(for:)` must still hold for HLS.
+        // Segments usually live on another CDN host; the host-exact cookie scope must still hold for HLS.
         let engine = HLSEngine(profile: .high)
         let request = engine.makeRequest(URL(string: "https://cdn.other.net/seg-0.ts")!,
                                          task: authenticatedTask())
@@ -119,11 +100,6 @@ final class HLSResumeIdentityTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "bytes=100-149")
     }
 
-    /// Under CMAF single-file packaging the init header is a small slice at the
-    /// head of the very resource the fragments occupy. The map's `BYTERANGE` has
-    /// to survive parsing *and* the trip into ``HLSEngine/MediaPlan`` — if the
-    /// plan drops it, the init fetch becomes an unranged GET of the entire
-    /// stream, which then gets concatenated in front of the fragments.
     func testCMAFInitMapKeepsItsRangeFromPlaylistToRequest() throws {
         let playlist = """
         #EXTM3U
@@ -139,7 +115,6 @@ final class HLSResumeIdentityTests: XCTestCase {
         }
         XCTAssertEqual(initMap.byteRange, HLSByteRange(start: 0, length: 1184))
 
-        // The plan is what `produce()` reads when it fetches the init segment.
         let plan = HLSEngine.MediaPlan(segments: segs, initMap: initMap,
                                        totalDuration: 4.0, bandwidth: 0, identity: "test")
         XCTAssertEqual(plan.initMap?.byteRange, HLSByteRange(start: 0, length: 1184),

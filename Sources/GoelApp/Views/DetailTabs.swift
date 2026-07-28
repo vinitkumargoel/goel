@@ -2,13 +2,6 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-// The five detail-panel tab bodies (General, Details, Progress, Files,
-// Connections) and their shared rows. Split out of `DetailPanelView.swift` so the
-// panel shell stays small; each tab is rendered by `DetailPanelView.content`.
-
-// MARK: - Shared rows
-
-/// A key/value row used across the detail tabs.
 struct KVRow: View {
     let key: String
     let value: String
@@ -34,14 +27,9 @@ struct KVRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                // Detail panels stack a dozen of these; an unnamed copy glyph
-                // per row is a dozen identical "button"s.
                 .a11yButton("Copy \(key.lowercased())")
             }
         }
-        // Key and value are a pair — read as "Save path, /Users/…", not as two
-        // adjacent strings whose relationship the listener has to infer. The
-        // copy button stays a separate, reachable element.
         .accessibilityElement(children: .contain)
         .accessibilityLabel(key)
         .accessibilityValue(value)
@@ -58,14 +46,10 @@ struct SectionLabel: View {
             .foregroundStyle(.tertiary)
             .padding(.top, 16)
             .padding(.bottom, 8)
-            // Uppercased for style; spoken in its natural case, and marked as a
-            // heading so the rotor can jump between detail sections.
             .accessibilityLabel(text)
             .accessibilityAddTraits(.isHeader)
     }
 }
-
-// MARK: - Details
 
 struct DetailsTab: View {
     let task: DownloadTask
@@ -103,7 +87,6 @@ struct DetailsTab: View {
         }
     }
 
-    /// Real feature flags from the active BitTorrent settings.
     private var torrentProtocol: String {
         var parts = ["BitTorrent"]
         if vm.settings.btEnableDHT { parts.append("DHT") }
@@ -120,8 +103,6 @@ struct DetailsTab: View {
         }
     }
 
-    /// Live tracker table from the engine, with a graceful fallback to the
-    /// magnet's declared trackers before the first announce report arrives.
     @ViewBuilder private var trackerSection: some View {
         if let live = task.trackers, !live.isEmpty {
             SectionLabel(text: "Trackers · \(live.count)")
@@ -147,8 +128,6 @@ struct DetailsTab: View {
         }
     }
 
-    /// Tracker URLs parsed from the magnet's `tr=` parameters — the pre-announce
-    /// fallback used until the engine reports live tracker state.
     private var magnetTrackers: [String] {
         guard case .magnet = task.source,
               let components = URLComponents(string: task.sourceLocator) else { return [] }
@@ -173,7 +152,6 @@ struct DetailsTab: View {
         }
     }
 
-    /// Reflects the integrity-check state for the HTTP "Checksum" row.
     private var checksumValue: String {
         guard let checksum = task.expectedChecksum else { return "Not provided" }
         if case .failed(.checksumMismatch) = task.status { return "\(checksum.algorithm.displayName) mismatch" }
@@ -192,8 +170,6 @@ struct DetailsTab: View {
     }
 }
 
-/// One row in the live tracker table: status dot, host, scrape counts, and a
-/// copy / open-in-browser context menu (the audit's "clickable trackers").
 struct TrackerRow: View {
     let tracker: TorrentTracker
     @EnvironmentObject private var vm: AppViewModel
@@ -224,8 +200,6 @@ struct TrackerRow: View {
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())
-        // Dot, host, message, "12S", "4L", status word — six fragments for one
-        // tracker, two of them letter-suffixed counts that read as gibberish.
         .a11yGroup(
             label: A11y.sentence("Tracker", tracker.host),
             value: A11y.sentence(
@@ -252,8 +226,6 @@ struct TrackerRow: View {
     }
 }
 
-// MARK: - Progress (segments / piece map)
-
 struct ProgressTab: View {
     let task: DownloadTask
 
@@ -266,8 +238,6 @@ struct ProgressTab: View {
     }
 
     private var pieceMap: some View {
-        // Real availability from the engine: each cell is a bucket of pieces,
-        // coloured by how much of it is downloaded. Empty before the first report.
         let buckets = task.pieceAvailability ?? []
         return VStack(alignment: .leading, spacing: 0) {
             if buckets.isEmpty {
@@ -289,11 +259,6 @@ struct ProgressTab: View {
                             .frame(width: 13, height: 13)
                     }
                 }
-                // Each cell is a 13pt unnamed rectangle whose only content is a
-                // colour. A large torrent puts several hundred of them in a row,
-                // so leaving them exposed buries the rest of the panel behind
-                // hundreds of meaningless stops — worse than silence. The map is
-                // a picture of a distribution; speak the distribution.
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Piece map")
                 .accessibilityValue(
@@ -315,8 +280,6 @@ struct ProgressTab: View {
         let live = task.connections ?? []
         return VStack(alignment: .leading, spacing: 9) {
             if live.isEmpty {
-                // No live per-segment data (queued / paused / completed / single
-                // stream before the first tick): show the aggregate bar honestly.
                 SectionLabel(text: "Overall progress")
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
@@ -344,7 +307,6 @@ struct ProgressTab: View {
                         ProgressView(value: segment.progress)
                             .tint(segment.progress >= 1 ? Theme.green : Theme.accent)
                     }
-                    // Label, percent and bar are three readings of one segment.
                     .a11yGroup(label: segment.label, value: A11y.percent(segment.progress))
                 }
             }
@@ -360,8 +322,6 @@ struct ProgressTab: View {
         .scaledFont(size: 11)
         .foregroundStyle(.secondary)
         .padding(.top, 12)
-        // A key to colours, for a map whose contents are now spoken as counts.
-        // It explains nothing that isn't already in the map's value.
         .a11yDecorative()
     }
 
@@ -372,8 +332,6 @@ struct ProgressTab: View {
         }
     }
 }
-
-// MARK: - Files (per-file selection + priority)
 
 struct FilesTab: View {
     let task: DownloadTask
@@ -412,8 +370,6 @@ struct FilesTab: View {
             }
             .buttonStyle(.plain)
             .disabled(fileID == nil)
-            // A checkbox drawn as a `Button` with a filled/empty square. Nothing
-            // in that says "checkbox", what it selects, or whether it is on.
             .a11yButton(wanted ? "Skip \(name)" : "Download \(name)")
             .accessibilityValue(wanted ? "Included" : "Skipped")
 
@@ -451,8 +407,6 @@ struct FilesTab: View {
         .padding(.vertical, 8)
     }
 }
-
-// MARK: - Connections
 
 struct ConnectionsTab: View {
     let task: DownloadTask
@@ -514,8 +468,6 @@ struct ConnectionsTab: View {
             .padding(.vertical, 8)
     }
 
-    /// Header for the two-column transfer table. `trailing` is the third column's
-    /// label — "↑" (upload speed) for peers, "range" (byte range) for HTTP segments.
     private func connHeader(left: String, trailing: String) -> some View {
         VStack(spacing: 0) {
             HStack {
@@ -527,24 +479,15 @@ struct ConnectionsTab: View {
             .scaledFont(size: 10.5, weight: .semibold)
             .foregroundStyle(.tertiary)
             .padding(.vertical, 6)
-            // Column headings made of bare arrows ("↓", "↑"). Each row below now
-            // names its own figures, so the headings add nothing spoken.
             .a11yDecorative()
             Divider()
         }
     }
 
-    /// A transfer row. `down` is a live bytes/sec figure (rendered in MB/s); the
-    /// third column is `trailing` (a peer's upload speed, or an HTTP segment's
-    /// completion) tinted with `trailingColor`. `subtitle` shows the peer's
-    /// client name under the address when present.
     private func connRow(label: String, subtitle: String?, down: Double,
                          trailing: String, trailingColor: Color) -> some View {
         connRowBody(label: label, subtitle: subtitle, down: down,
                     trailing: trailing, trailingColor: trailingColor)
-            // Address, client name, rate and a bare trailing figure, read as one
-            // peer/segment. Without this each row is four stops, and the rate is
-            // an abbreviation ("2.4 MB/s") rather than words.
             .a11yGroup(
                 label: A11y.sentence(label, subtitle.flatMap { $0.isEmpty || $0 == "peer" ? nil : $0 }),
                 value: A11y.sentence(A11y.speed(down), trailing))
@@ -574,6 +517,5 @@ struct ConnectionsTab: View {
 }
 
 private extension Double {
-    /// "2.4" — one-decimal rendering for the compact MB/s columns.
     var oneDecimal: String { String(format: "%.1f", self) }
 }

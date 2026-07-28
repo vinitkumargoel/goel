@@ -1,13 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-/// Tests for the input parsers lifted out of `AppViewModel`'s `NSAlert` prompts
-/// into ``PromptParsing`` — batch-rename templating, `Name: value` header
-/// parsing, and comma-separated tags. None of these edge cases were reachable
-/// before (the logic sat behind `runModal()` in the untested app target).
 final class PromptParsingTests: XCTestCase {
-
-    // MARK: batchRename
 
     func testBatchRenameRunningNumberAndExtensionCarry() {
         let out = PromptParsing.batchRename(template: "Episode #", over: ["a.mkv", "b.mp4", "c"])
@@ -28,14 +22,12 @@ final class PromptParsingTests: XCTestCase {
         XCTAssertEqual(PromptParsing.batchRename(template: "x #", over: []), [])
     }
 
-    // MARK: requestHeaders
-
     func testRequestHeadersTrimsSkipsAndParses() {
         let text = "Authorization: Bearer xyz\nX-Api-Key:  secret \n\nnocolonhere\n: emptyname\nReferer:https://e.com"
         let h = PromptParsing.requestHeaders(from: text)
         XCTAssertEqual(h, [
             "Authorization": "Bearer xyz",
-            "X-Api-Key": "secret",          // name + value whitespace-trimmed
+            "X-Api-Key": "secret",
             "Referer": "https://e.com",
         ], "blank / no-colon / empty-name lines are dropped")
     }
@@ -52,8 +44,6 @@ final class PromptParsingTests: XCTestCase {
     func testRequestHeadersEmpty() {
         XCTAssertTrue(PromptParsing.requestHeaders(from: "").isEmpty)
     }
-
-    // MARK: tags
 
     func testTagsSplitTrimAndDropEmpty() {
         XCTAssertEqual(PromptParsing.tags(from: " work ,urgent,, linux "), ["work", "urgent", "linux"])

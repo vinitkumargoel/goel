@@ -2,74 +2,36 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-// ============================================================================
-// First-run onboarding.
-//
-// A new install opens on an empty list, and every way of getting links *into*
-// that list — the browser extension, the Drop Basket, the Link Grabber, the
-// remote portal — is discoverable only by opening a Settings pane nobody has a
-// reason to open yet. Three short panes fix that: pick where files land, wire
-// up the browser, and decide about clipboard capture.
-//
-// Two deliberate constraints:
-//
-// * It is shown **once**. The completion flag lives in `UserDefaults` rather
-//   than in ``AppSettings`` so that importing someone else's backup, or the
-//   settings file being reset, can never make a long-time user sit through the
-//   welcome flow again — and so nothing here can affect the download engine.
-// * Every pane is skippable and nothing it asks for is required. Closing it at
-//   pane one leaves a perfectly working app; the same choices all live in
-//   Settings afterwards.
-//
-// The licence line on the last pane is informational, exactly like the rest of
-// the licensing surface. It states the terms once, links to the commercial
-// page, and can be dismissed forever. It gates nothing.
-// ============================================================================
-
-/// Persistent flags for the first-run flow. Kept as plain `UserDefaults` keys
-/// (not ``AppSettings``) so they are local to this machine's install and can
-/// never travel through a backup export/import.
+/// Plain `UserDefaults`, never ``AppSettings``: a backup import must not be able to replay first run.
 enum OnboardingState {
 
-    /// Bumped only when the flow gains a pane an existing user genuinely needs
-    /// to see. Storing a version rather than a Bool means a future revision can
-    /// re-show the flow deliberately instead of by accident.
+    /// Bumping this re-shows the whole flow to every existing user.
     static let currentVersion = 1
 
     private static let completedVersionKey = "onboarding.completedVersion"
     private static let licenceNoticeDismissedKey = "onboarding.licenceNoticeDismissed"
 
-    /// Whether the welcome flow still needs to run.
     static var needsOnboarding: Bool {
         UserDefaults.standard.integer(forKey: completedVersionKey) < currentVersion
     }
 
-    /// Record that the user has been through (or dismissed) the flow. Called on
-    /// every exit path — finishing, skipping, or closing the window — because a
-    /// welcome screen you have already declined must not come back.
     static func markCompleted() {
         UserDefaults.standard.set(currentVersion, forKey: completedVersionKey)
     }
 
-    /// Whether the one-line licence notice has been dismissed.
     static var licenceNoticeDismissed: Bool {
         get { UserDefaults.standard.bool(forKey: licenceNoticeDismissedKey) }
         set { UserDefaults.standard.set(newValue, forKey: licenceNoticeDismissedKey) }
     }
 
-    /// The commercial-licensing page, shared by the onboarding notice and the
-    /// Licence settings pane so the two can never drift apart.
     static let commercialURL = URL(string: "https://goel.vinitk.dev/commercial")!
 }
 
-/// The three-pane first-run flow: save folder → browser extension → clipboard.
 struct OnboardingView: View {
 
     @EnvironmentObject private var vm: AppViewModel
     @Environment(\.dismiss) private var dismiss
 
-    /// The panes, in order. An enum rather than an `Int` so `next`/`previous`
-    /// can't run off the end and each pane's chrome is derived, not duplicated.
     private enum Pane: Int, CaseIterable {
         case saveFolder, browser, clipboard
 
@@ -92,12 +54,8 @@ struct OnboardingView: View {
 
     @State private var pane: Pane = .saveFolder
 
-    /// Result of the "Install helper" button, shown in place of its description
-    /// so the user gets a straight answer about which browsers were found.
     @State private var helperResult: String?
 
-    /// Mirrors ``OnboardingState/licenceNoticeDismissed`` for the current view
-    /// update; the setter writes through so the choice survives relaunch.
     @State private var licenceNoticeVisible = !OnboardingState.licenceNoticeDismissed
 
     var body: some View {
@@ -122,18 +80,13 @@ struct OnboardingView: View {
             footer
         }
         .frame(width: 580)
-        // Every exit path — the buttons below, ⎋, or the window close button —
-        // ends up here, so the flow can never reappear once it has been seen.
+        // The catch-all exit path: ⎋ and the window close button do not call finish().
         .onDisappear { OnboardingState.markCompleted() }
     }
-
-    // MARK: Chrome
 
     private var header: some View {
         HStack(spacing: 11) {
             Image(systemName: pane.symbol)
-                // Not `.white`: the accent is a light colour in three of the
-                // four themes, where a white glyph on it measured 2.00–2.42:1.
                 .foregroundStyle(Theme.onAccent)
                 .frame(width: 30, height: 30)
                 .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
@@ -142,7 +95,6 @@ struct OnboardingView: View {
                 Text("Welcome to Goel°")
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.secondary)
-                    // The degree sign is read as "degrees".
                     .accessibilityLabel("Welcome to Goel")
                 Text(pane.title)
                     .scaledFont(size: 15, weight: .semibold)
@@ -163,8 +115,6 @@ struct OnboardingView: View {
                 Spacer()
                 if pane == .saveFolder {
                     Button("Skip") { finish() }
-                        // Escape should leave a first-run flow, not trap the
-                        // user in it — the only other exit is the mouse.
                         .keyboardShortcut(.cancelAction)
                         .accessibilityLabel("Skip setup")
                 } else {
@@ -186,7 +136,6 @@ struct OnboardingView: View {
         .padding(14)
     }
 
-    /// One dot per pane, filled up to the current one.
     private var progressDots: some View {
         HStack(spacing: 5) {
             ForEach(Pane.allCases, id: \.rawValue) { step in
@@ -195,16 +144,10 @@ struct OnboardingView: View {
                     .frame(width: 6, height: 6)
             }
         }
-        // Six-point dots are the only indication of how far through the flow
-        // you are, and they carry it purely by fill colour. Say it in words.
         .a11yGroup(label: "Setup progress",
                    value: "Step \(pane.rawValue + 1) of \(Pane.allCases.count)")
     }
 
-    /// The single licensing line the flow ends on. Informational only: it does
-    /// not gate the button beside it, it does not check anything, and once
-    /// dismissed it never returns. The same terms stay available forever in
-    /// Settings ▸ Licence, so dismissing this loses nothing.
     private var licenceNotice: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "info.circle")
@@ -213,8 +156,6 @@ struct OnboardingView: View {
                 .a11yDecorative()
             noticeText
                 .scaledFont(size: 11)
-                // "Learn more" is styled as a link but is part of one `Text`, so
-                // nothing marks the pill as activatable. Say what it does.
                 .accessibilityLabel("Free for personal use. Commercial use requires a licence. Learn more.")
                 .accessibilityAddTraits(.isLink)
             Spacer(minLength: 8)
@@ -233,24 +174,16 @@ struct OnboardingView: View {
         .padding(.vertical, 7)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline))
-        // The whole pill opens the commercial page — the "Learn more" wording
-        // is part of the sentence, so it can't be its own control without
-        // breaking the line. The dismiss button above still wins its own hits.
         .contentShape(Rectangle())
         .onTapGesture { NSWorkspace.shared.open(OnboardingState.commercialURL) }
     }
 
-    /// The notice's wording, kept verbatim in one place. Built as a single
-    /// `Text` so the accent-coloured "Learn more" stays part of the same
-    /// sentence and wraps with it, rather than becoming a separate control.
     private var noticeText: Text {
         Text("Free for personal use. Commercial use requires a licence — ")
             .foregroundStyle(.secondary)
         + Text("Learn more")
             .foregroundStyle(Theme.accent)
     }
-
-    // MARK: Pane 1 — save folder
 
     private var saveFolderPane: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -295,8 +228,6 @@ struct OnboardingView: View {
         }
     }
 
-    /// The destination as the user thinks of it — the fixed folder when one is
-    /// set, otherwise the rule that decides per download.
     private var currentFolderLabel: String {
         switch vm.settings.defaultFolderRule {
         case "byType":   return "Automatic — by file type"
@@ -313,8 +244,6 @@ struct OnboardingView: View {
         vm.setDefaultSaveDirectory(url.path)
         vm.update { $0.defaultFolderRule = "fixed" }
     }
-
-    // MARK: Pane 2 — browser extension
 
     private var browserPane: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -351,8 +280,6 @@ struct OnboardingView: View {
         }
         NSWorkspace.shared.activateFileViewerSelecting([folder])
     }
-
-    // MARK: Pane 3 — clipboard + the rest of the surface
 
     private var clipboardPane: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -404,18 +331,12 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: Exit
-
     private func finish() {
         OnboardingState.markCompleted()
         dismiss()
     }
 }
 
-// MARK: - Shared onboarding chrome
-
-/// A paragraph of explanation. Its own type only so the three panes can't drift
-/// on font size and wrapping behaviour.
 private struct OnboardingBlurb: View {
     let text: String
     init(_ text: String) { self.text = text }
@@ -428,7 +349,6 @@ private struct OnboardingBlurb: View {
     }
 }
 
-/// The bordered container used for the "current state" callouts.
 private struct OnboardingCard<Content: View>: View {
     @ViewBuilder let content: Content
 
@@ -441,8 +361,6 @@ private struct OnboardingCard<Content: View>: View {
     }
 }
 
-/// Symbol + title + one line of detail + an optional trailing control. Matches
-/// the `SetRow` rhythm of the Settings panes so the two feel like one app.
 private struct OnboardingRow<Control: View>: View {
     let symbol: String
     let title: String
@@ -463,8 +381,6 @@ private struct OnboardingRow<Control: View>: View {
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            // Title over explanatory detail is one label; the trailing control
-            // stays its own element so it can still be operated.
             .a11yGroup(label: title, value: detail)
             Spacer(minLength: 8)
             control

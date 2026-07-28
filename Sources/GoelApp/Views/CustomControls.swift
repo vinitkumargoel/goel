@@ -1,18 +1,6 @@
 import SwiftUI
 
-// Our own dropdown, action-menu, and confirmation-dialog controls — drawn and
-// styled in-app instead of leaning on the system `Picker` menu, `Menu`, and
-// `.confirmationDialog`. They share one visual language (hairline borders, the
-// accent-tinted hover row, the same corner radii) so every popout in the app
-// looks like it belongs to GoelDownloader rather than to AppKit.
-
-// MARK: - Dropdown (selection)
-
-/// A custom replacement for a menu-style `Picker`: a bordered trigger showing the
-/// current label + chevron, opening a popover list with a checkmark on the active
-/// row and an accent hover highlight.
 struct Dropdown<Value: Hashable>: View {
-    /// One entry in the list — a selectable option or a thin separator.
     enum Item {
         case option(Value, String)
         case separator
@@ -20,22 +8,12 @@ struct Dropdown<Value: Hashable>: View {
 
     @Binding var selection: Value
     let items: [Item]
-    /// Fixed trigger width; `nil` lets the trigger fill its container.
     var width: CGFloat? = nil
-    /// What this dropdown chooses, spoken. A real `Picker` gets its name from
-    /// the surrounding `Form`/`LabeledContent`; this control is drawn by hand, so
-    /// the name has to be supplied. Left empty it falls back to the enclosing
-    /// ``SetRow``'s name, which covers every Preferences call site without
-    /// touching any of them.
     var accessibilityName: String = ""
-    /// Invoked after `selection` is updated when the user picks a row, so call
-    /// sites can react (e.g. the "Choose folder…" sentinel) without a separate
-    /// `.onChange`.
     var onSelect: (Value) -> Void = { _ in }
 
     @State private var isOpen = false
 
-    /// The name of the settings row this dropdown sits in, when it is in one.
     @Environment(\.settingRowName) private var rowName
 
     private var currentLabel: String {
@@ -45,8 +23,6 @@ struct Dropdown<Value: Hashable>: View {
         return ""
     }
 
-    /// An explicit name wins, then the enclosing row's, then a last-resort
-    /// generic so the control is never wholly anonymous.
     private var spokenName: String {
         if !accessibilityName.isEmpty { return accessibilityName }
         return rowName.isEmpty ? "Options" : rowName
@@ -74,8 +50,6 @@ struct Dropdown<Value: Hashable>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Announce as a pop-up button with its current choice, the way the
-        // system `Picker` this replaces would have.
         .a11yGroup(label: spokenName, value: currentLabel,
                    hint: "Activate to choose a different option.")
         .accessibilityAddTraits(.isButton)
@@ -100,8 +74,6 @@ struct Dropdown<Value: Hashable>: View {
     }
 }
 
-/// Applies a fixed width when given, otherwise lets the view fill the available
-/// width — keeps the leading text aligned in both modes.
 private struct WidthOrFill: ViewModifier {
     let width: CGFloat?
     func body(content: Content) -> some View {
@@ -138,18 +110,12 @@ private struct DropdownRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        // The checkmark is drawn at zero opacity when unselected — present in the
-        // hierarchy either way, so it would be read on every row. Carry the
-        // selection as a trait instead.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
-// MARK: - Action menu
-
-/// One row in an ``ActionMenu``: a tappable command or a separator.
 struct ActionMenuItem: Identifiable {
     enum Kind { case action, separator }
 
@@ -171,9 +137,6 @@ struct ActionMenuItem: Identifiable {
     }
 }
 
-/// A custom replacement for `Menu`: a caller-styled trigger that opens a popover
-/// of `ActionMenuItem`s. The label closure receives whether the menu is open so
-/// the trigger can show an active state.
 struct ActionMenu<Label: View>: View {
     let items: [ActionMenuItem]
     var menuWidth: CGFloat = 190
@@ -188,8 +151,6 @@ struct ActionMenu<Label: View>: View {
             label(isOpen)
         }
         .buttonStyle(.plain)
-        // The trigger's own label supplies the name; this states that the thing
-        // is a menu, not a plain button, so VoiceOver says "pop up button".
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(isOpen ? "" : "Activate to open the menu.")
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
@@ -237,9 +198,6 @@ private struct ActionMenuRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        // Leading/trailing glyphs decorate the command (a checkmark, a sort
-        // chevron); the title is the command. Destructiveness is stated rather
-        // than left to the red tint alone.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.isDestructive ? "\(item.title), destructive" : item.title)
         .accessibilityAddTraits(.isButton)
@@ -251,8 +209,6 @@ private struct ActionMenuRow: View {
     }
 }
 
-/// The pill trigger used by the toolbar's menus (Select / Sort / Filter): an
-/// icon, a title, and a dropdown chevron, with a subtle active/hover fill.
 struct ToolbarMenuLabel: View {
     let title: String
     let systemImage: String
@@ -274,18 +230,11 @@ struct ToolbarMenuLabel: View {
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        // Icon + title + chevron would otherwise be read as three elements, the
-        // two glyphs by their SF Symbol names. It is one pop-up button.
         .a11yGroup(label: title, hint: "Activate to open the \(title.lowercased()) menu.")
         .accessibilityAddTraits(.isButton)
     }
 }
 
-// MARK: - Confirmation dialog
-
-/// A window-level modal confirm sheet — our own replacement for
-/// `.confirmationDialog`. Driven by ``AppViewModel/confirmRequest`` and rendered
-/// once at the root so any call site can raise it via ``AppViewModel/requestConfirm``.
 struct ConfirmDialogView: View {
     let request: AppViewModel.ConfirmRequest
     let dismiss: () -> Void
@@ -295,8 +244,6 @@ struct ConfirmDialogView: View {
             Color.black.opacity(0.28)
                 .ignoresSafeArea()
                 .onTapGesture(perform: dismiss)
-                // A scrim, not content. Without this VoiceOver offers an unnamed
-                // element covering the whole window in front of the dialog.
                 .a11yDecorative()
 
             VStack(spacing: 14) {
@@ -325,8 +272,6 @@ struct ConfirmDialogView: View {
                         request.onConfirm()
                         dismiss()
                     }
-                    // Return commits, so the dialog is completable without a
-                    // pointer. Escape already cancels via `.cancelAction`.
                     .keyboardShortcut(.defaultAction)
                 }
                 .padding(.top, 2)
@@ -336,10 +281,6 @@ struct ConfirmDialogView: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline))
             .shadow(radius: 30, y: 12)
-            // This is a hand-built modal, not a real sheet, so nothing tells
-            // assistive technology to stop reading the window behind it. `.isModal`
-            // is what confines VoiceOver to the dialog until it is dismissed —
-            // without it a destructive confirmation can be answered blind.
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
             .accessibilityLabel(request.title)
@@ -367,15 +308,11 @@ private struct DialogButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        // Destructiveness shows only as a red fill. Say it, so the difference
-        // between "Cancel" and "Remove" survives without colour.
         .accessibilityLabel(kind == .destructive ? "\(title), destructive" : title)
         .accessibilityAddTraits(.isButton)
     }
 
-    /// Ink derived from the fill rather than hard-coded white: the accent and
-    /// red fills are *light* colours in three of the four themes, where white
-    /// measured 2.0–2.8:1 on the app's only destructive confirmation.
+    /// Derived from the fill, not hard-coded white: accent and red are light in three of the four themes, where white measured 2.0–2.8:1.
     private var foreground: Color {
         switch kind {
         case .normal: return .primary

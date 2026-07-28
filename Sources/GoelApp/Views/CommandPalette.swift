@@ -2,35 +2,6 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-// ============================================================================
-// ⌘K command palette.
-//
-// The app has genuine depth — RSS auto-download, .torrent watch folders,
-// Metalink-style mirror failover, per-file torrent priority, multi-adapter
-// aggregation, AppleScript, the remote portal — and almost all of it is behind
-// a Settings pane, a detail-panel tab, or a menu the user has no reason to
-// open. Depth nobody can find is the same as depth that isn't there.
-//
-// The palette is one search field over every action *and* every place. Two
-// kinds of row, deliberately mixed:
-//
-// * **Commands** run something (Pause all, Show Drop Basket, Toggle theme).
-// * **Places** navigate — they open the Settings window on the right pane, or
-//   put the relevant surface on screen. These are what make buried features
-//   reachable by name, and they are the reason searching "rss", "watch folder"
-//   or "mirror" has to work even though no visible control says those words.
-//
-// Everything the palette does is reachable another way; nothing here is the
-// only path to a feature. It is a shortcut, not an API.
-// ============================================================================
-
-// MARK: - Cross-scene plumbing
-
-/// Lets a menu command in another scene raise the palette over the main window.
-///
-/// `GoelCommands` lives in the `App` body and cannot reach ``RootView``'s state
-/// directly, so the toggle travels as a notification that the root observes.
-/// A one-way, payload-free signal is deliberately the whole contract.
 enum CommandPaletteBus {
 
     static let toggleNotification = Notification.Name("goel.commandPalette.toggle")
@@ -40,19 +11,12 @@ enum CommandPaletteBus {
     }
 }
 
-/// The Settings pane a "place" row wants shown.
-///
-/// Opening the Settings *window* is the caller's job (`@Environment(\.openSettings)`
-/// is only available inside a view); this only carries **which** pane, which
-/// ``SettingsView`` picks up and selects. Keeping the two halves separate means
-/// a caller that merely wants to preselect a pane doesn't force a window open.
 @MainActor
 final class SettingsRoute: ObservableObject {
 
     static let shared = SettingsRoute()
 
-    /// The pane most recently requested. ``SettingsView`` clears it once it has
-    /// switched, so requesting the same pane twice in a row still navigates.
+    /// ``SettingsView`` must clear this after switching, or the same pane twice won't navigate.
     @Published var requestedPane: SettingsView.Pane?
 
     private init() {}
@@ -62,13 +26,8 @@ final class SettingsRoute: ObservableObject {
     }
 }
 
-// MARK: - Model
-
-/// One palette row.
 struct PaletteCommand: Identifiable {
 
-    /// Broad grouping, used for the trailing category label and to keep related
-    /// rows together when scores tie.
     enum Group: String {
         case add = "Add"
         case downloads = "Downloads"
@@ -82,19 +41,12 @@ struct PaletteCommand: Identifiable {
     let subtitle: String
     let symbol: String
     let group: Group
-    /// Rendered on the right as a reminder, e.g. `⌘⇧B`. Purely a label — the
-    /// real shortcut is registered by the menu command, not here.
+    /// Display label only — the real shortcut is registered by the menu command, not here.
     var shortcut: String?
-    /// Extra search terms that don't belong in the visible title: the words a
-    /// user would actually type ("cookies", "watch folder", "seed ratio").
     var keywords: [String] = []
     let run: () -> Void
 }
 
-// MARK: - View
-
-/// The palette sheet: a search field over ``PaletteCommand``s with arrow-key
-/// navigation and return-to-run.
 struct CommandPalette: View {
 
     @EnvironmentObject private var vm: AppViewModel
@@ -103,8 +55,7 @@ struct CommandPalette: View {
 
     @State private var query: String = ""
 
-    /// Index into ``matches``. Clamped on every recompute so a shrinking result
-    /// list can never leave the highlight pointing past the end.
+    /// Index into ``matches``; must be re-clamped or a shrinking list leaves it past the end.
     @State private var highlighted: Int = 0
 
     @FocusState private var searchFocused: Bool
@@ -130,8 +81,6 @@ struct CommandPalette: View {
         .onAppear { searchFocused = true }
     }
 
-    // MARK: Sections
-
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "command")
@@ -146,8 +95,6 @@ struct CommandPalette: View {
                 .onChange(of: query) { _, _ in highlighted = 0 }
                 .accessibilityLabel("Search actions and settings")
                 .accessibilityHint("Use the up and down arrow keys to move through results, return to run.")
-                // The highlighted result changes as you type but nothing has
-                // focus except the field, so announce what return would run.
                 .accessibilityValue(matches.indices.contains(highlighted)
                                     ? "\(matches.count) results, \(matches[highlighted].title) selected"
                                     : "No results")
@@ -165,8 +112,7 @@ struct CommandPalette: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
-        // The field owns the keyboard, so navigation keys are handled here
-        // rather than on the list — otherwise the arrows move the text cursor.
+        // Arrow keys must be handled on the field, not the list, or they move the text cursor.
         .onKeyPress(.downArrow) { move(by: 1) }
         .onKeyPress(.upArrow) { move(by: -1) }
         .onKeyPress(.escape) { dismiss(); return .handled }
@@ -209,9 +155,6 @@ struct CommandPalette: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        // A key hint strip built from arrow and return glyphs. The same guidance
-        // is on the search field as an accessibility hint, where it is actually
-        // spoken; here the glyphs would just be read as symbol names.
         .a11yDecorative()
     }
 
@@ -226,8 +169,6 @@ struct CommandPalette: View {
         }
     }
 
-    // MARK: Keyboard
-
     private func move(by delta: Int) -> KeyPress.Result {
         guard !matches.isEmpty else { return .handled }
         highlighted = (highlighted + delta + matches.count) % matches.count
@@ -239,18 +180,12 @@ struct CommandPalette: View {
         run(matches[highlighted])
     }
 
-    /// Close first, then act: several commands present a sheet of their own, and
-    /// AppKit will not stack a second sheet on a window that is still showing
-    /// this one. The hop to the next run loop is what makes that ordering hold.
+    /// Dismiss before running: AppKit won't stack a sheet on a window still showing this one.
     private func run(_ command: PaletteCommand) {
         dismiss()
         DispatchQueue.main.async(execute: command.run)
     }
 
-    // MARK: Matching
-
-    /// The visible rows. An empty query shows everything in its natural order,
-    /// which doubles as a browsable index of what the app can do.
     private var matches: [PaletteCommand] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !needle.isEmpty else { return commands }
@@ -259,9 +194,7 @@ struct CommandPalette: View {
                 guard let score = Self.score(command, needle) else { return nil }
                 return (command, score)
             }
-            // `sorted(by:)` is not stable, and an unstable sort here would let
-            // equally-scoring rows swap places on every keystroke. Carrying the
-            // declared position as the tie-break pins them.
+            // `sorted(by:)` is unstable: tie-break on declared position or rows swap per keystroke.
             .enumerated()
             .sorted { a, b in
                 a.element.1 == b.element.1 ? a.offset < b.offset : a.element.1 > b.element.1
@@ -269,13 +202,6 @@ struct CommandPalette: View {
             .map(\.element.0)
     }
 
-    /// Higher is better; `nil` means "no match at all".
-    ///
-    /// Three tiers rather than a general fuzzy matcher: a title prefix is what
-    /// the user meant, a word start inside the title or keywords is very likely
-    /// what they meant, and a plain substring anywhere is a long shot worth
-    /// keeping at the bottom. Subsequence matching was tried and rejected —
-    /// it made three-letter queries match almost everything.
     private static func score(_ command: PaletteCommand, _ needle: String) -> Int? {
         let title = command.title.lowercased()
         if title.hasPrefix(needle) { return 300 }
@@ -289,11 +215,6 @@ struct CommandPalette: View {
         return nil
     }
 
-    // MARK: The commands
-
-    /// Every row, in browse order. Built fresh on each update so titles that
-    /// depend on live state ("Pause all" vs the current traffic profile) stay
-    /// truthful.
     private var commands: [PaletteCommand] {
         addCommands + downloadCommands + viewCommands + settingsCommands + discoverCommands
     }
@@ -347,8 +268,6 @@ struct CommandPalette: View {
                            symbol: "tortoise", group: .downloads,
                            keywords: ["throttle", "snail", "slow", "bandwidth"]) { vm.toggleSnail() },
         ]
-        // One row per configured traffic profile, so "high" or "low" finds the
-        // switch without knowing the Traffic Limits pane exists.
         for profile in vm.settings.profiles {
             list.append(PaletteCommand(
                 id: "dl.profile.\(profile.name)",
@@ -401,8 +320,6 @@ struct CommandPalette: View {
         }
     }
 
-    /// One row per Settings pane. The subtitle names what actually lives there,
-    /// which is what makes searching for a *feature* land on the right pane.
     private var settingsCommands: [PaletteCommand] {
         SettingsView.Pane.allCases.map { pane in
             PaletteCommand(id: "settings.\(pane.id)",
@@ -414,8 +331,6 @@ struct CommandPalette: View {
         }
     }
 
-    /// Rows that answer "where is that thing?" for features living inside a
-    /// sheet or a detail tab, which no Settings pane would ever surface.
     private var discoverCommands: [PaletteCommand] {
         [
             PaletteCommand(id: "find.mirrors", title: "Mirrors & failover",
@@ -456,7 +371,6 @@ struct CommandPalette: View {
         ]
     }
 
-    /// A runnable snippet using the verbs declared in `GoelDownloader.sdef`.
     private static let appleScriptExample = """
     tell application "Goel°"
         add download "https://example.com/file.zip"
@@ -501,14 +415,11 @@ struct CommandPalette: View {
         }
     }
 
-    /// Open the Settings window on a specific pane.
     private func show(_ pane: SettingsView.Pane) {
         SettingsRoute.shared.request(pane)
         openSettings()
     }
 }
-
-// MARK: - Row
 
 private struct PaletteRow: View {
     let command: PaletteCommand
@@ -553,8 +464,6 @@ private struct PaletteRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Symbol, title, subtitle, shortcut and group chip are one command.
-        // Highlight is an accent wash only, so state it as a selection trait.
         .a11yGroup(label: A11y.sentence(command.title, command.group.rawValue),
                    value: command.subtitle,
                    hint: command.shortcut.map { "Keyboard shortcut \($0)." })

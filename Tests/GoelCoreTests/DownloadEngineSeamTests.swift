@@ -1,14 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-// MARK: - Capability-introspecting probe engine
-
-/// A controllable engine used to prove the scheduler talks to engines only
-/// through the protocol seam — never by downcasting to a concrete type. It
-/// advertises whatever capabilities the test asks for, returns a canned
-/// ``EngineMetadata`` from `resolveMetadata`, and records the `directory` it was
-/// asked to resolve in plus whichever **typed** config slice it received. It
-/// conforms to every refinement so one probe can stand in for any engine role.
 final class SeamProbeEngine: TorrentControlling, HTTPConfigurable, HLSConfigurable, @unchecked Sendable {
 
     let kind: DownloadKind
@@ -27,8 +19,6 @@ final class SeamProbeEngine: TorrentControlling, HTTPConfigurable, HLSConfigurab
         self.metadata = metadata
     }
 
-    // DownloadEngine
-
     nonisolated var capabilities: EngineCapabilities { caps }
 
     func add(_ task: DownloadTask) async {}
@@ -43,7 +33,6 @@ final class SeamProbeEngine: TorrentControlling, HTTPConfigurable, HLSConfigurab
         return metadata
     }
 
-    // Refinements — each records only its own typed slice.
     func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {}
     func setSequential(_ sequential: Bool, task id: DownloadTask.ID) async {}
     func setUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {}
@@ -54,15 +43,11 @@ final class SeamProbeEngine: TorrentControlling, HTTPConfigurable, HLSConfigurab
     func configure(_ session: TorrentSessionConfig) async { lock.lock(); _lastTorrent = session; lock.unlock() }
     func configure(maxHeight: Int) async { lock.lock(); _lastMaxHeight = maxHeight; lock.unlock() }
 
-    // Inspection
-
     var lastHTTP: HTTPNetworkConfig? { lock.lock(); defer { lock.unlock() }; return _lastHTTP }
     var lastTorrent: TorrentSessionConfig? { lock.lock(); defer { lock.unlock() }; return _lastTorrent }
     var lastMaxHeight: Int? { lock.lock(); defer { lock.unlock() }; return _lastMaxHeight }
     var lastResolveDirectory: String? { lock.lock(); defer { lock.unlock() }; return _lastResolveDirectory }
 }
-
-// MARK: - Tests
 
 final class DownloadEngineSeamTests: XCTestCase {
 
@@ -72,18 +57,13 @@ final class DownloadEngineSeamTests: XCTestCase {
         .magnet("magnet:?xt=urn:btih:\(hash)&dn=Demo+Pack")
     }
 
-    // MARK: (a) Capabilities are advertised correctly
-
     func testEnginesAdvertiseExpectedCapabilities() {
         XCTAssertEqual(HTTPEngine().capabilities, [.resolvesMetadata, .producesResumeData])
         XCTAssertEqual(TorrentEngine(profile: .high).capabilities, [.resolvesMetadata, .perFilePriority])
         XCTAssertEqual(HLSEngine(profile: .high).capabilities, [])
         XCTAssertEqual(MockTorrentEngine().capabilities, [.resolvesMetadata, .perFilePriority])
-        // An engine that doesn't override gets the protocol default: no capabilities.
         XCTAssertEqual(FakeEngine(kind: .http).capabilities, [])
     }
-
-    // MARK: (b) resolveMetadata flows through the seam (no concrete downcast)
 
     func testResolveMetadataFlowsThroughSeam() async {
         let files = [TransferFile(id: 0, path: "Pack/a.mkv", length: 123)]
@@ -96,18 +76,15 @@ final class DownloadEngineSeamTests: XCTestCase {
 
         let preview = await manager.resolveMetadata(for: magnet("aaaa"), saveDirectory: saveDir)
 
-        // The engine's metadata is folded straight into the preview…
         XCTAssertEqual(preview.suggestedName, "Resolved Name")
         XCTAssertEqual(preview.totalBytes, 999)
         XCTAssertEqual(preview.files, files)
         XCTAssertEqual(preview.kind, .torrent)
         XCTAssertNil(preview.note)
-        // …and the manager threaded the resolved save directory through the seam.
         XCTAssertEqual(probe.lastResolveDirectory, saveDir)
     }
 
     func testResolveMetadataFoldsFallbackNameWhenEngineReturnsEmpty() async {
-        // Engine resolves a size but no name — the manager supplies its own default.
         let probe = SeamProbeEngine(
             kind: .torrent, capabilities: [.resolvesMetadata],
             metadata: EngineMetadata(name: "", totalBytes: 42))
@@ -120,10 +97,7 @@ final class DownloadEngineSeamTests: XCTestCase {
         XCTAssertNil(preview.note)
     }
 
-    // MARK: (c) Capability gating of the explanatory note
-
     func testNonResolvingEngineGivesPlainPreviewWithoutNote() async {
-        // No `.resolvesMetadata` capability + nil result -> plain best-effort preview.
         let probe = SeamProbeEngine(kind: .torrent, capabilities: [], metadata: nil)
         let manager = DownloadManager(
             httpEngine: FakeEngine(kind: .http), torrentEngine: probe, store: nil)
@@ -135,7 +109,6 @@ final class DownloadEngineSeamTests: XCTestCase {
     }
 
     func testResolvingEngineFailureSurfacesNote() async {
-        // Advertises resolution but returns nil -> the kind-specific note appears.
         let probe = SeamProbeEngine(kind: .torrent, capabilities: [.resolvesMetadata], metadata: nil)
         let manager = DownloadManager(
             httpEngine: FakeEngine(kind: .http), torrentEngine: probe, store: nil)
@@ -144,8 +117,6 @@ final class DownloadEngineSeamTests: XCTestCase {
         XCTAssertNotNil(preview.note, "a probing engine that fails must explain why")
         XCTAssertNil(preview.totalBytes)
     }
-
-    // MARK: (d) each engine configures through its OWN typed seam
 
     func testEachEngineConfiguresThroughItsOwnTypedSeam() async {
         let http = SeamProbeEngine(kind: .http, capabilities: [.resolvesMetadata, .producesResumeData])
@@ -162,17 +133,13 @@ final class DownloadEngineSeamTests: XCTestCase {
 
         await manager.applyEngineConfigs()
 
-        // Each engine received ONLY its own typed slice — no shared union.
         XCTAssertEqual(http.lastHTTP?.timeout, 42)
         XCTAssertEqual(torrent.lastTorrent?.encryptionMode, "require")
         XCTAssertEqual(hls.lastMaxHeight, 720)
-        // The HTTP engine never saw a torrent config, and vice-versa.
         XCTAssertNil(http.lastTorrent)
         XCTAssertNil(torrent.lastHTTP)
         XCTAssertNil(hls.lastHTTP)
     }
-
-    // MARK: (e) capability refinements pair with the capability flags
 
     func testCapabilityRefinementsMatchConformance() {
         let http = HTTPEngine()
@@ -182,21 +149,15 @@ final class DownloadEngineSeamTests: XCTestCase {
         let ftp = FTPEngine(profile: .high)
         let sftp = SFTPEngine(profile: .high)
 
-        // Torrent engines advertise .perFilePriority AND conform to the torrent
-        // control refinement (which itself refines FilePrioritizing).
         XCTAssertTrue(torrent.capabilities.contains(.perFilePriority))
         XCTAssertTrue(torrent is TorrentControlling)
         XCTAssertTrue(mock.capabilities.contains(.perFilePriority))
         XCTAssertTrue(mock is TorrentControlling)
-        // HTTP carries per-file selection (metalink) + its own network config seam,
-        // but is not a torrent controller.
         XCTAssertTrue(http is FilePrioritizing)
         XCTAssertTrue(http is HTTPConfigurable)
         XCTAssertFalse(http is TorrentControlling)
-        // HLS configures rendition height only — never file priority.
         XCTAssertTrue(hls is HLSConfigurable)
         XCTAssertFalse(hls is FilePrioritizing)
-        // FTP / SFTP advertise no optional behaviour and conform to no refinement.
         XCTAssertFalse(ftp is FilePrioritizing)
         XCTAssertFalse(ftp is HLSConfigurable)
         XCTAssertFalse(sftp is FilePrioritizing)

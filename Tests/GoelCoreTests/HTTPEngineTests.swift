@@ -1,16 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-// MARK: - Stub URLProtocol
-
-/// A configurable in-memory HTTP server used to drive `HTTPEngine` deterministically.
-///
-/// It serves a fixed payload and can be switched between three behaviours:
-///  * range support + Content-Length (segmented path),
-///  * no range support but with Content-Length (single-connection fallback),
-///  * no Content-Length at all (streaming, unknown total).
-/// Bodies are delivered in chunks with an optional inter-chunk delay so tests can
-/// observe and interrupt in-flight progress.
 final class StubURLProtocol: URLProtocol {
 
     struct Config {
@@ -20,23 +10,10 @@ final class StubURLProtocol: URLProtocol {
         var etag: String?
         var chunkSize: Int
         var chunkDelayMicros: UInt32
-        /// Served as the `Content-Type` header (drives extension inference).
         var contentType: String = "application/octet-stream"
-        /// Served as the `Content-Disposition` header when non-nil (drives the
-        /// server-suggested filename).
         var contentDisposition: String? = nil
-        /// While delivering an UNRANGED `200` body, block once this many bytes have
-        /// been handed to the client and stay blocked until ``releaseUnrangedBody()``
-        /// (or the request is cancelled). Makes the mid-flight-upgrade tests causal
-        /// rather than timed: the stream physically cannot finish before the test has
-        /// observed the range probe and released it.
         var holdUnrangedBodyAt: Int? = nil
-        /// When set, UNRANGED `200`s serve this body (with its own `Content-Length`)
-        /// while ranged GETs keep serving ``data``. Lets a test express a
-        /// probe-vs-stream asymmetry (e.g. a stream longer than the probed size).
         var unrangedData: Data? = nil
-        /// When set, UNRANGED `200`s carry this `ETag` instead of ``etag`` — the
-        /// stream half of the validator triangle, independent of what the probe sees.
         var unrangedETagOverride: String? = nil
     }
 
@@ -49,8 +26,7 @@ final class StubURLProtocol: URLProtocol {
     static func set(_ config: Config) {
         lock.lock()
         _config = config
-        // Every static knob resets with the config so test order can never leak
-        // a hold, a recorded range or a pending flap-back into the next test.
+        // Every static knob resets with the config, or test order leaks a hold, a recorded range or a pending flap-back into the next test.
         _unrangedReleased = false
         _seenRangeHeaders = []
         _force200MultiByteCount = 0
@@ -60,9 +36,6 @@ final class StubURLProtocol: URLProtocol {
         lock.lock(); defer { lock.unlock() }; return _config
     }
 
-    /// User-Agent header observed on every request the engine issued. Used to
-    /// prove the engine never sends a request without a UA (see the WAF/-1005
-    /// regression).
     private static var _seenUserAgents: [String?] = []
     static func resetSeenUserAgents() { lock.lock(); _seenUserAgents = []; lock.unlock() }
     static func seenUserAgents() -> [String?] {
@@ -72,10 +45,6 @@ final class StubURLProtocol: URLProtocol {
         lock.lock(); _seenUserAgents.append(userAgent); lock.unlock()
     }
 
-    /// Number of upcoming ranged GETs to answer with `429 Too Many Requests`
-    /// (simulating a server that rate-limits concurrent range connections).
-    /// Each such request decrements the counter; once drained, requests are
-    /// served normally — so a client that retries with backoff still completes.
     private static var _force429Count = 0
     static func forceNext429s(_ n: Int) { lock.lock(); _force429Count = n; lock.unlock() }
     private static func consume429() -> Bool {
@@ -84,16 +53,12 @@ final class StubURLProtocol: URLProtocol {
         return false
     }
 
-    /// Releases a body parked by ``Config/holdUnrangedBodyAt``. Idempotent, and a
-    /// no-op when nothing is held (so tearDown can call it unconditionally).
     private static var _unrangedReleased = false
     static func releaseUnrangedBody() { lock.lock(); _unrangedReleased = true; lock.unlock() }
     private static func unrangedBodyReleased() -> Bool {
         lock.lock(); defer { lock.unlock() }; return _unrangedReleased
     }
 
-    /// Every `Range` header the engine sent, in arrival order. The mid-flight
-    /// upgrade prober is identifiable as the single-byte midpoint `"bytes=M-M"`.
     private static var _seenRangeHeaders: [String] = []
     static func seenRangeHeaders() -> [String] {
         lock.lock(); defer { lock.unlock() }; return _seenRangeHeaders
@@ -102,10 +67,7 @@ final class StubURLProtocol: URLProtocol {
         lock.lock(); _seenRangeHeaders.append(range); lock.unlock()
     }
 
-    /// Answer the next `n` ranged GETs whose range spans MORE than one byte with a
-    /// full `200` body — the "range support flapped back" case. Single-byte ranges
-    /// (the midpoint probe) are exempt, so the knob can never eat the probe that
-    /// triggers the upgrade under test.
+    /// Single-byte (midpoint probe) ranges are exempt, so this knob can't eat the probe under test.
     private static var _force200MultiByteCount = 0
     static func force200ForMultiByteRangedGETs(_ n: Int) {
         lock.lock(); _force200MultiByteCount = n; lock.unlock()
@@ -136,7 +98,6 @@ final class StubURLProtocol: URLProtocol {
         if let etag = cfg.etag { headers["ETag"] = etag }
         if cfg.supportsRanges { headers["Accept-Ranges"] = "bytes" }
 
-        // HEAD: headers only.
         if method == "HEAD" {
             if cfg.sendContentLength { headers["Content-Length"] = "\(total)" }
             sendResponse(url: url, status: 200, headers: headers)
@@ -144,7 +105,6 @@ final class StubURLProtocol: URLProtocol {
             return
         }
 
-        // Simulated rate-limiting: answer the first N ranged GETs with 429.
         if method == "GET", rangeHeader != nil, Self.consume429() {
             sendResponse(url: url, status: 429, headers: ["Content-Length": "11", "Retry-After": "0"])
             client?.urlProtocol(self, didLoad: Data("rate limited".utf8.prefix(11)))
@@ -152,13 +112,9 @@ final class StubURLProtocol: URLProtocol {
             return
         }
 
-        // Ranged GET that the server honours -> 206 partial.
         if cfg.supportsRanges,
            let rangeHeader,
            let (start, end) = Self.parseRange(rangeHeader, total: total) {
-            // Flap-back: a server that momentarily forgets range support answers a
-            // ranged GET with the whole body. Only multi-byte ranges are eligible,
-            // so the single-byte midpoint probe still gets its 206.
             if end > start, Self.consumeForce200() {
                 if cfg.sendContentLength { headers["Content-Length"] = "\(total)" }
                 sendResponse(url: url, status: 200, headers: headers)
@@ -173,9 +129,6 @@ final class StubURLProtocol: URLProtocol {
             return
         }
 
-        // Full body -> 200. An UNRANGED 200 may serve its own body/ETag and may be
-        // parked mid-body, so the probe-vs-stream asymmetries the mid-flight
-        // upgrade has to survive are expressible.
         let unranged = rangeHeader == nil
         let body = unranged ? (cfg.unrangedData ?? cfg.data) : cfg.data
         if unranged, let override = cfg.unrangedETagOverride { headers["ETag"] = override }
@@ -189,11 +142,7 @@ final class StubURLProtocol: URLProtocol {
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
     }
 
-    /// Bodies are delivered inline on URLSession's protocol loader thread, which
-    /// is SHARED across the session's requests. A parked body would therefore
-    /// wedge every other request — the mid-flight range probe above all — so a
-    /// held delivery moves to its own queue. Unheld deliveries keep the original
-    /// inline behaviour so existing tests are untouched.
+    /// Bodies deliver inline on URLSession's shared loader thread, so a parked body would wedge every other request — held deliveries need their own queue.
     private static let heldBodyQueue = DispatchQueue(label: "StubURLProtocol.held-body",
                                                      attributes: .concurrent)
 
@@ -207,10 +156,6 @@ final class StubURLProtocol: URLProtocol {
         let chunk = max(1, cfg.chunkSize)
         while offset < data.count {
             if stopped { return }
-            // Park the body at `holdAt` until the test releases it (or the client
-            // cancels). Spinning is fine: a held delivery runs on `heldBodyQueue`,
-            // so the loader thread stays free and other requests — the range probe
-            // above all — keep being served while this one waits.
             if let holdAt, offset >= holdAt {
                 while !Self.unrangedBodyReleased() && !stopped { usleep(10_000) }
                 if stopped { return }
@@ -224,7 +169,6 @@ final class StubURLProtocol: URLProtocol {
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    /// Parses "bytes=start-end" (end may be open-ended).
     static func parseRange(_ header: String, total: Int) -> (Int, Int)? {
         guard header.hasPrefix("bytes=") else { return nil }
         let spec = header.dropFirst("bytes=".count)
@@ -237,8 +181,6 @@ final class StubURLProtocol: URLProtocol {
     }
 }
 
-// MARK: - Tests
-
 final class HTTPEngineTests: XCTestCase {
 
     private var tempDir: URL!
@@ -247,7 +189,6 @@ final class HTTPEngineTests: XCTestCase {
         super.setUp()
         tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        // Reset injected stub state so test order can't leak rate-limit / UA state.
         StubURLProtocol.forceNext429s(0)
         StubURLProtocol.resetSeenUserAgents()
     }
@@ -256,8 +197,6 @@ final class HTTPEngineTests: XCTestCase {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
         super.tearDown()
     }
-
-    // MARK: Helpers
 
     private func makeEngine(profile: TrafficProfile = .high) -> HTTPEngine {
         let config = URLSessionConfiguration.ephemeral
@@ -285,8 +224,6 @@ final class HTTPEngineTests: XCTestCase {
         return false
     }
 
-    // MARK: (a) Full segmented download
-
     func testSegmentedDownloadStitchesExactBytes() async throws {
         let payload = deterministicData(300 * 1024)
         StubURLProtocol.set(.init(
@@ -296,7 +233,7 @@ final class HTTPEngineTests: XCTestCase {
         let engine = makeEngine()
         let task = makeTask(name: "segmented.bin")
 
-        // Subscribe before adding so no events are missed.
+        // Subscribe before adding, or the first events are missed.
         let stream = engine.events(for: task.id)
         await engine.add(task)
 
@@ -318,8 +255,6 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertTrue(connectionCounts.contains { $0 > 1 }, "a 300 KB file should use multiple segments")
     }
 
-    // MARK: (a2) Every request carries a User-Agent (WAF / -1005 regression)
-
     func testEveryRequestSendsUserAgent() async throws {
         StubURLProtocol.resetSeenUserAgents()
         let payload = deterministicData(300 * 1024)
@@ -338,8 +273,6 @@ final class HTTPEngineTests: XCTestCase {
         }
     }
 
-    // MARK: (a3) Segments recover from 429 rate-limiting via retry/backoff
-
     func testSegmentsRetryThrough429RateLimiting() async throws {
         StubURLProtocol.resetSeenUserAgents()
         let payload = deterministicData(300 * 1024)
@@ -347,8 +280,6 @@ final class HTTPEngineTests: XCTestCase {
             data: payload, supportsRanges: true, sendContentLength: true,
             etag: "\"rl\"", chunkSize: 32 * 1024, chunkDelayMicros: 0
         ))
-        // Answer the first 6 ranged GETs with 429 (Retry-After: 0 keeps the
-        // test fast); a client that retries should still finish intact.
         StubURLProtocol.forceNext429s(6)
 
         let engine = makeEngine()
@@ -363,12 +294,9 @@ final class HTTPEngineTests: XCTestCase {
         let written = try Data(contentsOf: tempDir.appendingPathComponent("ratelimited.bin"))
         XCTAssertEqual(written, payload, "bytes must be intact despite retried segments")
 
-        // More requests than segments proves retries actually happened.
         XCTAssertGreaterThan(StubURLProtocol.seenUserAgents().count, 6,
                              "expected extra requests from the 6 forced 429 retries")
     }
-
-    // MARK: (b) Progress events and final byte count
 
     func testProgressEventsReachTotal() async throws {
         let payload = deterministicData(256 * 1024)
@@ -398,8 +326,6 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertEqual(maxProgress, Int64(payload.count), "final bytesDownloaded must equal totalBytes")
     }
 
-    // MARK: (c) No range support -> single connection
-
     func testNoRangeSupportFallsBackToSingleConnection() async throws {
         let payload = deterministicData(200 * 1024)
         StubURLProtocol.set(.init(
@@ -416,20 +342,12 @@ final class HTTPEngineTests: XCTestCase {
             return nil
         }
         XCTAssertFalse(progressConnCounts.isEmpty)
-        // Single-connection fallback: no progress sample may report more than one
-        // active connection (more than one would mean segmentation kicked in), and
-        // at least one mid-transfer sample reports exactly 1. The terminal 100%
-        // emit reports 0 by design — the engine clears the live connection count on
-        // completion so the Connections panel doesn't show an open connection on a
-        // finished transfer.
         XCTAssertTrue(progressConnCounts.contains(1), "single-connection transfer must report one active connection")
         XCTAssertTrue(progressConnCounts.allSatisfy { $0 <= 1 }, "fallback must never open more than one connection")
 
         let written = try Data(contentsOf: tempDir.appendingPathComponent("norange.bin"))
         XCTAssertEqual(written, payload)
     }
-
-    // MARK: (d) Missing Content-Length -> unknown total, still downloads
 
     func testMissingContentLengthLeavesTotalUnknownButCompletes() async throws {
         let payload = deterministicData(180 * 1024)
@@ -455,12 +373,7 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertEqual(written, payload)
     }
 
-    // MARK: (d2) Filename resolution from Content-Disposition / Content-Type
-
-    /// Reproduces the opaque-CDN-URL bug: the URL's last path component is a huge
-    /// query token (no extension, well over NAME_MAX), which previously failed the
-    /// write with "the file name … is invalid". The server's `Content-Disposition`
-    /// supplies the real name; the engine renames the task and saves correctly.
+    /// Regression: a last path component over NAME_MAX with no extension used to fail the write with "the file name … is invalid".
     func testRenamesFromContentDisposition() async throws {
         let payload = deterministicData(120 * 1024)
         StubURLProtocol.set(.init(
@@ -470,7 +383,6 @@ final class HTTPEngineTests: XCTestCase {
             contentDisposition: "attachment; filename=\"Holiday Clip.mp4\""
         ))
         let engine = makeEngine()
-        // A 320-char opaque token with no extension — the kind that broke before.
         let token = String(repeating: "A1b2C3d4", count: 40)
         let url = URL(string: "https://video-downloads.example/\(token)")!
         let task = DownloadTask(source: .url(url),
@@ -487,8 +399,6 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertEqual(written, payload, "bytes must land under the resolved name")
     }
 
-    /// No Content-Disposition + a URL name without an extension -> infer the
-    /// extension from Content-Type.
     func testInfersExtensionFromContentType() async throws {
         let payload = deterministicData(64 * 1024)
         StubURLProtocol.set(.init(
@@ -497,7 +407,7 @@ final class HTTPEngineTests: XCTestCase {
             contentType: "application/pdf"
         ))
         let engine = makeEngine()
-        let task = makeTask(name: "report")   // no extension
+        let task = makeTask(name: "report")
         let events = await drainAfterAdd(engine, task)
 
         let resolved = events.compactMap { e -> String? in
@@ -508,8 +418,6 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertEqual(written, payload)
     }
 
-    /// A URL name that is already a good filename must not be renamed (no churn,
-    /// and resume relies on the name staying put).
     func testKeepsGoodFilename() async throws {
         let payload = deterministicData(64 * 1024)
         StubURLProtocol.set(.init(
@@ -526,8 +434,6 @@ final class HTTPEngineTests: XCTestCase {
         let written = try Data(contentsOf: tempDir.appendingPathComponent("archive.zip"))
         XCTAssertEqual(written, payload)
     }
-
-    // MARK: (d3) Metadata preview (add-confirmation screen)
 
     func testResolveMetadataReturnsNameAndSize() async throws {
         let payload = deterministicData(250 * 1024)
@@ -566,13 +472,8 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertNil(preview.note)
     }
 
-    // MARK: (e) Pause stops progress
-
     func testPauseStopsProgress() async throws {
         let payload = deterministicData(512 * 1024)
-        // 64 chunks × 50ms ≈ 3.2s if served serially. `supportsRanges` lets the engine
-        // fetch ranges in parallel, so the wall-clock is that divided by however many
-        // segments the machine opens — the budget has to survive the widest split.
         StubURLProtocol.set(.init(
             data: payload, supportsRanges: true, sendContentLength: true,
             etag: "\"v3\"", chunkSize: 8 * 1024, chunkDelayMicros: 50_000
@@ -580,7 +481,6 @@ final class HTTPEngineTests: XCTestCase {
         let engine = makeEngine()
         let task = makeTask(name: "pause.bin")
 
-        // Track the latest reported bytesDownloaded via a thread-safe box.
         let box = ProgressBox()
         let stream = engine.events(for: task.id)
         let consumer = Task {
@@ -591,15 +491,12 @@ final class HTTPEngineTests: XCTestCase {
 
         await engine.add(task)
 
-        // Pause as soon as ANY progress is observed, rather than after a fixed sleep.
-        // A fixed sleep raced the transfer: on a fast machine the parallel segments
-        // finished inside it, and the test then failed for having completed.
+        // Pause on the first observed progress, never after a fixed sleep: on a fast machine the parallel segments finish inside the sleep and the test fails.
         for _ in 0..<400 where box.get() == 0 {
             try await Task.sleep(nanoseconds: 5_000_000)
         }
         await engine.pause(task.id)
 
-        // Settle past any chunk already in flight, snapshot, wait again, snapshot.
         try await Task.sleep(nanoseconds: 400_000_000)
         let afterPause = box.get()
         try await Task.sleep(nanoseconds: 400_000_000)
@@ -612,16 +509,11 @@ final class HTTPEngineTests: XCTestCase {
         XCTAssertEqual(later, afterPause, "no further progress after pause")
     }
 
-    // MARK: Live network smoke test (opt-in)
-
-    /// End-to-end against the real Hetzner speed-test server, which both
-    /// rejects UA-less requests (-1005) and rate-limits concurrent ranges
-    /// (429) — the exact conditions that broke the app. Skipped unless
-    /// `GOEL_LIVE_NET=1` so the normal suite stays hermetic.
+    /// Hits a real server that rejects UA-less requests (-1005) and rate-limits concurrent ranges (429); gated on `GOEL_LIVE_NET=1` so the suite stays hermetic.
     func testLiveHetznerDownloadCompletes() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GOEL_LIVE_NET"] == "1",
                           "set GOEL_LIVE_NET=1 to run the live network test")
-        let engine = HTTPEngine(profile: .high)   // real session, 16-way fan-out
+        let engine = HTTPEngine(profile: .high)
         let task = DownloadTask(
             source: .url(URL(string: "https://ash-speed.hetzner.com/100MB.bin")!),
             name: "100MB.bin",
@@ -645,8 +537,6 @@ final class HTTPEngineTests: XCTestCase {
         let written = try Data(contentsOf: tempDir.appendingPathComponent("100MB.bin"))
         XCTAssertEqual(written.count, 100 * 1024 * 1024, "must fetch the full 100 MB")
     }
-
-    // MARK: Shared drain helper
 
     private func drainAfterAdd(_ engine: HTTPEngine, _ task: DownloadTask) async -> [EngineEvent] {
         let stream = engine.events(for: task.id)
@@ -672,7 +562,6 @@ final class HTTPEngineTests: XCTestCase {
     }
 }
 
-/// Thread-safe holder for the latest progress byte count.
 private final class ProgressBox: @unchecked Sendable {
     private let lock = NSLock()
     private var value: Int64 = 0

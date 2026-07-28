@@ -1,10 +1,6 @@
 import SwiftUI
 import GoelCore
 
-// MARK: - Sparkline
-
-/// A dependency-free area sparkline over a series of values, auto-scaled to
-/// the series' peak. Used for the per-task and global speed histories.
 struct SparklineView: View {
     let values: [Double]
     var tint: Color = Theme.accent
@@ -23,8 +19,6 @@ struct SparklineView: View {
                 }
             }
         }
-        // A stroked `Path` has no name and no value; overlaid twice it would read
-        // as two anonymous images. The enclosing view states the rates in words.
         .a11yDecorative()
     }
 
@@ -54,7 +48,6 @@ struct SparklineView: View {
     }
 }
 
-/// The detail panel's per-task speed graph (download + upload overlaid).
 struct TaskSpeedGraph: View {
     let taskID: DownloadTask.ID
     @EnvironmentObject private var vm: AppViewModel
@@ -70,10 +63,7 @@ struct TaskSpeedGraph: View {
                 }
                 .frame(height: 44)
             }
-            // Two overlaid sparklines distinguished only by tint. Read the pair
-            // as one chart whose value is the newest sample plus the window's
-            // peak — the two figures a sighted user actually takes from the
-            // shape. `.updatesFrequently` stops VoiceOver caching a stale value.
+            // `.updatesFrequently` below stops VoiceOver caching a stale value.
             .a11yGroup(
                 label: "Speed graph, last \(history.count) seconds",
                 value: A11y.sentence(
@@ -85,10 +75,6 @@ struct TaskSpeedGraph: View {
     }
 }
 
-// MARK: - Statistics sheet
-
-/// Lifetime + per-day transfer statistics, loaded from the persisted
-/// ``TransferStats`` when the sheet opens.
 struct StatsView: View {
     @EnvironmentObject private var vm: AppViewModel
     @State private var stats: TransferStats?
@@ -115,8 +101,6 @@ struct StatsView: View {
 
                 let today = stats.today()
                 HStack(spacing: 12) {
-                    // "Today ↓" reads as "Today" — the arrow is silent — so both
-                    // cards would announce the same name. Spell the direction.
                     statCard("Today ↓", today.down.byteString, Theme.accent,
                              spokenLabel: "Downloaded today", spoken: A11y.bytes(today.down))
                     statCard("Today ↑", today.up.byteString, Theme.teal,
@@ -136,9 +120,6 @@ struct StatsView: View {
         .task { stats = await vm.fetchStats() }
     }
 
-    /// One figure card. `spokenLabel` / `spoken` carry the VoiceOver wording when
-    /// the visible text uses symbols or abbreviations the ear can't parse; both
-    /// default to the visible strings.
     private func statCard(_ label: String, _ value: String, _ tint: Color,
                           spokenLabel: String? = nil, spoken: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -150,7 +131,6 @@ struct StatsView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
-        // Caption and figure are one reading, not two.
         .a11yGroup(label: spokenLabel ?? label, value: spoken ?? value)
     }
 
@@ -169,8 +149,6 @@ struct StatsView: View {
                         .foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity)
-                // The bar's height *is* the datum, and the "·" separated tooltip
-                // is pointer-only. Give each column the figures its height encodes.
                 .a11yGroup(
                     label: entry.day,
                     value: A11y.sentence("downloaded \(A11y.bytes(entry.totals.down))",
@@ -178,8 +156,6 @@ struct StatsView: View {
             }
         }
         .frame(height: 100, alignment: .bottom)
-        // Let the rotor treat the fourteen columns as one chart the user steps
-        // through, rather than fourteen loose elements in the sheet.
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Daily transfer totals, last 14 days")
     }

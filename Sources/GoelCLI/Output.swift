@@ -39,11 +39,6 @@ enum CLIError: Error {
     }
 }
 
-/// Terminal output helpers.
-///
-/// Colour is suppressed when stdout is not a terminal, and when `NO_COLOR` is set
-/// — `goel status` gets piped into scripts and grepped, and escape codes there are
-/// noise at best and a broken comparison at worst.
 enum Out {
     static let colorful: Bool = {
         if ProcessInfo.processInfo.environment["NO_COLOR"] != nil { return false }
@@ -67,13 +62,10 @@ enum Out {
         FileHandle.standardError.write(Data(("goel: " + text + "\n").utf8))
     }
 
-    /// A caution that must survive `>` and `|`: stderr, and never gated on colour — a
-    /// warning suppressed when output is redirected fires only when unnecessary.
     static func note(_ text: String) {
         FileHandle.standardError.write(Data((paint("note: ", "33") + text + "\n").utf8))
     }
 
-    /// Key/value block with aligned values, as `goel status` and `goel config` print.
     static func pairs(_ rows: [(String, String)]) {
         let width = rows.map(\.0.count).max() ?? 0
         for (key, value) in rows {
@@ -82,8 +74,6 @@ enum Out {
         }
     }
 
-    /// Left-aligned table with a dim header. Column widths come from the content,
-    /// clamped so one absurd filename cannot push the numbers off screen.
     static func table(headers: [String], rows: [[String]], maxWidths: [Int?]) {
         guard !rows.isEmpty else { return }
         var widths = headers.map(\.count)
@@ -107,8 +97,6 @@ enum Out {
         print("  " + dim(render(headers)))
         for row in rows { print("  " + render(row)) }
     }
-
-    // MARK: Formatting
 
     static func bytes(_ value: Double?) -> String {
         guard let value, value >= 0 else { return "—" }

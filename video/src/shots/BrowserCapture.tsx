@@ -1,36 +1,3 @@
-/* Shot 11 — browser capture.
- *
- * Card: integration-hub-map
- * Exact demo read: demos/integration-hub-map/IntegrationHubMap.tsx
- *
- * Demo parameters kept verbatim: the page is a two-sided card that turns a full
- * rotateY 0 -> 180 over 35 frames on Easing.out(cubic) — a fast turn with a long
- * decelerating landing, one continuous move with no mid-way pause (the card
- * records that a 70f version and a version that paused at the edge were both
- * rejected, and that "even" means "unbroken", not literally linear); the edge
- * flash is a 2f spike that is back to zero within 4 (the long bloom plateau was
- * rejected); the pipes' rainbow gradients use `gradientUnits="userSpaceOnUse"`,
- * because a perfectly horizontal or vertical line has a zero-height bounding box
- * and object-bounding-box gradients silently drop those pipes entirely; the
- * pipe-glow filter carries an explicit userSpaceOnUse filter region for the same
- * reason; pipes grow over 9f; and the transport pulse runs at 4.6px per frame
- * with a per-pipe phase offset, forever.
- *
- * Card 命门 — the two-beat entry — is exact: all five marks appear on ONE frame
- * (tIcon 52), and 10 frames later all five pipes start on ONE frame (tPipe 62).
- * The card's case history is unambiguous: staggered connection was rejected
- * twice, and only "all at once, then all connected at once" was accepted. The
- * two beats stay >= 6f apart so they read as two, not one.
- *
- * Reskin: the demo's neon-purple field and third-party SaaS logos become the
- * film's canvas and the five browsers Goel° actually installs a capture
- * extension into. The marks are the same inline SVGs the product website
- * serves, so the film and the site show the same logos.
- *
- * The card's dividing line with glow-flyline-moves is respected: the light pipes
- * here are structure (five things attach to one thing), not the subject. The
- * subject is the turn.
- */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C, FONT } from '../theme';
@@ -38,9 +5,8 @@ import { C, FONT } from '../theme';
 const CL = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;
 
 const HUB_W = 900;
-const HUB_H = 478; // 900 * 721/1360, the app window's aspect
+const HUB_H = 478;
 
-/* ---- browser marks: the site's own symbols, inlined ---- */
 const Mark: React.FC<{ kind: string }> = ({ kind }) => {
   switch (kind) {
     case 'chrome':
@@ -99,7 +65,7 @@ const Mark: React.FC<{ kind: string }> = ({ kind }) => {
           </g>
         </svg>
       );
-    default: // brave
+    default:
       return (
         <svg width={58} height={58} viewBox="0 0 48 48">
           <path
@@ -144,8 +110,7 @@ const Tile: React.FC<{ kind: string; label: string; on: number }> = ({ kind, lab
   </div>
 );
 
-/* Five pipes into the hub. The hub occupies 900x478 centred at (960, 565), so
-   its edges are x 510/1410 and y 326/804. Every path ends ON an edge. */
+/* The hub's edges are x 510/1410 and y 326/804; every path below must end ON an edge. */
 type Pipe = { kind: string; label: string; icon: [number, number]; path: string; len: number };
 const PIPES: Pipe[] = [
   { kind: 'chrome', label: 'Chrome', icon: [330, 210], path: 'M 330 278 L 330 400 Q 330 440 370 440 L 510 440', len: 342 },
@@ -155,21 +120,19 @@ const PIPES: Pipe[] = [
   { kind: 'brave', label: 'Brave', icon: [1690, 640], path: 'M 1624 640 L 1410 640', len: 214 },
 ];
 
-const T_ICON = 52; // one frame, all five
-const T_PIPE = 62; // one frame, all five — 10f later
+const T_ICON = 52;
+const T_PIPE = 62;
 const GROW = 9;
 const ALL_ON = T_PIPE + GROW;
 
 export const BrowserCapture: React.FC<{ durationInFrames: number }> = () => {
   const frame = useCurrentFrame();
 
-  // the turn: fast, with a long decelerating landing; one unbroken move
   const rotY = interpolate(frame, [14, 49], [0, 180], { ...CL, easing: Easing.out(Easing.cubic) });
   const zoom = interpolate(frame, [0, 14, 58, 96], [1.55, 1.48, 1.02, 1], {
     extrapolateRight: 'clamp',
     easing: Easing.inOut(Easing.cubic),
   });
-  // the edge: a 2f spike, back to nothing within 4
   const bloom = interpolate(frame, [19, 21, 23, 27], [0, 1, 0.25, 0], CL);
 
   const breathe = frame > ALL_ON ? 0.5 + 0.5 * Math.sin((frame - ALL_ON) * 0.16) : 0;
@@ -184,7 +147,6 @@ export const BrowserCapture: React.FC<{ durationInFrames: number }> = () => {
         }}
       />
 
-      {/* pipes */}
       <svg width={1920} height={1080} style={{ position: 'absolute', inset: 0, opacity: mapIn }}>
         <defs>
           {PIPES.map((p, i) => {
@@ -192,8 +154,7 @@ export const BrowserCapture: React.FC<{ durationInFrames: number }> = () => {
             const [x1, y1] = [nums[0], nums[1]];
             const [x2, y2] = [nums[nums.length - 2], nums[nums.length - 1]];
             return (
-              // userSpaceOnUse: a purely horizontal or vertical pipe has a
-              // zero-extent bbox and object-bounding-box gradients drop it
+              // userSpaceOnUse: an axis-aligned pipe has a zero-extent bbox and object-bounding-box gradients drop it
               <linearGradient
                 key={i}
                 id={`pipe-${i}`}
@@ -249,7 +210,6 @@ export const BrowserCapture: React.FC<{ durationInFrames: number }> = () => {
               />
               {grow >= 1 && flowIn > 0 && (
                 <>
-                  {/* transport: bright packets running browser -> hub, always */}
                   <path
                     d={p.path}
                     fill="none"
@@ -277,7 +237,6 @@ export const BrowserCapture: React.FC<{ durationInFrames: number }> = () => {
         })}
       </svg>
 
-      {/* the five marks: one frame, together */}
       {PIPES.map((p, i) => {
         const appear = interpolate(frame, [T_ICON, T_ICON + 12], [0, 1], {
           ...CL,
@@ -305,7 +264,6 @@ export const BrowserCapture: React.FC<{ durationInFrames: number }> = () => {
         );
       })}
 
-      {/* the hub: a two-sided card that turns over */}
       <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', perspective: 1500 }}>
         <div
           style={{
@@ -316,7 +274,6 @@ export const BrowserCapture: React.FC<{ durationInFrames: number }> = () => {
             height: HUB_H,
           }}
         >
-          {/* front: the browser we were just downloading from */}
           <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden' }}>
             <Img
               src={staticFile('textures/portal-window.png')}
@@ -329,7 +286,6 @@ export const BrowserCapture: React.FC<{ durationInFrames: number }> = () => {
               }}
             />
           </div>
-          {/* back: the queue everything lands in (pre-turned so it reads correctly) */}
           <div
             style={{
               position: 'absolute',
@@ -349,7 +305,6 @@ export const BrowserCapture: React.FC<{ durationInFrames: number }> = () => {
               }}
             />
           </div>
-          {/* edge blow-out: only during the spike */}
           {bloom > 0.02 && (
             <div
               style={{
@@ -368,7 +323,6 @@ export const BrowserCapture: React.FC<{ durationInFrames: number }> = () => {
         </div>
       </AbsoluteFill>
 
-      {/* the flash the edge throws across the frame */}
       {bloom > 0.02 && (
         <AbsoluteFill style={{ pointerEvents: 'none' }}>
           <div

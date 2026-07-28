@@ -1,21 +1,13 @@
 import Foundation
 
-/// One downloadable file described by a metalink document: a name, the mirror
-/// list, and (when published) the size and an integrity hash — everything the
-/// add pipeline needs to create a mirrored, checksum-verified task.
 public struct MetalinkFile: Sendable, Equatable {
     public var name: String
-    /// Every http(s) source, ordered by the document's priority/preference hint
-    /// (highest priority first; equal/unhinted mirrors keep document order).
     public var urls: [String]
     public var size: Int64?
     public var checksum: Checksum?
 }
 
-/// Parses Metalink documents — RFC 5854 (`.meta4`, `urn:ietf:params:xml:ns:metalink`)
-/// and the older Metalink 3 (`.metalink`, `<resources><url type="http">`).
-/// Only http(s) URLs are kept: metalink files routinely carry ftp/BitTorrent
-/// alternatives this pipeline routes differently or not at all.
+/// RFC 5854 and Metalink 3. Only http(s) URLs are kept — every other scheme is dropped.
 public enum MetalinkParser {
 
     public static func parse(_ data: Data) -> [MetalinkFile] {
@@ -30,13 +22,8 @@ public enum MetalinkParser {
         var files: [MetalinkFile] = []
         private var current: MetalinkFile?
         private var text = ""
-        /// The hash type attribute of the element being read ("sha-256", "md5"…).
         private var hashType: String?
-        /// The current `<url>`'s normalised ordering hint — smaller sorts first
-        /// (higher priority). Absent hint uses `.max`, sorting the mirror last.
         private var currentURLSortKey: Int = .max
-        /// http(s) mirrors collected for the current `<file>`, each with its sort
-        /// key; ordered by priority (stable within equal keys) when the file ends.
         private var currentURLEntries: [(url: String, sortKey: Int)] = []
 
         func parser(_ parser: XMLParser, didStartElement name: String,
@@ -48,11 +35,7 @@ public enum MetalinkParser {
                                        size: nil, checksum: nil)
                 currentURLEntries = []
             case "url":
-                // v3 carries type="http"/"ftp"; v4 has no type (scheme decides).
-                // Normalise the ordering hint to a key where *smaller sorts first*
-                // (higher priority): v4 `priority` is already "lower is better"
-                // (RFC 5854), while v3 `preference` is "higher is better", so it's
-                // negated. An absent hint sorts last.
+                // Normalised to smaller-sorts-first: RFC 5854 `priority` is low-is-better, v3 `preference` isn't.
                 if let priority = attributes["priority"].flatMap(Int.init) {
                     currentURLSortKey = priority
                 } else if let preference = attributes["preference"].flatMap(Int.init) {
@@ -100,9 +83,7 @@ public enum MetalinkParser {
                 hashType = nil
             case "file":
                 if var file = current {
-                    // Order mirrors by their priority/preference hint. The offset
-                    // tiebreaker keeps document order among equal-priority (and
-                    // hint-less) mirrors, since `sorted(by:)` isn't guaranteed stable.
+                    // `sorted(by:)` isn't stable — the offset tiebreaker preserves document order.
                     file.urls = currentURLEntries
                         .enumerated()
                         .sorted { ($0.element.sortKey, $0.offset) < ($1.element.sortKey, $1.offset) }

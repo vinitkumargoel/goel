@@ -1,11 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Pure construction checks for ``SFTPSession`` — no network, no Keychain.
 final class SFTPSessionTests: XCTestCase {
 
-    /// Minimal in-memory ``CredentialManaging`` so store-backed paths don't touch
-    /// the real Keychain.
     private final class MemCreds: CredentialManaging, @unchecked Sendable {
         private var store: [String: (user: String, pass: String)] = [:]
         func credential(forHost host: String) -> (username: String, password: String)? {

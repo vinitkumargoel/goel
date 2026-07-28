@@ -1,8 +1,6 @@
 import SwiftUI
 import GoelCore
 
-/// The custom in-window toolbar: Add, Select, Sort, Filter, a search field, and
-/// the detail-panel toggle.
 struct AppToolbar: View {
     @EnvironmentObject private var vm: AppViewModel
 
@@ -31,8 +29,6 @@ struct AppToolbar: View {
             ActionMenu(items: sortItems) { open in
                 ToolbarMenuLabel(title: "Sort", systemImage: "arrow.up.arrow.down", active: open)
             }
-            // The active sort key and direction are otherwise shown only as a
-            // chevron inside the (closed) popover.
             .accessibilityValue("\(vm.sortKey.accessibilityName), \(vm.sortAscending ? "ascending" : "descending")")
 
             ActionMenu(items: [
@@ -52,17 +48,11 @@ struct AppToolbar: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.tertiary)
                     .font(.system(size: 12))
-                    // The placeholder text already says "Search downloads".
                     .a11yDecorative()
                 TextField("Search downloads", text: $vm.search)
                     .textFieldStyle(.plain)
                     .frame(width: 180)
-                    // A placeholder disappears the moment the field has text, so
-                    // it can't be the only name the field has.
                     .accessibilityLabel("Search downloads")
-                    // ⌘F is the universal "find" gesture and the field was
-                    // previously only reachable by clicking it or tabbing the
-                    // whole toolbar.
                     .keyboardShortcut("f", modifiers: .command)
             }
             .padding(.horizontal, 10)
@@ -80,8 +70,6 @@ struct AppToolbar: View {
             .help("Toggle detail panel")
             .tint(vm.detailPanelVisible ? Theme.accent : nil)
             .keyboardShortcut("i", modifiers: [.command, .option])
-            // Icon-only, and its on/off state is carried purely by the accent
-            // tint — invisible to VoiceOver and to a colour-blind user alike.
             .a11yButton("Detail panel")
             .accessibilityValue(vm.detailPanelVisible ? "Shown" : "Hidden")
         }
@@ -90,7 +78,6 @@ struct AppToolbar: View {
         .background(.bar)
     }
 
-    /// Sort rows, with an up/down chevron marking the active key's direction.
     private var sortItems: [ActionMenuItem] {
         SortKey.allCases.map { key in
             .button(key.rawValue,

@@ -1,33 +1,7 @@
-// Exercises the DMG/notarization gates, which need vtool, codesign, hdiutil and
-// spctl — macOS-only tooling with no Linux equivalent.
+// Needs vtool, codesign, hdiutil and spctl — macOS-only tooling with no Linux equivalent.
 #if !os(Linux)
 import XCTest
 
-/// Regression tests for the two ways a *release artifact* could be produced
-/// without having passed the gates that exist to vet it.
-///
-/// Both defects lived in `Scripts/make_dmg.sh`, and both came from the same
-/// mistaken assumption — that the DMG is a presentation step at the end of
-/// `build_app.sh` rather than a release path in its own right. It is invoked
-/// separately (RELEASE.md's own sequence does exactly that), it can be handed any
-/// bundle at all, and the file it writes is the one the website tells people to
-/// download.
-///
-///   * B1 — it ran none of `build_app.sh`'s gates over the payload, so a bundle
-///     whose deployment-target gate had been *waived* by `GOEL_LOCAL_DEV=1` (but
-///     which was still notarized and stapled) was wrapped into a signed,
-///     notarized, Gatekeeper-clean `.dmg` full of dylibs that cannot launch on the
-///     macOS the bundle advertises.
-///   * B2 — it created the image in `dist/` under the release filename and only
-///     then signed, notarized and assessed it, so every failure after that point
-///     exited 1 and left the file behind for `gh release create dist/*.dmg` to
-///     publish.
-///
-/// The script is run for real, in a throwaway copy of the repo layout, with the
-/// Apple tools it drives replaced by stubs on `PATH` — the point is to observe
-/// what ends up in `dist/`, which no amount of reading the source can establish.
-/// `vtool`, `lipo`, `file` and `PlistBuddy` stay real, because the gate's actual
-/// job is to read Mach-O load commands.
 final class ReleaseArtifactRemediationTests: XCTestCase {
 
     private var repoRoot: URL {
@@ -41,11 +15,7 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
         try String(contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 
-    // MARK: - B1: the deployment-target gate reaches the DMG
-
-    /// `GOEL_LOCAL_DEV=1` may waive the gate, but it must not be able to *hide*
-    /// that it did: exit 3 is what lets a caller tell "passed" from "waived", and
-    /// it is the whole mechanism by which the waiver stays throwaway.
+    /// `GOEL_LOCAL_DEV=1` may waive the gate but must not *hide* that it did: exit 3 is what lets a caller tell "passed" from "waived".
     func testWaivedDeploymentTargetGateExitsThreeRatherThanZero() throws {
         let fixture = try makeFixtureBundle(minimumSystemVersion: "10.0")
         defer { try? FileManager.default.removeItem(at: fixture) }
@@ -57,11 +27,7 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
         XCTAssertTrue(output.contains("NOT shippable"), output)
     }
 
-    /// The defect in the field was a *vendored dylib* out-targeting the bundle, and
-    /// those land in `Contents/Frameworks` — not in `Contents/MacOS`, where the
-    /// existing fixture puts its Mach-O. The gate walks the whole of `Contents` now
-    /// rather than an allow-list of four directories, so a `Contents/Library` or
-    /// `Contents/XPCServices` added later cannot be excused by omission either.
+    /// The field defect was a vendored dylib in `Contents/Frameworks`, so the gate must walk all of `Contents` and let no directory escape by omission.
     func testGateCatchesAnOffenderAnywhereInsideTheBundle() throws {
         let fm = FileManager.default
         for location in ["Contents/Frameworks/libfixture.dylib",
@@ -69,9 +35,6 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
                          "Contents/Library/Support/Tool"] {
             let fixture = try makeFixtureBundle(minimumSystemVersion: "10.0")
             defer { try? fm.removeItem(at: fixture) }
-            // Move the only Mach-O out of Contents/MacOS so the offender is found
-            // *there* and nowhere else. The plist still names it as the executable,
-            // which is fine — this gate reads load commands, not launch paths.
             let planted = fixture.appendingPathComponent(location)
             try fm.createDirectory(at: planted.deletingLastPathComponent(),
                                    withIntermediateDirectories: true)
@@ -85,8 +48,6 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
         }
     }
 
-    /// A pass is still a pass — a gate that reports "waived" for a correct bundle
-    /// would make the status useless.
     func testUnwaivedPassStillExitsZeroUnderLocalDev() throws {
         let fixture = try makeFixtureBundle(minimumSystemVersion: "14.0")
         defer { try? FileManager.default.removeItem(at: fixture) }
@@ -97,26 +58,19 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
         XCTAssertEqual(status, 0, "a correctly-targeted bundle must exit 0:\n\(output)")
     }
 
-    /// A stapled ticket is a distribution credential, and `make_dmg.sh` trusts it.
-    /// `DISTRIBUTABLE=0` did not protect anything here: it only guards the `.zip`,
-    /// while the notarize+staple block is gated on `CODESIGN_IDENTITY` alone. So a
-    /// waived bundle must not be notarized at all.
+    /// A stapled ticket is a distribution credential `make_dmg.sh` trusts, and notarize+staple gates on `CODESIGN_IDENTITY` rather than `DISTRIBUTABLE`, so a waived bundle must never be notarized.
     func testBuildAppRefusesToNotarizeABundleWhoseGateWasWaived() throws {
         let script = try read("Scripts/build_app.sh")
         XCTAssertTrue(script.contains("refusing to notarize"),
                       "a waived bundle must not be handed a notarization ticket")
         XCTAssertTrue(script.contains("MINOS_OK"),
                       "build_app.sh must record whether the gate passed honestly")
-        // Both call sites must go through the wrapper that reads the exit status;
-        // invoking the gate bare discards the 3 and reads a waiver as a pass.
+        // Both call sites must go through the wrapper that reads the exit status; invoking the gate bare discards the 3 and reads a waiver as a pass.
         XCTAssertEqual(script.components(separatedBy: "minos_gate \"$APP\"").count - 1, 2,
                        "both deployment-target gate calls must read the exit status")
     }
 
-    /// The gate has to run in `make_dmg.sh` itself. Nothing guarantees
-    /// `build_app.sh` ran in the same invocation — and `Scripts/make_dmg.sh
-    /// <path>` will wrap any bundle it is pointed at, including one built before
-    /// the gate existed.
+    /// The gate has to run in `make_dmg.sh` itself: nothing guarantees `build_app.sh` ran, and `Scripts/make_dmg.sh <path>` wraps any bundle, including a pre-gate one.
     func testDMGRefusesAPayloadThatFailsTheDeploymentTargetGate() throws {
         let sandbox = try makeSandbox(minimumSystemVersion: "10.0")
         defer { try? FileManager.default.removeItem(at: sandbox.root) }
@@ -128,10 +82,7 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
                        "a refused build must leave nothing in dist/")
     }
 
-    /// `stapler validate` proves a ticket is attached; it cannot say whether the
-    /// certificate behind it is still good. Only Gatekeeper's `source=` line
-    /// separates "notarized" from "signed with a Developer ID and accepted on the
-    /// machine that signed it".
+    /// `stapler validate` proves only that a ticket is attached; Gatekeeper's `source=` line is what separates "notarized" from "Developer ID, accepted locally".
     func testDMGRequiresANotarizedGatekeeperVerdictForItsPayload() throws {
         let sandbox = try makeSandbox()
         defer { try? FileManager.default.removeItem(at: sandbox.root) }
@@ -144,12 +95,7 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
         XCTAssertEqual(try dmgsInDist(sandbox), [], "nothing may be left in dist/")
     }
 
-    // MARK: - B2: dist/ is written only by a build that passed
-
-    /// Apple returning `Invalid` is an ordinary outcome — a revoked certificate, a
-    /// rejected entitlement, an outage. The script exits 1 either way; what must
-    /// not happen is a release-named image surviving in `dist/`, because the next
-    /// documented step publishes `dist/*.dmg` with no further check.
+    /// Apple returning `Invalid` is an ordinary outcome; what must not survive is a release-named image in `dist/`, which the next step publishes unchecked.
     func testFailedNotarizationLeavesNothingInDist() throws {
         let sandbox = try makeSandbox()
         defer { try? FileManager.default.removeItem(at: sandbox.root) }
@@ -162,9 +108,6 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
                        "a rejected notarization left a release-named image in dist/")
     }
 
-    /// The last gate is the assessment a double-click performs. A rejection there
-    /// is the clearest possible statement that the image will not open on anyone
-    /// else's Mac, so it must not be the file left sitting under the release name.
     func testGatekeeperRejectionOfTheImageLeavesNothingInDist() throws {
         let sandbox = try makeSandbox()
         defer { try? FileManager.default.removeItem(at: sandbox.root) }
@@ -178,8 +121,6 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
                        "a Gatekeeper-rejected image left a release-named file in dist/")
     }
 
-    /// And the happy path still produces the artifact — a script that never writes
-    /// `dist/` is not a fix.
     func testEverythingPassingWritesExactlyOneImageIntoDist() throws {
         let sandbox = try makeSandbox()
         defer { try? FileManager.default.removeItem(at: sandbox.root) }
@@ -191,8 +132,7 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
         XCTAssertTrue(images.first?.hasPrefix("Goel-Downloader-9.9.9-macos-") == true, images.description)
     }
 
-    /// A local/dev image must not be written under a release name in the directory
-    /// the release upload reads from, waiver or no waiver.
+    /// A local/dev image must not be written under a release name in the directory the release upload reads from, waiver or no waiver.
     func testLocalDevImageIsNeverWrittenIntoDist() throws {
         let sandbox = try makeSandbox(minimumSystemVersion: "10.0")
         defer { try? FileManager.default.removeItem(at: sandbox.root) }
@@ -204,21 +144,14 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
         XCTAssertTrue(output.contains("NOT for distribution"), output)
     }
 
-    /// `dist/` is not pruned between releases, so a glob uploads whatever is still
-    /// lying there — including artifacts from a version nobody is releasing, built
-    /// before any of these gates existed.
+    /// `dist/` is not pruned between releases, so a glob uploads whatever is still lying there, including artifacts built before any of these gates.
     func testReleaseInstructionsNameTheArtifactsRatherThanGlobbingDist() throws {
         let release = try read("RELEASE.md")
         XCTAssertFalse(release.contains("dist/*.dmg dist/*.zip"),
                        "the publish step must not glob dist/")
     }
 
-    // MARK: - Harness
-
-    /// A throwaway directory laid out like the repo — `Scripts/` holding the two
-    /// scripts under test, and a `dist/` with a fixture bundle. `make_dmg.sh`
-    /// resolves the repo root from its own path, so a copy is enough to keep the
-    /// real `dist/` untouched.
+    /// `make_dmg.sh` resolves the repo root from its own path, so a throwaway repo-shaped copy is what keeps the real `dist/` untouched.
     private struct Sandbox {
         let root: URL
         let app: URL
@@ -242,10 +175,7 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
         return Sandbox(root: root, app: app, stubs: try makeStubs(in: root))
     }
 
-    /// A `.app` carrying a real Mach-O and the Info.plist keys both scripts read.
-    /// `/bin/ls` targets macOS 11, so it passes a 14.0 claim and fails a 10.0 one —
-    /// the exact shape of the defect (a binary needing a newer OS than the bundle
-    /// advertises).
+    /// `/bin/ls` targets macOS 11, so it passes a 14.0 claim and fails a 10.0 one — the exact shape of the defect.
     private func makeFixtureBundle(minimumSystemVersion: String,
                                    in directory: URL? = nil) throws -> URL {
         let fm = FileManager.default
@@ -279,10 +209,6 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
         return bundle
     }
 
-    /// Stand-ins for the Apple tools the script drives, so the *decisions* can be
-    /// exercised without a certificate, a notary account or a real disk image. Each
-    /// stub's outcome is steered by an environment variable so one test can make
-    /// notarization fail and another the final assessment.
     private func makeStubs(in root: URL) throws -> URL {
         let stubs = root.appendingPathComponent("stubs")
         try FileManager.default.createDirectory(at: stubs, withIntermediateDirectories: true)
@@ -343,15 +269,12 @@ final class ReleaseArtifactRemediationTests: XCTestCase {
                        arguments: [sandbox.app.path], environment: env)
     }
 
-    /// The `.dmg` files sitting in a sandbox's `dist/` — the only thing that
-    /// actually decides whether a failed run is publishable.
     private func dmgsInDist(_ sandbox: Sandbox) throws -> [String] {
         let dist = sandbox.root.appendingPathComponent("dist")
         let contents = try FileManager.default.contentsOfDirectory(atPath: dist.path)
         return contents.filter { $0.hasSuffix(".dmg") }.sorted()
     }
 
-    /// Run a script from `root` and return (exit status, combined output).
     private func run(script relativePath: String, in root: URL, arguments: [String],
                      environment: [String: String]) throws -> (Int32, String) {
         let process = Process()

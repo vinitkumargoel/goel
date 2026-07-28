@@ -11,24 +11,10 @@ import type {
   TaskRow,
 } from './types'
 
-/**
- * Typed client for the remote JSON API (see `docs/remote-api.md`).
- *
- * Auth is by session cookie, so every request is a plain same-origin fetch with
- * no credential handling here. The one exception the server makes — a `?token=`
- * on `GET /` promoted to a cookie — is handled by the shell before this module
- * ever runs.
- */
-
-/** Distinguishes the failure modes callers actually branch on. */
 export type ApiFailure =
-  /** 401 — the session is gone. A redirect to `/login` is already under way. */
   | 'auth'
-  /** 403 — refused. `message` carries the server's own words. */
   | 'refused'
-  /** Any other non-2xx. */
   | 'http'
-  /** The request never completed — the daemon is down or the network dropped. */
   | 'network'
 
 export class ApiError extends Error {
@@ -43,12 +29,7 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * A 403 is not only read-only mode: the add route also refuses an
- * internal-network target, an out-of-root save folder, and a cross-site POST.
- * The UI surfaces whatever the server said rather than guessing read-only,
- * which is why refusals are routed through a sink instead of being swallowed.
- */
+/** A 403 is not only read-only mode: it also covers internal-network targets, out-of-root folders and cross-site POSTs. */
 type RefusalSink = (message: string) => void
 let onRefused: RefusalSink = () => {}
 
@@ -56,18 +37,13 @@ export function setRefusalHandler(fn: RefusalSink): void {
   onRefused = fn
 }
 
-/**
- * The server's own words for a failure. Error bodies are `text/plain` and one
- * short sentence; anything longer or of another type is some intermediary's
- * error page, not ours, and is not worth showing.
- */
+/** Only a short `text/plain` body is ours; anything else is an intermediary's page and must not be shown. */
 async function errorText(response: Response): Promise<string> {
   if (!response.headers.get('Content-Type')?.startsWith('text/plain')) return ''
   try {
     const text = (await response.text()).trim()
     return text.length <= 300 ? text : ''
   } catch {
-    // The body is a nicety; the status itself is the signal.
     return ''
   }
 }
@@ -81,8 +57,7 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
   }
 
   if (response.status === 401) {
-    // The session expired. Going to `/` lets the server decide whether that
-    // means the login page or an open portal, instead of assuming.
+    // `/`, not `/login`: only the server knows whether this portal challenges or is open.
     location.href = '/'
     throw new ApiError('auth', 'Not signed in', 401)
   }
@@ -94,9 +69,6 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
   }
 
   if (!response.ok) {
-    // 4xx routes answer with a sentence explaining what was wrong with the
-    // request — "A folder name cannot contain /". Discarding it in favour of
-    // "Request failed (400)" would leave the user with nothing to act on.
     const message = (await errorText(response)) || `Request failed (${response.status})`
     throw new ApiError('http', message, response.status)
   }
@@ -118,7 +90,6 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return (await r.json()) as T
 }
 
-/** POST with no body and no useful response — the mutation routes. */
 async function post(path: string): Promise<void> {
   await request(path, { method: 'POST' })
 }
@@ -155,9 +126,7 @@ export const api = {
     try {
       await post('/logout')
     } catch {
-      // A failed sign-out must not strand the user on a page that looks signed
-      // in. Fall through to the redirect either way; the cookie is the
-      // server's to invalidate and `/` will re-challenge.
+      // Redirect even on failure: a stranded page that looks signed in is worse than a re-challenge at `/`.
     }
     location.href = '/'
   },

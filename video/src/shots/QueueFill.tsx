@@ -1,29 +1,3 @@
-/* Shot 4 — the queue fills.
- *
- * Card: row-embed
- * Exact reference implementation read: template/src/aifl/live/SceneDetail.tsx
- * (the card names the template scene, not a demos/ directory)
- *
- * Card parameters kept verbatim: cue = 12 + i*9, 12f flight, land = cue + 12;
- * `perspective(900px) translateY(-120*air) rotateX(16deg*air)`; scale
- * 1.06 -> 0.995 in flight then a 4f press-bounce to 1; the flying body is a
- * texture crop of the full-page capture (never a redrawn row — the card is
- * explicit that a redrawn row's text rendering differs visibly); the empty-slot
- * patch clears 2f after landing; the embed seam is a 2px accent line on the
- * BOTTOM EDGE ONLY, spreading from the centre over 5f on Easing.out(cubic) and
- * fading over 8f; the camera pans down throughout so the rows rain and the
- * camera move run in parallel.
- *
- * One improvement over the template, which the capture pipeline made possible:
- * the empty-slot patch is a crop of `app-empty-full.png` — the same page
- * rendered with an empty queue — rather than a flat colour guess. The slot the
- * row drops into is therefore the real empty-list surface, including its
- * zebra banding and separator.
- *
- * Arithmetic against the shot budget (the card's core sum): last row i=7 has
- * cue 75, lands 87, its seam is done by 95. At 125 frames that leaves 30f of
- * true rest.
- */
 import React from 'react';
 import { interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { PageCam, CamKey } from '../lib/PageCam';
@@ -35,8 +9,6 @@ const FLY_EASE = Easing.bezier(0.3, 0, 0.25, 1);
 const fullSrc = staticFile('textures/app-full.png');
 const emptySrc = staticFile('textures/app-empty-full.png');
 
-/* Camera: opens on the top of the list and pans down past the last row while
-   the rows are still landing. 75f of travel against a 125f shot. */
 const CAM: CamKey[] = [
   { frame: 0, cx: 690, cy: 268, zoom: 1.36 },
   { frame: 78, cx: 690, cy: 452, zoom: 1.28 },
@@ -57,8 +29,6 @@ export const QueueFill: React.FC<{ durationInFrames: number }> = () => {
         const cue = 12 + i * 9;
         const land = cue + 12;
 
-        // empty-slot patch, cropped out of the empty-queue capture of the very
-        // same page; gone 2f after the row seats
         const patchOpacity = interpolate(frame, [land, land + 2], [1, 0], {
           extrapolateLeft: 'clamp',
           extrapolateRight: 'clamp',
@@ -83,8 +53,6 @@ export const QueueFill: React.FC<{ durationInFrames: number }> = () => {
             />
           ) : null;
 
-        // the flying row: a crop of the full page, dropping into its own slot.
-        // Unmounted once the press-bounce is done so the baked texture shows.
         let flyer: React.ReactNode = null;
         if (frame >= cue && frame < cue + 16) {
           const p = interpolate(frame, [cue, cue + 12], [0, 1], {
@@ -129,8 +97,6 @@ export const QueueFill: React.FC<{ durationInFrames: number }> = () => {
           );
         }
 
-        // embed seam: accent line on the bottom edge only, spreading from the
-        // centre. Clipped to the row's own width so nothing bleeds past it.
         let seam: React.ReactNode = null;
         if (frame >= land && frame < land + 8) {
           const spread = interpolate(frame, [land, land + 5], [0, 1], {
@@ -153,10 +119,6 @@ export const QueueFill: React.FC<{ durationInFrames: number }> = () => {
                 width: seamW,
                 height: 2,
                 background: C.accent,
-                /* The template's own alpha, restored. At full opacity the 6px
-                   halo on eight stacked rows bled onto the sidebar and up
-                   through the divider above, so the queue grew a ladder of
-                   glowing rungs instead of eight seams. */
                 boxShadow: `0 0 6px rgba(138,162,255,0.35)`,
                 borderRadius: 1,
                 opacity: seamOpacity,

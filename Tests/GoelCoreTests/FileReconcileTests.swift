@@ -1,10 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// The filesystem-reconciliation rule (see `DownloadManager+FileReconcile`):
-/// a completed download whose file the user deleted or moved is dropped from the
-/// list, while ambiguous cases (unmounted volume / moved download folder) and
-/// non-completed tasks are left untouched.
 final class FileReconcileTests: XCTestCase {
 
     private var tempDirs: [String] = []
@@ -34,8 +30,6 @@ final class FileReconcileTests: XCTestCase {
         )
     }
 
-    // MARK: The pure decision
-
     func testPresentFileIsNotMissing() {
         let dir = makeTempDir()
         let path = (dir as NSString).appendingPathComponent("present.bin")
@@ -45,21 +39,20 @@ final class FileReconcileTests: XCTestCase {
     }
 
     func testDeletedFileWithLivingDirectoryIsMissing() {
-        let dir = makeTempDir()   // directory exists, file never created
+        let dir = makeTempDir()
         let task = completedTask(name: "gone.bin", saveDirectory: dir)
         XCTAssertTrue(DownloadManager.completedPayloadIsMissing(task, fileManager: .default))
     }
 
     func testAbsentDirectoryIsAmbiguousAndKept() {
-        // An unmounted volume / moved-away download folder: both the file and its
-        // directory are gone. That's ambiguous, so it must NOT count as deleted.
+        // An unmounted volume takes the directory too; deleting on that would drop live downloads.
         let dir = makeTempDir() + "/unmounted-volume"
         let task = completedTask(name: "file.bin", saveDirectory: dir)
         XCTAssertFalse(DownloadManager.completedPayloadIsMissing(task, fileManager: .default))
     }
 
     func testMultiFileFolderPayloadCountsAsPresent() {
-        // A multi-file torrent's payload is a folder (saveDirectory/name).
+        // A multi-file torrent's payload is a folder at saveDirectory/name, not a file.
         let dir = makeTempDir()
         let folder = (dir as NSString).appendingPathComponent("Season 1")
         try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
@@ -67,24 +60,18 @@ final class FileReconcileTests: XCTestCase {
         XCTAssertFalse(DownloadManager.completedPayloadIsMissing(task, fileManager: .default))
     }
 
-    // MARK: End-to-end through restore()
-
     func testRestorePrunesOnlyCompletedDownloadsWithDeletedFiles() async throws {
         let store = try PersistenceStore()
         let dir = makeTempDir()
 
-        // present: file on disk → kept.
         let presentPath = (dir as NSString).appendingPathComponent("present.bin")
         FileManager.default.createFile(atPath: presentPath, contents: Data("x".utf8))
         let present = completedTask(name: "present.bin", saveDirectory: dir)
 
-        // gone: directory exists, file deleted → pruned.
         let gone = completedTask(name: "gone.bin", saveDirectory: dir)
 
-        // unmounted: directory itself absent → conservatively kept.
         let unmounted = completedTask(name: "file.bin", saveDirectory: dir + "/unmounted")
 
-        // paused with a missing file → never pruned (only completed are checked).
         var paused = completedTask(name: "partial.bin", saveDirectory: dir)
         paused.status = .paused
 
@@ -105,9 +92,7 @@ final class FileReconcileTests: XCTestCase {
         XCTAssertNotNil(unmounted2, "an absent directory is ambiguous → kept")
         XCTAssertNotNil(paused2, "a non-completed download is never pruned")
 
-        // The prune is also written through to disk, not just the in-memory list.
-        // Drain the serial persistence pipeline first: it writes on a detached
-        // task, so reading the store straight away races the writer.
+        // Persistence writes on a detached task: read the store without draining and you race the writer.
         await manager.shutdown()
         XCTAssertFalse(try store.loadAllTasks().contains { $0.id == gone.id })
     }

@@ -1,10 +1,3 @@
-/* Builds the Goel° UI replica into the page.
- *
- * Each exported builder returns a DOM string; capture.mjs picks a page by
- * ?page= and a theme by ?theme=. Elements that the film needs to animate
- * separately carry data-cap="<name>" — capture.mjs reads those back as the
- * per-element cutout list and as layout.json bboxes.
- */
 import {
   ROWS, SIDEBAR, ICON, pieceStates, SFTP_REMOTE, SFTP_LOCAL,
   SVG_VIDEO, SVG_DISC, SVG_ARCHIVE,
@@ -14,8 +7,6 @@ const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt
 
 const ACTION_ICON = { play: 'playFill', retry: 'retry', done: 'folder' };
 
-/* The desktop app abbreviates BITTORRENT to BT in the row badge; the web
-   portal spells it out. Both are reproduced as the app draws them. */
 const SHORT_PROTO = { BITTORRENT: 'BT' };
 
 function rowHTML(r, i, { shortProto = true } = {}) {
@@ -129,7 +120,6 @@ function detailHTML() {
   </aside>`;
 }
 
-/** BitTorrent detail: same panel, Progress tab, piece map instead of the ring. */
 function torrentDetailHTML(emptyMap) {
   const cells = pieceStates()
     .map((s, i) => `<i class="${emptyMap ? '' : s}" data-p="${i}"></i>`)
@@ -293,9 +283,6 @@ export function buildPortal() {
   </div>`;
 }
 
-/** A compact transfer card — the object that flies between windows in shot 9.
- *  Same tokens as the app's own rows; a 17:1 table row does not read as a thing
- *  you can carry, and the messenger has to read as an object. */
 export function buildChip() {
   return `
   <div class="tchip" data-cap="chip">
@@ -313,8 +300,6 @@ export const PAGES = {
   torrent: () => buildApp({ torrent: true }),
   sftp: buildSFTP,
   menubar: () => buildMenuBar(),
-  // the desktop the popover drops onto, and the popover body without its rows —
-  // shot 12 needs both so the rows can stagger in over an empty panel
   desktop: () => buildMenuBar({ popover: false, window: true }),
   'menubar-norows': () => buildMenuBar({ rows: false }),
   portal: buildPortal,

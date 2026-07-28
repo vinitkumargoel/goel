@@ -1,9 +1,7 @@
-// origin: template/src/aifl/DigitRoll.tsx（模板片同源组件）
 import { interpolate, useCurrentFrame, Easing } from 'remotion';
 
 const DIGITS = '0123456789';
 
-/** Odometer-style digit column roll for monospace numerals. */
 export const DigitRoll: React.FC<{
   value: string;
   delay?: number;
@@ -26,7 +24,7 @@ export const DigitRoll: React.FC<{
           extrapolateRight: 'clamp',
           easing: Easing.bezier(0.25, 0.8, 0.25, 1),
         });
-        // roll through one full strip then land on the target digit
+        // The +10 rolls a full strip before landing on the digit; without it there is no spin.
         const offset = (10 + target) * t * lineH;
         return (
           <span key={i} style={{ display: 'inline-block', height: lineH }}>

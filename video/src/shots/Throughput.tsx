@@ -1,33 +1,3 @@
-/* Shot 5 — throughput.
- *
- * Card: odometer-digit-roll
- * Exact demo read: demos/odometer-digit-roll/OdometerDigitRoll.tsx
- *
- * Card parameters kept verbatim: one overflow box per digit over a 0-9 strip of
- * 20 cells; `posAt` is a pure frame function; digit i begins its 16f
- * Easing.out(cubic) deceleration at 20 + i*7 frames, overshoots by half a row,
- * then springs back over 6f; two ghost copies at +/- half a row (opacity
- * 0.25 / 0.12) gated on the per-frame speed and unmounted the moment the reel
- * settles; the lock frame carries an 8f darken-pulse plus the 1.035 micro-scale
- * the card records as a deliberate late addition; tabular-nums throughout.
- *
- * Two card rulings honoured explicitly:
- *   - "the digits rolled must be the real value's digits" — the reels are 4 and
- *     3, the two digits of the 43 MB/s the status bar in shot 4 already showed.
- *     A viewer who pauses gets a consistent number.
- *   - "digits <= 6" — two reels, so the stagger costs 7f total.
- *
- * Palette inversion: the demo pulses ink -> #000 on paper. On this canvas the
- * lock pulse runs the other way, ink -> pure white, because "more emphatic" on
- * a dark field means brighter, not darker.
- *
- * The shot opens by pushing the camera into the status-bar readout that shot 4
- * established, so the full-screen number is a magnification of something the
- * viewer already saw rather than a new assertion. A FlashCut covers the seam.
- *
- * Budget: last reel locks at 75, pulse ends 83, and the shot runs 140 frames —
- * 57f of true rest against the card's >= 45f.
- */
 import React from 'react';
 import {
   AbsoluteFill,
@@ -41,19 +11,18 @@ import { PageCam, CamKey } from '../lib/PageCam';
 import { FlashCut } from '../lib/FlashCut';
 import { C, FONT, PAGE } from '../theme';
 
-const ROW = 210; // digit row height (the overflow box height)
-const DW = 128; // digit box width
+const ROW = 210;
+const DW = 128;
 const FS = 190;
-const SPIN = 0.85; // rows per frame while free-spinning
-const DIGITS = [4, 3]; // the digits of "43 MB/s"
+const SPIN = 0.85;
+const DIGITS = [4, 3];
 
-const ODO = 26; // frame the odometer's own clock starts
-const CUT = 22; // seam the FlashCut straddles
+const ODO = 26;
+const CUT = 22;
 
-/** Strip position of digit i, in rows. Pure function of the frame. */
 const posAt = (f: number, i: number): number => {
   const d = DIGITS[i];
-  const s = 20 + i * 7; // deceleration start
+  const s = 20 + i * 7;
   const p0 = SPIN * s;
   // travel at least 6 more rows, then land on the nearest integer ending in d
   const T = Math.ceil((p0 + 6 - d) / 10) * 10 + d;
@@ -109,7 +78,6 @@ const Strip: React.FC<{ pos: number; color: string; opacity?: number; dy?: numbe
   </div>
 );
 
-/** One digit box: the reel plus two speed-gated ghost copies. */
 const DigitReel: React.FC<{ frame: number; i: number; color: string }> = ({ frame, i, color }) => {
   const pos = posAt(frame, i);
   const speed = Math.abs(pos - posAt(frame - 1, i));
@@ -130,12 +98,7 @@ const DigitReel: React.FC<{ frame: number; i: number; color: string }> = ({ fram
   );
 };
 
-/* Camera push: the whole page, driving into the status-bar readout. */
-/* The push ACCELERATES into the cut instead of the demo's ease-out. With an
-   ease-out the camera arrives by frame ~12 and the real status bar sits there
-   reading "43 MB/s" for ten frames before the odometer rolls up to it — the
-   answer given away before the question. Accelerating means the number is only
-   legible in the last few frames, and the flash cut at 22 absorbs the stop. */
+/* The push ACCELERATES into the cut: easing out parks on the real "43 MB/s" readout and gives the answer away. */
 const CAM: CamKey[] = [
   { frame: 0, cx: 740, cy: 610, zoom: 1.12 },
   { frame: 24, cx: 205, cy: 763, zoom: 4.6 },
@@ -143,7 +106,7 @@ const CAM: CamKey[] = [
 
 export const Throughput: React.FC<{ durationInFrames: number }> = () => {
   const frame = useCurrentFrame();
-  const f = frame - ODO; // odometer-local frame
+  const f = frame - ODO;
 
   const inkNow = interpolateColors(f, [49, 53, 57], [C.ink, '#ffffff', C.ink]);
   const pulseScale = interpolate(f, [49, 53, 57], [1, 1.035, 1], {
@@ -169,8 +132,6 @@ export const Throughput: React.FC<{ durationInFrames: number }> = () => {
         />
       ) : (
         <AbsoluteFill style={{ background: C.canvas }}>
-          {/* a single low pool of accent light under the number — the one light
-              effect in this shot, per the "one high-quality point source" rule */}
           <AbsoluteFill
             style={{
               background: `radial-gradient(760px 420px at 50% 46%, rgba(138,162,255,0.16), transparent 72%)`,
@@ -206,7 +167,6 @@ export const Throughput: React.FC<{ durationInFrames: number }> = () => {
               MB/s
             </div>
           </div>
-          {/* label bar: only after every reel has locked */}
           <div
             style={{
               position: 'absolute',

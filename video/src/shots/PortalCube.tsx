@@ -1,39 +1,8 @@
-/* Shot 13 — the same queue, in a browser.
- *
- * Card: page-turn-transitions, 式 A `cube-rotate`
- * Exact demo read: demos/page-turn-transitions/CubeRotate.tsx
- *
- * Demo parameters kept verbatim: two faces on adjacent sides of a cube
- * (`rotateY(faceAngle) translateZ(W/2)`), the scene layer carrying
- * `translateZ(-W/2) rotateY(theta)` so the front face is pulled back to z = 0 —
- * without that layer the held frames are the wrong size, pushed away by the
- * perspective; theta 0 -> -90 across 38f on Easing.inOut(cubic); the outgoing
- * face darkening 1 -> 0.55 while the incoming one lifts 0.55 -> 1; the seam
- * shadow on the shared edge of both faces following sin(p*pi); a 1.5px blur in
- * mid-turn whose filter is CONDITIONALLY MOUNTED so the settled tail renders
- * identically frame after frame.
- *
- * Card semantics respected: 式 A means "these two are peers", 式 B means "this
- * replaces that". The desktop app and the web portal are the same engine with
- * two front doors, so A is correct — the film is not claiming the portal
- * supersedes the app.
- *
- * Card rule "volume transitions <= 2 per film": this is the only one. Shot 7's line
- * carry is a graphic relay, not a volume, and shot 11's turn is a card flipping
- * inside a scene, not a scene changing — so no two adjacent seams read as
- * slides in a deck.
- *
- * Both faces are real captures of real pages at the same layout scale, per the
- * card's requirement that the faces be hi-res enough to survive being seen at
- * an angle.
- *
- * Budget: 30f establishing A, 38f turning, and 42f held on B.
- */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C, FONT } from '../theme';
 
-const S = 1.08; // the 1480x841 page rendered at 1598x908
+const S = 1.08;
 const W = 1480 * S;
 const H = 841 * S;
 

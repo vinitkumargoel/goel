@@ -6,9 +6,6 @@ import Crypto
 #endif
 @testable import GoelCore
 
-/// Regressions for the BitTorrent engine: the metadata preview must never touch
-/// the user's files or their running torrents, an unusable proxy must be stated
-/// rather than assumed, and the seed-ratio fallback must be decidable on paper.
 final class TorrentRemediationTests: XCTestCase {
 
     private var tempDir: URL!
@@ -23,12 +20,6 @@ final class TorrentRemediationTests: XCTestCase {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
     }
 
-    // MARK: The preview must not touch the user's data
-
-    /// The blocker: previewing a `.torrent` for data the user already has on
-    /// disk used to remove the torrent with libtorrent's `delete_files` flag, so
-    /// re-adding a finished torrent to re-seed it wiped the payload before the
-    /// user pressed anything.
     func testMetadataPreviewDoesNotDeleteExistingPayload() async throws {
         let saveDir = tempDir.appendingPathComponent("save", isDirectory: true)
         try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
@@ -40,24 +31,19 @@ final class TorrentRemediationTests: XCTestCase {
         let engine = TorrentEngine(profile: .low, config: .init(enableDHT: false, enableLSD: false))
 
         let meta = await engine.resolveMetadata(for: .torrentFile(fixture), in: saveDir.path)
-        // Fail CLOSED if the fixture were malformed: without a real resolve the
-        // "file survived" assertion below would pass for the wrong reason.
+        // Fail closed: without a real resolve, the "file survived" assertion passes for the wrong reason.
         let resolved = try XCTUnwrap(meta, "the fixture .torrent must resolve")
         XCTAssertEqual(resolved.name, "goel.bin")
         XCTAssertEqual(resolved.totalBytes, Int64(payload.count))
         XCTAssertEqual(resolved.files.count, 1)
 
-        // `remove_torrent(delete_files)` is serviced on libtorrent's disk thread,
-        // so give the old behaviour every chance to happen before asserting.
+        // `delete_files` is serviced on libtorrent's disk thread: assert too early and it passes blind.
         try await Task.sleep(nanoseconds: 1_500_000_000)
         XCTAssertTrue(FileManager.default.fileExists(atPath: payloadURL.path),
                       "the metadata preview must never delete the user's payload")
         withExtendedLifetime(engine) {}
     }
 
-    /// And it must not write into the save folder either: the probe belongs in a
-    /// throwaway directory of its own, so no future regression can reach the
-    /// user's files through it.
     func testMetadataPreviewLeavesTheSaveDirectoryUntouched() async throws {
         let saveDir = tempDir.appendingPathComponent("untouched", isDirectory: true)
         try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
@@ -74,10 +60,6 @@ final class TorrentRemediationTests: XCTestCase {
         withExtendedLifetime(engine) {}
     }
 
-    /// Previewing a torrent that is ALREADY in the session used to hand back the
-    /// live torrent's handle (libtorrent's default duplicate behaviour), so
-    /// tearing the probe down evicted the user's running download. The preview
-    /// must fail closed instead, and the running task must survive it.
     func testMetadataPreviewOfARunningTorrentDoesNotEvictIt() async throws {
         let saveDir = tempDir.appendingPathComponent("running", isDirectory: true)
         try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
@@ -90,8 +72,6 @@ final class TorrentRemediationTests: XCTestCase {
                                 saveDirectory: saveDir.path)
         await engine.add(task)
 
-        // The stream ends when `remove` finishes the task below, so the watcher
-        // terminates on its own rather than needing cancellation.
         let watcher = Task { () -> Bool in
             for await event in engine.events(for: task.id) {
                 if case .failed = event { return true }
@@ -110,9 +90,6 @@ final class TorrentRemediationTests: XCTestCase {
         XCTAssertFalse(failed, "the preview must not knock the running torrent out of the session")
     }
 
-    /// A hard add failure (a corrupt `.torrent`) must carry its real reason. It
-    /// used to collapse into "No peers answered in time — you can still start",
-    /// which invites the user to queue something that can never work.
     func testMetadataPreviewReportsWhyItFailed() async throws {
         let corrupt = tempDir.appendingPathComponent("corrupt.torrent")
         try Data("not a torrent at all".utf8).write(to: corrupt)
@@ -127,10 +104,6 @@ final class TorrentRemediationTests: XCTestCase {
         withExtendedLifetime(engine) {}
     }
 
-    /// `TransferFile.path` is documented as the path relative to the save folder.
-    /// The bridge used to report only the last component, so two files named the
-    /// same in different subfolders were indistinguishable in the picker and over
-    /// the remote portal.
     func testResolvedFilesCarryTheirRelativePath() async throws {
         let fixture = try writeMultiFileTorrent()
         let engine = TorrentEngine(profile: .low, config: .init(enableDHT: false, enableLSD: false))
@@ -145,11 +118,6 @@ final class TorrentRemediationTests: XCTestCase {
         withExtendedLifetime(engine) {}
     }
 
-    // MARK: Fast resume
-
-    /// Pausing a torrent must leave a libtorrent resume blob behind, so the next
-    /// launch restores the lifetime upload total instead of overwriting it with
-    /// a fresh zero (and re-hashing every piece).
     func testPauseWritesAFastResumeBlob() async throws {
         let saveDir = tempDir.appendingPathComponent("resume", isDirectory: true)
         try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
@@ -171,13 +139,10 @@ final class TorrentRemediationTests: XCTestCase {
         let size = (try FileManager.default.attributesOfItem(atPath: blob.path)[.size] as? Int) ?? 0
         XCTAssertGreaterThan(size, 0, "the resume blob must not be empty")
 
-        // Removing the task takes the orphaned blob with it.
         await engine.remove(task.id, deleteData: false)
         XCTAssertFalse(FileManager.default.fileExists(atPath: blob.path),
                        "removing a task must not leave its resume blob behind")
     }
-
-    // MARK: Pure policy
 
     func testSwarmProxyResolutionCoversEveryMode() {
         let none = SwarmProxy.resolve(.init(mode: "none"))
@@ -213,14 +178,9 @@ final class TorrentRemediationTests: XCTestCase {
     }
 
     func testEffectiveSeedRatioPrefersTaskOverProfile() {
-        // No per-task limit: the profile's global "stop seeding at ratio" applies
-        // — it used to be attached to nothing at all.
         XCTAssertEqual(TorrentEngine.effectiveSeedRatio(task: nil, profile: 1.5), 1.5)
-        // A per-task limit wins.
         XCTAssertEqual(TorrentEngine.effectiveSeedRatio(task: 3.0, profile: 1.5), 3.0)
-        // An explicit 0 means "seed this one indefinitely" and beats the profile.
         XCTAssertNil(TorrentEngine.effectiveSeedRatio(task: 0, profile: 1.5))
-        // A profile of 0 imposes nothing.
         XCTAssertNil(TorrentEngine.effectiveSeedRatio(task: nil, profile: 0))
         XCTAssertEqual(TorrentEngine.effectiveSeedRatio(task: 2.0, profile: 0), 2.0)
     }
@@ -233,10 +193,7 @@ final class TorrentRemediationTests: XCTestCase {
                           "the PeX choice must be part of the session identity, not dropped")
     }
 
-    // MARK: Fixtures
-
-    /// Mirror of the engine's own resume-blob location, so the test can look for
-    /// the file the engine would have written.
+    /// Must mirror the engine's own resume-blob location, or the test looks for a file nobody writes.
     private func resumeFileURL(_ id: UUID) -> URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("GoelDownloader", isDirectory: true)
@@ -244,8 +201,7 @@ final class TorrentRemediationTests: XCTestCase {
             .appendingPathComponent(id.uuidString + ".resume")
     }
 
-    /// A minimal, valid v1 single-file `.torrent`. No announce list — nothing in
-    /// these tests may talk to a tracker.
+    /// No announce list, deliberately: nothing in these tests may talk to a tracker.
     private func writeSingleFileTorrent(name: String, payload: Data) throws -> URL {
         var info = Data("d6:lengthi\(payload.count)e".utf8)
         info.append(Data("4:name\(name.utf8.count):\(name)".utf8))
@@ -263,8 +219,6 @@ final class TorrentRemediationTests: XCTestCase {
         return url
     }
 
-    /// A minimal v1 multi-file `.torrent` with two identically-named files in
-    /// different subfolders — the case a bare file name cannot describe.
     private func writeMultiFileTorrent() throws -> URL {
         let first = Data(repeating: 0x01, count: 8_192)
         let second = Data(repeating: 0x02, count: 8_192)

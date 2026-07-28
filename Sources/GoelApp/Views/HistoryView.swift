@@ -2,9 +2,6 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-/// The download-history archive: everything that ever completed, searchable,
-/// exportable as CSV, and re-downloadable — independent of whether the task
-/// still sits in the queue list.
 struct HistoryView: View {
     @EnvironmentObject private var vm: AppViewModel
     @State private var entries: [HistoryEntry]?
@@ -31,8 +28,6 @@ struct HistoryView: View {
 
             TextField("Search name or link", text: $search)
                 .textFieldStyle(.roundedBorder)
-                // The placeholder vanishes as soon as the field has text, so it
-                // can't be the field's only name.
                 .accessibilityLabel("Search history by name or link")
 
             if let entries {
@@ -102,16 +97,12 @@ struct HistoryView: View {
                     .scaledFont(size: 10.5)
                     .foregroundStyle(.secondary)
             }
-            // Name over a "date · size" line is one history entry.
             .a11yGroup(label: entry.name,
                        value: A11y.sentence(
                         entry.completedAt.formatted(date: .abbreviated, time: .shortened),
                         entry.totalBytes.map(A11y.bytes)))
             Spacer(minLength: 12)
             HStack(spacing: 4) {
-                // Four unlabelled glyphs per row. Across a full history that is a
-                // wall of identical "button"s with no way to tell which does
-                // what, or which entry it belongs to.
                 iconButton("arrow.down.circle", help: "Download again",
                            label: "Download “\(entry.name)” again") {
                     vm.redownload(entry)
@@ -137,8 +128,6 @@ struct HistoryView: View {
         .padding(.horizontal, 10)
     }
 
-    /// `help` is the pointer tooltip; `label` is what a screen reader hears, and
-    /// names the entry so the four buttons in a row stay distinguishable.
     private func iconButton(_ symbol: String, help: String, label: String,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -155,9 +144,6 @@ struct HistoryView: View {
     }
 }
 
-// MARK: - Scheduled-start presets
-
-/// Quick-pick presets for "start this download later" (context menu + add flow).
 struct ScheduledStartOption: Identifiable {
     let id: String
     let label: String
@@ -176,7 +162,6 @@ struct ScheduledStartOption: Identifiable {
         ]
     }
 
-    /// The next occurrence of `hour`:00 strictly in the future.
     private static func next(hour: Int) -> Date {
         let calendar = Calendar.current
         let now = Date()

@@ -1,10 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Unit coverage for the request-accumulation primitives that let a server shell
-/// read a COMPLETE HTTP request before dispatching. These are the fix for the
-/// macOS POST-body-truncation bug: a body split across TCP segments (or larger
-/// than one read) used to be parsed empty → `/api/add` and `/login` failed 400.
 final class RemoteRequestParsingTests: XCTestCase {
 
     func testHeaderEndNilUntilTerminatorArrives() {
@@ -30,18 +26,13 @@ final class RemoteRequestParsingTests: XCTestCase {
                        "absent Content-Length reads as 0")
     }
 
-    /// The completeness predicate the accumulator loops on: it must report
-    /// "incomplete" until the headers AND the full Content-Length body arrive,
-    /// then parse the reassembled body intact.
     func testCompletenessPredicateAcrossSplitSegments() throws {
         let head = "POST /api/add HTTP/1.1\r\nContent-Length: 5\r\n\r\n"
         var buf = Data(head.utf8)
         let start = try XCTUnwrap(RemoteRequest.headerEnd(buf))
 
-        // Headers in, body absent → still incomplete.
         XCTAssertLessThan(buf.count - start, RemoteRequest.contentLength(buf.prefix(start)),
                           "body has not arrived yet")
-        // Body trickles across two more segments.
         buf.append(Data("AB".utf8))
         XCTAssertLessThan(buf.count - start, RemoteRequest.contentLength(buf.prefix(start)))
         buf.append(Data("CDE".utf8))

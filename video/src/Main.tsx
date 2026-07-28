@@ -20,8 +20,6 @@ import { PortalCube } from './shots/PortalCube';
 import { ThemeSweep } from './shots/ThemeSweep';
 import { Outro } from './shots/Outro';
 
-/* The whole audio layer, driven entirely by src/sound.ts. Kept in Main so the
-   pin table sits next to the shot table it references. */
 const Sound: React.FC = () => {
   const frame = useCurrentFrame();
   const bgmVolume = interpolate(frame, BGM_ENV.frames, BGM_ENV.values, {

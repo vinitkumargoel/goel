@@ -1,38 +1,18 @@
 import Foundation
 
-// MARK: - Per-download network selection
-
-/// How ONE download should use the machine's network interfaces.
-///
-/// The server-wide policy (``AppSettings/aggregationEnabled`` and friends) decides
-/// what happens by default. This overrides it for a single task, which is the case
-/// a headless box actually has: two uplinks that are not equally good, and a
-/// download the operator wants pinned to one of them — or spread over both.
-///
-/// It survives as a single string in the task's JSON blob, in the `/api/add` body
-/// and behind `goel add --net`, so there is one grammar to learn rather than three:
-///
-///   - `auto`                    follow the server default
-///   - `single:wlp13s0`          every connection egresses that one interface
-///   - `aggregate`               spread across every eligible interface
-///   - `aggregate:eth0,wlan0`    spread across exactly these
 public enum NetworkSelection: Sendable, Equatable, Hashable {
     case auto
     case single(String)
     case aggregate([String])
 
-    /// Interface names are handed to `SO_BINDTODEVICE` / `IP_BOUND_IF` as C strings,
-    /// so they are validated here rather than at the syscall: `IFNAMSIZ` is 16
-    /// including the terminator, and only these characters ever appear in one.
+    /// 15 because these names go to `SO_BINDTODEVICE` / `IP_BOUND_IF` as C strings and `IFNAMSIZ` is 16 including the terminator.
     public static func isValidInterfaceName(_ name: String) -> Bool {
         guard !name.isEmpty, name.count <= 15 else { return false }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.:"))
         return name.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
-    /// Parse the wire/CLI form. Returns nil for anything malformed — callers report
-    /// that rather than silently falling back to `auto`, because "I asked for one
-    /// interface and got all of them" is exactly the surprise worth refusing.
+    /// nil for anything malformed: never silently fall back to `auto`, or a request for one interface quietly becomes all of them.
     public init?(spec raw: String) {
         let text = raw.trimmingCharacters(in: .whitespaces)
         if text.isEmpty || text.caseInsensitiveCompare("auto") == .orderedSame {
@@ -57,8 +37,6 @@ public enum NetworkSelection: Sendable, Equatable, Hashable {
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
             guard !names.isEmpty, names.allSatisfy(Self.isValidInterfaceName) else { return nil }
-            // One interface named under `aggregate` is a pin, not a fan-out. Normalising
-            // here means the engine never has to special-case a one-element "spread".
             self = names.count == 1 ? .single(names[0]) : .aggregate(names)
         default:
             return nil
@@ -75,7 +53,6 @@ public enum NetworkSelection: Sendable, Equatable, Hashable {
         }
     }
 
-    /// What to show a human.
     public var summary: String {
         switch self {
         case .auto: return "Automatic (server default)"
@@ -87,15 +64,11 @@ public enum NetworkSelection: Sendable, Equatable, Hashable {
     }
 }
 
-// MARK: - Resolving a selection against what actually exists
-
 extension AggregationPolicy {
 
     public struct NetworkResolution: Sendable, Equatable {
         /// Interfaces to bind. Empty means "do not bind" — the OS routing table decides.
         public var adapters: [BoundAdapter]
-        /// Set when the request could not be honoured verbatim. Surfaced to the user;
-        /// a cable pulled between queueing and starting must not fail the download.
         public var note: String?
 
         public init(adapters: [BoundAdapter], note: String? = nil) {
@@ -104,12 +77,6 @@ extension AggregationPolicy {
         }
     }
 
-    /// Turn a per-download selection into bind targets.
-    ///
-    /// - Parameters:
-    ///   - selection: the task's override; nil or `.auto` defers to `defaultAdapters`.
-    ///   - defaultAdapters: what the server-wide policy would have used.
-    ///   - available: every interface currently eligible to bind, aggregation on or off.
     public static func bindTargets(
         for selection: NetworkSelection?,
         defaultAdapters: [BoundAdapter],

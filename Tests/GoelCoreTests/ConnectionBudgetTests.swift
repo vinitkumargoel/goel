@@ -1,11 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-/// Pure unit tests for ``ConnectionBudget`` — reserve/release accounting and
-/// segment-count resolution against a traffic profile. No network / actor.
 final class ConnectionBudgetTests: XCTestCase {
-
-    // MARK: Reserve / release
 
     func testReserveAndReleaseTracksGlobalAndHost() {
         var budget = ConnectionBudget()
@@ -50,21 +46,15 @@ final class ConnectionBudgetTests: XCTestCase {
         XCTAssertEqual(budget.totalConnections, 0)
     }
 
-    // MARK: Room
-
     func testHostAndGlobalRoomFloorAtOne() {
         var budget = ConnectionBudget()
         budget.reserve(host: "h", count: 16)
-        // Over capacity: room still floors at 1 so a new download never stalls.
         XCTAssertEqual(budget.hostRoom(host: "h", maxPerServer: 8), 1)
         XCTAssertEqual(budget.globalRoom(maxConnections: 10), 1)
     }
 
-    // MARK: Mid-flight extra room
-
     func testExtraRoomUsesRawRoomWithoutFloorOne() {
         var budget = ConnectionBudget()
-        // Medium: per-server 8, global 200.
         XCTAssertEqual(budget.extraRoom(host: "h", profile: .medium), 8)
 
         budget.reserve(host: "h", count: 5)
@@ -74,7 +64,6 @@ final class ConnectionBudgetTests: XCTestCase {
         XCTAssertEqual(budget.extraRoom(host: "h", profile: .medium), 0,
                        "a saturated host grants zero — the caller already holds a connection")
 
-        // Over capacity must not report negative room.
         budget.reserve(host: "h", count: 4)
         XCTAssertEqual(budget.extraRoom(host: "h", profile: .medium), 0)
     }
@@ -82,7 +71,6 @@ final class ConnectionBudgetTests: XCTestCase {
     func testExtraRoomTakesTheTighterOfHostAndGlobal() {
         var budget = ConnectionBudget()
         budget.reserve(host: "other", count: 198)
-        // Host free = 8, global free = 2.
         XCTAssertEqual(budget.extraRoom(host: "h", profile: .medium), 2)
     }
 
@@ -92,8 +80,6 @@ final class ConnectionBudgetTests: XCTestCase {
                        "Low never grants mid-flight extras, however much room exists")
     }
 
-    // MARK: resolveSegmentCount
-
     func testLowProfileAlwaysOneSegment() {
         let budget = ConnectionBudget()
         let n = budget.resolveSegmentCount(total: 100 * 1024 * 1024, host: "h", profile: .low)
@@ -102,7 +88,6 @@ final class ConnectionBudgetTests: XCTestCase {
 
     func testHighProfileUsesPerServerCapWhenRoomFree() {
         let budget = ConnectionBudget()
-        // High: maxConnectionsPerServer = 16, plenty of global room, large file.
         let n = budget.resolveSegmentCount(total: 100 * 1024 * 1024, host: "h", profile: .high)
         XCTAssertEqual(n, 16)
     }
@@ -110,23 +95,19 @@ final class ConnectionBudgetTests: XCTestCase {
     func testSegmentCountRespectsHostBudgetAlreadyInUse() {
         var budget = ConnectionBudget()
         budget.reserve(host: "h", count: 12)
-        // High per-server = 16 → room 4.
         let n = budget.resolveSegmentCount(total: 100 * 1024 * 1024, host: "h", profile: .high)
         XCTAssertEqual(n, 4)
     }
 
     func testSegmentCountRespectsGlobalBudget() {
         var budget = ConnectionBudget()
-        // Medium: maxConnections = 200, per-server = 8. Fill global nearly full.
         budget.reserve(host: "other", count: 198)
         let n = budget.resolveSegmentCount(total: 100 * 1024 * 1024, host: "h", profile: .medium)
-        // global room = max(1, 200-198) = 2; per-server free = 8 → min = 2
         XCTAssertEqual(n, 2)
     }
 
     func testSegmentCountClampsByFileSize() {
         let budget = ConnectionBudget()
-        // 100 KiB / 64 KiB floor → at most 2 segments even on High (16).
         let n = budget.resolveSegmentCount(total: 100 * 1024, host: "h", profile: .high)
         XCTAssertEqual(n, 2)
     }

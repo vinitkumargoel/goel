@@ -1,32 +1,4 @@
 #!/usr/bin/env bash
-#
-# package_daemon.sh — build and package the Linux GoelDaemon tarball.
-#
-# WHY THIS EXISTS
-#
-# The tarball that shipped before this script was assembled by hand, and it
-# showed: it carried libXCTest.so and libTesting.so (test-only libraries with no
-# business in a production artifact), it copied the Swift runtime wholesale
-# rather than the daemon's actual dependency closure, and it contained no
-# licence files at all — not the project's own, and not the Apache-2.0 notice
-# that MUST travel with the redistributed Swift runtime .so files. None of that
-# is something a human assembling a directory can be relied upon to get right
-# twice, so it is a script.
-#
-# Verified end to end: built in a swift:6.1-noble container (Ubuntu 24.04) and the
-# resulting tarball installed, started, downloaded and uninstalled on an Ubuntu
-# 26.04 host — the cross-release case this script's vendoring exists for.
-#
-# Prerequisites (Ubuntu):
-#   apt install libtorrent-rasterbar-dev libssh2-1-dev libcurl4-openssl-dev \
-#               libssl-dev libboost-system-dev binutils gcc
-#   Scripts/linux/build-sqlite.sh     # snapshot-enabled libsqlite3.so for GRDB
-#
-# Do NOT `apt install clang`: the Swift toolchain ships its own, and apt's replaces
-# /usr/bin/clang with one that rejects -index-store-path, breaking every C target.
-#
-# Usage:  Scripts/linux/package_daemon.sh
-# Result: dist/goel-daemon-<version>-linux-<arch>.tar.gz
 
 set -euo pipefail
 
@@ -36,9 +8,7 @@ cd "$REPO_ROOT"
 ARCH="$(uname -m)"
 BIN_NAME="GoelDaemon"
 
-# Version, derived exactly as Scripts/build_app.sh derives it, so a daemon
-# tarball and a macOS bundle cut from the same commit cannot disagree about what
-# release they are. Only an EXACT tag counts.
+# Must derive the version exactly as Scripts/build_app.sh does, or a tarball and a bundle from the same commit disagree.
 VERSION="${GOEL_VERSION:-}"
 if [ -z "$VERSION" ]; then
   GIT_TAG="$(git describe --tags --exact-match 2>/dev/null || true)"
@@ -55,8 +25,7 @@ if [ -z "$VERSION" ]; then
 fi
 
 STAGE_NAME="goel-daemon-${VERSION}-linux-${ARCH}"
-# The template must end in X's and be a full path: GNU coreutils rejects `-t NAME`
-# with "too few X's", while BSD/macOS mktemp accepts it. This form works on both.
+# Template must be a full path ending in X's: GNU coreutils rejects `-t NAME` with "too few X's" where BSD mktemp accepts it.
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/goel-daemon-pkg.XXXXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 ROOT="$STAGE/$STAGE_NAME"
@@ -69,16 +38,11 @@ BIN="$BIN_DIR/$BIN_NAME"
 [ -x "$BIN" ] || { echo "error: no $BIN_NAME at $BIN" >&2; exit 1; }
 cp "$BIN" "$ROOT/bin/$BIN_NAME"
 
-# The `goel` admin CLI ships in the same tarball; install.sh wraps it as
-# /usr/local/bin/goel. Without it an installed daemon has no interface beyond
-# hand-editing the unit, so a tarball missing it is not shippable.
 CLI="$BIN_DIR/goel"
 [ -x "$CLI" ] || { echo "error: no goel CLI at $CLI" >&2; exit 1; }
 cp "$CLI" "$ROOT/bin/goel"
 
-# The localization tables. SwiftPM names this bundle `.resources` on Linux (it is
-# `.bundle` on Darwin), and it must sit beside the executable — that is the first
-# place ResourceBundles looks. Omitting it left the daemon silently English-only.
+# SwiftPM names this `.resources` on Linux (`.bundle` on Darwin) and it must sit beside the executable, else the daemon is silently English-only.
 RESOURCES="$BIN_DIR/GoelDownloader_GoelCore.resources"
 [ -d "$RESOURCES" ] || { echo "error: no resource bundle at $RESOURCES" >&2; exit 1; }
 cp -R "$RESOURCES" "$ROOT/bin/"
@@ -87,80 +51,16 @@ for code in en de; do
     || { echo "error: resource bundle has no $code.lproj" >&2; exit 1; }
 done
 
-# The unit file the installer installs. Shipping it inside the tarball (rather
-# than embedding its text in install.sh) keeps one copy under review in the repo.
 mkdir -p "$ROOT/systemd"
 cp "$REPO_ROOT/Scripts/linux/goel.service" "$ROOT/systemd/goel.service"
 
 # `goel version` reads this.
 printf '%s\n' "$VERSION" > "$ROOT/VERSION"
 
-# The runtime .so closure, resolved from the binaries rather than copied
-# wholesale from the toolchain's lib directory.
-#
-# WHAT IS VENDORED, AND WHY EXACTLY THESE
-#
-# Two rules decide it: a library is bundled if its SONAME is not stable across
-# distributions, and left to the distro if it is — because a distro-supplied
-# library keeps getting security updates and a vendored one only updates when we
-# cut a release.
-#
-#   Bundled: the Swift runtime (no distro ships it at all), and
-#            libtorrent-rasterbar + Boost. Those two are bundled because their
-#            SONAME encodes an upstream version that CHANGES BETWEEN RELEASES:
-#            Ubuntu 24.04 has libtorrent-rasterbar.so.2.0, 26.04 has .so.2.1, and
-#            Boost goes 1.83 → 1.88. A tarball built on one therefore cannot even
-#            start on the other. Verified on Ubuntu 26.04, where
-#            `libtorrent-rasterbar2.0` does not exist as a package at all.
-#
-#   Not bundled: OpenSSL, libcurl, libssh2, and glibc. Their SONAMEs are stable
-#            (libssl.so.3, libcurl.so.4, libssh2.so.1) — Debian's `t64` renames
-#            changed the *package* name, not the SONAME — and these are precisely
-#            the libraries where shipping a frozen copy of someone else's TLS
-#            stack would be actively worse than using the one the operator's
-#            distribution is patching.
-#
-# Both libtorrent and Boost are permissively licensed (BSD-3-Clause and BSL-1.0)
-# and already recorded in THIRD-PARTY-NOTICES.md, which travels in this tarball —
-# see the licence block below.
-#
-# The three exclusions are the ones a wholesale copy drags in: XCTest and
-# swift-testing exist only to run tests, and _InternalSwiftStaticMirror is a
-# compiler-internal library nothing at runtime loads.
-#
-# The closure is resolved from BOTH shipped binaries and unioned: the CLI is a
-# separate executable with its own (smaller) set of runtime dependencies, and a
-# closure taken from the daemon alone is not guaranteed to cover it.
-#
-# WHY THIS WALKS TRANSITIVELY RATHER THAN MATCHING A LIST
-#
-# An allowlist of names to bundle only ever sees the FIRST hop. The vendored
-# libFoundationXML.so needs libxml2.so.2, which is not in any such list — so a
-# tarball built on 24.04 vendored FoundationXML, left libxml2 to the distro, and
-# could not start on 26.04, where libxml2 is .so.16 and the `libxml2` package has
-# no candidate at all. Vendoring libxml2 by name would then have failed one hop
-# further along, on the libicuuc.so.74 that noble's libxml2 pulls in against
-# 26.04's ICU 78.
-#
-# So the rule is inverted and fails closed: walk the dependencies of everything
-# bundled, and bundle each one too UNLESS its SONAME is known stable. A new
-# unstable dependency is then carried automatically instead of being discovered
-# by a user whose daemon will not start.
-#
-# The walk follows DIRECT DT_NEEDED edges (objdump -p), not `ldd` output. `ldd`
-# prints the whole transitive closure, so walking it treats libcurl's dependencies
-# as if the Swift runtime needed them directly — and bundles a frozen GnuTLS,
-# Kerberos and OpenLDAP, which is precisely the "someone else's TLS stack, never
-# updated" outcome the rules above exist to avoid. Skipping libcurl has to skip
-# everything reachable only through it, and only direct edges do that.
+# Bundle only unstable SONAMEs (Swift runtime, libtorrent, Boost); TLS/HTTP stay with the distro so its security updates apply.
 echo "==> Resolving the .so closure"
 EXCLUDE='libXCTest\.so|libTesting\.so|lib_InternalSwiftStaticMirror\.so'
 VENDOR='/usr/lib/swift|libtorrent-rasterbar\.so|libboost_'
-# Provided by the target. Base system (glibc and friends), plus the TLS/HTTP stack
-# we deliberately leave to the distro's security updates. Anything NOT here that a
-# bundled library needs gets bundled.
-# ld-linux carries an arch infix (ld-linux-x86-64.so.2, ld-linux-aarch64.so.1), and
-# the loader is never something to bundle.
 STABLE='^(ld-linux[-a-z0-9]*|libc|libm|libdl|libpthread|librt|libresolv|libutil|libanl'
 STABLE="$STABLE"'|libstdc\+\+|libgcc_s|libz|liblzma|libzstd|libbz2|libffi'
 STABLE="$STABLE"'|libssl|libcrypto|libcurl|libssh2)\.so'
@@ -168,25 +68,21 @@ STABLE="$STABLE"'|libssl|libcrypto|libcurl|libssh2)\.so'
 command -v objdump >/dev/null 2>&1 \
   || { echo "error: objdump is required (apt install binutils)." >&2; exit 1; }
 
-# Shared state in files, not variables: the walk recurses through pipelines, and a
-# subshell's variable assignments would be lost.
+# Shared state in files, not variables: the walk recurses through pipelines, and a subshell's assignments would be lost.
 VENDORED="$STAGE/vendored.txt"
 SONAME_MAP="$STAGE/sonames.txt"
 : > "$VENDORED"
 
-# SONAME -> absolute path, from the binaries' full closure. `ldd`'s transitivity is
-# what makes it the right tool HERE (it sees everything reachable) and the wrong
-# one for deciding what to bundle.
+# ldd's transitivity is right HERE (resolving paths) and wrong for deciding what to bundle.
 for binary in "$ROOT/bin/$BIN_NAME" "$ROOT/bin/goel"; do
   ldd "$binary" | awk '/=>/ && $3 ~ /^\// { print $1, $3 }'
 done | sort -u > "$SONAME_MAP"
 
-# True when the target distribution is expected to provide this SONAME.
 is_stable() {
   printf '%s' "$1" | grep -qE "$STABLE"
 }
 
-# Direct DT_NEEDED entries only — see the note above on why not `ldd`.
+# Direct DT_NEEDED entries only — ldd's transitivity would over-bundle here.
 needed_sonames() {
   objdump -p "$1" 2>/dev/null | awk '/NEEDED/ { print $2 }'
 }
@@ -200,8 +96,7 @@ vendor_so() {
   _base=$(basename "$_path")
   if grep -qxF "$_base" "$VENDORED"; then return 0; fi
   printf '%s\n' "$_base" >> "$VENDORED"
-  # cp -L follows the symlink, and basename keeps the SONAME as the filename,
-  # which is what the dynamic linker looks for at load time.
+  # cp -L resolves the symlink and basename keeps the SONAME as the filename — what the dynamic linker looks for at load time.
   cp -L "$_path" "$ROOT/lib/$_base"
   echo "    + $_base"
   needed_sonames "$_path" | sort -u | while read -r _soname; do
@@ -226,9 +121,7 @@ for binary in "$ROOT/bin/$BIN_NAME" "$ROOT/bin/goel"; do
   done
 done
 
-# Everything a bundled library needs must now be either bundled or known stable.
-# The walk guarantees that by construction, so this only catches a typo in the
-# patterns above — but it catches it here rather than on a user's machine.
+# Redundant by construction — it only catches a typo, but catches it here rather than on a user's box.
 echo "==> Verifying the closure is self-contained"
 UNSATISFIED="$STAGE/unsatisfied.txt"
 : > "$UNSATISFIED"
@@ -247,10 +140,7 @@ if [ -s "$UNSATISFIED" ]; then
 fi
 echo "    all $(wc -l < "$VENDORED" | tr -d ' ') bundled libraries resolve"
 
-# libtorrent is the reason this tarball is portable at all, so its absence is a
-# hard stop rather than something to discover on the target machine. (Boost is
-# not checked: libtorrent may be built with Boost linked statically, in which
-# case there is legitimately nothing to copy.)
+# Boost is deliberately not checked: libtorrent may link it statically, leaving nothing to copy.
 if ! ls "$ROOT"/lib/libtorrent-rasterbar.so.* >/dev/null 2>&1; then
   echo "error: libtorrent-rasterbar was not vendored into lib/." >&2
   echo "       Without it this tarball only runs on the exact distro release it" >&2
@@ -258,8 +148,7 @@ if ! ls "$ROOT"/lib/libtorrent-rasterbar.so.* >/dev/null 2>&1; then
   exit 1
 fi
 
-# GRDB needs the snapshot-enabled SQLite that build-sqlite.sh produces; Ubuntu's
-# stock libsqlite3 declares sqlite3_snapshot_* and does not define it.
+# GRDB needs build-sqlite.sh's snapshot-enabled SQLite; Ubuntu's stock libsqlite3 declares sqlite3_snapshot_* without defining it.
 SQLITE="$REPO_ROOT/Vendor/linux/sqlite/libsqlite3.so"
 if [ ! -f "$SQLITE" ]; then
   echo "error: $SQLITE is missing — run Scripts/linux/build-sqlite.sh first." >&2
@@ -268,12 +157,6 @@ fi
 cp -L "$SQLITE" "$ROOT/lib/libsqlite3.so"
 echo "    + libsqlite3.so (snapshot-enabled)"
 
-# Licences. The project's own terms plus the third-party notices, and separately
-# the Swift runtime's own LICENSE/NOTICE: those .so files are redistributed
-# under Apache-2.0 with the Runtime Library Exception, which requires the notice
-# to accompany them. A missing file is a hard stop, not a warning — a tarball
-# that ships the libraries without their notices is a licence violation, and the
-# previous hand-assembled one had none of these at all.
 echo "==> Copying licences"
 for f in LICENSE LICENSE-COMMERCIAL.md TRADEMARK.md THIRD-PARTY-NOTICES.md; do
   if [ ! -f "$REPO_ROOT/$f" ]; then
@@ -300,8 +183,6 @@ if [ "$SWIFT_NOTICE_FOUND" -eq 0 ]; then
   exit 1
 fi
 
-# run.sh and README.txt are GENERATED. The hand-written pair that shipped before
-# could drift from the runtime deps the build actually links against, and did.
 cat > "$ROOT/run.sh" <<'RUNSH'
 #!/usr/bin/env bash
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -362,9 +243,7 @@ TARBALL="$REPO_ROOT/dist/$STAGE_NAME.tar.gz"
 rm -f "$TARBALL" "$TARBALL.sha256"
 tar -czf "$TARBALL" -C "$STAGE" "$STAGE_NAME"
 
-# NOT optional: install.sh refuses a release whose .sha256 it cannot fetch, so this
-# must ship as a release asset too. The name inside is the basename, so
-# `sha256sum -c` works wherever the pair was downloaded.
+# NOT optional: install.sh refuses a release whose .sha256 it cannot fetch; the `cd` keeps the name inside a basename so `sha256sum -c` works anywhere.
 if command -v sha256sum >/dev/null 2>&1; then
   ( cd "$REPO_ROOT/dist" && sha256sum "$STAGE_NAME.tar.gz" > "$STAGE_NAME.tar.gz.sha256" )
 elif command -v shasum >/dev/null 2>&1; then

@@ -1,13 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-/// The save-folder picker's reach, and what stops it.
-///
-/// The picker deliberately has no configured root: it goes wherever the server
-/// process's own uid goes. That makes the permission bits the boundary, so these
-/// tests set real ones on real directories and check that the browser reports
-/// what the kernel would enforce — a picker that offers a folder the write then
-/// fails on is worse than one that never offered it.
+/// The save-folder picker has no configured root: it goes wherever the server uid goes, so permission bits are the only boundary.
 final class SaveFolderBrowserTests: XCTestCase {
 
     private var base: String = ""
@@ -19,8 +13,6 @@ final class SaveFolderBrowserTests: XCTestCase {
             .appendingPathComponent("goel-folders-\(UUID().uuidString)")
             .path
         downloads = (base as NSString).appendingPathComponent("downloads")
-        // A sibling of the downloads folder. Under the old confinement this was
-        // unreachable; reaching it is now the point.
         sibling = (base as NSString).appendingPathComponent("elsewhere")
         let fm = FileManager.default
         try fm.createDirectory(atPath: downloads, withIntermediateDirectories: true)
@@ -55,13 +47,10 @@ final class SaveFolderBrowserTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: bits], ofItemAtPath: path)
     }
 
-    /// Permission bits mean nothing to uid 0, so the tests that turn on them can
-    /// only prove something as an ordinary user.
+    /// Permission bits mean nothing to uid 0, so the tests that turn on them prove nothing when run as root.
     private func skipIfRoot() throws {
         try XCTSkipIf(getuid() == 0, "permission bits do not constrain root")
     }
-
-    // MARK: Reach
 
     func testListingOpensAtTheDefaultFolderWhenGivenNoPath() throws {
         try mkdir(under(downloads, "Linux"))
@@ -74,7 +63,6 @@ final class SaveFolderBrowserTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(listing("   ")).path, downloads)
     }
 
-    /// The reported bug: the picker could not get above the downloads folder.
     func testTheDefaultFolderOffersAWayUp() throws {
         let listing = try XCTUnwrap(listing(nil))
         XCTAssertEqual(listing.parent, base,
@@ -122,8 +110,6 @@ final class SaveFolderBrowserTests: XCTestCase {
                        "the breadcrumb must name where the write will actually land")
     }
 
-    // MARK: Permissions are the boundary
-
     func testAnUnreadableFolderIsListedButMarkedUnreadable() throws {
         try skipIfRoot()
         let locked = under(downloads, "locked")
@@ -164,8 +150,6 @@ final class SaveFolderBrowserTests: XCTestCase {
         XCTAssertFalse(SaveFolderBrowser.canSave(into: readOnly))
     }
 
-    // MARK: Places
-
     func testPlacesOfferDownloadsHomeAndComputer() {
         let names = SaveFolderBrowser.places(defaultFolder: downloads, home: base).map(\.name)
         XCTAssertEqual(names.prefix(2).map { $0 }, ["Downloads", "Home"])
@@ -173,8 +157,6 @@ final class SaveFolderBrowserTests: XCTestCase {
     }
 
     func testPlacesDoNotRepeatAPathUnderTwoNames() {
-        // Downloads configured *as* home: one entry, not two pointing at the same
-        // folder, which would read as two different destinations.
         let places = SaveFolderBrowser.places(defaultFolder: base, home: base)
         XCTAssertEqual(places.filter { $0.path == base }.count, 1)
     }
@@ -184,8 +166,6 @@ final class SaveFolderBrowserTests: XCTestCase {
             defaultFolder: under(base, "gone"), home: base)
         XCTAssertFalse(places.contains { $0.name == "Downloads" })
     }
-
-    // MARK: Creating
 
     func testCreateMakesTheFolderAndReturnsItsPath() throws {
         let made = try XCTUnwrap(
@@ -224,17 +204,13 @@ final class SaveFolderBrowserTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: under(readOnly, "ISOs")))
     }
 
-    // MARK: Name validation
-
     func testPlainFolderNamesAreAccepted() {
         for name in ["ISOs", "Linux Distros", "2024-releases", "naïve", "a.b"] {
             XCTAssertTrue(RemoteRouter.isPlainFolderName(name), name)
         }
     }
 
-    /// Still refused, and still refused rather than sanitised — the name is a
-    /// single component by construction, which is what lets `create` join it
-    /// without re-checking where the result landed.
+    /// Refused rather than sanitised — the name is a single component by construction, which is what lets `create` join it without re-checking where the result landed.
     func testTraversalSlashesHiddenAndEmptyNamesAreRefused() {
         for name in ["", "   ", ".", "..", "../etc", "a/b", #"a\b"#, ".hidden", "a\nb", "a\0b"] {
             XCTAssertFalse(RemoteRouter.isPlainFolderName(name), name)

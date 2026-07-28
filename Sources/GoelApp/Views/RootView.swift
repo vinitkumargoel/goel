@@ -2,28 +2,16 @@ import SwiftUI
 import UniformTypeIdentifiers
 import GoelCore
 
-/// The whole window: a top toolbar, a sidebar | list | detail body, and a bottom
-/// status bar — matching the layout in `visual.html`.
 struct RootView: View {
     @EnvironmentObject private var vm: AppViewModel
 
-    /// Highlights the window-wide drop target while a web URL or `.torrent` file
-    /// is dragged over the window. Drops are routed straight into the add flow.
     @State private var isDropTargeted = false
 
-    /// The ⌘K palette. Raised either by the View menu command (which posts
-    /// through ``CommandPaletteBus``, since a `Commands` body can't reach this
-    /// state) or by the empty state's shortcut row.
     @State private var isCommandPalettePresented = false
 
-    /// The first-run flow. Evaluated once, at init, rather than on every update:
-    /// the flag flips as soon as the sheet appears, and re-reading it would tear
-    /// the sheet back down mid-presentation.
+    /// Read once at init: the flag flips when the sheet appears, and re-reading tears it down mid-present.
     @State private var isOnboardingPresented = OnboardingState.needsOnboarding
 
-    /// The detail panel is shown only when it's toggled on *and* a download is
-    /// actually selected — so clicking away (deselecting) makes it slide out, and
-    /// it returns when a task is picked again.
     private var showDetail: Bool {
         vm.detailPanelVisible && vm.selectedTask != nil
     }
@@ -44,25 +32,14 @@ struct RootView: View {
                 SidebarView()
                     .frame(width: 200)
                 Divider()
-                // The list — with the detail panel docked *below* it when the user
-                // has chosen the bottom position. `maxWidth: .infinity` makes this
-                // the greedy pane so the fixed-width right panel always keeps its
-                // 340pt (and never gets pushed off the window edge).
                 VStack(spacing: 0) {
                     if let server = vm.server(vm.selectedServer) {
-                        // A server is selected — browse it instead of the list.
-                        // Keyed by id so switching servers rebuilds the browser,
-                        // and by the generation so Reconnect rebuilds it against
-                        // a freshly resolved client even for the same server.
+                        // The `.id` must include the generation, or Reconnect reuses the dead client.
                         SFTPBrowserView(connection: server,
                                         client: vm.sftpClient(for: server))
                             .id("\(server.id)-\(vm.browserGeneration)")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if vm.tasks.isEmpty {
-                        // A genuinely empty queue — as opposed to a filter that
-                        // matched nothing, which `DownloadListView` still owns.
-                        // Blank space here is the first thing a new user sees,
-                        // so it offers the ways in instead of describing itself.
                         DownloadsEmptyState()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
@@ -77,7 +54,6 @@ struct RootView: View {
                     }
                 }
                 .frame(minWidth: 420, maxWidth: .infinity)
-                // …or docked on the right edge (the default).
                 if showDetail && vm.selectedServer == nil && vm.detailPanelPosition == .right {
                     Divider()
                     DetailPanelView()
@@ -93,22 +69,14 @@ struct RootView: View {
         }
         .frame(minWidth: 1040, minHeight: 620)
         .background {
-            // System canvas, plus an optional theme wash so themes with a
-            // non-neutral background (Dracula, Nord) read as that color under the
-            // translucent chrome. Frost themes leave the canvas untinted.
             Color(nsColor: .windowBackgroundColor)
                 .overlay { if let tint = Theme.windowTint { tint } }
         }
         .overlay(alignment: .bottom) { toastView }
-        // Above the toast layer: a conversion card persists for the whole job,
-        // and a passing toast must not be able to sit on top of it.
+        // Must stay after the toast overlay: a passing toast cannot be allowed to cover the job card.
         .overlay(alignment: .bottomTrailing) { MediaJobDock(center: vm.mediaJobs) }
         .overlay { dropOverlay }
         .overlay { confirmOverlay }
-        // Toasts and the persistence banner are the app's only feedback for
-        // several actions, and neither ever takes focus — so without an explicit
-        // announcement a screen-reader user gets no confirmation at all that
-        // "Copy source link" or "Convert to MP4" did anything.
         .onChange(of: vm.toast) { _, message in
             if let message { A11yAnnouncer.announce(message) }
         }
@@ -150,24 +118,18 @@ struct RootView: View {
             CommandPalette()
                 .environmentObject(vm)
         }
-        // First run only. `OnboardingView` writes the completion flag itself on
-        // every exit path, so this presents at most once per install.
         .sheet(isPresented: $isOnboardingPresented) {
             OnboardingView()
                 .environmentObject(vm)
         }
         .onReceive(NotificationCenter.default.publisher(for: CommandPaletteBus.toggleNotification)) { _ in
-            // A second ⌘K while it's open closes it, the way every other
-            // palette behaves. Suppressed during onboarding so the first-run
-            // flow can't end up underneath a second sheet.
+            // Suppressed during onboarding, or the first-run sheet ends up underneath a second sheet.
             guard !isOnboardingPresented else { return }
             isCommandPalettePresented.toggle()
         }
     }
 
-    /// The dashed "drop here" affordance shown only while a drag hovers the window
-    /// (the brief's "visible drop target"). Hit-testing is disabled so the drag
-    /// keeps reaching the underlying `.onDrop` region.
+    /// Hit-testing stays disabled here, or this overlay swallows the drag before `.onDrop` sees it.
     @ViewBuilder
     private var dropOverlay: some View {
         if isDropTargeted {
@@ -190,14 +152,10 @@ struct RootView: View {
             }
             .allowsHitTesting(false)
             .transition(.opacity)
-            // Purely a drag affordance: it exists only while a pointer drag is
-            // in flight, which is not a state reachable without a pointer.
             .a11yDecorative()
         }
     }
 
-    /// The app's own confirmation dialog, shown whenever a call site raises a
-    /// ``AppViewModel/ConfirmRequest`` (replaces the system `.confirmationDialog`).
     @ViewBuilder
     private var confirmOverlay: some View {
         if let request = vm.confirmRequest {
@@ -205,9 +163,6 @@ struct RootView: View {
         }
     }
 
-    /// Collect every web/file URL the drag carries and hand the newline-joined
-    /// locators to the manager. `.torrent` file URLs and http(s)/magnet links are
-    /// validated downstream by `DownloadSource.parse`; anything else is dropped.
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         collectDroppedURLs(providers) { urls in
             guard !urls.isEmpty else { return }
@@ -223,8 +178,6 @@ struct RootView: View {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
                 .a11yDecorative()
             Text(warning).scaledFont(size: 12)
-                // The triangle and the orange wash are what mark this as a
-                // warning rather than a notice — neither survives to the ear.
                 .accessibilityLabel("Warning. \(warning)")
             Spacer()
             Button {
@@ -241,8 +194,6 @@ struct RootView: View {
         .background(Theme.orange.opacity(0.12))
     }
 
-    /// An actionable banner offering to download a link just copied to the
-    /// clipboard (shown only while clipboard capture is enabled).
     private func clipboardBanner(_ link: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
@@ -257,7 +208,6 @@ struct RootView: View {
             Button("Add") { vm.acceptClipboardSuggestion() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                // Bare "Add" doesn't say what gets added.
                 .accessibilityLabel("Add copied link to downloads")
             Button {
                 vm.dismissClipboardSuggestion()

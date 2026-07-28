@@ -1,8 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Verifies the foreign-importer extracts locators from the shapes other download
-/// managers / browsers produce, de-duplicates, and ignores non-URL noise.
 final class ForeignImportParserTests: XCTestCase {
 
     func testAria2InputFileIgnoresOptionLines() {

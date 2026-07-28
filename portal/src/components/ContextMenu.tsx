@@ -8,7 +8,6 @@ export interface MenuItem {
   action: () => void
 }
 
-/** A separator between groups. */
 export type MenuEntry = MenuItem | { separator: true }
 
 export interface MenuState {
@@ -28,9 +27,7 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
 
-  // Position after paint: the clamp needs the menu's real size, which depends on
-  // its longest label. Rendering off-screen first avoids a visible jump from the
-  // unclamped position to the clamped one.
+  // Clamping needs the menu's measured size, so the first pass must render hidden and reposition after paint.
   useLayoutEffect(() => {
     if (!menu || !ref.current) {
       setPos(null)
@@ -45,8 +42,7 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
 
   useEffect(() => {
     if (!menu) return
-    // Capture phase, so a click that lands on another control closes this menu
-    // before that control's own handler runs and possibly opens a new one.
+    // Capture phase: without it another control's own handler runs first and can reopen a menu this closes.
     const onDocClick = (e: MouseEvent) => {
       if (!(e.target as Element | null)?.closest('.menu')) onClose()
     }
@@ -63,8 +59,7 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
       style={
         pos
           ? { left: pos.left, top: pos.top }
-          : // First pass: laid out for measurement only, kept out of sight.
-            { left: 0, top: 0, visibility: 'hidden' }
+          : { left: 0, top: 0, visibility: 'hidden' }
       }
     >
       {menu.entries.map((entry, i) =>

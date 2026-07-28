@@ -1,16 +1,11 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 body{background:var(--bg-app);color:var(--text);overflow:hidden;height:100vh}
-/* The topbar/shell/statusbar stack used to be direct children of <body>, which
- * supplied the flex column they size against — .statusbar in particular is
- * `flex:0 0 36px` and collapses without it. React mounts them inside #root, so
- * the column moves here. Overlays (.scrim, .menu, .toasts) are position:fixed
- * and are unaffected by the extra level. */
+/* Must stay a flex column: .statusbar is `flex:0 0 36px` and collapses without one. */
 #root{display:flex;flex-direction:column;height:100vh}
 button,input,select,textarea{font:inherit;color:inherit}
 svg{display:block}
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
-/* topbar */
 .topbar{height:54px;flex:0 0 54px;display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--bg-bar);backdrop-filter:blur(30px) saturate(160%);-webkit-backdrop-filter:blur(30px) saturate(160%);border-bottom:1px solid var(--border);z-index:40}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px}
 .brand .mk{width:28px;height:28px;border-radius:8px;overflow:hidden;box-shadow:0 3px 8px rgba(0,0,0,.3)}
@@ -30,7 +25,6 @@ svg{display:block}
 .user{display:flex;align-items:center;gap:8px;height:36px;padding:0 6px 0 8px;border:0;background:var(--bg-control);border-radius:20px;color:var(--text);cursor:pointer}
 .user:hover{background:var(--bg-control-active)}.avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(145deg,#5db4f5,#2f83e6);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700}
 .user .uname{font-size:12.5px;font-weight:600}.user svg{width:13px;height:13px;color:var(--text-dim)}
-/* shell */
 .shell{flex:1;display:flex;min-height:0;position:relative}
 .sidebar{width:214px;flex:0 0 214px;background:var(--bg-sidebar);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border-right:1px solid var(--border);padding:12px 10px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;z-index:30}
 .s-lbl{font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-faint);padding:13px 8px 5px}.s-lbl:first-child{padding-top:2px}
@@ -66,7 +60,6 @@ svg{display:block}
 @keyframes pl{0%,100%{opacity:1}50%{opacity:.35}}
 .stext{font-size:11.5px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .empty{display:grid;place-items:center;height:100%;text-align:center;color:var(--text-faint);padding:30px}.empty svg{width:46px;height:46px;opacity:.3;margin-bottom:12px}.empty h4{font-size:14px;color:var(--text-dim);margin-bottom:5px}.empty p{font-size:12px;line-height:1.5;max-width:280px}
-/* detail */
 .detail{width:360px;flex:0 0 360px;background:var(--bg-panel);backdrop-filter:blur(34px) saturate(160%);-webkit-backdrop-filter:blur(34px) saturate(160%);border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0;transition:margin-right .3s cubic-bezier(.3,.9,.3,1),opacity .25s;z-index:35}
 .detail.hidden{margin-right:-361px;opacity:0;pointer-events:none}
 .dhead{padding:16px 16px 12px;border-bottom:1px solid var(--border)}
@@ -95,9 +88,7 @@ svg{display:block}
 .fprio{font-size:10px;padding:1px 7px;border-radius:6px;background:var(--bg-chip);color:var(--text-dim);flex:0 0 auto;cursor:pointer;text-transform:capitalize}.fprio.high{background:rgba(255,159,10,.2);color:var(--orange)}
 .crow{display:grid;grid-template-columns:1fr 60px 60px;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:11.5px;align-items:center}.crow.h{color:var(--text-faint);font-weight:600;font-size:10.5px;text-transform:uppercase}
 .cip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}.cd{text-align:right;color:var(--green);font-variant-numeric:tabular-nums}.cu{text-align:right;color:var(--teal);font-variant-numeric:tabular-nums}
-/* statusbar */
 .statusbar{height:36px;flex:0 0 36px;display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--bg-bar);border-top:1px solid var(--border);font-size:11.5px}.sb-dim{color:var(--text-faint)}.sp{flex:1}
-/* panes */
 .pad{padding:20px 22px;overflow-y:auto;flex:1}
 .ph{font-size:18px;font-weight:700;margin-bottom:4px}.psub{font-size:12.5px;color:var(--text-dim);margin-bottom:20px;line-height:1.5}
 .card{background:var(--bg-panel);border:1px solid var(--border);border-radius:14px;padding:6px 16px;margin-bottom:16px}.card.pd{padding:16px}
@@ -110,7 +101,6 @@ svg{display:block}
 .chip{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px}.chip-d{background:rgba(255,159,10,.16);color:var(--orange)}.chip-w{background:rgba(50,215,75,.16);color:var(--green)}
 .hrow{display:grid;grid-template-columns:32px 1fr 96px 150px auto;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);font-size:12.5px}.hrow:last-child{border-bottom:0}
 .hic{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:#fff}
-/* modal */
 .scrim{position:fixed;inset:0;z-index:120;background:var(--scrim);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;padding:20px}.scrim.open{display:flex}
 .modal{width:560px;max-width:100%;max-height:88vh;background:var(--bg-modal);border-radius:16px;border:1px solid var(--border-strong);box-shadow:0 30px 80px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden}
 .mhead{padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}.mhead h3{font-size:15px;font-weight:600;flex:1}
@@ -125,11 +115,8 @@ textarea.finput{min-height:88px;font-family:inherit;resize:vertical}
 .btn:disabled{opacity:.45;cursor:default}.btn:disabled:hover{background:var(--bg-control)}
 .btn.ghost{background:transparent;color:var(--text-dim)}.btn.ghost:hover{background:var(--bg-control)}
 
-/* folder picker — a second layer above the Add dialog, hence the higher z */
 .picker-scrim{z-index:130}
 .modal.picker{width:460px}
-/* Shortcut roots. Wraps rather than scrolls: a mounted volume can have a long
-   name, and a hidden second row would look like there is nothing there. */
 .pkplaces{display:flex;flex-wrap:wrap;gap:6px;padding:10px 22px 0}
 .pkplace{padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:transparent;color:var(--text-dim);font-size:11.5px;font-family:inherit;cursor:pointer;white-space:nowrap}
 .pkplace:hover{background:var(--bg-control);color:var(--text)}
@@ -138,22 +125,17 @@ textarea.finput{min-height:88px;font-family:inherit;resize:vertical}
 .pkpath{padding:10px 22px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pkbody{min-height:190px;max-height:44vh}
 .pkrow{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:13px;font-family:inherit;text-align:left;cursor:pointer}.pkrow:hover{background:var(--bg-control)}.pkrow svg{width:16px;height:16px;flex:0 0 auto;color:var(--accent)}.pkrow.up svg{color:var(--text-faint)}.pkrow .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* Shown but inert: the server said this uid cannot list it. */
 .pkrow.locked{cursor:default;color:var(--text-faint)}.pkrow.locked:hover{background:transparent}.pkrow.locked svg{color:var(--text-faint)}
 .pkno{margin-left:auto;flex:0 0 auto;font-size:10.5px;color:var(--text-faint)}
 .pknew{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}.pknew .finput{flex:1}
-/* Overrides .finput's own padding so this row ends up the same height as the
- * Priority select beside it — the buttons inside would otherwise make it taller. */
 .pkfield{display:flex;gap:6px;align-items:center;padding:4px 4px 4px 12px}
 .pkfield .pkval{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}.pkfield .pkval.dim{color:var(--text-faint)}
 .pkfield .btn{height:30px;padding:0 10px;font-size:12px}.pkfield .btn.pkclear{padding:0 8px}.pkfield .btn svg{width:13px;height:13px}
 .menu{position:fixed;z-index:140;min-width:210px;background:var(--bg-modal);border:1px solid var(--border-strong);border-radius:11px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:5px;font-size:12.5px}
 .mi{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;cursor:pointer;color:var(--text);white-space:nowrap}.mi:hover{background:var(--accent);color:#fff}.mi:hover svg{color:#fff}.mi svg{width:15px;height:15px;color:var(--text-dim);flex:0 0 auto}.mi .t{flex:1}
 .mi.danger{color:var(--red)}.mi.danger svg{color:var(--red)}.mi.danger:hover{background:var(--red);color:#fff}.msep{height:1px;background:var(--border);margin:4px 6px}
-/* toasts */
 .toasts{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:160;align-items:center}
 .toast{display:flex;align-items:center;gap:9px;background:var(--bg-modal);border:1px solid var(--border-strong);border-radius:11px;box-shadow:0 12px 34px rgba(0,0,0,.4);padding:10px 15px;font-size:12.5px;animation:ti .28s;max-width:88vw}.toast svg{width:16px;height:16px;color:var(--accent);flex:0 0 auto}.toast.out{opacity:0;transition:.3s}
 @keyframes ti{from{opacity:0;transform:translateY(12px)}to{opacity:1}}
-/* responsive */
 @media(max-width:920px){.detail{position:absolute;right:0;top:0;bottom:0;box-shadow:-10px 0 40px rgba(0,0,0,.4)}.detail.hidden{transform:translateX(100%);margin-right:0}.lhead,.row{grid-template-columns:1fr 96px 108px}.lhead .hide-sm,.row .c.hide-sm{display:none}}
 @media(max-width:680px){.sidebar{position:absolute;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .28s;box-shadow:10px 0 40px rgba(0,0,0,.4)}.sidebar.open{transform:none}.sb-backdrop.show{display:block;position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:29}.hamburger{display:grid}.search,.stats,.user .uname,.brand .sub{display:none}.add-btn .lbl{display:none}.add-btn{padding:0 12px}.detail{width:100%;flex-basis:100%}.lhead,.row{grid-template-columns:1fr 96px}.lhead .hide-xs,.row .c.hide-xs{display:none}}

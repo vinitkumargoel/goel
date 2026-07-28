@@ -68,11 +68,7 @@ export function HistoryView({ canWrite, onReadd, onRemoved }: HistoryViewProps) 
           {state === 'ready' &&
             rows.map((e) => {
               const type = fileType({ name: e.name, kind: e.kind, statusToken: '' })
-              // `savePath` is the full path *including* the file name (see
-              // `DownloadTask.savePath`), so the containing folder is the
-              // second-to-last component. Taking the last one made this column
-              // repeat the name beside it, which is the one thing it must not do:
-              // it exists to tell apart two entries that share a name.
+              // `savePath` includes the file name, so the folder is the second-to-last component, not the last.
               const parts = e.savePath.split('/').filter(Boolean)
               const folder = parts.length >= 2 ? parts[parts.length - 2]! : ''
               return (

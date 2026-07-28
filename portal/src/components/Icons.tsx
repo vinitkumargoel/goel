@@ -1,14 +1,7 @@
 import type { SVGProps } from 'react'
 import type { FileType } from '../lib/taskKind'
 
-/**
- * Every icon in the portal, as components.
- *
- * These were `innerHTML` strings in the old build, which meant any name that
- * reached them had to be hand-escaped. As JSX they cannot inject markup at all,
- * so the escaping helper the old portal needed is simply gone.
- */
-
+/** JSX, never `innerHTML`: these icons must not become a markup-injection path again. */
 type IconProps = SVGProps<SVGSVGElement>
 
 const stroke = {
@@ -213,8 +206,6 @@ export function ArrowUpIcon(props: IconProps) {
   )
 }
 
-// ---- sidebar ----
-
 export function ListIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...props}>
@@ -285,8 +276,6 @@ export function SettingsIcon(props: IconProps) {
   )
 }
 
-// ---- file-type tiles (always white on a coloured tile) ----
-
 const tile = {
   fill: 'none',
   stroke: '#fff',
@@ -343,7 +332,6 @@ export function FileTypeIcon({ type, ...props }: IconProps & { type: FileType })
   }
 }
 
-/** The brand mark, shared with the server-rendered login page. */
 export function Logo(props: IconProps) {
   return (
     <svg viewBox="0 0 48 48" {...props}>

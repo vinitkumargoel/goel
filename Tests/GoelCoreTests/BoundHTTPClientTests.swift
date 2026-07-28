@@ -6,16 +6,8 @@ import Glibc
 import Darwin
 #endif
 
-/// Exercises the interface-bound curl path against a real socket.
-///
-/// The unranged mode (`rangeStart < 0`) exists so a download pinned to one
-/// interface still egresses it when the server does not support ranges — the
-/// alternative was silently falling back to `URLSession`, which cannot bind, and
-/// therefore ignoring the pin. Getting the C side wrong would send a malformed
-/// `Range: bytes=-1--1` on every such request, so it is checked on the wire.
 final class BoundHTTPClientTests: XCTestCase {
 
-    /// Captures the request line + headers the server actually received.
     private final class Recorder: @unchecked Sendable {
         private let lock = NSLock()
         private var text = ""
@@ -23,7 +15,6 @@ final class BoundHTTPClientTests: XCTestCase {
         func get() -> String { lock.lock(); defer { lock.unlock() }; return text }
     }
 
-    /// Accumulates the sizes handed to `onBytes` from the curl thread.
     private final class Tally: @unchecked Sendable {
         private let lock = NSLock()
         private var sum = 0
@@ -31,13 +22,6 @@ final class BoundHTTPClientTests: XCTestCase {
         var total: Int { lock.lock(); defer { lock.unlock() }; return sum }
     }
 
-    /// One-shot HTTP/1.1 server on loopback. Hand-rolled because Foundation has no
-    /// server and the portal's own listener is Network.framework — Darwin only,
-    /// while interface binding is a Linux feature above all.
-    ///
-    /// It answers every request with `200 OK` and the full body — including ranged
-    /// ones, which is exactly the "server ignored Range" case the bound path has
-    /// to survive.
     private func serveOnce(body: Data, recorder: Recorder,
                            extraHeaders: [String: String] = [:]) throws -> UInt16 {
         let listener = socket(AF_INET, PlatformSocket.stream, 0)
@@ -48,7 +32,7 @@ final class BoundHTTPClientTests: XCTestCase {
 
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = 0                                  // kernel picks a free port
+        addr.sin_port = 0
         addr.sin_addr.s_addr = inet_addr("127.0.0.1")
         #if canImport(Darwin)
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -84,9 +68,7 @@ final class BoundHTTPClientTests: XCTestCase {
             close(listener)
             guard client >= 0 else { return }
             defer { close(client) }
-            // curl hangs up the moment the C write thunk refuses a body (ranged
-            // 200, external abort), so the remaining writes must fail the call —
-            // not signal-kill the test process.
+            // Suppress SIGPIPE: curl hangs up on a refused body and the signal would kill the test process.
             #if canImport(Darwin)
             var noSigpipe: Int32 = 1
             setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe,
@@ -140,7 +122,6 @@ final class BoundHTTPClientTests: XCTestCase {
             extraHeaders: [:], connectTimeout: 10, expectedTotal: nil)
     }
 
-    /// The whole point of the new mode: no `Range` header at all, full body.
     func testNegativeStartSendsNoRangeHeaderAndStreamsEverything() async throws {
         let payload = Data((0..<64_000).map { UInt8($0 % 251) })
         let recorder = Recorder()
@@ -165,7 +146,6 @@ final class BoundHTTPClientTests: XCTestCase {
                        "an unranged request must not carry a Range header:\n\(seen)")
     }
 
-    /// The pre-existing ranged mode must keep sending exactly what it always did.
     func testRangedRequestStillSendsAnInclusiveRange() async throws {
         let payload = Data(repeating: 0x41, count: 4096)
         let recorder = Recorder()
@@ -184,8 +164,6 @@ final class BoundHTTPClientTests: XCTestCase {
                       "expected an inclusive range:\n\(recorder.get())")
     }
 
-    /// An inverted range is a caller bug; it must be refused before a socket is
-    /// opened rather than sent to the server as nonsense.
     func testInvertedRangeIsRejectedWithoutConnecting() async throws {
         let path = destination()
         defer { try? FileManager.default.removeItem(at: path) }
@@ -193,18 +171,12 @@ final class BoundHTTPClientTests: XCTestCase {
         let handle = try FileHandle(forWritingTo: path)
         defer { try? handle.close() }
 
-        // Port 1 is never listening; reaching the network at all would be the bug.
         let response = await BoundHTTPClient.downloadRange(
             request(port: 1, start: 500, end: 100), file: handle, fileOffset: 0, limiter: nil)
         XCTAssertNotEqual(response.curlCode, 0)
         XCTAssertEqual(response.bytesWritten, 0)
     }
 
-    // MARK: Live byte accounting
-
-    /// `Σ onBytes == Response.bytesWritten` is the invariant the segment pump's
-    /// live ledger credits rest on: the pump now credits progress from the tally
-    /// alone, so any divergence would double-count or lose bytes on every attempt.
     func testOnBytesTallyMatchesBytesWritten() async throws {
         let payload = Data((0..<64_000).map { UInt8($0 % 251) })
         let recorder = Recorder()
@@ -227,9 +199,6 @@ final class BoundHTTPClientTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: path), payload)
     }
 
-    /// The mid-flight upgrade stops a bound stream through `shouldAbort`. Nothing
-    /// may reach the file after the flag flips, and the response has to say it
-    /// aborted even when curl finished the same tick.
     func testShouldAbortStopsTransferAndReportsAborted() async throws {
         let payload = Data(repeating: 0x7E, count: 512 * 1024)
         let recorder = Recorder()
@@ -240,8 +209,6 @@ final class BoundHTTPClientTests: XCTestCase {
         FileManager.default.createFile(atPath: path.path, contents: nil)
         let handle = try FileHandle(forWritingTo: path)
 
-        // Flips after the first write callback, so the transfer is stopped
-        // mid-body with a non-empty, fully accounted prefix on disk.
         let tally = Tally()
         let response = await BoundHTTPClient.downloadRange(
             request(port: port, start: -1, end: -1), file: handle, fileOffset: 0,
@@ -259,11 +226,6 @@ final class BoundHTTPClientTests: XCTestCase {
                        "the file must hold exactly the bytes the response claims")
     }
 
-    // MARK: Validators + ranged 200
-
-    /// The bound path has no `HTTPURLResponse`, so the C header thunk is the only
-    /// place validators can come from — and without them the upgrade refuses to
-    /// mix a streamed prefix with ranged tail bytes.
     func testResponseCarriesValidators() async throws {
         let payload = Data(repeating: 0x11, count: 1024)
         let recorder = Recorder()
@@ -304,10 +266,6 @@ final class BoundHTTPClientTests: XCTestCase {
         XCTAssertNil(response.lastModified)
     }
 
-    /// A ranged GET answered with a final 200 means the server ignored Range: the
-    /// body is the whole file and useless to a segment. It must be refused before
-    /// the first body byte, and must NOT report `aborted` — Swift reads that as a
-    /// user pause and would hang the task.
     func testRangedTwoHundredAbortsEarlyWithRangeIgnored() async throws {
         let payload = Data(repeating: 0x3C, count: 256 * 1024)
         let recorder = Recorder()
@@ -332,9 +290,6 @@ final class BoundHTTPClientTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: path).count, 0)
     }
 
-    /// Binding to loopback proves the socket option is honoured end to end.
-    /// Skipped rather than failed where the sandbox forbids it — the assertion
-    /// that matters (unranged wire format) is covered above without binding.
     func testBindingToLoopbackStillReachesTheServer() async throws {
         #if canImport(Glibc)
         let loopback = "lo"

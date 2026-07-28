@@ -1,12 +1,6 @@
 import Foundation
 import CurlBridge
 
-/// Blocking HTTP(S) ranged GET pinned to a network interface via CurlBridge
-/// (`IP_BOUND_IF` / `SO_BINDTODEVICE`). Runs on a dedicated thread — never the
-/// cooperative pool — matching ``FTPEngine``.
-///
-/// Aggregate rate limiting is applied via Swift ``RateLimiter`` (curl's own
-/// per-handle cap stays 0) so N multi-path handles do not N× the user cap.
 enum BoundHTTPClient {
 
     struct Request: Sendable {
@@ -19,8 +13,7 @@ enum BoundHTTPClient {
         var authorization: String?
         var extraHeaders: [String: String]
         var connectTimeout: Double
-        /// When > 0, CurlBridge requires Content-Range total to match and aborts
-        /// before writing a mismatched body.
+        /// When > 0, CurlBridge aborts before writing a body whose Content-Range total differs.
         var expectedTotal: Int64?
     }
 
@@ -31,24 +24,17 @@ enum BoundHTTPClient {
         var bytesWritten: Int64
         var aborted: Bool
         var rangeTotalMismatch: Bool
-        /// 1:1 with GCBHTTPResult.range_ignored: a *ranged* request was answered with a
-        /// final 200 — the server ignored Range; C aborted before the first body byte.
+        /// Server answered a ranged request with a final 200; C aborted before the first body byte.
         var rangeIgnored: Bool = false
-        /// Validators of the final response, captured by the C header thunk (the
-        /// bound path has no HTTPURLResponse to read them from).
         var etag: String? = nil
         var lastModified: String? = nil
     }
 
-    /// Context shared with C write/progress callbacks. `@unchecked Sendable` —
-    /// body writes run on the curl thread; `abort` may flip from any thread.
+    /// `@unchecked Sendable`: body writes run on the curl thread, `abort` may flip from any thread.
     final class TransferContext: @unchecked Sendable {
         let handle: FileHandle
         let limiter: RateLimiter?
         let onBytes: (@Sendable (Int) -> Void)?
-        /// External stop signal (the mid-flight upgrade trip). Folded into
-        /// `aborted` so all three consumers — write thunk, progress thunk and
-        /// the final `Response.aborted` — observe it consistently.
         let shouldAbort: (@Sendable () -> Bool)?
         private let lock = NSLock()
         private var _aborted = false
@@ -74,7 +60,6 @@ enum BoundHTTPClient {
             lock.lock(); _aborted = true; lock.unlock()
         }
 
-        /// Pace after accumulating ~64 KiB (or force flush remaining).
         func paceIfNeeded(_ size: Int, force: Bool = false) {
             guard limiter != nil else { return }
             lock.lock()
@@ -93,7 +78,6 @@ enum BoundHTTPClient {
         }
     }
 
-    /// Run a ranged GET on a dedicated thread, writing at `fileOffset`.
     static func downloadRange(
         _ request: Request,
         file: FileHandle,
@@ -194,7 +178,6 @@ enum BoundHTTPClient {
         )
     }
 
-    /// GCBHTTPResult's char arrays arrive as homogeneous CChar tuples.
     private static func cString<T>(_ tuple: T) -> String? {
         withUnsafeBytes(of: tuple) { buf in
             guard let base = buf.baseAddress else { return nil }
@@ -203,8 +186,6 @@ enum BoundHTTPClient {
         }
     }
 }
-
-// MARK: - C thunks
 
 private func boundWriteThunk(_ data: UnsafePointer<CChar>?, _ size: Int, _ userdata: UnsafeMutableRawPointer?) -> Int {
     guard let data, let userdata, size > 0 else { return size }

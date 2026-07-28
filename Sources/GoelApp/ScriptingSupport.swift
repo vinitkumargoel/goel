@@ -1,18 +1,7 @@
 import Foundation
 import AppKit
 
-// AppleScript / Automator / Shortcuts-via-Run-AppleScript surface.
-//
-// The packaged app's Info.plist enables scripting (`NSAppleScriptEnabled`)
-// and points `OSAScriptingDefinition` at `GoelDownloader.sdef`, whose command
-// entries name these classes. Apple events are delivered on the main thread,
-// so hopping straight into the main-actor view model is sound.
-//
-// Example:
-//   tell application "GoelDownloader"
-//       add download "https://example.com/file.zip"
-//       pause all downloads
-//   end tell
+// Apple events arrive on the main thread, which is what makes `assumeIsolated` below safe.
 
 @objc(AddDownloadScriptCommand)
 final class AddDownloadScriptCommand: NSScriptCommand {
@@ -23,8 +12,7 @@ final class AddDownloadScriptCommand: NSScriptCommand {
             scriptErrorString = "Pass the URL to download."
             return nil
         }
-        // Same trusted local-automation path as the Services menu: the user
-        // wrote the script, so no web-origin confirmation banner.
+        // Trusted local automation only — web-origin adds must not be routed here, they need the banner.
         MainActor.assumeIsolated {
             ExternalAdd.post(lines: line)
         }

@@ -1,10 +1,6 @@
 import { BOOT } from './boot'
 
-/**
- * The four named themes, mirrored from `Theme.swift` and defined in
- * `styles/themes.css`. The desktop app sets the default a fresh browser starts
- * with; the choice made here is per-browser and independent of it.
- */
+/** Mirrored from `Theme.swift` and `styles/themes.css` — a new theme must be added in all three. */
 export const THEMES = ['frost-light', 'frost-dark', 'dracula', 'nord'] as const
 
 export type Theme = (typeof THEMES)[number]
@@ -16,7 +12,6 @@ export const THEME_LABEL: Record<Theme, string> = {
   nord: 'Nord',
 }
 
-/** Swatch colours for the settings picker — each theme's `--accent`. */
 export const THEME_ACCENT: Record<Theme, string> = {
   'frost-light': '#3F58D6',
   'frost-dark': '#8AA2FF',
@@ -44,30 +39,17 @@ function writeStored(theme: Theme): void {
   try {
     localStorage.setItem(STORAGE_KEY, theme)
   } catch {
-    // A theme that doesn't survive a reload is a much smaller problem than a
-    // theme switch that throws and leaves the settings pane half-rendered.
+    // Swallowed: a throwing theme switch would leave the settings pane half-rendered.
   }
 }
 
-/**
- * The theme to start from: the user's own choice if they have made one, else
- * the server's default.
- *
- * The distinction matters — a browser that has never picked a theme keeps
- * *following* the server, so changing the theme on the desktop moves it too.
- * That only works because nothing persists the server default on first paint.
- */
+/** Never persist `BOOT.theme`: a browser follows the desktop default only while nothing is stored. */
 export function initialTheme(): Theme {
   const stored = readStored()
   if (stored) return stored
   return isTheme(BOOT.theme) ? BOOT.theme : 'frost-dark'
 }
 
-/**
- * Themes are CSS variables keyed off `html[data-theme]`, so switching is one
- * attribute write and no re-render of anything that isn't already reading a
- * variable.
- */
 export function applyTheme(theme: Theme, persist: boolean): void {
   document.documentElement.dataset['theme'] = theme
   if (persist) writeStored(theme)

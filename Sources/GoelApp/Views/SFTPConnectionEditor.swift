@@ -2,9 +2,6 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-/// Add / edit an SFTP server. Passwords go straight to the Keychain; leaving
-/// the field blank when editing keeps the stored one. "Test" connects and shows
-/// the server's host-key fingerprint so the user can confirm it's the right box.
 struct SFTPConnectionEditor: View {
     @EnvironmentObject private var vm: AppViewModel
     @Environment(\.dismiss) private var dismiss
@@ -20,30 +17,20 @@ struct SFTPConnectionEditor: View {
     @State private var useAgent: Bool
     @State private var privateKeyPath: String
     @State private var keyPassphrase: String
-    /// True once the user edits the passphrase field, so an untouched field means
-    /// "keep the stored passphrase" rather than "clear it".
+    /// An untouched passphrase field means "keep the stored passphrase", not "clear it".
     @State private var keyPassphraseEdited = false
 
     @State private var testing = false
     @State private var testResult: TestResult?
     @State private var hostKeyReset = false
-    /// Drives an `.alert`, not ``AppViewModel/requestConfirm(title:message:confirmTitle:destructive:onConfirm:)``:
-    /// the shared confirm dialog is an `.overlay` on `RootView`'s content, and
-    /// this editor is a `.sheet` stacked above that content — so the dialog would
-    /// be drawn permanently *behind* the sheet and the reset could never be
-    /// confirmed. An alert presents its own window and works from inside a sheet.
+    /// Must be an `.alert`: the shared confirm dialog is an overlay on `RootView`, so this sheet would hide it.
     @State private var confirmingHostKeyReset = false
 
     private enum TestResult {
         case success(String)
-        /// `retry` is set when the failure is worth simply trying again — a
-        /// refused Keychain prompt, chiefly, where nothing about the entered
-        /// details is wrong and re-asking can succeed.
         case failure(String, detail: String?, retry: RetryAction? = nil)
     }
 
-    /// What a Retry button should re-run. Identified so SwiftUI can tell two
-    /// otherwise-identical failures apart.
     private enum RetryAction { case test, save }
 
     init(existing: SFTPConnection?) {
@@ -63,8 +50,7 @@ struct SFTPConnectionEditor: View {
         guard let n = Int(port), (1...65535).contains(n) else { return 22 }
         return n
     }
-    /// Whether the Port field holds a valid 1–65535 integer. Guards Save/Test so
-    /// invalid text is never silently coerced to 22 behind the user's back.
+    /// Guards Save/Test so invalid text is never silently coerced to 22 behind the user's back.
     private var portIsValid: Bool {
         guard let n = Int(port) else { return false }
         return (1...65535).contains(n)
@@ -144,9 +130,6 @@ struct SFTPConnectionEditor: View {
         }
     }
 
-    /// Private-key auth: pick a key file, and (only once one is chosen) supply
-    /// its passphrase. Auth order at connect time is password, then key, then
-    /// agent — each tried only when configured, so any combination works.
     @ViewBuilder
     private var privateKeyControls: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -189,8 +172,7 @@ struct SFTPConnectionEditor: View {
         }
     }
 
-    /// The key path with a leading `~` resolved, which is what the C bridge and
-    /// the readability check both need — libssh2 does no tilde expansion.
+    /// libssh2 does no tilde expansion, so `~` must be resolved before it or the readability check sees the path.
     private var expandedKeyPath: String {
         (privateKeyPath as NSString).expandingTildeInPath
     }
@@ -200,7 +182,6 @@ struct SFTPConnectionEditor: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        // Keys live in ~/.ssh, which is hidden and full of extensionless files.
         panel.showsHiddenFiles = true
         panel.treatsFilePackagesAsDirectories = true
         panel.message = "Choose an SSH private key (for example id_ed25519 — not the .pub file)."
@@ -212,10 +193,7 @@ struct SFTPConnectionEditor: View {
         }
     }
 
-    /// Forget the pinned SSH fingerprint so the next connection asks about the
-    /// key again — the in-app recovery after a legitimate server rekey, and the
-    /// only way out of a pin record Goel can no longer read (either fails closed
-    /// and permanently blocks the connection).
+    /// Drops the pinned SSH fingerprint: the next connection trusts whatever key is presented, so this is rekey-only.
     @ViewBuilder
     private var hostKeyResetControl: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -245,28 +223,19 @@ struct SFTPConnectionEditor: View {
                     .a11yDecorative()
                 Text(fp).scaledFont(size: 10, design: .monospaced)
                     .foregroundStyle(.secondary).textSelection(.enabled).lineLimit(2)
-                    // Base64 read as words is unverifiable; spell it out, which
-                    // is the only way to compare it against the server's own
-                    // `ssh-keygen -lf` output by ear.
+                    // Spelled out character by character: base64 read as words cannot be checked against `ssh-keygen -lf`.
                     .accessibilityLabel("Host key SHA-256 fingerprint")
                     .accessibilityValue(fp.map { "\($0) " }.joined())
             }
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-            // The panel appears after an async test without taking focus, so
-            // group it as one readable result rather than four loose strings.
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Connection test succeeded")
         case .failure(let message, let detail, let retry):
-            // Lead with what the user can act on; keep libssh2's own wording
-            // available but subordinate, since it names a cause ("Unable to
-            // exchange encryption keys") that is usually not the actual fault.
             VStack(alignment: .leading, spacing: 6) {
                 Label(message, systemImage: "xmark.octagon.fill")
                     .foregroundStyle(Theme.red).scaledFont(size: 12)
                     .fixedSize(horizontal: false, vertical: true)
-                    // The octagon glyph and the red tint are the only marks of
-                    // failure; neither survives to a screen reader.
                     .accessibilityLabel("Connection test failed. \(message)")
                 if let retry {
                     Button {
@@ -298,11 +267,7 @@ struct SFTPConnectionEditor: View {
         }
     }
 
-    // MARK: Actions
-
-    /// The pin that blocks a connection belongs to the *saved* endpoint — the
-    /// host and port fields may have been edited since — so the reset targets
-    /// that, not the draft.
+    /// The pin belongs to the saved endpoint, not the draft: host/port may have been edited since.
     private var pinnedEndpointHost: String { existing?.host ?? host }
     private var pinnedEndpointPort: Int { existing?.port ?? portNumber }
 
@@ -314,18 +279,14 @@ struct SFTPConnectionEditor: View {
         }
         testResult = nil
         hostKeyReset = true
-        // Connections are pooled, and each one carries the pin it was built with
-        // for every reconnect. Without this the reset would clear the store but
-        // the live connection would keep demanding the old key, and "reset and
-        // re-verify" would appear to do nothing until the app was restarted.
+        // Pooled connections carry the pin they were built with; without this the live one still demands the old key.
         let endpoint = SFTPTarget(host: pinnedEndpointHost, port: pinnedEndpointPort,
                                   username: existing?.username ?? username, password: nil)
         Task { await SFTPSessionPool.shared.disconnectAll(matching: endpoint) }
     }
 
     private func draftConnection() -> SFTPConnection {
-        // Store the tilde-expanded path: libssh2 opens it with plain fopen(), so
-        // a literal "~/.ssh/id_ed25519" would never resolve.
+        // libssh2 opens the key with plain fopen(), so a literal "~/.ssh/id_ed25519" would never resolve.
         let key = privateKeyPath.trimmingCharacters(in: .whitespaces)
         return SFTPConnection(id: existing?.id ?? UUID(),
                               name: name, host: host, port: portNumber,
@@ -335,20 +296,11 @@ struct SFTPConnectionEditor: View {
                               privateKeyPath: key.isEmpty ? nil : (key as NSString).expandingTildeInPath)
     }
 
-    /// Password to test with: the just-typed one, or nil to let
-    /// ``SFTPSession/resolve(for:password:keyPassphrase:credentialIdentity:store:hostKeys:)``
-    /// read the stored one.
-    ///
-    /// Deliberately does NOT pre-fetch from the Keychain: `resolve` already falls
-    /// back to the store, so fetching here too meant two Keychain reads — and
-    /// therefore two authorization prompts — for a single Test, with the first
-    /// one's refusal silently swallowed.
+    /// Deliberately does not pre-fetch the stored secret — that meant two Keychain prompts per Test.
     private func testPassword() -> String? {
         password.isEmpty ? nil : password
     }
 
-    /// Passphrase to test with: the just-typed one, else nil to fall back to the
-    /// store. Mirrors `testPassword()` so Test exercises what Save would persist.
     private func testKeyPassphrase() -> String? {
         keyPassphraseEdited ? keyPassphrase : nil
     }
@@ -360,13 +312,7 @@ struct SFTPConnectionEditor: View {
         let pw = testPassword()
         let phrase = testKeyPassphrase()
         Task {
-            // Explicit `password:` so an empty field + agent-only auth doesn't
-            // re-pull a stale Keychain secret mid-edit of the password field.
-            //
-            // `credentialIdentity: existing` because secrets are keyed by
-            // user@host:port: if the user edited the host and didn't retype the
-            // password, the draft's key points at nothing and Test would fail
-            // authentication against a server whose password is on file.
+            // Explicit `password:` avoids re-pulling a stale secret; `credentialIdentity:` because secrets are keyed by user@host:port, which may have been edited.
             let client: SFTPClient
             switch SFTPSession.resolve(for: connection, password: pw, keyPassphrase: phrase,
                                        credentialIdentity: existing) {
@@ -377,8 +323,6 @@ struct SFTPConnectionEditor: View {
                 testResult = .failure("Enter a host and username first.", detail: nil)
                 return
             case .credentialsUnavailable(let lookup):
-                // Nothing reached the server, so this is not a bad password —
-                // offer the retry that can actually fix it.
                 let e = SFTPError.credentialsUnavailable(lookup, host: connection.host)
                 testing = false
                 testResult = .failure(e.message, detail: e.detail,
@@ -401,15 +345,10 @@ struct SFTPConnectionEditor: View {
     }
 
     private func save() {
-        // nil password / passphrase = keep the existing secret; a typed one replaces it.
         let isNew = existing == nil
         let outcome = vm.saveServer(draftConnection(),
                                     password: password.isEmpty ? nil : password,
                                     keyPassphrase: keyPassphraseEdited ? keyPassphrase : nil)
-        // The server list itself always persists; only the Keychain half can be
-        // refused. Staying open with a Retry beats dismissing on a "save" that
-        // didn't store the secret — the next connection would fail for no
-        // visible reason.
         guard outcome.didStore else {
             testResult = .failure(
                 outcome.isRetryable

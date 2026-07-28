@@ -1,11 +1,6 @@
 import Foundation
 import GoelCore
 
-/// Optional hand-off to a user-installed `yt-dlp` for video-site pages: given
-/// a page URL, it resolves the direct media stream (plus a human title) that
-/// the normal engines can download. Nothing here runs unless the user has
-/// installed yt-dlp themselves and explicitly clicks the resolve button —
-/// the app never downloads or bundles the tool.
 enum YtDlpResolver {
 
     struct Resolved {
@@ -14,11 +9,6 @@ enum YtDlpResolver {
         var fileExtension: String?
     }
 
-    /// Resolve the yt-dlp binary. A packaged build carries its own copy inside
-    /// `Contents/Resources/` (see `Scripts/fetch_ytdlp.sh`), so the feature works
-    /// on a machine with nothing installed; we prefer that. Dev builds (run via
-    /// `swift run`, no bundle copy) and users who keep their own newer yt-dlp
-    /// fall back to the common install locations (Homebrew arm64/intel, pipx/pip).
     static var executable: URL? {
         var candidates: [String] = []
         if let bundled = Bundle.main.resourceURL?
@@ -37,27 +27,12 @@ enum YtDlpResolver {
 
     static var isAvailable: Bool { executable != nil }
 
-    /// The outcome of resolving a page to a direct stream, distinguishing a
-    /// genuine failure (which carries yt-dlp's own explanation) from the caller
-    /// walking away mid-run, which must stay silent.
     enum ResolveOutcome: Sendable {
         case resolved(Resolved)
-        /// Sheet dismissed / Cancel — no toast, no stale UI.
         case cancelled
         case failed(String)
     }
 
-    /// Ask yt-dlp for the best *muxed* format (a single downloadable URL — no
-    /// ffmpeg merge step) of the media behind `url`.
-    ///
-    /// `formatSelector` is a yt-dlp format id chosen by the user in
-    /// ``MediaFormatPicker``. When nil the default `b` (best muxed) is used —
-    /// deliberately not a guess at an id, because an id that does not exist for
-    /// this video makes yt-dlp fail outright rather than fall back. That failure
-    /// is precisely why this returns a reason rather than a bare nil: yt-dlp's own
-    /// line ("Requested format is not available", "Sign in to confirm…") is the
-    /// only thing that tells the user whether to clear the quality choice, sign
-    /// in, or try another page — and each needs a different remedy.
     static func resolveMedia(_ url: URL, formatSelector: String? = nil) async -> ResolveOutcome {
         guard let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else {
@@ -67,7 +42,6 @@ enum YtDlpResolver {
 
         let result: ToolRun
         do {
-            // Watchdog: some extractors hang on slow sites; kill after 45 s.
             result = try await run(["-j", "--no-playlist", "--no-warnings",
                                     "-f", formatSelector ?? "b", url.absoluteString],
                                    timeoutSeconds: 45)
@@ -85,8 +59,6 @@ enum YtDlpResolver {
               let mediaString = object["url"] as? String,
               let media = URL(string: mediaString),
               ["http", "https"].contains(media.scheme?.lowercased() ?? "") else {
-            // Exit 0 but no direct stream: usually a format that needs an ffmpeg
-            // merge, which this app can't download as a single URL.
             return .failed("yt-dlp didn’t report a single downloadable stream for that page.")
         }
         return .resolved(Resolved(
@@ -95,9 +67,6 @@ enum YtDlpResolver {
             fileExtension: object["ext"] as? String))
     }
 
-    /// Nil-on-anything-wrong shim over ``resolveMedia(_:formatSelector:)`` for
-    /// callers that have nowhere to show a reason. Prefer the outcome-returning
-    /// form — discarding the reason is what makes a failure undiagnosable.
     static func resolve(_ url: URL, formatSelector: String? = nil) async -> Resolved? {
         guard case .resolved(let resolved) = await resolveMedia(url, formatSelector: formatSelector) else {
             return nil
@@ -105,20 +74,12 @@ enum YtDlpResolver {
         return resolved
     }
 
-    /// The outcome of a subtitle fetch, distinguishing "wrote N files" from the
-    /// legitimately-common "this video has none" and a genuine failure (yt-dlp
-    /// missing, launch error, or a non-zero exit) so the caller can stay quiet on
-    /// `none` but surface `failed`.
     enum SubtitleOutcome: Sendable {
         case downloaded(Int)
         case none
         case failed(String)
     }
 
-    /// Fetch subtitles for `pageURL` into `directory`, named to sit beside the
-    /// video (`<baseName>.<lang>.<ext>`). Runs yt-dlp with `--skip-download` so no
-    /// media is re-fetched. `languages` is a comma/space list of codes; when
-    /// `includeAuto` is set, machine captions are accepted as a fallback.
     @discardableResult
     static func downloadSubtitles(pageURL: URL, into directory: String, baseName: String,
                                   languages: String, includeAuto: Bool) async -> SubtitleOutcome {
@@ -138,8 +99,7 @@ enum YtDlpResolver {
         if includeAuto { args.append("--write-auto-subs") }
         args += ["--sub-langs", langArg, "-o", template, pageURL.absoluteString]
 
-        // Snapshot the directory so we can count only the subtitle files this run
-        // produced (yt-dlp exits 0 even when a video simply has no subtitles).
+        // yt-dlp exits 0 even when a video has no subtitles, so count only what this run added.
         let fm = FileManager.default
         let before = Set((try? fm.contentsOfDirectory(atPath: directory)) ?? [])
 
@@ -166,8 +126,7 @@ enum YtDlpResolver {
             if process.isRunning { process.terminate() }
         }
         watchdog.cancel()
-        // Caller walked away (sheet dismissed / Cancel): the terminated process
-        // exits non-zero, so bail quietly instead of surfacing a stale toast.
+        // Must precede the status guard: a cancelled run's terminated process exits non-zero.
         if Task.isCancelled { return .none }
         guard process.terminationStatus == 0 else {
             let msg = String(data: errData, encoding: .utf8)?
@@ -182,25 +141,18 @@ enum YtDlpResolver {
         return count > 0 ? .downloaded(count) : .none
     }
 
-    // MARK: - Shared process plumbing
-
-    /// The captured result of one yt-dlp invocation.
     private struct ToolRun {
         var stdout: Data
         var stderr: Data
         var status: Int32
     }
 
-    /// Why a yt-dlp run could not even be attempted.
     private enum LaunchFailure: Error {
         case notInstalled
         case couldNotLaunch(String)
     }
 
-    /// Run yt-dlp with `arguments`, capturing both streams, with a watchdog and
-    /// cooperative cancellation. Both pipes are drained concurrently — a listing
-    /// large enough to fill the stdout pipe while stderr also has content would
-    /// otherwise deadlock, which is exactly what a 3 000-video channel does.
+    /// Both pipes must drain concurrently or a large listing deadlocks on a full pipe.
     private static func run(_ arguments: [String], timeoutSeconds: UInt64) async throws -> ToolRun {
         guard let executable else { throw LaunchFailure.notInstalled }
         let process = Process()
@@ -236,9 +188,6 @@ enum YtDlpResolver {
         return ToolRun(stdout: outData, stderr: errData, status: process.terminationStatus)
     }
 
-    /// The last meaningful line of yt-dlp's stderr, or `fallback`. yt-dlp puts the
-    /// actionable sentence last ("Video unavailable", "Sign in to confirm…"), and
-    /// showing that beats a generic failure toast.
     private static func message(from stderr: Data, fallback: String) -> String {
         let text = String(data: stderr, encoding: .utf8) ?? ""
         let line = text
@@ -249,21 +198,11 @@ enum YtDlpResolver {
         return String(line.suffix(200))
     }
 
-    // MARK: - Format listing
-
-    /// The outcome of asking yt-dlp what renditions a page offers.
     enum FormatListOutcome: Sendable {
         case formats([MediaFormat])
         case failed(String)
     }
 
-    /// List the renditions behind `url` via `yt-dlp -F`, parsed into pickable rows.
-    ///
-    /// This is the metadata pass behind ``MediaFormatPicker``: one cheap call, no
-    /// media fetched. The table (rather than `--dump-json`) is what gets parsed —
-    /// see ``MediaFormatTable`` for why — and rows the parser doesn't recognise
-    /// are dropped rather than guessed at, so a layout change degrades to a
-    /// shorter list instead of wrong sizes.
     static func listFormats(_ url: URL) async -> FormatListOutcome {
         guard let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else {
@@ -278,8 +217,7 @@ enum YtDlpResolver {
         } catch {
             return .failed("Couldn’t start yt-dlp.")
         }
-        // Sheet dismissed / Cancel: the terminated process exits non-zero, so bail
-        // quietly instead of surfacing a stale error.
+        // Must precede the status guard: a cancelled run's terminated process exits non-zero.
         if Task.isCancelled { return .formats([]) }
         guard result.status == 0 else {
             return .failed(message(from: result.stderr,
@@ -293,27 +231,13 @@ enum YtDlpResolver {
         return .formats(formats)
     }
 
-    // MARK: - Playlist / channel expansion
-
-    /// The outcome of expanding a playlist or channel URL into its items.
     enum PlaylistOutcome: Sendable {
         case expanded(PlaylistExpansion)
-        /// The URL resolved to a single video — the caller should fall back to the
-        /// ordinary one-URL add path rather than show an empty checklist.
         case notAPlaylist
         case failed(String)
     }
 
-    /// Enumerate the items of a playlist/channel URL with `--flat-playlist -J`.
-    ///
-    /// `--flat-playlist` is what keeps this affordable: yt-dlp lists the entries
-    /// without visiting each video page, so a 500-item playlist is one request
-    /// rather than 501. The trade is that per-item metadata (duration, exact
-    /// size) is often absent — hence the optional fields on ``PlaylistItem``.
-    ///
-    /// The 4-minute watchdog is generous on purpose: a large channel legitimately
-    /// takes minutes to page through, and killing it early would look like the
-    /// feature is broken on exactly the inputs it exists for.
+    /// 240s watchdog: a legitimately large channel takes minutes to enumerate.
     static func expandPlaylist(_ url: URL) async -> PlaylistOutcome {
         guard let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else {
@@ -342,8 +266,6 @@ enum YtDlpResolver {
         return .expanded(expansion)
     }
 
-    /// Build the add-flow preview for a resolved stream. HLS manifests route to
-    /// the HLS engine; direct files to HTTP.
     static func preview(for resolved: Resolved) -> DownloadPreview? {
         guard let source = DownloadSource.parse(resolved.mediaURL.absoluteString) else { return nil }
         let ext = resolved.fileExtension ?? (source.kind == .hls ? "mp4" : "bin")

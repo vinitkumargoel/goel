@@ -1,9 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// What may be offered as a download uplink. These are Linux-shaped cases: a box
-/// running Docker and Tailscale has a dozen interfaces with addresses, and all
-/// but one or two are dead ends.
 final class AdapterFilterTests: XCTestCase {
 
     func testContainerAndBridgePlumbingIsHidden() {
@@ -20,8 +17,7 @@ final class AdapterFilterTests: XCTestCase {
         }
     }
 
-    /// `tailscale0` matches neither `tun*` nor any virtual prefix, so before this
-    /// it was offered as an uplink — pinning a download to the tailnet.
+    /// `tailscale0` matches neither `tun*` nor any virtual prefix, so it was once offered as an uplink.
     func testPlainlyNamedTunnelsAreTreatedAsVPNs() {
         for name in ["tailscale0", "zt5u4uv63f", "nebula1", "proton0", "nordlynx",
                      "utun3", "wg0", "tun0", "ipsec0", "ppp0"] {
@@ -45,8 +41,6 @@ final class AdapterFilterTests: XCTestCase {
         XCTAssertEqual(usable.map(\.bsdName), ["eth0", "wlan0"])
     }
 
-    // MARK: What a single task may bind to
-
     private func settings(proxy: String = "none", aggregation: Bool = false,
                           selected: [String] = [], outsideVPN: Bool = false) -> AppSettings {
         var s = AppSettings()
@@ -57,8 +51,6 @@ final class AdapterFilterTests: XCTestCase {
         return s
     }
 
-    /// The saved selection and the aggregation toggle both describe a default the
-    /// task is overriding, so neither may narrow what it can pin to.
     func testBindableIgnoresTheSavedSelectionAndTheToggle() {
         let all = [adapter("eth0"), adapter("wlan0", type: "wifi", expensive: true)]
         let bindable = DownloadManager.bindableAdapters(
@@ -67,8 +59,7 @@ final class AdapterFilterTests: XCTestCase {
         XCTAssertEqual(bindable.map(\.bsdName), ["eth0", "wlan0"])
     }
 
-    /// Binding a socket to a NIC bypasses the proxy entirely, so a configured
-    /// proxy has to remove the choice rather than merely discourage it.
+    /// Binding a socket to a NIC bypasses the proxy entirely, so a proxy must remove the choice.
     func testProxyRemovesEveryBindTarget() {
         let all = [adapter("eth0"), adapter("wlan0")]
         for mode in ["manual", "system"] {
@@ -86,8 +77,6 @@ final class AdapterFilterTests: XCTestCase {
             settings: settings(outsideVPN: true), vpnDefaultRoute: true, all: all)
             .map(\.bsdName), ["eth0", "wlan0"])
     }
-
-    // MARK: The engine snapshot
 
     func testAvailableIsPopulatedEvenWhenAggregationIsOff() {
         let all = [adapter("eth0"), adapter("wlan0")]

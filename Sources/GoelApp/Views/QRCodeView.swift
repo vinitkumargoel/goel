@@ -3,8 +3,6 @@ import AppKit
 import CoreImage.CIFilterBuiltins
 import Darwin
 
-/// A crisp (nearest-neighbour scaled) QR code for short setup strings — used by
-/// the Remote Access pane so a phone can join by pointing its camera.
 struct QRCodeView: View {
     let text: String
     var side: CGFloat = 116
@@ -18,9 +16,6 @@ struct QRCodeView: View {
                 .background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
-                // A QR code is an image of a string — useless to anyone who
-                // can't point a camera at it, and silent to VoiceOver. Expose
-                // the encoded address so it can be read out and copied instead.
                 .accessibilityLabel("QR code for \(text)")
         }
     }
@@ -38,11 +33,8 @@ struct QRCodeView: View {
     }
 }
 
-/// This Mac's primary LAN IPv4 address, for building the URL other devices use.
 enum LANAddress {
 
-    /// Prefers `en0` (the built-in Wi-Fi/Ethernet), falling back to the first
-    /// non-loopback IPv4 interface that is up.
     static func primaryIPv4() -> String? {
         var list: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&list) == 0 else { return nil }

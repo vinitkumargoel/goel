@@ -1,13 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// The relay pipe is what stands between a fast source and a slow destination.
-/// Its contract is small but every clause matters: bytes come out in order and
-/// intact, the writer is actually blocked when the buffer is full, and a failure
-/// on either side wakes the other rather than deadlocking a copy forever.
 final class SFTPRelayPipeTests: XCTestCase {
 
-    /// Drive `pipe.read` until end-of-stream and return everything it produced.
     private func drain(_ pipe: SFTPRelayPipe, chunk: Int = 4096) -> [UInt8] {
         var out: [UInt8] = []
         var buffer = [UInt8](repeating: 0, count: chunk)
@@ -28,8 +23,6 @@ final class SFTPRelayPipeTests: XCTestCase {
         let payload = (0..<10_000).map { UInt8($0 % 251) }
 
         let producer = Thread {
-            // Deliberately ragged writes, so a read has to span several queued
-            // chunks and resume mid-chunk.
             var offset = 0
             let sizes = [1, 7, 999, 3, 4096, 512]
             var i = 0
@@ -43,30 +36,24 @@ final class SFTPRelayPipeTests: XCTestCase {
         }
         producer.start()
 
-        // A read buffer that does not divide the payload, to exercise partial
-        // consumption of a queued chunk.
         XCTAssertEqual(drain(pipe, chunk: 333), payload)
     }
 
     func testWriterBlocksWhileTheBufferIsFull() {
-        let pipe = SFTPRelayPipe(capacity: 64 * 1024)   // clamped floor
+        let pipe = SFTPRelayPipe(capacity: 64 * 1024)
         let unblocked = XCTestExpectation(description: "writer completed")
         let secondWriteReturned = Flag()
         let payload = [UInt8](repeating: 0xAB, count: 200 * 1024)
 
         Thread {
-            _ = payload.withUnsafeBytes { pipe.write($0) }   // fits: one chunk
-            // The second write must wait, because the first already put more than
-            // `capacity` bytes in.
+            _ = payload.withUnsafeBytes { pipe.write($0) }
             _ = payload.withUnsafeBytes { pipe.write($0) }
             secondWriteReturned.set()
             pipe.finish()
             unblocked.fulfill()
         }.start()
 
-        // Nothing has read yet, so the producer cannot have got past the second
-        // write. Sampled rather than waited on, because an expectation may only
-        // be waited on once and it is needed again below.
+        // Sampled, not waited on: an expectation may only be waited on once, and it is needed below.
         Thread.sleep(forTimeInterval: 0.2)
         XCTAssertFalse(secondWriteReturned.isSet,
                        "the writer should still be parked on a full pipe")
@@ -75,7 +62,6 @@ final class SFTPRelayPipeTests: XCTestCase {
         wait(for: [unblocked], timeout: 2)
     }
 
-    /// A set-once flag readable from another thread.
     private final class Flag: @unchecked Sendable {
         private let lock = NSLock()
         private var value = false
@@ -90,7 +76,6 @@ final class SFTPRelayPipeTests: XCTestCase {
 
         Thread {
             _ = payload.withUnsafeBytes { pipe.write($0) }
-            // Parks; must return false once the consumer fails rather than hang.
             let accepted = payload.withUnsafeBytes { pipe.write($0) }
             XCTAssertFalse(accepted)
             refused.fulfill()

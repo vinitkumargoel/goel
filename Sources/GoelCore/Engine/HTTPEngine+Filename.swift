@@ -3,18 +3,9 @@ import Foundation
 import UniformTypeIdentifiers
 #endif  // on Linux, `UTType` is provided by LinuxCompat.swift
 
-// MARK: - Filename resolution (Content-Disposition / Content-Type)
-
-/// Pure, testable helpers that turn HTTP response headers into a good on-disk
-/// filename. Split out of ``HTTPEngine`` so the download driver stays focused on
-/// transfer mechanics; all three are `static` and side-effect free.
 extension HTTPEngine {
 
-    /// Parse a filename out of a `Content-Disposition` header. Prefers the
-    /// RFC 5987 extended form (`filename*=UTF-8''…`, percent-decoded) and falls
-    /// back to the plain `filename="…"`. Returns nil if the header is absent or
-    /// carries no usable name. (Path components are stripped later by
-    /// `sanitizedName`, so a hostile `filename="../x"` can't escape.)
+    /// RFC 5987 `filename*` wins over plain `filename`; the value is server-supplied, so callers must run it through `sanitizedName` or `../x` escapes.
     static func filename(fromContentDisposition header: String?) -> String? {
         guard let header, !header.isEmpty else { return nil }
         var plain: String?
@@ -23,10 +14,9 @@ extension HTTPEngine {
             let lower = part.lowercased()
             if lower.hasPrefix("filename*=") {
                 let value = String(part.dropFirst("filename*=".count))
-                // charset'lang'pct-encoded  ->  take the part after the second quote.
                 let encoded = value.range(of: "''").map { String(value[$0.upperBound...]) } ?? value
                 if let decoded = encoded.removingPercentEncoding, !decoded.isEmpty {
-                    return decoded   // extended form wins outright
+                    return decoded
                 }
             } else if lower.hasPrefix("filename=") {
                 let value = String(part.dropFirst("filename=".count))
@@ -37,8 +27,6 @@ extension HTTPEngine {
         return plain
     }
 
-    /// Preferred file extension for a MIME type (e.g. `video/mp4` -> `mp4`),
-    /// stripping any `; charset=…` / `; codecs=…` parameters first.
     static func fileExtension(forMIME mime: String?) -> String? {
         guard let mime else { return nil }
         let base = mime.components(separatedBy: ";").first?
@@ -47,11 +35,6 @@ extension HTTPEngine {
         return UTType(mimeType: base)?.preferredFilenameExtension
     }
 
-    /// Compute a better on-disk name once response headers are known, or nil if
-    /// the current name is already the best we can do. The server-supplied
-    /// `Content-Disposition` name wins; otherwise the existing (URL-derived) name
-    /// is kept but gains an extension inferred from `Content-Type` when it has
-    /// none. The result is sanitized + length-clamped by `sanitizedName`.
     static func refinedName(current: String, suggestedName: String?, contentType: String?) -> String? {
         var name = current
         if let suggested = suggestedName {

@@ -1,20 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Tests for the enterprise layer: MDM-managed preference layering, the audit
-/// log's redaction contract, the portal's per-IP login throttle, and the
-/// trusted-header SSO gate.
-///
-/// Three of these are security tests in disguise. The redaction cases assert
-/// that a full URL — query string, credentials and all — cannot reach the audit
-/// file; the throttle cases assert that a brute-force attempt actually gets
-/// slower; the SSO cases assert that the header is inert until an operator has
-/// named the proxy that may assert it.
 final class EnterpriseTests: XCTestCase {
 
-    // MARK: - Managed policy layering
-
-    /// An unmanaged Mac must behave exactly as it always has.
     func testEmptyPolicyChangesNothing() {
         let settings = AppSettings()
         let policy = ManagedPolicy()
@@ -44,8 +32,6 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertEqual(effective.updateFeedURL, "https://software.example.com/appcast.xml")
     }
 
-    /// Keys the administrator did NOT set must survive untouched — the policy is
-    /// an overlay, never a reset to defaults.
     func testUnmanagedKeysAreLeftAlone() {
         var settings = AppSettings()
         settings.theme = "aurora-light"
@@ -60,8 +46,6 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertEqual(effective.proxyMode, "system")
     }
 
-    /// The bandwidth ceiling is a clamp over every profile, so a user who
-    /// switches to "High" still cannot exceed what the administrator allowed.
     func testBandwidthCeilingClampsEveryProfile() {
         let settings = AppSettings()
         let ceiling: Int64 = 5 * 1024 * 1024
@@ -74,13 +58,10 @@ final class EnterpriseTests: XCTestCase {
             XCTAssertLessThanOrEqual(profile.maxDownloadBytesPerSec, ceiling,
                                      "\(profile.name) escaped the managed ceiling")
         }
-        // Low was already below the ceiling and must not be raised to it.
         let low = effective.profiles.first { $0.name == "Low" }
         XCTAssertEqual(low?.maxDownloadBytesPerSec, TrafficProfile.low.maxDownloadBytesPerSec)
     }
 
-    /// A ceiling is meaningless while the snail is off, so forcing one implies
-    /// forcing the limiter on.
     func testCeilingImpliesSpeedLimitEnabled() {
         var settings = AppSettings()
         settings.speedLimitEnabled = false
@@ -91,8 +72,6 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertEqual(effective.effectiveProfile.maxUploadBytesPerSec, 256 * 1024)
     }
 
-    /// …unless the administrator says otherwise on the very next key. An explicit
-    /// value always beats the implication.
     func testExplicitSpeedLimitFlagBeatsTheImplication() {
         let effective = ManagedPolicy(forced: [
             .maxDownloadBytesPerSec: .int(1024),
@@ -101,7 +80,6 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertFalse(effective.speedLimitEnabled)
     }
 
-    /// A typo in a payload degrades to "not managed", never to a wrong number.
     func testUncoercibleValuesAreIgnored() {
         var settings = AppSettings()
         settings.proxyPort = 8080
@@ -114,7 +92,6 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertFalse(effective.remoteReadOnly)
     }
 
-    /// Plists routinely carry `<string>true</string>` where `<true/>` was meant.
     func testLenientBooleanAndNumberCoercion() {
         let effective = ManagedPolicy(forced: [
             .auditLogEnabled: .string("yes"),
@@ -126,8 +103,6 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertEqual(effective.auditLogRetentionDays, 365)
     }
 
-    /// The UI needs to know which controls to disable — managed-and-forced is a
-    /// different thing from managed-but-editable.
     func testManagedAndLockedKeysAreReportedSeparately() {
         let policy = ManagedPolicy(entries: [
             .defaultSaveDirectory: .init(value: .string("/Users/Shared"), isForced: true),
@@ -140,8 +115,6 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertFalse(policy.isLocked(.autoCheckUpdates))
     }
 
-    /// The JSON reader (the Linux daemon's source, and every test's) round-trips
-    /// through the same `read(using:)` path the MDM reader uses.
     func testJSONReaderFeedsThePolicy() throws {
         let json = """
         {"defaultSaveDirectory": "/srv/downloads",
@@ -168,10 +141,7 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertNil(JSONManagedPreferenceReader(contentsOfFile: "/nonexistent/goel-policy.json"))
     }
 
-    // MARK: - Audit log redaction
-    //
-    // These are the tests that back the promise in Deploy/README.md: the audit
-    // file records a host, and nothing more identifying than a host.
+    // Backs the Deploy/README.md promise: the audit file records a host, nothing more identifying.
 
     func testRedactedHostDropsPathQueryAndCredentials() {
         let locator = "https://user:s3cr3t@files.example.com/private/report.pdf?token=AKIAEXAMPLE&sig=deadbeef"
@@ -185,13 +155,11 @@ final class EnterpriseTests: XCTestCase {
     }
 
     func testUnparseableLocatorFallsBackToAConstant() {
-        // The fallback must be a constant, never the raw string — otherwise a
-        // locator that fails to parse smuggles itself into the file whole.
+        // The fallback must be a constant, never the raw string — otherwise a locator that fails to parse smuggles itself into the file whole.
         XCTAssertEqual(AuditEvent.redactedHost(from: "not a url at all"), "unknown")
         XCTAssertEqual(AuditEvent.redactedHost(from: ""), "unknown")
     }
 
-    /// The whole point, asserted on the actual serialised line.
     func testAuditLineContainsNoPartOfTheFullURL() throws {
         let secretURL = "https://files.example.com/private/quarterly-results.pdf?token=AKIAEXAMPLE"
         let source = try XCTUnwrap(DownloadSource.parse(secretURL))
@@ -229,8 +197,6 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertEqual(AuditEvent(action: .added, task: task).bytes, 0)
     }
 
-    // MARK: - Audit log writing
-
     func testDisabledAuditLogWritesNothing() async throws {
         let directory = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -265,8 +231,6 @@ final class EnterpriseTests: XCTestCase {
         let directory = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        // The smallest cap the configuration allows, so a few dozen records trip
-        // rotation several times without writing megabytes in a unit test.
         let log = AuditLog(configuration: .init(isEnabled: true, directory: directory,
                                                 maxFileBytes: 1, keepFiles: 2,
                                                 retentionDays: 0))
@@ -294,12 +258,9 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertEqual(config.retentionDays, 365)
         XCTAssertEqual(config.maxFileBytes, 16 * 1024 * 1024)
 
-        // An empty directory means "use Application Support", not "use /".
         settings.auditLogDirectory = "   "
         XCTAssertNil(AuditLog.Configuration(settings: settings).directory)
     }
-
-    // MARK: - Login throttle
 
     func testFreeAttemptsAreNotPenalised() {
         var throttle = RemoteLoginThrottle(freeAttempts: 3, baseDelay: 10)
@@ -315,10 +276,10 @@ final class EnterpriseTests: XCTestCase {
         var throttle = RemoteLoginThrottle(freeAttempts: 2, baseDelay: 10, maxDelay: 40)
         let now = Date()
         for _ in 0..<2 { throttle.recordFailure("10.0.0.5", now: now) }
-        XCTAssertEqual(throttle.recordFailure("10.0.0.5", now: now), 10)   // 1st over
-        XCTAssertEqual(throttle.recordFailure("10.0.0.5", now: now), 20)   // 2nd over
-        XCTAssertEqual(throttle.recordFailure("10.0.0.5", now: now), 40)   // 3rd over
-        XCTAssertEqual(throttle.recordFailure("10.0.0.5", now: now), 40)   // capped
+        XCTAssertEqual(throttle.recordFailure("10.0.0.5", now: now), 10)
+        XCTAssertEqual(throttle.recordFailure("10.0.0.5", now: now), 20)
+        XCTAssertEqual(throttle.recordFailure("10.0.0.5", now: now), 40)
+        XCTAssertEqual(throttle.recordFailure("10.0.0.5", now: now), 40)
     }
 
     func testBlockedClientIsRefusedUntilTheLockoutExpires() {
@@ -336,8 +297,7 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertEqual(throttle.check("10.0.0.5", now: start.addingTimeInterval(31)), .allowed)
     }
 
-    /// The reason this is per-IP at all: one attacker must not be able to lock
-    /// everybody else out of the portal.
+    /// The reason this is per-IP at all: one attacker must not be able to lock everybody else out of the portal.
     func testOneAttackerCannotLockOutOtherClients() {
         var throttle = RemoteLoginThrottle(freeAttempts: 1, baseDelay: 60)
         let now = Date()
@@ -359,8 +319,7 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertEqual(throttle.failureCount("10.0.0.5"), 0)
     }
 
-    /// Addresses arrive from the socket layer in several shapes; they must land
-    /// in one bucket or the throttle counts the same attacker several times.
+    /// Addresses arrive from the socket layer in several shapes; they must land in one bucket or the throttle counts the same attacker several times.
     func testAddressFormsShareOneBucket() {
         var throttle = RemoteLoginThrottle(freeAttempts: 1, baseDelay: 60)
         let now = Date()
@@ -393,16 +352,13 @@ final class EnterpriseTests: XCTestCase {
         }
     }
 
-    // MARK: - Trusted-header SSO
-
     func testHeaderSSOIsOffByDefault() {
         let request = loginlessRequest(headers: ["x-forwarded-user": "a.patel"])
         XCTAssertNil(RemoteAuthService.trustedIdentity(request, client: "127.0.0.1",
                                                        policy: TrustedIdentityHeaderPolicy()))
     }
 
-    /// An empty trusted-proxy list means "trust nobody" — the single most
-    /// important default in this feature.
+    /// An empty trusted-proxy list means "trust nobody" — the single most important default in this feature.
     func testEnabledButWithoutTrustedProxiesRefusesTheHeader() {
         let policy = TrustedIdentityHeaderPolicy(isEnabled: true, trustedProxies: [])
         XCTAssertFalse(policy.isEffective)
@@ -410,9 +366,7 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertNil(RemoteAuthService.trustedIdentity(request, client: "127.0.0.1", policy: policy))
     }
 
-    /// Once the proxy has presented its shared secret, the peer address is the
-    /// remaining discriminator: honoured from inside the trusted set, refused
-    /// from outside it or from an address we could not determine at all.
+    /// Once the proxy presents its shared secret the peer address is the remaining discriminator: honoured inside the trusted set, refused outside it or from an undeterminable address.
     func testHeaderIsHonouredOnlyFromATrustedAddress() {
         let policy = TrustedIdentityHeaderPolicy(isEnabled: true,
                                                  trustedProxies: ["127.0.0.1", "10.20.0.0/16"],
@@ -432,10 +386,7 @@ final class EnterpriseTests: XCTestCase {
                      "an unknown peer address must not be trusted")
     }
 
-    /// A trusted peer address is not on its own proof of proxy origin: on the
-    /// deployment we document, everything else on the host can also dial
-    /// 127.0.0.1. Without the shared secret — or with a near-miss of it — a
-    /// trusted address must still buy nothing.
+    /// A trusted peer address alone isn't proof of proxy origin — everything else on the host can dial 127.0.0.1 too, so without the shared secret it must buy nothing.
     func testTrustedAddressWithoutTheProxySecretIsRefused() {
         let policy = TrustedIdentityHeaderPolicy(isEnabled: true, trustedProxies: ["127.0.0.1"],
                                                  sharedSecret: "proxy-secret")
@@ -451,9 +402,6 @@ final class EnterpriseTests: XCTestCase {
                      "a wrong proxy secret must not assert an identity")
     }
 
-    /// Header-value rules, checked against a policy that is otherwise fully
-    /// satisfied — so a nil here is the value being refused, not the request
-    /// falling at the shared-secret gate first.
     func testMissingOrHostileHeaderValuesAreRefused() {
         let policy = TrustedIdentityHeaderPolicy(isEnabled: true, trustedProxies: ["127.0.0.1"],
                                                  sharedSecret: "proxy-secret")
@@ -469,14 +417,10 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertNil(RemoteAuthService.trustedIdentity(signed("   "),
                                                        client: "127.0.0.1", policy: policy),
                      "a whitespace-only identity is empty once trimmed")
-        // A control character embedded in the value (CRLF is already eaten by the
-        // request parser as a header break, so it cannot reach this guard — the
-        // interesting case is a control byte that survives into the value).
+        // CRLF is already eaten by the request parser as a header break, so the interesting case is a control byte that survives into the value.
         XCTAssertNil(RemoteAuthService.trustedIdentity(signed("a.patel\u{01}admin"),
                                                        client: "127.0.0.1", policy: policy),
                      "control characters are a smuggling attempt, refused not sanitised")
-        // The positive control: the same policy and address do grant an identity
-        // when the value itself is well-formed.
         XCTAssertEqual(RemoteAuthService.trustedIdentity(signed("a.patel"),
                                                          client: "127.0.0.1", policy: policy),
                        "a.patel")
@@ -494,10 +438,6 @@ final class EnterpriseTests: XCTestCase {
                        "a malformed prefix length must not match")
     }
 
-    // MARK: - Settings compatibility
-
-    /// A settings blob written before any of this existed must still load, with
-    /// every new key at the value that reproduces the old behaviour.
     func testOldSettingsBlobDecodesToSafeDefaults() throws {
         let legacy = Data(#"{"remotePort":8899,"theme":"frost-dark"}"#.utf8)
         let settings = try JSONDecoder().decode(AppSettings.self, from: legacy)
@@ -511,8 +451,6 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertEqual(settings.auditLogDirectory, "")
     }
 
-    /// The security bundle must reproduce the portal's previous posture from a
-    /// default `AppSettings`.
     func testDefaultSecurityBundleIsThePreHardeningPosture() {
         let security = RemotePortalSecurity(settings: AppSettings())
         XCTAssertFalse(security.tlsEnabled)
@@ -520,8 +458,6 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertFalse(security.sso.isEffective)
         XCTAssertEqual(security.throttle.freeAttempts, 5)
     }
-
-    // MARK: - Helpers
 
     private func makeScratchDirectory() throws -> URL {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -536,7 +472,6 @@ final class EnterpriseTests: XCTestCase {
                    destination: "/tmp/downloads", taskID: UUID().uuidString)
     }
 
-    /// A parsed request carrying only the headers a test cares about.
     private func loginlessRequest(headers: [String: String]) -> RemoteRequest {
         var raw = "GET / HTTP/1.1\r\nHost: localhost\r\n"
         for (key, value) in headers { raw += "\(key): \(value)\r\n" }

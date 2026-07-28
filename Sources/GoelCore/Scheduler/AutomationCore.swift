@@ -1,28 +1,10 @@
 import Foundation
 
-/// The pure decision core for the scheduler's timer-driven automation.
-///
-/// Given an immutable ``Snapshot`` — the current time, settings, a lightweight
-/// projection of the task list, the last-reported network path, any pre-fetched
-/// feed items, and the prior automation ``Memory`` — ``decide(_:)`` returns the
-/// ordered ``Action``s to apply **and** the next ``Memory``. The manager only
-/// applies the actions (re-validating each across its `await`s) and round-trips
-/// the memory; every day/time/network/schedule/RSS decision lives here, drivable
-/// by plain-value unit tests with no actor, clock, engine, socket, or store.
-///
-/// The five parallel bookkeeping ledgers the manager used to keep
-/// (`schedulePausedIDs`, `preScheduleProfileName`, `networkPaused`,
-/// `networkPausedIDs`, `rssSeenKeys`) are consolidated into the single
-/// ``Memory`` value, so they can never drift apart.
 enum AutomationCore {
 
-    /// The only per-task data ``decide(_:)`` needs — a projection, so the 24-field
-    /// ``DownloadTask`` never enters the decision core and test construction stays
-    /// trivial.
     struct TaskPhase: Sendable, Equatable {
         var id: UUID
-        /// In a download phase the window/network policies act on
-        /// (`.downloading` / `.verifying` / `.requestingMetadata` — never seeding).
+        /// `.downloading` / `.verifying` / `.requestingMetadata` — never seeding.
         var downloadingPhase: Bool
         var paused: Bool
         var terminal: Bool
@@ -40,11 +22,10 @@ enum AutomationCore {
         }
     }
 
-    /// One already-fetched, already-title-matched feed item.
     struct FeedCandidate: Sendable, Equatable {
-        var key: String // per-run identity: "feedID|guid-or-locator"
+        var key: String
         var source: DownloadSource
-        var dedupKey: String // == source.dedupKey, precomputed by the caller
+        var dedupKey: String // must equal source.dedupKey; precomputed by the caller
 
         init(key: String, source: DownloadSource, dedupKey: String) {
             self.key = key
@@ -53,8 +34,6 @@ enum AutomationCore {
         }
     }
 
-    /// A feed's contribution to a poll: its `startPaused` flag plus the candidates
-    /// that survived the title filter. The impure fetch/parse stays in the manager.
     struct FeedFetch: Sendable, Equatable {
         var startPaused: Bool
         var candidates: [FeedCandidate]
@@ -65,37 +44,26 @@ enum AutomationCore {
         }
     }
 
-    /// The consolidated automation state — replaces all five parallel ledgers.
     struct Memory: Sendable, Equatable {
-        /// Whether the download window was open as of the last decision.
         var windowOpen = true
-        /// Tasks the window-close paused, so reopening resumes exactly those.
         var windowPausedIDs: Set<UUID> = []
-        /// The profile active before the window switched to its own, restored on close.
         var preWindowProfile: String?
-        /// Whether the network policy currently holds the queue paused.
         var networkPaused = false
-        /// Tasks the network policy paused, so recovery resumes exactly those.
         var networkPausedIDs: Set<UUID> = []
-        /// Whether the battery policy currently holds the queue paused.
         var powerPaused = false
-        /// Tasks the battery policy paused, so recovery resumes exactly those.
         var powerPausedIDs: Set<UUID> = []
-        /// Feed item keys already queued this run, so a poll never re-adds items.
         var rssSeenKeys: Set<String> = []
 
         init() {}
     }
 
-    /// Which policy paused a task — so the manager can un-record a pause it could
-    /// not actually apply (the task changed phase across an `await`).
+    /// Lets the manager un-record a pause it could not apply (task changed phase across an `await`).
     enum Ledger: Sendable, Equatable, Hashable { case window, network, power }
 
     enum Action: Sendable, Equatable, Hashable {
         case pause(UUID, Ledger)
         case resume(UUID)
-        /// Narrow set-active-profile + persist + push-to-engines (bypasses the full
-        /// `updateSettings` cascade — the deliberate recursion seam).
+        /// Must bypass the full `updateSettings` cascade — this is the recursion seam.
         case activateProfile(String)
         case add(DownloadSource, startPaused: Bool)
     }
@@ -107,9 +75,7 @@ enum AutomationCore {
         var tasks: [TaskPhase]
         var networkExpensive: Bool
         var networkConstrained: Bool
-        /// Whether the machine is running on battery rather than AC.
         var onBattery: Bool
-        /// Remaining charge, 0…100, or `nil` when there is no battery to read.
         /// A missing level reads as full, so a desktop is never paused.
         var batteryPercent: Int?
         var feeds: [FeedFetch]
@@ -142,24 +108,15 @@ enum AutomationCore {
         }
     }
 
-    /// The one entry point: pure and total over its ``Snapshot``.
-    ///
-    /// Policies are evaluated in a fixed order — download window, then network
-    /// awareness, then battery level, then per-task scheduled starts, then RSS —
-    /// and a task is pause-claimed by at most one ledger per tick (window beats
-    /// network beats power), so a paused id is attributed to a single owner and
-    /// recovers deterministically.
+    /// Policy order is fixed — window, network, battery, scheduled, RSS — so one ledger claims a task per tick.
     static func decide(_ s: Snapshot) -> Decision {
         var memory = s.memory
         var actions: [Action] = []
         var claimedThisTick: Set<UUID> = []
 
-        // MARK: Download window
         let desiredOpen = isWindowOpen(settings: s.settings, date: s.now, calendar: s.calendar)
         if desiredOpen != memory.windowOpen {
             if desiredOpen {
-                // Opening: switch to the schedule's profile, then resume exactly
-                // the tasks the window itself paused.
                 let scheduleProfile = s.settings.scheduleProfileName
                 if !scheduleProfile.isEmpty,
                    s.settings.profiles.contains(where: { $0.name == scheduleProfile }),
@@ -171,13 +128,10 @@ enum AutomationCore {
                 memory.windowPausedIDs = []
                 memory.windowOpen = true
             } else {
-                // Closing: restore the pre-window profile, then pause every
-                // downloading-phase task (recording it, so a hand-paused task is
-                // never resumed by the window).
+                // Record each pause, or reopening resumes a task the user paused by hand.
                 if let previous = memory.preWindowProfile {
                     memory.preWindowProfile = nil
-                    // Only restore if the window's own profile is still active — a
-                    // manual profile change made while the window was open wins.
+                    // Only restore if the window's profile is still active: a manual change wins.
                     if s.settings.selectedProfileName == s.settings.scheduleProfileName,
                        s.settings.profiles.contains(where: { $0.name == previous }) {
                         actions.append(.activateProfile(previous))
@@ -194,7 +148,6 @@ enum AutomationCore {
             }
         }
 
-        // MARK: Network awareness
         let shouldPause = (s.settings.pauseOnExpensiveNetwork && s.networkExpensive)
             || (s.settings.pauseOnConstrainedNetwork && s.networkConstrained)
         if shouldPause, !memory.networkPaused {
@@ -204,13 +157,7 @@ enum AutomationCore {
                 paused.insert(t.id)
                 claimedThisTick.insert(t.id)
             }
-            // Only latch the policy once it has actually paused something. If every
-            // downloading-phase task is already paused by another ledger (e.g. the
-            // window), latching now with an empty set would "consume" the policy —
-            // when those tasks later resume over the still-expensive network, this
-            // branch would be skipped (`memory.networkPaused` already true) and they
-            // would never be re-paused. Leaving it unlatched lets the next tick pause
-            // the resumed task.
+            // Latch only if something was paused: an empty latch consumes the policy for good.
             if !paused.isEmpty {
                 memory.networkPaused = true
                 memory.networkPausedIDs = paused
@@ -221,12 +168,6 @@ enum AutomationCore {
             memory.networkPausedIDs = []
         }
 
-        // MARK: Power awareness
-        // "Pause downloads below battery threshold" — same latch/unlatch shape as
-        // the network policy, and third in the single-owner ordering (window >
-        // network > power) so a task paused by an earlier ledger is not re-claimed
-        // and is resumed by whoever actually paused it. A machine that reports no
-        // charge level (a desktop, or a read that failed) counts as full.
         let batteryLow = s.settings.pauseBelowBatteryThreshold
             && s.onBattery
             && (s.batteryPercent ?? 100) <= s.settings.batteryThresholdPercent
@@ -237,8 +178,6 @@ enum AutomationCore {
                 paused.insert(t.id)
                 claimedThisTick.insert(t.id)
             }
-            // Latch only once something was actually paused — see the network
-            // branch above for why an empty latch would consume the policy.
             if !paused.isEmpty {
                 memory.powerPaused = true
                 memory.powerPausedIDs = paused
@@ -249,12 +188,10 @@ enum AutomationCore {
             memory.powerPausedIDs = []
         }
 
-        // MARK: Per-task scheduled starts
         for t in s.tasks where t.paused && (t.scheduledAt ?? .distantFuture) <= s.now {
             actions.append(.resume(t.id))
         }
 
-        // MARK: RSS auto-download (two-layer dedup: per-run key set ∪ existing queue)
         var addedThisTick: Set<String> = []
         for feed in s.feeds {
             for cand in feed.candidates {
@@ -271,10 +208,7 @@ enum AutomationCore {
         return Decision(actions: actions, memory: memory)
     }
 
-    /// Whether the download window is open at `date` under `settings`. Pure so
-    /// tests can drive the day/time matrix directly. A disabled schedule — or a
-    /// degenerate window whose start equals its end — is always open; an end
-    /// before the start wraps past midnight (22:00 → 07:00).
+    /// start == end means always open; end < start wraps past midnight (22:00 → 07:00).
     static func isWindowOpen(settings: AppSettings, date: Date,
                                     calendar: Calendar = .current) -> Bool {
         guard settings.scheduleEnabled else { return true }
@@ -287,11 +221,7 @@ enum AutomationCore {
         if start < end {
             return settings.scheduleDays.contains(today) && minutes >= start && minutes < end
         }
-        // Wrap-around window (e.g. 22:00 → 07:00). The evening portion (`>= start`)
-        // belongs to today; the early-morning portion (`< end`) belongs to the
-        // window that *started* the previous calendar day, so it must be gated on
-        // yesterday's weekday — otherwise an overnight window from an included day
-        // (e.g. Fri) wrongly closes at midnight when the next day (Sat) is excluded.
+        // The `< end` portion belongs to yesterday's window: gate on yesterday's weekday.
         if minutes >= start {
             return settings.scheduleDays.contains(today)
         }
@@ -304,7 +234,5 @@ enum AutomationCore {
 }
 
 private extension Set where Element == UUID {
-    /// A deterministic ordering for set-derived resume actions (so a ``Decision``
-    /// is stable/testable). Resume order is otherwise immaterial to behaviour.
     func sortedByUUID() -> [UUID] { sorted { $0.uuidString < $1.uuidString } }
 }

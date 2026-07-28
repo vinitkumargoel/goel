@@ -3,13 +3,6 @@ import Foundation
 import Glibc
 #endif
 
-/// `goel doctor` and `goel uninstall`.
-///
-/// Doctor exists because every failure this daemon has is invisible from the
-/// outside: a missing shared library, a save folder the service user cannot
-/// write, a port already taken, a LAN bind silently refused for want of a
-/// password. Each of those presents identically — "it doesn't work" — and each has
-/// a different fix. So each is checked, by name, with the fix printed next to it.
 extension GoelCLI {
 
     struct Check {
@@ -22,7 +15,6 @@ extension GoelCLI {
         var checks: [Check] = []
         let manager = FileManager.default
 
-        // ---- Installation -------------------------------------------------
         for path in [Layout.daemonBinary, Layout.runScript, Layout.cliLink, Layout.configFile] {
             checks.append(Check(
                 name: path,
@@ -31,10 +23,6 @@ extension GoelCLI {
                     : .fail("missing — reinstall: curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh")))
         }
 
-        // A missing shared library is the classic "installed but won't start", and
-        // the daemon's own error goes to the journal where nobody looks first. Check
-        // both binaries: they have different closures, and a CLI that cannot link is
-        // the one failure that stops this command from reporting anything at all.
         if Shell.which("ldd") != nil {
             var unresolved: [String] = []
             for binary in [Layout.daemonBinary, Layout.installRoot + "/bin/goel"]
@@ -62,9 +50,7 @@ extension GoelCLI {
         }
         let effective = Effective(config)
 
-        // ---- Config file permissions --------------------------------------
-        // It holds the portal password in plaintext. systemd reads it as root
-        // before dropping privileges, so nothing else needs access to it.
+        // The config file holds the portal password in plaintext; only root needs to read it.
         if let attributes = try? manager.attributesOfItem(atPath: Layout.configFile),
            let mode = attributes[.posixPermissions] as? NSNumber {
             let permissions = mode.uint16Value & 0o777
@@ -76,7 +62,6 @@ extension GoelCLI {
                             + "tighten with: sudo chmod 600 \(Layout.configFile)")))
         }
 
-        // ---- Service ------------------------------------------------------
         if Service.systemdAvailable {
             let state = Service.activeState
             checks.append(Check(
@@ -95,23 +80,16 @@ extension GoelCLI {
             checks.append(Check(name: "service", result: .warn("no systemd — not managed as a service")))
         }
 
-        // ---- Directories the service user must write ----------------------
         for (label, path) in [("downloads", effective.saveDir),
                               ("database dir", (effective.databasePath as NSString).deletingLastPathComponent)] {
             checks.append(Check(name: label, result: writability(path)))
         }
 
-        // ---- Port ---------------------------------------------------------
         checks.append(Check(name: "port \(effective.port)", result: portCheck(effective)))
 
-        // ---- ffmpeg -------------------------------------------------------
-        // Only HLS needs it, so its absence is a warning rather than a failure —
-        // but it is silent otherwise: an .m3u8 download simply fails later.
         checks.append(Check(name: "ffmpeg", result: ffmpeg()))
 
-        // ---- LAN exposure sanity -----------------------------------------
-        // The daemon refuses a passwordless LAN bind and falls back to loopback.
-        // That is the right behaviour and completely silent from outside.
+        // The daemon silently refuses a passwordless LAN bind and falls back to loopback.
         if effective.allowLAN {
             let hasPassword = (config.value(forEnv: "GOEL_PASSWORD")?.isEmpty == false)
             checks.append(Check(
@@ -126,7 +104,6 @@ extension GoelCLI {
                                 + "only. `sudo goel config set password <password>`")))
         }
 
-        // ---- API ----------------------------------------------------------
         if Service.isActive {
             do {
                 let rows = try API(port: effective.port, token: try effective.token()).tasks()
@@ -140,17 +117,12 @@ extension GoelCLI {
 
         let failures = checks.filter { if case .fail = $0.result { return true } else { return false } }
         if !failures.isEmpty {
-            // Non-zero exit so this is usable in a health check or a CI step.
             Out.line()
             Out.error("\(failures.count) problem(s) found.")
             exit(1)
         }
     }
 
-    /// Deliberately does not name versioned packages. `libssh2-1` on Ubuntu 24.04
-    /// is `libssh2-1t64` on 26.04, and `libtorrent-rasterbar2.0` does not exist
-    /// there at all — printing a list that is wrong on the operator's own machine
-    /// is worse than teaching them the one command that is always right.
     static var missingLibraryAdvice: String {
         """
         Find what provides each one and install it:
@@ -161,9 +133,7 @@ extension GoelCLI {
         """
     }
 
-    /// The drop-in has to exist AND still name the configured paths: a stale one is
-    /// as broken as a missing one, and both fail silently — the service starts and
-    /// every write is denied.
+    /// A stale drop-in is as broken as a missing one: the service starts and every write is denied.
     static func dropIn(_ effective: Effective) -> Check.Result {
         guard let contents = try? String(contentsOfFile: Layout.dropInFile, encoding: .utf8) else {
             return .warn("missing — the unit runs ProtectSystem=strict, so downloads will fail "
@@ -180,8 +150,7 @@ extension GoelCLI {
         return .pass(Layout.dropInFile)
     }
 
-    /// Whether the *service user* can write there — not whether root can, which
-    /// is what a naïve `isWritableFile` from a sudo'd CLI would tell us.
+    /// Tests the *service user*, not root — `isWritableFile` under sudo answers the wrong question.
     static func writability(_ path: String) -> Check.Result {
         let manager = FileManager.default
         guard manager.fileExists(atPath: path) else {
@@ -192,7 +161,6 @@ extension GoelCLI {
               Shell.run("id", ["-u", Layout.serviceUser]).ok else {
             return .warn("\(path) exists, but there is no \(Layout.serviceUser) user to check against")
         }
-        // `runuser` is in util-linux on Ubuntu; `sudo -u` is the fallback.
         let probe = path + "/.goel-write-probe"
         var attempt = Shell.run("runuser", ["-u", Layout.serviceUser, "--", "touch", probe])
         if attempt.status == 127 {
@@ -209,8 +177,6 @@ extension GoelCLI {
                     + "Fix: sudo chown -R \(Layout.serviceUser): \(path)")
     }
 
-    /// ffmpeg is needed to remux HLS (`.m3u8`) into a playable file; everything
-    /// else works without it.
     static func ffmpeg() -> Check.Result {
         guard let path = Shell.which("ffmpeg"), !path.isEmpty else {
             return .warn("not installed — HLS (.m3u8) downloads will fail. "
@@ -219,22 +185,10 @@ extension GoelCLI {
         return .pass("\(path)")
     }
 
-    /// Is something listening on the configured port, and is it us?
-    ///
-    /// The probe is retried for a few seconds, because the moment this check is
-    /// most often run is the moment it is least likely to be true: `goel doctor`
-    /// straight after an install. systemd reports the unit active as soon as it
-    /// has forked, so a single instantaneous probe could report "nothing is
-    /// listening" while the API check further down was about to reach that very
-    /// port — a report that contradicted itself, and a CI failure that came and
-    /// went depending on how fast the runner was.
-    ///
-    /// A daemon that is genuinely dead still fails; it just takes three seconds
-    /// to say so, which is a diagnostic worth waiting for.
+    /// Must retry: systemd reports the unit active as soon as it forks, so one instant probe lies.
     static func portCheck(_ effective: Effective) -> Check.Result {
         let deadline = Date().addingTimeInterval(3)
         while true {
-            // `ss` is iproute2, present on any modern Ubuntu.
             let listening = Shell.run("ss", ["-ltnpH"])
             guard listening.ok else { return .warn("couldn't check (ss unavailable)") }
             let matching = listening.out.split(separator: "\n").filter {
@@ -249,8 +203,7 @@ extension GoelCLI {
                 }
                 return .pass("listening on \(boundLAN ? "0.0.0.0" : "127.0.0.1")")
             }
-            // Re-read each time round: this also notices a daemon that starts,
-            // binds nothing and exits while we are waiting on it.
+            // Must stay inside the loop: it catches a daemon that exits while we wait.
             guard Service.isActive else {
                 return .warn("nothing listening (the service is not running)")
             }
@@ -276,8 +229,6 @@ extension GoelCLI {
         }
     }
 
-    // MARK: - Uninstall
-
     static func uninstall(_ arguments: [String]) throws {
         try requireRoot()
         let purge = arguments.contains("--purge")
@@ -290,9 +241,7 @@ extension GoelCLI {
             Out.line(Out.red("  \(Layout.configDir) — your configuration"))
             Out.line(Out.red("  \(Layout.stateDir) — the queue database AND downloaded files"))
             Out.line(Out.red("  the \(Layout.serviceUser) system user"))
-            // A configured save-dir can be anyone's home directory, so it is never
-            // deleted — but the line above promises to remove downloads, so say where
-            // the ones that survive actually are.
+            // A configured save-dir can be anyone's home directory, so it is never deleted.
             if let config = try? ConfigFile(),
                case let effective = Effective(config),
                !effective.saveDir.hasPrefix(Layout.stateDir) {
@@ -306,8 +255,7 @@ extension GoelCLI {
 
         if !assumeYes {
             Out.line()
-            // Deleting downloads is not undoable, so an explicit word is required
-            // rather than a bare y/n that a reflex keypress can satisfy.
+            // Deletion is not undoable: require a typed word, not a y/n a reflex keypress satisfies.
             let expected = purge ? "purge" : "uninstall"
             Out.line("Type \(Out.bold(expected)) to confirm, anything else to abort:")
             let answer = readLine(strippingNewline: true) ?? ""
@@ -317,8 +265,7 @@ extension GoelCLI {
             }
         }
 
-        // Best-effort by design — stopping at the first problem leaves a half-removed
-        // install — but not "success regardless": failures are collected and named.
+        // Collect, don't throw: stopping at the first problem leaves a half-removed install.
         var problems: [String] = []
 
         if Service.systemdAvailable {
@@ -335,7 +282,7 @@ extension GoelCLI {
         if Service.systemdAvailable {
             let reload = Shell.run("systemctl", ["daemon-reload"])
             if !reload.ok { problems.append("systemctl daemon-reload failed: \(reload.err)") }
-            // Unchecked: reset-failed fails when nothing is failed, the normal case.
+            // Deliberately unchecked: reset-failed exits non-zero when nothing is failed.
             Shell.run("systemctl", ["reset-failed", Layout.serviceName])
         }
         if purge {
@@ -344,7 +291,6 @@ extension GoelCLI {
             }
             let userdel = Shell.run("userdel", [Layout.serviceUser])
             if !userdel.ok {
-                // Nearly always a process still running as the user, so say so.
                 problems.append("""
                     the \(Layout.serviceUser) user could not be deleted: \
                     \(userdel.err.isEmpty ? "userdel exited \(userdel.status)" : userdel.err)
@@ -370,11 +316,9 @@ extension GoelCLI {
         }
     }
 
-    /// Delete a path; "already absent" is the goal, not a failure.
     private static func remove(_ path: String) -> [String] {
         let manager = FileManager.default
-        // attributesOfItem, as well as fileExists: the former does not follow links, so
-        // a dangling one still counts as present and gets removed.
+        // attributesOfItem too: it doesn't follow links, so a dangling one still counts as present.
         guard manager.fileExists(atPath: path)
                 || (try? manager.attributesOfItem(atPath: path)) != nil else { return [] }
         do {
@@ -384,8 +328,6 @@ extension GoelCLI {
             return ["\(path) could not be removed: \(error.localizedDescription)"]
         }
     }
-
-    // MARK: - Help
 
     static func printHelp() {
         Out.line("""

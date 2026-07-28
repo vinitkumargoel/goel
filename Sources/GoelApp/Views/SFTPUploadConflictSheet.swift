@@ -1,10 +1,6 @@
 import SwiftUI
 import GoelCore
 
-/// Shown before an upload would overwrite same-named remote items. Each colliding
-/// item gets an Overwrite / Rename / Skip choice (defaulting to Rename, the safe
-/// option), with an "Apply to all" shortcut. Non-colliding items in the same
-/// batch aren't listed — they upload regardless of what's chosen here.
 struct SFTPUploadConflictSheet: View {
     let request: SFTPUploadConflictRequest
     let onResolve: ([UUID: SFTPUploadConflictRequest.Policy]) -> Void
@@ -32,8 +28,6 @@ struct SFTPUploadConflictSheet: View {
             }
         }
     }
-
-    // MARK: Sections
 
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -63,9 +57,6 @@ struct SFTPUploadConflictSheet: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.accent)
-                    // Out of context these read as three bare verbs; say what
-                    // they apply to, since the "Apply to all" caption beside
-                    // them is a separate element.
                     .accessibilityLabel("Apply \(policy.rawValue) to all items")
             }
         }
@@ -80,7 +71,6 @@ struct SFTPUploadConflictSheet: View {
                         Image(systemName: item.isDirectory ? "folder.fill" : "doc")
                             .foregroundStyle(item.isDirectory ? Theme.accent : .secondary)
                             .frame(width: 18)
-                            // Kind is folded into the name's label below.
                             .a11yDecorative()
                         Text(item.name).font(.system(size: 13)).lineLimit(1).truncationMode(.middle)
                             .accessibilityLabel("\(item.isDirectory ? "Folder" : "File"), \(item.name)")
@@ -91,8 +81,6 @@ struct SFTPUploadConflictSheet: View {
                         .labelsHidden()
                         .pickerStyle(.segmented)
                         .frame(width: 210)
-                        // Without a name this is one of N identical anonymous
-                        // segmented controls; the choice is destructive.
                         .accessibilityLabel("What to do with \(item.name)")
                     }
                     .padding(.horizontal, 16).padding(.vertical, 7)
@@ -115,11 +103,8 @@ struct SFTPUploadConflictSheet: View {
         .padding(16)
     }
 
-    // MARK: Helpers
-
     private var displayDir: String { request.remoteDir == "." ? "Home" : request.remoteDir }
 
-    /// A live count of what the current choices will do, e.g. "2 overwrite · 1 skip".
     private var summary: String {
         var counts: [Policy: Int] = [:]
         for item in request.colliding { counts[decisions[item.id] ?? .rename, default: 0] += 1 }

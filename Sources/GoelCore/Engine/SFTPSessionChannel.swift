@@ -1,33 +1,15 @@
 import Foundation
 import SSHBridge
 
-/// One authenticated SFTP connection, pinned for life to a dedicated thread.
-///
-/// libssh2 sessions are not thread-safe, so a `GSBSession *` may only ever be
-/// touched from the thread that opened it. This type is the enforcement: it owns
-/// a thread, that thread owns the session, and every operation is a closure
-/// posted to a serial queue the thread drains. Callers never see the pointer
-/// outside the closure.
-///
-/// The connection is opened lazily on the first operation and then *kept*, which
-/// is the whole point — the handshake (TCP connect, key exchange, host-key
-/// verification, authentication, SFTP channel init) costs several round trips
-/// plus asymmetric crypto, and paying it per operation is what made every folder
-/// click and every file of a folder upload wear a full handshake.
-///
-/// `@unchecked Sendable`: the mutable state below is guarded by `condition`, and
-/// the session pointer is only ever dereferenced on `thread`.
+/// libssh2 sessions are not thread-safe, so one connection is pinned to one thread; `@unchecked Sendable` because state is guarded by `condition`.
 final class SFTPSessionChannel: @unchecked Sendable {
 
-    /// A unit of work to run against the live session on the owning thread.
     private typealias Job = @Sendable (OpaquePointer?, GSBResult) -> Void
 
     private let target: SFTPTarget
     /// The fingerprint this channel must match, or nil for trust-on-first-use.
     private let expected: String?
-    /// How long an idle connection is held open before being dropped. Long
-    /// enough to cover a person reading a directory listing and clicking again;
-    /// short enough not to sit on a server's session slot indefinitely.
+    /// Long enough to cover reading a listing and clicking again, short enough not to sit on a server's session slot.
     private let idleTimeout: TimeInterval
 
     private let condition = NSCondition()
@@ -38,12 +20,10 @@ final class SFTPSessionChannel: @unchecked Sendable {
     /// Only touched on the owning thread.
     private var session: OpaquePointer?
 
-    /// Set from any thread, consumed on the owning thread: drop the connection
-    /// but keep the channel usable.
+    /// Set from any thread, consumed on the owning thread.
     private var shouldDropSession = false
 
-    /// The host key the live session connected with, published for pinning.
-    /// Guarded by `condition` because the caller reads it from another thread.
+    /// Guarded by `condition`: the caller reads it from another thread.
     private var learnedFingerprint: String?
 
     init(target: SFTPTarget, expected: String?, idleTimeout: TimeInterval = 90) {
@@ -52,29 +32,18 @@ final class SFTPSessionChannel: @unchecked Sendable {
         self.idleTimeout = idleTimeout
     }
 
-    // No `deinit` cleanup: once started, the run loop holds a strong reference to
-    // this object for as long as it runs, so `deinit` cannot fire while a
-    // connection is open. Lifetime is explicit — the owner calls `shutdown()`.
+    // No `deinit` cleanup: the running loop holds a strong reference, so `deinit` cannot fire while a connection is open — the owner must call `shutdown()`.
 
-    /// The fingerprint observed on the most recent successful connect, if any.
     var fingerprint: String? {
         condition.lock(); defer { condition.unlock() }
         return learnedFingerprint
     }
 
-    /// Whether this channel was built for exactly these credentials and this pin.
-    ///
-    /// Both are captured at init and used for every reconnect, so a channel that
-    /// no longer matches must be discarded rather than reused: it would otherwise
-    /// keep re-authenticating with a password the user has since changed, or keep
-    /// demanding a host key they have since re-approved.
+    /// Credentials and pin are captured at init and reused on every reconnect, so a stale channel would re-auth with a since-changed password or key.
     func matches(target other: SFTPTarget, expected otherExpected: String?) -> Bool {
         target == other && expected == otherExpected
     }
 
-    /// Run one operation against the live session, opening or reopening it first
-    /// if needed. Returns the operation's result, or the failure that prevented
-    /// the connection being established.
     func perform(_ body: @escaping @Sendable (OpaquePointer) -> GSBResult) async -> GSBResult {
         await withCheckedContinuation { (cont: CheckedContinuation<GSBResult, Never>) in
             submit { handle, openFailure in
@@ -84,9 +53,6 @@ final class SFTPSessionChannel: @unchecked Sendable {
         }
     }
 
-    /// Close the connection now, without tearing down the channel. The next
-    /// operation transparently reconnects. Takes effect between jobs, so it never
-    /// interrupts an operation already in flight.
     func disconnect() {
         condition.lock()
         shouldDropSession = true
@@ -94,16 +60,12 @@ final class SFTPSessionChannel: @unchecked Sendable {
         condition.unlock()
     }
 
-    /// Permanently stop this channel and close its connection. Jobs submitted
-    /// afterwards fail immediately rather than hanging.
     func shutdown() {
         condition.lock()
         isStopped = true
         condition.broadcast()
         condition.unlock()
     }
-
-    // MARK: Plumbing
 
     private func submit(_ job: @escaping Job) {
         condition.lock()
@@ -124,24 +86,18 @@ final class SFTPSessionChannel: @unchecked Sendable {
     private func startThread() {
         let thread = Thread { [weak self] in self?.runLoop() }
         thread.name = "goel.sftp-session"
-        // The transfer buffers moved to the heap in the C shim, but libssh2's own
-        // frames plus our callbacks still want headroom.
+        // libssh2's own frames plus our callbacks need the headroom.
         thread.stackSize = 1 << 20
         thread.start()
     }
 
-    /// The owning thread's whole life: wait for work, ensure a live connection,
-    /// run the job. Everything that touches `session` happens here.
+    /// Everything that touches `session` happens on this thread.
     private func runLoop() {
         while true {
             condition.lock()
             while pending.isEmpty && !isStopped && !shouldDropSession {
-                // Wake up on the idle deadline so a connection nobody is using is
-                // released rather than held against the server's session limit.
                 if session != nil {
                     if !condition.wait(until: Date().addingTimeInterval(idleTimeout)) {
-                        // Timed out with no work: drop the idle connection but keep
-                        // the thread, so the next click doesn't pay thread startup.
                         let idle = session
                         session = nil
                         condition.unlock()
@@ -153,9 +109,7 @@ final class SFTPSessionChannel: @unchecked Sendable {
                 }
             }
             if isStopped {
-                // Anything still queued must be answered, not abandoned — every
-                // pending job owns a continuation, and dropping it on the floor
-                // would hang the awaiting task forever.
+                // Every queued job owns a continuation: dropping one instead of answering it hangs the awaiting task forever.
                 let orphaned = pending
                 pending.removeAll()
                 let dying = session
@@ -177,10 +131,7 @@ final class SFTPSessionChannel: @unchecked Sendable {
             let job = pending.removeFirst()
             condition.unlock()
 
-            // This thread lives for as long as the connection does, so without a
-            // pool here everything autoreleased by a job — and by libssh2's own
-            // callbacks between the per-chunk pools in the transfer thunks —
-            // would accumulate until the channel shut down.
+            // The thread outlives every job, so without this pool everything autoreleased accumulates until the channel shuts down.
             autoreleasepool {
                 let (handle, failure) = ensureConnected()
                 job(handle, failure)
@@ -188,16 +139,12 @@ final class SFTPSessionChannel: @unchecked Sendable {
         }
     }
 
-    /// Return a live session, opening it if absent and reopening it if the peer
-    /// has gone away. On failure returns the `GSBResult` explaining why.
     private func ensureConnected() -> (OpaquePointer?, GSBResult) {
         var result = GSBResult()
 
         if let existing = session {
             if gsb_session_alive(existing) != 0 { return (existing, result) }
-            // The peer closed while we were idle. Drop it and reconnect, which is
-            // safe here because this only ever runs between jobs — never in the
-            // middle of one, so no half-applied mutation can be replayed.
+            // Reconnecting is safe only because this runs between jobs, never mid-operation, so no half-applied mutation is replayed.
             gsb_session_close(existing)
             session = nil
         }
@@ -223,8 +170,6 @@ final class SFTPSessionChannel: @unchecked Sendable {
         return (opened, result)
     }
 
-    /// The failure handed to any job that arrives at, or was queued behind, a
-    /// shutdown.
     private static func closedResult() -> GSBResult {
         var failed = GSBResult()
         failed.code = Int32(GSB_ERR_SFTP)
@@ -232,7 +177,6 @@ final class SFTPSessionChannel: @unchecked Sendable {
         return failed
     }
 
-    /// Write a message into a `GSBResult`'s fixed-size C buffer.
     private static func setMessage(_ result: inout GSBResult, _ text: String) {
         withUnsafeMutableBytes(of: &result.message) { raw in
             guard let base = raw.baseAddress else { return }
@@ -242,8 +186,7 @@ final class SFTPSessionChannel: @unchecked Sendable {
         }
     }
 
-    /// Marshal a target + optional pinned fingerprint into a `GSBAuth` with
-    /// correct C-string lifetimes, and invoke `body`.
+    /// The nested `withCString` calls keep every C string alive for the whole of `body` — do not flatten them.
     static func withAuth<T>(_ t: SFTPTarget, expected: String?,
                             _ body: (UnsafePointer<GSBAuth>) -> T) -> T {
         func withOpt(_ s: String?, _ f: (UnsafePointer<CChar>?) -> T) -> T {

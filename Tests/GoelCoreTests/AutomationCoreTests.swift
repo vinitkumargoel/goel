@@ -1,9 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Boundary tests for the pure ``AutomationCore/decide(_:)`` — the download
-/// window, network policy, scheduled starts, and RSS dedup driven with plain
-/// values, no actor / clock / socket / store.
 final class AutomationCoreTests: XCTestCase {
 
     // 2026-07-05 is a Sunday (weekday 1); offset to the wanted weekday.
@@ -31,7 +28,6 @@ final class AutomationCoreTests: XCTestCase {
               feeds: feeds, memory: memory)
     }
 
-    /// A schedule window 09:00–17:00, every day, activating the `profile` while open.
     private func windowSettings(profile: String = "", selected: String = "Medium") -> AppSettings {
         AppSettings(selectedProfileName: selected,
                     scheduleEnabled: true, scheduleStartMinute: 9 * 60,
@@ -39,14 +35,12 @@ final class AutomationCoreTests: XCTestCase {
                     scheduleProfileName: profile)
     }
 
-    // MARK: Download window
-
     func testWindowClosePausesActiveSet() {
         let a = UUID(), b = UUID()
-        let s = snapshot(now: date(weekday: 3, hour: 18),                 // outside window
+        let s = snapshot(now: date(weekday: 3, hour: 18),
                          settings: windowSettings(),
                          tasks: [phase(a, downloading: true), phase(b, downloading: true),
-                                 phase(UUID(), paused: true)])            // paused: untouched
+                                 phase(UUID(), paused: true)])
         let d = AutomationCore.decide(s)
         XCTAssertEqual(Set(d.actions), [.pause(a, .window), .pause(b, .window)])
         XCTAssertEqual(d.memory.windowPausedIDs, [a, b])
@@ -58,7 +52,7 @@ final class AutomationCoreTests: XCTestCase {
         var mem = AutomationCore.Memory()
         mem.windowOpen = false
         mem.windowPausedIDs = [a]
-        let s = snapshot(now: date(weekday: 3, hour: 12),                 // inside window
+        let s = snapshot(now: date(weekday: 3, hour: 12),
                          settings: windowSettings(),
                          tasks: [phase(a, paused: true)], memory: mem)
         let d = AutomationCore.decide(s)
@@ -76,15 +70,15 @@ final class AutomationCoreTests: XCTestCase {
                          settings: windowSettings(profile: "High", selected: "Medium"),
                          tasks: [phase(a, paused: true)], memory: mem)
         let d = AutomationCore.decide(s)
-        XCTAssertEqual(d.actions, [.activateProfile("High"), .resume(a)])  // profile first
-        XCTAssertEqual(d.memory.preWindowProfile, "Medium")               // stashed for restore
+        XCTAssertEqual(d.actions, [.activateProfile("High"), .resume(a)])
+        XCTAssertEqual(d.memory.preWindowProfile, "Medium")
     }
 
     func testWindowCloseRestoresPreWindowProfile() {
         var mem = AutomationCore.Memory()
         mem.windowOpen = true
         mem.preWindowProfile = "Medium"
-        let s = snapshot(now: date(weekday: 3, hour: 18),                 // closing
+        let s = snapshot(now: date(weekday: 3, hour: 18),
                          settings: windowSettings(profile: "High", selected: "High"),
                          tasks: [], memory: mem)
         let d = AutomationCore.decide(s)
@@ -96,20 +90,17 @@ final class AutomationCoreTests: XCTestCase {
         var mem = AutomationCore.Memory()
         mem.windowOpen = true
         mem.preWindowProfile = "Medium"
-        // Selected is neither the schedule profile — a manual change happened.
         let s = snapshot(now: date(weekday: 3, hour: 18),
                          settings: windowSettings(profile: "High", selected: "Low"),
                          tasks: [], memory: mem)
         let d = AutomationCore.decide(s)
-        XCTAssertTrue(d.actions.isEmpty)                                  // no restore
-        XCTAssertNil(d.memory.preWindowProfile)                          // but the stash clears
+        XCTAssertTrue(d.actions.isEmpty)
+        XCTAssertNil(d.memory.preWindowProfile)
     }
-
-    // MARK: Network awareness
 
     func testNetworkExpensivePausesThenResumes() {
         let a = UUID()
-        let base = AppSettings(pauseOnExpensiveNetwork: true)             // schedule disabled
+        let base = AppSettings(pauseOnExpensiveNetwork: true)
         let now = date(weekday: 3, hour: 12)
         let pause = AutomationCore.decide(
             snapshot(now: now, settings: base, tasks: [phase(a, downloading: true)],
@@ -128,40 +119,29 @@ final class AutomationCoreTests: XCTestCase {
 
     func testWindowAndNetworkSingleAttribution() {
         let a = UUID(), b = UUID()
-        var s = windowSettings()                                         // window closing now
+        var s = windowSettings()
         s.pauseOnExpensiveNetwork = true
         let d = AutomationCore.decide(
             snapshot(now: date(weekday: 3, hour: 18), settings: s,
                      tasks: [phase(a, downloading: true), phase(b, downloading: true)],
                      expensive: true))
-        // Both claimed by the window; network claims nothing (single attribution).
         XCTAssertEqual(Set(d.actions), [.pause(a, .window), .pause(b, .window)])
         XCTAssertEqual(d.memory.windowPausedIDs, [a, b])
-        // The network policy stays UNLATCHED because it paused nothing this tick.
-        // Latching on an empty set would consume the policy: when these tasks later
-        // resume over a still-expensive network, the pause branch would be skipped
-        // and they would never be re-paused. See `testNetworkClaimsTaskFreedByWindow`.
         XCTAssertFalse(d.memory.networkPaused)
         XCTAssertTrue(d.memory.networkPausedIDs.isEmpty)
     }
 
-    /// The reason the network policy must not latch on an empty set: once a task
-    /// the window had claimed is downloading again while the network is still
-    /// expensive, the network ledger has to be able to claim it.
     func testNetworkClaimsTaskFreedByWindow() {
         let a = UUID()
         var s = windowSettings()
         s.pauseOnExpensiveNetwork = true
 
-        // Tick 1 — window closing: the window claims `a`, network latches nothing.
         let closing = AutomationCore.decide(
             snapshot(now: date(weekday: 3, hour: 18), settings: s,
                      tasks: [phase(a, downloading: true)], expensive: true))
         XCTAssertEqual(closing.actions, [.pause(a, .window)])
         XCTAssertFalse(closing.memory.networkPaused)
 
-        // Tick 2 — inside the window again and `a` is downloading, but the network
-        // is still expensive: it must now be paused for `.network`.
         let reopened = AutomationCore.decide(
             snapshot(now: date(weekday: 3, hour: 12), settings: s,
                      tasks: [phase(a, downloading: true)], expensive: true,
@@ -170,8 +150,6 @@ final class AutomationCoreTests: XCTestCase {
         XCTAssertTrue(reopened.memory.networkPaused)
         XCTAssertEqual(reopened.memory.networkPausedIDs, [a])
     }
-
-    // MARK: Scheduled starts
 
     func testDueScheduledStartFires() {
         let due = UUID(), later = UUID()
@@ -183,23 +161,20 @@ final class AutomationCoreTests: XCTestCase {
         XCTAssertEqual(d.actions, [.resume(due)])
     }
 
-    // MARK: RSS
-
     func testRSSTwoLayerDedup() {
         let src1 = DownloadSource.url(URL(string: "https://example.com/a.bin")!)
         let src2 = DownloadSource.url(URL(string: "https://example.com/b.bin")!)
-        // c1 and c2 share a dedupKey (same file, two feed keys); c3 already queued.
         let feed = AutomationCore.FeedFetch(startPaused: true, candidates: [
             .init(key: "f|1", source: src1, dedupKey: src1.dedupKey),
-            .init(key: "f|2", source: src1, dedupKey: src1.dedupKey),  // dup dedupKey
-            .init(key: "f|3", source: src2, dedupKey: src2.dedupKey),  // already in queue
+            .init(key: "f|2", source: src1, dedupKey: src1.dedupKey),
+            .init(key: "f|3", source: src2, dedupKey: src2.dedupKey),
         ])
         let existing = phase(UUID(), dedupKey: src2.dedupKey)
         let d = AutomationCore.decide(
             snapshot(now: date(weekday: 3, hour: 12), settings: AppSettings(),
                      tasks: [existing], feeds: [feed]))
-        XCTAssertEqual(d.actions, [.add(src1, startPaused: true)])       // exactly one add
-        XCTAssertEqual(d.memory.rssSeenKeys, ["f|1", "f|2", "f|3"])      // all keys recorded
+        XCTAssertEqual(d.actions, [.add(src1, startPaused: true)])
+        XCTAssertEqual(d.memory.rssSeenKeys, ["f|1", "f|2", "f|3"])
     }
 
     func testRSSSkipsAlreadySeenKey() {

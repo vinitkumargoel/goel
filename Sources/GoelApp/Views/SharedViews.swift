@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-/// The accent-icon-tile + title row that heads the Add and Link-Grabber sheets.
 struct SheetHeader: View {
     let systemImage: String
     let title: String
@@ -10,17 +9,13 @@ struct SheetHeader: View {
     var body: some View {
         HStack(spacing: 11) {
             Image(systemName: systemImage)
-                // Not `.white`: the accent is a light colour in three of the four
-                // themes, where a white glyph on it measured 2.00–2.42:1.
+                // Not `.white`: on the light accent themes that measured 2.00–2.42:1.
                 .foregroundStyle(Theme.onAccent)
                 .frame(width: 30, height: 30)
                 .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
-                // The tile restates the sheet's subject; the title beside it
-                // already says it in words.
                 .a11yDecorative()
             Text(title)
                 .scaledFont(size: 15, weight: .semibold)
-                // Sheets are announced by their heading, so mark it as one.
                 .accessibilityAddTraits(.isHeader)
             Spacer()
         }
@@ -28,7 +23,6 @@ struct SheetHeader: View {
     }
 }
 
-/// Shared empty-list / empty-panel chrome: SF Symbol + title + optional subtitle.
 struct EmptyStateView: View {
     let systemImage: String
     let title: String
@@ -52,23 +46,16 @@ struct EmptyStateView: View {
                     .multilineTextAlignment(.center)
             }
         }
-        // Title and subtitle are one message ("No downloads match / Try a
-        // different filter"), so read them as one rather than two stray strings.
         .a11yGroup(label: A11y.sentence(title, subtitle))
     }
 }
 
-/// ↓ / ↑ speed readout: coloured while transferring, dimmed to "—" at rest.
-/// Shared by detail panel, menu bar, and status bar.
 struct SpeedStat: View {
     let symbol: String
     let speed: Double
     let color: Color
     var size: CGFloat = 12.5
     var minWidth: CGFloat? = nil
-    /// Which direction the arrow means, spoken. Defaults are derived from the
-    /// symbol so existing call sites need no change; pass explicitly when the
-    /// glyph is something other than a plain up/down arrow.
     var directionName: String? = nil
 
     var body: some View {
@@ -79,9 +66,6 @@ struct SpeedStat: View {
                 .frame(minWidth: minWidth, alignment: .trailing)
         }
         .foregroundStyle(speed > 0 ? color : Color.secondary)
-        // An arrow glyph plus "14.2 MB/s" is meaningless read aloud: VoiceOver
-        // names the arrow, not what it measures, and "—" is silent. Speak the
-        // direction and the rate in words instead.
         .a11yGroup(label: spokenDirection, value: A11y.speed(speed))
     }
 
@@ -91,7 +75,6 @@ struct SpeedStat: View {
     }
 }
 
-/// Shared SFTP transfer row for browser strip (full) and status-bar popover (compact).
 struct SFTPTransferRow: View {
     enum Density { case compact, full }
 
@@ -107,8 +90,6 @@ struct SFTPTransferRow: View {
             HStack(spacing: 8) {
                 Image(systemName: transfer.iconName(filledWhenFinished: density == .full))
                     .foregroundStyle(transfer.tint)
-                    // The glyph encodes direction + state, both of which the
-                    // grouped label below already says in words.
                     .a11yDecorative()
                 if let onShowRemoteFolder {
                     Button(action: onShowRemoteFolder) {
@@ -148,8 +129,6 @@ struct SFTPTransferRow: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, 22)
-                // Bar + size + rate + ETA are four readings of one thing. Fold
-                // them into a single progress element rather than four.
                 .a11yGroup(label: "Transfer progress", value: spokenProgress)
             }
         }
@@ -176,21 +155,16 @@ struct SFTPTransferRow: View {
                 .truncationMode(.middle)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // The identity and live numbers form one spoken element. Cancel/retry stay
-        // separate sibling controls so activating them never reveals the folder.
         .a11yGroup(
             label: A11y.sentence(spokenDirection, transfer.name, serverLabel,
                                  "Remote folder \(transfer.remoteFolderLabel)"),
             value: spokenProgress)
     }
 
-    /// "Uploading" / "Downloading" — the arrow glyph and tint, in words.
     private var spokenDirection: String {
         transfer.activityLabel
     }
 
-    /// The transfer's live numbers as one spoken value, ending in its state so a
-    /// finished or failed transfer says so rather than reporting a stale percent.
     private var spokenProgress: String {
         switch transfer.state {
         case .running:
@@ -229,8 +203,6 @@ struct SFTPTransferRow: View {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12))
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")
-                // Name the target: a popover of transfers otherwise reads as a
-                // column of identical "Cancel" buttons.
                 .a11yButton("Cancel transfer of \(transfer.name)")
             }
         case .finished:
@@ -262,7 +234,6 @@ struct SFTPTransferRow: View {
     }
 }
 
-/// The colored rounded type tile with an SF Symbol (the `.ftype` chip).
 struct FileTypeIcon: View {
     let type: FileType
     var size: CGFloat = 30
@@ -276,14 +247,10 @@ struct FileTypeIcon: View {
                     .font(.system(size: size * 0.5, weight: .semibold))
                     .foregroundStyle(.white)
             )
-            // Colour-coded restatement of the file's kind. Every row that shows
-            // this tile also names the file, whose extension carries the same
-            // information — so hiding it removes noise, not meaning.
             .a11yDecorative()
     }
 }
 
-/// The HTTP / BT badge.
 struct KindBadge: View {
     let task: DownloadTask
     var body: some View {
@@ -293,19 +260,11 @@ struct KindBadge: View {
             .padding(.vertical, 1)
             .background(task.kindBadgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
             .foregroundStyle(task.kindBadgeColor)
-            // The chip's own tint sits under its text, so the fill eats contrast
-            // the palette had already spent: at the mockup's 20% the badge
-            // measured 2.94–4.20:1 across the four themes. 12% is the highest
-            // opacity at which the chip still reads as tinted while giving the
-            // text back most of its headroom (3.83–7.95:1). It does not clear
-            // 4.5:1 everywhere — see docs/vpat.md, SC 1.4.3.
-            // "BT" and "HLS" are read as letter soup; say the protocol.
+            // 12% tint keeps text contrast at 3.83–7.95:1; 20% dropped it to 2.94:1 (SC 1.4.3).
             .accessibilityLabel(task.accessibilityKindName)
     }
 }
 
-/// A thin progress bar tinted by the task's state. Shimmers while resolving
-/// metadata (indeterminate).
 struct MiniProgressBar: View {
     let task: DownloadTask
     var height: CGFloat = 4
@@ -326,9 +285,6 @@ struct MiniProgressBar: View {
             }
         }
         .frame(height: height)
-        // A bar that announces nothing is useless to a screen-reader user. Give
-        // it the progress trait and a spoken value; an indeterminate metadata
-        // fetch says so rather than reporting a misleading 0 percent.
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.updatesFrequently)
         .accessibilityLabel("Progress")
@@ -338,9 +294,7 @@ struct MiniProgressBar: View {
     }
 }
 
-/// The circular state button shown in each row (play / pause / retry / folder).
-/// Holds `vm` as a plain reference (not `@EnvironmentObject`) so it doesn't make
-/// every row re-render on each progress publish — see `DownloadRow`.
+/// `vm` is a plain reference, not observed — observing re-renders every row on each publish.
 struct StateButton: View {
     let task: DownloadTask
     let vm: AppViewModel
@@ -355,8 +309,6 @@ struct StateButton: View {
         }
         .buttonStyle(.plain)
         .help(helpText)
-        // One glyph, four meanings, repeated once per row. Without the file name
-        // the whole list reads as "button, button, button".
         .a11yButton("\(task.accessibilityStateActionName) \(task.name)")
     }
 

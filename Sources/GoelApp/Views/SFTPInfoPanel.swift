@@ -1,24 +1,17 @@
 import SwiftUI
 import GoelCore
 
-/// One remote item's full metadata, as fetched for the info panel.
 struct SFTPEntryInfo: Equatable {
     let name: String
     let path: String
     let attributes: SFTPAttributes
-    /// Where a symlink points, or nil for a non-link (and for a link whose
-    /// target the server wouldn't tell us).
     let linkTarget: String?
 }
 
-/// Goel's answer to Finder's ⌘I: everything the server knows about one item,
-/// including the things a listing alone can't show — a symlink's target, the
-/// owner and group, and a folder's real recursive size.
 struct SFTPInfoPanel: View {
 
     let entry: SFTPEntry
     let info: SFTPEntryInfo?
-    /// The recursive byte count for a folder, once it has been walked.
     let folderSize: Int64?
     let isSizing: Bool
     let onApplyPermissions: (UInt32) -> Void
@@ -26,8 +19,7 @@ struct SFTPInfoPanel: View {
 
     @State private var mode: UInt32 = 0
     @State private var octalText = ""
-    /// Set once the fetched mode has been adopted, so re-renders while the user
-    /// is mid-edit don't snap the checkboxes back to the server's value.
+    /// Set once the fetched mode is adopted, so re-renders mid-edit don't snap the checkboxes back to the server's value.
     @State private var adoptedMode = false
 
     var body: some View {
@@ -85,9 +77,6 @@ struct SFTPInfoPanel: View {
     }
 
     private var kindLabel: String {
-        // A link is described by what it is *and* what it resolves to, because
-        // both matter: "Alias to folder" tells you it will open like a folder and
-        // that deleting it deletes only the link.
         if entry.isSymlink { return entry.isDirectory ? "Alias to folder" : "Alias" }
         return entry.isDirectory ? "Folder" : "File"
     }
@@ -107,9 +96,7 @@ struct SFTPInfoPanel: View {
         }
     }
 
-    /// A directory's listed size is its inode's, not its contents' — showing it
-    /// would be actively misleading, so folders show the walked total instead and
-    /// say so while the walk is running.
+    /// A directory's listed size is its inode's, not its contents', so folders show the walked total instead.
     private func sizeText(_ info: SFTPEntryInfo) -> String {
         guard info.attributes.isDirectory else { return info.attributes.size.byteString }
         if let folderSize { return folderSize.byteString }
@@ -165,8 +152,7 @@ struct SFTPInfoPanel: View {
                 Button("Apply") { onApplyPermissions(mode) }
                     .disabled(mode == info.attributes.mode)
             }
-            // Typed octal is only adopted on submit, so a half-typed "6" can't
-            // briefly strip every permission bit off the checkboxes.
+            // Typed octal is adopted only on submit, so a half-typed "6" can't briefly strip every permission bit off the checkboxes.
             if SFTPPermissions.parse(octal: octalText) == nil && !octalText.isEmpty {
                 Text("Enter three or four digits, 0–7.")
                     .font(.system(size: 10)).foregroundStyle(Theme.red)

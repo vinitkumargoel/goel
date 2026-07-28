@@ -1,13 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-/// Tests for the feature batch: time-of-day scheduling, transfer statistics,
-/// backup pruning, RSS parsing, the export envelope, and model decode
-/// compatibility for the new optional fields.
 final class NewFeatureTests: XCTestCase {
-
-    // MARK: Download window
-
     private func settings(start: Int, end: Int, days: [Int] = [1, 2, 3, 4, 5, 6, 7],
                           enabled: Bool = true) -> AppSettings {
         AppSettings(scheduleEnabled: enabled, scheduleStartMinute: start,
@@ -55,8 +49,6 @@ final class NewFeatureTests: XCTestCase {
         XCTAssertTrue(DownloadManager.isWindowOpen(settings: weekdaysOnly, date: date(weekday: 2, hour: 12)))
     }
 
-    // MARK: Transfer statistics
-
     func testStatsRecordAccumulates() {
         var stats = TransferStats()
         stats.record(down: 1_000, up: 100)
@@ -93,8 +85,6 @@ final class NewFeatureTests: XCTestCase {
         XCTAssertEqual(loaded, stats)
     }
 
-    // MARK: Backup pruning
-
     func testPruneBackupsKeepsNewest() throws {
         let dir = NSTemporaryDirectory() + "goel-prune-test-\(UUID().uuidString)"
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -105,7 +95,6 @@ final class NewFeatureTests: XCTestCase {
                 atPath: (dir as NSString).appendingPathComponent("backup-\(stamp).json"),
                 contents: Data("[]".utf8))
         }
-        // An unrelated file must never be touched.
         FileManager.default.createFile(
             atPath: (dir as NSString).appendingPathComponent("notes.txt"), contents: Data())
 
@@ -116,8 +105,6 @@ final class NewFeatureTests: XCTestCase {
                                    "backup-2026-01-05-000000.json",
                                    "notes.txt"])
     }
-
-    // MARK: RSS parsing
 
     func testParsesRSS2WithEnclosure() {
         let xml = """
@@ -152,8 +139,6 @@ final class NewFeatureTests: XCTestCase {
         XCTAssertEqual(items[0].guid, "urn:x:1")
     }
 
-    // MARK: Export envelope
-
     func testExportImportRoundTrip() async throws {
         let manager = DownloadManager(
             httpEngine: MockTorrentEngine(), torrentEngine: MockTorrentEngine(),
@@ -163,8 +148,6 @@ final class NewFeatureTests: XCTestCase {
 
         let data = try await manager.exportEnvelope()
 
-        // Importing into a fresh manager recreates the task, paused-or-queued
-        // state normalized, and adopts the settings.
         let fresh = DownloadManager(
             httpEngine: MockTorrentEngine(), torrentEngine: MockTorrentEngine(),
             settings: AppSettings(), store: try PersistenceStore())
@@ -174,7 +157,6 @@ final class NewFeatureTests: XCTestCase {
         XCTAssertEqual(snapshot.count, 1)
         XCTAssertEqual(snapshot.first?.source.dedupKey, source.dedupKey)
 
-        // Importing the same envelope again adds nothing (dedup).
         let again = try await fresh.importEnvelope(data)
         XCTAssertEqual(again, 0)
     }
@@ -189,11 +171,7 @@ final class NewFeatureTests: XCTestCase {
         XCTAssertTrue(cleaned.saveDirectory.hasPrefix("/"))
     }
 
-    // MARK: Decode compatibility
-
     func testOldTaskBlobDecodesWithoutNewFields() throws {
-        // A pre-batch task JSON: none of connections/seedCount/remoteInfo/
-        // scanVerdict/speedLimitBytesPerSec/sequentialDownload exist.
         let task = DownloadTask(source: DownloadSource.parse("https://e.com/f.zip")!,
                                 name: "f.zip", saveDirectory: "/tmp")
         var json = try JSONSerialization.jsonObject(
@@ -218,13 +196,8 @@ final class NewFeatureTests: XCTestCase {
         XCTAssertTrue(decoded.rssFeeds.isEmpty)
     }
 
-    // MARK: Review-fix regressions
-
     func testTorrentSuffixRespectsSchemeAllowlist() {
-        // file:/data: .torrent locators must be rejected by the remote-input
-        // parser; only http(s) .torrent URLs reach the torrent-file fetcher.
-        // An ftp .torrent URL parses (FTP is a supported engine now) but must
-        // route as a plain FTP file download, never into the fetcher.
+        // Scheme allowlist: only http(s) .torrent URLs reach the torrent-file fetcher; file:/data: are rejected outright.
         XCTAssertNil(DownloadSource.parse("file:///Users/x/evil.torrent"))
         if case .torrentFile = DownloadSource.parse("ftp://host/evil.torrent") {
             XCTFail("ftp .torrent URL must not route to the torrent-file fetcher")
@@ -245,7 +218,7 @@ final class NewFeatureTests: XCTestCase {
         hostile.btWatchFolderEnabled = true
         hostile.antivirusEnabled = true
         hostile.antivirusExecutablePath = "/tmp/evil"
-        hostile.theme = "dark"   // benign field — must still be adopted
+        hostile.theme = "dark"
 
         let current = AppSettings()
         let safe = DownloadManager.sanitizedImportedSettings(hostile, current: current)
@@ -275,13 +248,10 @@ final class NewFeatureTests: XCTestCase {
         let source = DownloadSource.parse("https://example.com/held.bin")!
         let task = await manager.add(source: source, startPaused: true)
         XCTAssertEqual(task.status, .paused)
-        // Give any (wrongly) scheduled launch a chance to run, then re-check.
         try await Task.sleep(nanoseconds: 100_000_000)
         let after = await manager.task(task.id)
         XCTAssertEqual(after?.status, .paused)
     }
-
-    // MARK: Version comparison (mirrors UpdateChecker.isNewer, kept in core-testable form)
 
     func testDottedVersionComparison() {
         XCTAssertTrue(isNewer("1.10", than: "1.9"))

@@ -1,16 +1,4 @@
-/* Hallmark · tokens for the Goel° marketing site (final: Terminal theme)
- * theme: studied-DNA (source: superset.sh screenshots, user-supplied)
- * paper dark · display mono (IBM Plex Mono) · accent cool sky-blue
- * every colour used anywhere on the site is named here — no literals in the pages
- */
-
-/* ---------- self-hosted typefaces ----------
- * Latin + Latin-Ext subsets, served from our own origin: no Google Fonts request,
- * so no third party ever sees a visitor's IP, and text paints without waiting on
- * two extra DNS+TLS handshakes. Inter is one variable file per subset; IBM Plex
- * Mono ships static per weight. unicode-range gates the -ext files so English
- * visitors never download them.
- */
+/* Self-hosted Latin(+Ext) faces: no Google Fonts, so no third party sees a visitor's IP; unicode-range gates the -ext files. */
 @font-face {
   font-family: 'Inter';
   font-style: normal;
@@ -76,8 +64,6 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* dark-only site: tells the UA to paint scrollbars and form controls dark, and
-   stops the white flash before the stylesheet applies */
 :root { color-scheme: dark; }
 
 .theme-terminal {
@@ -98,7 +84,6 @@
   --color-line-strong: oklch(96% 0.005 250 / 0.22);
   --color-focus: oklch(72% 0.135 240);
 
-  /* product-simulation surfaces — the live demo panels */
   --color-app-bg: oklch(17% 0.012 255);
   --color-app-bar: oklch(19% 0.014 255);
   --color-app-side: oklch(16% 0.011 255);
@@ -111,13 +96,11 @@
   --color-map-bg: oklch(22% 0.012 255);
   --color-qr: oklch(25% 0.015 255);
 
-  /* window traffic lights */
   --color-tl-off: oklch(45% 0.02 255);
   --color-tl-red: oklch(65% 0.19 25);
   --color-tl-amber: oklch(80% 0.15 85);
   --color-tl-green: oklch(72% 0.17 150);
 
-  /* file-kind swatches */
   --color-kind-disc: oklch(70% 0.15 55);
   --color-kind-video: oklch(62% 0.17 300);
   --color-kind-arch: oklch(66% 0.13 240);
@@ -155,10 +138,9 @@
   --radius-md: 10px;
   --radius-lg: 16px;
 
-  /* sticky-nav height — anchor targets clear it via scroll-margin-top */
   --nav-h: 64px;
 }
 
 @media (max-width: 980px) {
-  .theme-terminal { --nav-h: 100px; } /* nav wraps to two rows below 980px */
+  .theme-terminal { --nav-h: 100px; }
 }

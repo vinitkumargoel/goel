@@ -3,18 +3,10 @@ import AppKit
 import UniformTypeIdentifiers
 import GoelCore
 
-/// The main-pane SFTP file browser, shown in place of the download list when a
-/// server is selected in the sidebar. Drop files from Finder to upload; drag a
-/// remote file out to download it (or use the context menu). Files can also be
-/// handed to the normal download queue.
 struct SFTPBrowserView: View {
     @EnvironmentObject private var vm: AppViewModel
     @StateObject private var model: SFTPBrowserModel
 
-    /// The connection/client as most recently handed down by the parent. Stored
-    /// as plain view properties (not `@StateObject`) so they always reflect the
-    /// latest edit; `.onChange` forwards them into the long-lived model, which
-    /// SwiftUI keeps alive across an edit because the connection `id` is stable.
     private let connection: SFTPConnection
     private let client: SFTPClient?
 
@@ -23,44 +15,26 @@ struct SFTPBrowserView: View {
     @State private var newFolderName = ""
     @State private var pendingDelete: SFTPEntry?
 
-    /// The entry currently under the pointer, for the hover highlight (list + grid).
     @State private var hoveredEntry: SFTPEntry.ID?
-    /// The folder currently being dragged *onto*, so a drop uploads *into* it
-    /// rather than the open directory. One id at a time (the pointer is over one
-    /// folder), which also suppresses the whole-pane drop hint.
     @State private var folderDropTarget: SFTPEntry.ID?
-    /// List vs. grid layout, remembered across launches.
     @AppStorage("sftp.browser.gridView") private var isGrid = false
-    /// Live filter for the current directory (client-side, name substring).
     @State private var searchText = ""
-    /// Selected entries (multi-select) and the keyboard cursor within the listing.
     @State private var selection: Set<SFTPEntry.ID> = []
     @State private var cursor: SFTPEntry.ID?
     @FocusState private var listFocused: Bool
-    /// The entry being renamed (drives the rename alert) + its edit buffer.
     @State private var renaming: SFTPEntry?
     @State private var renameText = ""
-    /// Sort + hidden-file preferences, remembered across launches.
     @AppStorage("sftp.browser.sortKey") private var sortKeyRaw = "name"
     @AppStorage("sftp.browser.sortAsc") private var sortAscending = true
     @AppStorage("sftp.browser.showHidden") private var showHidden = false
-    /// The entry whose info panel is open, plus what has been fetched for it.
     @State private var infoEntry: SFTPEntry?
     @State private var entryInfo: SFTPEntryInfo?
-    /// A folder's recursive size, and the walk that produces it. The walk is
-    /// cancelled when the panel closes so a big tree doesn't keep listing after
-    /// nobody is looking.
     @State private var infoFolderSize: Int64?
     @State private var infoSizeTask: Task<Void, Never>?
     @State private var infoSizeCancel: CancelFlag?
-    /// The type-to-select buffer and when it was last extended.
     @State private var typeSelectBuffer = ""
     @State private var typeSelectAt = Date.distantPast
-    /// How long a typed prefix stays live. Matches the roughly-one-second window
-    /// Finder uses: long enough to type a word, short enough that coming back to
-    /// the keyboard starts a fresh search.
     private static let typeSelectWindow: TimeInterval = 1.0
-    /// Free space on the current folder's volume, or nil when unknown/unsupported.
     @State private var volumeSpace: SFTPVolumeSpace?
 
     init(connection: SFTPConnection, client: SFTPClient?) {
@@ -91,36 +65,25 @@ struct SFTPBrowserView: View {
         .task(id: model.connection.id) {
             await model.restore()
             await consumeNavigationRequest(vm.sftpBrowserNavigation)
-            // Piggy-back OS detection on this already-authenticated session, so it
-            // never opens a connection of its own to an un-browsed server.
+            // Reuses this authenticated session; never opens one to an un-browsed server.
             vm.detectServerOSIfNeeded(connection, client: client)
         }
-        // When the connection is edited (host/username/port/password), the parent
-        // re-renders this view with the fresh value but the @StateObject model is
-        // kept alive — so forward the new credentials in and re-list, otherwise the
-        // open browser keeps using the pre-edit login.
+        // The @StateObject model outlives the parent's re-render; without this it keeps the pre-edit login.
         .onChange(of: connection) {
             model.update(connection: connection, client: client)
             Task { await model.refresh() }
         }
-        // Re-list when a transfer changes the current server's contents (e.g. an
-        // upload finishes) — the transfer center bumps this on completion.
         .onChange(of: vm.sftpMutationTick) { Task { await model.refresh() } }
         .onChange(of: vm.sftpBrowserNavigation) { _, request in
             Task { await consumeNavigationRequest(request) }
         }
-        // Clear any stale hover/drop highlight when the listing changes — SFTPEntry
-        // ids are just names, so a same-named entry in the new folder must not
-        // inherit the previous folder's highlight until the pointer next moves.
+        // SFTPEntry ids are just names: a same-named entry must not inherit the old highlight.
         .onChange(of: model.path) {
             hoveredEntry = nil; folderDropTarget = nil; searchText = ""
             selection.removeAll(); cursor = nil
             typeSelectBuffer = ""; typeSelectAt = .distantPast
             closeInfo()
         }
-        // Free space is per-volume, so it is re-read whenever the folder changes
-        // (a different mount can have wildly different capacity) and after any
-        // transfer that moved bytes onto this server.
         .task(id: model.path) { volumeSpace = await model.volumeSpace() }
         .onChange(of: vm.sftpMutationTick) {
             Task { volumeSpace = await model.volumeSpace() }
@@ -174,13 +137,8 @@ struct SFTPBrowserView: View {
         }
     }
 
-    // MARK: Header
-
     private var header: some View {
         HStack(spacing: 10) {
-            // Every control in this bar is a bare SF Symbol; the `.help` tooltips
-            // are pointer-only, so each needs a spoken name of its own. Keyboard
-            // shortcuts match the Finder equivalents where one exists.
             Button { vm.closeServerBrowser() } label: {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
                     .font(.system(size: 12, weight: .semibold))
@@ -189,7 +147,6 @@ struct SFTPBrowserView: View {
             .help("Back to downloads")
             .a11yButton("Back to downloads")
 
-            // Browser-style back / forward through visited folders.
             Button { Task { await model.goBack() } } label: { Image(systemName: "chevron.backward") }
                 .disabled(!model.canGoBack).help("Back")
                 .keyboardShortcut("[", modifiers: .command)
@@ -251,7 +208,6 @@ struct SFTPBrowserView: View {
         .accessibilityLabel("Server browser toolbar")
     }
 
-    /// Clickable path segments — jump up any number of levels in one click.
     private var breadcrumbBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 3) {
@@ -259,7 +215,6 @@ struct SFTPBrowserView: View {
                     if idx > 0 {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 7, weight: .semibold)).foregroundStyle(.tertiary)
-                            // A separator between path segments, not a control.
                             .a11yDecorative()
                     }
                     let isLast = idx == breadcrumbs.count - 1
@@ -269,8 +224,6 @@ struct SFTPBrowserView: View {
                             .foregroundStyle(isLast ? Color.primary : Color.secondary)
                     }
                     .buttonStyle(.plain).disabled(isLast)
-                    // Which crumb is the *current* folder is shown only by a
-                    // darker text colour — colour alone, and inaudible.
                     .accessibilityLabel(isLast ? "Current folder, \(crumb.label)"
                                                : "Go to \(crumb.label)")
                 }
@@ -281,7 +234,6 @@ struct SFTPBrowserView: View {
         .accessibilityLabel("Folder path")
     }
 
-    /// Sort key + direction, plus the hidden-files toggle.
     private var sortMenu: some View {
         Menu {
             Button(sortItemLabel("Name", "name")) { setSort("name") }
@@ -295,8 +247,6 @@ struct SFTPBrowserView: View {
         .menuIndicator(.hidden)
         .frame(width: 24)
         .help("Sort & display options")
-        // The menu's own items use "↑"/"↓" suffixes to mark the active key, so
-        // the current sort is stated here rather than left to those arrows.
         .accessibilityLabel("Sort and display options")
         .accessibilityValue("\(sortKeyRaw), \(sortAscending ? "ascending" : "descending")")
     }
@@ -321,7 +271,7 @@ struct SFTPBrowserView: View {
             }
             return crumbs
         }
-        var crumbs = [Crumb(label: "Home", path: ".")]   // relative to the login home
+        var crumbs = [Crumb(label: "Home", path: ".")]
         var acc = ""
         for part in path.split(separator: "/", omittingEmptySubsequences: true) {
             acc = acc.isEmpty ? String(part) : acc + "/" + part
@@ -330,10 +280,6 @@ struct SFTPBrowserView: View {
         return crumbs
     }
 
-    // MARK: Search + entry list
-
-    /// The display pipeline: hide dotfiles (unless toggled), apply the search
-    /// filter, then sort per the chosen key/direction (folders always first).
     private var visibleEntries: [SFTPEntry] {
         var list = model.entries
         if !showHidden { list = list.filter { !$0.name.hasPrefix(".") } }
@@ -343,7 +289,7 @@ struct SFTPBrowserView: View {
     }
 
     private func sortComparator(_ a: SFTPEntry, _ b: SFTPEntry) -> Bool {
-        if a.isDirectory != b.isDirectory { return a.isDirectory }   // folders first, always
+        if a.isDirectory != b.isDirectory { return a.isDirectory }
         let ascending: Bool
         switch sortKeyRaw {
         case "size":
@@ -365,8 +311,6 @@ struct SFTPBrowserView: View {
         if sortKeyRaw == key { sortAscending.toggle() } else { sortKeyRaw = key; sortAscending = true }
     }
 
-    /// A live filter over the current directory — entries are matched by name as
-    /// you type; Enter jumps into a sole matching folder.
     private var searchBar: some View {
         HStack(spacing: 7) {
             Image(systemName: "magnifyingglass")
@@ -382,7 +326,6 @@ struct SFTPBrowserView: View {
                 Text("\(visibleEntries.count)")
                     .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
                     .foregroundStyle(.tertiary)
-                    // A bare number beside a filter field means nothing spoken.
                     .accessibilityLabel("\(visibleEntries.count) matches")
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12))
@@ -396,16 +339,11 @@ struct SFTPBrowserView: View {
         .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 2)
     }
 
-    /// Enter in the filter jumps into the folder when it's the only match.
     private func openSoleSearchResult() {
         guard visibleEntries.count == 1, let only = visibleEntries.first, only.isDirectory else { return }
         Task { await model.open(only) }
     }
 
-    // MARK: Selection & keyboard
-
-    /// Click selection with modifiers: ⌘ toggles, ⇧ extends a range from the
-    /// cursor, a plain click selects just this entry.
     private func handleClick(_ entry: SFTPEntry) {
         let mods = NSEvent.modifierFlags
         if mods.contains(.command) {
@@ -422,23 +360,17 @@ struct SFTPBrowserView: View {
         listFocused = true
     }
 
-    /// Double-click / Enter: open a folder, download a file.
     private func primaryAction(_ entry: SFTPEntry) {
         if entry.isDirectory { Task { await model.open(entry) } }
         else { downloadTargets([entry]) }
     }
 
-    /// Keyboard driving: arrows move the cursor (⇧ extends, ⌘↓ opens, ⌘↑ goes up),
-    /// Enter opens/downloads, Space previews, Delete removes the selection,
-    /// ⌘A selects all, Esc clears, and typing letters jumps to a matching name.
     private func handleKey(_ press: KeyPress, proxy: ScrollViewProxy) -> KeyPress.Result {
         let entries = visibleEntries
         guard !entries.isEmpty else { return .ignored }
         let current = cursor.flatMap { id in entries.firstIndex { $0.id == id } }
         switch press.key {
         case .downArrow, .upArrow:
-            // ⌘↓ / ⌘↑ navigate the hierarchy rather than the list, which is what
-            // those chords do in Finder.
             if press.modifiers.contains(.command) {
                 if press.key == .downArrow {
                     if let c = current { primaryAction(entries[c]) }
@@ -469,8 +401,6 @@ struct SFTPBrowserView: View {
             selection.removeAll(); return .handled
         default:
             guard press.modifiers.contains(.command) else {
-                // A bare printable character is a type-to-select query. Modifier
-                // combinations and control keys fall through untouched.
                 guard press.modifiers.subtracting(.shift).isEmpty,
                       let character = press.characters.first,
                       character.isLetter || character.isNumber
@@ -499,11 +429,6 @@ struct SFTPBrowserView: View {
         }
     }
 
-    /// Jump to the first entry whose name starts with what has just been typed —
-    /// Finder's type-to-select. Consecutive keystrokes within
-    /// ``typeSelectWindow`` accumulate, so "re" reaches "report.pdf" past
-    /// "readme"; after a pause the buffer resets and a single letter cycles
-    /// through the items starting with it.
     private func typeSelect(_ character: Character, entries: [SFTPEntry],
                             proxy: ScrollViewProxy) -> KeyPress.Result {
         let now = Date()
@@ -514,7 +439,6 @@ struct SFTPBrowserView: View {
         typeSelectBuffer = continuing && !repeated ? typeSelectBuffer + String(character)
                                                   : String(character)
 
-        // Repeating one letter cycles; extending the prefix restarts the search.
         let startIndex: Int
         if repeated, let c = cursor.flatMap({ id in entries.firstIndex { $0.id == id } }) {
             startIndex = c + 1
@@ -524,7 +448,7 @@ struct SFTPBrowserView: View {
         let prefix = typeSelectBuffer.lowercased()
         let order = (0..<entries.count).map { (startIndex + $0) % entries.count }
         guard let hit = order.first(where: { entries[$0].name.lowercased().hasPrefix(prefix) })
-        else { return .handled }   // no match: swallow the key rather than act on it
+        else { return .handled }
 
         let id = entries[hit].id
         cursor = id
@@ -533,8 +457,6 @@ struct SFTPBrowserView: View {
         return .handled
     }
 
-    /// Put the current selection — or the row under the cursor when nothing is
-    /// selected — on the remote clipboard.
     private func copySelection(_ operation: SFTPClipboard.Operation) {
         let targets = clipboardTargets()
         guard !targets.isEmpty else { return }
@@ -548,19 +470,12 @@ struct SFTPBrowserView: View {
         vm.duplicateSFTPItems(targets, on: model.connection, directory: model.path)
     }
 
-    /// What ⌘C / ⌘X / ⌘D act on: the selection if there is one, otherwise the
-    /// keyboard cursor's row, so the shortcuts work straight after arrow-keying
-    /// to an item.
     private func clipboardTargets() -> [SFTPEntry] {
         let selected = visibleEntries.filter { selection.contains($0.id) }
         if !selected.isEmpty { return selected }
         return visibleEntries.filter { $0.id == cursor }
     }
 
-    // MARK: Row actions
-
-    /// The entries an action applies to: the whole selection when the clicked row
-    /// is part of a multi-selection, otherwise just that row.
     private func actionTargets(for entry: SFTPEntry) -> [SFTPEntry] {
         if selection.contains(entry.id) && selection.count > 1 {
             return visibleEntries.filter { selection.contains($0.id) }
@@ -568,10 +483,6 @@ struct SFTPBrowserView: View {
         return [entry]
     }
 
-    // MARK: Info panel
-
-    /// Open the info panel for one entry, fetching its attributes and — for a
-    /// folder — walking it for a real size.
     private func showInfo(_ entry: SFTPEntry) {
         closeInfo()
         infoEntry = entry
@@ -582,8 +493,7 @@ struct SFTPBrowserView: View {
         infoSizeTask = Task {
             let size = await model.recursiveSize(of: entry,
                                                  shouldContinue: { !cancel.isCancelled })
-            // A walk that was cancelled must not write its partial answer into a
-            // panel that has since been closed or re-pointed.
+            // A cancelled walk must not write its partial answer into a closed panel.
             guard !cancel.isCancelled else { return }
             infoFolderSize = size
             infoSizeTask = nil
@@ -614,8 +524,6 @@ struct SFTPBrowserView: View {
             ?? FileManager.default.homeDirectoryForCurrentUser
     }
 
-    /// Download `entries` — files and whole folders alike — to the user's
-    /// Downloads folder.
     private func downloadTargets(_ entries: [SFTPEntry]) {
         let items = entries.filter { SFTPBrowserPaths.isSafeChildName($0.name) }
         guard !items.isEmpty else { vm.toastNow("Select items to download"); return }
@@ -635,10 +543,7 @@ struct SFTPBrowserView: View {
             confirmTitle: "Delete", destructive: true
         ) {
             Task {
-                // Counted, not assumed: a permission-denied or non-empty-directory
-                // refusal in the middle of a batch would otherwise be reported as
-                // a clean sweep, and the next item's refresh clears the error
-                // banner that was the only other sign of it.
+                // Count them: an unreported refusal mid-batch reads as a clean sweep.
                 var deleted = 0
                 for e in entries where await model.delete(e) { deleted += 1 }
                 selection.removeAll()
@@ -651,11 +556,8 @@ struct SFTPBrowserView: View {
         }
     }
 
-    /// The most a preview will pull to disk, applied both to the size the server
-    /// advertised and to the bytes that actually arrive.
     private var previewByteCap: Int64 { 512 * 1024 * 1024 }
 
-    /// Fetch a file to a temp copy, then peek it in the system Quick Look panel.
     private func quickLook(_ entry: SFTPEntry) {
         guard !entry.isDirectory, let client else { return }
         guard entry.size < previewByteCap else { vm.toastNow("Too large to preview"); return }
@@ -665,9 +567,7 @@ struct SFTPBrowserView: View {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let tmp = dir.appendingPathComponent(safe)
         let remote = SFTPBrowserModel.join(model.path, entry.name)
-        // `entry.size` is the server's claim, not a fact — a server reporting 0
-        // would otherwise stream unbounded data into the temp directory behind a
-        // preview the user asked for. Bound the fetch itself.
+        // `entry.size` is the server's claim: a reported 0 would stream unbounded data to temp.
         let cap = ByteCap(limit: previewByteCap)
         vm.toastNow("Preparing preview…")
         Task {
@@ -683,8 +583,6 @@ struct SFTPBrowserView: View {
                 }
                 await MainActor.run { QuickLookPresenter.shared.present(tmp) }
             } catch {
-                // Tripping the cap aborts the transfer, so the throw arrives as a
-                // bare "Aborted" — say what actually happened.
                 try? FileManager.default.removeItem(at: dir)
                 let message = cap.underLimit ? "Couldn’t preview “\(entry.name)”" : "Too large to preview"
                 await MainActor.run { vm.toastNow(message) }
@@ -706,8 +604,6 @@ struct SFTPBrowserView: View {
         return "sftp://\(c.username)@\(c.host):\(c.port)\(p.hasPrefix("/") ? p : "/" + p)"
     }
 
-    /// A "Move to" submenu: the current folder's subfolders (and the parent), for
-    /// a remote-to-remote move.
     @ViewBuilder
     private func moveMenu(_ entry: SFTPEntry) -> some View {
         Menu("Move to") {
@@ -721,10 +617,7 @@ struct SFTPBrowserView: View {
                 }
                 Divider()
             }
-            // `folder.name` is server-supplied and gets joined straight onto the
-            // remote path, exactly like a drop target — so it gets the same
-            // guard: an entry named "../.." must not relocate the file outside
-            // the browsed tree. A malformed entry is simply not offered.
+            // `folder.name` is server-supplied: an entry named "../.." must not escape the tree.
             let folders = model.entries.filter {
                 $0.isDirectory && $0.id != entry.id && SFTPBrowserPaths.isSafeChildName($0.name)
             }
@@ -744,8 +637,6 @@ struct SFTPBrowserView: View {
         }
     }
 
-    // MARK: Status footer
-
     private var statusFooter: some View {
         HStack(spacing: 8) {
             if !selection.isEmpty {
@@ -758,8 +649,6 @@ struct SFTPBrowserView: View {
             Spacer()
             let totalBytes = visibleEntries.filter { !$0.isDirectory }.reduce(Int64(0)) { $0 + $1.size }
             if totalBytes > 0 { Text(totalBytes.byteString).foregroundStyle(.secondary) }
-            // Only shown when the server answered `statvfs@openssh.com`; a server
-            // without it simply shows nothing rather than an error nobody can act on.
             if let space = volumeSpace, space.totalBytes > 0 {
                 Text("·").foregroundStyle(.tertiary)
                 Text("\(space.freeBytes.byteString) free")
@@ -781,16 +670,12 @@ struct SFTPBrowserView: View {
         return parts.isEmpty ? "Empty" : parts.joined(separator: " · ")
     }
 
-    // MARK: Entry list
-
     private var entryList: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 if isGrid { gridBody } else { listBody }
             }
             .overlay { if visibleEntries.isEmpty && !model.isLoading { emptyState } }
-            // Suppress the whole-pane "upload here" hint while a folder is being
-            // hovered, so that folder's own drop target reads clearly.
             .overlay { if dropTargeted && folderDropTarget == nil { dropHint } }
             .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
                 handleUploadDrop(providers)
@@ -830,9 +715,6 @@ struct SFTPBrowserView: View {
         }
     }
 
-    /// Finder's clickable column headers: click to sort by that column, click
-    /// again to reverse. The widths mirror ``row(_:)`` exactly, so the headings
-    /// sit over the values they name.
     private var columnHeaders: some View {
         HStack(spacing: 10) {
             Color.clear.frame(width: 18)
@@ -855,7 +737,6 @@ struct SFTPBrowserView: View {
         Button { setSort(key) } label: {
             HStack(spacing: 3) {
                 Text(title).font(.system(size: 10, weight: .semibold))
-                // The active column is marked by its arrow, not by colour alone.
                 if sortKeyRaw == key {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 7, weight: .bold))
@@ -882,8 +763,6 @@ struct SFTPBrowserView: View {
         .padding(14)
     }
 
-    /// "Folder, Documents" / "File, report.pdf" — the kind said in words, since
-    /// visually it is only an SF Symbol and a tint.
     private func entryLabel(_ entry: SFTPEntry) -> String {
         let kind = entry.isSymlink
             ? (entry.isDirectory ? "Alias to folder" : "Alias")
@@ -891,20 +770,15 @@ struct SFTPBrowserView: View {
         return "\(kind), \(entry.name)"
     }
 
-    /// The small arrow marking a symbolic link, with its target in the tooltip.
     private func symlinkBadge(_ entry: SFTPEntry) -> some View {
         Image(systemName: "arrow.up.forward")
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(.tertiary)
             .help(entry.linkTarget.isEmpty ? "Symbolic link"
                                            : "Symbolic link to \(entry.linkTarget)")
-            // The name already says which row this is; the badge repeating
-            // "alias" would double up with `entryLabel`.
             .a11yDecorative()
     }
 
-    /// Size and modification date, spoken. Folders have no meaningful size, so
-    /// they report only their date rather than a misleading zero.
     private func entryValue(_ entry: SFTPEntry) -> String {
         A11y.sentence(
             entry.isDirectory ? nil : A11y.bytes(entry.size),
@@ -919,12 +793,9 @@ struct SFTPBrowserView: View {
             Image(systemName: SFTPFileIcon.symbol(for: entry))
                 .foregroundStyle(SFTPFileIcon.tint(for: entry))
                 .frame(width: 18)
-            // Column widths here are mirrored by `columnHeaders`; changing one
-            // without the other visibly de-registers the headings.
+            // These column widths are mirrored in `columnHeaders`; change both together.
             HStack(spacing: 6) {
                 Text(entry.name).font(.system(size: 13)).lineLimit(1)
-                // A link looks exactly like what it points at otherwise, and the
-                // difference matters: deleting one removes only the link.
                 if entry.isSymlink { symlinkBadge(entry) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -939,9 +810,6 @@ struct SFTPBrowserView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .background(entryHighlight(hovered: hovered, dropping: dropping, selected: selected))
-        // Icon, name, size and date read as four fragments, and whether a row is
-        // a folder is carried only by its symbol and tint. One element, and say
-        // "Folder" or "File" out loud.
         .a11yGroup(label: entryLabel(entry), value: entryValue(entry),
                    hint: entry.isDirectory ? "Activate to open." : "Activate to select.")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -950,11 +818,9 @@ struct SFTPBrowserView: View {
         .onHover { inside in updateHover(entry.id, inside: inside) }
         .onTapGesture(count: 2) { primaryAction(entry) }
         .onTapGesture { handleClick(entry) }
-        // Drag a remote file out to Finder (downloads on demand).
         .ifLet(entry.isDirectory ? nil : entry) { view, file in
             view.onDrag { model.fileProvider(for: file) }
         }
-        // Drop local files onto a folder row to upload straight into it.
         .ifLet(entry.isDirectory ? entry : nil) { view, folder in
             view.onDrop(of: [.fileURL], isTargeted: folderDropBinding(folder.id)) { providers in
                 handleUploadDrop(providers, into: folder)
@@ -963,8 +829,6 @@ struct SFTPBrowserView: View {
         .contextMenu { rowMenu(entry) }
     }
 
-    /// A file/folder tile for the grid layout — same behaviours as ``row`` (open,
-    /// drag-out, drop-into, context menu) with hover + drop highlighting.
     private func gridTile(_ entry: SFTPEntry) -> some View {
         let hovered = hoveredEntry == entry.id
         let dropping = folderDropTarget == entry.id
@@ -995,8 +859,6 @@ struct SFTPBrowserView: View {
                               : hovered ? Color.primary.opacity(0.12) : Color.clear,
                               lineWidth: (dropping || selected) ? 2 : 1)
         )
-        // Same collapse as the list row — a grid tile is one item, and selection
-        // here is signalled purely by an accent fill and border.
         .a11yGroup(label: entryLabel(entry), value: entryValue(entry),
                    hint: entry.isDirectory ? "Activate to open." : "Activate to select.")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -1016,7 +878,6 @@ struct SFTPBrowserView: View {
         .contextMenu { rowMenu(entry) }
     }
 
-    /// The hover / drop-target / selection fill shared by list rows.
     @ViewBuilder
     private func entryHighlight(hovered: Bool, dropping: Bool, selected: Bool) -> some View {
         if dropping {
@@ -1030,15 +891,12 @@ struct SFTPBrowserView: View {
         }
     }
 
-    /// Track the hovered entry, only clearing when the pointer leaves the row that
-    /// currently owns the highlight (avoids a leave-event race between neighbours).
+    /// Clear only if this row still owns the highlight — neighbours race on leave events.
     private func updateHover(_ id: SFTPEntry.ID, inside: Bool) {
         if inside { hoveredEntry = id }
         else if hoveredEntry == id { hoveredEntry = nil }
     }
 
-    /// A per-folder `isTargeted` binding that records which folder is being dragged
-    /// onto — drives the highlight and suppresses the whole-pane hint.
     private func folderDropBinding(_ id: SFTPEntry.ID) -> Binding<Bool> {
         Binding(
             get: { folderDropTarget == id },
@@ -1082,9 +940,6 @@ struct SFTPBrowserView: View {
         }
     }
 
-    /// Copy / Cut / Duplicate / Paste, shared by the single- and multi-selection
-    /// menus. Paste appears here as well as in the empty-area menu because
-    /// right-clicking a row is how most people reach for it.
     @ViewBuilder
     private func clipboardMenuItems(_ targets: [SFTPEntry]) -> some View {
         Button(targets.count == 1 ? "Copy" : "Copy \(targets.count) Items") {
@@ -1126,11 +981,8 @@ struct SFTPBrowserView: View {
             .foregroundStyle(Theme.accent)
         }
         .allowsHitTesting(false)
-        // Shown only mid-drag, a state that requires a pointer to reach.
         .a11yDecorative()
     }
-
-    // MARK: Transfer strip
 
     private func consumeNavigationRequest(_ request: SFTPBrowserNavigationRequest?) async {
         guard let request, request.connectionID == model.connection.id else { return }
@@ -1171,7 +1023,6 @@ struct SFTPBrowserView: View {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
                 .a11yDecorative()
             Text(message).font(.system(size: 12)).lineLimit(2)
-                // Triangle + orange wash are the only "this is an error" cues.
                 .accessibilityLabel("Error. \(message)")
             Spacer()
             Button { model.error = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
@@ -1180,29 +1031,19 @@ struct SFTPBrowserView: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 7)
         .background(Theme.orange.opacity(0.12))
-        // The banner appears without taking focus, so nothing would otherwise
-        // tell a screen-reader user that the operation they just ran failed.
         .onAppear { A11yAnnouncer.announce("Error. \(message)") }
     }
-
-    // MARK: Drop / save handling
 
     private func handleUploadDrop(_ providers: [NSItemProvider]) -> Bool {
         let connection = model.connection
         let remoteDir = model.path
         return collectDroppedURLs(providers, fileURLsOnly: true) { urls in
-            // Files and folders both upload (folders recurse in the transfer center).
             if !urls.isEmpty { vm.startUpload(items: urls, toRemoteDir: remoteDir, on: connection) }
         }
     }
 
-    /// Drop straight onto a folder row/tile: upload into *that* folder rather than
-    /// the open directory.
     private func handleUploadDrop(_ providers: [NSItemProvider], into folder: SFTPEntry) -> Bool {
-        // `folder.name` comes from the server's directory listing — untrusted. Refuse
-        // any separator or parent-traversal so a hostile listing can't steer an
-        // upload outside the browsed directory. (Hidden ".config"-style names stay
-        // allowed; only path structure is rejected.)
+        // `folder.name` is untrusted server listing data: refuse separators and traversal.
         guard SFTPBrowserPaths.isSafeChildName(folder.name) else {
             vm.toastNow("Can’t upload into “\(folder.name)”")
             return false
@@ -1217,7 +1058,6 @@ struct SFTPBrowserView: View {
         }
     }
 
-    /// Pick local files and/or folders to upload into the current directory.
     private func chooseUploadItems() {
         let urls = FilePicker.openItems(
             canChooseFiles: true, canChooseDirectories: true,
@@ -1237,7 +1077,6 @@ struct SFTPBrowserView: View {
     }
 }
 
-/// Conditionally apply a modifier when an optional value is present.
 private extension View {
     @ViewBuilder
     func ifLet<T, Content: View>(_ value: T?, transform: (Self, T) -> Content) -> some View {

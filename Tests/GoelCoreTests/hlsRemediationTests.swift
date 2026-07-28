@@ -1,10 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Hardening regressions for the HLS parser and media engine: a hostile or
-/// malformed playlist arrives as network bytes, before the user has confirmed
-/// anything, so every one of these used to be a process trap or a silent
-/// degradation that still reported the download as finished.
 final class HLSRemediationTests: XCTestCase {
 
     private let base = URL(string: "https://cdn.example.com/video/index.m3u8")!
@@ -14,10 +10,6 @@ final class HLSRemediationTests: XCTestCase {
                      name: "stream.mp4", saveDirectory: NSTemporaryDirectory())
     }
 
-    // MARK: Byte-range bounds
-
-    /// `Int.max@Int.max` used to reach `start + length` and trap the process
-    /// (SIGTRAP, exit 133) during playlist parse.
     func testIntMaxByteRangeIsRejectedInsteadOfTrapping() {
         let text = """
         #EXTM3U
@@ -29,7 +21,6 @@ final class HLSRemediationTests: XCTestCase {
                      "an unbounded BYTERANGE must be a clean parse failure, never an overflow trap")
     }
 
-    /// The map's own range runs through the same accumulator.
     func testIntMaxMapByteRangeIsRejectedInsteadOfTrapping() {
         let text = """
         #EXTM3U
@@ -40,7 +31,6 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertNil(HLSParser.parse(text, baseURL: base))
     }
 
-    /// Large enough to parse as an `Int`, still far past any real resource.
     func testHugeButParseableByteRangeIsRejected() {
         let text = """
         #EXTM3U
@@ -51,8 +41,6 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertNil(HLSParser.parse(text, baseURL: base))
     }
 
-    /// A non-numeric offset used to fall back to the running offset, silently
-    /// addressing a slice the playlist never named.
     func testMalformedByteRangeOffsetIsRejectedNotSilentlyReplaced() {
         let text = """
         #EXTM3U
@@ -77,7 +65,6 @@ final class HLSRemediationTests: XCTestCase {
         }
     }
 
-    /// The bounds must not cost the legitimate CMAF case its ranges.
     func testOrdinaryByteRangesStillParse() {
         let text = """
         #EXTM3U
@@ -96,9 +83,6 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertEqual(segs[1].byteRange, HLSByteRange(start: 1184 + 501760, length: 498688))
     }
 
-    // MARK: Media sequence bounds
-
-    /// `seq += 1` on an `Int.max` start used to trap on the first segment.
     func testIntMaxMediaSequenceIsRejectedInsteadOfTrapping() {
         let text = """
         #EXTM3U
@@ -109,8 +93,7 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertNil(HLSParser.parse(text, baseURL: base))
     }
 
-    /// RFC 8216 §4.3.3.2 defines the sequence number as a decimal-integer; a
-    /// negative one is not legal, and it feeds AES-128 IV derivation.
+    /// RFC 8216 §4.3.3.2: MEDIA-SEQUENCE is a decimal-integer, never negative, and it feeds AES-128 IV derivation.
     func testNegativeOrNonNumericMediaSequenceIsRejected() {
         for value in ["-1", "abc"] {
             let text = """
@@ -138,10 +121,7 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertEqual(segs.map(\.sequence), [42, 43])
     }
 
-    // MARK: Duration bounds
-
-    /// `Double("inf")`, `Double("nan")` and `Double("1e400")` all parse in Swift,
-    /// and the poisoned total then trapped in the `Int64` size estimate.
+    /// `Double("inf")`, `"nan"` and `"1e400"` all parse in Swift, and the poisoned total then traps the `Int64` estimate.
     func testNonFiniteSegmentDurationsAreClampedNotPropagated() {
         for value in ["inf", "-inf", "nan", "1e400"] {
             let text = """
@@ -168,8 +148,6 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertEqual(normal, 9.009, accuracy: 0.0001)
     }
 
-    /// The consumer side of the same defect: the estimate is cosmetic, so an
-    /// unusable duration yields "unknown" rather than trapping the conversion.
     func testEstimatedBytesRefusesNonFiniteInput() {
         XCTAssertEqual(HLSEngine.estimatedBytes(bandwidth: 1_000_000, duration: .infinity), 0)
         XCTAssertEqual(HLSEngine.estimatedBytes(bandwidth: 1_000_000, duration: .nan), 0)
@@ -179,10 +157,7 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertEqual(HLSEngine.estimatedBytes(bandwidth: 8_000_000, duration: 10), 10_000_000)
     }
 
-    // MARK: Encryption — fail closed
-
-    /// An unrecognised METHOD used to collapse to `.none`, so ciphertext was
-    /// written to disk and the download reported as completed.
+    /// An unrecognised METHOD collapsing to `.none` writes ciphertext to disk and reports it as completed.
     func testUnrecognisedKeyMethodIsUnsupportedNotUnencrypted() {
         for method in ["SAMPLE-AES", "SAMPLE-AES-CTR", "AES-256"] {
             let text = """
@@ -199,8 +174,7 @@ final class HLSRemediationTests: XCTestCase {
         }
     }
 
-    /// A non-`identity` KEYFORMAT is DRM: the URI is a licence endpoint, not key
-    /// material, and fetching it and decrypting with the answer yields noise.
+    /// A non-`identity` KEYFORMAT is DRM: the URI is a licence endpoint, not key material.
     func testDRMKeyFormatIsReportedUnsupported() {
         let text = """
         #EXTM3U
@@ -238,9 +212,7 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertNil(plain[0].key)
     }
 
-    /// RFC 8216 §4.3.2.5: the key that applies to an `#EXT-X-MAP` is the most
-    /// recent one *preceding* it — not the first segment's, which the engine
-    /// used to reach for (decrypting a plaintext header, or using a later key).
+    /// RFC 8216 §4.3.2.5: an `#EXT-X-MAP`'s key is the most recent one *preceding* it, not the first segment's.
     func testInitMapCarriesThePrecedingKeyOnly() {
         let keyed = """
         #EXTM3U
@@ -266,10 +238,7 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertEqual(segs[0].key?.method, .aes128)
     }
 
-    // MARK: URI handling — fail closed
-
-    /// `URLSession` services `file://` data tasks, so an absolute non-web URI
-    /// would have read local bytes and spliced them into the output.
+    /// `URLSession` services `file://` data tasks, so an absolute non-web URI reads local bytes into the output.
     func testNonWebSegmentURIRejectsThePlaylist() {
         let text = """
         #EXTM3U
@@ -292,8 +261,7 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertNil(segs[0].key?.url, "a file:// key URI must not resolve")
     }
 
-    /// An unresolvable init-map URI used to leave `map` nil, silently switching
-    /// the engine from the fMP4 concat path to the MPEG-TS remux path.
+    /// An unresolvable init-map URI leaving `map` nil silently switches fMP4 concat to the MPEG-TS remux path.
     func testUnresolvableInitMapURIRejectsThePlaylist() {
         let bad = """
         #EXTM3U
@@ -311,8 +279,7 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertNil(HLSParser.parse(missing, baseURL: base))
     }
 
-    /// One unusable rendition still leaves the others — master playlists stay
-    /// lenient on purpose.
+    /// Master playlists stay lenient on purpose: one unusable rendition must still leave the others.
     func testUnresolvableVariantURIOnlyDropsThatVariant() {
         let text = """
         #EXTM3U
@@ -328,8 +295,6 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertEqual(variants[0].height, 720)
     }
 
-    // MARK: Live playlists
-
     func testIsFinishedDistinguishesVODFromLive() {
         let live = """
         #EXTM3U
@@ -343,10 +308,6 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertTrue(HLSParser.isFinished("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n" + live))
     }
 
-    // MARK: Separate audio renditions
-
-    /// A variant whose audio is a separate rendition needs muxing this
-    /// downloader can't do; downloading it alone produces a silent video.
     func testSeparateAudioRenditionIsFlaggedOnTheVariant() {
         let text = """
         #EXTM3U
@@ -363,8 +324,7 @@ final class HLSRemediationTests: XCTestCase {
                        "the variant declares no audio codec, so it would play silent")
     }
 
-    /// RFC 8216 §4.3.4.1: a rendition with no URI is already muxed into the
-    /// variants that name its group.
+    /// RFC 8216 §4.3.4.1: a rendition with no URI is already muxed into the variants that name its group.
     func testAudioRenditionWithoutURIIsNotTreatedAsSeparate() {
         let text = """
         #EXTM3U
@@ -385,18 +345,12 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertFalse(HLSParser.declaresAudioCodec(nil))
     }
 
-    // MARK: Engine request/session hardening
-
-    /// The one session in the codebase that used to be built without the
-    /// sanitizer, while `makeRequest` attaches the user's cookie and auth headers.
     func testEngineSessionStripsCredentialsOnCrossHostRedirect() {
         let engine = HLSEngine(profile: .high)
         XCTAssertTrue(engine.session.delegate is RedirectSanitizer,
                       "HLS fetches carry the task's cookie/auth headers; a 30x must not replay them")
     }
 
-    /// The `Range` header used to compute its last byte with unchecked addition
-    /// on the very values the playlist supplied.
     func testRangeHeaderIsOmittedRatherThanOverflowing() {
         let engine = HLSEngine(profile: .high)
         let url = URL(string: "https://cdn.example.com/video/stream.mp4")!

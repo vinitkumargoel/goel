@@ -1,27 +1,16 @@
 import Foundation
 import CurlBridge
 
-/// FTP/FTPS downloads via the system libcurl (through the ``CurlBridge`` C
-/// shim — `curl_easy_setopt` is variadic and unreachable from Swift).
-///
-/// One blocking libcurl transfer per task, each on its own dedicated thread
-/// (never the cooperative pool — a transfer can block for hours). Resume is
-/// byte-offset based: the engine restarts from the partial file's on-disk
-/// size using FTP `REST`, so no resume cursor is needed. `ftps://` is
-/// implicit TLS; plain `ftp://` opportunistically upgrades via `AUTH TLS`
-/// when the server supports it.
 actor FTPEngine: DownloadEngine {
 
     public nonisolated let kind: DownloadKind = .ftp
     nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata] }
 
     private nonisolated let hub = EventHub()
-    /// Username/password lookup for hosts the user stored logins for.
     private nonisolated let credentialLookup: @Sendable (String) -> (username: String, password: String)?
 
     private var tasks: [UUID: DownloadTask] = [:]
     private var jobs: [UUID: Task<Void, Never>] = [:]
-    /// Live transfer contexts, so pause/remove can abort the blocking perform.
     private var contexts: [UUID: FTPTransferContext] = [:]
     private var profile: TrafficProfile
 
@@ -36,8 +25,6 @@ actor FTPEngine: DownloadEngine {
         }
     }
 
-    // MARK: DownloadEngine
-
     public nonisolated func canHandle(_ source: DownloadSource) -> Bool { source.kind == .ftp }
 
     func add(_ task: DownloadTask) async {
@@ -47,9 +34,7 @@ actor FTPEngine: DownloadEngine {
 
     func pause(_ id: UUID) async {
         contexts[id]?.abort()
-        // Cancel a queued-but-not-started job; a mid-flight curl transfer
-        // stops via the abort flag. `jobs[id]` is kept so the next start
-        // serializes on the old transfer actually finishing.
+        // Keep `jobs[id]`: the next start serializes on the old transfer actually finishing.
         jobs[id]?.cancel()
     }
 
@@ -65,9 +50,7 @@ actor FTPEngine: DownloadEngine {
         jobs[id] = nil
         let task = tasks[id]
         tasks[id] = nil
-        // The curl thread keeps writing until it notices the abort — wait for
-        // it before touching the file, or a re-added download at the same
-        // path could receive the old transfer's bytes.
+        // Wait out the curl thread, or a re-added download at this path gets the old bytes.
         await job?.value
         if deleteData, let task, task.isSavePathContained {
             try? FileManager.default.removeItem(atPath: task.savePath)
@@ -79,7 +62,6 @@ actor FTPEngine: DownloadEngine {
 
     nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 
-    /// Preview probe: a body-less transfer reporting the remote size.
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard case .url(let url) = source, source.kind == .ftp else { return nil }
         let name = PathSafety.sanitizedName(url.lastPathComponent, fallback: url.host ?? "download")
@@ -87,18 +69,13 @@ actor FTPEngine: DownloadEngine {
         let probe = await Self.remoteSizeBlocking(url: url.absoluteString,
                                                   userpwd: credential?.userpwd,
                                                   requireTLS: credential?.requireTLS ?? false)
-        // A reachable server that simply doesn't advertise a size (size == -1) is
-        // still reachable — don't mislabel it "couldn't reach the server".
+        // size == -1 means "no size advertised", not unreachable — don't conflate them.
         return EngineMetadata(name: name, totalBytes: probe.size >= 0 ? probe.size : nil,
                               reachable: probe.reachable)
     }
 
-    // MARK: Transfer
-
     private func startJob(_ id: UUID) {
-        // Never overlap two transfers for one task: the previous curl thread
-        // may keep writing briefly after an abort, so the new job first waits
-        // for the old one to fully finish (two writers on one file corrupt it).
+        // Never overlap two transfers for one task — two writers on one file corrupt it.
         contexts[id]?.abort()
         let previous = jobs[id]
         previous?.cancel()
@@ -127,7 +104,6 @@ actor FTPEngine: DownloadEngine {
         let probe = await Self.remoteSizeBlocking(
             url: url.absoluteString, userpwd: credential?.userpwd,
             requireTLS: credential?.requireTLS ?? false)
-        // Shared prep: mkdir, open, resume clamp when remote smaller than local.
         let opened: RemoteTransferPrep.Opened
         do {
             opened = try RemoteTransferPrep.openForResume(
@@ -145,7 +121,6 @@ actor FTPEngine: DownloadEngine {
         let resumeFrom = opened.resumeFrom
         let fileURL = opened.fileURL
 
-        // Effective cap: the tighter of the profile ceiling and the task cap.
         let cap = profile.effectiveDownloadCap(taskLimit: task.speedLimitBytesPerSec)
 
         let context = FTPTransferContext(hub: hub, id: id, name: task.name,
@@ -163,9 +138,7 @@ actor FTPEngine: DownloadEngine {
         if gcb_is_aborted(result.code) != 0 {
             return   // our own pause/remove; the manager owns the state
         }
-        // NOTE: run() never touches jobs[id] — startJob() may already have
-        // stored a successor job's handle, and nilling it here would break
-        // the serialization remove()/startJob() rely on.
+        // run() must never touch jobs[id]: it may already hold a successor, breaking serialization.
         guard result.code == 0 else {
             let message = String(cString: gcb_error_message(result.code))
             let e = DownloadError.network(message)
@@ -179,18 +152,9 @@ actor FTPEngine: DownloadEngine {
             written: written, expected: task.expectedChecksum)
     }
 
-    /// The login for a URL, plus whether TLS must be REQUIRED to send it.
-    /// Inline `ftp://user:pass@host` userinfo is the user's own explicit
-    /// choice for that URL (opportunistic TLS, like any FTP client). Keychain
-    /// site logins were stored under an "encrypted transport only" promise
-    /// (the HTTP engine sends them over HTTPS exclusively), so here they ride
-    /// only a TLS-protected session — the transfer fails rather than let a
-    /// downgraded server read the password off the wire.
+    /// Keychain logins ride TLS only — they fail rather than leak on a downgrade.
     private func credentials(for url: URL) -> (userpwd: String, requireTLS: Bool)? {
-        // Only treat inline userinfo as complete credentials when a password is
-        // actually present. A bare `ftp://user@host` (e.g. after inline-password
-        // stripping in `DownloadSource.parse`) must fall through to the Keychain
-        // rather than authenticate with an empty password and skip the lookup.
+        // Inline userinfo counts only with a password: bare `ftp://user@host` must reach the Keychain.
         if let user = url.user, !user.isEmpty, let pass = url.password, !pass.isEmpty {
             return ("\(user):\(pass)", false)
         }
@@ -203,8 +167,6 @@ actor FTPEngine: DownloadEngine {
     private nonisolated func emit(_ id: UUID, _ event: EngineEvent) {
         hub.emit(id, event)
     }
-
-    // MARK: Blocking libcurl calls (dedicated threads, never the pool)
 
     private static func downloadBlocking(url: String, resumeFrom: Int64, userpwd: String?,
                                          requireTLS: Bool, maxBytesPerSecond: Int64,
@@ -238,12 +200,7 @@ actor FTPEngine: DownloadEngine {
     }
 }
 
-// MARK: - Transfer context (shared with the curl callbacks)
-
-/// Mutable per-transfer state the C callbacks reach through an opaque pointer:
-/// the output file handle, byte counters, the abort flag, and the throttled
-/// progress emitter. Lock-protected — callbacks arrive on the curl thread
-/// while `abort()` comes from the engine actor.
+/// Lock-protected: the curl thread races `abort()`.
 final class FTPTransferContext: @unchecked Sendable {
     private let hub: EventHub
     private let id: UUID
@@ -276,10 +233,7 @@ final class FTPTransferContext: @unchecked Sendable {
         aborted = true
     }
 
-    /// Write callback body. Returns false on a write failure (aborts curl). The
-    /// shared meter announces the total once and throttles progress over the
-    /// absolute offset (`resumeFrom + written`). Accepts a raw buffer so the C
-    /// thunk avoids an intermediate `Data` copy on the hot path.
+    /// Returns false on a write failure, which aborts curl.
     func write(_ buf: UnsafeRawBufferPointer) -> Bool {
         do {
             try handle.write(contentsOf: buf)
@@ -303,7 +257,6 @@ final class FTPTransferContext: @unchecked Sendable {
         return true
     }
 
-    /// Progress callback body: capture curl's size estimate, honour abort.
     func progress(dlTotal: Int64) -> Bool {
         lock.lock(); defer { lock.unlock() }
         if dlTotal > 0 { totalHint = resumeFrom + dlTotal }
@@ -311,7 +264,6 @@ final class FTPTransferContext: @unchecked Sendable {
     }
 }
 
-/// C write thunk (`gcb_write`): forward the buffer to the context.
 private func ftpWriteThunk(data: UnsafePointer<CChar>?, size: Int,
                            userdata: UnsafeMutableRawPointer?) -> Int {
     guard let data, size > 0, let userdata else { return 0 }
@@ -320,7 +272,7 @@ private func ftpWriteThunk(data: UnsafePointer<CChar>?, size: Int,
     return context.write(buf) ? size : 0
 }
 
-/// C progress thunk (`gcb_progress`): nonzero return aborts the transfer.
+/// Nonzero return aborts the transfer.
 private func ftpProgressThunk(userdata: UnsafeMutableRawPointer?,
                               dltotal: Int64, dlnow: Int64) -> Int32 {
     guard let userdata else { return 1 }

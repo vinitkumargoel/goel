@@ -1,8 +1,6 @@
 import SwiftUI
 import GoelCore
 
-/// The bottom status bar: the speed-limit "snail" toggle, aggregate ↓/↑ totals,
-/// and the Low / Medium / High profile picker.
 struct StatusBarView: View {
     @EnvironmentObject private var vm: AppViewModel
     @State private var showTransfers = false
@@ -10,15 +8,11 @@ struct StatusBarView: View {
     var body: some View {
         HStack(spacing: 14) {
             snail
-            // The sampled window average, not the live raw sums — the readout
-            // updates ~2×/sec and stays steady (see AppViewModel.takeSpeedSample).
             stat(symbol: "arrow.down", speed: vm.displayedCombinedSpeed.down, color: Theme.green)
             stat(symbol: "arrow.up", speed: vm.displayedCombinedSpeed.up, color: Theme.teal)
             if !activeTransfers.isEmpty { transfersIndicator }
             Spacer()
             Text("Profile").scaledFont(size: 11).foregroundStyle(.tertiary)
-                // Names the segmented control beside it; already read as part of
-                // each segment's label, so don't announce it twice.
                 .a11yDecorative()
             profilePicker
         }
@@ -28,10 +22,6 @@ struct StatusBarView: View {
         .accessibilityLabel("Status bar")
     }
 
-    // MARK: SFTP transfers indicator
-
-    /// In-flight SFTP transfers across all servers — the persistent surface that
-    /// keeps a background upload/download visible after its browser is closed.
     private var activeTransfers: [SFTPTransfer] { vm.sftpTransfers.filter { $0.isActive } }
 
     private var transfersIndicator: some View {
@@ -48,7 +38,6 @@ struct StatusBarView: View {
         }
         .buttonStyle(.plain)
         .help("SFTP transfers")
-        // A glyph and a bare number. Say what the number counts.
         .a11yButton("SFTP transfers", hint: "Activate to list transfers in progress.")
         .accessibilityValue("\(activeTransfers.count) in progress")
         .popover(isPresented: $showTransfers, arrowEdge: .bottom) { transfersPopover }
@@ -63,8 +52,6 @@ struct StatusBarView: View {
                 if vm.sftpTransfers.contains(where: { !$0.isActive }) {
                     Button("Clear") { vm.clearFinishedSFTPTransfers() }
                         .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
-                        // "Clear" alone doesn't say what it clears, or that it
-                        // spares the transfers still running.
                         .accessibilityLabel("Clear finished transfers")
                 }
             }
@@ -92,13 +79,7 @@ struct StatusBarView: View {
     }
 
     private var snail: some View {
-        // `speedLimitEnabled` is a ManagedPolicy key and this button is its only
-        // UI, so without this check a forced value is unenforceable here: the tap
-        // would flip the pill, the overlay would reassert the administrator's
-        // choice on the next apply, and the change would silently revert. Same
-        // reasoning as `.managed(…)` in Settings — the wording is substituted
-        // rather than layered on with that modifier because the button already
-        // carries its own `help` and hint, and one of each is all it can speak.
+        // ManagedPolicy key: without this check a forced value silently reverts on the next apply.
         let locked = vm.managedPolicy.isLocked(.speedLimitEnabled)
         return Button(action: vm.toggleSnail) {
             HStack(spacing: 6) {
@@ -120,10 +101,6 @@ struct StatusBarView: View {
         .buttonStyle(.plain)
         .disabled(locked)
         .help(locked ? AppViewModel.managedFootnote : "Toggle global speed limit")
-        // The control is a hand-drawn snail path — literally an unnamed `Shape`
-        // to VoiceOver — and its on/off state shows only as an orange fill. When
-        // it is locked, `help` is a pointer-only tooltip, so the reason has to be
-        // carried in the hint as well or the button is just dead to VoiceOver.
         .a11yButton("Global speed limit",
                     hint: locked ? AppViewModel.managedFootnote
                                  : "Activate to turn the speed limit on or off.")
@@ -132,19 +109,13 @@ struct StatusBarView: View {
                             : "Off, unlimited")
     }
 
-    /// One aggregate rate readout. `speed` is the raw bytes/sec the label was
-    /// formatted from — kept alongside so the spoken value can be built in words
-    /// rather than reverse-engineered out of the abbreviated string.
     private func stat(symbol: String, speed: Double, color: Color) -> some View {
         HStack(spacing: 5) {
             Image(systemName: symbol).font(.system(size: 11))
-            // Fixed width so the neighbouring stats / transfers pill don't shuffle
-            // sideways as the speed number grows and shrinks.
             Text(speed.speedString).scaledFont(size: 12, weight: .semibold, monospacedDigit: true)
                 .frame(width: 72, alignment: .leading)
         }
         .foregroundStyle(color)
-        // Arrow glyph + abbreviated rate. Both need words — see `SpeedStat`.
         .a11yGroup(label: symbol == "arrow.up" ? "Total upload speed" : "Total download speed",
                    value: A11y.speed(speed))
     }
@@ -164,14 +135,11 @@ struct StatusBarView: View {
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(selected ? Theme.accent : Color.clear)
                         )
-                        // Derived ink: the accent fill is light in three of the
-                        // four themes, where white measured 2.00–2.42:1.
+                        // Derived ink: white on the accent fill measures 2.00–2.42:1 in 3 of 4 themes.
                         .foregroundStyle(selected ? Theme.onAccent : Color.secondary)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                // Which profile is active is signalled only by the accent fill
-                // behind the label — carry it as a selection trait too.
                 .accessibilityLabel("\(profile.name) speed profile")
                 .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
             }
@@ -183,13 +151,6 @@ struct StatusBarView: View {
     }
 }
 
-// MARK: - Snail glyph
-
-/// The speed-limit glyph the brief and mockup call "the snail" — a spiral shell,
-/// a humped body, and a raised antenna with an upward chevron. Ported faithfully
-/// from the design's inline SVG (visual.html), drawn in its 24×24 space and
-/// scaled to whatever frame the view assigns. No SF Symbol "snail" exists, so the
-/// path is reproduced here rather than shipped as an asset.
 private struct Snail: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 24
@@ -199,19 +160,18 @@ private struct Snail: Shape {
         }
         var path = Path()
 
-        // Body: tail → over the back → down the neck → foot.
-        // (SVG: M2 18 h6 a6 6 0 0 1 6 -6 a5 5 0 0 1 5 5 v1)
+        // Source SVG: M2 18 h6 a6 6 0 0 1 6 -6 a5 5 0 0 1 5 5 v1
         path.move(to: p(2, 18))
         path.addLine(to: p(8, 18))
         path.addCurve(to: p(14, 12), control1: p(8, 14.69), control2: p(10.69, 12))
         path.addCurve(to: p(19, 17), control1: p(16.76, 12), control2: p(19, 14.24))
         path.addLine(to: p(19, 18))
 
-        // Shell spiral, rendered as a ring. (SVG: circle cx7 cy16 r4)
+        // Source SVG: circle cx7 cy16 r4
         path.addEllipse(in: CGRect(x: rect.minX + 3 * sx, y: rect.minY + 12 * sy,
                                    width: 8 * sx, height: 8 * sy))
 
-        // Antenna stalk + upward chevron. (SVG: M19 12 V8 … l-1.5 1.5 / l1.5 1.5)
+        // Source SVG: M19 12 V8 … l-1.5 1.5 / l1.5 1.5
         path.move(to: p(19, 12))
         path.addLine(to: p(19, 8))
         path.move(to: p(17.5, 9.5))

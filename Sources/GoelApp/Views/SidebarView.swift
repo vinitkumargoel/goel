@@ -2,8 +2,6 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-/// The left sidebar: Library / Status / Type groups with live counts, mirroring
-/// the mockup's `.sidebar`.
 struct SidebarView: View {
     @EnvironmentObject private var vm: AppViewModel
 
@@ -32,22 +30,17 @@ struct SidebarView: View {
         }
         .background(.regularMaterial)
         .accessibilityLabel("Library sidebar")
-        // Keep the sidebar's live server dots fresh: probe on appear and every
-        // ~20s while the app is open (unauthenticated TCP + DNS — no credentials).
+        // The status probe is unauthenticated TCP + DNS only — it must never carry credentials.
         .task {
             await vm.refreshServerStatuses()
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: AppViewModel.serverStatusRefreshSeconds * 1_000_000_000)
-                // Skip the sweep while the app is backgrounded/inactive — no point
-                // probing every server when the sidebar can't be seen.
                 if NSApplication.shared.isActive { await vm.refreshServerStatuses() }
             }
         }
-        // Re-probe immediately when a server is added or removed.
         .onChange(of: vm.servers.map(\.id)) { Task { await vm.refreshServerStatuses() } }
     }
 
-    /// The "Servers" group: each saved SFTP connection, plus an add button.
     @ViewBuilder
     private var serversGroup: some View {
         HStack {
@@ -63,7 +56,6 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .help("Add SFTP server")
-            // A bare "+" next to a heading. Say which list it adds to.
             .a11yButton("Add SFTP server")
         }
         .padding(.horizontal, 8)
@@ -97,16 +89,11 @@ struct SidebarView: View {
                     HStack(spacing: 6) {
                         Text(server.label).scaledFont(size: 13).lineLimit(1)
                         Spacer(minLength: 4)
-                        // A live spinner while this server has an in-flight
-                        // upload/download; otherwise the reachability dot, so a
-                        // server reads as online/offline at a glance and a transfer
-                        // stays visible even with the browser closed.
                         if transferring {
                             ProgressView()
                                 .controlSize(.small)
                                 .tint(selected ? Theme.onIndigo : Theme.accent)
                                 .help("Transferring…")
-                                // Folded into the row's own label below.
                                 .a11yDecorative()
                         } else {
                             liveDot(meta?.reachability ?? .unknown,
@@ -123,17 +110,11 @@ struct SidebarView: View {
                 RoundedRectangle(cornerRadius: 7)
                     .fill(selected ? Theme.indigo : Color.clear)
             )
-            // Ink derived from the fill, not hard-coded white: `indigo` is a
-            // *light* colour in three of the four themes, where white measured
-            // as low as 1.93:1.
+            // Ink must derive from the fill, not hard-coded white: `indigo` is light in three themes, measuring 1.93:1.
             .foregroundStyle(selected ? Theme.onIndigo : Color.primary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // A server row is a lock glyph, a name, a 7pt coloured dot, a monospaced
-        // host line, a latency figure and an OS chip. Read as one thing, with
-        // the reachability the dot encodes said out loud — that dot is the only
-        // online/offline signal in the entire sidebar.
         .a11yGroup(
             label: A11y.sentence("Server", server.label, server.host),
             value: A11y.sentence(
@@ -143,9 +124,6 @@ struct SidebarView: View {
                 meta?.os?.pretty),
             hint: "Activate to browse this server's files.")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        // The session actions live in a context menu, which is reachable but
-        // fiddly under VoiceOver — mirror the ones with no other route here, the
-        // way "Edit server" already is.
         .accessibilityAction(named: Text("Edit server")) { vm.presentEditServer(server) }
         .accessibilityAction(named: Text("Reconnect")) { vm.reconnectServer(server.id) }
         .accessibilityAction(named: Text("Disconnect")) { vm.disconnectServer(server.id) }
@@ -153,8 +131,6 @@ struct SidebarView: View {
         .contextMenu { serverMenu(server) }
     }
 
-    /// The server row's context menu, in four sections: session, clipboard,
-    /// external, and the destructive pair that was already here.
     @ViewBuilder
     private func serverMenu(_ server: SFTPConnection) -> some View {
         let engaged = vm.isServerEngaged(server.id)
@@ -165,7 +141,6 @@ struct SidebarView: View {
         }
         Button("Reconnect") { vm.reconnectServer(server.id) }
         Button("Disconnect") { vm.disconnectServer(server.id) }
-            // Nothing is holding this server open, so there is nothing to close.
             .disabled(!engaged)
         Button(vm.serverTestsInFlight.contains(server.id) ? "Testing…" : "Test Connection") {
             vm.testServerConnection(server)
@@ -178,8 +153,6 @@ struct SidebarView: View {
             vm.copyToPasteboard(vm.sftpLocator(for: server, remotePath: "/"))
         }
         Button("Copy Host") { vm.copyToPasteboard(server.host) }
-        // Only offered once the sidebar's DNS probe has actually resolved one,
-        // and never when it just echoes a host that is already an IP literal.
         if let ip = meta?.ip, ip != server.host {
             Button("Copy IP Address") { vm.copyToPasteboard(ip) }
         }
@@ -191,8 +164,7 @@ struct SidebarView: View {
         }
         .disabled(vm.hostKeyReadsInFlight.contains(server.id))
         Button("Forget Host Key") { vm.forgetHostKey(server) }
-            // Nothing pinned, nothing to forget. Deliberately still enabled when
-            // the pin record is unreadable — that is the state this clears.
+            // Deliberately still enabled when the pin record is unreadable — that is the state this clears.
             .disabled(!vm.hasHostKeyRecord(server))
             .help("Use only after a legitimate server rekey. Goel will ask you to confirm the new key.")
 
@@ -214,12 +186,8 @@ struct SidebarView: View {
         }
     }
 
-    /// The live-status dot: green online / red offline / grey unknown, with a
-    /// soft glow when online so it reads as "live".
     private func liveDot(_ reachability: ServerReachability, detail: String?, selected: Bool) -> some View {
         let color = selected && reachability == .unknown ? Theme.onIndigoSecondary : reachability.tint
-        // When offline, prefer the specific reason (refused / unreachable / DNS)
-        // over the generic "Offline" so the tooltip actually helps troubleshoot.
         let help = reachability == .offline
             ? (detail.map { "Offline — \($0)" } ?? "Offline")
             : reachability.help
@@ -230,13 +198,9 @@ struct SidebarView: View {
             .help(help)
     }
 
-    /// The second line under a server's name: host · IP, a latency read when
-    /// online, and an OS chip once detected.
     @ViewBuilder
     private func serverSubtitle(_ server: SFTPConnection, meta: ServerMeta?, selected: Bool) -> some View {
         let secondary = selected ? Theme.onIndigoSecondary : Color.secondary
-        // Don't repeat the address when the saved host is already an IP literal —
-        // "192.168.1.5 · 192.168.1.5" just truncates to a meaningless "192…5".
         let hostLine: String = {
             if let ip = meta?.ip, ip != server.host { return "\(server.host) · \(ip)" }
             return server.host
@@ -254,15 +218,12 @@ struct SidebarView: View {
                 }
                 Spacer(minLength: 0)
             }
-            // The OS chip gets its own line so "Ubuntu 24.04 LTS" reads in full,
-            // instead of being squeezed to "Ub…" next to the address.
             if let os = meta?.os {
                 osChip(os, selected: selected)
             }
         }
     }
 
-    /// A compact OS badge, e.g. a tinted dot + "Ubuntu 22.04 LTS".
     private func osChip(_ os: ServerOS, selected: Bool) -> some View {
         HStack(spacing: 3) {
             Image(systemName: os.symbol).font(.system(size: 8.5))
@@ -284,8 +245,6 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.top, 12)
             .padding(.bottom, 4)
-            // Uppercased for the eye only — spell it normally, and mark it as
-            // the heading it is so the rotor can jump between sidebar sections.
             .accessibilityLabel(title)
             .accessibilityAddTraits(.isHeader)
         content()
@@ -324,30 +283,13 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Symbol + label + count pill read as three elements, one of them an SF
-        // Symbol name. It is one filter, whose value is how many downloads match.
         .a11yGroup(label: label, value: "\(vm.count(for: filter)) downloads",
                    hint: "Activate to filter the list.")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
-// MARK: - Media jobs
-
-/// A live count of running conversions, shown only while there are any.
-///
-/// The dock in the window's corner is the detailed view; this row exists so the
-/// sidebar says *somewhere* that ffmpeg is working — a job stays discoverable
-/// after its card is dismissed, and the window is never silent about work in
-/// progress again.
-///
-/// Its own view, taking the center as an `@ObservedObject`, because
-/// ``MediaJobCenter`` is nested inside ``AppViewModel``: SwiftUI does not
-/// propagate a nested observable's changes through the outer one, so reading
-/// `vm.mediaJobs` from `SidebarView`'s body would render once and then freeze.
-///
-/// Not a filter. There is nothing in the download list to filter down to, so it
-/// is a read-only row rather than a button that would do nothing when clicked.
+/// Must stay its own view observing the center: nested observables do not propagate updates.
 private struct MediaJobsSidebarGroup: View {
 
     @ObservedObject var center: MediaJobCenter

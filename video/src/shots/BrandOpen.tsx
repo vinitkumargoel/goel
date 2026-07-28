@@ -1,32 +1,9 @@
-/* Shot 1 — brand open.
- *
- * Card: letterspace-materialize (gallery style-key `letterspace-materialize`)
- * Exact demo read: demos/letterspace-materialize/LetterspaceMaterialize.tsx
- * Ambient bed: glow-flyline-moves / `glow-orb-ambient`
- *
- * Card params preserved verbatim: all characters share ONE progress `p` (same
- * start frame, same finish frame, zero per-char stagger — the card's 命门),
- * pathLength-normalised continuous growth (no masked segments), thin strokes,
- * wide letter-spacing, easeInOut draw curve, >=30f settled hold (f62 -> f92,
- * during which the ambient bed is frozen too — see REST).
- *
- * Reskin: the demo draws SUPERHUMAN in caps on a dusk gradient. Goel°'s
- * wordmark is mixed-case with a raised degree, so the skeleton glyphs below are
- * drawn for G/o/e/l/° in the demo's 78x64 frame and stroke weight. Case is a
- * skinning choice; every timing and continuity parameter is the demo's.
- */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C, FONT } from '../theme';
 import { mulberry32 } from '../lib/helpers/rand';
 
-/* Skeleton glyphs on the demo's 64-unit cap height (glyph face y 5-59).
-   Single-line strokes — font outlines are double-line and read wrong drawn.
-   `vx`/`vw` crop each glyph's viewBox to its own ink plus a uniform BEARING, so
-   the visual gap between any two neighbours is the same. The demo could get away
-   with one fixed 78-wide box because SUPERHUMAN is ten glyphs of near-equal
-   width; here `l` (1 unit of ink) and `°` (28) would otherwise float in the
-   middle of boxes sized for `G` (55), and the word stops reading as a word. */
+/* `vx`/`vw` must crop each viewBox to its ink + BEARING, or a narrow glyph like `l` floats. */
 const BEARING = 4;
 const GLYPHS: Record<string, { d: string; vx: number; vw: number }> = {
   G: { d: 'M 64 16 C 56 5, 21 3, 14 20 C 7 38, 18 60, 40 59 C 58 58, 65 48, 65 36 L 45 36', vx: 11, vw: 55 },
@@ -37,29 +14,12 @@ const GLYPHS: Record<string, { d: string; vx: number; vw: number }> = {
 };
 
 const WORD = ['G', 'o', 'e', 'l', '°'];
-const START = 6; // unified start frame — no per-char offset
-/* Rendered at the demo's 64px cap height on a 1080 canvas the word is far too
-   small for a brand open, so the whole set is drawn 1.85x larger. Scaling the
-   SVG viewport (not a CSS transform) scales the stroke with it, so the card's
-   thin-stroke ratio survives verbatim.
-
-   Tracking: the demo's ink-to-ink gap is 46 units on a 64-unit cap height —
-   0.72em. That is a ten-letter all-caps mark; on a four-glyph mixed-case one it
-   spaces the word into rubble. GAP is set so ink-to-ink lands at 0.55em, which
-   is still unambiguously the card's "wide letter-spacing" register and is the
-   widest value at which "Goel" still reads as one word. */
+const START = 6;
 const GS = 1.85;
 const GAP = 0.55 * 64 - 2 * BEARING;
-/* Unified finish frame. The demo draws over 52f; this is 46, and the six frames
-   come off the front and back of the draw rather than out of the hold, because
-   the card's `>=30f settled hold` is a hard parameter and the 52 is not. With
-   START=6 the word is complete at f52, the glow has annealed by f60, the tagline
-   has landed by f62 and the exit does not begin until f92 — thirty frames in
-   which nothing on screen moves at all, which is what a brand open is for. */
 const DUR = 46;
 
-/* glow-orb-ambient: slow drifting soft orbs as the backdrop bed. Deterministic
-   seed, so every render is frame-identical. */
+/* Seeded, never Math.random: an unseeded orb bed renders differently on every frame and every machine. */
 const ORBS = Array.from({ length: 7 }, (_, i) => {
   const r = mulberry32(0x9e01 + i * 977);
   return {
@@ -74,12 +34,6 @@ const ORBS = Array.from({ length: 7 }, (_, i) => {
   };
 });
 
-/* The bed comes to rest with the wordmark. Left running, the orbs drift through
-   the whole hold and then hard-cut at the shot boundary, so the "settled hold"
-   is settled everywhere except the background and the cut has a visible jump in
-   it. Easing the bed's own clock to a stop at f62 freezes the frame properly:
-   from f62 the composition is literally identical frame to frame, and the cut
-   into the app shot is a cut from a still. */
 const REST = 62;
 const orbClock = (frame: number): number =>
   frame < 40
@@ -96,7 +50,6 @@ export const BrandOpen: React.FC<{ durationInFrames: number }> = ({ durationInFr
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
-  // easeInOut — slow lift-off, even middle, soft finish (the handwriting feel)
   const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
   const doneGlow = interpolate(frame, [START + DUR, START + DUR + 8], [1, 0], {
     extrapolateLeft: 'clamp',
@@ -104,7 +57,6 @@ export const BrandOpen: React.FC<{ durationInFrames: number }> = ({ durationInFr
   });
   const glowAmt = p >= 1 ? doneGlow : p > 0.7 ? (p - 0.7) / 0.3 : 0;
 
-  // the icon settles first and holds — it is the anchor the wordmark grows beside
   const iconIn = interpolate(frame, [0, 22], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -118,7 +70,6 @@ export const BrandOpen: React.FC<{ durationInFrames: number }> = ({ durationInFr
     easing: Easing.bezier(0, 0, 0.2, 1),
   });
 
-  // hand off to the app shot: the whole group eases up and out at the very end
   const exit = interpolate(frame, [durationInFrames - 8, durationInFrames], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -177,7 +128,6 @@ export const BrandOpen: React.FC<{ durationInFrames: number }> = ({ durationInFr
           }}
         />
 
-        {/* wide letter-spacing wordmark: all characters draw in parallel */}
         <div style={{ display: 'flex', gap: GAP * GS, alignItems: 'flex-end' }}>
           {WORD.map((ch, li) => {
             const g = GLYPHS[ch];
@@ -194,8 +144,6 @@ export const BrandOpen: React.FC<{ durationInFrames: number }> = ({ durationInFr
                   <path
                     d={g.d}
                     fill="none"
-                    // the degree is the brand's accent mark, in the app icon and
-                    // again on the outro wordmark — it carries colour here too
                     stroke={ch === '°' ? C.accent : '#f2f4fb'}
                     strokeWidth={5.5}
                     strokeLinecap="round"

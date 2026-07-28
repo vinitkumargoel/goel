@@ -1,10 +1,6 @@
 import XCTest
 @testable import GoelCore
 
-/// Direct tests for the response-status classification shared by both byte pumps
-/// (`SegmentedTransfer.classify`). This is the acceptance rule that previously
-/// drifted between the segmented (206-only) and single-stream (2xx) pumps; the
-/// full transfer behaviour is still covered end-to-end by `SegmentedTransferTests`.
 final class SegmentedTransferClassifyTests: XCTestCase {
     private typealias T = SegmentedTransfer
 
@@ -37,9 +33,6 @@ final class SegmentedTransferClassifyTests: XCTestCase {
         XCTAssertEqual(T.classify(403, ranged: false), .reject)
     }
 
-    /// A NIC that holds an address but has no working upstream fails with curl's
-    /// generic connect error. Without the interface in the text there is nothing
-    /// in the UI to act on.
     func testTransportErrorNamesTheInterfaceItWasBoundTo() {
         let adapter = BoundAdapter(bsdName: "wlx78", displayName: "Wi‑Fi (wlx78)")
         let bound = T.transportError(7, via: adapter)          // CURLE_COULDNT_CONNECT

@@ -16,11 +16,7 @@ export function useToasts() {
   const nextId = useRef(1)
   const timers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
-  // Every pending dismissal is cancelled on unmount. The set was being tracked
-  // but never drained, so the timers outlived the component and each one still
-  // fired — harmless today, but only because React tolerates a setState on an
-  // unmounted component. Under StrictMode's mount/unmount/remount it also meant
-  // a second set of live timers per toast.
+  // Cancel pending dismissals on unmount: undrained timers fire setState on an unmounted component, and StrictMode doubles them.
   useEffect(() => {
     const pending = timers.current
     return () => {

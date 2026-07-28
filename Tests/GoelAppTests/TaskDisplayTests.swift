@@ -2,10 +2,6 @@ import XCTest
 import GoelCore
 @testable import GoelApp
 
-/// Covers the pure presentation helpers on ``DownloadTask``. They decide the
-/// type badge, the sidebar "by type" buckets and which context-menu items the
-/// user is offered, so a wrong answer here is a visibly wrong row or a missing
-/// action — with nothing logged.
 final class TaskDisplayTests: XCTestCase {
 
     private func task(_ name: String,
@@ -21,16 +17,12 @@ final class TaskDisplayTests: XCTestCase {
         )
     }
 
-    // MARK: fileType
-
     func testMagnetWithoutMetadataIsMagnetUntilItsSizeIsKnown() {
         let pending = task("Season Pack",
                            source: .magnet("magnet:?xt=urn:btih:abc123"),
                            totalBytes: nil)
         XCTAssertEqual(pending.fileType, .magnet)
 
-        // Once the metadata arrives the row stops being an abstract magnet and
-        // starts describing what is actually being fetched.
         let resolved = task("Season Pack",
                             source: .magnet("magnet:?xt=urn:btih:abc123"),
                             totalBytes: 4_000_000)
@@ -40,7 +32,7 @@ final class TaskDisplayTests: XCTestCase {
     func testExtensionsMapToTheirCategory() {
         XCTAssertEqual(task("ubuntu-24.04.iso").fileType, .iso)
         XCTAssertEqual(task("clip.mkv").fileType, .video)
-        XCTAssertEqual(task("holiday.MP4").fileType, .video)     // case-insensitive
+        XCTAssertEqual(task("holiday.MP4").fileType, .video)
         XCTAssertEqual(task("backup.tar.gz").fileType, .archive)
         XCTAssertEqual(task("Tool.dmg").fileType, .archive)
         XCTAssertEqual(task("Installer.pkg").fileType, .app)
@@ -48,8 +40,6 @@ final class TaskDisplayTests: XCTestCase {
     }
 
     func testIsoWinsOverAnArchiveExtensionLaterInTheName() {
-        // The checks are ordered, and .iso is deliberately first: a disc image
-        // named for the archive it was built from is still a disc image.
         XCTAssertEqual(task("release.iso.zip").fileType, .iso)
     }
 
@@ -58,8 +48,6 @@ final class TaskDisplayTests: XCTestCase {
         XCTAssertEqual(t.kind, .torrent)
         XCTAssertEqual(t.fileType, .video)
     }
-
-    // MARK: isMediaFile
 
     func testIsMediaFileCoversVideoAndAudioButNotDocuments() {
         for name in ["a.mp4", "a.mkv", "a.mov", "a.webm", "a.mp3", "a.flac", "a.opus"] {
@@ -75,8 +63,6 @@ final class TaskDisplayTests: XCTestCase {
         XCTAssertTrue(task("archive.mp4.mkv").isMediaFile)
         XCTAssertFalse(task("movie.mkv.txt").isMediaFile)
     }
-
-    // MARK: badges
 
     func testKindBadgeCoversEveryTransport() {
         XCTAssertEqual(task("a.bin").kindBadge, "HTTP")

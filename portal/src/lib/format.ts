@@ -1,10 +1,3 @@
-/**
- * Display formatters. Ported from the hand-written portal JS with the same
- * rounding behaviour, so the numbers on screen do not shift under users who
- * knew the old build.
- */
-
-/** Binary units, matching the desktop app. `null` renders as an em dash. */
 export function fmtSize(bytes: number | null | undefined): string {
   if (bytes == null) return '—'
   if (bytes < 1) return '0 B'
@@ -16,22 +9,18 @@ export function fmtSize(bytes: number | null | undefined): string {
     n /= 1024
     i++
   } while (n >= 1024 && i < units.length - 1)
-  // One decimal below 10 so "1.4 GB" doesn't collapse to a uselessly coarse "1 GB".
   return `${n.toFixed(n < 10 ? 1 : 0)} ${units[i]}`
 }
 
-/** Zero and negative rates render as an em dash, not "0 B/s". */
 export function fmtSpeed(bytesPerSecond: number | null | undefined): string {
   return bytesPerSecond != null && bytesPerSecond > 0 ? `${fmtSize(bytesPerSecond)}/s` : '—'
 }
 
-/** The topbar totals want a real zero rather than a dash. */
 export function fmtRate(bytesPerSecond: number): string {
   const s = fmtSpeed(bytesPerSecond)
   return s === '—' ? '0 B/s' : s
 }
 
-/** Null for "no meaningful estimate" so callers can omit the row entirely. */
 export function fmtEta(seconds: number | null | undefined): string | null {
   if (seconds == null || seconds <= 0 || !isFinite(seconds)) return null
   const s = Math.round(seconds)
@@ -41,7 +30,6 @@ export function fmtEta(seconds: number | null | undefined): string | null {
   return `${Math.floor(s / 86400)}d`
 }
 
-/** Unix seconds → "Today 14:03" or "12 Mar 14:03". */
 export function fmtWhen(unixSeconds: number): string {
   const d = new Date(unixSeconds * 1000)
   const now = new Date()

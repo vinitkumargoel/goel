@@ -1,19 +1,11 @@
 import XCTest
 @testable import GoelCore
 
-/// Regression cover for the hardening fixes in `DownloadManager.swift`:
-/// the untrusted-backup import deny-list, and the batched pause/resume paths.
 final class DownloadManagerHardeningTests: XCTestCase {
 
     private let saveDir = NSTemporaryDirectory()
 
-    // MARK: Import sanitisation
-
-    /// A hostile "backup" must not be able to point the app at a proxy it chose,
-    /// install portal credentials it knows, widen the portal's reverse-proxy
-    /// trust, or move where downloads and the audit record land. Every one of
-    /// these was adopted verbatim before, defeating ``importEnvelope(_:)``'s own
-    /// documented guarantee.
+    /// A hostile "backup" must not pick the proxy, install portal credentials, widen proxy trust, or move directories.
     func testImportedSettingsNeverAdoptProxyPortalOrDirectoryFields() {
         var hostile = AppSettings()
         hostile.proxyMode = "manual"
@@ -35,7 +27,7 @@ final class DownloadManagerHardeningTests: XCTestCase {
         hostile.remoteTrustedProxies = ["0.0.0.0/0"]
         hostile.defaultSaveDirectory = "/tmp/attacker-drop"
         hostile.auditLogDirectory = "/tmp/attacker-audit"
-        hostile.theme = "dark"   // benign field — must still be adopted
+        hostile.theme = "dark"
 
         var current = AppSettings()
         current.defaultSaveDirectory = saveDir
@@ -69,12 +61,6 @@ final class DownloadManagerHardeningTests: XCTestCase {
         XCTAssertEqual(safe.theme, "dark")
     }
 
-    // MARK: Batched pause / resume
-
-    /// ``pauseAll()``/``resumeAll()`` now coalesce their snapshot and scheduler
-    /// passes instead of running one per task. The observable behaviour must be
-    /// unchanged: every eligible task ends up paused, the engine is told exactly
-    /// once per running task, and a following ``resumeAll()`` re-fills the slots.
     func testPauseAllThenResumeAllCoversEveryTaskExactlyOnce() async throws {
         let http = FakeEngine(kind: .http)
         let profile = TrafficProfile(
@@ -103,7 +89,6 @@ final class DownloadManagerHardeningTests: XCTestCase {
         for i in 0..<6 {
             await manager.add(source: .url(URL(string: "https://example.com/f\(i).bin")!))
         }
-        // Let the scheduler hand the first two tasks to the engine.
         try await pollUntil { await http.added.count == 2 }
 
         await manager.pauseAll()
@@ -116,7 +101,6 @@ final class DownloadManagerHardeningTests: XCTestCase {
         XCTAssertEqual(Set(http.paused).count, 2)
 
         await manager.resumeAll()
-        // Exactly the cap goes back to the engine; the rest wait in `.queued`.
         try await pollUntil { await http.resumed.count == 2 }
         let resumed = await manager.snapshot
         XCTAssertTrue(resumed.allSatisfy { $0.status != .paused },
@@ -124,7 +108,6 @@ final class DownloadManagerHardeningTests: XCTestCase {
         XCTAssertEqual(resumed.filter { $0.status == .queued }.count, 4)
     }
 
-    /// Poll an async predicate until it holds or the deadline passes.
     private func pollUntil(
         timeout: TimeInterval = 2,
         _ predicate: @Sendable () async -> Bool,

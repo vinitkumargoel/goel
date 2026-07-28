@@ -1,17 +1,8 @@
 import Foundation
 
-// MARK: - Scheduling
-
-/// Promotes queued tasks into free download slots and performs the async engine
-/// hand-off. Split out of ``DownloadManager`` so the queue-promotion policy lives
-/// on its own; the (synchronous) cap decision stays atomic before any `await`.
 extension DownloadManager {
 
-    /// Promote queued tasks into free download slots, honouring the simultaneous
-    /// cap, the metadata-resolution cap, and task priority order. The ordered
-    /// promotion decision is computed purely by ``SchedulingPolicy/promotions(tasks:runningSlots:maxSimultaneousDownloads:maxMetadataResolutions:windowOpen:)``;
-    /// this then applies the slot/resume/status bookkeeping synchronously (so the
-    /// cap decision stays atomic) and fires the async engine calls after.
+    /// Slot/status bookkeeping must stay synchronous (no `await`) so the cap decision is atomic.
     func schedule() {
         let profile = settings.selectedProfile
         let promoted = SchedulingPolicy.promotions(
@@ -40,12 +31,7 @@ extension DownloadManager {
         Task { await self.reapplyHTTPBudget() }
     }
 
-    /// Reflect the imminent start in the task's status before the engine emits
-    /// its own status event, so observers see the queue move immediately. A magnet
-    /// without metadata starts resolving; a torrent whose payload is already
-    /// complete (a paused-then-resumed seeder) goes straight back to `.seeding`
-    /// rather than falsely showing `.downloading` and occupying a download slot;
-    /// everything else downloads.
+    /// A complete torrent must go straight to `.seeding`, else it shows `.downloading` and holds a slot.
     private func setOptimisticStatus(_ id: UUID) {
         guard let i = index(of: id) else { return }
         if Self.isMagnet(tasks[i].source), !tasks[i].hasMetadata {
@@ -59,22 +45,15 @@ extension DownloadManager {
         }
     }
 
-    /// Perform the actual (async) engine hand-off for a promoted task.
     private func launch(_ id: UUID, resume: Bool) async {
-        // The promotion may have been cancelled (paused/removed) between the
-        // synchronous `schedule()` bookkeeping and this async hand-off. If so,
-        // bail — and for a fresh start, undo the `engineStarted` mark so a later
-        // resume re-adds the task cleanly rather than calling `engine.resume` on
-        // a task the engine never received.
+        // A cancelled promotion must undo `engineStarted`, or a later resume hits a never-added task.
         guard let task = task(id), task.status != .paused, !task.status.isTerminal else {
             if !resume { engineStarted.remove(id) }
             runningSlots.remove(id)
             return
         }
         let engine = engine(for: task.source)
-        // Ensure a live event subscription. On a fresh add this creates it; on a
-        // resume after a terminal state (where the consumer was torn down) it
-        // re-establishes it before the engine starts emitting again.
+        // A terminal state tore the consumer down; re-subscribe before the engine emits again.
         if consumers[id] == nil { subscribe(id, to: engine) }
         if resume {
             await engine.resume(id)
