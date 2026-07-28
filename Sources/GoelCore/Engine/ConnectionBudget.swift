@@ -54,6 +54,17 @@ struct ConnectionBudget: Sendable, Equatable {
         max(1, maxConnections - totalConnections)
     }
 
+    /// Room for MID-FLIGHT extras: min of per-host and global free slots, floored at
+    /// 0 (not 1 — see ``HTTPEngine/grantExtraConnections(host:wanted:)``: the download
+    /// already holds a connection, so zero is an honest answer). Low profile grants
+    /// nothing.
+    func extraRoom(host: String?, profile: TrafficProfile) -> Int {
+        guard profile.enableExtraConnections else { return 0 }
+        let hostFree = profile.maxConnectionsPerServer - hostInUse(host)
+        let globalFree = profile.maxConnections - totalConnections
+        return max(0, min(hostFree, globalFree))
+    }
+
     // MARK: Segment count
 
     /// Connection count this download may open, drawn from the profile + budget.

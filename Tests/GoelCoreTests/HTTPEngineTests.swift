@@ -25,6 +25,19 @@ final class StubURLProtocol: URLProtocol {
         /// Served as the `Content-Disposition` header when non-nil (drives the
         /// server-suggested filename).
         var contentDisposition: String? = nil
+        /// While delivering an UNRANGED `200` body, block once this many bytes have
+        /// been handed to the client and stay blocked until ``releaseUnrangedBody()``
+        /// (or the request is cancelled). Makes the mid-flight-upgrade tests causal
+        /// rather than timed: the stream physically cannot finish before the test has
+        /// observed the range probe and released it.
+        var holdUnrangedBodyAt: Int? = nil
+        /// When set, UNRANGED `200`s serve this body (with its own `Content-Length`)
+        /// while ranged GETs keep serving ``data``. Lets a test express a
+        /// probe-vs-stream asymmetry (e.g. a stream longer than the probed size).
+        var unrangedData: Data? = nil
+        /// When set, UNRANGED `200`s carry this `ETag` instead of ``etag`` — the
+        /// stream half of the validator triangle, independent of what the probe sees.
+        var unrangedETagOverride: String? = nil
     }
 
     private static let lock = NSLock()
@@ -34,7 +47,14 @@ final class StubURLProtocol: URLProtocol {
     )
 
     static func set(_ config: Config) {
-        lock.lock(); _config = config; lock.unlock()
+        lock.lock()
+        _config = config
+        // Every static knob resets with the config so test order can never leak
+        // a hold, a recorded range or a pending flap-back into the next test.
+        _unrangedReleased = false
+        _seenRangeHeaders = []
+        _force200MultiByteCount = 0
+        lock.unlock()
     }
     static func current() -> Config {
         lock.lock(); defer { lock.unlock() }; return _config
@@ -64,6 +84,38 @@ final class StubURLProtocol: URLProtocol {
         return false
     }
 
+    /// Releases a body parked by ``Config/holdUnrangedBodyAt``. Idempotent, and a
+    /// no-op when nothing is held (so tearDown can call it unconditionally).
+    private static var _unrangedReleased = false
+    static func releaseUnrangedBody() { lock.lock(); _unrangedReleased = true; lock.unlock() }
+    private static func unrangedBodyReleased() -> Bool {
+        lock.lock(); defer { lock.unlock() }; return _unrangedReleased
+    }
+
+    /// Every `Range` header the engine sent, in arrival order. The mid-flight
+    /// upgrade prober is identifiable as the single-byte midpoint `"bytes=M-M"`.
+    private static var _seenRangeHeaders: [String] = []
+    static func seenRangeHeaders() -> [String] {
+        lock.lock(); defer { lock.unlock() }; return _seenRangeHeaders
+    }
+    private static func record(range: String) {
+        lock.lock(); _seenRangeHeaders.append(range); lock.unlock()
+    }
+
+    /// Answer the next `n` ranged GETs whose range spans MORE than one byte with a
+    /// full `200` body — the "range support flapped back" case. Single-byte ranges
+    /// (the midpoint probe) are exempt, so the knob can never eat the probe that
+    /// triggers the upgrade under test.
+    private static var _force200MultiByteCount = 0
+    static func force200ForMultiByteRangedGETs(_ n: Int) {
+        lock.lock(); _force200MultiByteCount = n; lock.unlock()
+    }
+    private static func consumeForce200() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if _force200MultiByteCount > 0 { _force200MultiByteCount -= 1; return true }
+        return false
+    }
+
     private var stopped = false
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -76,6 +128,8 @@ final class StubURLProtocol: URLProtocol {
         Self.record(userAgent: request.value(forHTTPHeaderField: "User-Agent"))
         let total = cfg.data.count
         let method = request.httpMethod ?? "GET"
+        let rangeHeader = request.value(forHTTPHeaderField: "Range")
+        if let rangeHeader { Self.record(range: rangeHeader) }
 
         var headers = ["Content-Type": cfg.contentType]
         if let cd = cfg.contentDisposition { headers["Content-Disposition"] = cd }
@@ -91,7 +145,7 @@ final class StubURLProtocol: URLProtocol {
         }
 
         // Simulated rate-limiting: answer the first N ranged GETs with 429.
-        if method == "GET", request.value(forHTTPHeaderField: "Range") != nil, Self.consume429() {
+        if method == "GET", rangeHeader != nil, Self.consume429() {
             sendResponse(url: url, status: 429, headers: ["Content-Length": "11", "Retry-After": "0"])
             client?.urlProtocol(self, didLoad: Data("rate limited".utf8.prefix(11)))
             client?.urlProtocolDidFinishLoading(self)
@@ -100,8 +154,17 @@ final class StubURLProtocol: URLProtocol {
 
         // Ranged GET that the server honours -> 206 partial.
         if cfg.supportsRanges,
-           let rangeHeader = request.value(forHTTPHeaderField: "Range"),
+           let rangeHeader,
            let (start, end) = Self.parseRange(rangeHeader, total: total) {
+            // Flap-back: a server that momentarily forgets range support answers a
+            // ranged GET with the whole body. Only multi-byte ranges are eligible,
+            // so the single-byte midpoint probe still gets its 206.
+            if end > start, Self.consumeForce200() {
+                if cfg.sendContentLength { headers["Content-Length"] = "\(total)" }
+                sendResponse(url: url, status: 200, headers: headers)
+                deliver(cfg.data, cfg: cfg)
+                return
+            }
             let slice = cfg.data.subdata(in: start..<(end + 1))
             headers["Content-Length"] = "\(slice.count)"
             headers["Content-Range"] = "bytes \(start)-\(end)/\(total)"
@@ -110,10 +173,15 @@ final class StubURLProtocol: URLProtocol {
             return
         }
 
-        // Full body -> 200.
-        if cfg.sendContentLength { headers["Content-Length"] = "\(total)" }
+        // Full body -> 200. An UNRANGED 200 may serve its own body/ETag and may be
+        // parked mid-body, so the probe-vs-stream asymmetries the mid-flight
+        // upgrade has to survive are expressible.
+        let unranged = rangeHeader == nil
+        let body = unranged ? (cfg.unrangedData ?? cfg.data) : cfg.data
+        if unranged, let override = cfg.unrangedETagOverride { headers["ETag"] = override }
+        if cfg.sendContentLength { headers["Content-Length"] = "\(body.count)" }
         sendResponse(url: url, status: 200, headers: headers)
-        deliver(cfg.data, cfg: cfg)
+        deliver(body, cfg: cfg, holdAt: unranged ? cfg.holdUnrangedBodyAt : nil)
     }
 
     private func sendResponse(url: URL, status: Int, headers: [String: String]) {
@@ -121,11 +189,32 @@ final class StubURLProtocol: URLProtocol {
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
     }
 
-    private func deliver(_ data: Data, cfg: Config) {
+    /// Bodies are delivered inline on URLSession's protocol loader thread, which
+    /// is SHARED across the session's requests. A parked body would therefore
+    /// wedge every other request — the mid-flight range probe above all — so a
+    /// held delivery moves to its own queue. Unheld deliveries keep the original
+    /// inline behaviour so existing tests are untouched.
+    private static let heldBodyQueue = DispatchQueue(label: "StubURLProtocol.held-body",
+                                                     attributes: .concurrent)
+
+    private func deliver(_ data: Data, cfg: Config, holdAt: Int? = nil) {
+        guard let holdAt else { return deliverBody(data, cfg: cfg, holdAt: nil) }
+        Self.heldBodyQueue.async { self.deliverBody(data, cfg: cfg, holdAt: holdAt) }
+    }
+
+    private func deliverBody(_ data: Data, cfg: Config, holdAt: Int?) {
         var offset = 0
         let chunk = max(1, cfg.chunkSize)
         while offset < data.count {
             if stopped { return }
+            // Park the body at `holdAt` until the test releases it (or the client
+            // cancels). Spinning is fine: a held delivery runs on `heldBodyQueue`,
+            // so the loader thread stays free and other requests — the range probe
+            // above all — keep being served while this one waits.
+            if let holdAt, offset >= holdAt {
+                while !Self.unrangedBodyReleased() && !stopped { usleep(10_000) }
+                if stopped { return }
+            }
             let n = min(chunk, data.count - offset)
             client?.urlProtocol(self, didLoad: data.subdata(in: offset..<(offset + n)))
             offset += n

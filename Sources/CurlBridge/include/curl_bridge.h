@@ -46,6 +46,10 @@ typedef struct GCBHTTPResult {
     int64_t content_range_total; // Content-Range total, -1 unknown
     int64_t bytes_written;       // body bytes delivered to write_cb
     int range_total_mismatch;    // 1 if expected_total disagreed with Content-Range
+    int range_ignored;           /* 1: ranged request answered with a final 200 —
+                                    server ignored Range; aborted before body write */
+    char etag[256];              /* ETag of the final response, "" if none */
+    char last_modified[128];     /* Last-Modified of the final response, "" if none */
 } GCBHTTPResult;
 
 // Perform one HTTP(S) GET with Range: bytes=start-end (inclusive).

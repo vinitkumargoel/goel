@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Goel° — Download Engine Speed Audit &amp; State-of-the-Art Roadmap</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --card: #ffffff;
+    --border: rgba(11,11,11,0.10);
+    --hairline: #e1e0d9;
+    --baseline: #c3c2b7;
+    --ink: #0b0b0b;
+    --ink2: #52514e;
+    --muted: #898781;
+    --accent: #2a78d6;
+    --accent-deep: #1c5cab;
+    --accent-wash: rgba(42,120,214,0.08);
+    --seq-250: #86b6ef;
+    --seq-450: #2a78d6;
+    --track: #f0efec;
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --radius: 12px;
+    font-family: system-ui, -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--page); color: var(--ink); font-size: 15px; line-height: 1.6; }
+  a { color: var(--accent-deep); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.86em; }
+  code { background: var(--track); border: 1px solid var(--hairline); border-radius: 5px; padding: 1px 5px; white-space: nowrap; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 44px 24px 110px; }
+
+  /* Hero */
+  .hero { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 38px 42px 34px; margin-bottom: 22px; }
+  .eyebrow { display: inline-block; font-size: 11.5px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-deep); background: var(--accent-wash); padding: 5px 11px; border-radius: 999px; margin-bottom: 16px; }
+  h1 { font-size: 30px; letter-spacing: -0.02em; margin: 0 0 10px; line-height: 1.2; }
+  .subtitle { color: var(--ink2); font-size: 15.5px; max-width: 76ch; margin: 0 0 18px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { font-size: 12.5px; color: var(--ink2); border: 1px solid var(--hairline); background: var(--surface); padding: 4px 11px; border-radius: 999px; }
+  .pill strong { color: var(--ink); font-weight: 600; }
+  .verdict { margin-top: 20px; padding: 16px 18px; border-radius: 12px; border: 1px solid var(--hairline); background: var(--surface); font-size: 14.5px; color: var(--ink2); }
+  .verdict strong { color: var(--ink); }
+
+  /* Stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 10px; margin-bottom: 22px; }
+  .tile { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 16px 13px; }
+  .tile .v { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); line-height: 1.15; }
+  .tile .k { font-size: 12px; color: var(--muted); margin-top: 5px; line-height: 1.35; }
+
+  /* TOC */
+  nav.toc { position: sticky; top: 10px; z-index: 20; backdrop-filter: blur(10px); background: rgba(252,252,251,0.92); border: 1px solid var(--border); border-radius: 12px; padding: 9px 14px; margin-bottom: 30px; display: flex; flex-wrap: wrap; gap: 3px 14px; }
+  nav.toc a { color: var(--ink2); font-size: 12.5px; font-weight: 550; }
+  nav.toc a:hover { color: var(--accent-deep); text-decoration: none; }
+
+  section { margin-bottom: 42px; }
+  h2 { font-size: 21px; letter-spacing: -0.015em; margin: 0 0 6px; padding-top: 6px; }
+  .lede { color: var(--ink2); margin: 0 0 18px; max-width: 80ch; }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  p { max-width: 82ch; }
+  ul, ol { padding-left: 22px; max-width: 82ch; }
+  li { margin-bottom: 5px; }
+  .footnote { font-size: 12.5px; color: var(--muted); }
+
+  /* Cards */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 14px; }
+  .card h3 { margin-top: 0; }
+  .card .where { font-size: 12.5px; color: var(--muted); margin-top: -2px; margin-bottom: 10px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+
+  /* Status chips: colored dot + dark text — never color alone */
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 650; color: var(--ink); background: var(--track); border: 1px solid var(--hairline); border-radius: 999px; padding: 2.5px 10px 2.5px 8px; white-space: nowrap; vertical-align: 2px; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.good { background: var(--good); } .dot.warning { background: var(--warning); }
+  .dot.serious { background: var(--serious); } .dot.critical { background: var(--critical); }
+  .dot.info { background: var(--accent); }
+
+  /* Tables */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); margin: 12px 0 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 650; padding: 11px 14px; border-bottom: 1px solid var(--hairline); background: var(--surface); white-space: nowrap; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--hairline); vertical-align: top; color: var(--ink2); }
+  td:first-child, td strong { color: var(--ink); }
+  tr:last-child td { border-bottom: none; }
+  td .mono { font-size: 12px; color: var(--muted); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* Gain bars — one sequential hue (blue), solid to conservative estimate,
+     light band to optimistic; direct labels in ink. */
+  .gain { display: grid; grid-template-columns: 240px 1fr 110px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--hairline); }
+  .gain:last-child { border-bottom: none; }
+  .gain .name { font-size: 13.5px; color: var(--ink); }
+  .gain .name small { display: block; color: var(--muted); font-size: 11.5px; }
+  .gain .bar { position: relative; height: 10px; background: var(--track); border-radius: 4px; border-left: 2px solid var(--baseline); }
+  .gain .lo, .gain .hi { position: absolute; top: 0; left: 0; height: 100%; border-radius: 0 4px 4px 0; }
+  .gain .hi { background: var(--seq-250); }
+  .gain .lo { background: var(--seq-450); }
+  .gain .val { font-size: 13px; font-weight: 650; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  @media (max-width: 700px) { .gain { grid-template-columns: 1fr; gap: 4px; } .gain .val { text-align: left; } }
+
+  /* Segment timeline schematic */
+  .schematic { background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px; padding: 16px 18px 12px; margin: 12px 0; overflow-x: auto; }
+  .schematic .lane { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .schematic .lbl { flex: none; width: 74px; font-size: 11px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+  .schematic .t { position: relative; height: 12px; flex: 1 0 420px; background: var(--track); border-radius: 3px; }
+  .schematic .seg { position: absolute; top: 0; height: 100%; background: var(--seq-250); border-radius: 3px; }
+  .schematic .seg.busy { background: var(--seq-450); }
+  .schematic .seg.idle { background: repeating-linear-gradient(45deg, #efdcd4, #efdcd4 4px, var(--track) 4px, var(--track) 8px); }
+  .schematic .cap { font-size: 12px; color: var(--ink2); margin-top: 8px; }
+  .schematic .cap b { color: var(--ink); }
+
+  .kbd-note { background: var(--accent-wash); border: 1px solid rgba(42,120,214,0.25); border-radius: 10px; padding: 12px 16px; font-size: 13.5px; color: var(--ink2); margin: 14px 0; }
+  .kbd-note strong { color: var(--accent-deep); }
+
+  .srcs { font-size: 12.5px; color: var(--muted); line-height: 1.8; }
+  .divider { border: none; border-top: 1px solid var(--hairline); margin: 26px 0; }
+  footer { margin-top: 50px; color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--hairline); padding-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ═══════════════════════════ HERO ═══════════════════════════ -->
+<div class="hero">
+  <span class="eyebrow">Engine Performance · Deep Audit</span>
+  <h1>Goel° Download Engine — Speed Audit &amp; State-of-the-Art Roadmap</h1>
+  <p class="subtitle">A full-mechanism review of the HTTP segmented-transfer engine, the network-aggregation
+  (multi-path) layer, and the libtorrent bridge — measured against what IDM, aria2, qBittorrent, curl and the
+  transport-research literature do in 2026. Every claim below carries a <code>file:line</code> or a source link.</p>
+  <div class="meta-row">
+    <span class="pill">Audited <strong>July 28, 2026</strong></span>
+    <span class="pill">Engine files read <strong>end-to-end</strong></span>
+    <span class="pill"><strong>2</strong> codebase traces + <strong>2</strong> web-research sweeps</span>
+    <span class="pill">Scope <strong>HTTP · Multi-path · BitTorrent</strong></span>
+  </div>
+  <div class="verdict">
+    <strong>Verdict:</strong> the engine's <em>correctness</em> architecture is genuinely strong — but throughput is
+    left on the table in seven specific places. The two biggest are a <strong>default 50&nbsp;MiB/s profile cap</strong>
+    (≈420&nbsp;Mbps — on a gigabit line that alone is your "performance is 50%") and <strong>static
+    segmentation with no work-stealing</strong>, which lets every download's tail collapse to its slowest
+    connections. On the torrent side the session runs on <strong>library defaults</strong> that libtorrent's own
+    author overrides in his high-performance preset. All of it is fixable; most of it is fixable in days.
+  </div>
+</div>
+
+<!-- Stat tiles -->
+<div class="tiles">
+  <div class="tile"><div class="v">50 MiB/s</div><div class="k">default (Medium) download ceiling — ≈420 Mbps, applies to HTTP <em>and</em> torrents</div></div>
+  <div class="tile"><div class="v">0</div><div class="k">segment re-splits after start — ranges are cut once, never stolen</div></div>
+  <div class="tile"><div class="v">16 KB</div><div class="k">curl receive buffer on the multi-path route (default; max is 10 MB)</div></div>
+  <div class="tile"><div class="v">1×TLS</div><div class="k">full TCP + TLS handshake per multi-path segment attempt (reuse forbidden)</div></div>
+  <div class="tile"><div class="v">1 thread</div><div class="k">libtorrent piece hashing (<code>hashing_threads</code> default) on an M-series Mac</div></div>
+  <div class="tile"><div class="v">1 MiB/s</div><div class="k">default torrent upload cap — suppresses tit-for-tat, lowers download speed</div></div>
+</div>
+
+<nav class="toc">
+  <a href="#summary">Top moves</a>
+  <a href="#mechanism">How it works today</a>
+  <a href="#ceilings">The 7 HTTP ceilings</a>
+  <a href="#aggregation">Single-connection aggregation</a>
+  <a href="#torrent">Torrent</a>
+  <a href="#sota">State of the art</a>
+  <a href="#roadmap">Roadmap</a>
+  <a href="#bench">Benchmark harness</a>
+  <a href="#appendix">Bug appendix</a>
+</nav>
+
+<!-- ═══════════════════════════ S1 — SUMMARY ═══════════════════════════ -->
+<section id="summary">
+  <h2>1 · The moves that double you</h2>
+  <p class="lede">Ranked by expected sustained-throughput gain. Solid bar = conservative estimate, light band = optimistic
+  case. These are engineering estimates from the mechanism analysis + published measurements; §8 defines the harness that
+  turns them into your own numbers.</p>
+
+  <div class="card" role="img" aria-label="Expected sustained throughput gains per fix, horizontal bars">
+    <div class="gain">
+      <div class="name">Lift the default speed cap <small>Medium profile pacer · P0, ~1 hour</small></div>
+      <div class="bar"><div class="hi" style="width:92%"></div><div class="lo" style="width:46%"></div></div>
+      <div class="val">+60–120%*</div>
+    </div>
+    <div class="gain">
+      <div class="name">Work-stealing segmentation <small>largest-gap bisection + hot-connection reuse · P1</small></div>
+      <div class="bar"><div class="hi" style="width:46%"></div><div class="lo" style="width:15%"></div></div>
+      <div class="val">+20–60%</div>
+    </div>
+    <div class="gain">
+      <div class="name">Torrent settings overhaul <small>prefer_tcp, queue depth, disk queue, announce-all · P0</small></div>
+      <div class="bar"><div class="hi" style="width:38%"></div><div class="lo" style="width:15%"></div></div>
+      <div class="val">+20–50%</div>
+    </div>
+    <div class="gain">
+      <div class="name">Connection reuse + 1 MiB buffer on multi-path <small>drop FRESH_CONNECT/FORBID_REUSE · P0–P1</small></div>
+      <div class="bar"><div class="hi" style="width:31%"></div><div class="lo" style="width:8%"></div></div>
+      <div class="val">+10–40%</div>
+    </div>
+    <div class="gain">
+      <div class="name">HTTP/1.1 per segment (defeat H2 coalescing) <small>N real congestion windows, not 1 · P1</small></div>
+      <div class="bar"><div class="hi" style="width:23%"></div><div class="lo" style="width:8%"></div></div>
+      <div class="val">+10–30%†</div>
+    </div>
+    <div class="gain">
+      <div class="name">1–4 MiB flush + batched ledger <small>fewer syscalls + actor hops at &gt;500 MB/s · P0</small></div>
+      <div class="bar"><div class="hi" style="width:12%"></div><div class="lo" style="width:4%"></div></div>
+      <div class="val">+5–15%‡</div>
+    </div>
+  </div>
+  <p class="footnote">* On links faster than ~420 Mbps; a gigabit line goes from 420 → ~940 Mbps. Below 420 Mbps it changes nothing.
+  &nbsp;† Typical clean-path gain; on lossy high-BDP paths the literature supports up to ~2×. &nbsp;‡ CPU-bound regimes (multi-Gbps, many segments) only.
+  Torrent <em>ramp-up</em> (time to reach full speed) improves 2–5× separately from sustained throughput — see §5.</p>
+
+  <div class="kbd-note"><strong>Why "50% → 100%" is realistic:</strong> the caps multiply. A gigabit user on defaults is
+  capped at 420 Mbps (cap) × tail-collapse losses (static split) × handshake overhead (multi-path). Removing the first
+  factor alone reaches ~90% of line rate on clean paths; the second and third close the gap on real-world CDNs and
+  lossy links. For torrents, the 1 MiB/s upload cap + untuned request pipeline is the equivalent pair.</div>
+</section>
+
+<!-- ═══════════════════════════ S2 — MECHANISM ═══════════════════════════ -->
+<section id="mechanism">
+  <h2>2 · How the engine works today</h2>
+  <p class="lede">Verified by reading <code>SegmentedTransfer.swift</code> (1,435 lines), <code>HTTPEngine.swift</code>,
+  <code>curl_bridge.c</code>, <code>torrent_bridge.cpp</code> and the full settings→engine config chain.</p>
+
+  <h3>The HTTP pipeline</h3>
+  <ol>
+    <li><strong>Probe</strong> — cheap <code>HEAD</code>; falls through to a 1-byte ranged <code>GET</code> unless range support is already <em>proven</em>, so servers that only advertise <code>Accept-Ranges</code> on GET still segment (<span class="mono">HTTPEngine+Probe.swift:121–160</span>). Extracts size, ETag/Last-Modified, filename, and published digests (RFC 3230 / RFC 9530 / Content-MD5 + <code>.sha256</code> sidecar).</li>
+    <li><strong>Plan</strong> — segment count from the traffic profile + cross-download <code>ConnectionBudget</code> (per-host and global caps, 64 KiB min segment; <span class="mono">ConnectionBudget.swift:62–74</span>). With ≥2 bound adapters, <code>multiPathSegmentCount</code> overrides it: adapters × streams-per-adapter, hard cap 32 (<span class="mono">NetworkAdapter.swift:207–226</span>).</li>
+    <li><strong>Split</strong> — <code>makeRanges</code> cuts N <em>equal</em> ranges <em>once</em> (<span class="mono">SegmentedTransfer.swift:739–751</span>). The layout is frozen for the download's life and serialized into the resume cursor.</li>
+    <li><strong>Pump</strong> — per segment: URLSession data task with a delegate-driven <code>ChunkStreamer</code> (real TCP backpressure via suspend/resume at 8 MiB/2 MiB watermarks — good engineering), or the curl-based <code>BoundHTTPClient</code> when interface-bound. 64 KiB flushes into a preallocated sparse file, each flush hopping to a <code>Ledger</code> actor.</li>
+    <li><strong>Adapt</strong> — a per-download <code>ConnectionGovernor</code> shrinks fan-out on 429 (monotonic — it never grows back; <span class="mono">ConnectionGovernor.swift:85–87</span>). A <code>MirrorPool</code> round-robins mirrors and demotes misbehaving ones.</li>
+    <li><strong>Verify</strong> — every 206's Content-Range total must match; whole-file byte accounting before <code>.completed</code>; optional checksum verification.</li>
+  </ol>
+
+  <h3>What is already genuinely good</h3>
+  <div class="grid2">
+    <div class="card">
+      <ul style="margin:0">
+        <li><span class="chip"><span class="dot good"></span>solid</span> Delegate-based chunk streaming with true TCP backpressure (replaced byte-per-await <code>AsyncBytes</code>)</li>
+        <li><span class="chip"><span class="dot good"></span>solid</span> Resume cursors validated by ETag/Last-Modified <em>and</em> on-disk preallocation check — no silent corruption paths</li>
+        <li><span class="chip"><span class="dot good"></span>solid</span> Cross-host redirect/mirror secret-stripping and SSRF refusal in <code>RedirectSanitizer</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <ul style="margin:0">
+        <li><span class="chip"><span class="dot good"></span>solid</span> Aggregate rate-limiter chain that holds the cap in <em>sum</em> across downloads</li>
+        <li><span class="chip"><span class="dot good"></span>solid</span> Cancellation correctness in the governor (no doomed requests after teardown)</li>
+        <li><span class="chip"><span class="dot good"></span>solid</span> Overflow-safe range math against hostile <code>Content-Length</code></li>
+      </ul>
+    </div>
+  </div>
+  <p>The gap is not correctness. It is that the engine's <em>throughput policy</em> — how many bytes to keep in flight,
+  where, and for how long — was set conservatively and statically, while the state of the art is adaptive everywhere.</p>
+</section>
+
+<!-- ═══════════════════════════ S3 — CEILINGS ═══════════════════════════ -->
+<section id="ceilings">
+  <h2>3 · The seven ceilings on HTTP throughput</h2>
+  <p class="lede">Each with evidence, the state-of-the-art comparison, and the fix.</p>
+
+  <div class="card">
+    <h3><span class="chip"><span class="dot critical"></span>ceiling 1</span> &nbsp;The default profile caps everyone at ~420 Mbps</h3>
+    <div class="where">TrafficProfile.swift:73 · HTTPEngine.swift:155 (shared pacer) · torrent_bridge.cpp:180 (same cap → libtorrent)</div>
+    <p>"Medium" is the default profile and sets <code>maxDownloadBytesPerSec = 50 MiB/s</code>, enforced by the engine-wide
+    <code>downloadPacer</code> across all downloads in sum — and pushed into libtorrent as <code>download_rate_limit</code>.
+    Every user on a ≥500 Mbps line runs at half speed or less without knowing why. The comment in the file shows this was
+    already raised once (10 → 50 MiB/s) for exactly this reason; the same logic now applies again at gigabit+.</p>
+    <p><strong>Fix:</strong> default the byte cap to unlimited (keep connection caps as the safety valve — that's what they're for),
+    or run a 3-second first-launch calibration and set the cap to 110% of measured line rate. Keep "Low" as the true limiter.
+    <em>One-line change; the single largest win for users on defaults.</em></p>
+  </div>
+
+  <div class="card">
+    <h3><span class="chip"><span class="dot critical"></span>ceiling 2</span> &nbsp;Static segmentation — the tail collapse</h3>
+    <div class="where">SegmentedTransfer.swift:92–99 (ranges frozen in init) · :739–751 (equal split, never revisited)</div>
+    <p>Ranges are cut into N equal pieces at start. When a fast segment finishes, its connection <em>closes</em>; the
+    download ends at the pace of whichever segments were unlucky — slow CDN edge, lossy path, throttled mirror, slower NIC.
+    With aggregation on, round-robin adapter assignment makes this structural: a 1 Gbps Ethernet segment finishes early
+    and sits idle while a 100 Mbps Wi-Fi segment grinds through the same-sized range.</p>
+    <div class="schematic" role="img" aria-label="Timeline schematic comparing static split, where connections go idle near the end, against work stealing, where all connections stay busy to completion">
+      <div class="lane"><span class="lbl">static</span><div class="t">
+        <div class="seg busy" style="left:0;width:52%"></div><div class="seg idle" style="left:52%;width:48%"></div></div></div>
+      <div class="lane"><span class="lbl">&nbsp;</span><div class="t">
+        <div class="seg busy" style="left:0;width:64%"></div><div class="seg idle" style="left:64%;width:36%"></div></div></div>
+      <div class="lane"><span class="lbl">&nbsp;</span><div class="t">
+        <div class="seg busy" style="left:0;width:100%"></div></div></div>
+      <div class="lane" style="margin-top:10px"><span class="lbl">stealing</span><div class="t">
+        <div class="seg busy" style="left:0;width:97%"></div></div></div>
+      <div class="lane"><span class="lbl">&nbsp;</span><div class="t">
+        <div class="seg busy" style="left:0;width:97%"></div></div></div>
+      <div class="lane"><span class="lbl">&nbsp;</span><div class="t">
+        <div class="seg busy" style="left:0;width:97%"></div></div></div>
+      <div class="cap">Hatched = connection idle while the download is still running. <b>Static:</b> finish time = slowest
+      segment. <b>Stealing:</b> freed connections bisect the largest remaining gap; all N stay busy to ~100%.</div>
+    </div>
+    <p><strong>State of the art:</strong> IDM documents the exact rule — when a connection frees, <em>find the largest remaining
+    segment and divide it in half</em>, reusing the hot connection "without additional connect/login stages." aria2's picker
+    hands a finishing connection the byte range <em>adjacent</em> to its position (same socket, zero handshakes) and only
+    bisects when no adjacent work exists.</p>
+    <p><strong>Fix:</strong> replace the fixed <code>[Range64]</code> with a shared range ledger: on segment completion, (a) try the
+    adjacent unclaimed gap on the same connection via a new Range request; (b) else bisect the largest remaining gap
+    (floor: max(4 MiB, per-connection rate × 3 s)); (c) stall detector (&lt;N KB/s for 10 s) kills and re-steals. The resume-cursor
+    format already stores arbitrary ranges + completed counts, so persistence barely changes.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="chip"><span class="dot serious"></span>ceiling 3</span> &nbsp;Multi-path curl: a handshake per segment and a 16 KB buffer</h3>
+    <div class="where">curl_bridge.c:479–480 (FRESH_CONNECT + FORBID_REUSE) · :432/:514 (easy handle per attempt) · no CURLOPT_BUFFERSIZE set · BoundHTTPClient.swift:103 (thread per request)</div>
+    <p>Every interface-bound range request builds a fresh curl easy handle, forbids connection reuse, performs a full
+    TCP + TLS handshake, restarts TCP slow-start from zero, and delivers the body in 16 KB callbacks — each of which is a
+    separate <code>FileHandle.write</code> syscall (<span class="mono">BoundHTTPClient.swift:188</span>). curl's own docs cap
+    <code>CURLOPT_BUFFERSIZE</code> at 10 MB; users have measured order-of-magnitude callback-overhead differences at high rates.</p>
+    <p><strong>Fix:</strong> one long-lived <em>curl multi</em> (or at minimum a per-adapter easy-handle pool) with connection cache +
+    shared TLS session store (<code>CURLSH</code>); <code>CURLOPT_BUFFERSIZE</code> 512 KB–2 MB; coalesce writes to ≥1 MiB.
+    This is also the prerequisite that makes work-stealing cheap on the bound path — re-splits become one Range request
+    on a warm connection, exactly IDM's trick.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="chip"><span class="dot serious"></span>ceiling 4</span> &nbsp;HTTP/2 coalescing quietly serializes your "parallel" segments</h3>
+    <div class="where">URLSession path (default protocol negotiation) · curl_bridge.c:467 (CURL_HTTP_VERSION_2TLS)</div>
+    <p>URLSession multiplexes all data tasks to an h2 origin onto <em>one TCP connection</em>. Eight "segments" against an
+    HTTP/2 CDN can mean eight streams sharing a single congestion window — the parallel-TCP speedup (N independent
+    congestion controllers) silently evaporates, and one lost packet head-of-line-blocks all eight. This is a
+    well-documented failure mode (e.g. .NET saw h2 downloads at a fraction of HTTP/1.1 speed for large bodies).</p>
+    <p><strong>Fix:</strong> fetch <em>segments</em> over HTTP/1.1 — separate connections, separate cwnds (curl path:
+    <code>CURL_HTTP_VERSION_1_1</code> for ranged segment GETs; URLSession offers no h2 opt-out, which argues for routing all
+    segmented traffic through the curl engine once ceiling 3 is fixed). Keep h2/h3 for probes and single-stream bodies.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="chip"><span class="dot warning"></span>ceiling 5</span> &nbsp;The governor only ratchets down</h3>
+    <div class="where">ConnectionGovernor.swift:85–87 · design note :17–23</div>
+    <p>One transient 429 burst (a CDN edge hiccup, a shared rate-limit window) permanently halves the fan-out for the rest of
+    a multi-hour download. The code comments acknowledge re-probing belongs to "a future, slower control loop" — that loop is
+    exactly what the state of the art runs (AIMD: probe +1 slot after a clean multi-minute window; back off again on 429).</p>
+    <p><strong>Fix:</strong> add the slow loop: after T seconds with zero 429s and all segments healthy, raise the ceiling by 1
+    toward the original request. Trivially safe — worst case is one extra 429 per probe interval.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="chip"><span class="dot warning"></span>ceiling 6</span> &nbsp;64 KiB flushes: a syscall + actor hop every 64 KiB</h3>
+    <div class="where">HTTPEngine.swift:93 (flushSize = 64 * 1024) · SegmentedTransfer.swift:702–724 (pump loop)</div>
+    <p>At 1 GB/s aggregate this is ~16,000 write syscalls and ~16,000 <code>Ledger</code> actor hops per second, plus a
+    rate-limiter hop each when capped. Fine at 100 Mbps; measurable CPU at multi-Gbps.</p>
+    <p><strong>Fix:</strong> raise flush to 1–4 MiB (adaptive: min(4 MiB, rate/8)), advance the ledger per flush as today, and
+    write via <code>pwrite</code> on one shared fd. aria2 ships a 16 MiB coalescing cache for the same reason. Progress
+    granularity stays sub-second at any speed that notices the change.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="chip"><span class="dot warning"></span>ceiling 7</span> &nbsp;Single-connection downloads leave everything on the table</h3>
+    <div class="where">SegmentedTransfer.swift:114–122 (first-adapter pin) · :541 (truncate on entry) · :591–593 (no resume) · macOS <code>net.inet.tcp.autorcvbufmax</code> = 4 MiB</div>
+    <p>Covered in depth in §4 — this is your reported aggregation bottleneck. Also note the OS-level ceiling: macOS caps
+    auto-tuned receive windows at 4 MiB, which caps <em>any</em> single TCP flow at ~1 Gbps at 33 ms RTT (~330 Mbps at
+    100 ms). Segmentation is the workaround when the server allows it; when it doesn't, honesty + failover is the play.</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ S4 — AGGREGATION ═══════════════════════════ -->
+<section id="aggregation">
+  <h2>4 · Network aggregation and the single-connection case</h2>
+  <p class="lede">Diagnosis of "aggregation does nothing when there's only one connection" — what's a bug, what's physics,
+  and the fix ladder for each.</p>
+
+  <h3>What actually happens today</h3>
+  <p>Aggregation binds <em>different TCP connections</em> to different NICs. That requires ≥2 connections, which requires
+  the server to support ranges with a known size (<code>canSegment</code>, <span class="mono">HTTPEngine.swift:488</span>).
+  When it doesn't:</p>
+  <ul>
+    <li>The transfer silently collapses to a single stream on <code>boundAdapters.first</code> — the <em>first</em> NIC in the
+    list, not the fastest (<span class="mono">SegmentedTransfer.swift:118–119</span>). Your second ISP sits idle.</li>
+    <li>That path <strong>truncates the destination file on every entry</strong> (<span class="mono">:541</span>) and cannot resume
+    (<span class="mono">:591–593</span>) — a retry after 1.9 GB of a 2 GB unranged download restarts from zero <em>and destroys the partial</em>.</li>
+    <li>No signal reaches the UI: the "why am I on one path?" reasons (<code>.noRanges</code>, <code>.serverRejected</code>…)
+    are defined but <em>never produced anywhere</em> (<span class="mono">NetworkAdapter.swift:101–104</span>).</li>
+    <li>Bonus finding: on the bound path, pause discards all in-flight segment bytes from the resume cursor
+    (abort returns without crediting <code>bytesWritten</code>, <span class="mono">SegmentedTransfer.swift:401–404</span>) and
+    progress only ticks at segment boundaries (no <code>onBytes</code> wired at <span class="mono">:397–399</span>) — so
+    multi-path downloads show staircase progress and re-fetch data after pause.</li>
+  </ul>
+
+  <h3>What is physics, what is fixable</h3>
+  <p>A single TCP flow cannot be striped across two interfaces client-side — packets of one 5-tuple follow one route. True
+  single-flow bonding requires <strong>MPTCP on both ends</strong> (virtually no public HTTP servers speak it; on macOS it's
+  client-only via Network.framework, and URLSession's <code>multipathServiceType</code> is iOS-only with the aggregate mode
+  entitlement-gated) or a <strong>bonding relay</strong> (the Speedify model — packets tunneled across all links to a server you
+  operate, which reassembles the flow). Everything else is engineering you can ship now:</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Rung</th><th>What</th><th>Wins</th><th>Effort</th></tr></thead>
+    <tbody>
+      <tr><td><strong>1 · Fastest-NIC race</strong></td><td>Open the single connection on <em>all</em> bound adapters simultaneously (happy-eyeballs style, 200 ms stagger), keep the first to deliver body bytes, cancel the rest. Replaces the arbitrary <code>.first</code> pick.</td><td>Single-stream downloads always ride the best path; dead-upstream NICs never black-hole a download</td><td>Small</td></tr>
+      <tr><td><strong>2 · Stall failover</strong></td><td>On mid-stream stall/error, retry on the <em>other</em> adapter. If the server gave a strong validator, attempt <code>If-Range</code> resume even when the probe said "no ranges" (many servers honor Range on retry despite not advertising it); else restart early-only.</td><td>Wi-Fi drop no longer kills an unranged download; QUIC-migration-like resilience</td><td>Small–medium</td></tr>
+      <tr><td><strong>3 · Fix the destructive path</strong></td><td>Stop truncating on entry; probe-check before discarding partials; wire <code>onBytes</code> + commit partial bytes on abort so pause/resume stops re-downloading.</td><td>No lost bytes on pause; live progress on multi-path</td><td>Small</td></tr>
+      <tr><td><strong>4 · Surface the reason</strong></td><td>Emit the existing <code>SinglePathReason</code> cases; show "server doesn't support splitting — running on Ethernet (en0)" in the task row.</td><td>Users stop reading "aggregation broken" into a server limitation</td><td>Small</td></tr>
+      <tr><td><strong>5 · MPTCP (opt-in)</strong></td><td>Network.framework connection with <code>multipathServiceType = .aggregate</code> for servers that speak MPTCP (self-hosted origins, <code>check.mptcp.dev</code>). Falls back to TCP transparently.</td><td>True single-flow bonding where the server cooperates</td><td>Medium</td></tr>
+      <tr><td><strong>6 · Bonding relay (strategic)</strong></td><td>Optional user-supplied relay (WireGuard/MPTCP VPS, Speedify-style) that Goel° tunnels through; the relay sees one flow, the client stripes packets across NICs.</td><td>The only universal single-flow aggregation; a genuine differentiator — no consumer download manager ships this</td><td>Large</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Manufacturing more connections when the server "gives one"</h3>
+  <p>"One connection" is four different situations, each with its own unlock. The decisive insight: most
+  per-client limits are <strong>per IP address</strong> — and a machine with two ISPs has two public IPs. Aggregation
+  shouldn't just <em>spread</em> connections; it should <em>multiply the allowance</em>.</p>
+  <p class="footnote"><span class="chip"><span class="dot good"></span>shipped</span> Rows&nbsp;1 and&nbsp;3 are
+  implemented on branch <span class="mono">feat/single-conn-aggregation</span>: the mid-flight upgrade (background
+  ranged re-probe → abort the stream → keep the prefix → re-enter segmented across all NICs) and per-source-IP
+  connection budgets (one <code>ConnectionGovernor</code> per adapter, so a 429 on one ISP shrinks only that path's
+  ceiling), plus a mid-flight channel to charge the extra connections against the cross-download budget. Rows&nbsp;2,
+  4, 5 and&nbsp;6 remain proposals.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Why you got 1 connection</th><th>The unlock</th><th>How</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Probe false-negative</strong> — server really does support ranges but hid it (CDN cold cache ignoring <code>Range</code> until the object is cached — classic Cloudflare MISS behavior; servers advertising ranges only on GET; flaky HEAD)</td>
+        <td>Mid-flight upgrade to segmented</td>
+        <td>Start the single stream immediately (no latency cost), then background-probe with a real ranged GET at a mid-file offset every ~30 s. When a valid 206 with matching validators arrives, keep stream 1 running from the front and spawn segments for the remainder across all NICs. IDM effectively does this — it never trusts the first answer forever.</td>
+      </tr>
+      <tr>
+        <td><strong>Unknown size</strong> — ranges accepted but no <code>Content-Length</code> (today <code>canSegment</code> requires both, <span class="mono">HTTPEngine.swift:488</span>)</td>
+        <td>Progressive segmentation</td>
+        <td>Open with <code>Range: bytes=0-</code>; a 206 reply carries <code>Content-Range: bytes 0-…/N</code> — the total arrives in the first response headers. Split the tail the moment N is known.</td>
+      </tr>
+      <tr>
+        <td><strong>Per-IP connection cap</strong> — server 429s the 2nd connection <em>from the same IP</em> (Hetzner-style ~3/IP, file hosts with 1/IP free tiers)</td>
+        <td><strong>Per-source-IP budgets — the aggregation multiplier</strong></td>
+        <td>Each bound adapter with its own ISP is a different public IP → a <em>fresh</em> per-IP allowance. Replace the single per-download <code>ConnectionGovernor</code> with one governor per (host, adapter): a 429 on the Wi-Fi IP should shrink only Wi-Fi's ceiling, not the download's. A "1-connection server" becomes a 2-connection download on 2 ISPs — aggregation working exactly where it's told it can't.</td>
+      </tr>
+      <tr>
+        <td><strong>Per-request throttle</strong> — each request capped (e.g. nginx <code>limit_rate</code>), connections limited too</td>
+        <td>H2/H3 stream fan-out (experiment)</td>
+        <td>Per-<em>request</em> throttles multiply across HTTP/2 streams on one connection; N ranged requests as N streams × M NICs. Server-dependent (some servers count streams as connections) — ship behind a flag, keep only when measured faster.</td>
+      </tr>
+      <tr>
+        <td><strong>Per-edge cap on a CDN</strong> — the limit is per (client IP, edge IP) pair</td>
+        <td>Edge-IP fan-out</td>
+        <td>Resolve all A/AAAA records and pin different segments to different edge IPs (<code>CURLOPT_RESOLVE</code>); combine with the NIC matrix: adapters × edges independent allowances.</td>
+      </tr>
+      <tr>
+        <td><strong>Genuinely one TCP flow allowed</strong> — no ranges, hard 1-connection enforcement</td>
+        <td>Relay through your own daemon</td>
+        <td>Goel° already ships <strong>GoelDaemon</strong> on Linux: let the daemon (on a VPS/home server) fetch the origin over its fat datacenter link with the single allowed connection, while the Mac pulls from the daemon with full segmentation + multi-NIC aggregation. Origin sees one client; the user gets bonded speed. MPTCP (Network.framework, opt-in) covers own-origin servers; the daemon relay covers everything else.</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p class="footnote"><strong>Caveats to build in:</strong> signed URLs are sometimes IP-locked — a segment fetched from the second
+  NIC gets 403; the engine already demotes on 401/403, but it should then settle into single-NIC segmentation rather than
+  retry-thrash. Account-level (login-based) limits do not multiply across IPs. Always honor 429/<code>Retry-After</code> —
+  the goal is using independent allowances, not hammering one.</p>
+
+  <h3>Aggregation policy bugs (from the settings→engine trace)</h3>
+  <p>Full list with file:line in the <a href="#appendix">appendix</a>; the four that matter most:</p>
+  <ul>
+    <li><span class="chip"><span class="dot critical"></span>fix now</span> Per-task <code>.aggregate</code> <strong>bypasses the master switch, the Low profile, the adapter selection and the metered-adapter filter</strong> — a task can fan out over a hotspot the user explicitly excluded, with aggregation globally off (<span class="mono">DownloadManager+EngineConfig.swift:103–115</span>, <span class="mono">NetworkSelection.swift:131–132</span>).</li>
+    <li><span class="chip"><span class="dot serious"></span>fix</span> <code>SegmentedTransfer.swift:69</code> overrides the cross-download budget: N concurrent multi-path downloads can exceed <code>maxConnectionsPerServer</code> by adapters × N.</li>
+    <li><span class="chip"><span class="dot serious"></span>fix</span> <code>multiPathSegmentCount</code> ignores <code>enableExtraConnections</code> — a Low-profile user can reach 32 connections (<span class="mono">NetworkAdapter.swift:207–226</span>).</li>
+    <li><span class="chip"><span class="dot warning"></span>tidy</span> <code>aggregationStrategy</code> and <code>aggregationPathDiversityProbe</code> are persisted, validated, shown in Settings — and never read by any engine code. Ship them or remove them.</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════════ S5 — TORRENT ═══════════════════════════ -->
+<section id="torrent">
+  <h2>5 · Torrent: from library defaults to tuned</h2>
+  <p class="lede">libtorrent 2.0.13 via TorrentBridge, mmap disk I/O, and a settings pack that sets 11 keys — everything
+  else rides defaults that libtorrent's own <code>high_performance_seed()</code> preset overrides. The profile caps hit
+  torrents hardest: Medium = 50 MiB/s down, <strong>1 MiB/s up</strong>, 200 connections.</p>
+
+  <h3>Settings: current → recommended</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Setting</th><th>Today</th><th>Recommended</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><code>hashing_threads</code></td><td class="num">1 (default)</td><td class="num">physical cores</td><td>SHA-1/256 verification is the CPU wall above ~1 Gbps; rechecks go cores× faster</td></tr>
+      <tr><td><code>max_queued_disk_bytes</code></td><td class="num">1 MiB (default)</td><td class="num">64 MiB</td><td>When pending writes exceed this, libtorrent <em>stops reading from peer sockets</em> — the most common hidden download cap on fast links</td></tr>
+      <tr><td><code>max_out_request_queue</code></td><td class="num">500 (default)</td><td class="num">1500</td><td>Outstanding 16 KiB block requests per peer; needed depth ≈ rate×RTT/16 KiB on high-BDP peers (hp_seed value)</td></tr>
+      <tr><td><code>mixed_mode_algorithm</code></td><td>peer_proportional (default)</td><td>prefer_tcp</td><td>Default deliberately throttles TCP to protect uTP; libtorrent's tuning doc says it "might even be harmful" on fast links; qBittorrent ships prefer_tcp</td></tr>
+      <tr><td><code>enable_outgoing_utp</code></td><td>true</td><td>false (keep incoming)</td><td>uTP/LEDBAT yields by design; TCP wins on fast paths</td></tr>
+      <tr><td><code>announce_to_all_trackers</code> / <code>_tiers</code></td><td>false / false (default)</td><td>true / true</td><td>Announce every tracker in every tier in parallel — qBittorrent's single biggest ramp-up win on multi-tracker torrents</td></tr>
+      <tr><td><code>connection_speed</code> / <code>torrent_connect_boost</code></td><td class="num">100 / 30</td><td class="num">250–500 / 100</td><td>Connect-rate ramp; racing configs use 500/s to hit line rate in seconds</td></tr>
+      <tr><td><code>send_buffer_watermark</code> (+low, factor)</td><td class="num">500 KiB / 10 KiB / 50</td><td class="num">3 MiB / 1 MiB / 150</td><td>hp_seed values; keeps upload pipes full → better reciprocation</td></tr>
+      <tr><td><code>max_peer_recv_buffer_size</code></td><td class="num">2 MiB</td><td class="num">5 MiB</td><td>Per-peer assembly buffer for fast peers (hp_seed)</td></tr>
+      <tr><td><code>request_timeout</code> / <code>peer_timeout</code> / <code>max_failcount</code></td><td class="num">60 / 120 / 3</td><td class="num">10 / 20 / 1</td><td>Evict dead peers fast so slots recycle — critical for end-game and last-piece stalls</td></tr>
+      <tr><td><code>unchoke_slots_limit</code> / choker</td><td class="num">8 / fixed_slots</td><td class="num">−1 or rate_based_choker</td><td>Better upload utilization → tit-for-tat reciprocation → download speed</td></tr>
+      <tr><td><code>dht_bootstrap_nodes</code></td><td>dht.libtorrent.org only</td><td>+ router.bittorrent.com, router.utorrent.com, dht.transmissionbt.com</td><td>Today one unreachable host = 60 s magnet timeout</td></tr>
+      <tr><td>DHT state persistence</td><td>none — cold bootstrap every launch</td><td><code>write_session_params()</code> at quit, restore at launch</td><td>Warm routing table = magnet metadata in milliseconds, not tens of seconds</td></tr>
+      <tr><td><code>file_pool_size</code> + RLIMIT_NOFILE</td><td class="num">40 · launchd soft limit 256</td><td class="num">500 · setrlimit at startup</td><td>macOS gives 256 fds/process by default; raise soft limit in-process (no sysctl needed)</td></tr>
+      <tr><td>Upload cap (Medium profile)</td><td class="num">1 MiB/s</td><td class="num">≥5 MiB/s or unlimited</td><td>Starved upload = choked by tit-for-tat = slow download on real swarms</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Structural fixes in the bridge</h3>
+  <ul>
+    <li><strong>Stop polling with all-flags <code>status()</code>.</strong> Every second, per torrent, the bridge requests <em>every</em> status field — including an O(pieces × peers) availability walk — executed on libtorrent's network thread, the same thread moving peer traffic (<span class="mono">torrent_bridge.cpp:369</span>, <span class="mono">TorrentEngine.swift:465–575</span>). Pass only the ~10 flags actually read; better, switch to <code>post_torrent_updates()</code> + <code>state_update_alert</code> — one batched, non-blocking update per tick for all torrents.</li>
+    <li><strong>Make resume-saves async.</strong> <code>gt_save_resume_data</code> blocks the engine actor up to 2 s and its alert-drain loop <em>swallows other torrents' alerts</em>, causing cascading save timeouts (<span class="mono">torrent_bridge.cpp:292–311</span>). Route through a single alert dispatcher.</li>
+    <li><strong>Subscribe <code>performance_warning</code> alerts</strong> — libtorrent literally tells you when it's disk- or buffer-bound; today nothing listens (<span class="mono">torrent_bridge.cpp:140–142</span>).</li>
+    <li><strong>Plan the libtorrent 2.1 upgrade</strong> (July 2026): default <code>pread_disk_io</code> backend (fixes mmap's giant-RSS complaints on macOS), hash-before-flush uploads, and WebTorrent peers on by default.</li>
+    <li><strong>Adopt <code>set_piece_deadline</code></strong> for the streaming/preview path — it's libtorrent's time-critical picker (queue-time-sorted peers, escalating busy-requests) and strictly better than plain <code>sequential_download</code> for "play while downloading."</li>
+    <li><strong>Web seeds (BEP 19):</strong> expose <code>add_url_seed</code> — Goel° already has HTTP mirrors as a concept; a torrent with an HTTP source downloads at CDN speed with a swarm of zero. Raise <code>max_web_seed_connections</code> (3 → 8) and keep <code>urlseed_max_request_bytes</code> at 16 MiB so ranges coalesce.</li>
+    <li><strong>Sandbox check:</strong> ensure the <code>com.apple.security.network.server</code> entitlement is present — without it there are no incoming peers and DHT/uTP degrade; that's a permanently firewalled client.</li>
+  </ul>
+  <p><strong>Expected effect:</strong> ramp-to-saturation drops from tens of seconds to single digits on healthy swarms
+  (announce-all + connect boost + warm DHT + resume peers), sustained +20–50% on fast swarms (prefer_tcp, queue depth,
+  disk queue, upload unclamp), rechecks ~cores× faster.</p>
+</section>
+
+<!-- ═══════════════════════════ S6 — SOTA ═══════════════════════════ -->
+<section id="sota">
+  <h2>6 · State of the art — the reference points</h2>
+  <p class="lede">What the fastest tools actually do, with the numbers that matter.</p>
+  <div class="grid2">
+    <div class="card">
+      <h3>HTTP</h3>
+      <ul>
+        <li><strong>IDM</strong> — dynamic "in-half division": largest remaining segment bisects when a connection frees; freed connections reused with <em>zero</em> reconnect/login; default 8, max 32 connections; stalled ranges reassigned to fast connections.</li>
+        <li><strong>aria2</strong> — 1 MiB pieces, adjacent-piece continuation on the same socket ("establishing connection is an expensive operation"), <code>--min-split-size</code> floor (never split below 2×), mirror selection by measured speed (<code>feedback</code>/<code>adaptive</code>), persisted per-server profiles. Unmaintained since Nov 2023 — <em>there is a market vacuum here</em>.</li>
+        <li><strong>Parallel-TCP research</strong> — throughput scales near-linearly with stream count on lossy WANs until self-congestion; 4–8 streams captures most of the gain on clean paths (Hacker &amp; Athey IPDPS'02; ESnet).</li>
+        <li><strong>curl 2024–26</strong> — <code>CURLOPT_BUFFERSIZE</code> up to 10 MB; TLS 1.3 early-data; HTTP/3 via ngtcp2 stable with 200 ms QUIC-vs-TCP eyeball racing; <code>--mptcp</code> (Linux). QUIC is CPU-bound above ~10 Gbps — H3 wins on lossy paths, not raw rate.</li>
+        <li><strong>Multi-source standards</strong> — Metalink RFC 5854 + RFC 6249 (<code>Link: rel=duplicate</code> + mandatory <code>Digest</code>), RFC 9530 <code>Repr-Digest</code> — Goel° already parses digests; mirrors + work-stealing + per-edge-IP fan-out (<code>CURLOPT_RESOLVE</code> across all A/AAAA records) compose into one pool.</li>
+        <li><strong>macOS</strong> — <code>autorcvbufmax</code> 4 MiB caps one flow at ~1 Gbps @ 33 ms; explicit <code>SO_RCVBUF</code> disables autotuning; parallelism is the sanctioned workaround.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>BitTorrent</h3>
+      <ul>
+        <li><strong><code>high_performance_seed()</code></strong> — the author's answer key: prefer_tcp, request queue 1500, connection_speed 500, send watermark 3 MiB, queued disk 7 MiB, timeouts 10/20/20 s, failcount 1, aio 8, checking_mem 2048.</li>
+        <li><strong>qBittorrent</strong> — ships announce-to-all-trackers <em>and</em> -tiers, prefer_tcp, coalesced I/O, file pool 5000, 50 parallel HTTP announces; seedbox racing configs layer ConnectionSpeed 500 + BBR kernel tuning on top.</li>
+        <li><strong>Piece picking</strong> — rarest-first + tit-for-tat is provably near-optimal for bulk (Legout IMC'06; Bharambe INFOCOM'06): don't reinvent it, tune around it. For streaming, <code>set_piece_deadline</code>'s queue-time scheduler with escalating busy-requests is the modern answer (TorrServer's architecture, but native).</li>
+        <li><strong>BitTorrent v2</strong> — integrity/latency win (per-16 KiB-block attribution, instant bad-peer bans), not a throughput win; ship hybrid support, expect nothing from it on speed.</li>
+        <li><strong>libtorrent 2.1</strong> (Jul 2026) — pread backend default, WebTorrent on by default: browser peers become reachable swarm members.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ S7 — ROADMAP ═══════════════════════════ -->
+<section id="roadmap">
+  <h2>7 · Roadmap</h2>
+  <p class="lede">Ordered for payoff-per-effort. P0 is config-level — days, not weeks. P1 is the engine work that makes
+  Goel° structurally match IDM/aria2. P2 is where you pass them.</p>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th></th><th>Item</th><th>Touches</th><th>Effort</th><th>Expected effect</th></tr></thead>
+    <tbody>
+      <tr><td><strong>P0.1</strong></td><td>Default byte-cap → unlimited (or first-run calibration); raise Medium upload cap</td><td><span class="mono">TrafficProfile.swift</span></td><td>~1 h</td><td>Up to 2× on ≥500 Mbps lines; torrents stop self-choking</td></tr>
+      <tr><td><strong>P0.2</strong></td><td>Torrent settings pack: hashing_threads, queued disk 64 MiB, request queue 1500, prefer_tcp, outgoing-uTP off, announce-all, connect boost, timeouts, watermarks, DHT bootstrap list</td><td><span class="mono">torrent_bridge.cpp:130–170</span></td><td>1 d</td><td>+20–50% sustained; 2–5× faster ramp</td></tr>
+      <tr><td><strong>P0.3</strong></td><td><code>CURLOPT_BUFFERSIZE</code> 1 MiB; write coalescing on bound path; flushSize 64 KiB → 1–4 MiB</td><td><span class="mono">curl_bridge.c · HTTPEngine.swift:93</span></td><td>0.5 d</td><td>+5–15% at high rates; big CPU drop</td></tr>
+      <tr><td><strong>P0.4</strong></td><td>Governor AIMD re-probe (slow up-ramp after clean window)</td><td><span class="mono">ConnectionGovernor.swift</span></td><td>0.5 d</td><td>Recovers from transient 429 storms</td></tr>
+      <tr><td><strong>P0.5</strong></td><td>Narrow torrent status flags; RLIMIT_NOFILE raise; <code>network.server</code> entitlement check</td><td><span class="mono">torrent_bridge.cpp:369 · app startup</span></td><td>0.5 d</td><td>Removes engine-side stalls at scale</td></tr>
+      <tr><td><strong>P1.1</strong></td><td><strong>Work-stealing segmentation</strong>: adjacent-continuation + largest-gap bisection + stall re-steal, on both URLSession and bound paths</td><td><span class="mono">SegmentedTransfer.swift</span></td><td>1–2 wk</td><td>+20–60% wall-clock; kills the tail collapse</td></tr>
+      <tr><td><strong>P1.2</strong></td><td>Curl connection reuse: per-adapter multi/pool + CURLSH TLS cache + HTTP/1.1 for segments</td><td><span class="mono">curl_bridge.c · BoundHTTPClient.swift</span></td><td>1 wk</td><td>+10–40% multi-path; enables cheap re-splits</td></tr>
+      <tr><td><strong>P1.3</strong></td><td>Single-connection fixes: fastest-NIC race, stall failover, stop truncate-on-entry, commit partials on pause, live bound-path progress, surface SinglePathReason</td><td><span class="mono">SegmentedTransfer.swift · HTTPEngine.swift</span></td><td>1 wk</td><td>Fixes the reported aggregation bottleneck end-to-end</td></tr>
+      <tr><td><strong>P1.4</strong></td><td>Aggregation policy hardening (respect master switch/profile/metered in <code>.aggregate</code>; budget override; dead settings)</td><td><span class="mono">NetworkSelection.swift · +EngineConfig.swift</span></td><td>2–3 d</td><td>Correctness + predictability</td></tr>
+      <tr><td><strong>P1.5</strong></td><td>Torrent: alert-driven progress (<code>post_torrent_updates</code>), async resume saves, DHT persistence, performance_warning subscription</td><td><span class="mono">torrent_bridge.cpp · TorrentEngine.swift</span></td><td>1 wk</td><td>Engine scales to many torrents; instant magnet warm-start</td></tr>
+      <tr><td><strong>P2.1</strong></td><td>HTTP/3 with QUIC/TCP eyeball racing (ngtcp2 in vendored curl); TLS session reuse + 0-RTT</td><td><span class="mono">curl build · bridge</span></td><td>2 wk</td><td>Wins on lossy/mobile paths; connection-migration resilience</td></tr>
+      <tr><td><strong>P2.2</strong></td><td>Multi-source pool: Metalink RFC 5854/6249 + <code>Repr-Digest</code>, per-edge-IP segment fan-out (<code>CURLOPT_RESOLVE</code>), mirror speed feedback, persisted per-server profiles</td><td><span class="mono">MirrorPool · probe</span></td><td>2 wk</td><td>CDN-throttle multiplication; aria2-parity multi-source</td></tr>
+      <tr><td><strong>P2.3</strong></td><td>MPTCP client (Network.framework, opt-in) + optional bonding-relay mode</td><td><span class="mono">new transport</span></td><td>3+ wk</td><td>True single-flow aggregation — a feature no consumer downloader ships</td></tr>
+      <tr><td><strong>P2.4</strong></td><td>libtorrent 2.1 (pread, WebTorrent), web-seed API/UI, <code>set_piece_deadline</code> streaming, rate-based choker</td><td><span class="mono">TorrentBridge · Vendor</span></td><td>2 wk</td><td>Hybrid HTTP+P2P; modern streaming UX</td></tr>
+      <tr><td><strong>P2.5</strong></td><td>Benchmark harness in CI (see §8) with regression gates</td><td><span class="mono">Scripts/ · CI</span></td><td>1 wk</td><td>Every claim above becomes a measured number</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ═══════════════════════════ S8 — BENCH ═══════════════════════════ -->
+<section id="bench">
+  <h2>8 · Benchmark harness — turning "50% → 100%" into a number</h2>
+  <p class="lede">You can't tune what you don't measure. This is a one-week build that makes every optimization above provable.</p>
+  <h3>HTTP matrix</h3>
+  <ul>
+    <li><strong>Server:</strong> local nginx/caddy in Docker serving 100 MB / 2 GB / 10 GB files, with <code>dnctl</code>/<code>pfctl</code> (macOS) shaping profiles: RTT 20/80/200 ms × loss 0/0.5/2% × per-connection throttle on/off.</li>
+    <li><strong>Baselines:</strong> <code>curl -O</code> (single stream), <code>aria2c -x16 -k1M</code>, Goel° current, Goel° after each fix.</li>
+    <li><strong>Metrics:</strong> mean throughput, <strong>tail time</strong> (90% → 100% wall-clock — the work-stealing metric), time-to-first-byte, CPU-seconds per GB, bytes wasted on pause/resume.</li>
+    <li><strong>Acceptance:</strong> ≥90% of line rate on 1 Gbps @ 20 ms/0% with 8 connections; tail time ≤ 10% of total; pause/resume waste ≈ 0; single-stream within 5% of curl.</li>
+  </ul>
+  <h3>Torrent matrix</h3>
+  <ul>
+    <li><strong>Swarm-in-a-box:</strong> 10 dockerized libtorrent seeds, each capped at 20 MB/s, private tracker container; a 4 GB test torrent.</li>
+    <li><strong>Metrics:</strong> time-to-first-piece, time-to-90%-of-line-rate (ramp), sustained throughput, recheck time for the 4 GB payload.</li>
+    <li><strong>Acceptance:</strong> ramp ≤ 5 s warm / ≤ 10 s cold; sustained ≥ 90% of aggregate seed capacity; recheck scales with cores.</li>
+  </ul>
+  <h3>Aggregation matrix</h3>
+  <ul>
+    <li>Two shaped interfaces (e.g. 300 + 700 Mbps): assert aggregate ≥ 90% of the 1 Gbps sum on ranged downloads, correct fastest-NIC selection on unranged, and failover under mid-stream NIC kill with zero corrupted files.</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════════ S9 — APPENDIX ═══════════════════════════ -->
+<section id="appendix">
+  <h2>9 · Appendix — full findings ledger</h2>
+
+  <h3>A. HTTP / multi-path</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Severity</th><th>Finding</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip"><span class="dot critical"></span>critical</span></td><td>Default profile caps all traffic at 50 MiB/s (HTTP + torrent), 1 MiB/s torrent upload</td><td class="mono">TrafficProfile.swift:73–74</td></tr>
+      <tr><td><span class="chip"><span class="dot critical"></span>critical</span></td><td>Static equal split; no re-split, no reuse of freed connections; tail collapse</td><td class="mono">SegmentedTransfer.swift:92–99, 739–751</td></tr>
+      <tr><td><span class="chip"><span class="dot critical"></span>critical</span></td><td>Unranged single-stream on bound path truncates destination on entry; no resume; restarts from zero</td><td class="mono">SegmentedTransfer.swift:541, 591–593</td></tr>
+      <tr><td><span class="chip"><span class="dot serious"></span>serious</span></td><td>FRESH_CONNECT + FORBID_REUSE: full TCP+TLS per segment attempt; 16 KB receive buffer; write syscall per callback</td><td class="mono">curl_bridge.c:479–480 · BoundHTTPClient.swift:188</td></tr>
+      <tr><td><span class="chip"><span class="dot serious"></span>serious</span></td><td>Per-task <code>.aggregate</code> bypasses master switch, Low profile, adapter selection, metered filter</td><td class="mono">+EngineConfig.swift:103–115 · NetworkSelection.swift:131–132</td></tr>
+      <tr><td><span class="chip"><span class="dot serious"></span>serious</span></td><td>H2 coalescing: URLSession multiplexes segments onto one TCP connection (one cwnd)</td><td class="mono">URLSession default; curl_bridge.c:467</td></tr>
+      <tr><td><span class="chip"><span class="dot serious"></span>serious</span></td><td>Pause on bound path discards in-flight bytes from resume cursor (abort path skips ledger credit)</td><td class="mono">SegmentedTransfer.swift:401–404</td></tr>
+      <tr><td><span class="chip"><span class="dot serious"></span>serious</span></td><td>Multi-path segment count exceeds cross-download budget (adapter floor overrides room)</td><td class="mono">SegmentedTransfer.swift:69 · NetworkAdapter.swift:207–226</td></tr>
+      <tr><td><span class="chip"><span class="dot warning"></span>warning</span></td><td>Governor is monotonic-decreasing; one 429 burst permanently shrinks fan-out</td><td class="mono">ConnectionGovernor.swift:85–87</td></tr>
+      <tr><td><span class="chip"><span class="dot warning"></span>warning</span></td><td>No live progress on bound segments (onBytes not wired) — staircase UI ticks</td><td class="mono">SegmentedTransfer.swift:397–399</td></tr>
+      <tr><td><span class="chip"><span class="dot warning"></span>warning</span></td><td>64 KiB flush = syscall + actor hop each; costly at multi-Gbps</td><td class="mono">HTTPEngine.swift:93</td></tr>
+      <tr><td><span class="chip"><span class="dot warning"></span>warning</span></td><td>Four SinglePathReason cases defined but never produced; UI can't explain single-path fallback</td><td class="mono">NetworkAdapter.swift:101–104</td></tr>
+      <tr><td><span class="chip"><span class="dot warning"></span>warning</span></td><td><code>aggregationStrategy</code> / <code>aggregationPathDiversityProbe</code> persisted + shown in UI, never read</td><td class="mono">AppSettings.swift:141–144</td></tr>
+      <tr><td><span class="chip"><span class="dot warning"></span>warning</span></td><td><code>streamsPerAdapter</code> clamp disagrees across validation (1–16), UI (1–8), REST (1–8)</td><td class="mono">AppSettings+Validation.swift:61 · SettingsAggregationPane.swift:221</td></tr>
+      <tr><td><span class="chip"><span class="dot info"></span>note</span></td><td>Transient curl error demotes a whole adapter for the download's remainder (aggressive)</td><td class="mono">SegmentedTransfer.swift:424</td></tr>
+      <tr><td><span class="chip"><span class="dot info"></span>note</span></td><td><code>usableAdapters(includeVPN:)</code> parameter explicitly discarded while callers pass a real setting</td><td class="mono">NetworkAdapter.swift:140</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>B. Torrent</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Severity</th><th>Finding</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip"><span class="dot serious"></span>serious</span></td><td>All-flags <code>status()</code> poll per torrent per second on the network thread (O(pieces×peers) walks included)</td><td class="mono">torrent_bridge.cpp:369 · TorrentEngine.swift:465–575</td></tr>
+      <tr><td><span class="chip"><span class="dot serious"></span>serious</span></td><td>Blocking resume-save (≤2 s) stalls the engine actor and swallows other torrents' alerts</td><td class="mono">torrent_bridge.cpp:292–311 · TorrentEngine.swift:433</td></tr>
+      <tr><td><span class="chip"><span class="dot serious"></span>serious</span></td><td>hashing_threads=1; queued-disk 1 MiB; request queue 500; peer_proportional; announce-all off — all defaults</td><td class="mono">torrent_bridge.cpp:130–170 (absent keys)</td></tr>
+      <tr><td><span class="chip"><span class="dot warning"></span>warning</span></td><td>Single DHT bootstrap host; no session_params persistence — cold bootstrap every launch, 60 s magnet timeout risk</td><td class="mono">torrent_bridge.cpp · TorrentEngine.swift:245–268</td></tr>
+      <tr><td><span class="chip"><span class="dot warning"></span>warning</span></td><td>performance_warning alerts not subscribed; port-mapping failures silent; listen port hardcoded 6881</td><td class="mono">torrent_bridge.cpp:140–156</td></tr>
+      <tr><td><span class="chip"><span class="dot warning"></span>warning</span></td><td>Per-file blocking calls at metadata time (~2 round-trips per file; 5k-file torrent ≈ 10k hops)</td><td class="mono">TorrentEngine.swift:679–689, 583–600</td></tr>
+      <tr><td><span class="chip"><span class="dot info"></span>note</span></td><td>No web-seed API; no <code>set_piece_deadline</code> streaming; mmap backend inflates apparent RSS on macOS</td><td class="mono">TorrentBridge (absent)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>C. Sources</h3>
+  <p class="srcs">
+    IDM dynamic segmentation — internetdownloadmanager.com/support/segmentation.html · aria2 manual (split/min-split-size/piece selectors/server-stat) — aria2.github.io/manual · parallel-TCP: Hacker &amp; Athey, IPDPS 2002 — ieeexplore.ieee.org/document/1015527 · ESnet host tuning (macOS) — fasterdata.es.net/host-tuning/osx · CURLOPT_BUFFERSIZE — curl.se/libcurl/c/CURLOPT_BUFFERSIZE.html · curl HTTP/3 status &amp; eyeballing — curl.se/docs/http3.html · TLS early data — github.com/curl/curl/pull/15211 · H2 large-download regressions — github.com/dotnet/runtime/issues/47092 · MPTCP — mptcp.dev (incl. macOS page), RFC 8684 · multipath QUIC draft — datatracker.ietf.org/doc/draft-ietf-quic-multipath · Speedify bonding model — support.speedify.com/article/273-how-speedify-works · Metalink — RFC 5854, RFC 6249; Repr-Digest — RFC 9530 · QUIC ≥10 Gbps CPU study — Koenig et al. 2025 (doc.tm.kit.edu) · libtorrent tuning — libtorrent.org/tuning-ref.html · settings reference — libtorrent.org/reference-Settings.html · high_performance_seed — github.com/arvidn/libtorrent RC_2_0 src/session.cpp · 2.1.0 release — github.com/arvidn/libtorrent/releases · streaming/piece deadlines — libtorrent.org/streaming.html · DHT bootstrap — blog.libtorrent.org/2016/09/dht-bootstrap-node · qBittorrent option deltas — qBittorrent wiki · seedbox tuning profiles — github.com/jerry048/Dedicated-Seedbox · rarest-first near-optimality — Legout et al. IMC'06; Bharambe et al. INFOCOM'06 · BitTorrent v2 — blog.libtorrent.org/2020/09/bittorrent-v2 · BEP 19 — bittorrent.org/beps/bep_0019.html · macOS sandbox networking — developer.apple.com/documentation/xcode/configuring-the-macos-app-sandbox
+  </p>
+</section>
+
+<footer>
+  Goel° engine speed audit · July 28, 2026 · Generated from a full read of the transfer engine, two codebase traces, and
+  two literature sweeps. Gain figures are engineering estimates pending the §8 harness; file:line references are from
+  <span class="mono">main @ 2aa633f</span>.
+</footer>
+
+</div>
+</body>
+</html>

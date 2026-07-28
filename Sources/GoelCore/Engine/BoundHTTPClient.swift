@@ -31,6 +31,13 @@ enum BoundHTTPClient {
         var bytesWritten: Int64
         var aborted: Bool
         var rangeTotalMismatch: Bool
+        /// 1:1 with GCBHTTPResult.range_ignored: a *ranged* request was answered with a
+        /// final 200 — the server ignored Range; C aborted before the first body byte.
+        var rangeIgnored: Bool = false
+        /// Validators of the final response, captured by the C header thunk (the
+        /// bound path has no HTTPURLResponse to read them from).
+        var etag: String? = nil
+        var lastModified: String? = nil
     }
 
     /// Context shared with C write/progress callbacks. `@unchecked Sendable` —
@@ -39,6 +46,10 @@ enum BoundHTTPClient {
         let handle: FileHandle
         let limiter: RateLimiter?
         let onBytes: (@Sendable (Int) -> Void)?
+        /// External stop signal (the mid-flight upgrade trip). Folded into
+        /// `aborted` so all three consumers — write thunk, progress thunk and
+        /// the final `Response.aborted` — observe it consistently.
+        let shouldAbort: (@Sendable () -> Bool)?
         private let lock = NSLock()
         private var _aborted = false
         /// Coalesce RateLimiter hops — Task-per-write thrashes under multi-path.
@@ -46,15 +57,17 @@ enum BoundHTTPClient {
         private static let paceBatch = 64 * 1024
 
         init(handle: FileHandle, limiter: RateLimiter?,
-             onBytes: (@Sendable (Int) -> Void)? = nil) {
+             onBytes: (@Sendable (Int) -> Void)? = nil,
+             shouldAbort: (@Sendable () -> Bool)? = nil) {
             self.handle = handle
             self.limiter = limiter
             self.onBytes = onBytes
+            self.shouldAbort = shouldAbort
         }
 
         var aborted: Bool {
             lock.lock(); defer { lock.unlock() }
-            return _aborted
+            return _aborted || (shouldAbort?() ?? false)
         }
 
         func abort() {
@@ -86,9 +99,11 @@ enum BoundHTTPClient {
         file: FileHandle,
         fileOffset: UInt64,
         limiter: RateLimiter?,
-        onBytes: (@Sendable (Int) -> Void)? = nil
+        onBytes: (@Sendable (Int) -> Void)? = nil,
+        shouldAbort: (@Sendable () -> Bool)? = nil
     ) async -> Response {
-        let ctx = TransferContext(handle: file, limiter: limiter, onBytes: onBytes)
+        let ctx = TransferContext(handle: file, limiter: limiter, onBytes: onBytes,
+                                  shouldAbort: shouldAbort)
         do {
             try file.seek(toOffset: fileOffset)
         } catch {
@@ -172,8 +187,20 @@ enum BoundHTTPClient {
             contentRangeTotal: total,
             bytesWritten: raw.bytes_written,
             aborted: gcb_is_aborted(raw.code) != 0 || ctx.aborted,
-            rangeTotalMismatch: raw.range_total_mismatch != 0
+            rangeTotalMismatch: raw.range_total_mismatch != 0,
+            rangeIgnored: raw.range_ignored != 0,
+            etag: Self.cString(raw.etag),
+            lastModified: Self.cString(raw.last_modified)
         )
+    }
+
+    /// GCBHTTPResult's char arrays arrive as homogeneous CChar tuples.
+    private static func cString<T>(_ tuple: T) -> String? {
+        withUnsafeBytes(of: tuple) { buf in
+            guard let base = buf.baseAddress else { return nil }
+            let s = String(cString: base.assumingMemoryBound(to: CChar.self))
+            return s.isEmpty ? nil : s
+        }
     }
 }
 

@@ -94,3 +94,33 @@ actor ConnectionGovernor {
         }
     }
 }
+
+// MARK: - Per-adapter governors
+
+/// Per-adapter concurrency limiters for multi-path segmented downloads.
+///
+/// A 429 on one adapter's source IP says nothing about the other NICs — per-IP
+/// limits are per source address — so throttling the download-wide governor for
+/// it would starve healthy paths. Each adapter gets its own monotonic-decreasing
+/// ``ConnectionGovernor``; the download-wide governor keeps the aggregate ceiling.
+///
+/// The key set is fixed at init (the plan's bound adapters never grow mid-run),
+/// so this is an immutable dictionary of actors — cancellation safety is
+/// inherited from ``ConnectionGovernor/acquire()`` verbatim instead of being
+/// re-implemented. An unknown key is a no-op rather than a trap: the pump must
+/// never deadlock on bookkeeping.
+final class AdapterGovernors: Sendable {
+    private let governors: [String: ConnectionGovernor]
+
+    init(adapters: [BoundAdapter], limit: Int) {
+        var map: [String: ConnectionGovernor] = [:]
+        for a in adapters where map[a.bsdName] == nil {
+            map[a.bsdName] = ConnectionGovernor(limit: limit)
+        }
+        self.governors = map
+    }
+
+    func acquire(_ bsdName: String) async throws { try await governors[bsdName]?.acquire() }
+    func release(_ bsdName: String) async { await governors[bsdName]?.release() }
+    func throttleDown(_ bsdName: String) async { await governors[bsdName]?.throttleDown() }
+}

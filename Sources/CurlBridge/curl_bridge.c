@@ -171,6 +171,9 @@ struct gcb_http_ctx {
     int reject_body;
     /* 1 when no Range header was sent, so 200 (not 206) is the success status. */
     int unranged;
+    int range_ignored;
+    char etag[256];
+    char last_modified[128];
     char location[2048];
 };
 
@@ -227,6 +230,18 @@ static size_t gcb_http_write_thunk(char *ptr, size_t size, size_t nmemb, void *u
         return 0; /* abort — do not write mismatched body into the segment slot */
     }
 
+    /* A final 200 to a *ranged* request means the server ignored Range: the body
+       is the whole file and useless to a segment. Abort on the first byte instead
+       of draining it — a flapped CDN edge would otherwise cost one full body per
+       retry. Redirect hops are followed manually (FOLLOWLOCATION off), so a 200
+       here is never an interstitial; the unranged mode is untouched. Returning 0
+       yields CURLE_WRITE_ERROR, NOT CURLE_ABORTED_BY_CALLBACK — deliberately, so
+       Response.aborted stays false and Swift cannot misread this as a pause. */
+    if (!ctx->unranged && ctx->http_status == 200) {
+        ctx->range_ignored = 1;
+        return 0;
+    }
+
     /* Drain bodies that are not the success response (redirects, errors). A 200
        to a *ranged* request means the server ignored Range and would pour the
        whole file into one segment's slot, so only the unranged mode accepts it. */
@@ -277,6 +292,9 @@ static size_t gcb_http_header_thunk(char *buffer, size_t size, size_t nitems, vo
         ctx->location[0] = '\0';
         ctx->range_total_mismatch = 0;
         ctx->reject_body = 0;
+        /* A redirect chain must surface the FINAL response's validators only. */
+        ctx->etag[0] = '\0';
+        ctx->last_modified[0] = '\0';
         return n;
     }
     if (strncasecmp(line, "Content-Range:", 14) == 0) {
@@ -301,6 +319,18 @@ static size_t gcb_http_header_thunk(char *buffer, size_t size, size_t nitems, vo
         const char *v = line + 9;
         while (*v == ' ' || *v == '\t') v++;
         snprintf(ctx->location, sizeof(ctx->location), "%s", v);
+        return n;
+    }
+    if (strncasecmp(line, "ETag:", 5) == 0) {
+        const char *v = line + 5;
+        while (*v == ' ' || *v == '\t') v++;
+        snprintf(ctx->etag, sizeof(ctx->etag), "%s", v);
+        return n;
+    }
+    if (strncasecmp(line, "Last-Modified:", 14) == 0) {
+        const char *v = line + 14;
+        while (*v == ' ' || *v == '\t') v++;
+        snprintf(ctx->last_modified, sizeof(ctx->last_modified), "%s", v);
         return n;
     }
     return n;
@@ -495,6 +525,9 @@ GCBHTTPResult gcb_http_range(const char *url,
         result.content_range_total = ctx.content_range_total;
         result.bytes_written = total_written;
         result.range_total_mismatch = ctx.range_total_mismatch;
+        result.range_ignored = ctx.range_ignored;
+        snprintf(result.etag, sizeof(result.etag), "%s", ctx.etag);
+        snprintf(result.last_modified, sizeof(result.last_modified), "%s", ctx.last_modified);
 
         if (ctx.range_total_mismatch) {
             /* Force a distinct failure surface for Swift. */
