@@ -139,6 +139,9 @@ final class SecurityHardeningTests: XCTestCase {
         XCTAssertFalse(ProcessSafety.isSafeExecutable("ffmpeg"), "relative $PATH name refused")
         XCTAssertFalse(ProcessSafety.isSafeExecutable(""), "empty refused")
         XCTAssertFalse(ProcessSafety.isSafeExecutable("/nonexistent/tool"))
+        XCTAssertFalse(ProcessSafety.isSafeExecutable("/tmp"),
+                       "a directory carries the execute bit but is not a program")
+        XCTAssertFalse(ProcessSafety.isSafeExecutable("/usr/bin"))
         XCTAssertTrue(ProcessSafety.isSafeExecutable("/bin/ls"))
     }
 }

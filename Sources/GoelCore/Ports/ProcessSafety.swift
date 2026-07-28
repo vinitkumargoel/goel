@@ -18,6 +18,10 @@ public enum ProcessSafety {
     /// Must be absolute and executable and not an interpreter — never a bare name resolved through `$PATH`.
     public static func isSafeExecutable(_ path: String) -> Bool {
         let p = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A directory carries the execute bit too, and `isExecutableFile` says yes to it.
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: p, isDirectory: &isDirectory),
+              !isDirectory.boolValue else { return false }
         return !p.isEmpty
             && p.hasPrefix("/")
             && FileManager.default.isExecutableFile(atPath: p)

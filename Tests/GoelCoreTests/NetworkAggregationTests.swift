@@ -214,45 +214,27 @@ final class NetworkAggregationTests: XCTestCase {
         XCTAssertFalse(cfg.isActive)
     }
 
-    func testMakeAggregationConfigActiveWhenEnabled() {
-        var s = AppSettings()
-        s.aggregationEnabled = true
-        s.aggregationAdapterIds = ["en0", "en1"]
+    /// Splitting across interfaces is off unless nothing else owns the route — a proxy or VPN does.
+    func testMakeAggregationConfigOnlyActivatesWhenNothingElseOwnsTheRoute() {
         let adapters = [
             NetworkAdapter(bsdName: "en0", displayName: "Wi‑Fi", type: "wired", ipv4: "1.1.1.1", isUp: true),
             NetworkAdapter(bsdName: "en1", displayName: "Eth", type: "wired", ipv4: "2.2.2.2", isUp: true),
         ]
-        let cfg = DownloadManager.makeAggregationConfig(
-            settings: s, vpnDefaultRoute: false, adapters: adapters)
-        XCTAssertTrue(cfg.isActive)
-        XCTAssertEqual(cfg.adapters.count, 2)
-    }
-
-    func testMakeAggregationConfigDisabledUnderSystemProxy() {
-        var s = AppSettings()
-        s.aggregationEnabled = true
-        s.proxyMode = "system"
-        s.aggregationAdapterIds = ["en0", "en1"]
-        let adapters = [
-            NetworkAdapter(bsdName: "en0", displayName: "A", type: "wired", ipv4: "1.1.1.1", isUp: true),
-            NetworkAdapter(bsdName: "en1", displayName: "B", type: "wired", ipv4: "2.2.2.2", isUp: true),
+        let cases: [(label: String, proxyMode: String?, vpn: Bool, active: Bool)] = [
+            ("enabled with two usable adapters", nil, false, true),
+            ("a system proxy owns the route", "system", false, false),
+            ("a VPN default route, with no override", nil, true, false),
         ]
-        let cfg = DownloadManager.makeAggregationConfig(
-            settings: s, vpnDefaultRoute: false, adapters: adapters)
-        XCTAssertFalse(cfg.isActive)
-    }
-
-    func testMakeAggregationConfigDisabledWhenVPNWithoutOverride() {
-        var s = AppSettings()
-        s.aggregationEnabled = true
-        s.aggregationAdapterIds = ["en0", "en1"]
-        let adapters = [
-            NetworkAdapter(bsdName: "en0", displayName: "A", type: "wired", ipv4: "1.1.1.1", isUp: true),
-            NetworkAdapter(bsdName: "en1", displayName: "B", type: "wired", ipv4: "2.2.2.2", isUp: true),
-        ]
-        let cfg = DownloadManager.makeAggregationConfig(
-            settings: s, vpnDefaultRoute: true, adapters: adapters)
-        XCTAssertFalse(cfg.isActive)
+        for c in cases {
+            var s = AppSettings()
+            s.aggregationEnabled = true
+            s.aggregationAdapterIds = ["en0", "en1"]
+            if let mode = c.proxyMode { s.proxyMode = mode }
+            let cfg = DownloadManager.makeAggregationConfig(
+                settings: s, vpnDefaultRoute: c.vpn, adapters: adapters)
+            XCTAssertEqual(cfg.isActive, c.active, c.label)
+            if c.active { XCTAssertEqual(cfg.adapters.count, 2, c.label) }
+        }
     }
 
     func testExtractHostSkipsUserinfoAttack() {

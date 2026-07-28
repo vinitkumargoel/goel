@@ -9,26 +9,26 @@ final class CookieImportTests: XCTestCase {
         XCTAssertEqual(pairs.map(\.value), ["abc", "def", "dark"])
     }
 
-    func testTrimsSurroundingWhitespace() {
-        XCTAssertEqual(CookieHeader.sanitized("  sid = abc ;  csrf=def  "), "sid=abc; csrf=def")
-    }
-
-    func testKeepsEmptyValuedCookie() {
-        XCTAssertEqual(CookieHeader.sanitized("sid=abc; cleared="), "sid=abc; cleared=")
-    }
-
-    func testDuplicateNameKeepsLastValueAtFirstPosition() {
-        XCTAssertEqual(CookieHeader.sanitized("a=1; b=2; a=3"), "a=3; b=2")
-    }
-
-    func testDropsPairsWithoutEquals() {
-        XCTAssertEqual(CookieHeader.sanitized("sid=abc; garbage; csrf=def"), "sid=abc; csrf=def")
-    }
-
-    func testEmptyAndJunkInputYieldNil() {
-        XCTAssertNil(CookieHeader.sanitized(""))
-        XCTAssertNil(CookieHeader.sanitized("   ;;;  "))
-        XCTAssertNil(CookieHeader.sanitized("nothing-here"))
+    func testSanitizedNormalisesWhatItCanAndDropsWhatItCannot() {
+        let cases: [(raw: String, expected: String?, why: String)] = [
+            ("  sid = abc ;  csrf=def  ", "sid=abc; csrf=def", "surrounding whitespace is trimmed"),
+            ("sid=abc; cleared=", "sid=abc; cleared=", "an empty value is a real cookie, not junk"),
+            ("a=1; b=2; a=3", "a=3; b=2", "a duplicate name keeps the last value at the first position"),
+            ("sid=abc; garbage; csrf=def", "sid=abc; csrf=def", "a pair without '=' is dropped"),
+            ("", nil, "empty input"),
+            ("   ;;;  ", nil, "separators only"),
+            ("nothing-here", nil, "no pairs at all"),
+            ("sid=a\u{0}b", nil, "NUL in a value"),
+            ("sid=a\tb", nil, "control character in a value"),
+            ("bad name=abc", nil, "space is not a tchar"),
+            ("(bad)=abc", nil, "separators are not tchars"),
+            ("=orphan", nil, "empty name"),
+            ("sid=café", nil,
+             "a value we cannot encode the way the browser did is dropped, not mangled"),
+        ]
+        for c in cases {
+            XCTAssertEqual(CookieHeader.sanitized(c.raw), c.expected, c.why)
+        }
     }
 
     func testRejectsHeaderSplittingValue() {
@@ -37,22 +37,6 @@ final class CookieImportTests: XCTestCase {
         let cleaned = CookieHeader.sanitized(raw)
         XCTAssertEqual(cleaned, "csrf=def", "the CR/LF-bearing pair is dropped whole")
         XCTAssertFalse(cleaned?.contains("X-Evil") ?? false)
-    }
-
-    func testRejectsNulAndControlCharacters() {
-        XCTAssertNil(CookieHeader.sanitized("sid=a\u{0}b"))
-        XCTAssertNil(CookieHeader.sanitized("sid=a\tb"))
-    }
-
-    func testRejectsInvalidNameCharacters() {
-        XCTAssertNil(CookieHeader.sanitized("bad name=abc"), "space is not a tchar")
-        XCTAssertNil(CookieHeader.sanitized("(bad)=abc"), "separators are not tchars")
-        XCTAssertNil(CookieHeader.sanitized("=orphan"), "empty name")
-    }
-
-    func testRejectsNonASCIIValue() {
-        XCTAssertNil(CookieHeader.sanitized("sid=café"),
-                     "a value we cannot encode the way the browser did is dropped, not mangled")
     }
 
     func testCapsPairCount() {

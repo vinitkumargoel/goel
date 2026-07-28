@@ -659,7 +659,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// The core parser enforces the scheme allowlist (http/https/magnet/.torrent only).
+    /// The core parser enforces the scheme allowlist — http/https/ftp/ftps/sftp/magnet, nothing else.
     static func parseSource(_ line: String) -> DownloadSource? {
         DownloadSource.parse(line)
     }

@@ -98,16 +98,25 @@ final class RemoteRouterTests: XCTestCase {
                      name: name, saveDirectory: "/tmp", status: .downloading)
     }
 
-    func testMissingTokenIs401() async {
-        let router = RemoteRouter(backend: FakeRemoteBackend(), token: "secret")
-        let out = str(await router.handle(request("GET /api/tasks HTTP/1.1\r\n\r\n")))
-        XCTAssertTrue(out.hasPrefix("HTTP/1.1 401 Unauthorized"))
-    }
-
-    func testWrongTokenIs401() async {
-        let router = RemoteRouter(backend: FakeRemoteBackend(), token: "secret")
-        let out = str(await router.handle(request("GET /api/tasks?token=nope HTTP/1.1\r\n\r\n")))
-        XCTAssertTrue(out.hasPrefix("HTTP/1.1 401"))
+    /// Every status the router reaches before it does any real work — auth, routing, backend availability.
+    func testRefusedRequestsGetTheRightStatus() async {
+        let cases: [(label: String, backend: RemoteBackend?, line: String, expected: String)] = [
+            ("no token at all", FakeRemoteBackend(),
+             "GET /api/tasks HTTP/1.1\r\n\r\n", "HTTP/1.1 401 Unauthorized"),
+            ("wrong token", FakeRemoteBackend(),
+             "GET /api/tasks?token=nope HTTP/1.1\r\n\r\n", "HTTP/1.1 401"),
+            ("unknown route", FakeRemoteBackend(),
+             "GET /nope?token=secret HTTP/1.1\r\n\r\n", "HTTP/1.1 404 Not Found"),
+            ("a folder that is not there", folderBackend(),
+             "GET /api/folders?token=secret&path=%2Fnope HTTP/1.1\r\n\r\n", "HTTP/1.1 404"),
+            ("no backend attached", nil,
+             "GET /api/tasks?token=secret HTTP/1.1\r\n\r\n", "HTTP/1.1 503"),
+        ]
+        for c in cases {
+            let router = RemoteRouter(backend: c.backend, token: "secret")
+            let out = str(await router.handle(request(c.line)))
+            XCTAssertTrue(out.hasPrefix(c.expected), "\(c.label): \(out)")
+        }
     }
 
     func testBearerHeaderAuthorizes() async {
@@ -309,13 +318,6 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertFalse(out.contains("\"parent\""), out)
     }
 
-    func testAMissingFolderIs404() async {
-        let router = RemoteRouter(backend: folderBackend(), token: "secret")
-        let out = str(await router.handle(request(
-            "GET /api/folders?token=secret&path=%2Fnope HTTP/1.1\r\n\r\n")))
-        XCTAssertTrue(out.hasPrefix("HTTP/1.1 404"), out)
-    }
-
     func testCreateFolderPassesTheNameAndParentThrough() async {
         let backend = folderBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
@@ -365,18 +367,6 @@ final class RemoteRouterTests: XCTestCase {
         let created = str(await router.handle(request(
             "POST /api/folder HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{\"name\":\"x\"}")))
         XCTAssertTrue(created.hasPrefix("HTTP/1.1 401"), created)
-    }
-
-    func testUnknownRouteIs404() async {
-        let router = RemoteRouter(backend: FakeRemoteBackend(), token: "secret")
-        let out = str(await router.handle(request("GET /nope?token=secret HTTP/1.1\r\n\r\n")))
-        XCTAssertTrue(out.hasPrefix("HTTP/1.1 404 Not Found"))
-    }
-
-    func testNilBackendIs503() async {
-        let router = RemoteRouter(backend: nil, token: "secret")
-        let out = str(await router.handle(request("GET /api/tasks?token=secret HTTP/1.1\r\n\r\n")))
-        XCTAssertTrue(out.hasPrefix("HTTP/1.1 503"))
     }
 
     func testRemoveRouteCarriesDeleteFlag() async {

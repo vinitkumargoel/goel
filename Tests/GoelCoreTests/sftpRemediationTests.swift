@@ -8,25 +8,22 @@ final class SFTPRemediationTests: XCTestCase {
         XCTAssertNil(SFTPOverwritePlan.split(names: ["a.txt", "b.txt"], against: .unavailable))
     }
 
-    func testOverwriteSplitOnEmptyDirectoryLeavesEverythingFree() {
-        let split = SFTPOverwritePlan.split(names: ["a.txt", "b.txt"], against: .names([]))
-        XCTAssertEqual(split?.free, [0, 1])
-        XCTAssertEqual(split?.colliding, [])
-    }
-
-    func testOverwriteSplitFlagsExistingNames() {
-        let split = SFTPOverwritePlan.split(names: ["a.txt", "b.txt"],
-                                            against: .names(["b.txt"]))
-        XCTAssertEqual(split?.free, [0])
-        XCTAssertEqual(split?.colliding, [1])
-    }
-
-    /// Two picks sharing a last path component, both "free", would race two writers onto one remote path.
-    func testOverwriteSplitFlagsARepeatWithinOneBatch() {
-        let split = SFTPOverwritePlan.split(names: ["photo.jpg", "photo.jpg", "photo.jpg"],
-                                            against: .names([]))
-        XCTAssertEqual(split?.free, [0])
-        XCTAssertEqual(split?.colliding, [1, 2])
+    func testOverwriteSplitSeparatesFreeNamesFromCollidingOnes() {
+        let cases: [(label: String, names: [String], listing: Set<String>,
+                     free: [Int], colliding: [Int])] = [
+            ("an empty directory leaves everything free",
+             ["a.txt", "b.txt"], [], [0, 1], []),
+            ("a name already on the server collides",
+             ["a.txt", "b.txt"], ["b.txt"], [0], [1]),
+            // Two picks sharing a last path component, both "free", would race two writers onto one remote path.
+            ("a repeat within one batch collides against itself",
+             ["photo.jpg", "photo.jpg", "photo.jpg"], [], [0], [1, 2]),
+        ]
+        for c in cases {
+            let split = SFTPOverwritePlan.split(names: c.names, against: .names(c.listing))
+            XCTAssertEqual(split?.free, c.free, c.label)
+            XCTAssertEqual(split?.colliding, c.colliding, c.label)
+        }
     }
 
     private static let fingerprintA = String(repeating: "ab", count: 32)

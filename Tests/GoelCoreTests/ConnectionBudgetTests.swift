@@ -80,42 +80,23 @@ final class ConnectionBudgetTests: XCTestCase {
                        "Low never grants mid-flight extras, however much room exists")
     }
 
-    func testLowProfileAlwaysOneSegment() {
-        let budget = ConnectionBudget()
-        let n = budget.resolveSegmentCount(total: 100 * 1024 * 1024, host: "h", profile: .low)
-        XCTAssertEqual(n, 1)
-    }
-
-    func testHighProfileUsesPerServerCapWhenRoomFree() {
-        let budget = ConnectionBudget()
-        let n = budget.resolveSegmentCount(total: 100 * 1024 * 1024, host: "h", profile: .high)
-        XCTAssertEqual(n, 16)
-    }
-
-    func testSegmentCountRespectsHostBudgetAlreadyInUse() {
-        var budget = ConnectionBudget()
-        budget.reserve(host: "h", count: 12)
-        let n = budget.resolveSegmentCount(total: 100 * 1024 * 1024, host: "h", profile: .high)
-        XCTAssertEqual(n, 4)
-    }
-
-    func testSegmentCountRespectsGlobalBudget() {
-        var budget = ConnectionBudget()
-        budget.reserve(host: "other", count: 198)
-        let n = budget.resolveSegmentCount(total: 100 * 1024 * 1024, host: "h", profile: .medium)
-        XCTAssertEqual(n, 2)
-    }
-
-    func testSegmentCountClampsByFileSize() {
-        let budget = ConnectionBudget()
-        let n = budget.resolveSegmentCount(total: 100 * 1024, host: "h", profile: .high)
-        XCTAssertEqual(n, 2)
-    }
-
-    func testSegmentCountFloorOneWhenBudgetsExhausted() {
-        var budget = ConnectionBudget()
-        budget.reserve(host: "h", count: 500)
-        let n = budget.resolveSegmentCount(total: 100 * 1024 * 1024, host: "h", profile: .high)
-        XCTAssertEqual(n, 1, "never zero connections")
+    func testSegmentCountAnswersToProfileFileSizeAndBothBudgets() {
+        let big = Int64(100 * 1024 * 1024)
+        let cases: [(reserve: (host: String, count: Int)?, total: Int64,
+                     profile: TrafficProfile, expected: Int, why: String)] = [
+            (nil, big, .low, 1, "Low never splits, however much room exists"),
+            (nil, big, .high, 16, "a free host gets the whole per-server cap"),
+            (("h", 12), big, .high, 4, "what the host already holds comes off the cap"),
+            (("other", 198), big, .medium, 2, "another host's usage still spends the global budget"),
+            (nil, 100 * 1024, .high, 2, "a small file is clamped by its own size, not the cap"),
+            (("h", 500), big, .high, 1, "never zero connections"),
+        ]
+        for c in cases {
+            var budget = ConnectionBudget()
+            if let r = c.reserve { budget.reserve(host: r.host, count: r.count) }
+            XCTAssertEqual(
+                budget.resolveSegmentCount(total: c.total, host: "h", profile: c.profile),
+                c.expected, c.why)
+        }
     }
 }
