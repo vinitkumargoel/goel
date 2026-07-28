@@ -41,7 +41,7 @@ struct MediaFormatPicker: View {
             case .loaded:
                 formatList
                 if !separateTrackFormats.isEmpty {
-                    Toggle("Show video-only and audio-only tracks", isOn: $showSeparateTracks)
+                    Toggle(L10n.t("Show video-only and audio-only tracks"), isOn: $showSeparateTracks)
                         .toggleStyle(.checkbox)
                         .scaledFont(size: 11)
                         .foregroundStyle(.secondary)
@@ -54,20 +54,22 @@ struct MediaFormatPicker: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Label("Quality", systemImage: "square.stack.3d.up")
+            Label(L10n.t("Quality"), systemImage: "square.stack.3d.up")
                 .scaledFont(size: 12, weight: .semibold)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
             if phase == .loaded {
-                Text("\(visibleFormats.count) option\(visibleFormats.count == 1 ? "" : "s")")
+                Text(visibleFormats.count == 1
+                     ? L10n.t("%d option", visibleFormats.count)
+                     : L10n.t("%d options", visibleFormats.count))
                     .scaledFont(size: 10)
                     .foregroundStyle(.tertiary)
             }
             if case .failed = phase {
-                Button("Retry") { Task { await load(force: true) } }
+                Button(L10n.t("Retry")) { Task { await load(force: true) } }
                     .buttonStyle(.link)
                     .scaledFont(size: 11)
-                    .accessibilityLabel("Retry loading quality options")
+                    .accessibilityLabel(L10n.t("Retry loading quality options"))
             }
         }
     }
@@ -76,12 +78,12 @@ struct MediaFormatPicker: View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
                 .a11yDecorative()
-            Text("Asking yt-dlp what’s available…")
+            Text(L10n.t("Asking yt-dlp what’s available…"))
                 .scaledFont(size: 11)
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
-        .a11yGroup(label: "Asking yt-dlp what’s available")
+        .a11yGroup(label: L10n.t("Asking yt-dlp what’s available"))
     }
 
     private func failureRow(_ message: String) -> some View {
@@ -89,15 +91,15 @@ struct MediaFormatPicker: View {
             .scaledFont(size: 11)
             .foregroundStyle(Theme.orange)
             .fixedSize(horizontal: false, vertical: true)
-            .accessibilityLabel("Couldn’t load quality options. \(message)")
+            .accessibilityLabel(L10n.t("Couldn’t load quality options. %@", message))
     }
 
     private var formatList: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 row(id: nil,
-                    quality: "Best available",
-                    detail: "Let yt-dlp choose — always a single ready-to-play file.",
+                    quality: L10n.t("Best available"),
+                    detail: L10n.t("Let yt-dlp choose — always a single ready-to-play file."),
                     trailing: nil)
                 ForEach(visibleFormats) { format in
                     row(id: format.id,
@@ -154,8 +156,8 @@ struct MediaFormatPicker: View {
             .compactMap { $0 }
             .map { $0.split(separator: ".").first.map(String.init) ?? $0 }
         if !codecs.isEmpty { pieces.append(codecs.joined(separator: " + ")) }
-        if format.isVideoOnly { pieces.append("no sound — merged with an audio track") }
-        if format.isAudioOnly { pieces.append("audio only") }
+        if format.isVideoOnly { pieces.append(L10n.t("no sound — merged with an audio track")) }
+        if format.isAudioOnly { pieces.append(L10n.t("audio only")) }
         if !format.note.isEmpty { pieces.append(format.note) }
         return pieces.joined(separator: " · ")
     }
@@ -185,7 +187,7 @@ struct MediaFormatPicker: View {
         if let preloadedFormats {
             formats = preloadedFormats
             phase = preloadedFormats.isEmpty
-                ? .failed("No formats were supplied.")
+                ? .failed(L10n.t("No formats were supplied."))
                 : .loaded
             return
         }
@@ -245,17 +247,17 @@ struct PlaylistChecklistView: View {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                         .a11yDecorative()
-                    Text("Listing what’s in this playlist…")
+                    Text(L10n.t("Listing what’s in this playlist…"))
                         .scaledFont(size: 11)
                         .foregroundStyle(.secondary)
                 }
-                .a11yGroup(label: "Listing what’s in this playlist")
+                .a11yGroup(label: L10n.t("Listing what’s in this playlist"))
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .scaledFont(size: 11)
                     .foregroundStyle(Theme.orange)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Couldn’t list the playlist. \(message)")
+                    .accessibilityLabel(L10n.t("Couldn’t list the playlist. %@", message))
             case .loaded:
                 itemList
                 footer
@@ -267,14 +269,16 @@ struct PlaylistChecklistView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Label(phase == .loaded && !expansion.title.isEmpty ? expansion.title : "Playlist",
+            Label(phase == .loaded && !expansion.title.isEmpty ? expansion.title : L10n.t("Playlist"),
                   systemImage: "list.bullet.rectangle")
                 .scaledFont(size: 12, weight: .semibold)
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
             if phase == .loaded {
-                Text("\(expansion.items.count) item\(expansion.items.count == 1 ? "" : "s")")
+                Text(expansion.items.count == 1
+                     ? L10n.t("%d item", expansion.items.count)
+                     : L10n.t("%d items", expansion.items.count))
                     .scaledFont(size: 10)
                     .foregroundStyle(.tertiary)
             }
@@ -294,7 +298,7 @@ struct PlaylistChecklistView: View {
                         ))
                         .labelsHidden()
                         .toggleStyle(.checkbox)
-                        .accessibilityLabel("\(item.index). \(item.title)")
+                        .accessibilityLabel(L10n.t("%1$@. %2$@", String(item.index), item.title))
                         Text("\(item.index).")
                             .scaledFont(size: 10, design: .monospaced)
                             .foregroundStyle(.tertiary)
@@ -310,7 +314,7 @@ struct PlaylistChecklistView: View {
                             Text(duration)
                                 .scaledFont(size: 10, design: .monospaced)
                                 .foregroundStyle(.tertiary)
-                                .accessibilityLabel("Duration \(duration)")
+                                .accessibilityLabel(L10n.t("Duration %@", duration))
                         }
                     }
                     .padding(.vertical, 4)
@@ -326,20 +330,20 @@ struct PlaylistChecklistView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 6) {
             if expansion.truncated {
-                Text("Only the first \(PlaylistExpander.cap) items are shown.")
+                Text(L10n.t("Only the first %d items are shown.", PlaylistExpander.cap))
                     .scaledFont(size: 10)
                     .foregroundStyle(Theme.orange)
             }
             HStack {
-                Button(allSelected ? "Select None" : "Select All") {
+                Button(allSelected ? L10n.t("Select None") : L10n.t("Select All")) {
                     selected = allSelected ? [] : Set(expansion.items.map(\.id))
                 }
                 Spacer()
-                Text("\(selected.count) selected")
+                Text(L10n.t("%d selected", selected.count))
                     .scaledFont(size: 11)
                     .foregroundStyle(.secondary)
-                    .accessibilityLabel("\(selected.count) of \(expansion.items.count) items selected")
-                Button("Add Selected") {
+                    .accessibilityLabel(L10n.t("%1$@ of %2$@ items selected", String(selected.count), String(expansion.items.count)))
+                Button(L10n.t("Add Selected")) {
                     onConfirm(expansion.items.filter { selected.contains($0.id) })
                 }
                 .buttonStyle(.borderedProminent)
@@ -357,7 +361,7 @@ struct PlaylistChecklistView: View {
             expansion = preloadedExpansion
             selected = Set(preloadedExpansion.items.map(\.id))
             phase = preloadedExpansion.items.isEmpty
-                ? .failed("That playlist doesn’t list any downloadable items.")
+                ? .failed(L10n.t("That playlist doesn’t list any downloadable items."))
                 : .loaded
             return
         }
@@ -372,7 +376,7 @@ struct PlaylistChecklistView: View {
                 selected = Set(result.items.map(\.id))
                 phase = .loaded
             case .notAPlaylist:
-                phase = .failed("That link is a single video, not a playlist.")
+                phase = .failed(L10n.t("That link is a single video, not a playlist."))
             case .failed(let message):
                 phase = .failed(message)
             }

@@ -66,25 +66,25 @@ extension DownloadTask {
 
     var statusDetailText: String {
         switch status {
-        case .queued: return "Queued"
-        case .requestingMetadata: return "Requesting info…"
+        case .queued: return L10n.t("Queued")
+        case .requestingMetadata: return L10n.t("Requesting info…")
         case .downloading:
             let pct = Int((fractionCompleted * 100).rounded())
             if let eta = estimatedTimeRemaining, eta > 0 {
-                return "\(pct)% · \(Self.etaString(eta)) left"
+                return L10n.t("%1$d%% · %2$@ left", pct, Self.etaString(eta))
             }
-            return "\(pct)%"
+            return L10n.t("%d%%", pct)
         case .verifying:
-            return "Verifying…"
+            return L10n.t("Verifying…")
         case .paused:
-            return "Paused · \(Int((fractionCompleted * 100).rounded()))%"
+            return L10n.t("Paused · %d%%", Int((fractionCompleted * 100).rounded()))
         case .seeding:
             if let limit = seedRatioLimit, limit > 0 {
-                return String(format: "Seeding · ratio %.2f / %.1f", shareRatio, limit)
+                return L10n.t("Seeding · ratio %1$.2f / %2$.1f", shareRatio, limit)
             }
-            return String(format: "Seeding · ratio %.2f", shareRatio)
+            return L10n.t("Seeding · ratio %.2f", shareRatio)
         case .completed:
-            return "Completed"
+            return L10n.t("Completed")
         case .failed(let error):
             return error.message
         }

@@ -27,7 +27,7 @@ struct KVRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .a11yButton("Copy \(key.lowercased())")
+                .a11yButton(L10n.t("Copy %@", key.lowercased()))
             }
         }
         .accessibilityElement(children: .contain)
@@ -58,31 +58,31 @@ struct DetailsTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if task.kind == .torrent {
-                KVRow(key: "Info hash", value: task.displayInfoHash ?? "—",
+                KVRow(key: L10n.t("Info hash"), value: task.displayInfoHash ?? "—",
                       copyable: task.displayInfoHash != nil)
-                KVRow(key: "Peers", value: "\(task.connectionCount) connected")
-                KVRow(key: "Seeds", value: task.seedCount.map { "\($0) available" } ?? "—")
-                KVRow(key: "Leechers", value: "\(task.leecherCount)")
-                KVRow(key: "Protocol", value: torrentProtocol)
-                KVRow(key: "Encryption", value: encryptionText)
+                KVRow(key: L10n.t("Peers"), value: L10n.t("%d connected", task.connectionCount))
+                KVRow(key: L10n.t("Seeds"), value: task.seedCount.map { L10n.t("%d available", $0) } ?? "—")
+                KVRow(key: L10n.t("Leechers"), value: "\(task.leecherCount)")
+                KVRow(key: L10n.t("Protocol"), value: torrentProtocol)
+                KVRow(key: L10n.t("Encryption"), value: encryptionText)
                 if task.sequentialDownload == true {
-                    KVRow(key: "Piece order", value: "Sequential (streaming)", valueColor: Theme.teal)
+                    KVRow(key: L10n.t("Piece order"), value: L10n.t("Sequential (streaming)"), valueColor: Theme.teal)
                 }
                 if let limit = task.seedRatioLimit, limit > 0 {
-                    KVRow(key: "Seed until ratio", value: String(format: "%.1f", limit),
+                    KVRow(key: L10n.t("Seed until ratio"), value: String(format: "%.1f", limit),
                           valueColor: Theme.teal)
                 }
                 trackerSection
             } else {
-                KVRow(key: "URL", value: task.sourceLocator, copyable: true)
-                KVRow(key: "MIME type", value: task.remoteInfo?.mimeType ?? "—")
-                KVRow(key: "Server", value: task.remoteInfo?.server ?? "—")
-                KVRow(key: "Range support", value: rangeText, valueColor: rangeColor)
-                KVRow(key: "Segments", value: "\(max(1, task.connectionCount)) connections")
-                KVRow(key: "Resumable", value: task.resumeData != nil ? "Yes" : "Pending",
+                KVRow(key: L10n.t("URL"), value: task.sourceLocator, copyable: true)
+                KVRow(key: L10n.t("MIME type"), value: task.remoteInfo?.mimeType ?? "—")
+                KVRow(key: L10n.t("Server"), value: task.remoteInfo?.server ?? "—")
+                KVRow(key: L10n.t("Range support"), value: rangeText, valueColor: rangeColor)
+                KVRow(key: L10n.t("Segments"), value: L10n.t("%d connections", max(1, task.connectionCount)))
+                KVRow(key: L10n.t("Resumable"), value: task.resumeData != nil ? L10n.t("Yes") : L10n.t("Pending"),
                       valueColor: task.resumeData != nil ? Theme.green : .secondary)
-                KVRow(key: "ETag", value: task.remoteInfo?.etag ?? "—")
-                KVRow(key: "Checksum", value: checksumValue, valueColor: checksumColor)
+                KVRow(key: L10n.t("ETag"), value: task.remoteInfo?.etag ?? "—")
+                KVRow(key: L10n.t("Checksum"), value: checksumValue, valueColor: checksumColor)
             }
         }
     }
@@ -97,21 +97,21 @@ struct DetailsTab: View {
 
     private var encryptionText: String {
         switch vm.settings.btEncryptionMode {
-        case "require": return "Required"
-        case "disable": return "Disabled"
-        default: return "Enabled (prefer)"
+        case "require": return L10n.t("Required")
+        case "disable": return L10n.t("Disabled")
+        default: return L10n.t("Enabled (prefer)")
         }
     }
 
     @ViewBuilder private var trackerSection: some View {
         if let live = task.trackers, !live.isEmpty {
-            SectionLabel(text: "Trackers · \(live.count)")
+            SectionLabel(text: L10n.t("Trackers · %d", live.count))
             ForEach(live) { tracker in
                 TrackerRow(tracker: tracker)
                 Divider()
             }
         } else if !magnetTrackers.isEmpty {
-            SectionLabel(text: "Trackers · \(magnetTrackers.count)")
+            SectionLabel(text: L10n.t("Trackers · %d", magnetTrackers.count))
             ForEach(magnetTrackers, id: \.self) { url in
                 HStack(spacing: 8) {
                     Circle().fill(Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
@@ -120,7 +120,7 @@ struct DetailsTab: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Text("idle").scaledFont(size: 10).foregroundStyle(.tertiary)
+                    Text(L10n.t("idle")).scaledFont(size: 10).foregroundStyle(.tertiary)
                 }
                 .padding(.vertical, 6)
                 Divider()
@@ -138,8 +138,8 @@ struct DetailsTab: View {
 
     private var rangeText: String {
         switch task.remoteInfo?.acceptRanges {
-        case .some(true): return "Yes (Accept-Ranges)"
-        case .some(false): return "No — single connection"
+        case .some(true): return L10n.t("Yes (Accept-Ranges)")
+        case .some(false): return L10n.t("No — single connection")
         case .none: return "—"
         }
     }
@@ -153,12 +153,13 @@ struct DetailsTab: View {
     }
 
     private var checksumValue: String {
-        guard let checksum = task.expectedChecksum else { return "Not provided" }
-        if case .failed(.checksumMismatch) = task.status { return "\(checksum.algorithm.displayName) mismatch" }
+        guard let checksum = task.expectedChecksum else { return L10n.t("Not provided") }
+        let algorithm = checksum.algorithm.displayName
+        if case .failed(.checksumMismatch) = task.status { return L10n.t("%@ mismatch", algorithm) }
         switch task.status {
-        case .verifying: return "Verifying (\(checksum.algorithm.displayName))…"
-        case .completed: return "\(checksum.algorithm.displayName) verified"
-        default: return "\(checksum.algorithm.displayName) pending"
+        case .verifying: return L10n.t("Verifying (%@)…", algorithm)
+        case .completed: return L10n.t("%@ verified", algorithm)
+        default: return L10n.t("%@ pending", algorithm)
         }
     }
 
@@ -201,17 +202,17 @@ struct TrackerRow: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .a11yGroup(
-            label: A11y.sentence("Tracker", tracker.host),
+            label: A11y.sentence(L10n.t("Tracker"), tracker.host),
             value: A11y.sentence(
-                tracker.statusLabel,
-                tracker.seeds.map { "\($0) seeds" },
-                tracker.leeches.map { "\($0) leechers" },
+                L10n.t(tracker.statusLabel),
+                tracker.seeds.map { L10n.t("%d seeds", $0) },
+                tracker.leeches.map { L10n.t("%d leechers", $0) },
                 tracker.message.isEmpty ? nil : tracker.message))
-        .accessibilityAction(named: Text("Copy tracker URL")) { vm.copyToPasteboard(tracker.url) }
+        .accessibilityAction(named: Text(L10n.t("Copy tracker URL"))) { vm.copyToPasteboard(tracker.url) }
         .contextMenu {
-            Button("Copy Tracker URL") { vm.copyToPasteboard(tracker.url) }
+            Button(L10n.t("Copy Tracker URL")) { vm.copyToPasteboard(tracker.url) }
             if tracker.url.hasPrefix("http"), let url = URL(string: tracker.url) {
-                Button("Open in Browser") { NSWorkspace.shared.open(url) }
+                Button(L10n.t("Open in Browser")) { NSWorkspace.shared.open(url) }
             }
         }
     }
@@ -241,9 +242,9 @@ struct ProgressTab: View {
         let buckets = task.pieceAvailability ?? []
         return VStack(alignment: .leading, spacing: 0) {
             if buckets.isEmpty {
-                SectionLabel(text: "Piece map")
+                SectionLabel(text: L10n.t("Piece map"))
                 if task.status == .requestingMetadata {
-                    Text("Waiting for metadata…")
+                    Text(L10n.t("Waiting for metadata…"))
                         .scaledFont(size: 11.5).foregroundStyle(.secondary).padding(.vertical, 6)
                 } else {
                     ProgressView(value: task.fractionCompleted).tint(Theme.accent).padding(.vertical, 6)
@@ -251,7 +252,7 @@ struct ProgressTab: View {
             } else {
                 let have = buckets.filter { $0 >= 0.999 }.count
                 let partial = buckets.filter { $0 > 0 && $0 < 0.999 }.count
-                SectionLabel(text: "Piece map · \(have)/\(buckets.count) complete")
+                SectionLabel(text: L10n.t("Piece map · %1$@/%2$@ complete", String(have), String(buckets.count)))
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(13), spacing: 3), count: 16), spacing: 3) {
                     ForEach(buckets.indices, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 3)
@@ -260,11 +261,11 @@ struct ProgressTab: View {
                     }
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Piece map")
+                .accessibilityLabel(L10n.t("Piece map"))
                 .accessibilityValue(
-                    "\(have) of \(buckets.count) blocks complete, "
-                    + "\(partial) in progress, "
-                    + "\(buckets.count - have - partial) not started")
+                    L10n.t("%1$@ of %2$@ blocks complete, %3$@ in progress, %4$@ not started",
+                           String(have), String(buckets.count), String(partial),
+                           String(buckets.count - have - partial)))
             }
             legend
         }
@@ -280,7 +281,7 @@ struct ProgressTab: View {
         let live = task.connections ?? []
         return VStack(alignment: .leading, spacing: 9) {
             if live.isEmpty {
-                SectionLabel(text: "Overall progress")
+                SectionLabel(text: L10n.t("Overall progress"))
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(task.name).lineLimit(1).truncationMode(.middle)
@@ -292,9 +293,9 @@ struct ProgressTab: View {
                     ProgressView(value: task.fractionCompleted)
                         .tint(task.status == .completed ? Theme.green : Theme.accent)
                 }
-                .a11yGroup(label: "Overall progress", value: task.accessibilityProgressValue)
+                .a11yGroup(label: L10n.t("Overall progress"), value: task.accessibilityProgressValue)
             } else {
-                SectionLabel(text: "\(live.count) parallel segments")
+                SectionLabel(text: L10n.t("%d parallel segments", live.count))
                 ForEach(live) { segment in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -315,9 +316,9 @@ struct ProgressTab: View {
 
     private var legend: some View {
         HStack(spacing: 14) {
-            legendItem(Theme.green, "Have")
-            legendItem(Theme.accent, "Downloading")
-            legendItem(Color.primary.opacity(0.08), "Missing")
+            legendItem(Theme.green, L10n.t("Have"))
+            legendItem(Theme.accent, L10n.t("Downloading"))
+            legendItem(Color.primary.opacity(0.08), L10n.t("Missing"))
         }
         .scaledFont(size: 11)
         .foregroundStyle(.secondary)
@@ -342,7 +343,7 @@ struct FilesTab: View {
             VStack(alignment: .leading, spacing: 10) {
                 fileRow(name: task.name, fraction: task.fractionCompleted,
                         size: task.totalBytes ?? 0, wanted: true, fileID: nil, priority: .normal)
-                Text("Single-file HTTP download — the one-file case of the unified multi-file model.")
+                Text(L10n.t("Single-file HTTP download — the one-file case of the unified multi-file model."))
                     .scaledFont(size: 11.5)
                     .foregroundStyle(.tertiary)
             }
@@ -370,8 +371,8 @@ struct FilesTab: View {
             }
             .buttonStyle(.plain)
             .disabled(fileID == nil)
-            .a11yButton(wanted ? "Skip \(name)" : "Download \(name)")
-            .accessibilityValue(wanted ? "Included" : "Skipped")
+            .a11yButton(wanted ? L10n.t("Skip %@", name) : L10n.t("Download %@", name))
+            .accessibilityValue(wanted ? L10n.t("Included") : L10n.t("Skipped"))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(name).scaledFont(size: 12).lineLimit(1).truncationMode(.middle)
@@ -386,10 +387,10 @@ struct FilesTab: View {
 
             if let fileID {
                 ActionMenu(items: [FilePriority.skip, .low, .normal, .high].map { p in
-                    .button(p.displayName) { vm.setFilePriority(p, fileID: fileID, task: task.id) }
+                    .button(L10n.t(p.displayName)) { vm.setFilePriority(p, fileID: fileID, task: task.id) }
                 }, menuWidth: 130) { open in
                     HStack(spacing: 3) {
-                        Text(priority.displayName)
+                        Text(L10n.t(priority.displayName))
                         Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold))
                     }
                     .scaledFont(size: 10)
@@ -400,8 +401,8 @@ struct FilesTab: View {
                                 in: RoundedRectangle(cornerRadius: 5))
                     .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Priority for \(name)")
-                .accessibilityValue(priority.displayName)
+                .accessibilityLabel(L10n.t("Priority for %@", name))
+                .accessibilityValue(L10n.t(priority.displayName))
             }
         }
         .padding(.vertical, 8)
@@ -421,13 +422,13 @@ struct ConnectionsTab: View {
 
     private var peers: some View {
         let live = task.connections ?? []
-        let seeds = task.seedCount.map { " · \($0) seeds" } ?? ""
+        let seeds = task.seedCount.map { " · " + L10n.t("%d seeds", $0) } ?? ""
         return VStack(alignment: .leading, spacing: 0) {
-            SectionLabel(text: "\(task.connectionCount) peers\(seeds)")
+            SectionLabel(text: L10n.t("%d peers", task.connectionCount) + seeds)
             if live.isEmpty {
-                emptyConnections("No active peers")
+                emptyConnections(L10n.t("No active peers"))
             } else {
-                connHeader(left: "Peer", trailing: "↑")
+                connHeader(left: L10n.t("Peer"), trailing: "↑")
                 ForEach(live) { peer in
                     connRow(label: peer.label,
                             subtitle: peer.detail,
@@ -442,13 +443,13 @@ struct ConnectionsTab: View {
     private var httpConnections: some View {
         let live = task.connections ?? []
         let host = URLComponents(string: task.sourceLocator)?.host ?? ""
-        let label = host.isEmpty ? "HTTP connections" : "HTTP connections · \(host)"
+        let label = host.isEmpty ? L10n.t("HTTP connections") : L10n.t("HTTP connections") + " · \(host)"
         return VStack(alignment: .leading, spacing: 0) {
             SectionLabel(text: label)
             if live.isEmpty {
-                emptyConnections("No active connections")
+                emptyConnections(L10n.t("No active connections"))
             } else {
-                connHeader(left: "Segment", trailing: "done")
+                connHeader(left: L10n.t("Segment"), trailing: L10n.t("done"))
                 ForEach(live) { segment in
                     let adapter = segment.adapterLabel.map { " · \($0)" } ?? ""
                     connRow(label: "\(segment.label)\(adapter) · \(segment.detail)",

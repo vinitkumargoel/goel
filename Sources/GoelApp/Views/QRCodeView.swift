@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import CoreImage.CIFilterBuiltins
 import Darwin
+import GoelCore
 
 struct QRCodeView: View {
     let text: String
@@ -16,7 +17,7 @@ struct QRCodeView: View {
                 .background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
-                .accessibilityLabel("QR code for \(text)")
+                .accessibilityLabel(L10n.t("QR code for %@", text))
         }
     }
 

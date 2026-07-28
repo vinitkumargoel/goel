@@ -53,13 +53,13 @@ struct AddDownloadSheet: View {
         var options: [Dropdown<String>.Item] = [
             .option(downloadsPath, "~/Downloads"),
             .option(moviesPath, "~/Movies"),
-            .option(SaveOption.automatic, "Automatic (by type)"),
+            .option(SaveOption.automatic, L10n.t("Automatic (by type)")),
         ]
         if let customFolder, customFolder != downloadsPath, customFolder != moviesPath {
             options.append(.option(customFolder, (customFolder as NSString).abbreviatingWithTildeInPath))
         }
         options.append(.separator)
-        options.append(.option(SaveOption.choose, "Choose folder…"))
+        options.append(.option(SaveOption.choose, L10n.t("Choose folder…")))
         return options
     }
 
@@ -88,7 +88,7 @@ struct AddDownloadSheet: View {
 
     private var header: some View {
         SheetHeader(systemImage: phase == .input ? "link" : "checklist",
-                    title: phase == .input ? "Add download" : "Review & start")
+                    title: phase == .input ? L10n.t("Add download") : L10n.t("Review & start"))
     }
 
     private var inputContent: some View {
@@ -97,13 +97,13 @@ struct AddDownloadSheet: View {
                 dropZone
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("URL, magnet, or .m3u8 stream")
+                    Text(L10n.t("URL, magnet, or .m3u8 stream"))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.secondary)
                     TextEditor(text: $text)
                         .font(.system(size: 12, design: .monospaced))
-                        .accessibilityLabel("URL, magnet, or m3u8 stream")
-                        .accessibilityHint("Paste one link per line to add several at once.")
+                        .accessibilityLabel(L10n.t("URL, magnet, or m3u8 stream"))
+                        .accessibilityHint(L10n.t("Paste one link per line to add several at once."))
                         .frame(height: 90)
                         .padding(6)
                         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
@@ -113,9 +113,9 @@ struct AddDownloadSheet: View {
                         Label(inputError, systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.orange)
-                            .accessibilityLabel("Error. \(inputError)")
+                            .accessibilityLabel(L10n.t("Error. %@", inputError))
                     } else {
-                        Text("Paste several lines to add them all at once (batch). Patterns expand too: file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts.")
+                        Text(L10n.t("Paste several lines to add them all at once (batch). Patterns expand too: file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts."))
                             .font(.system(size: 11))
                             .foregroundStyle(.tertiary)
                     }
@@ -126,9 +126,9 @@ struct AddDownloadSheet: View {
             Divider()
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button(L10n.t("Cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Continue") { continueTapped() }
+                Button(L10n.t("Continue")) { continueTapped() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -141,25 +141,25 @@ struct AddDownloadSheet: View {
         VStack(spacing: 14) {
             ProgressView()
                 .controlSize(.large)
-                .accessibilityLabel("Fetching details")
-            Text("Fetching details…")
+                .accessibilityLabel(L10n.t("Fetching details"))
+            Text(L10n.t("Fetching details…"))
                 .font(.system(size: 13, weight: .medium))
                 .accessibilityAddTraits(.isHeader)
-            Text("Reading the file name and size. Magnet links ask peers for the file list, which can take a few seconds.")
+            Text(L10n.t("Reading the file name and size. Magnet links ask peers for the file list, which can take a few seconds."))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
             HStack(spacing: 10) {
-                Button("Cancel") {
+                Button(L10n.t("Cancel")) {
                     resolveTask?.cancel()
                     phase = .input
                 }
-                Button("Continue anyway") { continueWithoutPreview() }
+                Button(L10n.t("Continue anyway")) { continueWithoutPreview() }
                     .buttonStyle(.borderedProminent)
             }
             .padding(.top, 4)
-            Text("Continue anyway adds it straight to the queue — the name and size fill in as it starts.")
+            Text(L10n.t("Continue anyway adds it straight to the queue — the name and size fill in as it starts."))
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -184,7 +184,7 @@ struct AddDownloadSheet: View {
                 metadataSummary(preview)
 
                 if let duplicate = vm.existingDuplicate(of: preview.source) {
-                    Label("Already in your list (\(duplicate.status.displayName.lowercased())) — starting it again won’t add a second copy.",
+                    Label(L10n.t("Already in your list (%@) — starting it again won’t add a second copy.", duplicate.status.displayName.lowercased()),
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.orange)
@@ -196,7 +196,7 @@ struct AddDownloadSheet: View {
                 }
 
                 if allFilesDeselected(preview) {
-                    Label("Pick at least one file to download.",
+                    Label(L10n.t("Pick at least one file to download."),
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.orange)
@@ -212,22 +212,22 @@ struct AddDownloadSheet: View {
 
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Save to").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                        Text(L10n.t("Save to")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                         Dropdown(selection: $saveSelection, items: saveOptions) { newValue in
                             handleSaveSelection(newValue)
                         }
                         .frame(maxWidth: .infinity)
                     }
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Priority").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                        Text(L10n.t("Priority")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                         Dropdown(selection: $priority, items: [
-                            .option(.high, "High"),
-                            .option(.normal, "Normal"),
-                            .option(.low, "Low"),
+                            .option(.high, L10n.t("High")),
+                            .option(.normal, L10n.t("Normal")),
+                            .option(.low, L10n.t("Low")),
                         ], width: 120)
                     }
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Start").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                        Text(L10n.t("Start")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                         Dropdown(selection: $startSelection, items: startOptions, width: 150)
                     }
                 }
@@ -256,11 +256,11 @@ struct AddDownloadSheet: View {
 
             Divider()
             HStack {
-                Button("Back") { deselectedFileIDs = []; phase = .input }
+                Button(L10n.t("Back")) { deselectedFileIDs = []; phase = .input }
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button(L10n.t("Cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Start download") { start(preview) }
+                Button(L10n.t("Start download")) { start(preview) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     // A second press during a resolve queues a second copy; an all-unticked torrent fetches nothing.
@@ -296,7 +296,7 @@ struct AddDownloadSheet: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                     if !preview.files.isEmpty {
-                        Text("· \(preview.files.count) file\(preview.files.count == 1 ? "" : "s")")
+                        Text("· " + (preview.files.count == 1 ? L10n.t("%d file", preview.files.count) : L10n.t("%d files", preview.files.count)))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
@@ -311,10 +311,10 @@ struct AddDownloadSheet: View {
         let selectedBytes = files.filter { !deselectedFileIDs.contains($0.id) }.reduce(Int64(0)) { $0 + $1.length }
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Files").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                Text(L10n.t("Files")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                 Spacer()
                 if selectable {
-                    Text("\(selectedCount) of \(files.count) · \(selectedBytes.byteString)")
+                    Text(L10n.t("%1$d of %2$d · %3$@", selectedCount, files.count, selectedBytes.byteString))
                         .font(.system(size: 11)).foregroundStyle(.tertiary).monospacedDigit()
                 }
             }
@@ -334,9 +334,9 @@ struct AddDownloadSheet: View {
                                 }
                                 .buttonStyle(.plain)
                                 .a11yButton(wanted
-                                    ? "Skip \((file.path as NSString).lastPathComponent)"
-                                    : "Download \((file.path as NSString).lastPathComponent)")
-                                .accessibilityValue(wanted ? "Included" : "Skipped")
+                                    ? L10n.t("Skip %@", (file.path as NSString).lastPathComponent)
+                                    : L10n.t("Download %@", (file.path as NSString).lastPathComponent))
+                                .accessibilityValue(wanted ? L10n.t("Included") : L10n.t("Skipped"))
                             } else {
                                 Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(.tertiary)
                                     .a11yDecorative()
@@ -372,7 +372,7 @@ struct AddDownloadSheet: View {
                 .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(isDropTargeted ? Theme.accent : .secondary)
                 .a11yDecorative()
-            (Text("Drag a URL or ") + Text(".torrent").bold() + Text(" file here"))
+            (Text(L10n.t("Drag a URL or ")) + Text(".torrent").bold() + Text(L10n.t(" file here")))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
@@ -393,22 +393,22 @@ struct AddDownloadSheet: View {
 
     private var checksumField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Checksum (optional)")
+            Text(L10n.t("Checksum (optional)"))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
-            TextField("MD5, SHA-1, or SHA-256 hex", text: $checksumText)
-                .accessibilityLabel("Expected checksum")
+            TextField(L10n.t("MD5, SHA-1, or SHA-256 hex"), text: $checksumText)
+                .accessibilityLabel(L10n.t("Expected checksum"))
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12, design: .monospaced))
                 .disableAutocorrection(true)
             if !checksumText.trimmingCharacters(in: .whitespaces).isEmpty {
                 if let parsed = Checksum.parse(checksumText) {
-                    Label("\(parsed.algorithm.displayName) — verified after the download finishes",
+                    Label(L10n.t("%@ — verified after the download finishes", parsed.algorithm.displayName),
                           systemImage: "checkmark.seal.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.green)
                 } else {
-                    Label("Not a valid MD5 / SHA-1 / SHA-256 hex digest",
+                    Label(L10n.t("Not a valid MD5 / SHA-1 / SHA-256 hex digest"),
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.orange)
@@ -421,13 +421,13 @@ struct AddDownloadSheet: View {
         HStack(spacing: 8) {
             if isResolvingMedia {
                 ProgressView().controlSize(.small)
-                    .accessibilityLabel("Resolving media formats")
-                Text("Asking yt-dlp…")
+                    .accessibilityLabel(L10n.t("Resolving media formats"))
+                Text(L10n.t("Asking yt-dlp…"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             } else {
-                Button("Resolve Media with yt-dlp") { resolveWithYtDlp(preview) }
-                Text("For video-site pages: download the stream, not the page.")
+                Button(L10n.t("Resolve Media with yt-dlp")) { resolveWithYtDlp(preview) }
+                Text(L10n.t("For video-site pages: download the stream, not the page."))
                     .font(.system(size: 10.5))
                     .foregroundStyle(.tertiary)
             }
@@ -444,7 +444,7 @@ struct AddDownloadSheet: View {
             case .resolved(let resolved):
                 guard let mediaPreview = YtDlpResolver.preview(for: resolved) else {
                     inputError = nil
-                    vm.toast = "yt-dlp couldn’t resolve that page"
+                    vm.toast = L10n.t("yt-dlp couldn’t resolve that page")
                     return
                 }
                 // Don't fetch subtitles here: "Save to" is still editable, so sidecars would be orphaned.
@@ -461,7 +461,7 @@ struct AddDownloadSheet: View {
 
     private var mirrorsField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Mirrors (optional, one per line)")
+            Text(L10n.t("Mirrors (optional, one per line)"))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
             TextEditor(text: $mirrorsText)
@@ -470,7 +470,7 @@ struct AddDownloadSheet: View {
                 .padding(4)
                 .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
-            Text("Alternative URLs for the same file — segments spread across them and fail over automatically.")
+            Text(L10n.t("Alternative URLs for the same file — segments spread across them and fail over automatically."))
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
         }
@@ -489,7 +489,7 @@ struct AddDownloadSheet: View {
     private func continueTapped() {
         let sources = vm.parsedSources(in: text)
         guard !sources.isEmpty else {
-            inputError = "Enter a valid URL, magnet, or .m3u8 link."
+            inputError = L10n.t("Enter a valid URL, magnet, or .m3u8 link.")
             return
         }
         if sources.count > 1 {
@@ -498,7 +498,7 @@ struct AddDownloadSheet: View {
             return
         }
         guard let line = firstParseableLine() else {
-            inputError = "Enter a valid URL, magnet, or .m3u8 link."
+            inputError = L10n.t("Enter a valid URL, magnet, or .m3u8 link.")
             return
         }
         // Reset every per-link field: state left from the previous link would silently apply to this one.
@@ -526,13 +526,13 @@ struct AddDownloadSheet: View {
                 phase = .confirm(preview)
             } else {
                 phase = .input
-                inputError = "That link isn’t valid."
+                inputError = L10n.t("That link isn’t valid.")
             }
         }
     }
 
     private var startOptions: [Dropdown<String>.Item] {
-        [.option("now", "Now")]
+        [.option("now", L10n.t("Now"))]
             + ScheduledStartOption.presets.map { .option($0.id, $0.label) }
     }
 
@@ -553,7 +553,7 @@ struct AddDownloadSheet: View {
             guard let resolved = await YtDlpResolver.resolve(pageURL, formatSelector: formatSelector),
                   let mediaPreview = YtDlpResolver.preview(for: resolved) else {
                 if Task.isCancelled { return }
-                vm.toast = "yt-dlp couldn’t resolve that page"
+                vm.toast = L10n.t("yt-dlp couldn’t resolve that page")
                 return
             }
             resolvedPageURL = pageURL
@@ -587,7 +587,7 @@ struct AddDownloadSheet: View {
     private func fetchSubtitlesIfWanted(for preview: DownloadPreview) {
         guard vm.settings.subtitleDownloadEnabled, let pageURL = resolvedPageURL else { return }
         guard let directory = subtitleDestination else {
-            vm.toastNow("Subtitles skipped — pick a folder under “Save to” so they land beside the video")
+            vm.toastNow(L10n.t("Subtitles skipped — pick a folder under “Save to” so they land beside the video"))
             return
         }
         let base = (preview.suggestedName as NSString).deletingPathExtension
@@ -599,11 +599,11 @@ struct AddDownloadSheet: View {
                 languages: langs, includeAuto: auto)
             switch outcome {
             case .downloaded(let n):
-                vm.toastNow("Downloaded \(n) subtitle file\(n == 1 ? "" : "s")")
+                vm.toastNow(n == 1 ? L10n.t("Downloaded %d subtitle file", n) : L10n.t("Downloaded %d subtitle files", n))
             case .none:
                 break
             case .failed(let msg):
-                vm.toastNow("Subtitles: \(msg)")
+                vm.toastNow(L10n.t("Subtitles: %@", msg))
             }
         }
     }
@@ -695,7 +695,7 @@ struct AddDownloadSheet: View {
 
     private func sizeText(_ preview: DownloadPreview) -> String {
         guard let bytes = preview.totalBytes else {
-            return preview.isEstimatedSize ? "Size resolved while downloading" : "Unknown size"
+            return preview.isEstimatedSize ? L10n.t("Size resolved while downloading") : L10n.t("Unknown size")
         }
         return (preview.isEstimatedSize ? "~" : "") + bytes.byteString
     }

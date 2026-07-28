@@ -1,4 +1,5 @@
 import SwiftUI
+import GoelCore
 
 struct Dropdown<Value: Hashable>: View {
     enum Item {
@@ -25,7 +26,7 @@ struct Dropdown<Value: Hashable>: View {
 
     private var spokenName: String {
         if !accessibilityName.isEmpty { return accessibilityName }
-        return rowName.isEmpty ? "Options" : rowName
+        return rowName.isEmpty ? L10n.t("Options") : rowName
     }
 
     var body: some View {
@@ -51,7 +52,7 @@ struct Dropdown<Value: Hashable>: View {
         }
         .buttonStyle(.plain)
         .a11yGroup(label: spokenName, value: currentLabel,
-                   hint: "Activate to choose a different option.")
+                   hint: L10n.t("Activate to choose a different option."))
         .accessibilityAddTraits(.isButton)
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 1) {
@@ -152,7 +153,7 @@ struct ActionMenu<Label: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(.isButton)
-        .accessibilityHint(isOpen ? "" : "Activate to open the menu.")
+        .accessibilityHint(isOpen ? "" : L10n.t("Activate to open the menu."))
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 1) {
                 ForEach(items) { item in
@@ -199,7 +200,8 @@ private struct ActionMenuRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(item.isDestructive ? "\(item.title), destructive" : item.title)
+        .accessibilityLabel(item.isDestructive
+                            ? L10n.t("%@, destructive", item.title) : item.title)
         .accessibilityAddTraits(.isButton)
     }
 
@@ -230,7 +232,8 @@ struct ToolbarMenuLabel: View {
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .a11yGroup(label: title, hint: "Activate to open the \(title.lowercased()) menu.")
+        .a11yGroup(label: title,
+                   hint: L10n.t("Activate to open the %@ menu.", L10n.t(title).lowercased()))
         .accessibilityAddTraits(.isButton)
     }
 }

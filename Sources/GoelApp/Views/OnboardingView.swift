@@ -37,9 +37,9 @@ struct OnboardingView: View {
 
         var title: String {
             switch self {
-            case .saveFolder: return "Where should downloads land?"
-            case .browser:    return "Catch downloads from your browser"
-            case .clipboard:  return "Copy a link, download it"
+            case .saveFolder: return L10n.t("Where should downloads land?")
+            case .browser:    return L10n.t("Catch downloads from your browser")
+            case .clipboard:  return L10n.t("Copy a link, download it")
             }
         }
 
@@ -92,10 +92,10 @@ struct OnboardingView: View {
                 .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 2) {
-                Text("Welcome to Goel°")
+                Text(L10n.t("Welcome to Goel°"))
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.secondary)
-                    .accessibilityLabel("Welcome to Goel")
+                    .accessibilityLabel(L10n.t("Welcome to Goel"))
                 Text(pane.title)
                     .scaledFont(size: 15, weight: .semibold)
                     .accessibilityAddTraits(.isHeader)
@@ -114,15 +114,15 @@ struct OnboardingView: View {
                 progressDots
                 Spacer()
                 if pane == .saveFolder {
-                    Button("Skip") { finish() }
+                    Button(L10n.t("Skip")) { finish() }
                         .keyboardShortcut(.cancelAction)
-                        .accessibilityLabel("Skip setup")
+                        .accessibilityLabel(L10n.t("Skip setup"))
                 } else {
-                    Button("Back") { pane = Pane(rawValue: pane.rawValue - 1) ?? .saveFolder }
+                    Button(L10n.t("Back")) { pane = Pane(rawValue: pane.rawValue - 1) ?? .saveFolder }
                         .keyboardShortcut(.cancelAction)
-                        .accessibilityLabel("Back to the previous step")
+                        .accessibilityLabel(L10n.t("Back to the previous step"))
                 }
-                Button(pane == .clipboard ? "Start using Goel°" : "Continue") {
+                Button(pane == .clipboard ? L10n.t("Start using Goel°") : L10n.t("Continue")) {
                     if let next = Pane(rawValue: pane.rawValue + 1) {
                         pane = next
                     } else {
@@ -144,8 +144,8 @@ struct OnboardingView: View {
                     .frame(width: 6, height: 6)
             }
         }
-        .a11yGroup(label: "Setup progress",
-                   value: "Step \(pane.rawValue + 1) of \(Pane.allCases.count)")
+        .a11yGroup(label: L10n.t("Setup progress"),
+                   value: L10n.t("Step %1$@ of %2$@", String(pane.rawValue + 1), String(Pane.allCases.count)))
     }
 
     private var licenceNotice: some View {
@@ -156,7 +156,7 @@ struct OnboardingView: View {
                 .a11yDecorative()
             noticeText
                 .scaledFont(size: 11)
-                .accessibilityLabel("Free for personal use. Commercial use requires a licence. Learn more.")
+                .accessibilityLabel(L10n.t("Free for personal use. Commercial use requires a licence. Learn more."))
                 .accessibilityAddTraits(.isLink)
             Spacer(minLength: 8)
             Button {
@@ -167,8 +167,8 @@ struct OnboardingView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.tertiary)
-            .help("Hide this notice")
-            .a11yButton("Hide licence notice")
+            .help(L10n.t("Hide this notice"))
+            .a11yButton(L10n.t("Hide licence notice"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -179,17 +179,17 @@ struct OnboardingView: View {
     }
 
     private var noticeText: Text {
-        Text("Free for personal use. Commercial use requires a licence — ")
+        Text(L10n.t("Free for personal use. Commercial use requires a licence — "))
             .foregroundStyle(.secondary)
-        + Text("Learn more")
+        + Text(L10n.t("Learn more"))
             .foregroundStyle(Theme.accent)
     }
 
     private var saveFolderPane: some View {
         VStack(alignment: .leading, spacing: 14) {
             OnboardingBlurb(
-                "Everything you queue lands in one place unless you say otherwise. "
-                + "You can still pick a different folder for any individual download.")
+                L10n.t("Everything you queue lands in one place unless you say otherwise. "
+                + "You can still pick a different folder for any individual download."))
 
             OnboardingCard {
                 HStack(spacing: 12) {
@@ -203,35 +203,35 @@ struct OnboardingView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Text(vm.settings.defaultFolderRule == "fixed"
-                             ? "Every download goes here."
-                             : "Sorted automatically by file type.")
+                             ? L10n.t("Every download goes here.")
+                             : L10n.t("Sorted automatically by file type."))
                             .scaledFont(size: 11)
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Button("Choose…") { chooseFolder() }
-                        .accessibilityLabel("Choose download folder")
+                    Button(L10n.t("Choose…")) { chooseFolder() }
+                        .accessibilityLabel(L10n.t("Choose download folder"))
                 }
             }
 
             OnboardingRow(symbol: "wand.and.stars",
-                          title: "Or let Goel° sort them",
-                          detail: "Video, archives, disc images and documents each get their own subfolder.") {
-                Button(vm.settings.defaultFolderRule == "byType" ? "Chosen" : "Sort by type") {
+                          title: L10n.t("Or let Goel° sort them"),
+                          detail: L10n.t("Video, archives, disc images and documents each get their own subfolder.")) {
+                Button(vm.settings.defaultFolderRule == "byType" ? L10n.t("Chosen") : L10n.t("Sort by type")) {
                     vm.update { $0.defaultFolderRule = "byType" }
                 }
                 .disabled(vm.settings.defaultFolderRule == "byType")
                 .accessibilityLabel(vm.settings.defaultFolderRule == "byType"
-                                    ? "Sorting by file type, already chosen"
-                                    : "Sort downloads by file type")
+                                    ? L10n.t("Sorting by file type, already chosen")
+                                    : L10n.t("Sort downloads by file type"))
             }
         }
     }
 
     private var currentFolderLabel: String {
         switch vm.settings.defaultFolderRule {
-        case "byType":   return "Automatic — by file type"
-        case "bySource": return "Automatic — by source site"
+        case "byType":   return L10n.t("Automatic — by file type")
+        case "bySource": return L10n.t("Automatic — by source site")
         default:
             return (vm.settings.defaultSaveDirectory as NSString).abbreviatingWithTildeInPath
         }
@@ -239,8 +239,8 @@ struct OnboardingView: View {
 
     private func chooseFolder() {
         guard let url = FilePicker.chooseDirectory(
-            prompt: "Use Folder",
-            message: "Choose where Goel° saves finished downloads.") else { return }
+            prompt: L10n.t("Use Folder"),
+            message: L10n.t("Choose where Goel° saves finished downloads.")) else { return }
         vm.setDefaultSaveDirectory(url.path)
         vm.update { $0.defaultFolderRule = "fixed" }
     }
@@ -248,34 +248,34 @@ struct OnboardingView: View {
     private var browserPane: some View {
         VStack(alignment: .leading, spacing: 14) {
             OnboardingBlurb(
-                "With the extension installed, clicking a download in Chrome, Edge, Brave, "
+                L10n.t("With the extension installed, clicking a download in Chrome, Edge, Brave, "
                 + "Firefox or Safari sends it here instead — with the page's sign-in cookies, "
-                + "so files behind a login still work.")
+                + "so files behind a login still work."))
 
             OnboardingRow(symbol: "puzzlepiece.extension",
-                          title: "1. Load the extension",
-                          detail: "Opens the folder to point your browser's “Load unpacked” at.") {
-                Button("Show Folder") { revealExtensionFolder() }
-                    .accessibilityLabel("Show the browser extension folder in Finder")
+                          title: L10n.t("1. Load the extension"),
+                          detail: L10n.t("Opens the folder to point your browser's “Load unpacked” at.")) {
+                Button(L10n.t("Show Folder")) { revealExtensionFolder() }
+                    .accessibilityLabel(L10n.t("Show the browser extension folder in Finder"))
             }
 
             OnboardingRow(symbol: "app.connected.to.app.below.fill",
-                          title: "2. Install the messaging helper",
+                          title: L10n.t("2. Install the messaging helper"),
                           detail: helperResult
-                              ?? "Lets the extension talk to Goel°. Writes files in your own Library — no admin password.") {
-                Button("Install") { helperResult = BrowserIntegrationService.installHostManifests() }
-                    .accessibilityLabel("Install the browser messaging helper")
+                              ?? L10n.t("Lets the extension talk to Goel°. Writes files in your own Library — no admin password.")) {
+                Button(L10n.t("Install")) { helperResult = BrowserIntegrationService.installHostManifests() }
+                    .accessibilityLabel(L10n.t("Install the browser messaging helper"))
             }
 
             OnboardingBlurb(
-                "Not now? The full step-by-step, plus the bookmarklet, the URL scheme and the "
-                + "Services-menu route, all live in Settings ▸ Browser.")
+                L10n.t("Not now? The full step-by-step, plus the bookmarklet, the URL scheme and the "
+                + "Services-menu route, all live in Settings ▸ Browser."))
         }
     }
 
     private func revealExtensionFolder() {
         guard let folder = BrowserIntegrationService.extensionFolder else {
-            vm.toastNow("The bundled extension is only in the packaged app, not a dev build")
+            vm.toastNow(L10n.t("The bundled extension is only in the packaged app, not a dev build"))
             return
         }
         NSWorkspace.shared.activateFileViewerSelecting([folder])
@@ -284,8 +284,8 @@ struct OnboardingView: View {
     private var clipboardPane: some View {
         VStack(alignment: .leading, spacing: 14) {
             OnboardingBlurb(
-                "Goel° can watch for http(s) and magnet links you copy and offer them in a "
-                + "banner. It only ever offers — nothing downloads without you clicking Add.")
+                L10n.t("Goel° can watch for http(s) and magnet links you copy and offer them in a "
+                + "banner. It only ever offers — nothing downloads without you clicking Add."))
 
             OnboardingCard {
                 HStack(spacing: 12) {
@@ -294,9 +294,9 @@ struct OnboardingView: View {
                         .foregroundStyle(Theme.accent)
                         .a11yDecorative()
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Watch the clipboard")
+                        Text(L10n.t("Watch the clipboard"))
                             .scaledFont(size: 13, weight: .medium)
-                        Text("Links you copy appear as a one-click banner at the top of the window.")
+                        Text(L10n.t("Links you copy appear as a one-click banner at the top of the window."))
                             .scaledFont(size: 11)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -306,26 +306,26 @@ struct OnboardingView: View {
                 }
             }
 
-            Text("A few other ways in")
+            Text(L10n.t("A few other ways in"))
                 .scaledFont(size: 10.5, weight: .bold)
                 .accessibilityAddTraits(.isHeader)
                 .foregroundStyle(.tertiary)
                 .padding(.top, 2)
 
             OnboardingRow(symbol: "tray.and.arrow.down",
-                          title: "Drop Basket · ⌘⇧B",
-                          detail: "A small always-on-top target — drag links onto it from anywhere.") {
-                Button("Show") { DropBasketController.shared.toggle() }
-                    .accessibilityLabel("Show drop basket")
+                          title: L10n.t("Drop Basket · ⌘⇧B"),
+                          detail: L10n.t("A small always-on-top target — drag links onto it from anywhere.")) {
+                Button(L10n.t("Show")) { DropBasketController.shared.toggle() }
+                    .accessibilityLabel(L10n.t("Show drop basket"))
             }
             OnboardingRow(symbol: "link.badge.plus",
-                          title: "Link Grabber · ⌘⇧L",
-                          detail: "Give it a page URL and it lists every file linked from it to pick from.") {
+                          title: L10n.t("Link Grabber · ⌘⇧L"),
+                          detail: L10n.t("Give it a page URL and it lists every file linked from it to pick from.")) {
                 EmptyView()
             }
             OnboardingRow(symbol: "command",
-                          title: "Command palette · ⌘K",
-                          detail: "Every action and settings pane in one search field.") {
+                          title: L10n.t("Command palette · ⌘K"),
+                          detail: L10n.t("Every action and settings pane in one search field.")) {
                 EmptyView()
             }
         }

@@ -25,13 +25,13 @@ enum BrowserIntegrationService {
         let fm = FileManager.default
         guard let appSupport = fm.urls(for: .applicationSupportDirectory,
                                        in: .userDomainMask).first else {
-            return "Couldn’t locate Application Support"
+            return L10n.t("Couldn’t locate Application Support")
         }
         let wrapper: URL
         do {
             wrapper = try writeWrapperScript(under: appSupport)
         } catch {
-            return "Couldn’t write the helper script"
+            return L10n.t("Couldn’t write the helper script")
         }
 
         var installed: [String] = []
@@ -65,8 +65,8 @@ enum BrowserIntegrationService {
         }
 
         return installed.isEmpty
-            ? "No supported browsers found"
-            : "Helper installed for \(installed.joined(separator: ", "))"
+            ? L10n.t("No supported browsers found")
+            : L10n.t("Helper installed for %@", installed.joined(separator: ", "))
     }
 
     /// Needed because host manifests can't pass args: browsers spawn `path` verbatim.

@@ -24,7 +24,7 @@ struct DetailPanelView: View {
 
             Picker("", selection: $vm.detailTab) {
                 ForEach(DetailTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Text(L10n.t(tab.rawValue)).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
@@ -32,7 +32,7 @@ struct DetailPanelView: View {
             .labelsHidden()
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            .accessibilityLabel("Detail section")
+            .accessibilityLabel(L10n.t("Detail section"))
             Divider()
 
             ScrollView {
@@ -93,7 +93,7 @@ struct DetailPanelView: View {
                 VStack(spacing: 1) {
                     Text("\(task.percentComplete)%")
                         .scaledFont(size: 30, weight: .bold, monospacedDigit: true)
-                    Text("complete")
+                    Text(L10n.t("complete"))
                         .scaledFont(size: 10.5)
                         .foregroundStyle(.tertiary)
                 }
@@ -101,7 +101,7 @@ struct DetailPanelView: View {
             .padding(.top, 4)
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits(.updatesFrequently)
-            .accessibilityLabel("Download progress")
+            .accessibilityLabel(L10n.t("Download progress"))
             .accessibilityValue(task.accessibilityProgressValue)
 
             HStack(spacing: 22) {
@@ -113,7 +113,7 @@ struct DetailPanelView: View {
                 .scaledFont(size: 11.5, monospacedDigit: true)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(A11y.sentence(
-                    "\(A11y.bytes(task.bytesDownloaded)) of \(A11y.bytes(task.totalBytes))",
+                    L10n.t("%1$@ of %2$@", A11y.bytes(task.bytesDownloaded), A11y.bytes(task.totalBytes)),
                     A11y.eta(task.estimatedTimeRemaining)))
 
             if case .failed(let error) = task.status {
@@ -124,7 +124,7 @@ struct DetailPanelView: View {
                     .padding(10)
                     .frame(maxWidth: .infinity)
                     .background(Theme.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
-                    .accessibilityLabel("Download failed. \(error.message)")
+                    .accessibilityLabel(L10n.t("Download failed. %@", error.message))
             }
         }
         .padding(.horizontal, 16)
@@ -140,44 +140,46 @@ struct DetailPanelView: View {
     private func facts(for task: DownloadTask) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if task.kind == .torrent {
-                KVRow(key: "Share ratio", value: String(format: "%.2f", task.shareRatio))
-                KVRow(key: "Uploaded", value: task.bytesUploaded.byteString)
-                KVRow(key: "Peers", value: task.swarmSummary.value)
-                KVRow(key: "Leechers", value: "\(task.leecherCount)")
+                KVRow(key: L10n.t("Share ratio"), value: String(format: "%.2f", task.shareRatio))
+                KVRow(key: L10n.t("Uploaded"), value: task.bytesUploaded.byteString)
+                KVRow(key: L10n.t("Peers"), value: task.swarmSummary.value)
+                KVRow(key: L10n.t("Leechers"), value: "\(task.leecherCount)")
                 if let limit = task.seedRatioLimit, limit > 0 {
                     let pct = Int(((task.seedRatioProgress ?? 0) * 100).rounded())
-                    KVRow(key: "Seed target",
-                          value: String(format: "ratio %.1f · %d%%", limit, pct),
+                    KVRow(key: L10n.t("Seed target"),
+                          value: L10n.t("ratio %.1f · %d%%", limit, pct),
                           valueColor: Theme.teal)
                 }
             } else {
-                KVRow(key: "Connections", value: "\(task.connectionCount)")
+                KVRow(key: L10n.t("Connections"), value: "\(task.connectionCount)")
             }
             if let label = task.label {
-                KVRow(key: "Label", value: label, valueColor: Theme.accent)
+                KVRow(key: L10n.t("Label"), value: label, valueColor: Theme.accent)
             }
             if !task.allTags.isEmpty {
-                KVRow(key: "Tags", value: task.allTags.joined(separator: ", "), valueColor: Theme.teal)
+                KVRow(key: L10n.t("Tags"), value: task.allTags.joined(separator: ", "), valueColor: Theme.teal)
             }
             if let note = task.note, !note.isEmpty {
-                KVRow(key: "Note", value: note)
+                KVRow(key: L10n.t("Note"), value: note)
             }
             if let referer = task.referer, !referer.isEmpty {
-                KVRow(key: "Referer", value: referer, copyable: true)
+                KVRow(key: L10n.t("Referer"), value: referer, copyable: true)
             }
             if let headers = task.requestHeaders, !headers.isEmpty {
-                KVRow(key: "Headers", value: "\(headers.count) custom")
+                KVRow(key: L10n.t("Headers"), value: L10n.t("%d custom", headers.count))
             }
             // Cookie STATE only — never the value, and never `copyable`.
             if let cookieSource = task.cookieSource, cookieSource != .none {
-                KVRow(key: "Cookies",
-                      value: task.cookieHeader.map { "\(CookieHeader.count(in: $0)) attached · \(cookieSource.displayName)" }
-                          ?? "Not loaded — re-import from \(cookieSource.displayName)")
+                KVRow(key: L10n.t("Cookies"),
+                      value: task.cookieHeader.map {
+                          L10n.t("%1$@ attached · %2$@",
+                                 String(CookieHeader.count(in: $0)), cookieSource.displayName)
+                      } ?? L10n.t("Not loaded — re-import from %@", cookieSource.displayName))
             }
-            KVRow(key: "Priority", value: task.priority.displayName)
-            KVRow(key: "Added", value: task.addedString)
-            KVRow(key: "Save path", value: task.savePath, copyable: true)
-            KVRow(key: "Source", value: task.sourceLocator, copyable: true)
+            KVRow(key: L10n.t("Priority"), value: L10n.t(task.priority.displayName))
+            KVRow(key: L10n.t("Added"), value: task.addedString)
+            KVRow(key: L10n.t("Save path"), value: task.savePath, copyable: true)
+            KVRow(key: L10n.t("Source"), value: task.sourceLocator, copyable: true)
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 14)
@@ -192,8 +194,8 @@ struct DetailPanelView: View {
             .padding(12)
             Spacer(minLength: 0)
             EmptyStateView(systemImage: "doc.text.magnifyingglass",
-                           title: "No selection",
-                           subtitle: "Select a download to see its progress, live speed, and details.",
+                           title: L10n.t("No selection"),
+                           subtitle: L10n.t("Select a download to see its progress, live speed, and details."),
                            symbolSize: 40)
                 .padding(.horizontal, 30)
             Spacer(minLength: 0)

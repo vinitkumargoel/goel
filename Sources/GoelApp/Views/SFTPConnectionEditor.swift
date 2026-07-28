@@ -59,30 +59,30 @@ struct SFTPConnectionEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(existing == nil ? "Add SFTP Server" : "Edit SFTP Server")
+            Text(existing == nil ? L10n.t("Add SFTP Server") : L10n.t("Edit SFTP Server"))
                 .font(.system(size: 15, weight: .semibold))
                 .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 12)
             Divider()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    field("Name", "My Server (optional)", $name)
+                    field(L10n.t("Name"), L10n.t("My Server (optional)"), $name)
                     HStack(spacing: 10) {
-                        field("Host", "example.com", $host).frame(maxWidth: .infinity)
-                        field("Port", "22", $port).frame(width: 80)
+                        field(L10n.t("Host"), "example.com", $host).frame(maxWidth: .infinity)
+                        field(L10n.t("Port"), "22", $port).frame(width: 80)
                     }
                     if !portIsValid {
-                        Text("Port must be a number between 1 and 65535.")
+                        Text(L10n.t("Port must be a number between 1 and 65535."))
                             .font(.system(size: 10)).foregroundStyle(Theme.red)
                     }
-                    field("Username", "user", $username)
-                    labeled("Password") {
-                        SecureField(existing == nil ? "password" : "•••••• (unchanged)", text: $password)
+                    field(L10n.t("Username"), L10n.t("user"), $username)
+                    labeled(L10n.t("Password")) {
+                        SecureField(existing == nil ? L10n.t("password") : L10n.t("•••••• (unchanged)"), text: $password)
                             .textFieldStyle(.roundedBorder)
                     }
                     privateKeyControls
-                    field("Start folder", ".", $initialPath)
-                    Toggle("Also try the SSH agent", isOn: $useAgent)
+                    field(L10n.t("Start folder"), ".", $initialPath)
+                    Toggle(L10n.t("Also try the SSH agent"), isOn: $useAgent)
                         .font(.system(size: 12))
 
                     if existing != nil { hostKeyResetControl }
@@ -94,12 +94,12 @@ struct SFTPConnectionEditor: View {
 
             Divider()
             HStack {
-                Button("Test") { runTest() }
+                Button(L10n.t("Test")) { runTest() }
                     .disabled(!canSave || testing)
                 if testing { ProgressView().controlSize(.small) }
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
+                Button(L10n.t("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(L10n.t("Save")) { save() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(!canSave)
@@ -107,11 +107,11 @@ struct SFTPConnectionEditor: View {
             .padding(.horizontal, 20).padding(.vertical, 14)
         }
         .frame(width: 460)
-        .alert("Reset the pinned host key?", isPresented: $confirmingHostKeyReset) {
-            Button("Cancel", role: .cancel) { }
-            Button("Reset Key", role: .destructive) { resetPinnedHostKey() }
+        .alert(L10n.t("Reset the pinned host key?"), isPresented: $confirmingHostKeyReset) {
+            Button(L10n.t("Cancel"), role: .cancel) { }
+            Button(L10n.t("Reset Key"), role: .destructive) { resetPinnedHostKey() }
         } message: {
-            Text("Goel will trust whatever key \(pinnedEndpointHost) presents next. Only do this after a legitimate server rekey, then re-verify with Test.")
+            Text(L10n.t("Goel will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test.", pinnedEndpointHost))
         }
     }
 
@@ -133,14 +133,14 @@ struct SFTPConnectionEditor: View {
     @ViewBuilder
     private var privateKeyControls: some View {
         VStack(alignment: .leading, spacing: 6) {
-            labeled("Private key") {
+            labeled(L10n.t("Private key")) {
                 HStack(spacing: 8) {
-                    TextField("None — password or agent only", text: $privateKeyPath)
+                    TextField(L10n.t("None — password or agent only"), text: $privateKeyPath)
                         .textFieldStyle(.roundedBorder)
                         .autocorrectionDisabled()
                         .font(.system(size: 11, design: .monospaced))
-                        .help("Path to an SSH private key, e.g. ~/.ssh/id_ed25519")
-                    Button("Choose…") { chooseKey() }
+                        .help(L10n.t("Path to an SSH private key, e.g. ~/.ssh/id_ed25519"))
+                    Button(L10n.t("Choose…")) { chooseKey() }
                     if !privateKeyPath.isEmpty {
                         Button {
                             privateKeyPath = ""
@@ -151,21 +151,21 @@ struct SFTPConnectionEditor: View {
                         }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
-                        .help("Remove the private key")
-                        .a11yButton("Remove the private key")
+                        .help(L10n.t("Remove the private key"))
+                        .a11yButton(L10n.t("Remove the private key"))
                     }
                 }
             }
             if !privateKeyPath.isEmpty {
-                labeled("Key passphrase") {
-                    SecureField(existing?.privateKeyPath == nil ? "leave blank if the key has none"
-                                                               : "•••••• (unchanged)",
+                labeled(L10n.t("Key passphrase")) {
+                    SecureField(existing?.privateKeyPath == nil ? L10n.t("leave blank if the key has none")
+                                                               : L10n.t("•••••• (unchanged)"),
                                 text: $keyPassphrase)
                         .textFieldStyle(.roundedBorder)
                         .onChange(of: keyPassphrase) { _, _ in keyPassphraseEdited = true }
                 }
                 if !FileManager.default.isReadableFile(atPath: expandedKeyPath) {
-                    Text("Goel can't read that file — check the path and its permissions.")
+                    Text(L10n.t("Goel can't read that file — check the path and its permissions."))
                         .font(.system(size: 10)).foregroundStyle(Theme.red)
                 }
             }
@@ -184,8 +184,8 @@ struct SFTPConnectionEditor: View {
         panel.allowsMultipleSelection = false
         panel.showsHiddenFiles = true
         panel.treatsFilePackagesAsDirectories = true
-        panel.message = "Choose an SSH private key (for example id_ed25519 — not the .pub file)."
-        panel.prompt = "Choose"
+        panel.message = L10n.t("Choose an SSH private key (for example id_ed25519 — not the .pub file).")
+        panel.prompt = L10n.t("Choose")
         panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".ssh")
         if panel.runModal() == .OK, let url = panel.url {
             privateKeyPath = url.path
@@ -200,13 +200,13 @@ struct SFTPConnectionEditor: View {
             Button {
                 confirmingHostKeyReset = true
             } label: {
-                Label("Reset pinned host key", systemImage: "key.slash")
+                Label(L10n.t("Reset pinned host key"), systemImage: "key.slash")
                     .scaledFont(size: 11)
             }
             .buttonStyle(.link)
-            .help("Forget the saved SSH host-key fingerprint. Use this only after a legitimate server rekey, then re-verify with Test.")
+            .help(L10n.t("Forget the saved SSH host-key fingerprint. Use this only after a legitimate server rekey, then re-verify with Test."))
             if hostKeyReset {
-                Text("Pinned key cleared — Goel will ask you to confirm the key on the next connection.")
+                Text(L10n.t("Pinned key cleared — Goel will ask you to confirm the key on the next connection."))
                     .scaledFont(size: 10).foregroundStyle(.secondary)
             }
         }
@@ -217,26 +217,26 @@ struct SFTPConnectionEditor: View {
         switch result {
         case .success(let fp):
             VStack(alignment: .leading, spacing: 3) {
-                Label("Connected successfully", systemImage: "checkmark.seal.fill")
+                Label(L10n.t("Connected successfully"), systemImage: "checkmark.seal.fill")
                     .foregroundStyle(Theme.green).scaledFont(size: 12, weight: .semibold)
-                Text("Host key SHA-256:").scaledFont(size: 10).foregroundStyle(.secondary)
+                Text(L10n.t("Host key SHA-256:")).scaledFont(size: 10).foregroundStyle(.secondary)
                     .a11yDecorative()
                 Text(fp).scaledFont(size: 10, design: .monospaced)
                     .foregroundStyle(.secondary).textSelection(.enabled).lineLimit(2)
                     // Spelled out character by character: base64 read as words cannot be checked against `ssh-keygen -lf`.
-                    .accessibilityLabel("Host key SHA-256 fingerprint")
+                    .accessibilityLabel(L10n.t("Host key SHA-256 fingerprint"))
                     .accessibilityValue(fp.map { "\($0) " }.joined())
             }
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("Connection test succeeded")
+            .accessibilityLabel(L10n.t("Connection test succeeded"))
         case .failure(let message, let detail, let retry):
             VStack(alignment: .leading, spacing: 6) {
                 Label(message, systemImage: "xmark.octagon.fill")
                     .foregroundStyle(Theme.red).scaledFont(size: 12)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Connection test failed. \(message)")
+                    .accessibilityLabel(L10n.t("Connection test failed. %@", message))
                 if let retry {
                     Button {
                         switch retry {
@@ -244,13 +244,13 @@ struct SFTPConnectionEditor: View {
                         case .save: save()
                         }
                     } label: {
-                        Label("Try again", systemImage: "arrow.clockwise")
+                        Label(L10n.t("Try again"), systemImage: "arrow.clockwise")
                             .scaledFont(size: 11)
                     }
                     .disabled(testing)
                 }
                 if let detail {
-                    DisclosureGroup("Technical detail") {
+                    DisclosureGroup(L10n.t("Technical detail")) {
                         Text(detail)
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
@@ -273,7 +273,7 @@ struct SFTPConnectionEditor: View {
 
     private func resetPinnedHostKey() {
         guard HostKeyStore.shared.reset(host: pinnedEndpointHost, port: pinnedEndpointPort) else {
-            testResult = .failure("Goel couldn’t clear the saved host key for \(pinnedEndpointHost).",
+            testResult = .failure(L10n.t("Goel couldn’t clear the saved host key for %@.", pinnedEndpointHost),
                                   detail: nil)
             return
         }
@@ -320,7 +320,7 @@ struct SFTPConnectionEditor: View {
                 client = c
             case .incomplete:
                 testing = false
-                testResult = .failure("Enter a host and username first.", detail: nil)
+                testResult = .failure(L10n.t("Enter a host and username first."), detail: nil)
                 return
             case .credentialsUnavailable(let lookup):
                 let e = SFTPError.credentialsUnavailable(lookup, host: connection.host)
@@ -352,13 +352,13 @@ struct SFTPConnectionEditor: View {
         guard outcome.didStore else {
             testResult = .failure(
                 outcome.isRetryable
-                    ? "The server was saved, but Goel wasn't allowed to store the secret in your Keychain. Choose Allow when macOS asks, then try again."
-                    : "The server was saved, but its secret couldn't be written to your Keychain.",
+                    ? L10n.t("The server was saved, but Goel wasn't allowed to store the secret in your Keychain. Choose Allow when macOS asks, then try again.")
+                    : L10n.t("The server was saved, but its secret couldn't be written to your Keychain."),
                 detail: outcome.statusDetail,
                 retry: outcome.isRetryable ? .save : nil)
             return
         }
-        vm.toastNow(isNew ? "Server added" : "Server saved")
+        vm.toastNow(isNew ? L10n.t("Server added") : L10n.t("Server saved"))
         dismiss()
     }
 }

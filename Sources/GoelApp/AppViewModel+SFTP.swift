@@ -63,7 +63,7 @@ extension AppViewModel {
         SFTPBrowserLocationStore.shared.removePath(for: id)
         SFTPConnectionStore.shared.remove(id)
         reloadServers()
-        toastNow("Server removed")
+        toastNow(L10n.t("Server removed"))
     }
 
     func selectServer(_ id: SFTPConnection.ID) {
@@ -73,7 +73,7 @@ extension AppViewModel {
 
     func revealSFTPTransfer(_ transfer: SFTPTransfer) {
         guard server(transfer.connectionID) != nil else {
-            toastNow("Server is no longer available")
+            toastNow(L10n.t("Server is no longer available"))
             return
         }
         sftpBrowserNavigation = SFTPBrowserNavigationRequest(
@@ -107,11 +107,11 @@ extension AppViewModel {
         }
         let count = active.count
         requestConfirm(
-            title: "Disconnect from “\(connection.label)”?",
+            title: L10n.t("Disconnect from “%@”?", connection.label),
             message: count == 1
-                ? "“\(active[0].name)” is still transferring. It will stop and be removed from the list."
-                : "\(count) transfers are still running. They will stop and be removed from the list.",
-            confirmTitle: "Disconnect",
+                ? L10n.t("“%@” is still transferring. It will stop and be removed from the list.", active[0].name)
+                : L10n.t("%d transfers are still running. They will stop and be removed from the list.", count),
+            confirmTitle: L10n.t("Disconnect"),
             destructive: true
         ) { [weak self] in
             guard let self else { return }
@@ -130,7 +130,7 @@ extension AppViewModel {
         if sftpBrowserNavigation?.connectionID == id { sftpBrowserNavigation = nil }
         serverTestsInFlight.remove(id)
         osProbesInFlight.remove(id)
-        toastNow("Disconnected")
+        toastNow(L10n.t("Disconnected"))
     }
 
     func reconnectServer(_ id: SFTPConnection.ID) {
@@ -139,7 +139,7 @@ extension AppViewModel {
         selectedServer = id
         osProbesInFlight.remove(id)
         bumpBrowserGeneration()
-        toastNow("Reconnecting…")
+        toastNow(L10n.t("Reconnecting…"))
         Task { await refreshServerStatuses() }
     }
 
@@ -149,7 +149,7 @@ extension AppViewModel {
         guard !serverTestsInFlight.contains(id) else { return }
         guard let client = sftpClientReportingFailure(for: connection) else { return }
         serverTestsInFlight.insert(id)
-        toastNow("Testing “\(connection.label)”…")
+        toastNow(L10n.t("Testing “%@”…", connection.label))
         let endpoint = "\(connection.username)@\(connection.host)"
         Task { [weak self] in
             let started = Date()
@@ -157,11 +157,11 @@ extension AppViewModel {
             do {
                 _ = try await client.probe()
                 let ms = Int((Date().timeIntervalSince(started) * 1000).rounded())
-                outcome = "Connected as \(endpoint) · \(ms) ms"
+                outcome = L10n.t("Connected as %1$@ · %2$d ms", endpoint, ms)
             } catch let error as SFTPError {
-                outcome = "Couldn’t connect: \(error.message)"
+                outcome = L10n.t("Couldn’t connect: %@", error.message)
             } catch {
-                outcome = "Couldn’t connect: \(error.localizedDescription)"
+                outcome = L10n.t("Couldn’t connect: %@", error.localizedDescription)
             }
             guard let self else { return }
             self.serverTestsInFlight.remove(id)
@@ -188,7 +188,7 @@ extension AppViewModel {
             return
         }
         hostKeyReadsInFlight.insert(id)
-        toastNow("Reading host key…")
+        toastNow(L10n.t("Reading host key…"))
         Task { [weak self] in
             let live: HostKeyInspector.LiveKey
             do {
@@ -211,23 +211,23 @@ extension AppViewModel {
     func forgetHostKey(_ connection: SFTPConnection) {
         let host = connection.host, port = connection.port
         requestConfirm(
-            title: "Forget the host key for “\(connection.label)”?",
-            message: """
+            title: L10n.t("Forget the host key for “%@”?", connection.label),
+            message: L10n.t("""
                 Goel will stop checking this server against its saved key and will ask \
                 you to confirm the key on the next connection.
 
                 Do this only after you rekeyed the server yourself. If the key changed \
                 for any other reason, forgetting it accepts whatever is answering.
-                """,
-            confirmTitle: "Forget Key",
+                """),
+            confirmTitle: L10n.t("Forget Key"),
             destructive: true
         ) { [weak self] in
             guard let self else { return }
             guard HostKeyStore.shared.reset(host: host, port: port) else {
-                self.toastNow("Couldn’t clear the saved host key for \(host)")
+                self.toastNow(L10n.t("Couldn’t clear the saved host key for %@", host))
                 return
             }
-            self.toastNow("Host key forgotten — you’ll be asked to confirm it next connection")
+            self.toastNow(L10n.t("Host key forgotten — you’ll be asked to confirm it next connection"))
         }
     }
 
@@ -249,12 +249,12 @@ extension AppViewModel {
     /// This leaves Goel: the external client uses its own `known_hosts`, not our pinned key.
     func openServerInTerminal(_ connection: SFTPConnection) {
         guard let url = sshURL(for: connection) else {
-            toastNow("This server’s address can’t be opened in Terminal")
+            toastNow(L10n.t("This server’s address can’t be opened in Terminal"))
             return
         }
         #if canImport(AppKit)
         guard NSWorkspace.shared.open(url) else {
-            toastNow("No app is set up to open ssh:// links")
+            toastNow(L10n.t("No app is set up to open ssh:// links"))
             return
         }
         #endif
@@ -270,11 +270,12 @@ extension AppViewModel {
         case .ready(let client):
             return (client, nil)
         case .incomplete:
-            return (nil, "This server is misconfigured.")
+            return (nil, L10n.t("This server is misconfigured."))
         case .credentialsUnavailable(let lookup):
             return (nil, lookup.isRetryable
-                ? "Goel wasn't allowed to read this server's saved secret from your Keychain. Try again and choose Allow."
-                : "This server's saved secret couldn't be read from your Keychain.")
+                ? L10n.t("Goel wasn't allowed to read this server's saved secret from your "
+                    + "Keychain. Try again and choose Allow.")
+                : L10n.t("This server's saved secret couldn't be read from your Keychain."))
         }
     }
 

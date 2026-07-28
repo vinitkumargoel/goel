@@ -25,16 +25,16 @@ final class HostKeyApprovalPresenter: HostKeyApproving {
     private func present(endpoint: String, fingerprint: String) async -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Is this really \(endpoint)?"
-        alert.informativeText = """
+        alert.messageText = L10n.t("Is this really %@?", endpoint)
+        alert.informativeText = L10n.t("""
             Goel has never connected to this server, so it can't tell whether the \
             machine answering is yours. Compare the fingerprint below with the one \
             the server reports for its own host key, then decide.
 
             Goel remembers the key you accept and refuses to connect if it changes.
-            """
-        alert.addButton(withTitle: "Connect and Remember")
-        alert.addButton(withTitle: "Cancel")
+            """)
+        alert.addButton(withTitle: L10n.t("Connect and Remember"))
+        alert.addButton(withTitle: L10n.t("Cancel"))
         alert.accessoryView = Self.fingerprintView(fingerprint)
 
         // No window yet: fall back to app-modal rather than skipping the question.
@@ -49,7 +49,7 @@ final class HostKeyApprovalPresenter: HostKeyApproving {
     }
 
     private static func fingerprintView(_ fingerprint: String) -> NSView {
-        let field = NSTextField(labelWithString: "SHA-256: \(fingerprint)")
+        let field = NSTextField(labelWithString: L10n.t("SHA-256: %@", fingerprint))
         field.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         field.isSelectable = true
         field.maximumNumberOfLines = 0
@@ -57,7 +57,7 @@ final class HostKeyApprovalPresenter: HostKeyApproving {
         field.preferredMaxLayoutWidth = 280
         field.frame = NSRect(x: 0, y: 0, width: 280, height: 46)
         // Spelled out per character: read as words the fingerprint can't be verified by ear.
-        field.setAccessibilityLabel("Host key SHA-256 fingerprint")
+        field.setAccessibilityLabel(L10n.t("Host key SHA-256 fingerprint"))
         field.setAccessibilityValue(fingerprint.map { "\($0) " }.joined())
         return field
     }

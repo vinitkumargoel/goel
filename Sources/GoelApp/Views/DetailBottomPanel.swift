@@ -60,7 +60,7 @@ struct DetailBottomPanel: View {
                     .padding(9)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-                    .accessibilityLabel("Download failed. \(error.message)")
+                    .accessibilityLabel(L10n.t("Download failed. %@", error.message))
             }
 
             Spacer(minLength: 0)
@@ -72,11 +72,11 @@ struct DetailBottomPanel: View {
 
     private func telemetryZone(for task: DownloadTask) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("LIVE THROUGHPUT")
+            Text(L10n.t("LIVE THROUGHPUT"))
                 .scaledFont(size: 10, weight: .bold)
                 .tracking(0.7)
                 .foregroundStyle(.tertiary)
-                .accessibilityLabel("Live throughput")
+                .accessibilityLabel(L10n.t("Live throughput"))
                 .accessibilityAddTraits(.isHeader)
 
             HStack(spacing: 12) {
@@ -87,7 +87,7 @@ struct DetailBottomPanel: View {
                     DetailSpeedStat(symbol: "arrow.down",
                                     speed: vm.displaySpeed(for: task).down,
                                     color: Theme.green, size: 16)
-                    Text("last 60s").scaledFont(size: 10).foregroundStyle(.tertiary)
+                    Text(L10n.t("last 60s")).scaledFont(size: 10).foregroundStyle(.tertiary)
                 }
                 .fixedSize()
             }
@@ -95,14 +95,14 @@ struct DetailBottomPanel: View {
             Spacer(minLength: 0)
 
             HStack(alignment: .top, spacing: 16) {
-                telStat("Up") {
+                telStat(L10n.t("Up")) {
                     DetailSpeedStat(symbol: "arrow.up", speed: vm.displaySpeed(for: task).up, color: Theme.teal, size: 12)
                 }
-                telStat("ETA") {
+                telStat(L10n.t("ETA")) {
                     Text(task.etaText ?? "—")
                         .scaledFont(size: 12.5, weight: .semibold, monospacedDigit: true)
                 }
-                telStat(task.swarmSummary.label) {
+                telStat(L10n.t(task.swarmSummary.label)) {
                     Text(task.swarmSummary.value)
                         .scaledFont(size: 12.5, weight: .semibold, monospacedDigit: true)
                         .lineLimit(1)
@@ -130,13 +130,13 @@ struct DetailBottomPanel: View {
             HStack(spacing: 10) {
                 Picker("", selection: $vm.detailTab) {
                     ForEach(DetailTab.allCases) { tab in
-                        Text(tab.rawValue).tag(tab)
+                        Text(L10n.t(tab.rawValue)).tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(maxWidth: 440)
-                .accessibilityLabel("Detail section")
+                .accessibilityLabel(L10n.t("Detail section"))
                 Spacer(minLength: 8)
                 PanelDockToggle()
             }
@@ -179,16 +179,16 @@ struct DetailBottomPanel: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.bottom, 10)
-            .a11yGroup(label: "Progress", value: task.accessibilityProgressValue)
+            .a11yGroup(label: L10n.t("Progress"), value: task.accessibilityProgressValue)
 
             if task.kind == .torrent {
-                KVRow(key: "Uploaded", value: task.bytesUploaded.byteString)
-                KVRow(key: "Share ratio", value: String(format: "%.2f", task.shareRatio))
+                KVRow(key: L10n.t("Uploaded"), value: task.bytesUploaded.byteString)
+                KVRow(key: L10n.t("Share ratio"), value: String(format: "%.2f", task.shareRatio))
             }
-            KVRow(key: "Priority", value: task.priority.displayName)
-            KVRow(key: "Added", value: task.addedString)
-            KVRow(key: "Save path", value: task.savePath, copyable: true)
-            KVRow(key: "Source", value: task.sourceLocator, copyable: true)
+            KVRow(key: L10n.t("Priority"), value: L10n.t(task.priority.displayName))
+            KVRow(key: L10n.t("Added"), value: task.addedString)
+            KVRow(key: L10n.t("Save path"), value: task.savePath, copyable: true)
+            KVRow(key: L10n.t("Source"), value: task.sourceLocator, copyable: true)
 
             TaskSpeedGraph(taskID: task.id)
                 .padding(.top, 14)
@@ -204,8 +204,8 @@ struct DetailBottomPanel: View {
             .padding(12)
             Spacer(minLength: 0)
             EmptyStateView(systemImage: "doc.text.magnifyingglass",
-                           title: "No selection",
-                           subtitle: "Select a download to see its details, progress, and live throughput.",
+                           title: L10n.t("No selection"),
+                           subtitle: L10n.t("Select a download to see its details, progress, and live throughput."),
                            symbolSize: 30)
             Spacer(minLength: 0)
         }
@@ -226,11 +226,11 @@ struct PanelDockToggle: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .help(vm.detailPanelPosition == .right ? "Dock panel to bottom" : "Dock panel to right")
+        .help(vm.detailPanelPosition == .right ? L10n.t("Dock panel to bottom") : L10n.t("Dock panel to right"))
         .a11yButton(vm.detailPanelPosition == .right
-                    ? "Dock detail panel to the bottom"
-                    : "Dock detail panel to the right")
+                    ? L10n.t("Dock detail panel to the bottom")
+                    : L10n.t("Dock detail panel to the right"))
         .accessibilityValue(vm.detailPanelPosition == .right
-                            ? "Currently docked right" : "Currently docked bottom")
+                            ? L10n.t("Currently docked right") : L10n.t("Currently docked bottom"))
     }
 }

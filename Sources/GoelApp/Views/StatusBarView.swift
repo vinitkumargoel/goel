@@ -12,14 +12,14 @@ struct StatusBarView: View {
             stat(symbol: "arrow.up", speed: vm.displayedCombinedSpeed.up, color: Theme.teal)
             if !activeTransfers.isEmpty { transfersIndicator }
             Spacer()
-            Text("Profile").scaledFont(size: 11).foregroundStyle(.tertiary)
+            Text(L10n.t("Profile")).scaledFont(size: 11).foregroundStyle(.tertiary)
                 .a11yDecorative()
             profilePicker
         }
         .padding(.horizontal, 14)
         .frame(height: 38)
         .background(.bar)
-        .accessibilityLabel("Status bar")
+        .accessibilityLabel(L10n.t("Status bar"))
     }
 
     private var activeTransfers: [SFTPTransfer] { vm.sftpTransfers.filter { $0.isActive } }
@@ -37,22 +37,22 @@ struct StatusBarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("SFTP transfers")
-        .a11yButton("SFTP transfers", hint: "Activate to list transfers in progress.")
-        .accessibilityValue("\(activeTransfers.count) in progress")
+        .help(L10n.t("SFTP transfers"))
+        .a11yButton(L10n.t("SFTP transfers"), hint: L10n.t("Activate to list transfers in progress."))
+        .accessibilityValue(L10n.t("%d in progress", activeTransfers.count))
         .popover(isPresented: $showTransfers, arrowEdge: .bottom) { transfersPopover }
     }
 
     private var transfersPopover: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("SFTP Transfers").scaledFont(size: 12, weight: .bold)
+                Text(L10n.t("SFTP Transfers")).scaledFont(size: 12, weight: .bold)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if vm.sftpTransfers.contains(where: { !$0.isActive }) {
-                    Button("Clear") { vm.clearFinishedSFTPTransfers() }
+                    Button(L10n.t("Clear")) { vm.clearFinishedSFTPTransfers() }
                         .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
-                        .accessibilityLabel("Clear finished transfers")
+                        .accessibilityLabel(L10n.t("Clear finished transfers"))
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -62,7 +62,7 @@ struct StatusBarView: View {
                     ForEach(vm.sftpTransfers) { t in
                         SFTPTransferRow(
                             transfer: t, density: .compact,
-                            serverLabel: vm.server(t.connectionID)?.label ?? "Server",
+                            serverLabel: vm.server(t.connectionID)?.label ?? L10n.t("Server"),
                             onCancel: { vm.requestCancelSFTPTransfer(t.id) },
                             onRetry: { vm.retrySFTPTransfer(t.id) },
                             onShowRemoteFolder: {
@@ -86,7 +86,7 @@ struct StatusBarView: View {
                 Snail()
                     .stroke(style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
                     .frame(width: 15, height: 15)
-                Text(vm.settings.speedLimitEnabled ? vm.settings.selectedProfileName : "Unlimited")
+                Text(vm.settings.speedLimitEnabled ? vm.settings.selectedProfileName : L10n.t("Unlimited"))
                     .scaledFont(size: 11.5, weight: .medium)
             }
             .padding(.horizontal, 10)
@@ -100,13 +100,13 @@ struct StatusBarView: View {
         }
         .buttonStyle(.plain)
         .disabled(locked)
-        .help(locked ? AppViewModel.managedFootnote : "Toggle global speed limit")
-        .a11yButton("Global speed limit",
+        .help(locked ? AppViewModel.managedFootnote : L10n.t("Toggle global speed limit"))
+        .a11yButton(L10n.t("Global speed limit"),
                     hint: locked ? AppViewModel.managedFootnote
-                                 : "Activate to turn the speed limit on or off.")
+                                 : L10n.t("Activate to turn the speed limit on or off."))
         .accessibilityValue(vm.settings.speedLimitEnabled
-                            ? "On, \(vm.settings.selectedProfileName) profile"
-                            : "Off, unlimited")
+                            ? L10n.t("On, %@ profile", vm.settings.selectedProfileName)
+                            : L10n.t("Off, unlimited"))
     }
 
     private func stat(symbol: String, speed: Double, color: Color) -> some View {
@@ -116,7 +116,7 @@ struct StatusBarView: View {
                 .frame(width: 72, alignment: .leading)
         }
         .foregroundStyle(color)
-        .a11yGroup(label: symbol == "arrow.up" ? "Total upload speed" : "Total download speed",
+        .a11yGroup(label: symbol == "arrow.up" ? L10n.t("Total upload speed") : L10n.t("Total download speed"),
                    value: A11y.speed(speed))
     }
 
@@ -140,14 +140,14 @@ struct StatusBarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(profile.name) speed profile")
+                .accessibilityLabel(L10n.t("%@ speed profile", profile.name))
                 .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(2)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Speed profile")
+        .accessibilityLabel(L10n.t("Speed profile"))
     }
 }
 

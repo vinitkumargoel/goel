@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../lib/api'
 import { fmtSize, fmtWhen } from '../lib/format'
 import { fileType, kindLabel } from '../lib/taskKind'
@@ -14,6 +15,7 @@ interface HistoryViewProps {
 }
 
 export function HistoryView({ canWrite, onReadd, onRemoved }: HistoryViewProps) {
+  const { t } = useTranslation()
   const [rows, setRows] = useState<HistoryRow[]>([])
   const [state, setState] = useState<LoadState>('loading')
 
@@ -44,25 +46,23 @@ export function HistoryView({ canWrite, onReadd, onRemoved }: HistoryViewProps) 
   return (
     <div className="view">
       <div className="pad">
-        <div className="ph">History</div>
-        <div className="psub">
-          Completed &amp; removed downloads. Re-queue any of them in one click.
-        </div>
+        <div className="ph">{t('common.history')}</div>
+        <div className="psub">{t('history.subtitle')}</div>
 
         <div className="card">
           {state === 'loading' && (
             <p className="fhint" style={{ padding: 8 }}>
-              Loading…
+              {t('common.loading')}
             </p>
           )}
           {state === 'error' && (
             <p className="fhint" style={{ padding: 14 }}>
-              Could not load history.
+              {t('history.loadError')}
             </p>
           )}
           {state === 'ready' && rows.length === 0 && (
             <p className="fhint" style={{ padding: 14 }}>
-              No history yet.
+              {t('history.empty')}
             </p>
           )}
           {state === 'ready' &&
@@ -96,9 +96,13 @@ export function HistoryView({ canWrite, onReadd, onRemoved }: HistoryViewProps) 
                       <>
                         <button className="mbtn" onClick={() => void onReadd(e.source)}>
                           <RetryIcon />
-                          Re-add
+                          {t('history.readd')}
                         </button>
-                        <button className="mbtn danger" onClick={() => void remove(e.id)}>
+                        <button
+                          className="mbtn danger"
+                          onClick={() => void remove(e.id)}
+                          aria-label={t('common.remove')}
+                        >
                           <TrashIcon />
                         </button>
                       </>

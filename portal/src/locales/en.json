@@ -1,0 +1,258 @@
+{
+  "common": {
+    "add": "Add",
+    "cancel": "Cancel",
+    "copy": "Copy",
+    "copyLink": "Copy link",
+    "create": "Create",
+    "download": "Download",
+    "history": "History",
+    "loading": "Loading…",
+    "off": "Off",
+    "on": "On",
+    "pause": "Pause",
+    "remove": "Remove",
+    "resume": "Resume",
+    "retry": "Retry",
+    "save": "Save",
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "stream": "Stream",
+    "turnOff": "Turn off",
+    "turnOn": "Turn on"
+  },
+
+  "status": {
+    "active": "Active",
+    "paused": "Paused",
+    "completed": "Completed",
+    "seeding": "Seeding",
+    "failed": "Failed"
+  },
+
+  "task": {
+    "priority": {
+      "low": "Low",
+      "normal": "Normal",
+      "high": "High",
+      "skip": "Skip"
+    }
+  },
+
+  "network": {
+    "noAddress": "no address",
+    "metered": "Metered"
+  },
+
+  "topbar": {
+    "menu": "Menu",
+    "web": "WEB",
+    "searchDownloads": "Search downloads",
+    "detailPanel": "Detail panel"
+  },
+
+  "sidebar": {
+    "library": "Library",
+    "allDownloads": "All downloads",
+    "status": "Status",
+    "tools": "Tools"
+  },
+
+  "statusbar": {
+    "downloads_one": "{{count}} download",
+    "downloads_other": "{{count}} downloads",
+    "signedIn": "Signed in"
+  },
+
+  "library": {
+    "readOnlyBanner": "Read-only mode — viewing & streaming only. Changes are disabled by the host.",
+    "colName": "Name",
+    "colSize": "Size",
+    "colStatus": "Status",
+    "colSpeed": "↓ Speed",
+    "emptyTitle": "Nothing here",
+    "emptyBody": "No downloads match this filter. Tap <bold>{{addLabel}}</bold> to queue a URL, magnet, or torrent.",
+    "confirmRemoveWithData": "Delete the downloaded files from disk too? This permanently removes them and can't be undone."
+  },
+
+  "menu": {
+    "copySourceLink": "Copy source link",
+    "forceRecheck": "Force recheck",
+    "removeFromList": "Remove from list",
+    "removeWithData": "Remove with data"
+  },
+
+  "toast": {
+    "copied": "Copied",
+    "copyFailed": "Couldn’t copy — select the text manually",
+    "paused": "Paused",
+    "resumed": "Resumed",
+    "retried": "Retried",
+    "rechecking": "Rechecking",
+    "removed": "Removed",
+    "removedWithData": "Removed with data",
+    "readded": "Re-added to queue",
+    "entryRemoved": "Entry removed",
+    "added": "Added to queue",
+    "addedMany": "Added {{count}} downloads",
+    "refused_one": "{{count}} refused — internal network address",
+    "refused_other": "{{count}} refused — internal network address"
+  },
+
+  "history": {
+    "subtitle": "Completed & removed downloads. Re-queue any of them in one click.",
+    "loadError": "Could not load history.",
+    "empty": "No history yet.",
+    "readd": "Re-add"
+  },
+
+  "detail": {
+    "emptyTitle": "No download selected",
+    "emptyBody": "Pick a download to see its files, peers, progress and options.",
+    "closePanel": "Close panel",
+    "tabs": {
+      "general": "General",
+      "details": "Details",
+      "progress": "Progress",
+      "files": "Files",
+      "peers": "Peers"
+    },
+    "general": {
+      "savePath": "Save path",
+      "downloaded": "Downloaded",
+      "uploaded": "Uploaded",
+      "shareRatio": "Share ratio",
+      "eta": "ETA",
+      "speed": "Speed",
+      "protocol": "Protocol",
+      "source": "Source"
+    },
+    "details": {
+      "infoHash": "Info hash",
+      "seeds": "Seeds",
+      "peers": "Peers",
+      "sequential": "Sequential",
+      "trackers": "Trackers",
+      "server": "Server",
+      "mime": "MIME",
+      "connections": "Connections",
+      "segments": "Segments"
+    },
+    "progress": {
+      "pieceMap": "Piece map · {{count}} buckets",
+      "segments_one": "{{count}} segment",
+      "segments_other": "{{count}} segments",
+      "hint": "Live piece/segment data appears here while the transfer runs."
+    },
+    "files": {
+      "singleFile": "Single-file download."
+    },
+    "peers": {
+      "summary": "{{seeds}} seeds · {{peers}} peers",
+      "colPeer": "Peer",
+      "colSegment": "Segment",
+      "colRange": "range",
+      "none": "No connected peers right now.",
+      "connections_one": "{{count}} connection",
+      "connections_other": "{{count}} connections",
+      "segmentHint": "Segment data appears while downloading."
+    }
+  },
+
+  "addDialog": {
+    "title": "Add download",
+    "urlLabel": "URL, magnet, FTP or SFTP link",
+    "urlPlaceholder": "https://example.com/file.iso\nmagnet:?xt=urn:btih:...\nsftp://user@host/path/file.zip",
+    "urlHint": "Paste multiple lines to batch-add. Torrents/files download to the server running Goel°.",
+    "saveTo": "Save to",
+    "serverFolder": "Server folder",
+    "defaultFolder": "Default downloads folder",
+    "browse": "Browse…",
+    "useDefaultFolder": "Use the default folder",
+    "priority": "Priority",
+    "network": "Network",
+    "modeAutoSplit": "Automatic — split across every eligible interface",
+    "modeAutoDefault": "Automatic — use the system default route",
+    "modeSplit": "Split this download across interfaces",
+    "modeSingle": "Send it all through one interface",
+    "splitHint": "This machine has {{count}} usable interfaces. Splitting only helps when each has its own upstream link — two adapters behind the same router share one pipe and are usually slower together than the faster one alone.",
+    "addPaused": "Add paused",
+    "adding": "Adding…",
+    "submit": "Add to queue",
+    "pickInterface": "Pick at least one interface",
+    "enterUrl": "Enter a URL or magnet first"
+  },
+
+  "folderPicker": {
+    "title": "Choose a folder",
+    "computer": "Computer",
+    "home": "Home",
+    "noPermission": "{{path}} — no permission to open",
+    "openError": "Could not open that folder",
+    "listError": "Could not list folders",
+    "readError": "Could not read that folder.",
+    "nameFirst": "Name the folder first",
+    "upOneLevel": "Up one level",
+    "noAccess": "no access",
+    "noSubfolders": "No subfolders here.",
+    "useOrCreate": "Use this folder, or make a new one.",
+    "useThis": "Use this folder.",
+    "newFolderPlaceholder": "New folder name",
+    "newFolder": "New folder",
+    "noWritePermission": "No permission to write here",
+    "usePick": "Use this folder"
+  },
+
+  "settings": {
+    "subtitle": "These apply to your browser. Server options (port, sign-in, password) are managed in the desktop app under Settings → Web Access.",
+    "theme": {
+      "name": "Web theme",
+      "desc": "Independent of the desktop app — this choice is remembered in <bold>this browser</bold> only. The desktop sets the default a new browser starts with.",
+      "toast": "Theme: {{theme}}"
+    },
+    "access": {
+      "name": "Access",
+      "readOnly": "Read-only",
+      "fullControl": "Full control",
+      "signedInAs": "Signed in as <bold>{{username}}</bold>.",
+      "descReadOnly": "This session can view and stream but not change downloads.",
+      "descFull": "This session can add, remove, and manage downloads."
+    },
+    "desktop": {
+      "name": "Managed on the desktop",
+      "chip": "Desktop",
+      "desc": "Port, sign-in username/password, LAN access, read-only, and session length live in the app (Settings → Web Access). A native folder picker, Reveal in Finder, clipboard capture, and notifications also stay on the Mac running Goel°."
+    },
+    "signOut": {
+      "desc": "End this browser session."
+    },
+    "network": {
+      "saved": "Network settings saved",
+      "readError": "Could not read the network configuration.",
+      "loading": "Loading network…",
+      "splitName": "Split downloads across interfaces",
+      "splitDesc": "Opens connections on several interfaces at once. Faster only when each interface has its own upstream link — two adapters behind the same router share one pipe and are usually slower together than the faster one alone.",
+      "splitDescSingle": "This machine has one usable interface, so there is nothing to split across.",
+      "notSplitting": "Not splitting right now — {{reason}}",
+      "lockedDesc": "GOEL_AGGREGATION is set in <path>/etc/goel/config</path>, so a change made here is reverted the next time the service restarts. Run <cmd>goel config set aggregation on|off</cmd> on the server to make it permanent.",
+      "interfaces": "Interfaces",
+      "interfacesDesc": "Ticked interfaces are the ones a split may use. Leave them all ticked to use every eligible one.",
+      "unavailable": "Unavailable",
+      "streamsName": "Connections per interface",
+      "streamsDesc": "More streams help on high-latency links and hurt against servers that throttle per connection.",
+      "applyDesc": "Applies to new downloads; running ones keep the interfaces they started on.",
+      "tickAtLeastOne": "Tick at least one interface"
+    }
+  },
+
+  "api": {
+    "unreachable": "Could not reach the server",
+    "notSignedIn": "Not signed in",
+    "changeBlocked": "Change blocked",
+    "requestFailed": "Request failed ({{status}})"
+  },
+
+  "format": {
+    "today": "Today {{time}}"
+  }
+}

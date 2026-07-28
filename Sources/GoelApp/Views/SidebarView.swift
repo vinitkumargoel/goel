@@ -8,20 +8,20 @@ struct SidebarView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                group("Library") {
-                    item("All files", "tray.full", .all)
+                group(L10n.t("Library")) {
+                    item(L10n.t("All files"), "tray.full", .all)
                 }
-                group("Status") {
-                    item(vm.localized("Active"), "arrow.down.circle", .active)
-                    item(vm.localized("Paused"), "pause.circle", .paused)
-                    item(vm.localized("Completed"), "checkmark.circle", .completed)
-                    item(vm.localized("Seeding"), "arrow.up.circle", .seeding)
+                group(L10n.t("Status")) {
+                    item(L10n.t("Active"), "arrow.down.circle", .active)
+                    item(L10n.t("Paused"), "pause.circle", .paused)
+                    item(L10n.t("Completed"), "checkmark.circle", .completed)
+                    item(L10n.t("Seeding"), "arrow.up.circle", .seeding)
                 }
-                group("Type") {
-                    item("Video", "film", .type(.video))
-                    item("Disc images", "opticaldisc", .type(.iso))
-                    item("Archives", "doc.zipper", .type(.archive))
-                    item("Apps", "app.badge", .type(.app))
+                group(L10n.t("Type")) {
+                    item(L10n.t("Video"), "film", .type(.video))
+                    item(L10n.t("Disc images"), "opticaldisc", .type(.iso))
+                    item(L10n.t("Archives"), "doc.zipper", .type(.archive))
+                    item(L10n.t("Apps"), "app.badge", .type(.app))
                 }
                 MediaJobsSidebarGroup(center: vm.mediaJobs)
                 serversGroup
@@ -29,7 +29,7 @@ struct SidebarView: View {
             .padding(10)
         }
         .background(.regularMaterial)
-        .accessibilityLabel("Library sidebar")
+        .accessibilityLabel(L10n.t("Library sidebar"))
         // The status probe is unauthenticated TCP + DNS only — it must never carry credentials.
         .task {
             await vm.refreshServerStatuses()
@@ -44,10 +44,10 @@ struct SidebarView: View {
     @ViewBuilder
     private var serversGroup: some View {
         HStack {
-            Text("SERVERS")
+            Text(L10n.t("Servers").uppercased())
                 .scaledFont(size: 10.5, weight: .bold)
                 .foregroundStyle(.tertiary)
-                .accessibilityLabel("Servers")
+                .accessibilityLabel(L10n.t("Servers"))
                 .accessibilityAddTraits(.isHeader)
             Spacer()
             Button { vm.presentNewServer() } label: {
@@ -55,15 +55,15 @@ struct SidebarView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .help("Add SFTP server")
-            .a11yButton("Add SFTP server")
+            .help(L10n.t("Add SFTP server"))
+            .a11yButton(L10n.t("Add SFTP server"))
         }
         .padding(.horizontal, 8)
         .padding(.top, 12)
         .padding(.bottom, 4)
 
         if vm.servers.isEmpty {
-            Text("Add an SFTP server to browse and transfer files.")
+            Text(L10n.t("Add an SFTP server to browse and transfer files."))
                 .scaledFont(size: 11)
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 8)
@@ -93,7 +93,7 @@ struct SidebarView: View {
                             ProgressView()
                                 .controlSize(.small)
                                 .tint(selected ? Theme.onIndigo : Theme.accent)
-                                .help("Transferring…")
+                                .help(L10n.t("Transferring…"))
                                 .a11yDecorative()
                         } else {
                             liveDot(meta?.reachability ?? .unknown,
@@ -116,18 +116,18 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .a11yGroup(
-            label: A11y.sentence("Server", server.label, server.host),
+            label: A11y.sentence(L10n.t("Server"), server.label, server.host),
             value: A11y.sentence(
-                transferring ? "Transferring" : (meta?.reachability ?? .unknown).accessibilityName,
+                transferring ? L10n.t("Transferring") : (meta?.reachability ?? .unknown).accessibilityName,
                 meta?.reachability == .offline ? meta?.offlineDetail : nil,
-                meta?.latencyMS.map { "\($0) milliseconds" },
+                meta?.latencyMS.map { L10n.t("%d milliseconds", $0) },
                 meta?.os?.pretty),
-            hint: "Activate to browse this server's files.")
+            hint: L10n.t("Activate to browse this server's files."))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction(named: Text("Edit server")) { vm.presentEditServer(server) }
-        .accessibilityAction(named: Text("Reconnect")) { vm.reconnectServer(server.id) }
-        .accessibilityAction(named: Text("Disconnect")) { vm.disconnectServer(server.id) }
-        .accessibilityAction(named: Text("Test connection")) { vm.testServerConnection(server) }
+        .accessibilityAction(named: Text(L10n.t("Edit server"))) { vm.presentEditServer(server) }
+        .accessibilityAction(named: Text(L10n.t("Reconnect"))) { vm.reconnectServer(server.id) }
+        .accessibilityAction(named: Text(L10n.t("Disconnect"))) { vm.disconnectServer(server.id) }
+        .accessibilityAction(named: Text(L10n.t("Test connection"))) { vm.testServerConnection(server) }
         .contextMenu { serverMenu(server) }
     }
 
@@ -137,50 +137,50 @@ struct SidebarView: View {
         let meta = vm.serverMeta[server.id]
 
         if vm.selectedServer != server.id {
-            Button("Connect") { vm.selectServer(server.id) }
+            Button(L10n.t("Connect")) { vm.selectServer(server.id) }
         }
-        Button("Reconnect") { vm.reconnectServer(server.id) }
-        Button("Disconnect") { vm.disconnectServer(server.id) }
+        Button(L10n.t("Reconnect")) { vm.reconnectServer(server.id) }
+        Button(L10n.t("Disconnect")) { vm.disconnectServer(server.id) }
             .disabled(!engaged)
-        Button(vm.serverTestsInFlight.contains(server.id) ? "Testing…" : "Test Connection") {
+        Button(vm.serverTestsInFlight.contains(server.id) ? L10n.t("Testing…") : L10n.t("Test Connection")) {
             vm.testServerConnection(server)
         }
         .disabled(vm.serverTestsInFlight.contains(server.id))
 
         Divider()
 
-        Button("Copy SFTP Address") {
+        Button(L10n.t("Copy SFTP Address")) {
             vm.copyToPasteboard(vm.sftpLocator(for: server, remotePath: "/"))
         }
-        Button("Copy Host") { vm.copyToPasteboard(server.host) }
+        Button(L10n.t("Copy Host")) { vm.copyToPasteboard(server.host) }
         if let ip = meta?.ip, ip != server.host {
-            Button("Copy IP Address") { vm.copyToPasteboard(ip) }
+            Button(L10n.t("Copy IP Address")) { vm.copyToPasteboard(ip) }
         }
 
         Divider()
 
-        Button(vm.hostKeyReadsInFlight.contains(server.id) ? "Reading Host Key…" : "Show Host Key…") {
+        Button(vm.hostKeyReadsInFlight.contains(server.id) ? L10n.t("Reading Host Key…") : L10n.t("Show Host Key…")) {
             vm.showHostKey(server)
         }
         .disabled(vm.hostKeyReadsInFlight.contains(server.id))
-        Button("Forget Host Key") { vm.forgetHostKey(server) }
+        Button(L10n.t("Forget Host Key")) { vm.forgetHostKey(server) }
             // Deliberately still enabled when the pin record is unreadable — that is the state this clears.
             .disabled(!vm.hasHostKeyRecord(server))
-            .help("Use only after a legitimate server rekey. Goel will ask you to confirm the new key.")
+            .help(L10n.t("Use only after a legitimate server rekey. Goel will ask you to confirm the new key."))
 
         Divider()
 
-        Button("Open in Terminal") { vm.openServerInTerminal(server) }
-            .help("Opens an ssh session in your terminal, outside Goel’s host-key pinning.")
+        Button(L10n.t("Open in Terminal")) { vm.openServerInTerminal(server) }
+            .help(L10n.t("Opens an ssh session in your terminal, outside Goel’s host-key pinning."))
 
         Divider()
 
-        Button("Edit…") { vm.presentEditServer(server) }
-        Button("Remove", role: .destructive) {
+        Button(L10n.t("Edit…")) { vm.presentEditServer(server) }
+        Button(L10n.t("Remove"), role: .destructive) {
             vm.requestConfirm(
-                title: "Remove “\(server.label)”?",
-                message: "This deletes the saved connection and its Keychain password. Files on the server are not touched.",
-                confirmTitle: "Remove",
+                title: L10n.t("Remove “%@”?", server.label),
+                message: L10n.t("This deletes the saved connection and its Keychain password. Files on the server are not touched."),
+                confirmTitle: L10n.t("Remove"),
                 destructive: true
             ) { vm.removeServer(server.id) }
         }
@@ -189,7 +189,7 @@ struct SidebarView: View {
     private func liveDot(_ reachability: ServerReachability, detail: String?, selected: Bool) -> some View {
         let color = selected && reachability == .unknown ? Theme.onIndigoSecondary : reachability.tint
         let help = reachability == .offline
-            ? (detail.map { "Offline — \($0)" } ?? "Offline")
+            ? (detail.map { L10n.t("Offline — %@", $0) } ?? L10n.t("Offline"))
             : reachability.help
         return Circle()
             .fill(color)
@@ -283,8 +283,8 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .a11yGroup(label: label, value: "\(vm.count(for: filter)) downloads",
-                   hint: "Activate to filter the list.")
+        .a11yGroup(label: label, value: L10n.t("%d downloads", vm.count(for: filter)),
+                   hint: L10n.t("Activate to filter the list."))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
@@ -296,19 +296,19 @@ private struct MediaJobsSidebarGroup: View {
 
     var body: some View {
         if center.liveCount > 0 {
-            Text("MEDIA")
+            Text(L10n.t("Media").uppercased())
                 .scaledFont(size: 10.5, weight: .bold)
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 8)
                 .padding(.top, 12)
                 .padding(.bottom, 4)
-                .accessibilityLabel("Media")
+                .accessibilityLabel(L10n.t("Media"))
                 .accessibilityAddTraits(.isHeader)
             HStack(spacing: 9) {
                 Image(systemName: "waveform")
                     .font(.system(size: 13))
                     .frame(width: 16)
-                Text("Converting")
+                Text(L10n.t("Converting"))
                     .scaledFont(size: 13)
                     .lineLimit(1)
                 Spacer(minLength: 4)
@@ -321,8 +321,9 @@ private struct MediaJobsSidebarGroup: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .a11yGroup(label: "Converting",
-                       value: "\(center.liveCount) media job\(center.liveCount == 1 ? "" : "s") in progress")
+            .a11yGroup(label: L10n.t("Converting"),
+                       value: center.liveCount == 1 ? L10n.t("%d media job in progress", center.liveCount)
+                                     : L10n.t("%d media jobs in progress", center.liveCount))
         }
     }
 }

@@ -66,8 +66,8 @@ struct CommandPalette: View {
             Divider()
             if matches.isEmpty {
                 EmptyStateView(systemImage: "magnifyingglass",
-                               title: "No matching command",
-                               subtitle: "Try “rss”, “mirror”, “watch folder”, or “cookies”.",
+                               title: L10n.t("No matching command"),
+                               subtitle: L10n.t("Try “rss”, “mirror”, “watch folder”, or “cookies”."),
                                symbolSize: 26)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 44)
@@ -87,17 +87,18 @@ struct CommandPalette: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.accent)
                 .a11yDecorative()
-            TextField("Search actions and settings…", text: $query)
+            TextField(L10n.t("Search actions and settings…"), text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($searchFocused)
                 .onSubmit { runHighlighted() }
                 .onChange(of: query) { _, _ in highlighted = 0 }
-                .accessibilityLabel("Search actions and settings")
-                .accessibilityHint("Use the up and down arrow keys to move through results, return to run.")
+                .accessibilityLabel(L10n.t("Search actions and settings"))
+                .accessibilityHint(L10n.t("Use the up and down arrow keys to move through results, return to run."))
                 .accessibilityValue(matches.indices.contains(highlighted)
-                                    ? "\(matches.count) results, \(matches[highlighted].title) selected"
-                                    : "No results")
+                                    ? L10n.t("%1$@ results, %2$@ selected",
+                                             String(matches.count), matches[highlighted].title)
+                                    : L10n.t("No results"))
             if !query.isEmpty {
                 Button {
                     query = ""
@@ -107,7 +108,7 @@ struct CommandPalette: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.tertiary)
-                .a11yButton("Clear search")
+                .a11yButton(L10n.t("Clear search"))
             }
         }
         .padding(.horizontal, 16)
@@ -144,11 +145,11 @@ struct CommandPalette: View {
 
     private var legend: some View {
         HStack(spacing: 14) {
-            legendKey("↑↓", "Navigate")
-            legendKey("↩", "Run")
-            legendKey("esc", "Close")
+            legendKey("↑↓", L10n.t("Navigate"))
+            legendKey("↩", L10n.t("Run"))
+            legendKey("esc", L10n.t("Close"))
             Spacer()
-            Text("\(matches.count) of \(commands.count)")
+            Text(L10n.t("%1$@ of %2$@", String(matches.count), String(commands.count)))
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
                 .monospacedDigit()
@@ -221,31 +222,31 @@ struct CommandPalette: View {
 
     private var addCommands: [PaletteCommand] {
         [
-            PaletteCommand(id: "add.sheet", title: "Add Download…",
-                           subtitle: "Paste a URL, magnet, or .m3u8 stream",
+            PaletteCommand(id: "add.sheet", title: L10n.t("Add Download…"),
+                           subtitle: L10n.t("Paste a URL, magnet, or .m3u8 stream"),
                            symbol: "plus.circle", group: .add, shortcut: "⌘N",
                            keywords: ["new", "url", "magnet", "torrent", "link", "hls"]) {
                 vm.isAddSheetPresented = true
             },
-            PaletteCommand(id: "add.clipboard", title: "Paste URLs from Clipboard",
-                           subtitle: "Queue every link on the pasteboard, one per line",
+            PaletteCommand(id: "add.clipboard", title: L10n.t("Paste URLs from Clipboard"),
+                           subtitle: L10n.t("Queue every link on the pasteboard, one per line"),
                            symbol: "doc.on.clipboard", group: .add, shortcut: "⌘⇧V",
                            keywords: ["paste", "batch", "bulk"]) {
                 guard let text = NSPasteboard.general.string(forType: .string),
                       !text.isEmpty else {
-                    vm.toastNow("Nothing on the clipboard")
+                    vm.toastNow(L10n.t("Nothing on the clipboard"))
                     return
                 }
                 vm.add(rawLines: text, saveDirectory: nil, priority: .normal)
             },
-            PaletteCommand(id: "add.grabber", title: "Grab Links from Page…",
-                           subtitle: "List every file linked from a page and pick from it",
+            PaletteCommand(id: "add.grabber", title: L10n.t("Grab Links from Page…"),
+                           subtitle: L10n.t("List every file linked from a page and pick from it"),
                            symbol: "link.badge.plus", group: .add, shortcut: "⌘⇧L",
                            keywords: ["scrape", "extract", "page", "links"]) {
                 vm.isLinkGrabberPresented = true
             },
-            PaletteCommand(id: "add.basket", title: "Show Drop Basket",
-                           subtitle: "A small always-on-top target for dragging links onto",
+            PaletteCommand(id: "add.basket", title: L10n.t("Show Drop Basket"),
+                           subtitle: L10n.t("A small always-on-top target for dragging links onto"),
                            symbol: "tray.and.arrow.down", group: .add, shortcut: "⌘⇧B",
                            keywords: ["drag", "drop", "float", "basket"]) {
                 DropBasketController.shared.toggle()
@@ -255,41 +256,41 @@ struct CommandPalette: View {
 
     private var downloadCommands: [PaletteCommand] {
         var list: [PaletteCommand] = [
-            PaletteCommand(id: "dl.startAll", title: "Start All Downloads",
-                           subtitle: "Resume everything paused or queued",
+            PaletteCommand(id: "dl.startAll", title: L10n.t("Start All Downloads"),
+                           subtitle: L10n.t("Resume everything paused or queued"),
                            symbol: "play.fill", group: .downloads,
                            keywords: ["resume", "unpause"]) { vm.resumeAll() },
-            PaletteCommand(id: "dl.pauseAll", title: "Pause All Downloads",
-                           subtitle: "Hold every active transfer",
+            PaletteCommand(id: "dl.pauseAll", title: L10n.t("Pause All Downloads"),
+                           subtitle: L10n.t("Hold every active transfer"),
                            symbol: "pause.fill", group: .downloads,
                            keywords: ["stop", "hold"]) { vm.pauseAll() },
-            PaletteCommand(id: "dl.snail", title: "Toggle Speed Limit",
-                           subtitle: "Switch between Unlimited and the active traffic profile",
+            PaletteCommand(id: "dl.snail", title: L10n.t("Toggle Speed Limit"),
+                           subtitle: L10n.t("Switch between Unlimited and the active traffic profile"),
                            symbol: "tortoise", group: .downloads,
                            keywords: ["throttle", "snail", "slow", "bandwidth"]) { vm.toggleSnail() },
         ]
         for profile in vm.settings.profiles {
             list.append(PaletteCommand(
                 id: "dl.profile.\(profile.name)",
-                title: "Traffic Profile: \(profile.name)",
+                title: L10n.t("Traffic Profile: %@", profile.name),
                 subtitle: profile.name == vm.settings.selectedProfileName
-                    ? "Currently active"
-                    : "Switch the global speed and connection limits",
+                    ? L10n.t("Currently active")
+                    : L10n.t("Switch the global speed and connection limits"),
                 symbol: "speedometer", group: .downloads,
                 keywords: ["profile", "limit", "speed", profile.name])
             { vm.setProfile(profile.name) })
         }
         list.append(contentsOf: [
-            PaletteCommand(id: "dl.stats", title: "Statistics…",
-                           subtitle: "Totals, throughput history, and per-kind breakdown",
+            PaletteCommand(id: "dl.stats", title: L10n.t("Statistics…"),
+                           subtitle: L10n.t("Totals, throughput history, and per-kind breakdown"),
                            symbol: "chart.bar", group: .downloads, shortcut: "⌘Y",
                            keywords: ["graph", "totals", "usage"]) { vm.isStatsPresented = true },
-            PaletteCommand(id: "dl.history", title: "History…",
-                           subtitle: "Finished downloads, re-download, CSV export",
+            PaletteCommand(id: "dl.history", title: L10n.t("History…"),
+                           subtitle: L10n.t("Finished downloads, re-download, CSV export"),
                            symbol: "clock.arrow.circlepath", group: .downloads, shortcut: "⌘⇧Y",
                            keywords: ["past", "completed", "csv", "export"]) { vm.isHistoryPresented = true },
-            PaletteCommand(id: "dl.updates", title: "Check for Updates…",
-                           subtitle: "Asks the release feed once, when you press it",
+            PaletteCommand(id: "dl.updates", title: L10n.t("Check for Updates…"),
+                           subtitle: L10n.t("Asks the release feed once, when you press it"),
                            symbol: "arrow.down.app", group: .downloads,
                            keywords: ["version", "upgrade", "release"]) { vm.checkForUpdates() },
         ])
@@ -298,22 +299,22 @@ struct CommandPalette: View {
 
     private var viewCommands: [PaletteCommand] {
         [
-            PaletteCommand(id: "view.detail", title: "Toggle Detail Panel",
-                           subtitle: "Files, peers, trackers, and per-task limits",
+            PaletteCommand(id: "view.detail", title: L10n.t("Toggle Detail Panel"),
+                           subtitle: L10n.t("Files, peers, trackers, and per-task limits"),
                            symbol: "sidebar.right", group: .view, shortcut: "⌘I",
                            keywords: ["inspector", "panel", "info"]) {
                 vm.detailPanelVisible.toggle()
             },
-            PaletteCommand(id: "view.detailPosition", title: "Move Detail Panel",
-                           subtitle: "Dock it on the right edge or along the bottom",
+            PaletteCommand(id: "view.detailPosition", title: L10n.t("Move Detail Panel"),
+                           subtitle: L10n.t("Dock it on the right edge or along the bottom"),
                            symbol: "rectangle.split.2x1", group: .view,
                            keywords: ["dock", "bottom", "right", "layout"]) {
                 vm.toggleDetailPanelPosition()
             },
         ] + AppTheme.allCases.map { theme in
             PaletteCommand(id: "view.theme.\(theme.settingsValue)",
-                           title: "Theme: \(theme.rawValue)",
-                           subtitle: theme == vm.theme ? "Currently active" : "Switch the whole app to this palette",
+                           title: L10n.t("Theme: %@", L10n.t(theme.rawValue)),
+                           subtitle: theme == vm.theme ? L10n.t("Currently active") : L10n.t("Switch the whole app to this palette"),
                            symbol: "paintpalette", group: .view,
                            keywords: ["theme", "colour", "color", "dark", "light", theme.rawValue])
             { vm.theme = theme }
@@ -323,7 +324,7 @@ struct CommandPalette: View {
     private var settingsCommands: [PaletteCommand] {
         SettingsView.Pane.allCases.map { pane in
             PaletteCommand(id: "settings.\(pane.id)",
-                           title: "Settings: \(pane.rawValue)",
+                           title: L10n.t("Settings: %@", L10n.t(pane.rawValue)),
                            subtitle: Self.paneSummary(pane),
                            symbol: pane.symbol, group: .settings,
                            keywords: Self.paneKeywords(pane))
@@ -333,40 +334,40 @@ struct CommandPalette: View {
 
     private var discoverCommands: [PaletteCommand] {
         [
-            PaletteCommand(id: "find.mirrors", title: "Mirrors & failover",
-                           subtitle: "Add sheet ▸ Mirrors — segments spread across alternate URLs and fail over",
+            PaletteCommand(id: "find.mirrors", title: L10n.t("Mirrors & failover"),
+                           subtitle: L10n.t("Add sheet ▸ Mirrors — segments spread across alternate URLs and fail over"),
                            symbol: "arrow.triangle.branch", group: .discover,
                            keywords: ["mirror", "metalink", "failover", "alternate", "redundant"]) {
                 vm.isAddSheetPresented = true
             },
-            PaletteCommand(id: "find.checksum", title: "Verify a checksum",
-                           subtitle: "Add sheet ▸ Checksum — MD5/SHA-1/SHA-256, checked when the download finishes",
+            PaletteCommand(id: "find.checksum", title: L10n.t("Verify a checksum"),
+                           subtitle: L10n.t("Add sheet ▸ Checksum — MD5/SHA-1/SHA-256, checked when the download finishes"),
                            symbol: "checkmark.seal", group: .discover,
                            keywords: ["checksum", "hash", "sha256", "md5", "integrity", "verify"]) {
                 vm.isAddSheetPresented = true
             },
-            PaletteCommand(id: "find.cookies", title: "Sign-in cookies for a download",
-                           subtitle: "Add sheet ▸ Sign-in cookies — for files behind a login",
+            PaletteCommand(id: "find.cookies", title: L10n.t("Sign-in cookies for a download"),
+                           subtitle: L10n.t("Add sheet ▸ Sign-in cookies — for files behind a login"),
                            symbol: "person.badge.key", group: .discover,
                            keywords: ["cookie", "login", "session", "auth", "paywall"]) {
                 vm.isAddSheetPresented = true
             },
-            PaletteCommand(id: "find.filePriority", title: "Per-file priority in a torrent",
-                           subtitle: "Select a torrent, then the detail panel's Files tab — skip, low, normal, high",
+            PaletteCommand(id: "find.filePriority", title: L10n.t("Per-file priority in a torrent"),
+                           subtitle: L10n.t("Select a torrent, then the detail panel's Files tab — skip, low, normal, high"),
                            symbol: "list.bullet.indent", group: .discover,
                            keywords: ["priority", "files", "torrent", "skip", "select"]) {
                 vm.detailPanelVisible = true
                 vm.detailTab = .files
                 if vm.selectedTask == nil {
-                    vm.toastNow("Select a torrent to set per-file priority")
+                    vm.toastNow(L10n.t("Select a torrent to set per-file priority"))
                 }
             },
-            PaletteCommand(id: "find.applescript", title: "Automate with AppleScript",
-                           subtitle: "Copies a working example — add download, pause all, count downloads",
+            PaletteCommand(id: "find.applescript", title: L10n.t("Automate with AppleScript"),
+                           subtitle: L10n.t("Copies a working example — add download, pause all, count downloads"),
                            symbol: "applescript", group: .discover,
                            keywords: ["applescript", "automation", "script", "shortcuts", "osascript"]) {
                 vm.copyToPasteboard(Self.appleScriptExample)
-                vm.toastNow("AppleScript example copied")
+                vm.toastNow(L10n.t("AppleScript example copied"))
             },
         ]
     }
@@ -380,19 +381,19 @@ struct CommandPalette: View {
 
     private static func paneSummary(_ pane: SettingsView.Pane) -> String {
         switch pane {
-        case .general:     return "Theme, language, default folder, clipboard capture, ffmpeg"
-        case .network:     return "Proxy, timeouts, retries, saved per-host credentials"
-        case .aggregation: return "Combine Wi-Fi and Ethernet on one download"
-        case .traffic:     return "Three switchable speed and connection profiles"
-        case .bittorrent:  return "DHT, PeX, encryption, and the .torrent watch folder"
-        case .scheduler:   return "Daily download window and what happens when the queue drains"
-        case .rss:         return "Watch feeds and queue matching items automatically"
-        case .advanced:    return "Notifications, power, post-download actions, backup, diagnostics"
-        case .antivirus:   return "Run an external scanner over finished files"
-        case .browser:     return "The extension, the helper, the bookmarklet, the URL scheme"
-        case .remote:      return "Reach your queue from a phone or another machine"
-        case .audit:       return "Local, on-disk record of what was downloaded"
-        case .license:     return "Personal use, commercial licensing, and what the app never does"
+        case .general:     return L10n.t("Theme, language, default folder, clipboard capture, ffmpeg")
+        case .network:     return L10n.t("Proxy, timeouts, retries, saved per-host credentials")
+        case .aggregation: return L10n.t("Combine Wi-Fi and Ethernet on one download")
+        case .traffic:     return L10n.t("Three switchable speed and connection profiles")
+        case .bittorrent:  return L10n.t("DHT, PeX, encryption, and the .torrent watch folder")
+        case .scheduler:   return L10n.t("Daily download window and what happens when the queue drains")
+        case .rss:         return L10n.t("Watch feeds and queue matching items automatically")
+        case .advanced:    return L10n.t("Notifications, power, post-download actions, backup, diagnostics")
+        case .antivirus:   return L10n.t("Run an external scanner over finished files")
+        case .browser:     return L10n.t("The extension, the helper, the bookmarklet, the URL scheme")
+        case .remote:      return L10n.t("Reach your queue from a phone or another machine")
+        case .audit:       return L10n.t("Local, on-disk record of what was downloaded")
+        case .license:     return L10n.t("Personal use, commercial licensing, and what the app never does")
         }
     }
 
@@ -449,7 +450,7 @@ private struct PaletteRow: View {
                         .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                         .foregroundStyle(.tertiary)
                 }
-                Text(command.group.rawValue)
+                Text(L10n.t(command.group.rawValue))
                     .font(.system(size: 9.5, weight: .semibold))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
@@ -464,9 +465,9 @@ private struct PaletteRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .a11yGroup(label: A11y.sentence(command.title, command.group.rawValue),
+        .a11yGroup(label: A11y.sentence(command.title, L10n.t(command.group.rawValue)),
                    value: command.subtitle,
-                   hint: command.shortcut.map { "Keyboard shortcut \($0)." })
+                   hint: command.shortcut.map { L10n.t("Keyboard shortcut %@.", $0) })
         .accessibilityAddTraits(isHighlighted ? [.isButton, .isSelected] : .isButton)
     }
 }

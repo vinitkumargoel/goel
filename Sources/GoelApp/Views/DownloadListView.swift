@@ -61,8 +61,8 @@ struct DownloadListView: View {
             if task.status == .completed { vm.openFile(task) } else { vm.revealInFinder(task) }
             return .handled
         }
-        .accessibilityLabel("Download queue")
-        .accessibilityHint("Use the up and down arrow keys to move through downloads, space to preview, return to open.")
+        .accessibilityLabel(L10n.t("Download queue"))
+        .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, space to preview, return to open."))
     }
 
     private func moveSelection(by offset: Int) -> KeyPress.Result {
@@ -100,7 +100,7 @@ struct DownloadListView: View {
         } label: {
             HStack(spacing: 3) {
                 if alignment == .trailing { Spacer(minLength: 0) }
-                Text(title)
+                Text(L10n.t(title))
                 if isSortKey {
                     Image(systemName: vm.sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8, weight: .bold))
@@ -116,23 +116,26 @@ struct DownloadListView: View {
         .padding(.horizontal, 6)
         .a11yButton(spokenHeader(title),
                     hint: isSortKey
-                        ? "Currently sorting \(vm.sortAscending ? "ascending" : "descending"). Activate to reverse."
-                        : "Activate to sort by this column.")
-        .accessibilityValue(isSortKey ? (vm.sortAscending ? "Sorted ascending" : "Sorted descending") : "Not sorted")
+                        ? L10n.t("Currently sorting %@. Activate to reverse.",
+                                 vm.sortAscending ? L10n.t("ascending") : L10n.t("descending"))
+                        : L10n.t("Activate to sort by this column."))
+        .accessibilityValue(isSortKey
+                            ? (vm.sortAscending ? L10n.t("Sorted ascending") : L10n.t("Sorted descending"))
+                            : L10n.t("Not sorted"))
     }
 
     private func spokenHeader(_ title: String) -> String {
         switch title {
-        case "#": return "Row number"
-        case "↓ Speed": return "Download speed"
-        case "↑ Speed": return "Upload speed"
-        default: return title
+        case "#": return L10n.t("Row number")
+        case "↓ Speed": return L10n.t("Download speed")
+        case "↑ Speed": return L10n.t("Upload speed")
+        default: return L10n.t(title)
         }
     }
 
     private var emptyState: some View {
-        EmptyStateView(systemImage: "tray", title: "No downloads match",
-                       subtitle: "Try a different filter or search term.")
+        EmptyStateView(systemImage: "tray", title: L10n.t("No downloads match"),
+                       subtitle: L10n.t("Try a different filter or search term."))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -204,11 +207,11 @@ struct DownloadRow: View {
         .accessibilityAddTraits(isSelected
                                 ? [.isButton, .isSelected, .updatesFrequently]
                                 : [.isButton, .updatesFrequently])
-        .accessibilityHint("Select to show details.")
-        .accessibilityAction(named: Text(task.accessibilityStateActionName), primaryStateAction)
-        .accessibilityAction(named: Text("Show in Finder")) { vm.revealInFinder(task) }
-        .accessibilityAction(named: Text("Copy source link")) { vm.copyToPasteboard(task.sourceLocator) }
-        .accessibilityAction(named: Text("Remove from list")) { vm.remove(task.id, deleteData: false) }
+        .accessibilityHint(L10n.t("Select to show details."))
+        .accessibilityAction(named: Text(L10n.t(task.accessibilityStateActionName)), primaryStateAction)
+        .accessibilityAction(named: Text(L10n.t("Show in Finder"))) { vm.revealInFinder(task) }
+        .accessibilityAction(named: Text(L10n.t("Copy source link"))) { vm.copyToPasteboard(task.sourceLocator) }
+        .accessibilityAction(named: Text(L10n.t("Remove from list"))) { vm.remove(task.id, deleteData: false) }
         .contentShape(Rectangle())
         .onTapGesture {
             if NSEvent.modifierFlags.contains(.command) {
@@ -255,40 +258,40 @@ struct DownloadRow: View {
     @ViewBuilder
     private var contextMenu: some View {
         if task.status == .paused || task.status == .queued {
-            Button("Resume") { vm.resume(task.id) }
+            Button(L10n.t("Resume")) { vm.resume(task.id) }
         } else if task.status.isActive {
-            Button("Pause") { vm.pause(task.id) }
+            Button(L10n.t("Pause")) { vm.pause(task.id) }
         }
-        if isFailed { Button("Retry") { vm.retry(task.id) } }
-        Button("Open folder") { vm.revealInFinder(task) }
+        if isFailed { Button(L10n.t("Retry")) { vm.retry(task.id) } }
+        Button(L10n.t("Open folder")) { vm.revealInFinder(task) }
         if task.status == .completed || playableWhileDownloading {
-            Button("Open in Player") { vm.openFile(task) }
+            Button(L10n.t("Open in Player")) { vm.openFile(task) }
         }
         if task.isMediaFile, task.status.hasData {
-            Button("Play in Goel°") { vm.playInApp(task) }
+            Button(L10n.t("Play in Goel°")) { vm.playInApp(task) }
         }
         if task.status.hasData {
-            Button("Quick Look") { quickLook(URL(fileURLWithPath: task.savePath)) }
+            Button(L10n.t("Quick Look")) { quickLook(URL(fileURLWithPath: task.savePath)) }
         }
         if task.status == .completed, task.isMediaFile {
             if let reason = vm.ffmpegUnavailableReason {
-                Button("Convert To…") { vm.toastNow(reason) }
-                Button("Extract Audio…") { vm.toastNow(reason) }
+                Button(L10n.t("Convert To…")) { vm.toastNow(reason) }
+                Button(L10n.t("Extract Audio…")) { vm.toastNow(reason) }
             } else {
                 MediaMenuItems(task: task, vm: vm, center: vm.mediaJobs)
             }
         }
-        Button("Copy source link") { vm.copyToPasteboard(task.sourceLocator) }
+        Button(L10n.t("Copy source link")) { vm.copyToPasteboard(task.sourceLocator) }
         if vm.settings.remoteAccessEnabled, !vm.settings.remoteToken.isEmpty,
            RemoteStreamService.streamPlan(for: task) != nil {
-            Button("Copy Stream Link") {
+            Button(L10n.t("Copy Stream Link")) {
                 // With `remoteTLSEnabled` the socket speaks only TLS; a hardcoded http:// link cannot connect.
                 let scheme = vm.settings.remoteTLSEnabled ? "https" : "http"
                 vm.copyToPasteboard("\(scheme)://127.0.0.1:\(vm.settings.remotePort)/stream?id=\(task.id.uuidString)&token=\(vm.settings.remoteToken)")
             }
         }
         Divider()
-        Menu("Speed Limit") {
+        Menu(L10n.t("Speed Limit")) {
             Button(limitLabel(nil)) { vm.setTaskSpeedLimit(nil, task: task.id) }
             ForEach([1, 2, 5, 10, 25], id: \.self) { mb in
                 Button(limitLabel(Int64(mb) * 1_000_000)) {
@@ -298,10 +301,10 @@ struct DownloadRow: View {
         }
         if task.kind == .torrent {
             Button(task.sequentialDownload == true
-                   ? "✓ Sequential Download" : "Sequential Download") {
+                   ? L10n.t("✓ Sequential Download") : L10n.t("Sequential Download")) {
                 vm.setSequential(!(task.sequentialDownload == true), task: task.id)
             }
-            Menu("Upload Limit") {
+            Menu(L10n.t("Upload Limit")) {
                 Button(uploadLimitLabel(nil)) { vm.setTaskUploadLimit(nil, task: task.id) }
                 ForEach([1, 2, 5, 10, 25], id: \.self) { mb in
                     Button(uploadLimitLabel(Int64(mb) * 1_000_000)) {
@@ -309,7 +312,7 @@ struct DownloadRow: View {
                     }
                 }
             }
-            Menu("Seed Until Ratio") {
+            Menu(L10n.t("Seed Until Ratio")) {
                 Button(seedRatioLabel(nil)) { vm.setSeedRatioLimit(nil, task: task.id) }
                 Button(seedRatioLabel(0)) { vm.setSeedRatioLimit(0, task: task.id) }
                 ForEach([0.5, 1.0, 1.5, 2.0, 3.0], id: \.self) { r in
@@ -317,47 +320,47 @@ struct DownloadRow: View {
                 }
             }
             if task.status.isActive || task.status == .seeding || task.status == .paused {
-                Button("Force Recheck") { vm.forceRecheck(task.id) }
-                Button("Re-announce to Trackers") { vm.forceReannounce(task.id) }
+                Button(L10n.t("Force Recheck")) { vm.forceRecheck(task.id) }
+                Button(L10n.t("Re-announce to Trackers")) { vm.forceReannounce(task.id) }
             }
             if isMagnet {
-                Button("Copy Magnet Link") { vm.copyToPasteboard(task.sourceLocator) }
+                Button(L10n.t("Copy Magnet Link")) { vm.copyToPasteboard(task.sourceLocator) }
             }
         }
         Divider()
         if task.kind != .torrent, !task.status.isActive {
             if vm.selection.count > 1, vm.selection.contains(task.id) {
-                Button("Rename \(vm.selection.count) Selected…") {
+                Button(L10n.t("Rename %d Selected…", vm.selection.count)) {
                     vm.promptForBatchRename(tasks: vm.tasks.filter { vm.selection.contains($0.id) })
                 }
             } else {
-                Button("Rename…") { vm.promptForRename(task: task) }
+                Button(L10n.t("Rename…")) { vm.promptForRename(task: task) }
             }
         }
-        Button(task.allTags.isEmpty ? "Add Tags…" : "Edit Tags…") { vm.promptForTags(task: task) }
-        Button(task.note == nil ? "Add Note…" : "Edit Note…") { vm.promptForNote(task: task) }
+        Button(task.allTags.isEmpty ? L10n.t("Add Tags…") : L10n.t("Edit Tags…")) { vm.promptForTags(task: task) }
+        Button(task.note == nil ? L10n.t("Add Note…") : L10n.t("Edit Note…")) { vm.promptForNote(task: task) }
         if task.kind == .http {
-            Button("Request Options…") { vm.promptForRequestOptions(task: task) }
+            Button(L10n.t("Request Options…")) { vm.promptForRequestOptions(task: task) }
         }
-        Button(task.label == nil ? "Add Label…" : "Edit Label…") { vm.promptForLabel(task: task) }
+        Button(task.label == nil ? L10n.t("Add Label…") : L10n.t("Edit Label…")) { vm.promptForLabel(task: task) }
         if task.status == .paused || task.status == .queued || task.status.isActive {
-            Menu("Schedule Start") {
+            Menu(L10n.t("Schedule Start")) {
                 ForEach(ScheduledStartOption.presets) { preset in
-                    Button(preset.label) { vm.setScheduledStart(preset.date(), task: task.id) }
+                    Button(L10n.t(preset.label)) { vm.setScheduledStart(preset.date(), task: task.id) }
                 }
                 if task.scheduledAt != nil {
                     Divider()
-                    Button("Cancel Scheduled Start") { vm.setScheduledStart(nil, task: task.id) }
+                    Button(L10n.t("Cancel Scheduled Start")) { vm.setScheduledStart(nil, task: task.id) }
                 }
             }
         }
         Divider()
-        Button("Remove from list", role: .destructive) { vm.remove(task.id, deleteData: false) }
-        Button("Remove with data", role: .destructive) {
+        Button(L10n.t("Remove from list"), role: .destructive) { vm.remove(task.id, deleteData: false) }
+        Button(L10n.t("Remove with data"), role: .destructive) {
             vm.requestConfirm(
-                title: "Delete downloaded files for “\(task.name)”?",
-                message: "This permanently deletes the file from disk and can’t be undone.",
-                confirmTitle: "Delete Files",
+                title: L10n.t("Delete downloaded files for “%@”?", task.name),
+                message: L10n.t("This permanently deletes the file from disk and can’t be undone."),
+                confirmTitle: L10n.t("Delete Files"),
                 destructive: true
             ) { vm.remove(task.id, deleteData: true) }
         }
@@ -380,7 +383,7 @@ struct DownloadRow: View {
         let isActive = bytesPerSec == nil
             ? (current == nil || current == 0)
             : current == bytesPerSec
-        let name = bytesPerSec.map { "\($0 / 1_000_000) MB/s" } ?? "Unlimited"
+        let name = bytesPerSec.map { "\($0 / 1_000_000) MB/s" } ?? L10n.t("Unlimited")
         return isActive ? "✓ \(name)" : name
     }
 
@@ -389,7 +392,7 @@ struct DownloadRow: View {
         let isActive = bytesPerSec == nil
             ? (current == nil || current == 0)
             : current == bytesPerSec
-        let name = bytesPerSec.map { "\($0 / 1_000_000) MB/s" } ?? "Unlimited"
+        let name = bytesPerSec.map { "\($0 / 1_000_000) MB/s" } ?? L10n.t("Unlimited")
         return isActive ? "✓ \(name)" : name
     }
 
@@ -402,9 +405,9 @@ struct DownloadRow: View {
         let name: String
         switch ratio {
         case nil:
-            name = String(format: "Profile default (%.1f×)", vm.settings.effectiveProfile.seedRatioLimit)
+            name = L10n.t("Profile default (%.1f×)", vm.settings.effectiveProfile.seedRatioLimit)
         case .some(let r) where r <= 0:
-            name = "Seed indefinitely"
+            name = L10n.t("Seed indefinitely")
         case .some(let r):
             name = String(format: "%.1f", r)
         }
@@ -429,16 +432,16 @@ private struct MediaMenuItems: View {
     var body: some View {
         let live = center.liveJobs(input: input)
         ForEach(live) { job in
-            Button("Cancel \(job.kind.activeTitle.lowercased())") { center.cancel(job.id) }
+            Button(L10n.t("Cancel %@", L10n.t(job.kind.activeTitle).lowercased())) { center.cancel(job.id) }
         }
         if !live.isEmpty { Divider() }
-        Menu("Convert To") {
+        Menu(L10n.t("Convert To")) {
             ForEach(MediaContainer.convertTargets, id: \.self) { ext in
                 Button(label(for: ext)) { vm.convertFile(task: task, toExtension: ext) }
                     .disabled(center.liveJob(input: input, outputExtension: ext) != nil)
             }
         }
-        Menu("Extract Audio") {
+        Menu(L10n.t("Extract Audio")) {
             ForEach(AudioExtractionFormat.allCases, id: \.self) { format in
                 Button(format.displayName) { vm.extractAudio(task: task, format: format) }
                     .disabled(center.liveJob(input: input, outputExtension: format.rawValue) != nil)
@@ -452,6 +455,6 @@ private struct MediaMenuItems: View {
               MediaContainer.likelyStreamCopy(from: source, to: ext) else {
             return ext.uppercased()
         }
-        return "\(ext.uppercased()) — copy, instant"
+        return L10n.t("%@ — copy, instant", ext.uppercased())
     }
 }

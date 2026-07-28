@@ -100,7 +100,7 @@ enum SFTPReachability {
     /// Never authenticates — TCP connect only.
     static func probe(host: String, port: Int, timeout: TimeInterval = 4) async
         -> (reachable: Bool, latencyMS: Int?, detail: String?) {
-        guard !host.isEmpty else { return (false, nil, "No host") }
+        guard !host.isEmpty else { return (false, nil, L10n.t("No host")) }
         let nwPort = NWEndpoint.Port(rawValue: UInt16(clamping: max(1, port))) ?? 22
         let conn = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
         let start = Date()
@@ -128,7 +128,7 @@ enum SFTPReachability {
             conn.start(queue: .global(qos: .utility))
             // `NWConnection` sits in `.preparing` forever behind a black-hole firewall.
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-                finish(false, "No response (timed out)")
+                finish(false, L10n.t("No response (timed out)"))
             }
         }
     }
@@ -137,13 +137,13 @@ enum SFTPReachability {
         switch error {
         case .posix(let code):
             switch code {
-            case .ECONNREFUSED: return "Connection refused"
-            case .EHOSTUNREACH, .ENETUNREACH, .ENETDOWN: return "Host unreachable"
-            case .ETIMEDOUT: return "Timed out"
-            default: return "Connection failed"
+            case .ECONNREFUSED: return L10n.t("Connection refused")
+            case .EHOSTUNREACH, .ENETUNREACH, .ENETDOWN: return L10n.t("Host unreachable")
+            case .ETIMEDOUT: return L10n.t("Timed out")
+            default: return L10n.t("Connection failed")
             }
-        case .dns: return "DNS lookup failed"
-        default: return "Connection failed"
+        case .dns: return L10n.t("DNS lookup failed")
+        default: return L10n.t("Connection failed")
         }
     }
 

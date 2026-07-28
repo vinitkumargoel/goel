@@ -258,7 +258,7 @@ final class SFTPBrowserModel: ObservableObject {
     }
 
     private func list(_ target: String) async -> [SFTPEntry]? {
-        guard let client else { error = "This server is misconfigured."; return nil }
+        guard let client else { error = L10n.t("This server is misconfigured."); return nil }
         isLoading = true
         error = nil
         defer { isLoading = false }
@@ -308,7 +308,7 @@ final class SFTPBrowserModel: ObservableObject {
         guard let client, !trimmed.isEmpty, trimmed != entry.name,
               !trimmed.contains("/"), trimmed != ".", trimmed != ".." else { return false }
         if entries.contains(where: { $0.name == trimmed }) {
-            error = "“\(trimmed)” already exists here."; return false
+            error = L10n.t("“%@” already exists here.", trimmed); return false
         }
         do {
             try await client.rename(Self.join(path, entry.name), to: Self.join(path, trimmed))
@@ -421,7 +421,7 @@ final class SFTPBrowserModel: ObservableObject {
     private nonisolated static let dragOutByteCap: Int64 = 512 * 1024 * 1024
 
     private nonisolated static func tooLargeToDrag(_ name: String) -> SFTPError {
-        SFTPError(kind: .io, message: "“\(name)” is too large to drag out of the browser.")
+        SFTPError(kind: .io, message: L10n.t("“%@” is too large to drag out of the browser.", name))
     }
 
     static func join(_ base: String, _ child: String) -> String {

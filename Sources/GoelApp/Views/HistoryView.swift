@@ -19,20 +19,20 @@ struct HistoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("History").scaledFont(size: 16, weight: .bold)
+                Text(L10n.t("History")).scaledFont(size: 16, weight: .bold)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                Button("Done") { vm.isHistoryPresented = false }
+                Button(L10n.t("Done")) { vm.isHistoryPresented = false }
                     .keyboardShortcut(.defaultAction)
             }
 
-            TextField("Search name or link", text: $search)
+            TextField(L10n.t("Search name or link"), text: $search)
                 .textFieldStyle(.roundedBorder)
-                .accessibilityLabel("Search history by name or link")
+                .accessibilityLabel(L10n.t("Search history by name or link"))
 
             if let entries {
                 if entries.isEmpty {
-                    Text("Nothing here yet — finished downloads are archived automatically.")
+                    Text(L10n.t("Nothing here yet — finished downloads are archived automatically."))
                         .scaledFont(size: 12)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -41,18 +41,18 @@ struct HistoryView: View {
                 }
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .accessibilityLabel("Loading history")
+                    .accessibilityLabel(L10n.t("Loading history"))
             }
 
             HStack {
-                Button("Export CSV…") { exportCSV() }
+                Button(L10n.t("Export CSV…")) { exportCSV() }
                     .disabled((entries ?? []).isEmpty)
                 Spacer()
-                Button("Clear History", role: .destructive) {
+                Button(L10n.t("Clear History"), role: .destructive) {
                     vm.requestConfirm(
-                        title: "Clear the download history?",
-                        message: "This removes every archived entry. Files on disk are not touched.",
-                        confirmTitle: "Clear History",
+                        title: L10n.t("Clear the download history?"),
+                        message: L10n.t("This removes every archived entry. Files on disk are not touched."),
+                        confirmTitle: L10n.t("Clear History"),
                         destructive: true
                     ) {
                         vm.clearHistory()
@@ -103,22 +103,22 @@ struct HistoryView: View {
                         entry.totalBytes.map(A11y.bytes)))
             Spacer(minLength: 12)
             HStack(spacing: 4) {
-                iconButton("arrow.down.circle", help: "Download again",
-                           label: "Download “\(entry.name)” again") {
+                iconButton("arrow.down.circle", help: L10n.t("Download again"),
+                           label: L10n.t("Download “%@” again", entry.name)) {
                     vm.redownload(entry)
                 }
-                iconButton("magnifyingglass.circle", help: "Reveal in Finder",
-                           label: "Reveal “\(entry.name)” in Finder") {
+                iconButton("magnifyingglass.circle", help: L10n.t("Reveal in Finder"),
+                           label: L10n.t("Reveal “%@” in Finder", entry.name)) {
                     NSWorkspace.shared.activateFileViewerSelecting(
                         [URL(fileURLWithPath: entry.savePath)])
                 }
                 .disabled(!FileManager.default.fileExists(atPath: entry.savePath))
-                iconButton("doc.on.doc", help: "Copy link",
-                           label: "Copy link for “\(entry.name)”") {
+                iconButton("doc.on.doc", help: L10n.t("Copy link"),
+                           label: L10n.t("Copy link for “%@”", entry.name)) {
                     vm.copyToPasteboard(entry.locator)
                 }
-                iconButton("trash", help: "Remove entry",
-                           label: "Remove “\(entry.name)” from history") {
+                iconButton("trash", help: L10n.t("Remove entry"),
+                           label: L10n.t("Remove “%@” from history", entry.name)) {
                     vm.deleteHistoryEntry(entry.id)
                     entries?.removeAll { $0.id == entry.id }
                 }
@@ -151,14 +151,14 @@ struct ScheduledStartOption: Identifiable {
 
     static var presets: [ScheduledStartOption] {
         [
-            ScheduledStartOption(id: "1h", label: "In 1 Hour") {
+            ScheduledStartOption(id: "1h", label: L10n.t("In 1 Hour")) {
                 Date().addingTimeInterval(3600)
             },
-            ScheduledStartOption(id: "4h", label: "In 4 Hours") {
+            ScheduledStartOption(id: "4h", label: L10n.t("In 4 Hours")) {
                 Date().addingTimeInterval(4 * 3600)
             },
-            ScheduledStartOption(id: "night", label: "Tonight at 2 AM") { Self.next(hour: 2) },
-            ScheduledStartOption(id: "morning", label: "Tomorrow at 8 AM") { Self.next(hour: 8) },
+            ScheduledStartOption(id: "night", label: L10n.t("Tonight at 2 AM")) { Self.next(hour: 2) },
+            ScheduledStartOption(id: "morning", label: L10n.t("Tomorrow at 8 AM")) { Self.next(hour: 8) },
         ]
     }
 

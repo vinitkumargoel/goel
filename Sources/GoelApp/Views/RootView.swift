@@ -81,7 +81,7 @@ struct RootView: View {
             if let message { A11yAnnouncer.announce(message) }
         }
         .onChange(of: vm.persistenceWarning) { _, warning in
-            if let warning { A11yAnnouncer.announce("Warning. \(warning)") }
+            if let warning { A11yAnnouncer.announce(L10n.t("Warning. %@", warning)) }
         }
         .animation(.easeInOut(duration: 0.08), value: isDropTargeted)
         .onDrop(of: [.url, .fileURL], isTargeted: $isDropTargeted) { handleDrop($0) }
@@ -138,7 +138,7 @@ struct RootView: View {
                 VStack(spacing: 14) {
                     Image(systemName: "arrow.down.to.line")
                         .font(.system(size: 34, weight: .regular))
-                    Text("Drop a URL or .torrent file here")
+                    Text(L10n.t("Drop a URL or .torrent file here"))
                         .scaledFont(size: 15, weight: .semibold)
                 }
                 .foregroundStyle(Theme.accent)
@@ -178,7 +178,7 @@ struct RootView: View {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
                 .a11yDecorative()
             Text(warning).scaledFont(size: 12)
-                .accessibilityLabel("Warning. \(warning)")
+                .accessibilityLabel(L10n.t("Warning. %@", warning))
             Spacer()
             Button {
                 vm.persistenceWarning = nil
@@ -187,7 +187,7 @@ struct RootView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .a11yButton("Dismiss warning")
+            .a11yButton(L10n.t("Dismiss warning"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -198,17 +198,17 @@ struct RootView: View {
         HStack(spacing: 8) {
             Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
                 .a11yDecorative()
-            Text("Copied link detected").scaledFont(size: 12, weight: .semibold)
+            Text(L10n.t("Copied link detected")).scaledFont(size: 12, weight: .semibold)
             Text(link)
                 .scaledFont(size: 11, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
-            Button("Add") { vm.acceptClipboardSuggestion() }
+            Button(L10n.t("Add")) { vm.acceptClipboardSuggestion() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .accessibilityLabel("Add copied link to downloads")
+                .accessibilityLabel(L10n.t("Add copied link to downloads"))
             Button {
                 vm.dismissClipboardSuggestion()
             } label: {
@@ -216,7 +216,7 @@ struct RootView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .a11yButton("Dismiss copied link suggestion")
+            .a11yButton(L10n.t("Dismiss copied link suggestion"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)

@@ -1,3 +1,7 @@
+import i18n from '../i18n'
+
+// Byte units and the ↓/↑ glyphs stay literal: they are symbols, not prose, and are
+// written the same way in every locale this app targets.
 export function fmtSize(bytes: number | null | undefined): string {
   if (bytes == null) return '—'
   if (bytes < 1) return '0 B'
@@ -34,7 +38,7 @@ export function fmtWhen(unixSeconds: number): string {
   const d = new Date(unixSeconds * 1000)
   const now = new Date()
   const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  if (d.toDateString() === now.toDateString()) return `Today ${time}`
+  if (d.toDateString() === now.toDateString()) return i18n.t('format.today', { time })
   return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`
 }
 

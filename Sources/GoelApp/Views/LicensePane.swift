@@ -31,14 +31,14 @@ struct LicensePane: View {
     @State private var showsDetail = false
 
     var body: some View {
-        PaneScaffold(title: "Licence",
-                     subtitle: "What you may do with Goel°, and how to license it for work.") {
+        PaneScaffold(title: L10n.t("Licence"),
+                     subtitle: L10n.t("What you may do with Goel°, and how to license it for work.")) {
             currentLicence
-            SectionHeader("Using Goel° at work?")
+            SectionHeader(L10n.t("Using Goel° at work?"))
             atWorkPanel
-            SectionHeader("What this app never does")
+            SectionHeader(L10n.t("What this app never does"))
             neverPanel
-            SectionHeader("For your own records")
+            SectionHeader(L10n.t("For your own records"))
             recordsPanel
         }
     }
@@ -54,8 +54,8 @@ struct LicensePane: View {
                     Text("PolyForm Noncommercial 1.0.0")
                         .font(.system(size: 14, weight: .semibold))
                         .accessibilityAddTraits(.isHeader)
-                    Text("Free for personal use, forever. The full source is available to read and modify. "
-                         + "Commercial and business use requires a separate paid licence.")
+                    Text(L10n.t("Free for personal use, forever. The full source is available to read and modify. "
+                         + "Commercial and business use requires a separate paid licence."))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -64,15 +64,16 @@ struct LicensePane: View {
             }
             HStack(spacing: 8) {
                 if let licenceFile = Self.bundledText(named: "LICENSE") {
-                    Button("Read the Licence") { NSWorkspace.shared.open(licenceFile) }
+                    Button(L10n.t("Read the Licence")) { NSWorkspace.shared.open(licenceFile) }
                 }
                 if let commercialFile = Self.bundledText(named: "LICENSE-COMMERCIAL") {
-                    Button("Commercial Terms") { NSWorkspace.shared.open(commercialFile) }
+                    Button(L10n.t("Commercial Terms")) { NSWorkspace.shared.open(commercialFile) }
                 }
-                Button("Third-Party Notices") { openThirdPartyNotices() }
+                Button(L10n.t("Third-Party Notices")) { openThirdPartyNotices() }
             }
-            Text("Version \(DiagnosticsBundle.hostAppVersion) (\(DiagnosticsBundle.hostBuildNumber)) · "
-                 + "© 2026 Vinit Kumar Goel")
+            Text(L10n.t("Version %1$@ (%2$@)",
+                        DiagnosticsBundle.hostAppVersion, DiagnosticsBundle.hostBuildNumber)
+                 + " · © 2026 Vinit Kumar Goel")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
         }
@@ -84,46 +85,46 @@ struct LicensePane: View {
 
     private var atWorkPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("If Goel° is used in the course of a business — even by one person, on one laptop, "
+            Text(L10n.t("If Goel° is used in the course of a business — even by one person, on one laptop, "
                  + "for internal work — that is commercial use and needs a paid licence. "
-                 + "Personal downloads, study, charities, schools and public research bodies do not.")
+                 + "Personal downloads, study, charities, schools and public research bodies do not."))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             DisclosureGroup(isExpanded: $showsDetail) {
                 VStack(alignment: .leading, spacing: 10) {
-                    LicenceList(title: "You need a commercial licence if", tint: Theme.orange, items: [
-                        "You are a company, partnership or sole trader and Goel° is used for that business.",
-                        "You are a contractor or consultant using it in work you bill to a client.",
-                        "You deploy it to a managed fleet — MDM, Jamf, Intune, a golden image, shared infrastructure.",
-                        "You bundle, resell, host, or offer it as part of a product or service.",
-                        "You need a warranty, an indemnity, support, or a signed agreement to file.",
+                    LicenceList(title: L10n.t("You need a commercial licence if"), tint: Theme.orange, items: [
+                        L10n.t("You are a company, partnership or sole trader and Goel° is used for that business."),
+                        L10n.t("You are a contractor or consultant using it in work you bill to a client."),
+                        L10n.t("You deploy it to a managed fleet — MDM, Jamf, Intune, a golden image, shared infrastructure."),
+                        L10n.t("You bundle, resell, host, or offer it as part of a product or service."),
+                        L10n.t("You need a warranty, an indemnity, support, or a signed agreement to file."),
                     ])
-                    LicenceList(title: "You do not need to buy anything if", tint: Theme.green, items: [
-                        "You are an individual downloading for personal purposes.",
-                        "You are a student or researcher with no commercial application in view.",
-                        "You are a charity, school, university, or public research, safety or health body.",
-                        "You are evaluating Goel° to decide whether to buy. Evaluation is not metered or reported.",
+                    LicenceList(title: L10n.t("You do not need to buy anything if"), tint: Theme.green, items: [
+                        L10n.t("You are an individual downloading for personal purposes."),
+                        L10n.t("You are a student or researcher with no commercial application in view."),
+                        L10n.t("You are a charity, school, university, or public research, safety or health body."),
+                        L10n.t("You are evaluating Goel° to decide whether to buy. Evaluation is not metered or reported."),
                     ])
-                    Text("Not sure which side you fall on? Ask. A one-line email costs nothing and the "
-                         + "answer is usually “you’re fine”.")
+                    Text(L10n.t("Not sure which side you fall on? Ask. A one-line email costs nothing and the "
+                         + "answer is usually “you’re fine”."))
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 8)
             } label: {
-                Text(showsDetail ? "Hide the detail" : "Who needs one, exactly?")
+                Text(showsDetail ? L10n.t("Hide the detail") : L10n.t("Who needs one, exactly?"))
                     .font(.system(size: 12))
             }
 
             HStack(spacing: 8) {
-                Button("Request a Commercial Licence") {
+                Button(L10n.t("Request a Commercial Licence")) {
                     NSWorkspace.shared.open(OnboardingState.commercialURL)
                 }
                 .buttonStyle(.borderedProminent)
-                Button("Email \(LicenseNotes.contactEmail)") { composeLicensingEmail() }
+                Button(L10n.t("Email %@", LicenseNotes.contactEmail)) { composeLicensingEmail() }
                 Spacer()
             }
             .padding(.top, 2)
@@ -148,42 +149,44 @@ struct LicensePane: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
-                .a11yGroup(label: "Guarantee, never: \(line)")
+                .a11yGroup(label: L10n.t("Guarantee, never: %@", line))
             }
         }
         .padding(.top, 4)
     }
 
-    private static let guarantees = [
-        "No licence key, activation, serial number, or online check.",
-        "No trial clock. Nothing expires and nothing stops working.",
-        "No feature gating — paying unlocks nothing, because nothing is locked.",
-        "No telemetry, no analytics, no phone-home. Nothing checks whether you have paid.",
-        "Diagnostics are only ever sent by you, by hand, from Settings ▸ Advanced.",
-    ]
+    private static var guarantees: [String] {
+        [
+            L10n.t("No licence key, activation, serial number, or online check."),
+            L10n.t("No trial clock. Nothing expires and nothing stops working."),
+            L10n.t("No feature gating — paying unlocks nothing, because nothing is locked."),
+            L10n.t("No telemetry, no analytics, no phone-home. Nothing checks whether you have paid."),
+            L10n.t("Diagnostics are only ever sent by you, by hand, from Settings ▸ Advanced."),
+        ]
+    }
 
     private var recordsPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Bought a commercial licence? You can note the details here so they travel with the "
+            Text(L10n.t("Bought a commercial licence? You can note the details here so they travel with the "
                  + "install for your own audit or asset records. Goel° never reads these fields, never "
-                 + "checks them, and never sends them anywhere — leaving them blank changes nothing.")
+                 + "checks them, and never sends them anywhere — leaving them blank changes nothing."))
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            SetRow(name: "Licensed to", desc: "The legal entity named on your licence.") {
+            SetRow(name: L10n.t("Licensed to"), desc: L10n.t("The legal entity named on your licence.")) {
                 TextField("", text: $holder)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
-                    .accessibilityLabel("Licensed to")
+                    .accessibilityLabel(L10n.t("Licensed to"))
                     .onChange(of: holder) { _, new in LicenseNotes.holder = new }
             }
-            SetRow(name: "Licence reference",
-                   desc: "Whatever your invoice or agreement calls it. Free text — no format is expected.") {
+            SetRow(name: L10n.t("Licence reference"),
+                   desc: L10n.t("Whatever your invoice or agreement calls it. Free text — no format is expected.")) {
                 TextField("", text: $reference)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
-                    .accessibilityLabel("Licence reference")
+                    .accessibilityLabel(L10n.t("Licence reference"))
                     .onChange(of: reference) { _, new in LicenseNotes.reference = new }
             }
         }
@@ -194,7 +197,7 @@ struct LicensePane: View {
         components.scheme = "mailto"
         components.path = LicenseNotes.contactEmail
         components.queryItems = [
-            URLQueryItem(name: "subject", value: "Goel° commercial licence enquiry"),
+            URLQueryItem(name: "subject", value: L10n.t("Goel° commercial licence enquiry")),
         ]
         guard let url = components.url else { return }
         NSWorkspace.shared.open(url)
@@ -204,9 +207,9 @@ struct LicensePane: View {
         if let url = Self.bundledText(named: "THIRD-PARTY-NOTICES") {
             NSWorkspace.shared.open(url)
         } else {
-            vm.settingsMessage("Third-Party Notices",
-                "The notices file ships inside the packaged app. In a source build, read "
-                + "THIRD-PARTY-NOTICES.md in the repository.")
+            vm.settingsMessage(L10n.t("Third-Party Notices"),
+                L10n.t("The notices file ships inside the packaged app. In a source build, read "
+                + "THIRD-PARTY-NOTICES.md in the repository."))
         }
     }
 

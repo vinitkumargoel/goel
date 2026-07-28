@@ -15,34 +15,34 @@ struct LinkGrabberSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             SheetHeader(systemImage: "text.page.badge.magnifyingglass",
-                        title: "Grab links from a page")
+                        title: L10n.t("Grab links from a page"))
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    TextField("Page URL (https://…)", text: $pageText)
+                    TextField(L10n.t("Page URL (https://…)"), text: $pageText)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12, design: .monospaced))
                         .onSubmit(fetch)
-                        .accessibilityLabel("Page URL")
-                    Button(isFetching ? "Fetching…" : "Fetch") { fetch() }
+                        .accessibilityLabel(L10n.t("Page URL"))
+                    Button(isFetching ? L10n.t("Fetching…") : L10n.t("Fetch")) { fetch() }
                         .disabled(isFetching || pageText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 if let fetchError {
                     Label(fetchError, systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.orange)
-                        .accessibilityLabel("Error. \(fetchError)")
+                        .accessibilityLabel(L10n.t("Error. %@", fetchError))
                 }
                 if !links.isEmpty {
                     filterChips
                     linkList
                     HStack {
-                        Button(allVisibleSelected ? "Select None" : "Select All") {
+                        Button(allVisibleSelected ? L10n.t("Select None") : L10n.t("Select All")) {
                             toggleVisibleSelection()
                         }
                         Spacer()
-                        Text("\(selected.count) selected")
+                        Text(L10n.t("%d selected", selected.count))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -53,9 +53,9 @@ struct LinkGrabberSheet: View {
             Divider()
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button(L10n.t("Cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Add Selected") { addSelected() }
+                Button(L10n.t("Add Selected")) { addSelected() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(selected.isEmpty)
@@ -92,10 +92,10 @@ struct LinkGrabberSheet: View {
 
     private var filterChips: some View {
         HStack(spacing: 6) {
-            chip("All (\(links.count))", active: categoryFilter == nil) { categoryFilter = nil }
+            chip(L10n.t("All (%d)", links.count), active: categoryFilter == nil) { categoryFilter = nil }
             ForEach(presentCategories, id: \.self) { category in
                 let count = links.filter { $0.category == category }.count
-                chip("\(category.label) (\(count))", active: categoryFilter == category) {
+                chip(L10n.t("%1$@ (%2$@)", category.label, String(count)), active: categoryFilter == category) {
                     categoryFilter = category
                 }
             }
@@ -155,7 +155,7 @@ struct LinkGrabberSheet: View {
     private func fetch() {
         guard let url = URL(string: pageText.trimmingCharacters(in: .whitespaces)),
               ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
-            fetchError = "Enter a full http(s) page URL."
+            fetchError = L10n.t("Enter a full http(s) page URL.")
             return
         }
         isFetching = true
@@ -169,19 +169,19 @@ struct LinkGrabberSheet: View {
                 let (data, response) = try await URLSession.shared.data(from: url)
                 guard let http = response as? HTTPURLResponse,
                       (200..<300).contains(http.statusCode) else {
-                    fetchError = "The page couldn’t be loaded."
+                    fetchError = L10n.t("The page couldn’t be loaded.")
                     return
                 }
                 guard data.count <= 8_000_000 else {
-                    fetchError = "That page is too large to scan."
+                    fetchError = L10n.t("That page is too large to scan.")
                     return
                 }
                 let html = String(data: data, encoding: .utf8)
                     ?? String(decoding: data, as: UTF8.self)
                 links = LinkExtractor.extract(from: html, baseURL: url)
-                if links.isEmpty { fetchError = "No downloadable links found on that page." }
+                if links.isEmpty { fetchError = L10n.t("No downloadable links found on that page.") }
             } catch {
-                fetchError = "The page couldn’t be loaded."
+                fetchError = L10n.t("The page couldn’t be loaded.")
             }
         }
     }
@@ -199,13 +199,13 @@ struct GrabbedLink: Hashable {
         case archive, video, audio, image, software, document, other
         var label: String {
             switch self {
-            case .archive: return "Archives"
-            case .video: return "Video"
-            case .audio: return "Audio"
-            case .image: return "Images"
-            case .software: return "Software"
-            case .document: return "Documents"
-            case .other: return "Other"
+            case .archive: return L10n.t("Archives")
+            case .video: return L10n.t("Video")
+            case .audio: return L10n.t("Audio")
+            case .image: return L10n.t("Images")
+            case .software: return L10n.t("Software")
+            case .document: return L10n.t("Documents")
+            case .other: return L10n.t("Other")
             }
         }
     }

@@ -80,21 +80,21 @@ enum FFmpegService {
     private static func overrideRejectionMessage(for path: String) -> String {
         let fm = FileManager.default
         if !path.hasPrefix("/") {
-            return "The ffmpeg path in Settings (“\(path)”) isn’t a full path. "
+            return L10n.t("The ffmpeg path in Settings (“%@”) isn’t a full path. "
                  + "Enter the complete location, e.g. /opt/homebrew/bin/ffmpeg, or clear "
-                 + "the field to use the copy included with Goel°."
+                 + "the field to use the copy included with Goel°.", path)
         }
         if !fm.fileExists(atPath: path) {
-            return "There’s no file at the ffmpeg path set in Settings (“\(path)”). "
-                 + "Fix the path, or clear the field to use the copy included with Goel°."
+            return L10n.t("There’s no file at the ffmpeg path set in Settings (“%@”). "
+                 + "Fix the path, or clear the field to use the copy included with Goel°.", path)
         }
         if ProcessSafety.interpreterBlocklist.contains(path) {
-            return "The ffmpeg path in Settings points at “\(path)”, which is a script "
+            return L10n.t("The ffmpeg path in Settings points at “%@”, which is a script "
                  + "interpreter rather than ffmpeg. Goel° won’t run it. Clear the field to "
-                 + "use the copy included with Goel°."
+                 + "use the copy included with Goel°.", path)
         }
-        return "The ffmpeg path in Settings (“\(path)”) isn’t a program Goel° can run. "
-             + "Clear the field to use the copy included with Goel°."
+        return L10n.t("The ffmpeg path in Settings (“%@”) isn’t a program Goel° can run. "
+             + "Clear the field to use the copy included with Goel°.", path)
     }
 
     /// Goes into the diagnostics bundle: never include user content beyond the typed path.
@@ -284,7 +284,7 @@ enum FFmpegService {
         case .missing(let reason): return .failure(summary: reason, detail: reason)
         }
         guard FileManager.default.isReadableFile(atPath: input.path) else {
-            let reason = "The source file is missing."
+            let reason = L10n.t("The source file is missing.")
             return .failure(summary: reason, detail: reason)
         }
         // Must stay after every abort path: this creates a real (empty) file beside the user's media.
@@ -395,7 +395,8 @@ enum FFmpegService {
         } catch {
             outPipe.fileHandleForReading.readabilityHandler = nil
             return .failure(stderr: "",
-                            launchError: "Couldn’t launch ffmpeg: \(error.localizedDescription)")
+                            launchError: L10n.t("Couldn’t launch ffmpeg: %@",
+                                                error.localizedDescription))
         }
         cancellation.markLaunched()
 

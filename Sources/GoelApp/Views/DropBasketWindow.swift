@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import GoelCore
 
 @MainActor
 final class DropBasketController {
@@ -21,7 +22,7 @@ final class DropBasketController {
             styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel],
             backing: .buffered, defer: false
         )
-        panel.title = "Drop Basket"
+        panel.title = L10n.t("Drop Basket")
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
@@ -50,12 +51,12 @@ private struct DropBasketView: View {
                 .font(.system(size: 26, weight: .light))
                 .foregroundStyle(isTargeted ? Color.accentColor : .secondary)
                 .a11yDecorative()
-            Text("Drop links here")
+            Text(L10n.t("Drop links here"))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
-        .a11yGroup(label: "Drop basket",
-                   hint: "Drag links or torrent files here to queue them.")
+        .a11yGroup(label: L10n.t("Drop basket"),
+                   hint: L10n.t("Drag links or torrent files here to queue them."))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 10)

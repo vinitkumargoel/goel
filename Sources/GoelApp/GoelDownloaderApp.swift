@@ -97,14 +97,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let converting = MainActor.assumeIsolated { AppViewModel.shared?.mediaJobs.hasLiveWork } ?? false
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = converting ? "Work is still in progress."
-                                       : "Downloads are still running."
+        alert.messageText = converting ? L10n.t("Work is still in progress.")
+                                       : L10n.t("Downloads are still running.")
         alert.informativeText = converting
-            ? "Quitting now stops it. Unfinished downloads are kept and can be resumed next "
-            + "launch; a conversion in progress is cancelled and its partial file removed."
-            : "Quitting now stops them. Unfinished downloads are kept and can be resumed next launch."
-        alert.addButton(withTitle: "Quit")
-        alert.addButton(withTitle: "Cancel")
+            ? L10n.t("Quitting now stops it. Unfinished downloads are kept and can be resumed next "
+            + "launch; a conversion in progress is cancelled and its partial file removed.")
+            : L10n.t("Quitting now stops them. Unfinished downloads are kept and can be resumed next launch.")
+        alert.addButton(withTitle: L10n.t("Quit"))
+        alert.addButton(withTitle: L10n.t("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
         guard converting else { return .terminateNow }
         // `.terminateLater`: ffmpeg cleanup runs on exit and needs us alive — terminating at once orphans the child and leaves the partial file.
@@ -147,51 +147,51 @@ struct GoelCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
-            Button("About Goel°") { showAboutPanel() }
-            Button("Check for Updates…") { viewModel.checkForUpdates() }
+            Button(L10n.t("About Goel°")) { showAboutPanel() }
+            Button(L10n.t("Check for Updates…")) { viewModel.checkForUpdates() }
         }
         CommandGroup(replacing: .newItem) {
-            Button("Add Download…") { viewModel.isAddSheetPresented = true }
+            Button(L10n.t("Add Download…")) { viewModel.isAddSheetPresented = true }
                 .keyboardShortcut("n", modifiers: .command)
-            Button("Grab Links from Page…") { viewModel.isLinkGrabberPresented = true }
+            Button(L10n.t("Grab Links from Page…")) { viewModel.isLinkGrabberPresented = true }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             Divider()
-            Button("Paste URLs from Clipboard") { pasteFromClipboard() }
+            Button(L10n.t("Paste URLs from Clipboard")) { pasteFromClipboard() }
                 .keyboardShortcut("v", modifiers: [.command, .shift])
-            Button("Paste URLs from File…") { pasteFromFile() }
+            Button(L10n.t("Paste URLs from File…")) { pasteFromFile() }
             Divider()
-            Button("Export Download List…") { exportList() }
-            Button("Import Download List…") { importList() }
-            Button("Import from Other App…") { importForeign() }
+            Button(L10n.t("Export Download List…")) { exportList() }
+            Button(L10n.t("Import Download List…")) { importList() }
+            Button(L10n.t("Import from Other App…")) { importForeign() }
             Divider()
-            Button("Export Backup (JSON)…") { exportBackup() }
-            Button("Import Backup (JSON)…") { importBackup() }
+            Button(L10n.t("Export Backup (JSON)…")) { exportBackup() }
+            Button(L10n.t("Import Backup (JSON)…")) { importBackup() }
         }
-        CommandMenu("Downloads") {
-            Button("Start All") { viewModel.resumeAll() }
-            Button("Pause All") { viewModel.pauseAll() }
+        CommandMenu(L10n.t("Downloads")) {
+            Button(L10n.t("Start All")) { viewModel.resumeAll() }
+            Button(L10n.t("Pause All")) { viewModel.pauseAll() }
             Divider()
-            Button("Statistics…") { viewModel.isStatsPresented = true }
+            Button(L10n.t("Statistics…")) { viewModel.isStatsPresented = true }
                 .keyboardShortcut("y", modifiers: .command)
-            Button("History…") { viewModel.isHistoryPresented = true }
+            Button(L10n.t("History…")) { viewModel.isHistoryPresented = true }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
             Divider()
-            Picker("When Downloads Finish", selection: autoShutdownBinding) {
-                Text("Do Nothing").tag("none")
-                Text("Quit Goel°").tag("quit")
-                Text("Sleep").tag("sleep")
-                Text("Shut Down").tag("shutdown")
+            Picker(L10n.t("When Downloads Finish"), selection: autoShutdownBinding) {
+                Text(L10n.t("Do Nothing")).tag("none")
+                Text(L10n.t("Quit Goel°")).tag("quit")
+                Text(L10n.t("Sleep")).tag("sleep")
+                Text(L10n.t("Shut Down")).tag("shutdown")
             }
         }
         CommandGroup(after: .sidebar) {
-            Button("Toggle Detail Panel") { viewModel.detailPanelVisible.toggle() }
+            Button(L10n.t("Toggle Detail Panel")) { viewModel.detailPanelVisible.toggle() }
                 .keyboardShortcut("i", modifiers: .command)
-            Button("Toggle Theme") { cycleTheme() }
+            Button(L10n.t("Toggle Theme")) { cycleTheme() }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
-            Button("Toggle Drop Basket") { DropBasketController.shared.toggle() }
+            Button(L10n.t("Toggle Drop Basket")) { DropBasketController.shared.toggle() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
             Divider()
-            Button("Command Palette…") { CommandPaletteBus.toggle() }
+            Button(L10n.t("Command Palette…")) { CommandPaletteBus.toggle() }
                 .keyboardShortcut("k", modifiers: .command)
         }
     }
@@ -199,8 +199,8 @@ struct GoelCommands: Commands {
     /// Credits are supplied explicitly: a source build has no `NSHumanReadableCopyright`, so the panel would otherwise omit the licence.
     private func showAboutPanel() {
         let credits = NSAttributedString(
-            string: "Free for personal use. Commercial and business use requires a paid licence.\n"
-                + "Licensed under PolyForm Noncommercial 1.0.0 — see Settings ▸ Licence.",
+            string: L10n.t("Free for personal use. Commercial and business use requires a paid licence.\n"
+                + "Licensed under PolyForm Noncommercial 1.0.0 — see Settings ▸ Licence."),
             attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor.secondaryLabelColor,
@@ -246,9 +246,9 @@ struct GoelCommands: Commands {
         let body = viewModel.tasks.map(\.source.locator).joined(separator: "\n")
         do {
             try body.write(to: url, atomically: true, encoding: .utf8)
-            viewModel.toastNow("Download list exported")
+            viewModel.toastNow(L10n.t("Download list exported"))
         } catch {
-            viewModel.toastNow("Export failed")
+            viewModel.toastNow(L10n.t("Export failed"))
         }
     }
 
@@ -259,20 +259,22 @@ struct GoelCommands: Commands {
 
     private func importForeign() {
         guard let url = FilePicker.openFile(
-            message: "Choose a file exported by aria2, JDownloader, IDM, a browser, etc."
+            message: L10n.t("Choose a file exported by aria2, JDownloader, IDM, a browser, etc.")
         ) else { return }
         guard let data = try? Data(contentsOf: url) else {
-            viewModel.toastNow("Couldn’t read that file")
+            viewModel.toastNow(L10n.t("Couldn’t read that file"))
             return
         }
         let text = String(decoding: data, as: UTF8.self)
         let locators = ForeignImportParser.extractLocators(from: text)
         guard !locators.isEmpty else {
-            viewModel.toastNow("No downloadable links found in that file")
+            viewModel.toastNow(L10n.t("No downloadable links found in that file"))
             return
         }
         viewModel.add(rawLines: locators.joined(separator: "\n"), saveDirectory: nil, priority: .normal)
-        viewModel.toastNow("Imported \(locators.count) link\(locators.count == 1 ? "" : "s")")
+        viewModel.toastNow(locators.count == 1
+                           ? L10n.t("Imported %d link", locators.count)
+                           : L10n.t("Imported %d links", locators.count))
     }
 
     private func cycleTheme() {
@@ -284,7 +286,7 @@ struct GoelCommands: Commands {
     private func readTextFile() -> String? {
         guard let url = FilePicker.openFile(types: [.plainText, .text]) else { return nil }
         guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
-            viewModel.toastNow("Couldn’t read that file")
+            viewModel.toastNow(L10n.t("Couldn’t read that file"))
             return nil
         }
         return contents

@@ -71,7 +71,7 @@ struct SpeedStat: View {
 
     private var spokenDirection: String {
         if let directionName { return directionName }
-        return symbol.contains("up") ? "Upload speed" : "Download speed"
+        return symbol.contains("up") ? L10n.t("Upload speed") : L10n.t("Download speed")
     }
 }
 
@@ -102,9 +102,9 @@ struct SFTPTransferRow: View {
                     }
                     .accessibilityLabel(
                         A11y.sentence(spokenDirection, transfer.name, serverLabel,
-                                      "Remote folder \(transfer.remoteFolderLabel)"))
+                                      L10n.t("Remote folder %@", transfer.remoteFolderLabel)))
                     .accessibilityValue(spokenProgress)
-                    .accessibilityHint("Opens this folder in the SFTP browser.")
+                    .accessibilityHint(L10n.t("Opens this folder in the SFTP browser."))
                 } else {
                     identityContent
                 }
@@ -129,7 +129,7 @@ struct SFTPTransferRow: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, 22)
-                .a11yGroup(label: "Transfer progress", value: spokenProgress)
+                .a11yGroup(label: L10n.t("Transfer progress"), value: spokenProgress)
             }
         }
         .padding(.horizontal, density == .full ? 14 : 12)
@@ -148,7 +148,7 @@ struct SFTPTransferRow: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
-            Text("\(transfer.folderPreposition) \(transfer.remoteFolderLabel)")
+            Text(L10n.t(transfer.folderPreposition) + " " + transfer.remoteFolderLabel)
                 .scaledFont(size: density == .compact ? 10 : 10.5)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -157,12 +157,12 @@ struct SFTPTransferRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .a11yGroup(
             label: A11y.sentence(spokenDirection, transfer.name, serverLabel,
-                                 "Remote folder \(transfer.remoteFolderLabel)"),
+                                 L10n.t("Remote folder %@", transfer.remoteFolderLabel)),
             value: spokenProgress)
     }
 
     private var spokenDirection: String {
-        transfer.activityLabel
+        L10n.t(transfer.activityLabel)
     }
 
     private var spokenProgress: String {
@@ -170,14 +170,14 @@ struct SFTPTransferRow: View {
         case .running:
             return A11y.sentence(
                 A11y.percent(transfer.fraction),
-                "\(A11y.bytes(transfer.bytes)) of \(A11y.bytes(transfer.total))",
+                L10n.t("%1$@ of %2$@", A11y.bytes(transfer.bytes), A11y.bytes(transfer.total)),
                 transfer.displaySpeed > 0 ? A11y.speed(transfer.displaySpeed) : nil)
         case .finished:
-            return A11y.sentence("Finished", transfer.total > 0 ? A11y.bytes(transfer.total) : nil)
+            return A11y.sentence(L10n.t("Finished"), transfer.total > 0 ? A11y.bytes(transfer.total) : nil)
         case .cancelled:
-            return "Cancelled"
+            return L10n.t("Cancelled")
         case .failed(let message):
-            return "Failed, \(message)"
+            return L10n.t("Failed, %@", message)
         }
     }
 
@@ -202,33 +202,33 @@ struct SFTPTransferRow: View {
                 Button(action: onCancel) {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12))
                 }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help("Cancel")
-                .a11yButton("Cancel transfer of \(transfer.name)")
+                .buttonStyle(.plain).foregroundStyle(.secondary).help(L10n.t("Cancel"))
+                .a11yButton(L10n.t("Cancel transfer of %@", transfer.name))
             }
         case .finished:
             if density == .full {
-                Text(transfer.total > 0 ? "Done · \(transfer.total.byteString)" : "Done")
+                Text(transfer.total > 0 ? L10n.t("Done") + " · \(transfer.total.byteString)" : L10n.t("Done"))
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.green)
             } else {
-                Text("Done").font(.system(size: 11)).foregroundStyle(Theme.green)
+                Text(L10n.t("Done")).font(.system(size: 11)).foregroundStyle(Theme.green)
             }
         case .cancelled:
             if density == .full {
-                Text("Cancelled").scaledFont(size: 11).foregroundStyle(.secondary)
+                Text(L10n.t("Cancelled")).scaledFont(size: 11).foregroundStyle(.secondary)
             }
             if let onRetry {
-                Button("Retry", action: onRetry)
+                Button(L10n.t("Retry"), action: onRetry)
                     .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
-                    .accessibilityLabel("Retry transfer of \(transfer.name)")
+                    .accessibilityLabel(L10n.t("Retry transfer of %@", transfer.name))
             }
         case .failed(let message):
             if density == .full {
                 Text(message).scaledFont(size: 11).foregroundStyle(Theme.red).lineLimit(1)
             }
             if let onRetry {
-                Button("Retry", action: onRetry)
+                Button(L10n.t("Retry"), action: onRetry)
                     .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
-                    .accessibilityLabel("Retry transfer of \(transfer.name)")
+                    .accessibilityLabel(L10n.t("Retry transfer of %@", transfer.name))
             }
         }
     }
@@ -261,7 +261,7 @@ struct KindBadge: View {
             .background(task.kindBadgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
             .foregroundStyle(task.kindBadgeColor)
             // 12% tint keeps text contrast at 3.83–7.95:1; 20% dropped it to 2.94:1 (SC 1.4.3).
-            .accessibilityLabel(task.accessibilityKindName)
+            .accessibilityLabel(L10n.t(task.accessibilityKindName))
     }
 }
 
@@ -287,9 +287,9 @@ struct MiniProgressBar: View {
         .frame(height: height)
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.updatesFrequently)
-        .accessibilityLabel("Progress")
+        .accessibilityLabel(L10n.t("Progress"))
         .accessibilityValue(task.status == .requestingMetadata
-                            ? "Requesting information"
+                            ? L10n.t("Requesting information")
                             : task.accessibilityProgressValue)
     }
 }
@@ -309,7 +309,7 @@ struct StateButton: View {
         }
         .buttonStyle(.plain)
         .help(helpText)
-        .a11yButton("\(task.accessibilityStateActionName) \(task.name)")
+        .a11yButton(L10n.t("%1$@ %2$@", L10n.t(task.accessibilityStateActionName), task.name))
     }
 
     private var symbol: String {
@@ -323,10 +323,10 @@ struct StateButton: View {
 
     private var helpText: String {
         switch task.status {
-        case .completed: return "Open folder"
-        case .failed: return "Retry"
-        case .paused, .queued: return "Resume"
-        default: return "Pause"
+        case .completed: return L10n.t("Open folder")
+        case .failed: return L10n.t("Retry")
+        case .paused, .queued: return L10n.t("Resume")
+        default: return L10n.t("Pause")
         }
     }
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../lib/api'
 import { BOOT } from '../lib/boot'
 import type { AddRequest, NetworkAdapter, NetworkState } from '../lib/types'
@@ -14,6 +15,7 @@ interface AddDialogProps {
 }
 
 export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
+  const { t } = useTranslation()
   const [url, setUrl] = useState('')
   const [folder, setFolder] = useState('')
   const [priority, setPriority] = useState<'normal' | 'high' | 'low'>('normal')
@@ -59,7 +61,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
     if (mode === 'single') return single ? `single:${single}` : 'auto'
     if (mode !== 'split') return 'auto'
     if (chosen.length === 0) {
-      onWarn('Pick at least one interface')
+      onWarn(t('addDialog.pickInterface'))
       return null
     }
     if (chosen.length === 1) return `single:${chosen[0]}`
@@ -69,7 +71,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
   async function submit() {
     const trimmed = url.trim()
     if (!trimmed) {
-      onWarn('Enter a URL or magnet first')
+      onWarn(t('addDialog.enterUrl'))
       return
     }
     const network = networkSpec()
@@ -114,41 +116,40 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
           <div className="mic">
             <LinkIcon />
           </div>
-          <h3>Add download</h3>
+          <h3>{t('addDialog.title')}</h3>
         </div>
 
         <div className="mbody">
-          <label className="flabel">URL, magnet, FTP or SFTP link</label>
+          <label className="flabel">{t('addDialog.urlLabel')}</label>
           <textarea
             className="finput"
             ref={urlRef}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder={'https://example.com/file.iso\nmagnet:?xt=urn:btih:...\nsftp://user@host/path/file.zip'}
+            placeholder={t('addDialog.urlPlaceholder')}
           />
-          <div className="fhint">
-            Paste multiple lines to batch-add. Torrents/files download to the server running Goel°.
-          </div>
+          <div className="fhint">{t('addDialog.urlHint')}</div>
 
           <div className="twocol">
             <div className="fg">
               <label className="flabel">
-                Save to <span className="chip chip-w">Server folder</span>
+                {t('addDialog.saveTo')}{' '}
+                <span className="chip chip-w">{t('addDialog.serverFolder')}</span>
               </label>
               {/* Read-only on purpose: a typed absolute path is refused only after the request is composed. */}
               <div className="finput pkfield">
                 <span className={`pkval${folder ? '' : ' dim'}`} title={folder || undefined}>
-                  {folder ? folderLabel(folder, home) : 'Default downloads folder'}
+                  {folder ? folderLabel(folder, home) : t('addDialog.defaultFolder')}
                 </span>
                 <button className="btn ghost pkbrowse" onClick={() => setPicking(true)}>
-                  Browse…
+                  {t('addDialog.browse')}
                 </button>
                 {folder && (
                   <button
                     className="btn ghost pkclear"
                     onClick={() => setFolder('')}
-                    title="Use the default folder"
-                    aria-label="Use the default folder"
+                    title={t('addDialog.useDefaultFolder')}
+                    aria-label={t('addDialog.useDefaultFolder')}
                   >
                     <CloseIcon />
                   </button>
@@ -156,35 +157,34 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
               </div>
             </div>
             <div className="fg" style={{ flex: '0 0 130px' }}>
-              <label className="flabel">Priority</label>
+              <label className="flabel">{t('addDialog.priority')}</label>
               <select
                 className="finput"
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as 'normal' | 'high' | 'low')}
               >
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-                <option value="low">Low</option>
+                <option value="normal">{t('task.priority.normal')}</option>
+                <option value="high">{t('task.priority.high')}</option>
+                <option value="low">{t('task.priority.low')}</option>
               </select>
             </div>
           </div>
 
           {showNetworkChoice && net && (
             <div className="fg" style={{ marginTop: 14 }}>
-              <label className="flabel">Network</label>
+              <label className="flabel">{t('addDialog.network')}</label>
               <select
                 className="finput"
                 value={mode}
                 onChange={(e) => setMode(e.target.value as NetMode)}
               >
                 <option value="auto">
-                  Automatic —{' '}
                   {net.aggregation
-                    ? 'split across every eligible interface'
-                    : 'use the system default route'}
+                    ? t('addDialog.modeAutoSplit')
+                    : t('addDialog.modeAutoDefault')}
                 </option>
-                <option value="split">Split this download across interfaces</option>
-                <option value="single">Send it all through one interface</option>
+                <option value="split">{t('addDialog.modeSplit')}</option>
+                <option value="single">{t('addDialog.modeSingle')}</option>
               </select>
 
               {mode === 'split' && (
@@ -233,9 +233,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
               )}
 
               <div className="fhint">
-                This machine has {eligible.length} usable interfaces. Splitting only helps when each
-                has its own upstream link — two adapters behind the same router share one pipe and are
-                usually slower together than the faster one alone.
+                {t('addDialog.splitHint', { count: eligible.length })}
               </div>
             </div>
           )}
@@ -251,16 +249,16 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
             }}
           >
             <input type="checkbox" checked={paused} onChange={(e) => setPaused(e.target.checked)} />{' '}
-            Add paused
+            {t('addDialog.addPaused')}
           </label>
         </div>
 
         <div className="mfoot">
           <button className="btn" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button className="btn primary" onClick={submit} disabled={busy}>
-            {busy ? 'Adding…' : 'Add to queue'}
+            {busy ? t('addDialog.adding') : t('addDialog.submit')}
           </button>
         </div>
       </div>
@@ -269,10 +267,14 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
 }
 
 export function AdapterLine({ adapter }: { adapter: NetworkAdapter }) {
+  const { t } = useTranslation()
   return (
     <span>
-      {adapter.label} <span style={{ color: 'var(--text-faint)' }}>{adapter.ipv4 ?? 'no address'}</span>
-      {adapter.expensive && <span className="chip chip-d">Metered</span>}
+      {adapter.label}{' '}
+      <span style={{ color: 'var(--text-faint)' }}>
+        {adapter.ipv4 ?? t('network.noAddress')}
+      </span>
+      {adapter.expensive && <span className="chip chip-d">{t('network.metered')}</span>}
     </span>
   )
 }

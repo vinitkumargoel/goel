@@ -9,7 +9,7 @@ struct AppToolbar: View {
             Button {
                 vm.isAddSheetPresented = true
             } label: {
-                Label("Add download", systemImage: "plus")
+                Label(L10n.t("Add download"), systemImage: "plus")
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -18,25 +18,26 @@ struct AppToolbar: View {
             Divider().frame(height: 20)
 
             ActionMenu(items: [
-                .button("Select all") { vm.selectAll() },
-                .button("Select none") { vm.selectNone() },
-                .button("Select completed") { vm.selectCompleted() },
+                .button(L10n.t("Select all")) { vm.selectAll() },
+                .button(L10n.t("Select none")) { vm.selectNone() },
+                .button(L10n.t("Select completed")) { vm.selectCompleted() },
             ]) { open in
                 ToolbarMenuLabel(title: "Select", systemImage: "checkmark.circle", active: open)
             }
-            .accessibilityValue("\(vm.selection.count) selected")
+            .accessibilityValue(L10n.t("%d selected", vm.selection.count))
 
             ActionMenu(items: sortItems) { open in
                 ToolbarMenuLabel(title: "Sort", systemImage: "arrow.up.arrow.down", active: open)
             }
-            .accessibilityValue("\(vm.sortKey.accessibilityName), \(vm.sortAscending ? "ascending" : "descending")")
+            .accessibilityValue(L10n.t("%1$@, %2$@", L10n.t(vm.sortKey.accessibilityName),
+                                      vm.sortAscending ? L10n.t("ascending") : L10n.t("descending")))
 
             ActionMenu(items: [
-                .button("All files") { vm.filter = .all },
-                .button("Active") { vm.filter = .active },
-                .button("Paused") { vm.filter = .paused },
-                .button("Completed") { vm.filter = .completed },
-                .button("Seeding") { vm.filter = .seeding },
+                .button(L10n.t("All files")) { vm.filter = .all },
+                .button(L10n.t("Active")) { vm.filter = .active },
+                .button(L10n.t("Paused")) { vm.filter = .paused },
+                .button(L10n.t("Completed")) { vm.filter = .completed },
+                .button(L10n.t("Seeding")) { vm.filter = .seeding },
             ]) { open in
                 ToolbarMenuLabel(title: "Filter", systemImage: "line.3.horizontal.decrease.circle", active: open)
             }
@@ -49,10 +50,10 @@ struct AppToolbar: View {
                     .foregroundStyle(.tertiary)
                     .font(.system(size: 12))
                     .a11yDecorative()
-                TextField("Search downloads", text: $vm.search)
+                TextField(L10n.t("Search downloads"), text: $vm.search)
                     .textFieldStyle(.plain)
                     .frame(width: 180)
-                    .accessibilityLabel("Search downloads")
+                    .accessibilityLabel(L10n.t("Search downloads"))
                     .keyboardShortcut("f", modifiers: .command)
             }
             .padding(.horizontal, 10)
@@ -67,11 +68,11 @@ struct AppToolbar: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
-            .help("Toggle detail panel")
+            .help(L10n.t("Toggle detail panel"))
             .tint(vm.detailPanelVisible ? Theme.accent : nil)
             .keyboardShortcut("i", modifiers: [.command, .option])
-            .a11yButton("Detail panel")
-            .accessibilityValue(vm.detailPanelVisible ? "Shown" : "Hidden")
+            .a11yButton(L10n.t("Detail panel"))
+            .accessibilityValue(vm.detailPanelVisible ? L10n.t("Shown") : L10n.t("Hidden"))
         }
         .padding(.horizontal, 14)
         .frame(height: 52)

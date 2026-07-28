@@ -56,7 +56,7 @@ struct TaskSpeedGraph: View {
         let history = vm.taskSpeedHistory[taskID] ?? []
         if history.count > 2 {
             VStack(alignment: .leading, spacing: 4) {
-                SectionLabel(text: "Speed · last \(history.count)s")
+                SectionLabel(text: L10n.t("Speed · last %ds", history.count))
                 ZStack {
                     SparklineView(values: history.map(\.down), tint: Theme.accent)
                     SparklineView(values: history.map(\.up), tint: Theme.teal)
@@ -65,11 +65,11 @@ struct TaskSpeedGraph: View {
             }
             // `.updatesFrequently` below stops VoiceOver caching a stale value.
             .a11yGroup(
-                label: "Speed graph, last \(history.count) seconds",
+                label: L10n.t("Speed graph, last %d seconds", history.count),
                 value: A11y.sentence(
-                    "Download \(A11y.speed(history.last?.down ?? 0))",
-                    "upload \(A11y.speed(history.last?.up ?? 0))",
-                    "peak download \(A11y.speed(history.map(\.down).max() ?? 0))"))
+                    L10n.t("Download %@", A11y.speed(history.last?.down ?? 0)),
+                    L10n.t("upload %@", A11y.speed(history.last?.up ?? 0)),
+                    L10n.t("peak download %@", A11y.speed(history.map(\.down).max() ?? 0))))
             .accessibilityAddTraits(.updatesFrequently)
         }
     }
@@ -82,36 +82,36 @@ struct StatsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Statistics").scaledFont(size: 16, weight: .bold)
+                Text(L10n.t("Statistics")).scaledFont(size: 16, weight: .bold)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                Button("Done") { vm.isStatsPresented = false }
+                Button(L10n.t("Done")) { vm.isStatsPresented = false }
                     .keyboardShortcut(.defaultAction)
             }
 
             if let stats {
                 HStack(spacing: 12) {
-                    statCard("Downloaded", stats.totalDownloadedBytes.byteString, Theme.accent,
+                    statCard(L10n.t("Downloaded"), stats.totalDownloadedBytes.byteString, Theme.accent,
                              spoken: A11y.bytes(stats.totalDownloadedBytes))
-                    statCard("Uploaded", stats.totalUploadedBytes.byteString, Theme.teal,
+                    statCard(L10n.t("Uploaded"), stats.totalUploadedBytes.byteString, Theme.teal,
                              spoken: A11y.bytes(stats.totalUploadedBytes))
-                    statCard("Completed", "\(stats.completedCount)", Theme.green,
-                             spoken: "\(stats.completedCount) downloads")
+                    statCard(L10n.t("Completed"), "\(stats.completedCount)", Theme.green,
+                             spoken: L10n.t("%d downloads", stats.completedCount))
                 }
 
                 let today = stats.today()
                 HStack(spacing: 12) {
-                    statCard("Today ↓", today.down.byteString, Theme.accent,
-                             spokenLabel: "Downloaded today", spoken: A11y.bytes(today.down))
-                    statCard("Today ↑", today.up.byteString, Theme.teal,
-                             spokenLabel: "Uploaded today", spoken: A11y.bytes(today.up))
+                    statCard(L10n.t("Today ↓"), today.down.byteString, Theme.accent,
+                             spokenLabel: L10n.t("Downloaded today"), spoken: A11y.bytes(today.down))
+                    statCard(L10n.t("Today ↑"), today.up.byteString, Theme.teal,
+                             spokenLabel: L10n.t("Uploaded today"), spoken: A11y.bytes(today.up))
                 }
 
-                SectionLabel(text: "Last 14 days")
+                SectionLabel(text: L10n.t("Last 14 days"))
                 dailyBars(stats.lastDays(14))
             } else {
                 ProgressView().frame(maxWidth: .infinity, alignment: .center)
-                    .accessibilityLabel("Loading statistics")
+                    .accessibilityLabel(L10n.t("Loading statistics"))
             }
             Spacer(minLength: 0)
         }
@@ -143,7 +143,8 @@ struct StatsView: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(total > 0 ? Theme.accent : Color.primary.opacity(0.08))
                         .frame(height: max(3, CGFloat(Double(total) / Double(peak)) * 80))
-                        .help("\(entry.day): ↓ \(entry.totals.down.byteString) · ↑ \(entry.totals.up.byteString)")
+                        .help(L10n.t("%1$@: ↓ %2$@ · ↑ %3$@", entry.day,
+                                     entry.totals.down.byteString, entry.totals.up.byteString))
                     Text(String(entry.day.suffix(2)))
                         .scaledFont(size: 8.5)
                         .foregroundStyle(.tertiary)
@@ -151,12 +152,12 @@ struct StatsView: View {
                 .frame(maxWidth: .infinity)
                 .a11yGroup(
                     label: entry.day,
-                    value: A11y.sentence("downloaded \(A11y.bytes(entry.totals.down))",
-                                         "uploaded \(A11y.bytes(entry.totals.up))"))
+                    value: A11y.sentence(L10n.t("downloaded %@", A11y.bytes(entry.totals.down)),
+                                         L10n.t("uploaded %@", A11y.bytes(entry.totals.up))))
             }
         }
         .frame(height: 100, alignment: .bottom)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Daily transfer totals, last 14 days")
+        .accessibilityLabel(L10n.t("Daily transfer totals, last 14 days"))
     }
 }

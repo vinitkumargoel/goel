@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { fmtSize, fmtSpeed, pct } from '../lib/format'
 import { fileType, kindLabel, rowAction, type RowAction } from '../lib/taskKind'
 import type { TaskRow } from '../lib/types'
@@ -23,29 +24,32 @@ export function LibraryView({
   onAction,
   onContextMenu,
 }: LibraryViewProps) {
+  const { t } = useTranslation()
+
   return (
     <div className="view">
-      {readOnly && (
-        <div className="ro-banner">
-          Read-only mode — viewing &amp; streaming only. Changes are disabled by the host.
-        </div>
-      )}
+      {readOnly && <div className="ro-banner">{t('library.readOnlyBanner')}</div>}
 
       {/* hide-* must match the cells below AND portal.css's ≤920px grid, or a label loses its column. */}
       <div className="lhead">
-        <div>Name</div>
-        <div className="r">Size</div>
-        <div className="hide-sm">Status</div>
-        <div className="r hide-xs">↓ Speed</div>
+        <div>{t('library.colName')}</div>
+        <div className="r">{t('library.colSize')}</div>
+        <div className="hide-sm">{t('library.colStatus')}</div>
+        <div className="r hide-xs">{t('library.colSpeed')}</div>
       </div>
 
       <div className="rows">
         {tasks.length === 0 ? (
           <div className="empty">
             <DownloadIcon />
-            <h4>Nothing here</h4>
+            <h4>{t('library.emptyTitle')}</h4>
             <p>
-              No downloads match this filter. Tap <b>Add</b> to queue a URL, magnet, or torrent.
+              {/* The bolded word is the Add button's own label, so it has to come from that key. */}
+              <Trans
+                i18nKey="library.emptyBody"
+                values={{ addLabel: t('common.add') }}
+                components={{ bold: <b /> }}
+              />
             </p>
           </div>
         ) : (
@@ -83,6 +87,7 @@ const Row = memo(function Row({
   onAction,
   onContextMenu,
 }: RowProps) {
+  const { t } = useTranslation()
   const percent = pct(task.progress)
   const type = fileType(task)
   const action = rowAction(task.statusToken)
@@ -100,7 +105,7 @@ const Row = memo(function Row({
         {action && canWrite ? (
           <button
             className="sbtn"
-            aria-label={action}
+            aria-label={t(`common.${action}`)}
             onClick={(e) => {
               e.stopPropagation()
               onAction(task.id, action)

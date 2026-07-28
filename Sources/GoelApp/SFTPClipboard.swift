@@ -20,8 +20,8 @@ struct SFTPClipboard: Equatable {
     }
 
     var pasteLabel: String {
-        if items.count == 1 { return "Paste “\(items[0].name)”" }
-        return "Paste \(items.count) Items"
+        if items.count == 1 { return L10n.t("Paste “%@”", items[0].name) }
+        return L10n.t("Paste %d Items", items.count)
     }
 
     func isSelfMove(toConnection id: UUID, directory target: String) -> Bool {

@@ -11,13 +11,13 @@ enum HostKeyInspector {
 
     static func present(endpoint: String, pinned: HostKeyStore.PinLookup, live: LiveKey) {
         let alert = NSAlert()
-        alert.messageText = "Host key for \(endpoint)"
+        alert.messageText = L10n.t("Host key for %@", endpoint)
         alert.informativeText = summary(pinned: pinned, live: live)
         alert.alertStyle = isMismatch(pinned: pinned, live: live) ? .critical : .informational
         alert.accessoryView = detailView(pinned: pinned, live: live)
-        alert.addButton(withTitle: "Done")
+        alert.addButton(withTitle: L10n.t("Done"))
         let copyable = liveFingerprint(live) ?? pinnedFingerprint(pinned)
-        if copyable != nil { alert.addButton(withTitle: "Copy Fingerprint") }
+        if copyable != nil { alert.addButton(withTitle: L10n.t("Copy Fingerprint")) }
 
         guard let window = NSApp.keyWindow ?? NSApp.mainWindow else {
             copy(copyable, if: alert.runModal())
@@ -55,43 +55,43 @@ enum HostKeyInspector {
     private static func summary(pinned: HostKeyStore.PinLookup, live: LiveKey) -> String {
         switch (pinned, live) {
         case (.pinned(let pin), .read(let now)) where pin == now:
-            return """
+            return L10n.t("""
                 The server is presenting the key Goel pinned. Connections to this \
                 server are verified against it.
-                """
+                """)
         case (.pinned, .read):
-            return """
+            return L10n.t("""
                 The key this server is presenting does NOT match the one Goel pinned, \
                 so connections are being refused.
 
                 If you rekeyed this server yourself, use “Forget Host Key” and confirm \
                 the new key on the next connection. If you did not, do not connect — \
                 something is answering in this server’s place.
-                """
+                """)
         case (.pinned, .unreachable(let reason)):
-            return """
+            return L10n.t("""
                 Goel has a key pinned for this server. It couldn’t read the server’s \
-                current key to compare: \(reason)
-                """
+                current key to compare: %@
+                """, reason)
         case (.none, .read):
-            return """
+            return L10n.t("""
                 Goel hasn’t pinned a key for this server yet — it will ask you to \
                 confirm the one below the first time it connects. Compare it with the \
                 fingerprint the server reports for its own host key.
-                """
+                """)
         case (.none, .unreachable(let reason)):
-            return """
+            return L10n.t("""
                 Goel hasn’t pinned a key for this server yet, and couldn’t read the \
-                server’s current key: \(reason)
-                """
+                server’s current key: %@
+                """, reason)
         case (.unavailable, _):
             // The store fails closed: this state blocks every connection until the record is cleared.
-            return """
+            return L10n.t("""
                 Goel can’t read its record of pinned host keys, so it is refusing to \
                 connect to any saved server rather than trusting one it can’t verify. \
                 “Forget Host Key” clears the record and restores first-contact \
                 approval.
-                """
+                """)
         }
     }
 
@@ -104,7 +104,8 @@ enum HostKeyInspector {
         let width: CGFloat = 300
         let spacing: CGFloat = 6
         let fields: [NSTextField] = lines.map { caption, fingerprint in
-            let field = NSTextField(labelWithString: "\(caption) — SHA-256:\n\(fingerprint)")
+            let field = NSTextField(labelWithString:
+                L10n.t("%1$@ — SHA-256:\n%2$@", L10n.t(caption), fingerprint))
             field.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
             field.isSelectable = true
             field.maximumNumberOfLines = 0
@@ -112,7 +113,7 @@ enum HostKeyInspector {
             // Required for `fittingSize` below to report the wrapped height, not one long line's.
             field.preferredMaxLayoutWidth = width
             // Spaced per character so the hex is spelled out, not read aloud as words.
-            field.setAccessibilityLabel("\(caption) host key SHA-256 fingerprint")
+            field.setAccessibilityLabel(L10n.t("%@ host key SHA-256 fingerprint", L10n.t(caption)))
             field.setAccessibilityValue(fingerprint.map { "\($0) " }.joined())
             return field
         }

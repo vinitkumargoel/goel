@@ -36,11 +36,11 @@ struct SFTPUploadConflictSheet: View {
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 3) {
                 Text(request.colliding.count == 1
-                     ? "An item already exists"
-                     : "\(request.colliding.count) items already exist")
+                     ? L10n.t("An item already exists")
+                     : L10n.t("%d items already exist", request.colliding.count))
                     .font(.system(size: 14, weight: .semibold))
                     .accessibilityAddTraits(.isHeader)
-                Text("These already exist in \(displayDir). Choose what to do with each.")
+                Text(L10n.t("These already exist in %@. Choose what to do with each.", displayDir))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -50,14 +50,14 @@ struct SFTPUploadConflictSheet: View {
 
     private var applyToAll: some View {
         HStack(spacing: 8) {
-            Text("Apply to all").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+            Text(L10n.t("Apply to all")).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
             Spacer()
             ForEach(Policy.allCases) { policy in
-                Button(policy.rawValue) { setAll(policy) }
+                Button(L10n.t(policy.rawValue)) { setAll(policy) }
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.accent)
-                    .accessibilityLabel("Apply \(policy.rawValue) to all items")
+                    .accessibilityLabel(L10n.t("Apply %@ to all items", L10n.t(policy.rawValue)))
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
@@ -73,15 +73,17 @@ struct SFTPUploadConflictSheet: View {
                             .frame(width: 18)
                             .a11yDecorative()
                         Text(item.name).font(.system(size: 13)).lineLimit(1).truncationMode(.middle)
-                            .accessibilityLabel("\(item.isDirectory ? "Folder" : "File"), \(item.name)")
+                            .accessibilityLabel(L10n.t("%1$@, %2$@",
+                                                       item.isDirectory ? L10n.t("Folder") : L10n.t("File"),
+                                                       item.name))
                         Spacer(minLength: 12)
                         Picker("", selection: binding(for: item.id)) {
-                            ForEach(Policy.allCases) { Text($0.rawValue).tag($0) }
+                            ForEach(Policy.allCases) { Text(L10n.t($0.rawValue)).tag($0) }
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
                         .frame(width: 210)
-                        .accessibilityLabel("What to do with \(item.name)")
+                        .accessibilityLabel(L10n.t("What to do with %@", item.name))
                     }
                     .padding(.horizontal, 16).padding(.vertical, 7)
                     Divider().opacity(0.3)
@@ -94,22 +96,22 @@ struct SFTPUploadConflictSheet: View {
         HStack {
             Text(summary).font(.system(size: 11)).foregroundStyle(.tertiary)
             Spacer()
-            Button("Cancel", role: .cancel, action: onCancel)
+            Button(L10n.t("Cancel"), role: .cancel, action: onCancel)
                 .keyboardShortcut(.cancelAction)
-            Button("Upload") { onResolve(decisions) }
+            Button(L10n.t("Upload")) { onResolve(decisions) }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
         }
         .padding(16)
     }
 
-    private var displayDir: String { request.remoteDir == "." ? "Home" : request.remoteDir }
+    private var displayDir: String { request.remoteDir == "." ? L10n.t("Home") : request.remoteDir }
 
     private var summary: String {
         var counts: [Policy: Int] = [:]
         for item in request.colliding { counts[decisions[item.id] ?? .rename, default: 0] += 1 }
         return Policy.allCases
-            .compactMap { p in (counts[p] ?? 0) > 0 ? "\(counts[p]!) \(p.rawValue.lowercased())" : nil }
+            .compactMap { p in (counts[p] ?? 0) > 0 ? L10n.t("%1$@ %2$@", String(counts[p]!), L10n.t(p.rawValue).lowercased()) : nil }
             .joined(separator: " · ")
     }
 

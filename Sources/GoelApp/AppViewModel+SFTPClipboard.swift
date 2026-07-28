@@ -10,8 +10,8 @@ extension AppViewModel {
         guard !safe.isEmpty else { return }
         sftpClipboard = SFTPClipboard(operation: operation, connectionID: connection.id,
                                       directory: directory, items: safe)
-        let noun = safe.count == 1 ? "“\(safe[0].name)”" : "\(safe.count) items"
-        toastNow(operation == .cut ? "Cut \(noun)" : "Copied \(noun)")
+        let noun = safe.count == 1 ? "“\(safe[0].name)”" : L10n.t("%d items", safe.count)
+        toastNow(operation == .cut ? L10n.t("Cut %@", noun) : L10n.t("Copied %@", noun))
     }
 
     func clearSFTPClipboard() { sftpClipboard = nil }
@@ -25,7 +25,7 @@ extension AppViewModel {
         guard let clip = sftpClipboard, !clip.isEmpty else { return }
         guard !clip.isSelfMove(toConnection: connection.id, directory: directory) else { return }
         guard let source = server(clip.connectionID) else {
-            toastNow("The server those items came from is no longer set up."); return
+            toastNow(L10n.t("The server those items came from is no longer set up.")); return
         }
         // Resolve clients once per paste, not per item: otherwise one Keychain prompt per item.
         guard let sourceClient = sftpClientReportingFailure(for: source) else { return }
@@ -40,7 +40,7 @@ extension AppViewModel {
         let sameServer = clip.connectionID == connection.id
         for entry in clip.items {
             guard !clip.wouldRecurse(entry, intoConnection: connection.id, directory: directory) else {
-                toastNow("Can’t paste “\(entry.name)” inside itself.")
+                toastNow(L10n.t("Can’t paste “%@” inside itself.", entry.name))
                 continue
             }
             startRemoteCopy(entry: entry, clip: clip,
@@ -94,15 +94,15 @@ extension AppViewModel {
         guard let plan = sftpRemoteCopyPlans[id],
               let sourceConnection = server(plan.sourceConnectionID),
               let destinationConnection = server(plan.destinationConnectionID) else {
-            settleTransfer(id, .failed("The servers for this copy are no longer set up."))
+            settleTransfer(id, .failed(L10n.t("The servers for this copy are no longer set up.")))
             return
         }
         guard let source = sftpClientReportingFailure(for: sourceConnection) else {
-            settleTransfer(id, .failed("Couldn’t reach the source server.")); return
+            settleTransfer(id, .failed(L10n.t("Couldn’t reach the source server."))); return
         }
         let destination = plan.sameServer ? source : sftpClient(for: destinationConnection)
         guard let destination else {
-            settleTransfer(id, .failed("Couldn’t reach the destination server.")); return
+            settleTransfer(id, .failed(L10n.t("Couldn’t reach the destination server."))); return
         }
         await performRemoteCopy(id: id, plan: plan, source: source,
                                 destination: destination, cancel: cancel)
@@ -130,7 +130,7 @@ extension AppViewModel {
                                                         in: plan.destinationDirectory,
                                                         on: writer,
                                                         policy: .rename)
-            guard let name else { throw SFTPError(kind: .io, message: "That name is already taken.") }
+            guard let name else { throw SFTPError(kind: .io, message: L10n.t("That name is already taken.")) }
             let target = SFTPBrowserPaths.join(plan.destinationDirectory, name)
             renameTransferRow(id, to: name)
 
@@ -182,7 +182,9 @@ extension AppViewModel {
                     try await reader.remove(plan.sourcePath, isDirectory: plan.entry.isDirectory)
                 } catch {
                     let detail = (error as? SFTPError)?.message ?? error.localizedDescription
-                    settleTransfer(id, .failed("Copied “\(plan.entry.name)” to the destination, but the original couldn’t be deleted — delete it by hand. \(detail)"))
+                    settleTransfer(id, .failed(
+                        L10n.t("Copied “%1$@” to the destination, but the original couldn’t be "
+                            + "deleted — delete it by hand. %2$@", plan.entry.name, detail)))
                     await releaseCopyConnections(plan: plan, reader: reader, readJob: readJob,
                                                  writer: writer, writeJob: writeJob,
                                                  source: sourceClient, destination: destinationClient)
