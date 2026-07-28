@@ -60,6 +60,38 @@ final class ConnectionBudgetTests: XCTestCase {
         XCTAssertEqual(budget.globalRoom(maxConnections: 10), 1)
     }
 
+    // MARK: Mid-flight extra room
+
+    func testExtraRoomUsesRawRoomWithoutFloorOne() {
+        var budget = ConnectionBudget()
+        // Medium: per-server 8, global 200.
+        XCTAssertEqual(budget.extraRoom(host: "h", profile: .medium), 8)
+
+        budget.reserve(host: "h", count: 5)
+        XCTAssertEqual(budget.extraRoom(host: "h", profile: .medium), 3)
+
+        budget.reserve(host: "h", count: 3)
+        XCTAssertEqual(budget.extraRoom(host: "h", profile: .medium), 0,
+                       "a saturated host grants zero — the caller already holds a connection")
+
+        // Over capacity must not report negative room.
+        budget.reserve(host: "h", count: 4)
+        XCTAssertEqual(budget.extraRoom(host: "h", profile: .medium), 0)
+    }
+
+    func testExtraRoomTakesTheTighterOfHostAndGlobal() {
+        var budget = ConnectionBudget()
+        budget.reserve(host: "other", count: 198)
+        // Host free = 8, global free = 2.
+        XCTAssertEqual(budget.extraRoom(host: "h", profile: .medium), 2)
+    }
+
+    func testExtraRoomZeroWhenProfileForbidsExtraConnections() {
+        let budget = ConnectionBudget()
+        XCTAssertEqual(budget.extraRoom(host: "h", profile: .low), 0,
+                       "Low never grants mid-flight extras, however much room exists")
+    }
+
     // MARK: resolveSegmentCount
 
     func testLowProfileAlwaysOneSegment() {

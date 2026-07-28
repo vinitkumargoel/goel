@@ -502,6 +502,19 @@ actor HTTPEngine: HTTPConfigurable {
                 GoelLog.engineHTTP.notice("Network selection adjusted", .detail(note))
             }
             let boundAdapters = resolution.adapters
+            if boundAdapters.count >= 2, !canSegment {
+                // ≥2 NICs resolved but the server hid range support: aggregation
+                // cannot start. The mid-flight prober watches only when a size +
+                // validator exist, so surface exactly what will happen instead of
+                // an idle-NIC mystery.
+                let willReprobe = SegmentedTransfer.shouldAttemptUpgrade(
+                    totalBytes: probe.totalBytes, acceptsRanges: probe.acceptsRanges,
+                    etag: probe.etag, lastModified: probe.lastModified)
+                GoelLog.engineHTTP.notice("Aggregation unavailable: server does not support ranged requests",
+                    .host(host ?? "unknown"),
+                    .count(boundAdapters.count, label: "adapters"),
+                    .flag(willReprobe, label: "willReprobeMidDownload"))
+            }
             if canSegment, boundAdapters.count >= 2 {
                 let hostRoom = connectionBudget.hostRoom(
                     host: host, maxPerServer: profile.maxConnectionsPerServer)
@@ -526,7 +539,7 @@ actor HTTPEngine: HTTPConfigurable {
             // sanitized them to http/https, deduped, capped).
             let mirrors = (resolved.mirrors ?? []).compactMap(URL.init(string:))
 
-            let plan = TransferPlan(
+            var plan = TransferPlan(
                 url: url,
                 destination: fileURL,
                 totalBytes: probe.totalBytes,
@@ -544,6 +557,16 @@ actor HTTPEngine: HTTPConfigurable {
                 boundAdapters: boundAdapters,
                 connectTimeout: networkConfig.timeout
             )
+            // Mid-flight upgrade channel: attached unconditionally — the
+            // transfer's own gate (size + validators + no range support) is
+            // authoritative; plans built directly in tests default to nil.
+            let extraGrants = ExtraGrantCounter()
+            plan.requestExtraConnections = { [weak self] wanted in
+                guard let self, wanted > 0 else { return 0 }
+                let granted = await self.grantExtraConnections(host: host, wanted: wanted)
+                extraGrants.add(granted)
+                return granted
+            }
             let planned = PlannedTransfer(plan: plan)
 
             // Charge the cross-download budget with the connection count the
@@ -555,7 +578,11 @@ actor HTTPEngine: HTTPConfigurable {
             // atomic on the actor (no suspension between them).
             let reserved = planned.connectionCount
             reserveConnections(host: host, count: reserved)
-            defer { releaseConnections(host: host, count: reserved) }
+            // Balance to zero on EVERY exit: initial reservation + every mid-flight
+            // grant (the grant closure records into `extraGrants` before it returns,
+            // and it is only ever called from the transfer's main task, so every
+            // grant happens-before this defer).
+            defer { releaseConnections(host: host, count: reserved + extraGrants.total) }
 
             // Consume the transfer's progress on the actor: update our task and
             // re-emit the SAME EngineEvents as before (.progress, .fileProgress,
