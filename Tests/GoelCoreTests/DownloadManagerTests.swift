@@ -3,11 +3,8 @@ import XCTest
 
 // MARK: - In-test fake engine
 
-/// A controllable, networking-free ``DownloadEngine`` for driving the scheduler
-/// deterministically. It records calls and lets the test inject events at will.
-///
-/// Events emitted before a subscriber attaches are buffered per task and replayed
-/// on subscription, so tests never race the scheduler's (async) subscribe step.
+/// A controllable, networking-free ``DownloadEngine``: records calls, injects events. Events emitted
+/// pre-subscribe are buffered per task and replayed, so tests never race the async subscribe step.
 final class FakeEngine: FilePrioritizing, @unchecked Sendable {
 
     let kind: DownloadKind
@@ -188,10 +185,8 @@ final class DownloadManagerTests: XCTestCase {
 
     // MARK: (a′) Metadata resolved on the add screen seeds the task
 
-    /// The add-confirmation screen already resolved the name, size and file list;
-    /// `add` must carry them onto the created task so the download doesn't re-show
-    /// a "gathering details" state for facts we already have (the redundancy the
-    /// Add flow used to have — it discarded the preview and re-derived everything).
+    /// The add-confirmation screen already resolved name, size and file list; `add` must carry them onto
+    /// the task so it doesn't re-show "gathering details" for facts we have (Add used to discard them).
     func testAddSeedsResolvedPreviewMetadata() async throws {
         let http = FakeEngine(kind: .http)
         let torrent = FakeEngine(kind: .torrent)
@@ -352,9 +347,8 @@ final class DownloadManagerTests: XCTestCase {
 
         // A "downloading" event buffered before the engine stopped arrives late.
         http.emit(.statusChanged(.downloading), for: task.id)
-        // Order-preserving sentinel: events fold in order, so once the name updates
-        // the stale status event has already been processed (and, per the guard,
-        // ignored) — no timing assumption needed.
+        // Order-preserving sentinel: events fold in order, so once the name updates the stale status
+        // event has already been processed (and, per the guard, ignored) — no timing assumption needed.
         http.emit(.nameResolved("SENTINEL"), for: task.id)
         let sawSentinel = await waitUntil { await manager.task(task.id)?.name == "SENTINEL" }
         XCTAssertTrue(sawSentinel)
@@ -468,10 +462,8 @@ final class DownloadManagerTests: XCTestCase {
         let snap = await manager.task(task.id)
         XCTAssertEqual(snap?.totalBytes, 1000)
         XCTAssertEqual(snap?.bytesDownloaded, 400)
-        // The stored speed is meter-derived from byte-counter deltas (a ~3 s
-        // sliding window, see ``SpeedMeter``), never copied from the event — a
-        // single progress report has no window yet, so it reads 0. The window
-        // math itself is covered by `SpeedMeterTests`.
+        // Stored speed is meter-derived from byte-counter deltas (~3 s sliding window, ``SpeedMeter``),
+        // never copied from the event — one progress report has no window yet, so it reads 0.
         XCTAssertEqual(snap?.downloadSpeed, 0)
         XCTAssertEqual(snap?.connectionCount, 4)
         XCTAssertEqual(snap?.files.first?.bytesCompleted, 400)

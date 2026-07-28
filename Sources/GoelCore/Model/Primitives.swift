@@ -64,10 +64,8 @@ public enum DownloadError: Error, Codable, Sendable, Equatable, Hashable {
 }
 
 public extension DownloadError {
-    /// Best-effort mapping of an arbitrary transfer error to a `DownloadError`:
-    /// pass an existing `DownloadError` through unchanged, translate the common
-    /// `URLError` codes, and otherwise fall back to `.network` with the
-    /// underlying description. Shared by the HTTP and HLS engines.
+    /// Best-effort mapping of any transfer error to a `DownloadError`: pass `DownloadError` through,
+    /// translate common `URLError` codes, else `.network(description)`. Shared by HTTP and HLS.
     init(mapping error: Error) {
         if let de = error as? DownloadError { self = de; return }
         if let ue = error as? URLError {
@@ -168,13 +166,8 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         }
     }
 
-    /// Whether this source may be auto-added from the browser-capture spool
-    /// *without* a confirmation banner. The spool is a no-confirmation channel,
-    /// so only credential-free web-download schemes qualify: a web page's link
-    /// must never be able to make the app open an authenticated `sftp:`/`ftp:`
-    /// connection (which would spend the user's ssh-agent identities or a stored
-    /// Keychain secret against an attacker-chosen host). Those schemes are still
-    /// accepted through the in-app add box, which is an explicit user action.
+    /// May this be auto-added from the browser-capture spool *without* confirmation? Only
+    /// credential-free schemes: a web link must not spend ssh-agent/Keychain secrets via `sftp:`/`ftp:`.
     public var isBrowserCaptureSafe: Bool {
         switch self {
         case .magnet, .torrentFile: return true
@@ -184,13 +177,8 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         }
     }
 
-    /// The URL this source will actually be fetched from — nil for a magnet, whose
-    /// swarm is reached by infohash rather than by contacting a named host.
-    ///
-    /// This is the address that has to be screened whenever the source came from
-    /// somewhere other than the person at the keyboard (the web portal's
-    /// `POST /api/add`, the browser-extension spool), so it lives with the type
-    /// rather than being re-derived at each of those seams.
+    /// The URL actually fetched — nil for a magnet (reached by infohash, not a named host). Lives on
+    /// the type because every untrusted seam (`POST /api/add`, the extension spool) must screen it.
     public var fetchTargetURL: URL? {
         switch self {
         case .url(let url), .torrentFile(let url), .hlsStream(let url): return url
@@ -198,25 +186,15 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         }
     }
 
-    /// Web-page / server-script path extensions that are pages to *view*, not
-    /// files to download. Used to gate the passive clipboard-capture banner so a
-    /// copied article/repo/search URL isn't offered as a download.
+    /// Path extensions that are pages to *view*, not files to download — gates the passive
+    /// clipboard-capture banner so a copied article/repo/search URL isn't offered as a download.
     public static let nonDownloadPageExtensions: Set<String> = [
         "html", "htm", "xhtml", "shtml", "php", "php3", "php4", "php5", "phtml",
         "asp", "aspx", "jsp", "jspx", "cfm", "cgi", "pl", "do", "action",
     ]
 
-    /// A conservative heuristic for the *automatic* clipboard suggestion: does
-    /// this source look like a downloadable file rather than a web page the user
-    /// merely copied? Gates ONLY the passive clipboard banner — the explicit Add
-    /// box and the browser-extension capture still accept any allowed URL, so the
-    /// user can always download an edge-case URL by hand.
-    ///
-    /// Non-HTTP sources (magnet/torrent/HLS/FTP/SFTP) are always file transfers,
-    /// so they pass. An HTTP(S) URL passes only when its path ends in a concrete
-    /// file extension that isn't a known page/markup type — an extensionless URL
-    /// (`…/user/repo`, a bare domain, a dynamic endpoint) reads as a page and is
-    /// skipped.
+    /// Conservative heuristic gating ONLY the passive clipboard banner (the Add box and the capture
+    /// spool still take any allowed URL): non-HTTP always passes; HTTP(S) needs a non-page extension.
     public var looksLikeDownloadableFile: Bool {
         switch self {
         case .magnet, .torrentFile, .hlsStream:
@@ -242,12 +220,8 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         }
     }
 
-    /// The canonical identity used for duplicate detection. For a magnet this is
-    /// the `btih:` infohash (lowercased): two magnet links for the *same* torrent
-    /// routinely differ only in their `dn=` display name or `tr=` tracker list, so
-    /// keying on the raw string would let the identical torrent be added twice and
-    /// collide on the same save path. Non-magnets — and a malformed magnet with no
-    /// infohash — fall back to ``locator``.
+    /// Duplicate-detection identity: a magnet's lowercased `btih:` infohash, because two links for
+    /// one torrent differ only in `dn=`/`tr=` and would collide on one save path. Else ``locator``.
     public var dedupKey: String {
         guard case .magnet(let m) = self else { return locator }
         if let range = m.range(of: #"btih:([a-zA-Z0-9]+)"#, options: .regularExpression) {
@@ -258,25 +232,15 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         return m
     }
 
-    /// Parse a raw, user-entered line into a source, enforcing a scheme allowlist.
-    ///
-    /// Accepts `magnet:` links, `*.torrent` URLs, HTTP(S) URLs, FTP(S) URLs,
-    /// and `sftp://` URLs (with a host) only. Anything else — `file:`,
-    /// `javascript:`, schemeless junk — is
-    /// rejected (returns `nil`). This is the single front door for adding
-    /// downloads, so the allowlist is enforced in one place (defends against
-    /// SSRF / local-file reads).
+    /// Parse a user-entered line, allowlisting only magnet / `*.torrent` / HTTP(S) / FTP(S) / `sftp`
+    /// (with host); `file:`, `javascript:`, junk ⇒ `nil`. One front door, so SSRF/local reads die here.
     public static func parse(_ line: String) -> DownloadSource? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let lower = trimmed.lowercased()
         if lower.hasPrefix("magnet:") { return .magnet(trimmed) }
-        // The scheme check must run BEFORE the `.torrent`-suffix routing —
-        // otherwise `file:///…/x.torrent` (local-file read) or any other
-        // scheme URLSession accepts would slip past the allowlist via the
-        // suffix. Local `.torrent` files enter through the watch-folder /
-        // file-open paths, which construct `.torrentFile` directly from a
-        // user-action file URL and never go through `parse`.
+        // Scheme check must run BEFORE `.torrent`-suffix routing, or `file:///…/x.torrent` (local-file
+        // read) slips past the allowlist. Local .torrent files enter via watch-folder/file-open only.
         if let url = URL(string: trimmed),
            url.pathExtension.lowercased() == "torrent",
            let scheme = url.scheme?.lowercased(),
@@ -297,12 +261,8 @@ public enum DownloadSource: Codable, Sendable, Hashable {
                 // Needs a host to be a real target (ftp://host/path); a bare
                 // `ftp:` or hostless form is junk that can only fail at connect.
                 guard url.host?.isEmpty == false else { return nil }
-                // Never persist an inline password (`ftp://user:pass@host`). Like
-                // the SFTP case below, a URL is stored/displayed/exported/copied
-                // verbatim, so an inline secret would leak into the task DB, JSON
-                // backups, the plain-text "Export list", and the clipboard. Strip
-                // it; FTP auth is resolved from the Keychain credential store at
-                // connect time (see `FTPEngine.credentials(for:)`).
+                // Never persist an inline password (`ftp://user:pass@host`): URLs are stored, exported
+                // and copied verbatim. Auth comes from the Keychain (see `FTPEngine.credentials(for:)`).
                 if url.password != nil,
                    var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
                     comps.password = nil
@@ -314,10 +274,8 @@ public enum DownloadSource: Codable, Sendable, Hashable {
                 // Needs a host to be a real target (sftp://host/path); a bare
                 // `sftp:` or hostless form is junk.
                 guard url.host?.isEmpty == false else { return nil }
-                // Never persist an inline password (`sftp://user:pass@host`).
-                // SFTP secrets live in the Keychain and are resolved at connect
-                // time; strip any inline secret so it can't leak into the task
-                // DB, exports, or the copyable on-screen "Source" field.
+                // Never persist an inline password (`sftp://user:pass@host`): it would leak into the
+                // task DB, exports and the copyable "Source" field. Secrets come from the Keychain.
                 if url.password != nil,
                    var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
                     comps.password = nil

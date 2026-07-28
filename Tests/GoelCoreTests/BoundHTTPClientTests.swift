@@ -6,13 +6,8 @@ import Glibc
 import Darwin
 #endif
 
-/// Exercises the interface-bound curl path against a real socket.
-///
-/// The unranged mode (`rangeStart < 0`) exists so a download pinned to one
-/// interface still egresses it when the server does not support ranges — the
-/// alternative was silently falling back to `URLSession`, which cannot bind, and
-/// therefore ignoring the pin. Getting the C side wrong would send a malformed
-/// `Range: bytes=-1--1` on every such request, so it is checked on the wire.
+/// Exercises the interface-bound curl path against a real socket. Unranged mode (`rangeStart < 0`) keeps
+/// a pinned download on its interface; a C-side slip sends `Range: bytes=-1--1`, so it is wire-checked.
 final class BoundHTTPClientTests: XCTestCase {
 
     /// Captures the request line + headers the server actually received.
@@ -31,13 +26,8 @@ final class BoundHTTPClientTests: XCTestCase {
         var total: Int { lock.lock(); defer { lock.unlock() }; return sum }
     }
 
-    /// One-shot HTTP/1.1 server on loopback. Hand-rolled because Foundation has no
-    /// server and the portal's own listener is Network.framework — Darwin only,
-    /// while interface binding is a Linux feature above all.
-    ///
-    /// It answers every request with `200 OK` and the full body — including ranged
-    /// ones, which is exactly the "server ignored Range" case the bound path has
-    /// to survive.
+    /// One-shot HTTP/1.1 loopback server, hand-rolled: Foundation has none and the portal's listener is
+    /// Network.framework (Darwin only). Always answers `200 OK` + full body — the "Range ignored" case.
     private func serveOnce(body: Data, recorder: Recorder,
                            extraHeaders: [String: String] = [:]) throws -> UInt16 {
         let listener = socket(AF_INET, PlatformSocket.stream, 0)
@@ -84,9 +74,8 @@ final class BoundHTTPClientTests: XCTestCase {
             close(listener)
             guard client >= 0 else { return }
             defer { close(client) }
-            // curl hangs up the moment the C write thunk refuses a body (ranged
-            // 200, external abort), so the remaining writes must fail the call —
-            // not signal-kill the test process.
+            // curl hangs up the moment the C write thunk refuses a body (ranged 200, external abort),
+            // so the remaining writes must fail the call — not signal-kill the test process.
             #if canImport(Darwin)
             var noSigpipe: Int32 = 1
             setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe,
@@ -202,9 +191,8 @@ final class BoundHTTPClientTests: XCTestCase {
 
     // MARK: Live byte accounting
 
-    /// `Σ onBytes == Response.bytesWritten` is the invariant the segment pump's
-    /// live ledger credits rest on: the pump now credits progress from the tally
-    /// alone, so any divergence would double-count or lose bytes on every attempt.
+    /// `Σ onBytes == Response.bytesWritten` is the invariant the segment pump's live ledger rests on:
+    /// it credits progress from the tally alone, so divergence double-counts or loses bytes.
     func testOnBytesTallyMatchesBytesWritten() async throws {
         let payload = Data((0..<64_000).map { UInt8($0 % 251) })
         let recorder = Recorder()
@@ -227,9 +215,8 @@ final class BoundHTTPClientTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: path), payload)
     }
 
-    /// The mid-flight upgrade stops a bound stream through `shouldAbort`. Nothing
-    /// may reach the file after the flag flips, and the response has to say it
-    /// aborted even when curl finished the same tick.
+    /// The mid-flight upgrade stops a bound stream through `shouldAbort`: nothing may reach the file
+    /// after the flag flips, and the response must say aborted even when curl finished the same tick.
     func testShouldAbortStopsTransferAndReportsAborted() async throws {
         let payload = Data(repeating: 0x7E, count: 512 * 1024)
         let recorder = Recorder()
@@ -261,9 +248,8 @@ final class BoundHTTPClientTests: XCTestCase {
 
     // MARK: Validators + ranged 200
 
-    /// The bound path has no `HTTPURLResponse`, so the C header thunk is the only
-    /// place validators can come from — and without them the upgrade refuses to
-    /// mix a streamed prefix with ranged tail bytes.
+    /// The bound path has no `HTTPURLResponse`, so validators can only come from the C header thunk —
+    /// without them the upgrade refuses to mix a streamed prefix with ranged tail bytes.
     func testResponseCarriesValidators() async throws {
         let payload = Data(repeating: 0x11, count: 1024)
         let recorder = Recorder()
@@ -304,10 +290,8 @@ final class BoundHTTPClientTests: XCTestCase {
         XCTAssertNil(response.lastModified)
     }
 
-    /// A ranged GET answered with a final 200 means the server ignored Range: the
-    /// body is the whole file and useless to a segment. It must be refused before
-    /// the first body byte, and must NOT report `aborted` — Swift reads that as a
-    /// user pause and would hang the task.
+    /// A ranged GET answered 200 means Range was ignored: refuse before the first body byte, and do
+    /// NOT report `aborted` — Swift reads that as a user pause and would hang the task.
     func testRangedTwoHundredAbortsEarlyWithRangeIgnored() async throws {
         let payload = Data(repeating: 0x3C, count: 256 * 1024)
         let recorder = Recorder()
@@ -332,9 +316,8 @@ final class BoundHTTPClientTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: path).count, 0)
     }
 
-    /// Binding to loopback proves the socket option is honoured end to end.
-    /// Skipped rather than failed where the sandbox forbids it — the assertion
-    /// that matters (unranged wire format) is covered above without binding.
+    /// Binding to loopback proves the socket option is honoured end to end. Skipped, not failed, where
+    /// the sandbox forbids it — the assertion that matters (unranged wire format) is covered above.
     func testBindingToLoopbackStillReachesTheServer() async throws {
         #if canImport(Glibc)
         let loopback = "lo"

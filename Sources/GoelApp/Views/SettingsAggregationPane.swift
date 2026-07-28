@@ -224,10 +224,8 @@ struct AggregationSettingsPane: View {
                         }
                     ), in: 1...8)
                     .labelsHidden()
-                    // `labelsHidden()` strips the name from VoiceOver too, and a
-                    // `Stepper`'s value lives in a separate `Text` beside it —
-                    // so unlabelled it is an anonymous pair of arrows with no
-                    // readable value at all.
+                    // `labelsHidden()` strips the name from VoiceOver too, and a `Stepper`'s value lives in a
+                    // separate `Text` beside it — so unlabelled it is anonymous arrows with no readable value.
                     .accessibilityLabel("Streams per adapter")
                     .accessibilityValue("\(vm.settings.aggregationStreamsPerAdapter)")
                     Text("\(vm.settings.aggregationStreamsPerAdapter)")
@@ -299,10 +297,8 @@ private struct AdapterRow: View {
         Button {
             guard !disabled else { return }
             if vm.settings.aggregationAdapterIds.isEmpty {
-                // Read on the main actor, where this button action already runs.
-                // `update` takes a @Sendable closure, and reaching into
-                // main-actor state from inside one is an error on the toolchain
-                // CI builds with.
+                // Read on the main actor, where this button action already runs. `update` takes a @Sendable
+                // closure, and reaching into main-actor state from one is an error on the CI toolchain.
                 let ids = vm.networkAdapters.map(\.bsdName)
                 vm.update { $0.aggregationAdapterIds = ids }
             }
@@ -367,9 +363,8 @@ private struct AdapterRow: View {
         .help(disabled
               ? "Enable “Include expensive networks” to use this adapter"
               : "Click to include or exclude from multi-path")
-        // A hand-drawn checkbox: participation shows as a filled circle glyph
-        // plus an accent wash and border, none of which is spoken. Collapse the
-        // row and carry inclusion as an explicit value.
+        // A hand-drawn checkbox: participation shows as a filled circle plus an accent wash, none of
+        // which is spoken. Collapse the row and carry inclusion as an explicit value.
         .a11yGroup(
             label: A11y.sentence("Network adapter",
                                  adapter.displayName.isEmpty ? adapter.bsdName : adapter.displayName,

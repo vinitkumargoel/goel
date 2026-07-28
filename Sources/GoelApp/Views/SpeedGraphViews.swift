@@ -70,10 +70,8 @@ struct TaskSpeedGraph: View {
                 }
                 .frame(height: 44)
             }
-            // Two overlaid sparklines distinguished only by tint. Read the pair
-            // as one chart whose value is the newest sample plus the window's
-            // peak — the two figures a sighted user actually takes from the
-            // shape. `.updatesFrequently` stops VoiceOver caching a stale value.
+            // Two overlaid sparklines distinguished only by tint. Read the pair as one chart valued at the
+            // newest sample plus the window's peak. `.updatesFrequently` stops VoiceOver caching a stale value.
             .a11yGroup(
                 label: "Speed graph, last \(history.count) seconds",
                 value: A11y.sentence(
@@ -136,9 +134,8 @@ struct StatsView: View {
         .task { stats = await vm.fetchStats() }
     }
 
-    /// One figure card. `spokenLabel` / `spoken` carry the VoiceOver wording when
-    /// the visible text uses symbols or abbreviations the ear can't parse; both
-    /// default to the visible strings.
+    /// One figure card. `spokenLabel` / `spoken` carry the VoiceOver wording when the visible text
+    /// uses symbols the ear can't parse; both default to the visible strings.
     private func statCard(_ label: String, _ value: String, _ tint: Color,
                           spokenLabel: String? = nil, spoken: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {

@@ -1,10 +1,7 @@
 import Foundation
 
-/// The seam between the scheduler and a concrete transfer backend.
-///
-/// Both the real HTTP engine and the (currently mock) torrent engine conform to
-/// this. A production libtorrent shim slots in behind the same protocol without
-/// the scheduler or UI changing.
+/// The seam between the scheduler and a concrete transfer backend. The HTTP and (mock) torrent engines
+/// both conform; a production libtorrent shim slots in behind it without the scheduler or UI changing.
 public protocol DownloadEngine: AnyObject, Sendable {
     /// Which kind of source this engine handles.
     var kind: DownloadKind { get }
@@ -34,9 +31,8 @@ public protocol DownloadEngine: AnyObject, Sendable {
     /// *what an engine can do* instead of downcasting to a concrete engine type.
     nonisolated var capabilities: EngineCapabilities { get }
 
-    /// Resolve a source's metadata for the add-confirmation preview, **without**
-    /// starting a tracked download. Returns nil when the engine can't resolve it
-    /// (timeout / no peers answered / the engine doesn't probe at all).
+    /// Resolve a source's metadata for the add-confirmation preview, **without** starting a tracked
+    /// download. nil when unresolvable (timeout / no peers answered / the engine doesn't probe).
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata?
 }
 
@@ -54,11 +50,8 @@ public extension DownloadEngine {
 
 // MARK: - Capability-scoped refinements
 
-/// Optional engine behaviours, expressed as refinement protocols that pair with
-/// the ``EngineCapabilities`` flags. The scheduler reaches an optional behaviour
-/// through an intentional `as?` capability query (e.g. `engine as? FilePrioritizing`)
-/// instead of every engine carrying a no-op it doesn't mean. Only the engines that
-/// actually implement a behaviour conform to its refinement.
+/// Optional engine behaviours as refinement protocols paired with the ``EngineCapabilities`` flags.
+/// The scheduler reaches them via an `as?` query, so no engine carries a no-op it doesn't mean.
 
 /// Engines that honour per-file selection / priority within a multi-file task.
 public protocol FilePrioritizing: DownloadEngine {
@@ -82,16 +75,14 @@ protocol TorrentControlling: FilePrioritizing {
     func setSeedRatioLimit(_ ratio: Double?, task: DownloadTask.ID) async
 }
 
-/// The HTTP engine's network-configuration seam (timeout / proxy / UA / cookies /
-/// retry). Refines ``FilePrioritizing`` — the HTTP engine also carries per-file
-/// selection for multi-file (metalink) transfers.
+/// The HTTP engine's network-configuration seam (timeout / proxy / UA / cookies / retry). Refines
+/// ``FilePrioritizing`` — it also carries per-file selection for multi-file (metalink) transfers.
 protocol HTTPConfigurable: FilePrioritizing {
     func configure(_ net: HTTPNetworkConfig) async
     /// Multi-path adapter set for network aggregation. Default no-op for mocks.
     func configureAggregation(_ config: AggregationEngineConfig) async
-    /// The user's "when a file exists" choice (`rename` | `overwrite`). The engine
-    /// re-resolves a name once the response headers arrive, so it has to read the
-    /// same setting ``DownloadManager/makeTask`` did. Default no-op for mocks.
+    /// The user's "when a file exists" choice (`rename` | `overwrite`). The engine re-resolves the name
+    /// once headers arrive, so it reads the same setting ``DownloadManager/makeTask`` did. No-op for mocks.
     func configureFileConflictPolicy(_ policy: String) async
 }
 
@@ -107,9 +98,8 @@ protocol HLSConfigurable: DownloadEngine {
 
 // MARK: - Torrent session configuration
 
-/// The session-level BitTorrent settings the scheduler pushes to a torrent engine.
-/// A free-standing value type (promoted out of the concrete engines) so the shared
-/// configuration seam never names a specific engine. `Equatable` for testability.
+/// Session-level BitTorrent settings the scheduler pushes to a torrent engine. Free-standing so the
+/// shared configuration seam never names a concrete engine. `Equatable` for testability.
 public struct TorrentSessionConfig: Sendable, Equatable {
     /// Wire encryption policy: `prefer` | `require` | `disable`.
     public var encryptionMode: String
@@ -121,9 +111,8 @@ public struct TorrentSessionConfig: Sendable, Equatable {
     public var enableLPD: Bool
     /// uTP (Micro Transport Protocol) transport.
     public var enableUTP: Bool
-    /// The user's proxy choice, applied to the HTTP fetch of a remote `.torrent`
-    /// file body so it follows the same proxy policy as real downloads (the
-    /// torrent swarm itself is separate). Defaults to "follow the OS proxy".
+    /// The user's proxy choice, applied to the HTTP fetch of a remote `.torrent` body so it follows the
+    /// same policy as real downloads (the swarm itself is separate). Defaults to "follow the OS proxy".
     public var proxy: NetworkGuard.ProxySpec
 
     public init(
@@ -162,9 +151,8 @@ public struct EngineCapabilities: OptionSet, Sendable {
 
 // MARK: - Metadata preview
 
-/// A source's resolved metadata, gathered for the add-confirmation preview before
-/// anything is committed to the queue. An empty `name` means the engine has no
-/// better name than the caller's own default (the manager folds in its fallback).
+/// A source's resolved metadata for the add-confirmation preview, before anything is queued. An empty
+/// `name` means the engine has no better name than the caller's default (the manager folds in one).
 public struct EngineMetadata: Sendable {
     /// Best display name the engine could resolve, or empty when it has none.
     public var name: String
@@ -177,14 +165,11 @@ public struct EngineMetadata: Sendable {
     /// Whether the source was reachable. False flags a probe that failed but may
     /// still succeed once the download actually starts.
     public var reachable: Bool
-    /// An integrity hash the server itself published (a `Digest`/`Content-MD5`
-    /// header or a `.sha256` sidecar file), offered as the pre-filled checksum on
-    /// the add-confirmation screen. Never trusted silently — the user sees it.
+    /// An integrity hash the server published (`Digest`/`Content-MD5` header or a `.sha256` sidecar),
+    /// pre-filled on the add-confirmation screen. Never trusted silently — the user sees it.
     public var suggestedChecksum: Checksum?
-    /// Why the probe failed, when the engine knows a concrete reason (a corrupt
-    /// `.torrent`, an unreachable session). Preferred over the manager's generic
-    /// "it may still work when you start" note, which would otherwise invite the
-    /// user to queue something that cannot work.
+    /// Why the probe failed, when the engine knows a concrete reason (corrupt `.torrent`, dead session).
+    /// Preferred over the manager's generic "may still work" note, which invites queueing the impossible.
     public var failureNote: String?
 
     public init(

@@ -1,23 +1,5 @@
-/* Shot 2 — the app window's debut.
- *
- * Card: neon-frame-orbit-drop (gallery style-key `neon-frame-orbit-drop`)
- * Exact demo read: demos/neon-frame-orbit-drop/NeonFrameForerunOrbit.tsx
- *
- * Card 命门 preserved exactly: every component shares ONE land moment
- * (LAND = 0.52, FALL = 0.3) — same frame off the ground, same frame down, with
- * the FloatWrap contact shadow converging in lockstep. Any stagger would read
- * as a tour shot (graze-face-tour), which is a different grammar and is used
- * later in this film, so the distinction has to hold.
- *
- * Demo values kept verbatim: trace 0-14f frame draw; easeFall bezier(0.5, 0.05,
- * 0.6, 1); the orbit's sweep, its scale curve and its perspective-origin travel;
- * rotX and rotZ shapes; scale 0.9 + 0.1*sin(orbit*PI) + 0.02*orbit; perspective-origin
- * 30% -> 64%; FloatWrap shadow maths unchanged.
- *
- * Reskin: the demo's purple/amber neon becomes the product accent ramp
- * (accent -> indigo -> teal, all from Theme.swift), and the grey placeholder
- * panel becomes the real captured UI, split into the layers that drop.
- */
+/* Shot 2 — the app window's debut, from demos/neon-frame-orbit-drop/NeonFrameForerunOrbit.tsx. 命门:
+ * ONE shared land moment (LAND 0.52, FALL 0.3); any stagger reads as the graze-face-tour used later. */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C } from '../theme';
@@ -116,24 +98,15 @@ export const AppDebut: React.FC<{ durationInFrames: number }> = ({ durationInFra
     extrapolateRight: 'clamp',
   });
 
-  /* The orbit finishes 34 frames before the cut, not 4. Running it to the last
-     frame meant the layers seated at f64 and then the camera kept turning for
-     another 52 — so the shot never actually held a settled, readable app, which
-     is the whole reason it exists. */
+  /* The orbit finishes 34 frames before the cut, not 4: running it to the last frame kept the
+     camera turning 52f after the layers seated, so the shot never held a settled, readable app. */
   const orbit = interpolate(frame, [0, D - 34], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
     easing: Easing.bezier(0.42, 0.05, 0.32, 1),
   });
-  /* The demo ends its 64-degree orbit at rotY -26 because its subject is an
-     abstract card and the pose is the point. Here the subject is a dense TABLE,
-     and the aesthetic rules are explicit that list shots must stay near-frontal:
-     past ~25 degrees the keystone shears the rows by more than a row height
-     across the window's width and every filename reads against its neighbour's
-     size and status. So the sweep is 26 degrees, not 64, and it ARRIVES flat
-     rather than departing. This is a deliberate downgrade of the card's
-     amplitude in favour of a hard readability rule; the orbit's shape, easing
-     and the perspective-origin travel that sells it are the demo's. */
+  /* Sweep is 26 degrees, not the demo's 64, and it ARRIVES flat: past ~25 degrees the keystone
+     shears a dense TABLE's rows by more than a row height, so filenames read against neighbours. */
   const rotY = 26 - 26 * orbit;
   const rotX = 5 - 4 * orbit;
   const rotZ = 2.4 - 2.8 * orbit;
@@ -221,14 +194,8 @@ export const AppDebut: React.FC<{ durationInFrames: number }> = ({ durationInFra
               <Layer src="textures/detail.png" x={1021} y={51} w={339} h={633} lift={L(150)} />
               <Layer src="textures/statusbar.png" x={0} y={684} w={1360} h={37} lift={L(122)} />
             </div>
-            {/* The toolbar is the one layer that CANNOT be clipped. Its slot is
-                at y=0 and it hovers 100px above it, so inside the clip it was
-                100% invisible for the entire fly-in — leaving its blurred
-                shadow crossing the window with nothing casting it, in the shot
-                that introduces the product. Outside the clip it reads as the
-                last piece being laid onto the window's top edge, which is what
-                the card's relay is supposed to look like. Everything else stays
-                clipped: they are body panes and they belong inside the frame. */}
+            {/* The toolbar alone cannot be clipped: its slot is y=0 and it hovers 100px above, so inside
+                the clip the whole fly-in was invisible — just a shadow with nothing casting it. */}
             <Layer src="textures/toolbar.png" x={0} y={0} w={1360} h={51} lift={L(122)} />
             <div
               style={{
@@ -257,11 +224,8 @@ export const AppDebut: React.FC<{ durationInFrames: number }> = ({ durationInFra
           <svg
             width={PW * fit + 80}
             height={PH * fit + 80}
-            /* The 40px pad is CSS px on a box that is `fit` times the user-unit
-               size, so in user units it is 40/fit. Padding both spaces by a
-               literal 40 gave the box and the viewBox different aspect ratios,
-               and preserveAspectRatio then letterboxed the path ~28px inside
-               the very window it is supposed to trace. */
+            /* The 40px pad is CSS px on a box `fit`× the user-unit size, so in user units it is
+               40/fit. A literal 40 in both skewed the aspect ratio and letterboxed the path ~28px. */
             viewBox={`${-40 / fit} ${-40 / fit} ${PW + 80 / fit} ${PH + 80 / fit}`}
             style={{ position: 'absolute', left: -40, top: -40 }}
           >

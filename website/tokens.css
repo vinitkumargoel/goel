@@ -1,16 +1,8 @@
-/* Hallmark · tokens for the Goel° marketing site (final: Terminal theme)
- * theme: studied-DNA (source: superset.sh screenshots, user-supplied)
- * paper dark · display mono (IBM Plex Mono) · accent cool sky-blue
- * every colour used anywhere on the site is named here — no literals in the pages
- */
+/* Hallmark tokens for the Goel° marketing site — Terminal theme: paper dark, IBM Plex Mono display,
+ * cool sky-blue accent. Every colour is named here; no literals in the pages. */
 
-/* ---------- self-hosted typefaces ----------
- * Latin + Latin-Ext subsets, served from our own origin: no Google Fonts request,
- * so no third party ever sees a visitor's IP, and text paints without waiting on
- * two extra DNS+TLS handshakes. Inter is one variable file per subset; IBM Plex
- * Mono ships static per weight. unicode-range gates the -ext files so English
- * visitors never download them.
- */
+/* ---------- self-hosted typefaces ---------- Latin(+Ext) from our own origin: no Google Fonts, so no
+ * third party sees a visitor's IP and no extra DNS+TLS wait; unicode-range gates the -ext files. */
 @font-face {
   font-family: 'Inter';
   font-style: normal;

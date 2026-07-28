@@ -1,13 +1,8 @@
 import type { SVGProps } from 'react'
 import type { FileType } from '../lib/taskKind'
 
-/**
- * Every icon in the portal, as components.
- *
- * These were `innerHTML` strings in the old build, which meant any name that
- * reached them had to be hand-escaped. As JSX they cannot inject markup at all,
- * so the escaping helper the old portal needed is simply gone.
- */
+/** Every icon in the portal, as components. These were `innerHTML` strings needing hand-escaping;
+ * as JSX they cannot inject markup at all, so the old portal's escaping helper is simply gone. */
 
 type IconProps = SVGProps<SVGSVGElement>
 

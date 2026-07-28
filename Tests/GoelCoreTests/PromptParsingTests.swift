@@ -1,10 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Tests for the input parsers lifted out of `AppViewModel`'s `NSAlert` prompts
-/// into ``PromptParsing`` — batch-rename templating, `Name: value` header
-/// parsing, and comma-separated tags. None of these edge cases were reachable
-/// before (the logic sat behind `runModal()` in the untested app target).
+/// Tests for the parsers lifted out of `AppViewModel`'s `NSAlert` prompts into ``PromptParsing``:
+/// batch-rename templating, `Name: value` headers, tags. Unreachable before, behind `runModal()`.
 final class PromptParsingTests: XCTestCase {
 
     // MARK: batchRename

@@ -1,8 +1,7 @@
 import Foundation
 
-/// Pure stream planning shared by the macOS and Linux remote-control servers.
-/// Keeps `streamPlan` / byte-range parse / MIME in one place so the two I/O
-/// shells cannot drift (e.g. empty finished files).
+/// Pure stream planning shared by the macOS and Linux remote-control servers: `streamPlan` /
+/// byte-range parse / MIME in one place so the two I/O shells cannot drift (e.g. empty finished files).
 public enum RemoteStreamService {
 
     /// What (and how much) of a task can be streamed right now, or nil.
@@ -20,14 +19,11 @@ public enum RemoteStreamService {
 
     public static func streamPlan(for task: DownloadTask) -> StreamPlan? {
         if task.status.hasData {
-            // Finished payload: multi-file torrents stream their main file. Resolve
-            // it through `primaryFilePath`, which rejects an engine-declared file
-            // path that would escape the save directory (this path is streamed out
-            // over the network, so a traversal here would be an arbitrary-file read).
+            // Finished payload; multi-file torrents stream their main file. `primaryFilePath` rejects an
+            // engine-declared path escaping the save directory — streamed out, so traversal = file read.
             let path = task.primaryFilePath
-            // The file must exist on disk to be streamable, but a legitimately
-            // empty (0-byte) finished payload is still streamable — serve it as
-            // an empty body rather than collapsing it into the not-ready path.
+            // Must exist on disk, but a legitimately empty (0-byte) finished payload is still
+            // streamable — serve an empty body rather than collapsing it into the not-ready path.
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else {
                 return nil
             }
@@ -49,11 +45,8 @@ public enum RemoteStreamService {
     public static func parseByteRange(_ header: String, available: Int64) -> (Int64, Int64)? {
         let trimmed = header.trimmingCharacters(in: .whitespaces).lowercased()
         guard trimmed.hasPrefix("bytes=") else { return nil }
-        // First range only; we don't do multipart. `split` omits empty pieces, so a
-        // header of exactly `bytes=` (or `bytes=,,,`) yields nothing — take `.first`
-        // rather than subscripting, which would trap and kill the whole process on a
-        // request any stream client can send. Nil here degrades to a full-body 200,
-        // the same as every other malformed range below.
+        // First range only (no multipart). `bytes=` or `bytes=,,,` splits to nothing, so `.first` —
+        // subscripting would trap and kill the process on a request any client can send. Nil → 200.
         guard let spec = trimmed.dropFirst("bytes=".count)
             .split(separator: ",").first else { return nil }
         let parts = spec.split(separator: "-", maxSplits: 1,

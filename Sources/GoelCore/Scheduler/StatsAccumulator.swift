@@ -1,17 +1,7 @@
 import Foundation
 
-/// The re-base ledger behind the download manager's highest-frequency path (a
-/// `.progress` event fires ~10×/sec/task), lifted out of the actor as a pure
-/// value type so its subtle regression rule can be tested directly.
-///
-/// Engines report *absolute* byte counts. To fold those into lifetime totals we
-/// keep a per-task ``Mark`` (the last absolute counts already recorded) and add
-/// only the delta since then. The wrinkle is regression: a retry or an
-/// invalidated resume can restart the engine's absolute count *below* the
-/// previous mark. We must never subtract that history from the lifetime total,
-/// yet the bytes re-transferred after the restart must still count. ``fold(_:)``
-/// re-bases the mark DOWN to the regressed reading (delta 0 for that step) so
-/// subsequent progress records the re-transferred interval from there.
+/// Re-base ledger for the manager's hottest path (~10 `.progress`/sec/task): engines report *absolute* counts, so a
+/// per-task ``Mark`` adds only deltas. A retry can regress below the mark, so ``fold(_:)`` re-bases DOWN, never subtracting.
 enum StatsAccumulator {
 
     /// A per-task watermark of the last absolute byte counts folded into the
@@ -25,12 +15,8 @@ enum StatsAccumulator {
         }
     }
 
-    /// Fold a fresh absolute progress reading against the task's previous mark.
-    ///
-    /// - Returns: the non-negative `deltaDown`/`deltaUp` to add to the lifetime
-    ///   totals, and the `newMark` to store for the next fold. On a regression
-    ///   (either absolute count below the mark) the mark re-bases down to the new
-    ///   reading, so the delta is never negative and history is never subtracted.
+    /// Fold a fresh absolute progress reading against the task's previous mark. - Returns: non-negative `deltaDown`/
+    /// `deltaUp` plus the `newMark`; a regression re-bases the mark down, so history is never subtracted.
     static func fold(previous mark: Mark, absoluteDown: Int64, absoluteUp: Int64)
         -> (deltaDown: Int64, deltaUp: Int64, newMark: Mark) {
         var rebased = mark

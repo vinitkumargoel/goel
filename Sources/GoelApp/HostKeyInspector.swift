@@ -1,20 +1,8 @@
 import AppKit
 import GoelCore
 
-/// Shows what Goel has pinned for a server against the key that server is
-/// presenting *right now*.
-///
-/// The connection editor already displays a fingerprint, but only as the byproduct
-/// of a successful "Test" — which needs credentials and a server that will let you
-/// in. The question this answers is the one you ask when it *won't* let you in:
-/// has the key changed? So the live read here is deliberately credential-free
-/// (``SFTPClient/hostKeyFingerprint()`` / `gsb_hostkey` hangs up before offering a
-/// password), and an unreachable server still shows the pin.
-///
-/// `NSAlert` rather than a SwiftUI sheet, for the reason recorded on
-/// ``HostKeyApprovalPresenter``: SwiftUI presentation is bound to a view
-/// hierarchy, so anything raised from `RootView` is drawn behind a sheet that is
-/// already open. An alert attached to the frontmost window always appears above it.
+/// Shows what Goel has pinned against the key the server presents right now. The live read is
+/// credential-free, so it answers "has the key changed?" exactly when login is failing.
 @MainActor
 enum HostKeyInspector {
 
@@ -32,9 +20,8 @@ enum HostKeyInspector {
         alert.alertStyle = isMismatch(pinned: pinned, live: live) ? .critical : .informational
         alert.accessoryView = detailView(pinned: pinned, live: live)
         alert.addButton(withTitle: "Done")
-        // Copying the *live* key is what lets the user paste it next to the
-        // server's own `ssh-keygen -lf` output; falling back to the pin keeps the
-        // button useful when the server can't be reached.
+        // Copying the *live* key is what lets the user paste it next to the server's own `ssh-keygen -lf`
+        // output; falling back to the pin keeps the button useful when the server is unreachable.
         let copyable = liveFingerprint(live) ?? pinnedFingerprint(pinned)
         if copyable != nil { alert.addButton(withTitle: "Copy Fingerprint") }
 
@@ -42,9 +29,8 @@ enum HostKeyInspector {
             copy(copyable, if: alert.runModal())
             return
         }
-        // The dialog outlives this call, so the value to copy is captured rather
-        // than looked up again on dismissal. `NSPasteboard` is not main-actor
-        // isolated, so the completion handler needs no hop.
+        // The dialog outlives this call, so the value to copy is captured rather than re-read on
+        // dismissal. `NSPasteboard` is not main-actor isolated, so the handler needs no hop.
         alert.beginSheetModal(for: window) { response in
             Self.copy(copyable, if: response)
         }
@@ -70,11 +56,8 @@ enum HostKeyInspector {
         return nil
     }
 
-    /// Only a *readable* pin that disagrees with a *successful* read is a
-    /// mismatch. Everything else is missing information, not evidence — and this
-    /// decides whether the user sees a critical "something is answering in this
-    /// server's place" alert, so a firewalled host or an unreadable pin record
-    /// must not be able to raise one.
+    /// Only a *readable* pin disagreeing with a *successful* read is a mismatch. Everything else is
+    /// missing information — a firewalled host must not raise a "something is impersonating" alert.
     static func isMismatch(pinned: HostKeyStore.PinLookup, live: LiveKey) -> Bool {
         guard let pin = pinnedFingerprint(pinned), let now = liveFingerprint(live) else { return false }
         return pin != now
@@ -126,9 +109,8 @@ enum HostKeyInspector {
 
     // MARK: Accessory
 
-    /// The fingerprints as selectable monospaced text — the whole point of the
-    /// dialog is comparing them against the server's own output, which means they
-    /// have to be copyable rather than eyeballed.
+    /// The fingerprints as selectable monospaced text — the dialog exists to compare them against
+    /// the server's own output, which means they must be copyable.
     private static func detailView(pinned: HostKeyStore.PinLookup, live: LiveKey) -> NSView {
         var lines: [(String, String)] = []
         if let pin = pinnedFingerprint(pinned) { lines.append(("Pinned", pin)) }
@@ -157,12 +139,8 @@ enum HostKeyInspector {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = spacing
-        // `NSAlert` sizes an accessory view from its frame, so the height is
-        // measured rather than guessed: a hard-coded box that comes up short
-        // clips the fingerprint, and half a fingerprint is worse than none — it
-        // is exactly the part the user is meant to compare character by
-        // character. Summed from the labels' own fitting sizes, which avoids
-        // adding a width constraint to a view whose frame is set directly.
+        // `NSAlert` sizes an accessory view from its frame, so the height is measured, not guessed: a
+        // short box clips the fingerprint, and half a fingerprint is worse than none.
         let height = fields.reduce(0) { $0 + $1.fittingSize.height }
             + CGFloat(max(0, fields.count - 1)) * spacing
         stack.frame = NSRect(x: 0, y: 0, width: width, height: max(height, 46))

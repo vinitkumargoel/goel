@@ -1,15 +1,5 @@
-/* Capture the Goel° UI replica into film textures.
- *
- * Produces the three-part asset set the 2.5D camera work needs:
- *   1. full-page 2x PNGs            -> public/textures/<name>.png
- *   2. per-element cutouts (some transparent) -> public/textures/<name>.png
- *   3. layout.json                  -> src/layout.json  (bbox per element, CSS px)
- *
- * Everything is served from file:// — no dev server, no network, no live data.
- * The fixture is frozen in fixtures.js, so runs are byte-reproducible.
- *
- *   node capture/capture.mjs
- */
+/* Capture the Goel° UI replica into film textures (`node capture/capture.mjs`): full-page 2x PNGs and
+ * element cutouts → public/textures, plus src/layout.json bboxes. All file://, frozen fixture, no net. */
 import puppeteer from 'puppeteer';
 import fs from 'node:fs';
 import path from 'node:path';

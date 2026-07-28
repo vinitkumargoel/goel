@@ -3,20 +3,8 @@ import { ApiError, api } from '../lib/api'
 import type { FolderListing } from '../lib/types'
 import { FolderIcon, FolderPlusIcon } from './Icons'
 
-/**
- * Browses the server's filesystem so nobody has to type an absolute path into
- * the Add dialog.
- *
- * Web-only by design: the macOS app opens a real `NSOpenPanel`, which knows
- * about sandbox scope and mounted volumes in ways this cannot.
- *
- * The whole tree is server-supplied — `path`, `parent`, `places` and every
- * entry's `path` come back from `GET /api/folders`. Nothing here joins or trims
- * a path, and nothing here decides what is reachable: `readable` and `writable`
- * are the server's report of what its own user may do, and this only greys out
- * what it is told to. A permission guess made in JavaScript would be a guess
- * about someone else's filesystem.
- */
+/** Browses the server's filesystem so nobody types an absolute path; the macOS app uses NSOpenPanel instead.
+ * Paths and `readable`/`writable` all come from `GET /api/folders` — a permission guess in JS would guess. */
 
 interface FolderPickerProps {
   /** Folder to open on first render; falls back to the default when unreachable. */
@@ -51,11 +39,8 @@ export function FolderPicker({
   // request is still open would otherwise land the user somewhere they left.
   const seqRef = useRef(0)
 
-  // Held in a ref rather than a dependency. The callers above pass a fresh arrow
-  // on every render, and the whole app re-renders on every SSE tick — so a
-  // `useCallback([onWarn])` would give `load` a new identity roughly once a
-  // second, and the mount effect below would yank the user back to the start
-  // mid-browse.
+  // Held in a ref, not a dependency: callers pass a fresh arrow each render and the app re-renders on
+  // every SSE tick, so `useCallback([onWarn])` would re-fire the mount effect ~1×/s and reset browsing.
   const warnRef = useRef(onWarn)
   warnRef.current = onWarn
 
@@ -73,9 +58,8 @@ export function FolderPicker({
       .catch((e: unknown) => {
         if (seq !== seqRef.current) return
         setLoading(false)
-        // A path that no longer exists, or that this user may not read, should
-        // not strand the picker — fall back to the default folder, which the
-        // server always has.
+        // A path that no longer exists, or that this user may not read, must not strand the picker —
+        // fall back to the default folder, which the server always has.
         if (path !== undefined) {
           load(undefined)
           warnRef.current(e instanceof Error ? e.message : 'Could not open that folder')
@@ -95,9 +79,8 @@ export function FolderPicker({
     if (naming) nameRef.current?.focus()
   }, [naming])
 
-  // Escape belongs to the innermost thing that is open. Without the capture
-  // phase it would reach the App-level handler and close the Add dialog too,
-  // discarding a typed URL to dismiss a folder list.
+  // Escape belongs to the innermost open thing: without the capture phase it reaches the App-level
+  // handler and closes the Add dialog too, discarding a typed URL just to dismiss a folder list.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
@@ -184,13 +167,8 @@ export function FolderPicker({
           )}
 
           {listing?.folders.map((f) => (
-            // Clicking navigates *into* a folder rather than selecting it, so
-            // there is exactly one way to choose: "Use this folder" always means
-            // the one named above the list. A row that both selects and drills in
-            // makes "which folder am I about to save to" ambiguous.
-            //
-            // An unreadable folder stays visible but inert. Hiding it would be a
-            // worse answer to "where did my folder go" than showing why.
+            // Clicking drills in, never selects, so "Use this folder" is the one unambiguous choice.
+            // An unreadable folder stays visible but inert — hiding it answers "where did it go" worse.
             <button
               key={f.path}
               className={`pkrow${f.readable ? '' : ' locked'}`}
@@ -244,9 +222,8 @@ export function FolderPicker({
           </button>
           <button
             className="btn primary"
-            // Not writable means the download would fail at submit time with a
-            // 403 the user could do nothing about. Refusing the choice here says
-            // the same thing while it is still fixable.
+            // Not writable means submit would fail with a 403 the user can do nothing about;
+            // refusing the choice here says the same thing while it is still fixable.
             disabled={!listing || !listing.writable}
             title={listing && !listing.writable ? 'No permission to write here' : undefined}
             onClick={() => listing && onPick(listing.path, listing)}
@@ -259,14 +236,8 @@ export function FolderPicker({
   )
 }
 
-/**
- * The path as the user thinks of it: "Home / Downloads / Linux" rather than
- * `/Users/someone/Downloads/Linux`. Callers keep the absolute one as a `title`,
- * because that is what a support conversation needs.
- *
- * `home` may be empty before the first listing arrives, in which case the
- * absolute path is shown — a long true path beats a short invented one.
- */
+/** The path as the user thinks of it ("Home / Downloads / Linux"); callers keep the absolute one as `title`.
+ * Empty `home` (before the first listing) shows the absolute path — a true path beats an invented one. */
 export function folderLabel(path: string, home: string | null): string {
   if (path === '/') return 'Computer'
   const parts = (rest: string) => rest.split('/').filter(Boolean)

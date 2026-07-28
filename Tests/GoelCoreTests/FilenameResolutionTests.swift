@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Filename derivation/safety: length clamping (the NAME_MAX bug), uniqueness,
-/// Content-Disposition parsing, MIME→extension inference, and the combined
-/// `refinedName` policy. Pure functions, no network.
+/// Filename derivation/safety: length clamping (the NAME_MAX bug), uniqueness, Content-Disposition
+/// parsing, MIME→extension inference, and the combined `refinedName` policy. Pure, no network.
 final class FilenameResolutionTests: XCTestCase {
 
     // MARK: sanitizedName / clampLength (the "file name is invalid" bug)

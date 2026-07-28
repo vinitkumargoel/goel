@@ -97,10 +97,8 @@ struct SidebarView: View {
                     HStack(spacing: 6) {
                         Text(server.label).scaledFont(size: 13).lineLimit(1)
                         Spacer(minLength: 4)
-                        // A live spinner while this server has an in-flight
-                        // upload/download; otherwise the reachability dot, so a
-                        // server reads as online/offline at a glance and a transfer
-                        // stays visible even with the browser closed.
+                        // A live spinner while this server has an in-flight transfer; otherwise the reachability dot, so
+                        // a server reads as online/offline at a glance and a transfer stays visible with the browser closed.
                         if transferring {
                             ProgressView()
                                 .controlSize(.small)
@@ -123,17 +121,14 @@ struct SidebarView: View {
                 RoundedRectangle(cornerRadius: 7)
                     .fill(selected ? Theme.indigo : Color.clear)
             )
-            // Ink derived from the fill, not hard-coded white: `indigo` is a
-            // *light* colour in three of the four themes, where white measured
-            // as low as 1.93:1.
+            // Ink derived from the fill, not hard-coded white: `indigo` is a *light* colour in three of the
+            // four themes, where white measured as low as 1.93:1.
             .foregroundStyle(selected ? Theme.onIndigo : Color.primary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // A server row is a lock glyph, a name, a 7pt coloured dot, a monospaced
-        // host line, a latency figure and an OS chip. Read as one thing, with
-        // the reachability the dot encodes said out loud — that dot is the only
-        // online/offline signal in the entire sidebar.
+        // A server row is a lock glyph, name, 7pt dot, host line, latency and an OS chip. Read as one
+        // thing, with reachability said out loud — that dot is the sidebar's only online/offline signal.
         .a11yGroup(
             label: A11y.sentence("Server", server.label, server.host),
             value: A11y.sentence(
@@ -143,9 +138,8 @@ struct SidebarView: View {
                 meta?.os?.pretty),
             hint: "Activate to browse this server's files.")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        // The session actions live in a context menu, which is reachable but
-        // fiddly under VoiceOver — mirror the ones with no other route here, the
-        // way "Edit server" already is.
+        // The session actions live in a context menu, reachable but fiddly under VoiceOver — mirror the
+        // ones with no other route here, the way "Edit server" already is.
         .accessibilityAction(named: Text("Edit server")) { vm.presentEditServer(server) }
         .accessibilityAction(named: Text("Reconnect")) { vm.reconnectServer(server.id) }
         .accessibilityAction(named: Text("Disconnect")) { vm.disconnectServer(server.id) }
@@ -334,20 +328,8 @@ struct SidebarView: View {
 
 // MARK: - Media jobs
 
-/// A live count of running conversions, shown only while there are any.
-///
-/// The dock in the window's corner is the detailed view; this row exists so the
-/// sidebar says *somewhere* that ffmpeg is working — a job stays discoverable
-/// after its card is dismissed, and the window is never silent about work in
-/// progress again.
-///
-/// Its own view, taking the center as an `@ObservedObject`, because
-/// ``MediaJobCenter`` is nested inside ``AppViewModel``: SwiftUI does not
-/// propagate a nested observable's changes through the outer one, so reading
-/// `vm.mediaJobs` from `SidebarView`'s body would render once and then freeze.
-///
-/// Not a filter. There is nothing in the download list to filter down to, so it
-/// is a read-only row rather than a button that would do nothing when clicked.
+/// A live count of running conversions, shown only while there are any, so the window is never
+/// silent about work. Its own view observing the center, since nested observables don't propagate.
 private struct MediaJobsSidebarGroup: View {
 
     @ObservedObject var center: MediaJobCenter

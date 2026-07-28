@@ -3,17 +3,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 import GoelCore
 
-/// An in-flight (or finished) SFTP transfer tracked by the app-wide transfer
-/// center (``AppViewModel`` + `AppViewModel+SFTPTransfers`). Lives independently
-/// of any browser view, so it survives closing/switching the server browser and
-/// stays cancellable; the browser and status bar just render it. One row per
-/// top-level item picked/dropped — a folder aggregates its whole subtree.
+/// An in-flight or finished SFTP transfer tracked by the app-wide transfer center, independent of
+/// any browser view. One row per top-level item; a folder aggregates its whole subtree.
 struct SFTPTransfer: Identifiable {
     enum Direction {
         case upload, download
-        /// A remote→remote copy or move. SFTP has no server-side copy, so the
-        /// bytes still stream through this machine — but never through a local
-        /// file, which is why such a row has no ``localURL``.
+        /// A remote→remote copy or move. SFTP has no server-side copy, so the bytes still stream
+        /// through this machine — but never through a local file, hence no ``localURL``.
         case remoteCopy
     }
     enum State: Equatable { case running, finished, failed(String), cancelled }
@@ -21,16 +17,14 @@ struct SFTPTransfer: Identifiable {
     let id = UUID()
     /// The server this transfer belongs to, so the browser can filter to its own.
     let connectionID: UUID
-    /// Not `let`: a download retry may have to land on a uniqued name, because the
-    /// path this row first claimed can belong to another transfer by then. See
-    /// ``AppViewModel/retrySFTPTransfer(_:)``.
+    /// Not `let`: a download retry may land on a uniqued name, because the path this row first
+    /// claimed can belong to another transfer by then.
     var name: String
     let direction: Direction
     /// True when an upload's source is a directory (uploaded recursively).
     let isDirectory: Bool
-    /// The local file/folder: an upload's source, or a download's destination.
-    /// Nil for a ``Direction/remoteCopy``, which never touches the disk.
-    /// Mutable for the same reason as ``name``.
+    /// The local file/folder: an upload's source or a download's destination. Nil for a
+    /// ``Direction/remoteCopy``, which never touches disk. Mutable for the same reason as ``name``.
     var localURL: URL?
     /// The resolved remote target (upload) or remote source (download). Enough,
     /// with `connectionID`, to retry the transfer after a failure/cancel.
@@ -44,9 +38,8 @@ struct SFTPTransfer: Identifiable {
     var remoteFolderLabel: String { remoteFolder == "." ? "Home" : remoteFolder }
     var bytes: Int64 = 0
     var total: Int64 = 0
-    /// Live throughput in bytes/sec — a sliding-window average (see
-    /// ``SpeedMeter``, the same smoothing behind the download queue's rates) so
-    /// the readout is steady rather than per-chunk jitter.
+    /// Live throughput in bytes/sec — a sliding-window average (``SpeedMeter``, the same smoothing
+    /// behind the download queue) so the readout is steady rather than per-chunk jitter.
     var speed: Double = 0
     var state: State = .running
 
@@ -74,12 +67,8 @@ struct SFTPTransfer: Identifiable {
     var fraction: Double { total > 0 ? min(1, Double(bytes) / Double(total)) : 0 }
     var isActive: Bool { state == .running }
 
-    /// The rate to *display*. Prefers the smoothed window average (``speed``), but
-    /// while that window is still filling — under ``SpeedMeter/minimumSpan`` of
-    /// history, where a fast LAN upload or a small file can finish before it warms
-    /// up — falls back to the plain average since the first byte. Same code path
-    /// for uploads and downloads, so a rate appears promptly either direction
-    /// rather than the smoothing swallowing short transfers whole.
+    /// The rate to *display*: the smoothed window average, falling back to the plain average since
+    /// the first byte while that window fills, so short transfers still show a rate.
     var displaySpeed: Double {
         if speed > 0 { return speed }
         guard isActive, bytes > 0, let firstByteAt else { return 0 }
@@ -96,9 +85,8 @@ struct SFTPTransfer: Identifiable {
         return Double(total - bytes) / rate
     }
 
-    /// Absorb a fresh absolute byte count. `bytes` tracks every callback so the
-    /// progress bar stays smooth; ``speed`` is the meter's window average, so
-    /// it stays stable no matter how bursty the callbacks are.
+    /// Absorb a fresh absolute byte count. `bytes` tracks every callback so the bar stays smooth;
+    /// ``speed`` is the meter's window average, so it stays stable however bursty the callbacks.
     mutating func record(bytes newBytes: Int64, now: Date = Date()) {
         if firstByteAt == nil, newBytes > 0 { firstByteAt = now }
         bytes = newBytes
@@ -117,11 +105,8 @@ struct SFTPTransfer: Identifiable {
 
 // MARK: - Shared row presentation
 
-/// Presentation derived once and shared by the browser's transfer tray and the
-/// menu-bar status popover, which previously each kept a verbatim copy of this
-/// state→colour mapping and the progress label (drift-prone across the two views).
-/// The two rows keep their own *layouts* (full vs compact) but no longer duplicate
-/// this logic.
+/// Presentation derived once and shared by the browser's transfer tray and the menu-bar popover,
+/// which each previously kept a verbatim (drift-prone) copy of this mapping.
 extension SFTPTransfer {
     /// Row tint by state.
     var tint: Color {
@@ -205,9 +190,8 @@ extension SFTPTransfer {
     var etaLabel: String? { etaSeconds.map { DownloadTask.etaString($0) } }
 }
 
-/// A thread-safe cancel flag shared between a drag's `Progress.cancellationHandler`
-/// (main thread) and the blocking download's progress callback (a libssh2
-/// thread), so cancelling a drag actually aborts the transfer.
+/// A thread-safe cancel flag shared between a drag's `Progress.cancellationHandler` (main thread)
+/// and the blocking download's progress callback (a libssh2 thread).
 final class CancelFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
@@ -215,10 +199,8 @@ final class CancelFlag: @unchecked Sendable {
     var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
 }
 
-/// Drives one SFTP server browser: current directory, listing, and the
-/// interactive upload/download transfers. Navigation is string-path based —
-/// libssh2 resolves relative paths against the login home, so "." is home and
-/// child/parent paths are joined/trimmed here.
+/// Drives one SFTP server browser: current directory, listing, and interactive transfers.
+/// Navigation is string-path based — libssh2 resolves relative paths against the login home.
 @MainActor
 final class SFTPBrowserModel: ObservableObject {
 
@@ -247,11 +229,8 @@ final class SFTPBrowserModel: ObservableObject {
         Self.sweepStaleDragTemps()
     }
 
-    /// Re-point this browser at an edited connection (host/username/port/password
-    /// may have changed). SwiftUI keeps this `@StateObject` alive across an edit
-    /// because the connection's `id` is stable, so the owning view must forward
-    /// the fresh connection/client here — otherwise every operation keeps using
-    /// the pre-edit credentials captured at `init`. Keeps the current directory.
+    /// Re-point this browser at an edited connection. SwiftUI keeps this `@StateObject` alive across
+    /// an edit, so the owning view must forward the fresh client or every operation uses stale credentials.
     func update(connection: SFTPConnection, client: SFTPClient?) {
         self.connection = connection
         self.client = client
@@ -291,9 +270,8 @@ final class SFTPBrowserModel: ObservableObject {
     }
 
     func open(_ entry: SFTPEntry) async {
-        // The name is server-supplied and joined onto the browsed path, so a
-        // listing entry named ".." or "a/b" would silently walk the user out of
-        // the tree they think they're in.
+        // The name is server-supplied and joined onto the browsed path, so a listing entry named ".."
+        // or "a/b" would silently walk the user out of the tree they think they're in.
         guard entry.isDirectory, SFTPBrowserPaths.isSafeChildName(entry.name) else { return }
         await navigate(to: Self.join(path, entry.name))
     }
@@ -433,9 +411,8 @@ final class SFTPBrowserModel: ObservableObject {
         let full = Self.join(path, entry.name)
         do {
             let attributes = try await client.attributes(full)
-            // A link's target is a second round trip, so only pay it for links.
-            // A target that can't be read is not an error — a dangling link is a
-            // perfectly ordinary thing to be looking at in an info panel.
+            // A link's target is a second round trip, so only pay it for links. An unreadable target is
+            // not an error — a dangling link is perfectly ordinary in an info panel.
             var target: String?
             if attributes.isSymlink {
                 target = try? await client.linkTarget(full)
@@ -460,9 +437,8 @@ final class SFTPBrowserModel: ObservableObject {
         } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
     }
 
-    /// Free/total space on the volume holding the current folder, or nil when the
-    /// server doesn't support the query. Runs on the background connection so a
-    /// slow answer never delays a folder click.
+    /// Free/total space on the volume holding the current folder, or nil when the server doesn't
+    /// support the query. Runs on the background connection so a slow answer never delays a click.
     func volumeSpace() async -> SFTPVolumeSpace? {
         guard let client else { return nil }
         return try? await client.onBackground().freeSpace(path)
@@ -477,19 +453,11 @@ final class SFTPBrowserModel: ObservableObject {
                                              shouldContinue: shouldContinue)
     }
 
-    // MARK: Transfers
-    //
-    // Uploads and "Download to…" downloads are owned by the app-wide transfer
-    // center on ``AppViewModel`` (see `AppViewModel+SFTPTransfers`), so they keep
-    // running — and stay visible/cancellable — after this browser is closed. The
-    // view starts them through `vm` and reads them back filtered by connection.
-    // Only the drag-out provider below stays here, because Finder drives its
-    // lifecycle (and its own cancellation) directly.
+    // MARK: Transfers — owned by the app-wide center on ``AppViewModel`` so they outlive this browser.
+    // Only the drag-out provider stays here, because Finder drives its lifecycle and cancellation.
 
-    /// A drag-out provider for a remote file: Finder pulls the bytes on demand
-    /// via `registerFileRepresentation`, so nothing downloads until the drop is
-    /// accepted. Only the `client` and computed paths are captured (never the
-    /// main-actor model), so the background load handler stays Sendable-safe.
+    /// A drag-out provider for a remote file: Finder pulls bytes on demand, so nothing downloads
+    /// until the drop is accepted. Captures only `client` and paths, never the main-actor model.
     func fileProvider(for entry: SFTPEntry) -> NSItemProvider {
         let provider = NSItemProvider()
         // Sanitize the server-supplied name: it names the *local* dropped file
@@ -506,13 +474,11 @@ final class SFTPBrowserModel: ObservableObject {
                 .appendingPathComponent("GoelSFTP-\(UUID().uuidString)", isDirectory: true)
             try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
             let tmp = tmpDir.appendingPathComponent(safeName)
-            // Cancelling the drag must actually stop the network transfer, not
-            // just the wrapping Task — the blocking download runs on its own
-            // thread and only observes this flag on progress ticks.
+            // Cancelling the drag must actually stop the network transfer, not just the wrapping Task —
+            // the blocking download runs on its own thread and only observes this flag on progress ticks.
             let cancelled = CancelFlag()
-            // The listing's byte count is the server's claim, not a fact, and a
-            // drag-out has no size check of its own — so bound what a drag can
-            // pull into the temp directory.
+            // The listing's byte count is the server's claim, not a fact, and a drag-out has no size check
+            // of its own — so bound what a gesture can pull into the temp directory.
             let cap = ByteCap(limit: Self.dragOutByteCap)
             let task = Task {
                 do {
@@ -544,12 +510,8 @@ final class SFTPBrowserModel: ObservableObject {
         return provider
     }
 
-    /// The most a single drag-out will pull to disk before it is abandoned.
-    /// Matches the browser's preview cap — both fetch a server-sized file into
-    /// the temp directory on nothing more than a gesture.
-    /// `nonisolated` for the same reason as the two helpers below it: the
-    /// drag-out closure that reads it is @Sendable, and a constant needs no
-    /// actor.
+    /// The most a single drag-out pulls to disk before being abandoned; matches the preview cap.
+    /// `nonisolated` because the drag-out closure that reads it is @Sendable and a constant needs no actor.
     private nonisolated static let dragOutByteCap: Int64 = 512 * 1024 * 1024
 
     private nonisolated static func tooLargeToDrag(_ name: String) -> SFTPError {
@@ -568,23 +530,14 @@ final class SFTPBrowserModel: ObservableObject {
 
     // MARK: Local-path safety + drag-out temp housekeeping
 
-    /// Whether `url` resolves to a path inside `directory` (belt-and-suspenders
-    /// on top of `sanitizedName`, which already strips slashes and `..`).
-    ///
-    /// Delegates to ``PathSafety/isContained(_:within:)``, which resolves symlinks
-    /// as well as collapsing `..` — standardizing alone leaves a symlinked
-    /// component intact, so a download folder containing a link that points
-    /// outside would have passed a purely textual check.
-    ///
-    /// `nonisolated`: pure path arithmetic with no model state, and the folder
-    /// download checks every file it writes from its transfer workers.
+    /// Whether `url` resolves inside `directory`, via ``PathSafety/isContained(_:within:)`` — which
+    /// resolves symlinks, unlike a purely textual check. `nonisolated`: pure path arithmetic.
     nonisolated static func isContained(_ url: URL, in directory: URL) -> Bool {
         PathSafety.isContained(url.path, within: directory.path)
     }
 
-    /// Remove a drag-out temp directory after the system has had time to copy
-    /// the dropped file out of it. `nonisolated` so the background file-provider
-    /// handler can call it off the main actor.
+    /// Remove a drag-out temp directory after the system has had time to copy the file out.
+    /// `nonisolated` so the background file-provider handler can call it off the main actor.
     private nonisolated static func scheduleTempCleanup(_ dir: URL) {
         Task.detached {
             try? await Task.sleep(nanoseconds: 120 * NSEC_PER_SEC)
@@ -592,9 +545,8 @@ final class SFTPBrowserModel: ObservableObject {
         }
     }
 
-    /// Backstop for the delayed cleanup above (e.g. if the app quit first):
-    /// remove any `GoelSFTP-*` temp directories older than an hour, so an
-    /// in-flight sibling drag is never disturbed.
+    /// Backstop for the delayed cleanup above (e.g. if the app quit first): remove `GoelSFTP-*` temp
+    /// directories older than an hour, so an in-flight sibling drag is never disturbed.
     private static func sweepStaleDragTemps() {
         let fm = FileManager.default
         guard let items = try? fm.contentsOfDirectory(

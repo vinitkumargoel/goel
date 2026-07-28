@@ -1,17 +1,10 @@
 import Foundation
 
-// ============================================================================
-// Linux compatibility shims for GoelCore.
-//
-// swift-corelibs-foundation splits a few things out of `Foundation` into
-// separate modules, and Linux lacks a handful of macOS-only frameworks. These
-// shims are compiled ONLY on Linux (or only where a module is missing), so the
-// macOS build is completely unaffected.
-// ============================================================================
+// Linux compatibility shims for GoelCore: swift-corelibs-foundation splits pieces of `Foundation`
+// into separate modules. Compiled ONLY on Linux / where a module is missing, so macOS is unaffected.
 
-// URLSession / URLRequest / HTTPURLResponse live in FoundationNetworking on
-// Linux; XMLParser lives in FoundationXML. Re-export them so the rest of the
-// module sees these types with only `import Foundation`.
+// URLSession/URLRequest/HTTPURLResponse live in FoundationNetworking on Linux, XMLParser in
+// FoundationXML. Re-exported so the rest of the module sees them with only `import Foundation`.
 #if canImport(FoundationNetworking)
 @_exported import FoundationNetworking
 #endif
@@ -19,9 +12,8 @@ import Foundation
 @_exported import FoundationXML
 #endif
 
-// Glibc gives these C constants types Darwin does not: net/if.h flags import as
-// `Int` and SOCK_* as the `__socket_type` enum, so expressions that compile on
-// macOS fail here. Normalising to Int32 once keeps the call sites platform-free.
+// Glibc types these C constants differently from Darwin: net/if.h flags import as `Int`, SOCK_* as
+// the `__socket_type` enum. Normalising to Int32 once keeps the call sites platform-free.
 enum PlatformSocket {
     #if os(Linux)
     static let stream = Int32(SOCK_STREAM.rawValue)
@@ -38,11 +30,8 @@ enum InterfaceFlag {
 
 #if os(Linux)
 
-/// Minimal stand-in for `UniformTypeIdentifiers.UTType`, covering the one use in
-/// the HTTP engine: mapping a response MIME type to a preferred file extension.
-/// Only the common web-download types are needed; anything unknown returns nil
-/// (the engine then simply keeps the URL-derived name, exactly as on macOS when
-/// the type is unrecognized).
+/// Minimal stand-in for `UniformTypeIdentifiers.UTType`: maps a response MIME type to a file extension.
+/// Unknown types return nil, so the HTTP engine keeps the URL-derived name exactly as it does on macOS.
 struct UTType {
     private let ext: String?
 

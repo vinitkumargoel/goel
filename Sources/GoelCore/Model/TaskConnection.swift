@@ -1,9 +1,7 @@
 import Foundation
 
-/// One live transfer connection inside a task — an HTTP segment or a torrent
-/// peer — as reported by the engine for the detail panel's Connections and
-/// Progress tabs. Purely observational: the UI renders these verbatim and
-/// nothing schedules off them.
+/// One live connection in a task — HTTP segment or torrent peer — as reported for the detail panel's
+/// Connections/Progress tabs. Purely observational: rendered verbatim, nothing schedules off them.
 public struct TaskConnection: Codable, Sendable, Equatable, Hashable, Identifiable {
     /// Stable identity within one task (segment index, or peer "ip:port").
     public var id: String

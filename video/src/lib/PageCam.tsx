@@ -14,18 +14,8 @@ export type CamKey = {
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-/**
- * 2.5D camera over a full-page screenshot. (cx, cy) is the page-space CSS
- * point centered in the 1920x1080 viewport; zoom is scale (1 = 1 CSS px
- * -> 1 output px). Page textures are 2x, rendered at CSS size via width.
- *
- * Optional 3D: keys may carry rotX/rotZ/persp to tilt the page like a plane
- * seen from an oblique camera. When NO key declares any 3D field, the markup
- * degrades to the original flat pan/zoom and renders pixel-identical.
- *
- * Optional DOF: a screen-space gradient-blur band approximating a focal plane
- * near `focusY` (blurring the far/top part of a tilted page).
- */
+/** 2.5D camera over a full-page screenshot: (cx, cy) is the page-space CSS point centered in the
+ * 1920x1080 viewport, zoom is scale. Optional rotX/rotZ/persp (absent ⇒ flat, pixel-identical) + DOF. */
 export const PageCam: React.FC<{
   src: string; // staticFile path under textures/live/
   pageH: number; // CSS page height
@@ -36,9 +26,8 @@ export const PageCam: React.FC<{
   saturate?: number;
   ease?: (t: number) => number;
   dof?: { focusY: number; strength: number };
-  // Optional absolute-frame override: when PageCam is rendered inside a
-  // <Sequence> (which rebases useCurrentFrame), the parent can pass the
-  // restored absolute comp frame so CAM_KEYS keep their absolute frame refs.
+  // Optional absolute-frame override: inside a <Sequence> (which rebases useCurrentFrame) the parent
+  // passes the restored absolute comp frame so CAM_KEYS keep their absolute frame refs.
   frame?: number;
 }> = ({ src, pageH, pageW = 1920, keys, children, blur = 0, saturate = 1, ease = Easing.bezier(0.33, 0, 0.15, 1), dof, frame: frameProp }) => {
   const ownFrame = useCurrentFrame();
@@ -80,9 +69,8 @@ export const PageCam: React.FC<{
     );
   }
 
-  // 3D mode: pivot rotation/scale about the focal page-point (cx, cy) so it
-  // stays centered in the viewport. With rotX=rotZ=0 this reduces to the flat
-  // transform (proven identical: (960,540) + zoom*(p - (cx,cy))).
+  // 3D mode: pivot rotation/scale about the focal page-point (cx, cy) so it stays centered. With
+  // rotX=rotZ=0 this reduces to the flat transform (proven identical: (960,540) + zoom*(p - (cx,cy))).
   const rotX = lerp(a.rotX ?? 0, b.rotX ?? 0, t);
   const rotY = lerp(a.rotY ?? 0, b.rotY ?? 0, t);
   const rotZ = lerp(a.rotZ ?? 0, b.rotZ ?? 0, t);
@@ -97,23 +85,8 @@ export const PageCam: React.FC<{
           perspectiveOrigin: '960px 540px',
         }}
       >
-        {/* LAYOUT-SCALE zoom: instead of scale(zoom) in the transform chain (which
-            makes Chromium rasterize the 3D-composited layer at 1920-wide LAYOUT
-            size and then GPU-upscale by zoom — everything inside gets downsampled
-            before magnification, hence blurry text), we apply the magnification as
-            the CSS `zoom` property. `zoom` enlarges the layout box itself, so the
-            page + card textures rasterize at the ENLARGED device size and sample
-            down from their hi-res sources → sharp glyph edges under perspective.
-
-            Coordinate math: `zoom` scales this element's local coordinate space by
-            `zoom`, so a page point (cx,cy) renders at (cx*zoom, cy*zoom) device px
-            from the box origin, and a `translate(Tx px)` renders as Tx*zoom device
-            px. To land the focal point (cx,cy) at viewport centre (960,540):
-              cx*zoom + Tx*zoom = 960  ⟹  Tx = 960/zoom - cx  (likewise Ty).
-            Rotations pivot about transform-origin (cx,cy) = the focal point, so
-            they leave its screen position unchanged. With rot=0 this reduces to
-            translate(960/zoom - cx, 540/zoom - cy) under zoom — identical framing
-            to the old scale-based transform, just rasterized at layout scale. */}
+        {/* CSS `zoom`, not scale(zoom): scale rasterizes the 3D layer at 1920 layout width then GPU-upscales
+            (blurry text); `zoom` enlarges the layout box. Hence Tx = 960/zoom - cx; origin (cx,cy) pins rotations. */}
         <div
           style={{
             position: 'absolute', width: pageW, height: pageH,

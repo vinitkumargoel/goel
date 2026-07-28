@@ -4,28 +4,8 @@ import GoelCore
 import Glibc   // umask, so the token file is created private from birth
 #endif
 
-// ============================================================================
-// GoelDaemon — the headless Linux entry point.
-//
-// On macOS the SwiftUI app owns the DownloadManager and (optionally) exposes the
-// web portal. On Linux there is no desktop shell, so the portal IS the UI: this
-// daemon boots the same GoelCore DownloadManager and turns the remote-control
-// server on unconditionally, reading its configuration from the environment.
-//
-//   GOEL_PORT          portal port                        (default 8080)
-//   GOEL_ALLOW_LAN     bind 0.0.0.0 vs 127.0.0.1          (default true)
-//   GOEL_REQUIRE_AUTH  require sign-in                    (default true)
-//   GOEL_USERNAME      portal username                    (default "admin")
-//   GOEL_PASSWORD      portal password (plaintext, hashed at boot)
-//   GOEL_TOKEN         API bearer token (else auto-generated → private file)
-//   GOEL_SAVE_DIR      default download folder            (default ~/Downloads)
-//   GOEL_DB            queue database path                (default ~/.local/share/goel-downloader/queue.sqlite)
-//   GOEL_WATCH_DIR     folder watched for .torrent files  (unset = leave as configured)
-//   GOEL_WATCH_AUTOSTART  start watched torrents without confirmation  (default false)
-//   GOEL_AGGREGATION   split downloads across interfaces  (unset = leave as configured)
-//   GOEL_AGGREGATION_ADAPTERS  comma-separated interfaces (empty = every eligible one)
-//   GOEL_AGGREGATION_STREAMS   connections per interface, 1–8    (default 2)
-// ============================================================================
+// GoelDaemon — the headless Linux entry point. No desktop shell, so the portal IS the UI: this boots
+// the same GoelCore DownloadManager with the remote server always on, configured from GOEL_* env vars.
 
 func env(_ key: String, _ fallback: String) -> String {
     let v = ProcessInfo.processInfo.environment[key]
@@ -52,9 +32,8 @@ let username = env("GOEL_USERNAME", "admin")
 let password = ProcessInfo.processInfo.environment["GOEL_PASSWORD"] ?? ""
 let tokenEnv = ProcessInfo.processInfo.environment["GOEL_TOKEN"] ?? ""
 let saveDir = env("GOEL_SAVE_DIR", home.appendingPathComponent("Downloads").path)
-// Watch folder. Opt-in and non-destructive: leaving GOEL_WATCH_DIR unset keeps
-// whatever is already persisted rather than clearing it, so a restart with a
-// trimmed unit file doesn't silently switch the feature off.
+// Watch folder, opt-in and non-destructive: unset GOEL_WATCH_DIR keeps whatever is persisted, so a
+// restart with a trimmed unit file doesn't silently switch the feature off.
 let watchDir = env("GOEL_WATCH_DIR", "")
 let watchAutoStart = envBool("GOEL_WATCH_AUTOSTART", false)
 
@@ -136,9 +115,8 @@ Task {
         retainer.remote = remote
         await remote.apply(settings: settings, backend: manager)
 
-        // Report the ACTUAL bound state — never claim "ready" if the bind failed,
-        // and derive loopback-vs-LAN from what the server really did (not a
-        // re-computed guess that can drift from the bind decision).
+        // Report the ACTUAL bound state: never claim "ready" on a failed bind, and read
+        // loopback-vs-LAN from what the server really did, not a guess that can drift.
         guard let bound = await remote.boundState() else {
             stderrLine("GoelDaemon: fatal — the portal failed to bind port \(port) (already in use, or a privileged port without permission)")
             exit(1)
@@ -149,10 +127,8 @@ Task {
             stderrLine("GoelDaemon: WARNING — portal is on the LAN over plain HTTP; sign-in and token cross the network unencrypted. Use a trusted network or a TLS reverse proxy (e.g. nginx/caddy).")
         }
         stderrLine("GoelDaemon: save dir \(saveDir) · db \(dbPath)")
-        // Never print the bearer token to stderr — on a systemd host that lands in
-        // the journal (often readable more broadly than intended) and in container
-        // log drivers shipped to central logging. Write it to a private 0600 file
-        // and log only the path. An operator who set GOEL_TOKEN already has it.
+        // Never print the bearer token to stderr: it lands in the systemd journal and in container
+        // log drivers shipped to central logging. Write it to a private 0600 file, log only the path.
         if tokenEnv.isEmpty {
             let tokenFile = (dbDir as NSString).appendingPathComponent("portal-token")
             #if canImport(Glibc)

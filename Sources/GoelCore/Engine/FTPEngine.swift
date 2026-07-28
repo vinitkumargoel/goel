@@ -1,15 +1,8 @@
 import Foundation
 import CurlBridge
 
-/// FTP/FTPS downloads via the system libcurl (through the ``CurlBridge`` C
-/// shim — `curl_easy_setopt` is variadic and unreachable from Swift).
-///
-/// One blocking libcurl transfer per task, each on its own dedicated thread
-/// (never the cooperative pool — a transfer can block for hours). Resume is
-/// byte-offset based: the engine restarts from the partial file's on-disk
-/// size using FTP `REST`, so no resume cursor is needed. `ftps://` is
-/// implicit TLS; plain `ftp://` opportunistically upgrades via `AUTH TLS`
-/// when the server supports it.
+/// FTP/FTPS via system libcurl (``CurlBridge`` shim — `curl_easy_setopt` is variadic). One blocking
+/// transfer per task on a dedicated thread; resume by byte offset via `REST`; `ftp://` upgrades if it can.
 actor FTPEngine: DownloadEngine {
 
     public nonisolated let kind: DownloadKind = .ftp
@@ -47,9 +40,8 @@ actor FTPEngine: DownloadEngine {
 
     func pause(_ id: UUID) async {
         contexts[id]?.abort()
-        // Cancel a queued-but-not-started job; a mid-flight curl transfer
-        // stops via the abort flag. `jobs[id]` is kept so the next start
-        // serializes on the old transfer actually finishing.
+        // Cancel a queued-but-not-started job; a mid-flight curl transfer stops via the abort flag.
+        // `jobs[id]` is kept so the next start serializes on the old transfer actually finishing.
         jobs[id]?.cancel()
     }
 
@@ -65,9 +57,8 @@ actor FTPEngine: DownloadEngine {
         jobs[id] = nil
         let task = tasks[id]
         tasks[id] = nil
-        // The curl thread keeps writing until it notices the abort — wait for
-        // it before touching the file, or a re-added download at the same
-        // path could receive the old transfer's bytes.
+        // The curl thread keeps writing until it notices the abort — wait for it before touching the
+        // file, or a re-added download at the same path could receive the old transfer's bytes.
         await job?.value
         if deleteData, let task, task.isSavePathContained {
             try? FileManager.default.removeItem(atPath: task.savePath)
@@ -96,9 +87,8 @@ actor FTPEngine: DownloadEngine {
     // MARK: Transfer
 
     private func startJob(_ id: UUID) {
-        // Never overlap two transfers for one task: the previous curl thread
-        // may keep writing briefly after an abort, so the new job first waits
-        // for the old one to fully finish (two writers on one file corrupt it).
+        // Never overlap two transfers for one task: the previous curl thread may write briefly after
+        // an abort, so the new job waits for the old to fully finish (two writers on one file corrupt).
         contexts[id]?.abort()
         let previous = jobs[id]
         previous?.cancel()
@@ -163,9 +153,8 @@ actor FTPEngine: DownloadEngine {
         if gcb_is_aborted(result.code) != 0 {
             return   // our own pause/remove; the manager owns the state
         }
-        // NOTE: run() never touches jobs[id] — startJob() may already have
-        // stored a successor job's handle, and nilling it here would break
-        // the serialization remove()/startJob() rely on.
+        // NOTE: run() never touches jobs[id] — startJob() may already have stored a successor job's
+        // handle, and nilling it here would break the serialization remove()/startJob() rely on.
         guard result.code == 0 else {
             let message = String(cString: gcb_error_message(result.code))
             let e = DownloadError.network(message)
@@ -179,18 +168,11 @@ actor FTPEngine: DownloadEngine {
             written: written, expected: task.expectedChecksum)
     }
 
-    /// The login for a URL, plus whether TLS must be REQUIRED to send it.
-    /// Inline `ftp://user:pass@host` userinfo is the user's own explicit
-    /// choice for that URL (opportunistic TLS, like any FTP client). Keychain
-    /// site logins were stored under an "encrypted transport only" promise
-    /// (the HTTP engine sends them over HTTPS exclusively), so here they ride
-    /// only a TLS-protected session — the transfer fails rather than let a
-    /// downgraded server read the password off the wire.
+    /// The login for a URL, plus whether TLS must be REQUIRED. Inline `ftp://user:pass@host` userinfo is
+    /// the user's own choice; Keychain logins ride TLS only, failing rather than leaking on a downgrade.
     private func credentials(for url: URL) -> (userpwd: String, requireTLS: Bool)? {
-        // Only treat inline userinfo as complete credentials when a password is
-        // actually present. A bare `ftp://user@host` (e.g. after inline-password
-        // stripping in `DownloadSource.parse`) must fall through to the Keychain
-        // rather than authenticate with an empty password and skip the lookup.
+        // Treat inline userinfo as credentials only when a password is present: a bare `ftp://user@host`
+        // (after stripping in `DownloadSource.parse`) must fall through to the Keychain, not skip it.
         if let user = url.user, !user.isEmpty, let pass = url.password, !pass.isEmpty {
             return ("\(user):\(pass)", false)
         }
@@ -240,10 +222,8 @@ actor FTPEngine: DownloadEngine {
 
 // MARK: - Transfer context (shared with the curl callbacks)
 
-/// Mutable per-transfer state the C callbacks reach through an opaque pointer:
-/// the output file handle, byte counters, the abort flag, and the throttled
-/// progress emitter. Lock-protected — callbacks arrive on the curl thread
-/// while `abort()` comes from the engine actor.
+/// Mutable per-transfer state the C callbacks reach through an opaque pointer: file handle, byte
+/// counters, abort flag, throttled progress emitter. Lock-protected — curl thread races `abort()`.
 final class FTPTransferContext: @unchecked Sendable {
     private let hub: EventHub
     private let id: UUID
@@ -276,10 +256,8 @@ final class FTPTransferContext: @unchecked Sendable {
         aborted = true
     }
 
-    /// Write callback body. Returns false on a write failure (aborts curl). The
-    /// shared meter announces the total once and throttles progress over the
-    /// absolute offset (`resumeFrom + written`). Accepts a raw buffer so the C
-    /// thunk avoids an intermediate `Data` copy on the hot path.
+    /// Write callback body; returns false on a write failure (aborts curl). Progress is throttled over
+    /// the absolute offset (`resumeFrom + written`); a raw buffer avoids an intermediate `Data` copy.
     func write(_ buf: UnsafeRawBufferPointer) -> Bool {
         do {
             try handle.write(contentsOf: buf)

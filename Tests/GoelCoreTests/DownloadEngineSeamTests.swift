@@ -3,12 +3,8 @@ import XCTest
 
 // MARK: - Capability-introspecting probe engine
 
-/// A controllable engine used to prove the scheduler talks to engines only
-/// through the protocol seam — never by downcasting to a concrete type. It
-/// advertises whatever capabilities the test asks for, returns a canned
-/// ``EngineMetadata`` from `resolveMetadata`, and records the `directory` it was
-/// asked to resolve in plus whichever **typed** config slice it received. It
-/// conforms to every refinement so one probe can stand in for any engine role.
+/// Controllable engine proving the scheduler reaches engines only through the protocol seam, never a
+/// downcast. Records the resolve `directory` and each **typed** config slice; conforms to all refinements.
 final class SeamProbeEngine: TorrentControlling, HTTPConfigurable, HLSConfigurable, @unchecked Sendable {
 
     let kind: DownloadKind

@@ -2,17 +2,8 @@ import Foundation
 
 // MARK: - Auto re-download on remote change
 
-/// An opt-in background check that re-downloads a *finished* HTTP download when
-/// its remote resource changes. A completed task keeps the server's validators
-/// (`ETag` via ``DownloadTask/remoteInfo`` and the byte size via
-/// ``DownloadTask/totalBytes``); on a coarse timer we issue a cheap `HEAD` and,
-/// when a validator has definitively changed, re-queue the task so the engine
-/// fetches the new version (overwriting the old file).
-///
-/// Deliberately conservative: it acts ONLY on a proven difference (never on a
-/// missing/transient validator), only for completed HTTP downloads, and only
-/// while ``AppSettings/autoRedownloadOnRemoteChange`` is enabled — so a finished
-/// file is never silently replaced by accident.
+/// Opt-in sweep (``AppSettings/autoRedownloadOnRemoteChange``) that `HEAD`s finished HTTP downloads and
+/// re-queues one whose validators (`ETag`/size) *provably* changed — never on a missing/transient one.
 extension DownloadManager {
 
     /// Seconds between remote-change sweeps (6 hours).
@@ -66,9 +57,8 @@ extension DownloadManager {
         }
     }
 
-    /// Reset a completed task back to `.queued` for a fresh fetch (the engine
-    /// re-probes and overwrites the old file). Clears the resume cursor so it
-    /// starts from zero rather than trying to resume against changed bytes.
+    /// Reset a completed task to `.queued` for a fresh fetch (engine re-probes, overwrites the old file).
+    /// Clears the resume cursor so it starts from zero instead of resuming against changed bytes.
     private func requeueForRedownload(at i: Int) {
         tasks[i].status = .queued
         tasks[i].bytesDownloaded = 0
@@ -76,12 +66,8 @@ extension DownloadManager {
         tasks[i].resumeData = nil
         tasks[i].completedAt = nil
         tasks[i].scanVerdict = nil
-        // Drop the stale stats mark from the just-finished download. Its `down`
-        // equals the OLD file's full size; leaving it would make StatsAccumulator
-        // re-base the fresh (from-zero) re-download against that larger mark and
-        // report deltaDown == 0 for most/all of the transfer, so a real successful
-        // re-download would be under-counted (or entirely lost) in lifetime stats.
-        // The next `.progress` seeds a fresh mark from the zeroed byte counts.
+        // Drop the stale stats mark: its `down` is the OLD file's full size, so StatsAccumulator would
+        // re-base the from-zero re-download against it and report deltaDown == 0, lost from lifetime stats.
         statsMarks[tasks[i].id] = nil
         // Same for the speed meter: the re-download's counters restart at zero.
         speedMeters[tasks[i].id] = nil
@@ -90,10 +76,8 @@ extension DownloadManager {
         schedule()
     }
 
-    /// Pure decision: has a validator definitively changed? Prefers `ETag` (both
-    /// present, non-empty, and different); falls back to byte size. Any missing
-    /// side is treated as "unknown" → not changed, so we never re-download on a
-    /// server that simply stopped sending a validator.
+    /// Pure decision: did a validator definitively change? Prefers `ETag` (both present, non-empty,
+    /// differing), else size. A missing side is "unknown" → not changed, so a dropped validator is safe.
     static func remoteResourceChanged(oldETag: String?, oldSize: Int64?,
                                       newETag: String?, newSize: Int64?) -> Bool {
         if let o = oldETag, let n = newETag, !o.isEmpty, !n.isEmpty {
@@ -105,9 +89,8 @@ extension DownloadManager {
         return false
     }
 
-    /// The remote validators from a cheap `HEAD`, or nil if the probe failed. The
-    /// `proxy` dictionary (from ``proxyDictionary(from:)``) is applied so the probe
-    /// follows the same proxy policy as real downloads.
+    /// Remote validators from a cheap `HEAD`, or nil if the probe failed. The `proxy` dict (from
+    /// ``proxyDictionary(from:)``) keeps the probe on the same proxy policy as real downloads.
     struct RemoteValidators: Sendable { var etag: String?; var size: Int64? }
 
     static func fetchValidators(url: URL, userAgent: String,
@@ -138,10 +121,8 @@ extension DownloadManager {
                                host: settings.proxyHost, port: settings.proxyPort)
     }
 
-    /// Translate the user's proxy settings into a `connectionProxyDictionary`:
-    /// nil to follow the OS ("system"), an empty dict to force direct ("none"),
-    /// or the HTTP/SOCKS keys for a configured manual proxy. Mirrors the HTTP
-    /// engine's own proxy handling so background probes don't bypass it.
+    /// Proxy settings → `connectionProxyDictionary`: nil = follow OS, empty dict = direct, keys = manual.
+    /// Mirrors the HTTP engine's handling so background probes don't bypass the user's proxy.
     static func proxyDictionary(from settings: AppSettings) -> [String: Any]? {
         NetworkGuard.proxyDictionary(proxySpec(from: settings))
     }

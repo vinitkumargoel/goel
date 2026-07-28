@@ -2,16 +2,8 @@ import Foundation
 import XCTest
 @testable import GoelCore
 
-/// Guards the one answer in `docs/compliance/security-questionnaire.md` that
-/// quotes hard numbers out of the code: 4.4, brute-force protection.
-///
-/// That answer is a procurement artefact — a reviewer scores the portal's
-/// online-guessing resistance from it — and it has already drifted once, still
-/// describing a global, fixed 30-second lockout for several releases after the
-/// throttle became per-IP with exponential backoff. Prose cannot be compiled,
-/// so this test does the next best thing: it fails when the shipped defaults
-/// move away from the numbers the document states, forcing whoever changes a
-/// default to change the answer with it.
+/// Guards §4.4 (brute-force protection) of `docs/compliance/security-questionnaire.md`, the one procurement answer
+/// quoting hard numbers from code. It drifted once (claiming a global 30s lockout after it went per-IP exponential).
 final class SecurityQuestionnaireThrottleTests: XCTestCase {
 
     /// The document's §4.4. Skips rather than fails if the docs tree is absent,

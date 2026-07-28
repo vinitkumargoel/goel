@@ -8,17 +8,8 @@ import CommonCrypto
 import CryptoBridge  // OpenSSL-backed AES-128-CBC on Linux
 #endif
 
-/// Downloads an HLS (`.m3u8`) video stream into a single playable file.
-///
-/// Flow: fetch the playlist → if it's a master, pick the best variant → parse the
-/// media playlist → download every segment concurrently (decrypting AES-128
-/// segments on the fly) → assemble. fMP4 streams (with an `EXT-X-MAP` init
-/// segment) concatenate directly into a valid `.mp4`; MPEG-TS streams concatenate
-/// to a temp `.ts` and are remuxed to `.mp4` via AVFoundation passthrough.
-///
-/// Segment files are written under a per-task work directory, so a paused stream
-/// resumes by skipping segments already on disk. Conforms to ``DownloadEngine``
-/// so the scheduler and UI treat it like any other download.
+/// Downloads an HLS (`.m3u8`) stream into one playable file: playlist → best variant → concurrent
+/// segments (AES-128 decrypted) → assemble. fMP4 concatenates, MPEG-TS remuxes; per-task workDir resumes.
 actor HLSEngine: HLSConfigurable {
     public nonisolated let kind: DownloadKind = .hls
 
@@ -47,11 +38,8 @@ actor HLSEngine: HLSConfigurable {
         #if !os(Linux)
         config.waitsForConnectivity = true   // get-only in swift-corelibs-foundation
         #endif
-        // Built with the SAME redirect sanitizer the HTTP engine installs.
-        // `makeRequest` attaches the task's `Cookie`, `Referer` and custom auth
-        // headers to every fetch, and Foundation replays a hand-set header across
-        // a redirect to any host — so without the delegate a single 30x hands the
-        // user's session credentials to an arbitrary third party.
+        // Built with the SAME redirect sanitizer the HTTP engine installs: `makeRequest` attaches
+        // Cookie/Referer/auth, and Foundation replays hand-set headers across a 30x to ANY host.
         self.session = URLSession(configuration: config,
                                   delegate: RedirectSanitizer.shared, delegateQueue: nil)
     }
@@ -66,10 +54,8 @@ actor HLSEngine: HLSConfigurable {
     }
 
     func pause(_ id: UUID) async {
-        // Cancel but KEEP `jobs[id]`: cancellation is a request, not an exit, and
-        // the next `startJob` serializes on this handle so a rapid pause→resume
-        // can't run two producers over the same workDir. Clearing it here would
-        // hand the resume a nil predecessor. Mirrors FTP/SFTP.
+        // Cancel but KEEP `jobs[id]`: cancellation is a request, not an exit, and the next `startJob`
+        // serializes on this handle so a rapid pause→resume can't double up on workDir. Mirrors FTP/SFTP.
         jobs[id]?.cancel()
     }
 
@@ -102,10 +88,8 @@ actor HLSEngine: HLSConfigurable {
         setMaxHeight(maxHeight)
     }
 
-    /// HLS can't cheaply probe size without walking the whole playlist, which the
-    /// preview deliberately skips. It surfaces no name and no size, flagging the
-    /// size as an estimate so the UI shows it as approximate until the download
-    /// settles the exact figure. The manager folds in its own fallback name.
+    /// HLS can't cheaply probe size without walking the whole playlist, which the preview skips: no
+    /// name, no size, flagged estimated so the UI shows approximate until the download settles it.
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         EngineMetadata(name: "", totalBytes: nil, isEstimatedSize: true)
     }
@@ -162,9 +146,8 @@ actor HLSEngine: HLSConfigurable {
             guard let variant = HLSParser.selectVariant(variants, maxHeight: maxHeight > 0 ? maxHeight : nil) else {
                 throw DownloadError.unknown("No playable variant in the HLS master playlist")
             }
-            // A variant whose audio lives in a separate rendition needs muxing
-            // this downloader can't do; fetching it alone yields a silent video,
-            // so refuse rather than hand back a file that looks fine until played.
+            // A variant whose audio lives in a separate rendition needs muxing this downloader can't
+            // do; fetching it alone yields a silent video, so refuse rather than a file that looks fine.
             if variant.hasSeparateAudio, !HLSParser.declaresAudioCodec(variant.codecs) {
                 throw DownloadError.unknown("This stream delivers its audio as a separate track that this downloader can’t mux in — the result would be a silent video.")
             }
@@ -186,17 +169,14 @@ actor HLSEngine: HLSConfigurable {
         }
     }
 
-    /// Download every segment, assemble, and emit completion. `nonisolated` so the
-    /// concurrent fetch/decrypt/assemble work runs off the actor; it reaches the
-    /// engine only through the thread-safe `hub` and `nonisolated` fetch helpers.
+    /// Download every segment, assemble, and emit completion. `nonisolated` so the concurrent
+    /// fetch/decrypt/assemble runs off the actor, reaching the engine only via the thread-safe `hub`.
     private nonisolated func produce(id: UUID, task: DownloadTask, plan: MediaPlan,
                                       concurrency: Int, rateCap: Int64) async throws {
         let segments = plan.segments
         guard !segments.isEmpty else { throw DownloadError.unknown("HLS playlist had no segments") }
-        // Defense in depth: the destination is derived from a sanitised task name,
-        // but assert it stays inside the save directory before any write — the same
-        // guard HTTP/FTP/SFTP apply, so a sanitisation bypass upstream still can't
-        // let the final `.mp4` (or its temp files) escape the download folder.
+        // Defense in depth: assert the destination stays inside the save directory before any write
+        // (as HTTP/FTP/SFTP do), so a sanitisation bypass upstream can't let the `.mp4` escape.
         guard task.isSavePathContained else {
             throw DownloadError.unknown("HLS destination escapes the download folder")
         }
@@ -219,12 +199,8 @@ actor HLSEngine: HLSConfigurable {
             try Task.checkCancellation()
             let initFile = workDir.appendingPathComponent("init.mp4")
             if Self.fileSize(initFile) == nil {
-                // Carry the map's own BYTERANGE: under CMAF single-file packaging
-                // the header is a small slice of the same resource the fragments
-                // occupy, and an unranged GET would fetch the whole stream here.
-                // The map carries the key that was in force where it appeared —
-                // NOT the first segment's, which may be a later `#EXT-X-KEY` (or
-                // may encrypt a header the playlist left in plaintext).
+                // Carry the map's own BYTERANGE: under CMAF single-file packaging an unranged GET
+                // fetches the whole stream. Its key is the one in force where it appeared, not seg 0's.
                 let data = try await fetchSegment(HLSSegment(url: initMap.url, duration: 0, sequence: 0,
                                                              key: initMap.key,
                                                              byteRange: initMap.byteRange),
@@ -276,9 +252,8 @@ actor HLSEngine: HLSConfigurable {
             try await Self.remuxToMP4(from: tsURL, to: destURL)
         }
 
-        // `fileSize` declines both a missing file and a zero-byte one, so falling
-        // back to the ESTIMATE here would report a concat/remux that produced
-        // nothing as a completed download of `estTotal` bytes.
+        // `fileSize` declines both a missing file and a zero-byte one, so falling back to the
+        // ESTIMATE would report a concat/remux that produced nothing as a completed `estTotal`.
         guard let actual = Self.fileSize(destURL) else {
             throw DownloadError.unknown("The assembled HLS file is empty — the stream produced no playable output")
         }
@@ -287,10 +262,8 @@ actor HLSEngine: HLSConfigurable {
         hub.emit(id, .progress(bytesDownloaded: actual, bytesUploaded: 0,
                                downloadSpeed: 0, uploadSpeed: 0, connectionCount: 0))
 
-        // Integrity check: the Add sheet offers a checksum field for HLS and the
-        // detail panel reports the result, so the check has to actually run. It
-        // throws before the work directory is cleared, leaving the segment cache
-        // in place for a retry.
+        // Integrity check: the Add sheet offers a checksum field for HLS and the detail panel reports
+        // it, so it must run. Throws before the work dir is cleared, leaving the segment cache to retry.
         if let expected = task.expectedChecksum {
             hub.emit(id, .statusChanged(.verifying))
             let matched = try await ChecksumVerifier.verify(fileAt: destURL, expected: expected)
@@ -325,9 +298,8 @@ actor HLSEngine: HLSConfigurable {
         if let limiter { await limiter.pace(data.count) }
     }
 
-    /// Fetch one segment and decrypt it when a key applies. `requiresExplicitIV`
-    /// is set for the fMP4 init map, which has no sequence number of its own to
-    /// derive an IV from (RFC 8216 §4.3.2.5 requires the playlist to state one).
+    /// Fetch one segment and decrypt it when a key applies. `requiresExplicitIV` is set for the fMP4
+    /// init map, which has no sequence number to derive an IV from (RFC 8216 §4.3.2.5 states one).
     private nonisolated func fetchSegment(_ segment: HLSSegment, task: DownloadTask,
                                           keyCache: KeyCache,
                                           requiresExplicitIV: Bool = false) async throws -> Data {
@@ -357,17 +329,8 @@ actor HLSEngine: HLSConfigurable {
         }
     }
 
-    /// Build the request for one HLS fetch (playlist, AES key, init map, segment).
-    ///
-    /// Every outbound request goes through here so none is sent UA-less — and so
-    /// the task's credentials are never silently dropped. Playlists behind a login
-    /// are the normal case for HLS, so the captured `Cookie`, the `Referer` and any
-    /// custom ``DownloadTask/requestHeaders`` must ride along exactly as they do on
-    /// the HTTP engine. Headers are resolved through
-    /// ``DownloadTask/outboundHeaders(for:)`` rather than read from
-    /// `requestHeaders` directly: that is the one place the host-exact cookie scope
-    /// is enforced, and it correctly withholds the cookie when a segment lives on a
-    /// different CDN host from the playlist.
+    /// Build the request for one HLS fetch (playlist, AES key, init map, segment). Everything goes
+    /// through here so none is UA-less; ``DownloadTask/outboundHeaders(for:)`` scopes cookies host-exactly.
     nonisolated func makeRequest(_ url: URL, task: DownloadTask,
                                  range: HLSByteRange? = nil) -> URLRequest {
         var request = URLRequest(url: url)
@@ -378,12 +341,8 @@ actor HLSEngine: HLSConfigurable {
         if let referer = task.referer, !referer.isEmpty {
             request.setValue(referer, forHTTPHeaderField: "Referer")
         }
-        // EXT-X-BYTERANGE segments address a slice of a larger resource; request
-        // just that byte range (servers answer 206, which `fetchData` requires).
-        // The last-byte arithmetic is overflow-checked rather than trusted: the
-        // parser bounds every range it produces, but a range built elsewhere must
-        // still not be able to trap here. A range we can't express is left off,
-        // and the response check downstream then refuses the unranged answer.
+        // EXT-X-BYTERANGE segments address a slice of a larger resource; request just that range
+        // (206 required). Last-byte math is overflow-checked; an inexpressible range is left off.
         if let range, range.start >= 0, range.length > 0 {
             let (last, overflow) = range.start.addingReportingOverflow(range.length - 1)
             if !overflow {
@@ -398,11 +357,8 @@ actor HLSEngine: HLSConfigurable {
         let request = makeRequest(url, task: task, range: range)
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse {
-            // A ranged fetch must be answered 206 — the same acceptance rule the
-            // segmented HTTP pump applies. A server that ignores `Range` and
-            // returns 200 with the whole resource would otherwise have that entire
-            // file written as one segment and spliced into the output. (`.retry`
-            // is a rejection here too: HLS has no per-segment retry loop.)
+            // A ranged fetch must be answered 206 (same rule as the segmented HTTP pump): a server
+            // ignoring `Range` would splice its whole 200 body in as one segment. `.retry` rejects too.
             guard SegmentedTransfer.classify(http.statusCode, ranged: range != nil) == .accept else {
                 throw DownloadError.httpStatus(http.statusCode)
             }
@@ -415,9 +371,8 @@ actor HLSEngine: HLSConfigurable {
 
     private nonisolated func fetchText(_ url: URL, task: DownloadTask) async throws -> String {
         let data = try await fetchData(url, task: task)
-        // A playlist is a small text file — a long VOD's runs to a few hundred KB.
-        // Anything past a few MB is an error page or a hostile body, and decoding
-        // it into a `String` would cost as much memory again as receiving it did.
+        // A playlist is a small text file (a few hundred KB for a long VOD). Past a few MB it is an
+        // error page or a hostile body, and decoding it into a `String` costs as much memory again.
         guard data.count <= Self.maxPlaylistBytes else {
             throw DownloadError.unknown("The HLS playlist is implausibly large (\(Int64(data.count).byteString)) — refusing to parse it")
         }
@@ -434,19 +389,13 @@ actor HLSEngine: HLSConfigurable {
     /// Upper bound on a playlist body (8 MB) — see ``fetchText(_:task:)``.
     private static let maxPlaylistBytes = 8 * 1024 * 1024
 
-    /// Refusal for a media playlist that never declares itself finished.
-    /// A live stream has no end to download to: the file would stop at whatever
-    /// had been published when the walk reached it, and report success.
+    /// Refusal for a media playlist that never declares itself finished: a live stream has no end,
+    /// so the file would stop at whatever had been published and still report success.
     static let liveStreamRefusal = DownloadError.unknown(
         "This is a live HLS stream (no #EXT-X-ENDLIST). Only finished (VOD) streams can be downloaded — the file would stop at whatever part had been published.")
 
-    /// The download-size estimate from the variant's advertised bitrate and the
-    /// playlist's total duration.
-    ///
-    /// Guarded rather than computed inline: a playlist can say `#EXTINF:inf`, and
-    /// converting a non-finite (or `Int64`-overflowing) product traps the process.
-    /// The figure is only an estimate the UI shows as approximate, so an unusable
-    /// one is reported as 0 — "unknown" — rather than crashing over cosmetics.
+    /// Size estimate from the variant's advertised bitrate × playlist duration. Guarded: `#EXTINF:inf`
+    /// or an `Int64`-overflowing product would trap, so an unusable figure is reported as 0 = unknown.
     static func estimatedBytes(bandwidth: Int, duration: Double) -> Int64 {
         guard bandwidth > 0, duration.isFinite, duration > 0 else { return 0 }
         let bytes = Double(bandwidth) / 8.0 * duration
@@ -460,15 +409,8 @@ actor HLSEngine: HLSConfigurable {
         return base.appendingPathComponent("GoelDownloader/hls/\(id.uuidString)", isDirectory: true)
     }
 
-    /// A stable identity for the rendition a plan's segments come from.
-    ///
-    /// Cached segment files are keyed only by their *position* in the playlist, so
-    /// the work directory is only safe to resume into when the same rendition is
-    /// being fetched — see ``prepareWorkDir(_:identity:)``. The query string is
-    /// deliberately excluded: signed CDN URLs carry a token that rotates on every
-    /// fetch, and folding it in would make every resume look like a new rendition
-    /// and throw away all the progress. Bandwidth and height are folded in so the
-    /// packagers that distinguish renditions by query alone still compare unequal.
+    /// Stable identity for a plan's rendition — cached segments are keyed by playlist position, so
+    /// resume is safe only for the same one. Query excluded (rotating CDN tokens); bw+height folded in.
     static func renditionIdentity(_ url: URL, bandwidth: Int, height: Int?) -> String {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         components?.query = nil
@@ -476,17 +418,8 @@ actor HLSEngine: HLSConfigurable {
         return "\(components?.string ?? url.absoluteString)|bw=\(bandwidth)|h=\(height ?? 0)"
     }
 
-    /// Create the per-task work directory, discarding anything a *different*
-    /// rendition left behind.
-    ///
-    /// `pause()` keeps the work directory on purpose so a resume can skip segments
-    /// already on disk, but the selected rendition is re-resolved on every start:
-    /// the user can change the maximum video height between pause and resume, or
-    /// the master playlist's variant list can move. Reusing the old segments then
-    /// splices two renditions' elementary streams into one file — the remux either
-    /// fails or the video breaks at the join, and the task still reports success.
-    /// So the identity is stamped into the directory and a mismatch (including a
-    /// directory from a build that predates the stamp) starts over from empty.
+    /// Create the per-task work directory, discarding what a *different* rendition left behind: the
+    /// rendition is re-resolved on every start, and splicing two of them breaks the file silently.
     static func prepareWorkDir(_ workDir: URL, identity: String) throws {
         let stamp = workDir.appendingPathComponent("rendition.id")
         let recorded = try? String(contentsOf: stamp, encoding: .utf8)
@@ -592,9 +525,8 @@ actor HLSEngine: HLSConfigurable {
             throw export.error ?? DownloadError.unknown("HLS → MP4 conversion failed (unsupported codec)")
         }
         #else
-        // Linux: remux via ffmpeg (stream copy, no re-encode). `aac_adtstoasc`
-        // rewrites AAC-in-TS for the MP4 container; `+faststart` moves the moov
-        // atom to the front so the result is streamable.
+        // Linux: remux via ffmpeg (stream copy, no re-encode). `aac_adtstoasc` rewrites AAC-in-TS
+        // for the MP4 container; `+faststart` moves the moov atom to the front to stay streamable.
         let ff = Process()
         ff.executableURL = URL(fileURLWithPath: Self.ffmpegPath)
         ff.arguments = [
@@ -611,10 +543,8 @@ actor HLSEngine: HLSConfigurable {
         } catch {
             throw DownloadError.unknown("ffmpeg not found for HLS remux (install ffmpeg): \(error)")
         }
-        // Drain stderr on a background thread WHILE ffmpeg runs. Reading it only
-        // after termination would deadlock: a chatty ffmpeg (e.g. many per-frame
-        // errors on a corrupt segment) fills the ~64 KB pipe, blocks in write(),
-        // and never exits — exactly the failure case this remux is meant to report.
+        // Drain stderr on a background thread WHILE ffmpeg runs: reading it only after termination
+        // deadlocks — a chatty ffmpeg fills the ~64 KB pipe, blocks in write(), and never exits.
         let errData = Task.detached { errHandle.readDataToEndOfFile() }
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
             ff.terminationHandler = { _ in c.resume() }
@@ -629,9 +559,8 @@ actor HLSEngine: HLSConfigurable {
     #if os(Linux)
     /// Path to the ffmpeg binary used for HLS remux on Linux.
     static let ffmpegPath: String = {
-        // GOEL_FFMPEG comes from the process environment (attacker-influenceable by
-        // anything that can set the daemon's env); only honour it when it's a
-        // concrete absolute executable, never a bare $PATH name or an interpreter.
+        // GOEL_FFMPEG comes from the process environment (attacker-influenceable); only honour it
+        // when it's a concrete absolute executable, never a bare $PATH name or an interpreter.
         if let p = ProcessInfo.processInfo.environment["GOEL_FFMPEG"],
            ProcessSafety.isSafeExecutable(p) { return p }
         for c in ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg"] where FileManager.default.isExecutableFile(atPath: c) {
@@ -646,16 +575,13 @@ actor HLSEngine: HLSConfigurable {
     /// The concrete download plan resolved from the source playlist.
     struct MediaPlan: Sendable {
         var segments: [HLSSegment]
-        /// The fMP4 init segment, carrying its own `BYTERANGE` when the packager
-        /// put the movie header inside the same resource as the fragments. The
-        /// range has to survive into the plan: fetching the map URL unranged
-        /// would pull the entire single-file stream down as the "init segment".
+        /// The fMP4 init segment with its own `BYTERANGE` when the packager put the movie header in
+        /// the fragments' resource; the range must survive or an unranged GET pulls the whole stream.
         var initMap: HLSInitMap?
         var totalDuration: Double
         var bandwidth: Int
-        /// Identifies the rendition these segments came from, so a resumed work
-        /// directory filled by a different rendition is discarded rather than
-        /// spliced in. See ``HLSEngine/renditionIdentity(_:bandwidth:height:)``.
+        /// Identifies the rendition these segments came from, so a work directory filled by a
+        /// different one is discarded, not spliced in. See ``HLSEngine/renditionIdentity(_:bandwidth:height:)``.
         var identity: String
     }
 
@@ -670,11 +596,8 @@ actor HLSEngine: HLSConfigurable {
         }
     }
 
-    /// Accumulates downloaded bytes from concurrent segment tasks and emits a
-    /// throttled aggregate progress event with a smoothed speed. The throttle +
-    /// windowed-speed math is the shared, clock-tested ``TransferProgressMeter``;
-    /// this only holds the running total, the event hub, and the fixed connection
-    /// count (rather than re-deriving the same 0.2 s throttle + speed guard).
+    /// Accumulates bytes from concurrent segment tasks and emits a throttled aggregate progress
+    /// event; the 0.2 s throttle + smoothed speed are the shared ``TransferProgressMeter``.
     private actor ProgressTracker {
         private let hub: EventHub
         private let id: UUID
@@ -688,9 +611,8 @@ actor HLSEngine: HLSConfigurable {
 
         func add(_ n: Int64) {
             bytes += n
-            // HLS streams segments with no aggregate Content-Length, so pass
-            // total: 0 — the meter announces a total only once it's known (never,
-            // here), and still emits the throttled progress sample.
+            // HLS streams segments with no aggregate Content-Length, so pass total: 0 — the meter
+            // announces a total only once known (never here) and still emits the throttled sample.
             let tick = meter.step(total: 0, sofar: bytes, now: Date())
             guard let progress = tick.progress else { return }
             hub.emit(id, .progress(bytesDownloaded: progress.bytes, bytesUploaded: 0,

@@ -11,8 +11,7 @@ enum RemoteTransferPrep {
     }
 
     /// Prepare `savePath` for a sequential byte-offset resume.
-    /// - Parameter remoteSize: when known and local size is larger, restart from 0
-    ///   (remote replaced/truncated or path held an unrelated larger file).
+    /// - Parameter remoteSize: when smaller than local size, restart from 0 (remote replaced/truncated).
     static func openForResume(
         saveDirectory: String,
         savePath: String,

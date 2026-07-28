@@ -1,21 +1,15 @@
 import Foundation
 import GoelCore
 
-/// What the user has copied or cut in a remote browser, waiting to be pasted.
-///
-/// Deliberately app-internal rather than on `NSPasteboard`: the remote items have
-/// no local representation to put there, and putting a path string on the system
-/// pasteboard would let a paste land somewhere that has no idea which server the
-/// path belongs to. "Copy Path" and "Copy sftp:// Link" already cover the cases
-/// where the *text* is what the user wants.
+/// What the user copied or cut in a remote browser, waiting to be pasted. App-internal, not
+/// `NSPasteboard`: a bare path string would let a paste land with no idea which server it means.
 struct SFTPClipboard: Equatable {
 
     enum Operation: Equatable {
         /// ⌘C — the source stays where it is.
         case copy
-        /// ⌘X — the source is removed once the destination has the bytes. A cut
-        /// only takes effect on paste, so an un-pasted cut leaves everything as
-        /// it was.
+        /// ⌘X — the source is removed once the destination has the bytes. A cut only takes effect on
+        /// paste, so an un-pasted cut leaves everything as it was.
         case cut
     }
 

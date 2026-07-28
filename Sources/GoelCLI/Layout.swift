@@ -1,20 +1,15 @@
 import Foundation
 
-/// Every path and name the installed service occupies, in one place.
-///
-/// These are the values `install.sh` writes and this CLI reads; they are a
-/// contract between the two, so changing one here means changing the installer.
-/// A short constant is cheaper to keep in sync than the same literal spelled out
-/// in nine command implementations.
+/// Every path and name the installed service occupies, in one place. These are what `install.sh`
+/// writes and this CLI reads — a contract between the two, cheaper to keep in sync as constants.
 enum Layout {
     /// Unpacked release: binaries, the bundled Swift runtime, and `run.sh`.
     static let installRoot = "/opt/goel"
     static let runScript = "/opt/goel/run.sh"
     static let daemonBinary = "/opt/goel/bin/GoelDaemon"
 
-    /// `EnvironmentFile` for the unit — plain `KEY=value` lines the daemon
-    /// already understands as its environment, so configuring the service needs
-    /// no new format and no parser in the daemon.
+    /// `EnvironmentFile` for the unit — plain `KEY=value` lines the daemon already understands as its
+    /// environment, so configuring the service needs no new format and no parser.
     static let configFile = "/etc/goel/config"
     static let configDir = "/etc/goel"
 
@@ -23,9 +18,8 @@ enum Layout {
 
     static let serviceName = "goel"
     static let unitFile = "/etc/systemd/system/goel.service"
-    /// Drop-in this CLI owns and rewrites. `ProtectSystem=strict` means the unit
-    /// must name every writable path, and the writable paths depend on
-    /// configuration — so they cannot live in the static unit.
+    /// Drop-in this CLI owns and rewrites. `ProtectSystem=strict` means the unit must name every
+    /// writable path, and those depend on configuration — so they cannot live in the static unit.
     static let dropInDir = "/etc/systemd/system/goel.service.d"
     static let dropInFile = "/etc/systemd/system/goel.service.d/10-paths.conf"
 
@@ -35,9 +29,8 @@ enum Layout {
     /// CLI needs the bundled Swift runtime in `lib/` on its library path.
     static let cliLink = "/usr/local/bin/goel"
 
-    /// Where the daemon puts the generated bearer token: alongside its database,
-    /// mode 0600, owned by the service user. Root can read it; an unprivileged
-    /// caller cannot, which is why most commands ask for sudo.
+    /// Where the daemon puts the generated bearer token: beside its database, mode 0600, owned by the
+    /// service user. Root can read it, an unprivileged caller cannot — hence sudo on most commands.
     static func tokenFile(databasePath: String) -> String {
         (databasePath as NSString).deletingLastPathComponent + "/portal-token"
     }

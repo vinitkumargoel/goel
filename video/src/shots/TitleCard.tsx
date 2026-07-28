@@ -1,25 +1,5 @@
-/* Shots 3 and 10 — the two title cards.
- *
- * Card: type-assembly-moves, 式 A `split-text-stagger`
- * Exact demo read: demos/type-assembly-moves/SplitTextStagger.tsx
- *
- * Demo parameters kept verbatim: per-character overflow box, translateY
- * 115% -> OVERSHOOT -> 0, RISE = 14f on Easing.out(cubic), SETTLE = 6f on
- * Easing.out(quad), delay = charIndex * 2f, and the baseline rule growing from
- * the first character's cue over 26f. OVERSHOOT stays at the card's -10%: the
- * card records that the original 6% was measurable but not perceptible and was
- * deliberately raised, so it is a 已知坑 value and must not be walked back.
- *
- * The only structural adaptation is two lines instead of one: each line indexes
- * its characters from its own cue, and line 2's cue is offset so both lines
- * land on the same frame (48). The film's copy does not fit on one line at a
- * readable size, and the card's grammar is per-character, not per-string.
- *
- * The card's 全片 <=2 种 rule for title entrances is satisfied: this is the
- * only title-entrance grammar in the film. Rest after landing is 42f (> the
- * card's >=30f), which is why the shot runs 90f rather than the 48f the first
- * pass of the storyboard reserved.
- */
+/* Shots 3/10 title cards — 式 A `split-text-stagger`, demo params verbatim (115%->OVERSHOOT->0,
+ * RISE 14f, SETTLE 6f). OVERSHOOT -10 is 已知坑, never revert to 6; line 2 cue lands both on f48. */
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame, Easing } from 'remotion';
 import { C, FONT } from '../theme';

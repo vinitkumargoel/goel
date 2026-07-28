@@ -1,14 +1,5 @@
-/* Goel° UI replica for the keynote film.
- *
- * Target: pixel-faithful to Assets/screenshots/desktop.png (1480x841, window
- * 1360x721 at 60,60). Palette is lifted from Sources/GoelApp/Theme.swift
- * (AppTheme.frostDark + FileType gradients); surfaces are sampled from the
- * screenshot itself. Captured at deviceScaleFactor 2.
- *
- * The UI sets in -apple-system so it rasterises in the same SF Pro the real app
- * draws in. The FILM's own typography (captions, titles, metrics) is Inter and
- * IBM Plex Mono and lives in the Remotion project, not here.
- */
+/* Goel° UI replica for the keynote film: pixel-faithful to Assets/screenshots/desktop.png (1480x841,
+ * window 1360x721 at 60,60, dSF 2). Palette from GoelApp/Theme.swift; UI font -apple-system = SF Pro. */
 
 @font-face {
   font-family: 'Inter';
@@ -235,9 +226,8 @@ body.on-canvas {
   background: rgba(255, 255, 255, 0.07);
   border-radius: 5px; padding: 3px 6px;
 }
-/* The selected row prints WHITE on the accent in every theme — the dark-navy
-   ink that stood here read as a different, flatter component next to the real
-   pill. */
+/* The selected row prints WHITE on the accent in every theme — the dark-navy ink that stood here
+   read as a different, flatter component next to the real pill. */
 .si.on { background: var(--accent); color: #fff; font-weight: 500; }
 .si.on .g { color: rgba(255, 255, 255, 0.92); }
 .si.on .n { color: #fff; background: rgba(0, 0, 0, 0.18); }
@@ -251,9 +241,8 @@ body.on-canvas {
 /* ---------------- list ---------------- */
 .list { flex: 1; min-width: 0; background: var(--app-list); display: flex; flex-direction: column; }
 
-/* Column geometry measured off Assets/screenshots/desktop.png. The list is
-   820px wide; every track below is the real pixel distance between the
-   corresponding text edges in that screenshot. */
+/* Column geometry measured off Assets/screenshots/desktop.png: the list is 820px wide, and every
+   track below is the real pixel distance between the corresponding text edges. */
 .list { --cols: 22px 36px 233px 84px 143px 98px 77px 84px; }
 
 .lhead {
@@ -378,9 +367,8 @@ body.on-canvas {
   display: grid; place-items: center; color: var(--ink-faint); font-size: 11px;
 }
 
-/* The app's detail tabs are a segmented control: the selected tab is a filled
-   accent pill with white ink. The underline this used to draw is a web idiom
-   and read as a different framework on sight. */
+/* The app's detail tabs are a segmented control — selected tab is a filled accent pill, white ink.
+   The underline this used to draw is a web idiom and read as a different framework on sight. */
 .tabs {
   display: flex; gap: 2px; margin: 13px 0 0;
   padding-bottom: 6px;

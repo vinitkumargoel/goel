@@ -1,8 +1,7 @@
 import Foundation
 
-/// Lifetime and per-day transfer accounting, persisted alongside the settings.
-/// Fed by the manager from engine progress deltas; rendered by the Statistics
-/// window. Days beyond the retention horizon are pruned on write.
+/// Lifetime and per-day transfer accounting, persisted alongside the settings. Fed by the manager from engine
+/// progress deltas, rendered by the Statistics window; days beyond the retention horizon are pruned on write.
 public struct TransferStats: Codable, Sendable, Equatable {
 
     public struct DayTotals: Codable, Sendable, Equatable {

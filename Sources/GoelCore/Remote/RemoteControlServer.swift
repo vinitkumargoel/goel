@@ -5,31 +5,19 @@ import Network
 import Security
 #endif
 
-/// The remote-access server: a minimal embedded HTTP endpoint exposing the queue
-/// to a phone/other machine — a live web page plus a JSON API (list, pause/resume,
-/// add). Token-authenticated; binds loopback-only unless the user explicitly
-/// allows LAN access.
-///
-/// This type is now **just the I/O shell**: the `NWListener`, the connection caps,
-/// the SSE loop, and the byte-range file streaming. Every decision — request
-/// parsing, routing, auth, the JSON API, the control page — lives in the pure
-/// ``RemoteRouter``, which it constructs per request. That split lets ~all of the
-/// server's logic be unit-tested through the router with an in-memory backend,
-/// while this file keeps only the parts that genuinely need a socket or a file.
+/// Remote-access server: embedded HTTP exposing the queue (web page + JSON API), token-authenticated,
+/// loopback-only unless LAN is allowed. Just the I/O shell — all decisions live in pure ``RemoteRouter``.
 public actor RemoteControlServer {
 
     private weak var manager: RemoteBackend?
     private var listener: NWListener?
 
-    /// The bind parameters the live `listener` was created with. Only these two
-    /// actually affect the socket, so any *other* settings change updates config in
-    /// place instead of tearing the listener down and rebinding — a rebind can't
-    /// reclaim the port instantly and used to fail (silently) with EADDRINUSE.
+    /// Bind parameters the live `listener` was created with. Only these two affect the socket, so other
+    /// settings update in place — a rebind can't reclaim the port instantly and failed with EADDRINUSE.
     private var boundPort: UInt16?
     private var boundExposeLAN: Bool?
-    /// TLS is part of the bind identity too — switching HTTP↔HTTPS or swapping the
-    /// certificate changes the socket's protocol stack, so it cannot be applied in
-    /// place the way a theme or a token can.
+    /// TLS is part of the bind identity too — HTTP↔HTTPS or a swapped certificate changes the socket's
+    /// protocol stack, so it can't be applied in place the way a theme or token can.
     private var boundTLS: String?
 
     /// The current routing config (token, requireAuth, readOnly, theme, username),
@@ -48,10 +36,8 @@ public actor RemoteControlServer {
         self.manager = manager
     }
 
-    /// Live connections, capped so idle clients can't exhaust descriptors.
-    /// The identifier set makes teardown exactly-once: the idle timeout and
-    /// the receive completion can both race to close the same connection, and
-    /// a double decrement would quietly erode the cap.
+    /// Live connections, capped so idle clients can't exhaust descriptors. The identifier set makes
+    /// teardown exactly-once — idle timeout and receive completion race, and a double decrement erodes the cap.
     private var openConnections = 0
     private var liveConnections = Set<ObjectIdentifier>()
     private static let maxConnections = 32
@@ -69,10 +55,8 @@ public actor RemoteControlServer {
     /// streaming) notice a restart and wind down.
     private var generation = 0
 
-    /// Why the last ``start(port:allowLAN:config:passwordHash:sessionMinutes:security:)``
-    /// left nothing listening. The reasons live in ``RemotePortalStartFailure`` so
-    /// both transports report the same set; this alias keeps the shell-scoped
-    /// spelling every existing caller uses.
+    /// Why the last `start(...)` left nothing listening. Reasons live in ``RemotePortalStartFailure`` so
+    /// both transports report the same set; this alias keeps the shell-scoped spelling callers use.
     public typealias StartFailure = RemotePortalStartFailure
 
     /// Set on each refusal in `start`, cleared the moment a listener is bound or the
@@ -82,25 +66,8 @@ public actor RemoteControlServer {
     /// A router bound to the current backend + config, rebuilt per use (cheap).
     private var router: RemoteRouter { RemoteRouter(backend: manager, config: routerConfig) }
 
-    /// Start (or reconfigure) listening. `allowLAN: false` binds 127.0.0.1 only.
-    ///
-    /// `config` carries the token, requireAuth/readOnly flags, portal theme, and
-    /// username; `passwordHash` and `sessionMinutes` drive the login flow. Any
-    /// change to the credentials (username/password/requireAuth) invalidates
-    /// existing sessions, so a password change actually logs everyone out.
-    ///
-    /// Called on *every* settings change. Only the port and the loopback/LAN choice
-    /// affect the socket, so when those are unchanged this just swaps the live config
-    /// on the running listener — it does **not** rebind. Rebinding on every change
-    /// used to tear the socket down and immediately re-create it, which failed with
-    /// EADDRINUSE (the port isn't reclaimable that fast) and, with no state handler,
-    /// failed silently: the UI still showed the portal "enabled" with nothing behind
-    /// it. A rebind now happens only when the port or LAN exposure actually changes,
-    /// and it first `await`s the old listener's full teardown.
-    ///
-    /// `security` carries the hardening layer (per-IP login backoff, header SSO,
-    /// TLS). It defaults to the pre-hardening posture so every existing caller —
-    /// and every existing test — keeps its exact behaviour.
+    /// Start/reconfigure listening (`allowLAN: false` = 127.0.0.1 only); credential changes invalidate
+    /// sessions. Called on every settings change, but rebinds only on port/LAN change — else EADDRINUSE.
     public func start(port: UInt16, allowLAN: Bool, config: RemoteRouter.Config,
                       passwordHash: String, sessionMinutes: Int,
                       security: RemotePortalSecurity = RemotePortalSecurity()) async {
@@ -109,12 +76,8 @@ public actor RemoteControlServer {
             || config.token != routerConfig.token
             || passwordHash != self.passwordHash
         if credentialsChanged {
-            // A password/username/sign-in/token change logs everyone out: drop
-            // sessions, and bump the generation so any *already-open* SSE or
-            // file-stream loop winds down and has to reconnect (and re-authenticate).
-            // Rotating ONLY the bearer token must count here too — otherwise a
-            // leaked token could be "rotated" in Settings while an attacker's live
-            // stream, opened with the old token, keeps flowing indefinitely.
+            // Any credential change (token rotation included) logs everyone out: bump the generation so
+            // already-open SSE/file-stream loops re-authenticate, else a leaked token keeps flowing.
             generation += 1
         }
         // Live config — applied whether or not we rebind, so a password / theme /
@@ -129,16 +92,8 @@ public actor RemoteControlServer {
                                      invalidatingSessions: credentialsChanged)
         await sessionStore.configure(throttle: security.throttle)
         if security.sso.isEnabled && !security.sso.isEffective {
-            // Enabled but unusable. Failing closed is correct, but silently is not:
-            // the operator thinks SSO is on and it is not.
-            //
-            // Name the precondition that is *actually* missing.
-            // ``TrustedIdentityHeaderPolicy/isEffective`` requires both a
-            // trusted-proxy list and a shared secret, so a message that always
-            // blames the proxy list sends an operator whose
-            // `GOEL_PORTAL_PROXY_SECRET` is unset to go editing settings that were
-            // never the problem. `isEnabled` is true here, so at least one of the
-            // two is empty and `missing` is never blank.
+            // Enabled but unusable — fail closed, but not silently. Name which of `isEffective`'s two
+            // preconditions is missing, or an unset `GOEL_PORTAL_PROXY_SECRET` reads as a proxy-list bug.
             let missing = [security.sso.trustedProxies.isEmpty ? "trusted-proxies" : nil,
                            security.sso.sharedSecret.isEmpty ? "shared-secret" : nil]
                 .compactMap { $0 }.joined(separator: ",")
@@ -146,28 +101,16 @@ public actor RemoteControlServer {
                                  .state(missing, label: "missing"))
         }
 
-        // Refuse to expose an unauthenticated portal to the network. When sign-in
-        // is off, ``RemoteRouter/authorize`` grants everyone full control, so a LAN
-        // bind would hand the mutating API (add with an arbitrary save folder,
-        // remove-with-data, stream) to anyone on the subnet. In that state we force
-        // a loopback-only bind regardless of the LAN toggle — the UI warning is
-        // then backed by the actual bind, not just advice.
-        //
-        // `requireAuth` alone is only the *policy* toggle: with it on but no password
-        // set, the password login can never succeed, yet ``RemoteRouter/authorize``
-        // still accepts the bearer token — so a LAN bind would expose the full
-        // mutating API to anyone holding (or sniffing) that token. Require a real
-        // password before ever binding to the network.
+        // Never expose an unauthenticated portal: without sign-in ``RemoteRouter/authorize`` grants the
+        // whole mutating API to the subnet. `requireAuth` alone isn't enough — a real password is required.
         let exposeLAN = allowLAN && config.requireAuth && !passwordHash.isEmpty
         if allowLAN && !exposeLAN {
             let why = config.requireAuth ? "no-portal-password" : "sign-in-disabled"
             GoelLog.remote.notice("LAN access refused; binding 127.0.0.1 only",
                                   .state(why, label: "reason"))
         } else if exposeLAN, !security.tlsEnabled, boundExposeLAN != true {
-            // Exposing on the LAN over plain HTTP: the login/cookie/token cross the
-            // network unencrypted. Warn explicitly (once per bind) so the operator
-            // enables the portal's own TLS, uses a trusted network, or terminates
-            // TLS at a reverse proxy.
+            // LAN over plain HTTP sends login/cookie/token unencrypted. Warn once per bind so the
+            // operator enables portal TLS, trusts the network, or terminates TLS at a reverse proxy.
             GoelLog.remote.notice("Portal exposed on the LAN over plain HTTP — enable portal TLS, use a trusted network, or put it behind a TLS reverse proxy")
         }
 
@@ -190,9 +133,8 @@ public actor RemoteControlServer {
         let parameters: NWParameters
         if security.tlsEnabled {
             guard let tls = Self.tlsParameters(identityPath: security.tlsIdentityPath) else {
-                // Fail closed. Falling back to cleartext would hand the operator a
-                // portal they believe is encrypted while it quietly is not — the
-                // worst possible outcome of a mistyped certificate path.
+                // Fail closed: falling back to cleartext would hand the operator a portal they believe
+                // is encrypted while it quietly is not — the worst outcome of a mistyped cert path.
                 GoelLog.remote.error("Portal TLS is enabled but the identity could not be loaded — refusing to serve cleartext",
                                      .path(security.tlsIdentityPath))
                 startFailure = .tlsIdentityUnavailable(path: security.tlsIdentityPath)
@@ -223,9 +165,8 @@ public actor RemoteControlServer {
         if exposeLAN {
             newListener.service = NWListener.Service(name: "GoelDownloader", type: "_http._tcp")
         }
-        // Surface a listener that fails *after* start() — otherwise a bad bind
-        // leaves the UI claiming the portal is on with nothing behind it, exactly
-        // the state that made this hard to diagnose.
+        // Surface a listener that fails *after* start() — otherwise a bad bind leaves the UI claiming
+        // the portal is on with nothing behind it, exactly the state that made this hard to diagnose.
         let portForLog = listenPort.rawValue
         newListener.stateUpdateHandler = { state in
             switch state {
@@ -242,9 +183,8 @@ public actor RemoteControlServer {
             }
         }
         newListener.newConnectionHandler = { [weak self] connection in
-            // Bound before the Task — see DownloadManager.updates(). A dead
-            // server drops the connection either way; this only moves the check
-            // out of the concurrently-executing closure.
+            // Bound before the Task — see DownloadManager.updates(). Only moves the check out of the
+            // concurrently-executing closure; a dead server drops the connection either way.
             guard let self else { return }
             Task { await self.accept(connection) }
         }
@@ -259,14 +199,8 @@ public actor RemoteControlServer {
 
     // MARK: TLS
 
-    /// Build TLS parameters from a PKCS#12 identity on disk, or `nil` when it
-    /// cannot be loaded.
-    ///
-    /// A `.p12` bundle is the only certificate form macOS can consume without a
-    /// third-party crypto library: `SecPKCS12Import` turns it into a `SecIdentity`
-    /// (certificate + private key), which `sec_identity_create` hands to
-    /// Network.framework. `Deploy/README.md` carries the two `openssl` commands
-    /// that produce one, self-signed or from a corporate CA.
+    /// TLS parameters from a PKCS#12 identity on disk, or `nil` if unloadable. `.p12` is the only form
+    /// macOS consumes without a third-party crypto lib; `Deploy/README.md` has the `openssl` commands.
     private static func tlsParameters(identityPath: String) -> NWParameters? {
         guard let identity = loadIdentity(path: identityPath) else { return nil }
         let options = NWProtocolTLS.Options()
@@ -285,9 +219,8 @@ public actor RemoteControlServer {
             kSecImportExportPassphrase as String: RemotePortalSecurity.tlsPassphrase,
         ]
         if #available(macOS 15.0, *) {
-            // Keep the imported key in this process only. On earlier systems the
-            // import lands in the login keychain, which is why the deployment guide
-            // recommends a dedicated certificate rather than a shared one.
+            // Keep the imported key in this process only; on earlier systems it lands in the login
+            // keychain — hence the deployment guide's dedicated (not shared) certificate advice.
             options[kSecImportToMemoryOnly as String] = kCFBooleanTrue as Any
         }
         var items: CFArray?
@@ -304,21 +237,15 @@ public actor RemoteControlServer {
         return sec_identity_create(identity)
     }
 
-    /// Stop listening and **wait** for the socket to be fully released. Awaiting the
-    /// listener's `.cancelled` state (rather than firing `cancel()` and returning) is
-    /// what lets a subsequent `start()` rebind the same port without EADDRINUSE — the
-    /// cancel is asynchronous, so a fire-and-forget teardown leaves the port held.
-    /// The port / LAN exposure of the live listener, or nil when not bound.
-    /// Used by ``RemoteAccess`` so `isRunning` reflects a real socket, not a
-    /// hoped-for start.
+    /// Stopping awaits the listener's `.cancelled` state, so a later `start()` rebinds without EADDRINUSE
+    /// (cancel is async). Port/LAN exposure of the live listener, or nil — ``RemoteAccess`` uses it for `isRunning`.
     public func boundState() -> (port: UInt16, exposedLAN: Bool)? {
         guard listener != nil, let p = boundPort else { return nil }
         return (p, boundExposeLAN ?? false)
     }
 
-    /// Why nothing is listening after the last `start`, or nil when the portal is
-    /// bound. The companion to ``boundState()``: that answers *whether* the portal
-    /// is up, this answers *why not* in words a person can act on.
+    /// Why nothing is listening after the last `start`, or nil when bound. Companion to ``boundState()``:
+    /// that answers *whether* the portal is up, this answers *why not* in words a person can act on.
     public func lastStartFailure() -> StartFailure? { startFailure }
 
     public func stop() async {
@@ -331,9 +258,8 @@ public actor RemoteControlServer {
         guard let listener else { return }
         self.listener = nil
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            // Resume exactly once, from whichever fires first — the listener's
-            // terminal state or the backstop timer. A `@Sendable` one-shot keeps
-            // this correct across the two concurrent callbacks.
+            // Resume exactly once, from whichever fires first — listener terminal state or backstop
+            // timer. A `@Sendable` one-shot keeps this correct across the two concurrent callbacks.
             let once = OneShotResume(cont)
             listener.stateUpdateHandler = { state in
                 switch state {
@@ -341,9 +267,8 @@ public actor RemoteControlServer {
                 default: break
                 }
             }
-            // Backstop: if the listener was already terminal, setting the handler
-            // above won't re-fire it — don't hang teardown waiting for a state that
-            // will never come.
+            // Backstop: if the listener was already terminal, setting the handler above won't re-fire
+            // it — don't hang teardown waiting for a state that will never come.
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { once.fire() }
             listener.cancel()
         }
@@ -351,9 +276,8 @@ public actor RemoteControlServer {
 
     // MARK: Connection handling
 
-    /// Gate new connections behind the concurrency cap, then arm an idle
-    /// timeout so a client that connects and sends nothing can't hold a slot
-    /// (and its Task/queue) open forever.
+    /// Gate new connections behind the concurrency cap, then arm an idle timeout so a client that
+    /// connects and sends nothing can't hold a slot (and its Task/queue) open forever.
     private func accept(_ connection: NWConnection) {
         guard openConnections < Self.maxConnections else {
             connection.cancel()
@@ -373,12 +297,8 @@ public actor RemoteControlServer {
                     client: Self.clientAddress(connection))
     }
 
-    /// The peer's IP address as reported by the socket.
-    ///
-    /// This is the *only* address the auth layer will trust: it comes from the
-    /// kernel's view of the connection, so unlike `X-Forwarded-For` a client
-    /// cannot choose it. Both the login throttle and the trusted-proxy check for
-    /// header SSO key off this value.
+    /// The peer's IP as the socket reports it — the *only* address auth trusts, since unlike
+    /// `X-Forwarded-For` a client can't choose it. Keys the login throttle and the trusted-proxy check.
     private static func clientAddress(_ connection: NWConnection) -> String {
         guard case .hostPort(let host, _) = connection.endpoint else { return "" }
         switch host {
@@ -389,13 +309,8 @@ public actor RemoteControlServer {
         }
     }
 
-    /// Read from `connection` until a COMPLETE HTTP request has arrived — headers
-    /// terminated by `\r\n\r\n` and a body at least as long as `Content-Length` —
-    /// then dispatch once. A single `receive` is not enough: a POST body can trail
-    /// the headers in a later TCP segment, or exceed one read, so parsing after one
-    /// read would see a truncated (often empty) body → 400. Re-arms until the
-    /// request is whole, the size cap trips, or the peer / idle-timeout closes it.
-    /// (The Linux server already accumulates this way via its NIO handler.)
+    /// Read until a COMPLETE request arrives (`\r\n\r\n` plus a body ≥ `Content-Length`), then dispatch
+    /// once — one `receive` sees a POST body trailing in a later segment as truncated/empty → 400.
     private nonisolated func readRequest(_ connection: NWConnection, buffer: Data,
                                          timeout: Task<Void, Never>, client: String) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] chunk, _, isComplete, error in
@@ -506,18 +421,14 @@ public actor RemoteControlServer {
 
     // MARK: Auth, sessions & login (stateful — the pure router can't do these)
 
-    /// Handle one non-streaming request: cookie sessions and the login/logout
-    /// endpoints live here; everything else delegates to the pure router with the
-    /// session verdict folded in. Unauthenticated browser page-loads are bounced
-    /// to `/login`; the `/api` surface returns 401 (handled by the router) so
-    /// script clients get a clean status instead of an HTML redirect.
+    /// One non-streaming request: cookie sessions + login/logout here, the rest delegates to the pure
+    /// router. Browser page-loads bounce to `/login`; `/api` gets a 401 so script clients see a status.
     private func respond(to request: RemoteRequest, client: String) async -> Data {
         let authed = await portalAuthed(request, client: client)
         let cfg = routerConfig
 
-        // Ahead of every gate: the login page cannot style itself or run its
-        // submit handler without these, and they are the same public bytes for
-        // everyone. See `RemoteRouter.staticAsset(path:)`.
+        // Ahead of every gate: the login page can't style itself or submit without these, and they
+        // are the same public bytes for everyone. See `RemoteRouter.staticAsset(path:)`.
         if request.method == "GET", let asset = RemoteRouter.staticAsset(path: request.path) {
             return asset
         }
@@ -534,11 +445,8 @@ public actor RemoteControlServer {
             }
             return await handleLogin(request, client: client)
         case ("GET", "/logout"), ("POST", "/logout"):
-            // Signing out is a state change, and a loud one: it drops the session
-            // AND bumps the generation, which winds down every live event stream
-            // and byte-range download on the server. Registered ahead of the auth
-            // gate it let any unauthenticated caller do that from a bare `curl`.
-            // Gate it with the same predicate every other route uses.
+            // Sign-out drops the session AND bumps the generation, winding down every live stream —
+            // ungated it let any unauthenticated `curl` do that, so use the same predicate as other routes.
             guard router.authorize(request, sessionAuthed: authed) else {
                 return request.method == "GET"
                     ? Self.redirect(to: "/login")
@@ -567,12 +475,8 @@ public actor RemoteControlServer {
         await sessionStore.validSession(request)
     }
 
-    /// Is this request signed in — by its own session cookie, or by an identity a
-    /// trusted upstream proxy has already verified?
-    ///
-    /// The SSO branch is inert unless the operator enabled it *and* listed the
-    /// proxy's address, so on a default install this is exactly the old cookie
-    /// check with one extra boolean test.
+    /// Signed in by session cookie, or by an identity a trusted upstream proxy already verified?
+    /// The SSO branch is inert unless enabled *and* the proxy's address is listed — default: cookie only.
     private func portalAuthed(_ request: RemoteRequest, client: String) async -> Bool {
         if await sessionStore.validSession(request) { return true }
         return RemoteAuthService.trustedIdentity(request, client: client,
@@ -589,9 +493,8 @@ public actor RemoteControlServer {
 
     private func handleLogout(_ request: RemoteRequest) async -> Data {
         let result = await sessionStore.handleLogout(request)
-        // Only a real sign-out needs the bump: it is what forces open SSE and
-        // byte-range loops to re-authenticate. Bumping it for a logout that dropped
-        // nothing turned one stray request into every client's dead stream.
+        // Only a real sign-out needs the bump (it forces open SSE/byte-range loops to re-auth);
+        // bumping for a logout that dropped nothing turned one stray request into dead streams.
         if result.droppedSession { generation += 1 }
         return result.response
     }
@@ -606,11 +509,8 @@ public actor RemoteControlServer {
 
     // MARK: File streaming (watch while downloading / play remotely)
 
-    /// `GET /stream?id=<task>` — serve a task's payload with Range support so
-    /// media players (and the control page) can play it. Finished tasks stream
-    /// the whole file; a sequential in-progress torrent streams its contiguous
-    /// prefix (kept behind a safety margin). Multi-file torrents stream their
-    /// largest wanted file once finished.
+    /// `GET /stream?id=<task>` — serve a task's payload with Range support. Finished tasks stream whole;
+    /// a sequential in-progress torrent streams its contiguous prefix (behind a safety margin).
     private func serveStream(_ connection: NWConnection, _ request: RemoteRequest,
                              client: String) async {
         func reject(_ status: String, _ message: String) async {
@@ -708,10 +608,8 @@ public actor RemoteControlServer {
     }
 }
 
-/// A thread-safe one-shot resume for a `CheckedContinuation` that may be signalled
-/// by more than one concurrent callback (here: a listener's terminal state and a
-/// timeout backstop). Resuming a continuation twice traps, so the first caller wins
-/// and the rest are no-ops.
+/// Thread-safe one-shot resume for a `CheckedContinuation` signalled by several concurrent callbacks
+/// (listener terminal state, timeout backstop). Resuming twice traps, so first caller wins.
 private final class OneShotResume: @unchecked Sendable {
     private let lock = NSLock()
     private var fired = false

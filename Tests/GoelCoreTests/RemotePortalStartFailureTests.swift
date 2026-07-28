@@ -2,12 +2,8 @@
 import XCTest
 @testable import GoelCore
 
-/// A refused portal start must be *reportable*, not just logged.
-///
-/// Both refusals in ``RemoteControlServer/start(port:allowLAN:config:passwordHash:sessionMinutes:security:)``
-/// are fail-closed on purpose, but a silent fail-closed is indistinguishable from
-/// success — that is what let the UI keep offering "Open" for a portal that never
-/// bound. These tests pin the reason surviving in ``RemoteControlServer/lastStartFailure()``.
+/// A refused portal start must be *reportable*, not just logged — a silent fail-closed looks like
+/// success, which let the UI offer "Open" for a dead portal. Pins ``RemoteControlServer/lastStartFailure()``.
 final class RemotePortalStartFailureTests: XCTestCase {
 
     private func config() -> RemoteRouter.Config {
@@ -50,9 +46,8 @@ final class RemotePortalStartFailureTests: XCTestCase {
         var failure = await server.lastStartFailure()
         XCTAssertNotNil(failure)
 
-        // A kernel-reserved port, so no concurrent test process can be holding it;
-        // a restricted CI that still refuses the bind must report *that* instead of
-        // the stale TLS reason, which is the property under test either way.
+        // A kernel-reserved port, so no concurrent test holds it; a restricted CI that still refuses
+        // must report *that* instead of the stale TLS reason — the property under test either way.
         let port = LoopbackPort.reserve()
         await server.start(port: port, allowLAN: false, config: cfg,
                            passwordHash: hash, sessionMinutes: 120)

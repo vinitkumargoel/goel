@@ -77,9 +77,8 @@ export function Topbar({
         </span>
       </div>
 
-      {/* Read-only sessions get no Add button: the server would refuse the POST
-          anyway, and offering it invites the user to compose a request that
-          cannot succeed. */}
+      {/* Read-only sessions get no Add button: the server refuses the POST anyway, and
+          offering it invites composing a request that cannot succeed. */}
       {canWrite && (
         <button className="add-btn" onClick={onAdd}>
           <PlusIcon />

@@ -126,9 +126,8 @@ extension DownloadTask {
         return Self.dateFormatter.string(from: addedAt)
     }
 
-    /// The info-hash parsed from a magnet link, used as a fallback before the
-    /// engine resolves the real one (which also covers `.torrent` files). Prefer
-    /// the model's stored ``DownloadTask/infoHash``; fall back to this.
+    /// The info-hash parsed from a magnet link, a fallback before the engine resolves the real one.
+    /// Prefer the model's stored ``DownloadTask/infoHash``.
     var magnetInfoHash: String? {
         guard case .magnet(let m) = source else { return nil }
         guard let range = m.range(of: #"btih:([a-zA-Z0-9]+)"#, options: .regularExpression) else { return nil }

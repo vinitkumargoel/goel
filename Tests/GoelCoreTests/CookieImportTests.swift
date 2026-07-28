@@ -1,12 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Tests for browser cookie import: the ``CookieHeader`` parser/sanitiser, the
-/// host scoping that decides whether a captured session may ride on a request,
-/// and the guarantee that a cookie never reaches persisted JSON.
-///
-/// All pure — no network, no browser, no engine. The live capture path is the
-/// extension + native-messaging host, which these rules sit underneath.
+/// Browser cookie import: ``CookieHeader`` parser/sanitiser, host scoping for whether a captured
+/// session may ride on a request, and that a cookie never reaches persisted JSON. All pure.
 final class CookieImportTests: XCTestCase {
 
     // MARK: Parsing

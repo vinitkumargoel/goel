@@ -1,10 +1,7 @@
 import Foundation
 
-/// The unified task model both engines present upward.
-///
-/// It carries up/down byte counts and speeds, a multi-file list, a pre-metadata
-/// state (`totalBytes == nil`), a persistable status with a concrete failure
-/// reason, and a distinct seeding state — the requirements from the brief.
+/// The unified task model both engines present upward: up/down bytes and speeds, a multi-file list, a
+/// pre-metadata state (`totalBytes == nil`), a persistable status with a failure reason, and seeding.
 public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     public let id: UUID
     public var source: DownloadSource
@@ -32,13 +29,11 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// torrent fast-resume blob). Opaque to the rest of the app.
     public var resumeData: Data?
 
-    /// An optional integrity hash the finished file must match. When set, the
-    /// engine verifies the payload before marking the task complete; a mismatch
-    /// fails it with ``DownloadError/checksumMismatch``. `nil` = no verification.
+    /// Integrity hash the finished file must match: verified before the task is marked complete, a
+    /// mismatch fails it with ``DownloadError/checksumMismatch``. `nil` = no verification.
     public var expectedChecksum: Checksum?
 
-    /// Live per-connection snapshots (HTTP segments / torrent peers) for the
-    /// detail panel. Transient — refreshed by the engine while transferring,
+    /// Live per-connection snapshots (HTTP segments / torrent peers) for the detail panel. Transient and
     /// meaningless after relaunch. Optional so old persisted blobs still decode.
     public var connections: [TaskConnection]?
 
@@ -60,14 +55,12 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// still transferring. nil/false = rarest-first (default).
     public var sequentialDownload: Bool?
 
-    /// When set on a paused task, the scheduler starts it automatically at (or
-    /// shortly after) this time. Cleared the moment the task starts — manually
-    /// or on schedule. Survives relaunch.
+    /// On a paused task, the scheduler auto-starts it at (or shortly after) this time. Cleared the
+    /// moment the task starts, manually or on schedule. Survives relaunch.
     public var scheduledAt: Date?
 
-    /// Alternative URLs serving the same file (HTTP only). Segments spread
-    /// across them and fail over when one misbehaves; every response is checked
-    /// against the primary's size so a divergent mirror is dropped, not merged.
+    /// Alternative URLs for the same file (HTTP only); segments spread across them and fail over. Every
+    /// response is size-checked against the primary so a divergent mirror is dropped, not merged.
     public var mirrors: [String]?
 
     /// The torrent's v1 info-hash (hex), resolved from libtorrent so it is known
@@ -78,9 +71,8 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// meaningless after relaunch. Optional so old persisted blobs still decode.
     public var trackers: [TorrentTracker]?
 
-    /// A downsampled piece-availability map (torrents only): each value is the
-    /// fraction 0…1 of the real pieces in that bucket that are downloaded. Drives
-    /// the Progress tab's piece grid with true data. Transient.
+    /// Downsampled piece-availability map (torrents only): each value is the fraction 0…1 of that
+    /// bucket's real pieces that are downloaded. Drives the Progress tab's piece grid. Transient.
     public var pieceAvailability: [Double]?
 
     /// Optional per-task upload cap in bytes/sec (torrents; 0 or nil = uncapped).
@@ -90,9 +82,8 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// indefinitely (until the user stops it or a global rule applies).
     public var seedRatioLimit: Double?
 
-    /// A free-form category the user assigns for grouping/filtering. nil = none.
-    /// Retained for back-compat; the multi-tag ``tags`` field supersedes it and
-    /// the UI treats a legacy `label` as one more tag.
+    /// Free-form user category for grouping/filtering. Retained for back-compat; the multi-tag ``tags``
+    /// supersedes it and the UI treats a legacy `label` as one more tag. nil = none.
     public var label: String?
 
     /// User-assigned tags for grouping/filtering (many per task). nil/empty = none.
@@ -101,66 +92,32 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// A free-form note the user attaches to the download. nil = none.
     public var note: String?
 
-    /// A `Referer` header sent with the HTTP(S) request for this task (some hosts
-    /// gate downloads on it). Captured from the browser extension or entered by
-    /// the user. Only ever sent to the same origin as the download URL. nil = none.
+    /// `Referer` header for this task's HTTP(S) request (some hosts gate downloads on it), from the
+    /// extension or the user. Only ever sent to the same origin as the download URL. nil = none.
     public var referer: String?
 
-    /// Extra request headers (name → value) sent with the HTTP(S) request for this
-    /// task. Reserved header names (Host, Content-Length, …) are ignored by the
-    /// engine. nil/empty = none.
+    /// Extra request headers (name → value) for this task's HTTP(S) request. Reserved names
+    /// (Host, Content-Length, …) are ignored by the engine. nil/empty = none.
     public var requestHeaders: [String: String]?
 
-    /// The browser session's `Cookie` header value for this download
-    /// (`"sid=abc; csrf=def"`), captured by the extension or pasted by the user.
-    /// This is what makes a paywalled / logged-in / private-forum file downloadable
-    /// at all: without it the server hands back a login page instead of the file.
-    ///
-    /// **Deliberately NOT persisted** — it is excluded from ``CodingKeys``, so it
-    /// never reaches the SQLite store and never reaches ``DownloadManager``'s
-    /// export envelope. Three reasons, in order of weight:
-    ///
-    /// 1. A session cookie is a *bearer credential*: whoever holds it is logged in
-    ///    as the user, with no password and usually no second factor.
-    /// 2. The task store is plaintext SQLite in Application Support, and the JSON
-    ///    export (File ▸ Export) encodes tasks wholesale — a persisted cookie
-    ///    would ride into any backup the user shared with someone else.
-    /// 3. Cookies expire in hours-to-days anyway, so persisting them buys little:
-    ///    a stale one fails exactly like no cookie at all, but with a worse error.
-    ///
-    /// The Keychain was the other candidate. It was rejected for the *value*
-    /// because the engine needs the cookie on a background actor during a resume,
-    /// and a Keychain read can block on a user prompt (see ``CredentialLookup``) —
-    /// turning "resume" into a modal password dialog. What survives a relaunch is
-    /// the non-secret provenance pair below (``cookieSource``/``cookieHost``), so
-    /// the UI can say "re-import cookies from your browser" instead of silently
-    /// failing with a 403.
-    ///
-    /// Never log this value, in any privacy class. See ``GoelLogField``.
+    /// Browser session `Cookie` value that makes a paywalled/logged-in file downloadable at all. **Never
+    /// persisted** (absent from ``CodingKeys``): a bearer credential vs plaintext SQLite + JSON export.
     public var cookieHeader: String?
 
     /// Where ``cookieHeader`` came from. Persisted: it is provenance, not a
     /// secret, and it lets the UI explain an empty cookie jar after a relaunch.
     public var cookieSource: CookieSource?
 
-    /// The host ``cookieHeader`` was captured for. Cookies are only ever sent to
-    /// exactly this host (see ``sendsCookies(to:)``) — never to a mirror on
-    /// another host, which would hand the user's session to the mirror operator.
-    /// nil = fall back to the task's own source host.
+    /// Host ``cookieHeader`` was captured for; cookies go to exactly this host (``sendsCookies(to:)``),
+    /// never a mirror elsewhere — that hands the user's session to its operator. nil = the source host.
     public var cookieHost: String?
 
-    /// How many times the scheduler has already auto-retried this download in
-    /// the current failure streak (see ``AppSettings/autoRetryEnabled``). Reset
-    /// to nil on a successful completion or a manual retry. Optional so old
-    /// persisted blobs decode unchanged.
+    /// Auto-retries in the current failure streak (see ``AppSettings/autoRetryEnabled``); reset to nil on
+    /// success or a manual retry. Optional so old persisted blobs decode unchanged.
     public var retryAttempt: Int?
 
-    /// File indices the user deselected on the add screen (torrents), before the
-    /// per-file list exists. Applied once as `.skip` the moment metadata resolves
-    /// (after which the skip lives in each file's own `.priority`), then dropped:
-    /// the engine clears its copy after the first apply, and changing a file's
-    /// priority scrubs that id here — so re-enabling a file is never undone by a
-    /// later resume/relaunch re-applying a stale add-time skip.
+    /// Torrent file indices deselected on the add screen, before the per-file list exists. Applied once as
+    /// `.skip` when metadata resolves, then dropped, so a re-enabled file is never re-skipped on resume.
     public var initialSkipFileIDs: [Int]?
 
     /// Which network interface(s) this download should egress through, overriding
@@ -255,13 +212,8 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
 
     // MARK: Codable
 
-    /// Spelled out rather than synthesised for exactly one reason: ``cookieHeader``
-    /// is **absent** from this list, so the compiler guarantees the credential is
-    /// never encoded — not into the SQLite blob, not into the JSON export, not
-    /// into any future serialisation someone adds. `init(from:)` still synthesises
-    /// because the omitted property has a default (`nil`), so a decoded task simply
-    /// comes back cookie-less. Every other stored property must stay listed here or
-    /// it silently stops persisting.
+    /// Spelled out so ``cookieHeader`` is **absent**: the compiler then guarantees the credential is never
+    /// encoded (SQLite or JSON export). Every other stored property must stay listed or stops persisting.
     private enum CodingKeys: String, CodingKey {
         case id, source, name, saveDirectory, totalBytes
         case bytesDownloaded, bytesUploaded, downloadSpeed, uploadSpeed
@@ -350,30 +302,17 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         }
     }
 
-    /// Whether ``cookieHeader`` may ride on a request to `url`.
-    ///
-    /// Host-exact, never a suffix match. A cookie captured for `files.example.com`
-    /// is not sent to `cdn.example.com`, because "same registrable domain" is not
-    /// the same trust boundary — mirrors and CDNs are frequently third parties, and
-    /// a leaked session cookie is a full account takeover. ``SegmentedTransfer``
-    /// independently strips every custom header on a cross-host mirror request, so
-    /// this is the first of two locks, not the only one.
+    /// Whether ``cookieHeader`` may ride on a request to `url`. Host-exact, never a suffix match:
+    /// `files.example.com` ≠ `cdn.example.com`, and a leaked session cookie is account takeover.
     public func sendsCookies(to url: URL) -> Bool {
         guard let cookieHeader, !cookieHeader.isEmpty else { return false }
-        // An explicit capture scope wins; otherwise cookies apply only to the
-        // task's own origin (the manual-paste case, where the user pasted the
-        // cookies *for this download*).
+        // An explicit capture scope wins; otherwise cookies apply only to the task's own origin
+        // (the manual-paste case, where the user pasted the cookies *for this download*).
         return CookieHeader.matches(cookieHost: cookieHost ?? sourceHost, url: url)
     }
 
-    /// Every custom header this task should send to `url`: the user's
-    /// ``requestHeaders`` plus the captured `Cookie` when it is in scope.
-    ///
-    /// The single place cookies enter the request path — engines call this rather
-    /// than reading ``requestHeaders`` directly, so the host check above cannot be
-    /// forgotten at a call site. Any `Cookie` the user typed into the headers
-    /// editor is replaced (not merged) by the captured one: two `Cookie` headers
-    /// on one request is a protocol violation and servers pick unpredictably.
+    /// ``requestHeaders`` plus the captured `Cookie` when in scope — the single place cookies enter the
+    /// request path, so the host check can't be forgotten. A user-typed `Cookie` is replaced, not merged.
     public func outboundHeaders(for url: URL) -> [String: String] {
         var headers = requestHeaders ?? [:]
         guard let cookieHeader, sendsCookies(to: url) else { return headers }
@@ -384,22 +323,14 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
 
     // MARK: Path safety
 
-    /// Whether ``savePath`` resolves to a location strictly inside
-    /// ``saveDirectory``. A defense-in-depth guard the engines check before any
-    /// filesystem write/delete, so a malformed name can never escape the download
-    /// folder even if name sanitisation is bypassed upstream. The containment and
-    /// filename invariants live in ``PathSafety``.
+    /// Whether ``savePath`` stays strictly inside ``saveDirectory`` — defense-in-depth the engines check
+    /// before any write/delete, in case name sanitisation was bypassed upstream. See ``PathSafety``.
     public var isSavePathContained: Bool {
         PathSafety.isContained(savePath, within: saveDirectory)
     }
 
-    /// The absolute path of the payload to open / play / stream. For a multi-file
-    /// torrent that's the largest wanted file, resolved under the save directory.
-    /// The engine-declared per-file `path` is untrusted — a hostile `.torrent`
-    /// could (against a buggy or downgraded libtorrent) carry a traversing path —
-    /// so the joined result is verified to stay inside the save directory and
-    /// falls back to ``savePath`` if it would escape. Callers that open/stream a
-    /// torrent's file must route through here rather than joining `path` raw.
+    /// Absolute path to open/play/stream (multi-file torrent: the largest wanted file). The engine-declared
+    /// per-file `path` is untrusted, so a joined result escaping `saveDirectory` falls back to ``savePath``.
     public var primaryFilePath: String {
         guard isMultiFile,
               let largest = files.filter(\.isWanted).max(by: { $0.length < $1.length })
@@ -411,12 +342,8 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
 
 // MARK: - Browser cookies
 
-/// Where a task's cookies came from.
-///
-/// Persisted with the task (it is provenance, not a secret). Its job is to make
-/// the *absence* of a cookie explainable: after a relaunch the value is gone by
-/// design, and "cookies came from your browser — re-import them" is a fixable
-/// message, where a bare 403 is not.
+/// Where a task's cookies came from. Persisted (provenance, not a secret) so the *absence* of a cookie
+/// after relaunch is explainable — "re-import them from your browser" is fixable, a bare 403 is not.
 public enum CookieSource: String, Codable, Sendable, Hashable, CaseIterable, Identifiable {
     /// No cookies — the request goes out anonymous. The default.
     case none
@@ -449,29 +376,20 @@ public enum CookieSource: String, Codable, Sendable, Hashable, CaseIterable, Ide
     }
 }
 
-/// Parsing, validation and normalisation of a `Cookie` request-header value.
-///
-/// Everything here is a pure function over a string so the whole cookie path can
-/// be tested without a browser, a network, or a running engine. The values that
-/// flow through are credentials, so the rules are conservative: anything that
-/// could split a request, smuggle a second header, or blow a server's header
-/// budget is dropped rather than escaped.
+/// Pure-function parsing/validation/normalisation of a `Cookie` header value, testable without a browser.
+/// The values are credentials: anything that could split a request or blow the header budget is dropped.
 public enum CookieHeader {
 
     /// Most cookie pairs kept from one capture. Real sessions use a handful;
     /// hundreds means a tracking-cookie pile-up that would only bloat the request.
     public static let maxPairs = 128
 
-    /// Longest normalised header value kept, in bytes. Most servers reject a
-    /// request line/header block over 8 KiB with a 400 — sending more turns a
-    /// working download into an unexplainable failure.
+    /// Longest normalised header value kept, in bytes. Most servers 400 a header block over 8 KiB,
+    /// turning a working download into an unexplainable failure.
     public static let maxLength = 8192
 
-    /// The pairs in a raw `Cookie` value, in order, invalid ones dropped.
-    ///
-    /// Duplicate names collapse to the **last** value seen (matching the header
-    /// editor's `A: 1\nA: 2` → `2` rule) while keeping the position of the first
-    /// occurrence, so the order the browser sent stays recognisable.
+    /// Pairs in a raw `Cookie` value, in order, invalid ones dropped. Duplicate names collapse to the
+    /// **last** value (the header editor's `A: 1\nA: 2` → `2` rule) but keep the first's position.
     public static func pairs(in raw: String) -> [(name: String, value: String)] {
         var order: [String] = []
         var values: [String: String] = [:]
@@ -489,10 +407,8 @@ public enum CookieHeader {
         return order.prefix(maxPairs).map { (name: $0, value: values[$0] ?? "") }
     }
 
-    /// A normalised, size-capped `Cookie` header value, or nil when nothing
-    /// survivable is left. The one function that may produce a value stored on a
-    /// ``DownloadTask`` — every entry point (extension capture, manual paste,
-    /// scripting) must go through it.
+    /// A normalised, size-capped `Cookie` value, or nil when nothing survives. The only function that may
+    /// produce a value stored on a ``DownloadTask`` — every entry point must go through it.
     public static func sanitized(_ raw: String) -> String? {
         var kept: [String] = []
         var length = 0
@@ -528,9 +444,8 @@ public enum CookieHeader {
 
     // MARK: Token rules
 
-    /// RFC 7230 `tchar` set — the characters a header/cookie *name* may use.
-    /// Excluding everything else also excludes `=`, `;`, whitespace and every
-    /// control character, so a name can never terminate its own pair.
+    /// RFC 7230 `tchar` set for a header/cookie *name*. Excluding everything else also excludes `=`,
+    /// `;`, whitespace and every control character, so a name can never terminate its own pair.
     private static func isValidName(_ name: String) -> Bool {
         guard !name.isEmpty else { return false }
         return name.unicodeScalars.allSatisfy { scalar in
@@ -543,10 +458,8 @@ public enum CookieHeader {
         }
     }
 
-    /// A cookie *value* may be empty (servers do issue `name=`), but must stay
-    /// printable ASCII with no `;`. Rejecting CR/LF/NUL blocks header splitting;
-    /// rejecting non-ASCII avoids `URLRequest` mangling a value we can't encode
-    /// the way the browser did.
+    /// A cookie *value* may be empty (`name=`) but must be printable ASCII with no `;`: rejecting
+    /// CR/LF/NUL blocks header splitting, rejecting non-ASCII avoids `URLRequest` mangling it.
     private static func isValidValue(_ value: String) -> Bool {
         value.unicodeScalars.allSatisfy { $0.value >= 0x20 && $0.value < 0x7F && $0 != ";" }
     }

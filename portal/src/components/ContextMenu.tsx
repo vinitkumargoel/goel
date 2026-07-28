@@ -28,9 +28,8 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
 
-  // Position after paint: the clamp needs the menu's real size, which depends on
-  // its longest label. Rendering off-screen first avoids a visible jump from the
-  // unclamped position to the clamped one.
+  // Position after paint: the clamp needs the menu's real size (depends on its longest label). Rendering
+  // off-screen first avoids a visible jump from the unclamped position to the clamped one.
   useLayoutEffect(() => {
     if (!menu || !ref.current) {
       setPos(null)

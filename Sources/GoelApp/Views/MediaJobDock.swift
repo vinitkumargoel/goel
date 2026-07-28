@@ -2,30 +2,14 @@ import AppKit
 import SwiftUI
 import GoelCore
 
-/// The stack of conversion cards docked in the bottom-trailing corner of the
-/// window.
-///
-/// This is the surface that was missing. Convert and Extract Audio previously
-/// reported themselves through the app's single shared `toast` string — one line,
-/// 2.4 seconds, overwritten by the next toast from anywhere in the app — so a
-/// conversion that ran for six minutes was visible for the first four hundredth
-/// of it. A card persists for the whole job, shows real progress, and carries the
-/// cancel button that had nowhere to live before.
-///
-/// Deliberately **not** a row in the main download list: that list is bound to
-/// `DownloadTask`s owned by the manager actor, and a conversion has no URL, no
-/// network throughput, no resume, no retry and no persistence. Forcing one into
-/// that model would mean either a counterfeit `DownloadTask` leaking into
-/// History, the CLI and the portal API, or a variant enum every call site has to
-/// unwrap. The dock is purely additive.
+/// The stack of conversion cards docked bottom-trailing. Replaces the shared 2.4-second `toast`,
+/// which made a six-minute conversion visible for a four-hundredth of it. Not a download-list row.
 struct MediaJobDock: View {
 
     @ObservedObject var center: MediaJobCenter
 
-    /// Cards drawn at once. The stack is an overlay on the window, so it cannot
-    /// scroll and cannot grow — past about five it would cover the list it is
-    /// reporting on. Successes clear themselves, so what accumulates here is
-    /// failures and a queue, and the queue is summarised in one line instead.
+    /// Cards drawn at once. The stack is a window overlay, so it cannot scroll or grow — past about
+    /// five it would cover the list it reports on. Successes self-clear; the queue is summarised.
     private static let visibleLimit = 5
 
     var body: some View {
@@ -74,19 +58,15 @@ private struct MediaJobCard: View {
         .overlay(RoundedRectangle(cornerRadius: 11).stroke(accent.opacity(0.45)))
         .overlay(alignment: .topTrailing) { closeButton.padding(.top, 8).padding(.trailing, 8) }
         .shadow(radius: 10, y: 4)
-        // A *container*, not one element. Collapsing the whole card into a single
-        // accessibility element (`children: .ignore`) reads nicely and takes the
-        // cancel, Reveal in Finder and Copy details buttons out of the tree
-        // entirely — the card would be narrated and then be unusable. The status
-        // half is grouped into one sentence below; the buttons stay siblings.
+        // A *container*, not one element: collapsing the card would take the cancel, Reveal and Copy
+        // buttons out of the tree entirely, leaving it narrated but unusable.
         .accessibilityElement(children: .contain)
     }
 
     // MARK: Pieces
 
-    /// Everything that is text rather than action: glyph, title, numbers, bar.
-    /// One accessibility element, read as a sentence and marked live so a state
-    /// change is announced.
+    /// Everything that is text rather than action: glyph, title, numbers, bar. One accessibility
+    /// element, read as a sentence and marked live so a state change is announced.
     private var summary: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
@@ -113,9 +93,8 @@ private struct MediaJobCard: View {
         .accessibilityAddTraits(.updatesFrequently)
     }
 
-    /// One button with three meanings, which is why its label changes: on a live
-    /// job it stops the work, on a finished one it clears the card, and on a stop
-    /// that is not completing it lets go of the job entirely.
+    /// One button with three meanings, hence the changing label: on a live job it stops the work, on
+    /// a finished one it clears the card, and on a stuck stop it lets go of the job entirely.
     private var closeButton: some View {
         Button {
             if job.isStopStuck() {
@@ -133,9 +112,8 @@ private struct MediaJobCard: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        // Disabled only during the few seconds a stop should take. Past that
-        // ``Job/isStopStuck()`` re-enables it as a force-dismiss, so a cancel that
-        // never lands can't leave a card with no working control on it.
+        // Disabled only during the few seconds a stop should take. Past that ``Job/isStopStuck()``
+        // re-enables it as a force-dismiss, so a cancel that never lands can't strand the card.
         .disabled(job.state == .cancelling && !job.isStopStuck())
         .help(closeHelp)
         .accessibilityLabel(closeHelp)
@@ -217,9 +195,8 @@ private struct MediaJobCard: View {
             }
             .scaledFont(size: 11)
         case .cancelling where job.isStopStuck():
-            // The one card the user cannot resolve by waiting. Say what letting go
-            // does and does not do, rather than offering a button that implies the
-            // process is being killed again — it already was.
+            // The one card the user cannot resolve by waiting. Say what letting go does and does not do,
+            // rather than offering a button that implies the process is being killed again — it already was.
             HStack(spacing: 12) {
                 Button("Stop waiting") { center.forceDismiss(job.id) }
                     .buttonStyle(.link)

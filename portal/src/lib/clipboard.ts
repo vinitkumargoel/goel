@@ -1,11 +1,5 @@
-/**
- * Copy to clipboard, resolving to whether anything actually landed there.
- *
- * `navigator.clipboard` is undefined in a non-secure context — which is the
- * default LAN deployment, plain HTTP — so a selection copy stands in. The
- * return value is honest on purpose: a "Copied" toast over an empty clipboard
- * is a lie the user only discovers when they paste.
- */
+/** Copy to clipboard, resolving to whether it actually landed — a "Copied" toast over an empty clipboard
+ * is a lie. `navigator.clipboard` is undefined in a non-secure context (plain-HTTP LAN), hence selection. */
 export async function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
     try {

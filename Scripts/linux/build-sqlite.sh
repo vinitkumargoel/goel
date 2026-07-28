@@ -1,24 +1,6 @@
 #!/usr/bin/env bash
-# Build a snapshot-enabled SQLite for the Linux build of GoelDownloader.
-#
-# GRDB references `sqlite3_snapshot_*`, which Ubuntu's stock libsqlite3 declares
-# in its header but omits from the shared object (it's built without
-# SQLITE_ENABLE_SNAPSHOT). This compiles the SQLite amalgamation with that flag
-# (plus the features GRDB expects) into Vendor/linux/sqlite/libsqlite3.so, which
-# Package.swift links against on Linux (see GOEL_SQLITE_DIR).
-#
-# The amalgamation is PINNED, not scraped. This .so is linked into the shipped
-# Linux daemon, so "whatever sqlite.org's download page links to today" is an
-# unverified third party deciding what goes in the release. Bumping SQLite is a
-# TWO-LINE edit — the version and its digest belong together:
-#
-#   curl -fsSL -o /tmp/amalg.zip https://sqlite.org/<year>/sqlite-amalgamation-<n>.zip
-#   sha256sum /tmp/amalg.zip
-#
-# SQLITE_VERSION=latest re-enables the scrape, and still refuses to build
-# without a SQLITE_SHA256 to check the result against.
-#
-# Usage:  Scripts/linux/build-sqlite.sh
+# Build a SQLITE_ENABLE_SNAPSHOT libsqlite3.so for Linux — Ubuntu's stock build omits
+# the `sqlite3_snapshot_*` symbols GRDB needs. Amalgamation is PINNED (version + digest).
 set -euo pipefail
 
 SQLITE_YEAR="${SQLITE_YEAR:-2026}"

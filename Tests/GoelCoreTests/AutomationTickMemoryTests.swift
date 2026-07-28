@@ -3,11 +3,8 @@ import XCTest
 
 // MARK: - An engine whose first pause parks the caller
 
-/// A networking-free engine whose **first** ``pause(_:)`` suspends until the test
-/// releases it. That parks one automation tick inside ``DownloadManager/pause(_:)``
-/// — the actor is released at that `await` — so a second tick can be driven
-/// through the actor while the first is mid-flight, which is exactly the
-/// interleaving ``DownloadManager/runAutomation(feeds:)`` has to survive.
+/// Networking-free engine whose **first** ``pause(_:)`` suspends until the test releases it, parking one
+/// automation tick mid-`await` so a second interleaves — the case `runAutomation(feeds:)` must survive.
 private final class GatedPauseEngine: DownloadEngine, @unchecked Sendable {
 
     let kind: DownloadKind
@@ -94,17 +91,8 @@ final class AutomationTickMemoryTests: XCTestCase {
         return await predicate()
     }
 
-    /// Two automation ticks overlapping across the `await` inside `pause(_:)` must
-    /// not clobber each other's ``AutomationCore/Memory``.
-    ///
-    /// `runAutomation` used to store the memory *after* applying the actions, so a
-    /// tick that suspended in `pause(_:)` resumed last and wrote back a value
-    /// computed from its pre-overlap snapshot. Here the network tick parks in
-    /// `pause(_:)` while an RSS tick records a feed key; if the network tick's
-    /// stale memory wins, `rssSeenKeys` is wiped and the next poll re-queues an
-    /// item the user already dealt with (symmetrically, an RSS tick winning would
-    /// wipe `networkPausedIDs` and strand the paused task with no `.resume` on
-    /// recovery). Both ledgers must survive.
+    /// Ticks overlapping across the `await` in `pause(_:)` must not clobber each other's
+    /// ``AutomationCore/Memory``: a stale write-back wipes `rssSeenKeys` or `networkPausedIDs`.
     func testOverlappingTicksPreserveBothMemoryLedgers() async throws {
         let http = GatedPauseEngine(kind: .http)
         let torrent = GatedPauseEngine(kind: .torrent)

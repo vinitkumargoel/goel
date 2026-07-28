@@ -1,27 +1,13 @@
 import Foundation
 
-/// Why the last portal start left nothing listening, or nil when the portal is
-/// bound (or stopped on purpose).
-///
-/// Starting the portal has three fail-closed refusals — an unusable TLS identity,
-/// a port that is not a port, and a failed bind — and all three are *correct*, but
-/// they were also silent: the only trace was a `GoelLog` line in the unified log,
-/// which the person using the app will never see. Failing closed invisibly is
-/// indistinguishable from succeeding, so Settings kept offering "Open" and "Copy
-/// Link" for a portal that was never there. Recording the reason lets
-/// ``RemoteAccess`` — and through it the UI — say *why* web access is off instead
-/// of quietly claiming it is on.
-///
-/// Declared here rather than nested in a shell so both the Network.framework and
-/// the NIO transport can report the same reasons.
+/// Why the last portal start left nothing listening, or nil when bound / stopped on purpose. The three fail-closed
+/// refusals were silent, so Settings offered "Open" for a portal that was never there; both transports report these.
 public enum RemotePortalStartFailure: Sendable, Equatable {
-    /// Portal TLS is on, but the PKCS#12 identity at this path could not be
-    /// loaded: wrong path, unreadable file, or a `GOEL_PORTAL_TLS_PASSPHRASE`
-    /// that doesn't match the bundle.
+    /// Portal TLS is on, but the PKCS#12 identity at this path could not be loaded: wrong path, unreadable
+    /// file, or a `GOEL_PORTAL_TLS_PASSPHRASE` that doesn't match the bundle.
     case tlsIdentityUnavailable(path: String)
-    /// Portal TLS is on, but this build cannot terminate it — the Linux daemon
-    /// links SwiftNIO without NIOSSL. Reported separately because the fix is a
-    /// different one: a TLS-terminating reverse proxy, not a certificate path.
+    /// Portal TLS is on, but this build cannot terminate it — the Linux daemon links SwiftNIO without NIOSSL.
+    /// Separate case because the fix differs: a TLS-terminating reverse proxy, not a certificate path.
     case tlsUnsupported
     /// The configured port is outside 1…65535, so there is nothing to bind.
     case portUnavailable(Int)
@@ -57,10 +43,8 @@ public enum RemoteAccessPolicy {
         settings.remoteAccessEnabled
     }
 
-    /// Whether an already-running portal must be reconfigured for `next`.
-    /// Covers bind (port/LAN) and every live routing/auth field the server
-    /// applies on `start` — theme, read-only, session length included, matching
-    /// the previous AppViewModel snapshot comparison.
+    /// Whether an already-running portal must be reconfigured for `next`. Covers bind (port/LAN) and every live
+    /// routing/auth field applied on `start` — theme, read-only, session length included.
     public static func needsRestart(previous: AppSettings, next: AppSettings) -> Bool {
         previous.remotePort != next.remotePort
             || previous.remoteAllowLAN != next.remoteAllowLAN
@@ -83,11 +67,8 @@ public enum RemoteAccessPolicy {
     }
 }
 
-/// Deep façade: start/stop/restart the remote portal from `AppSettings` + backend.
-///
-/// Hides the platform `RemoteControlServer` (Network.framework / NIO) and the
-/// "did settings change enough to re-apply?" comparison. Callers just hand
-/// current settings on every change; the actor decides stop / start / no-op.
+/// Deep façade: start/stop/restart the remote portal from `AppSettings` + backend. Hides the platform
+/// `RemoteControlServer` (Network.framework / NIO); callers hand it settings and it decides stop / start / no-op.
 public actor RemoteAccess {
 
     private var server: RemoteControlServer?
@@ -100,11 +81,8 @@ public actor RemoteAccess {
 
     public init() {}
 
-    /// Apply desired settings: if remote disabled → stop; if enabled → start or
-    /// reconfigure when bind/auth/token (or other live config) changed.
-    ///
-    /// `isRunning` / `applied` only advance when the server actually has a bound
-    /// listener — a failed bind leaves us stopped so a later identical apply retries.
+    /// Apply desired settings: disabled → stop; enabled → start or reconfigure when live config changed. `isRunning` /
+    /// `applied` advance only on a genuinely bound listener — a failed bind leaves us stopped so an identical apply retries.
     public func apply(settings: AppSettings, backend: RemoteBackend) async {
         guard RemoteAccessPolicy.shouldRun(settings) else {
             await stop()
@@ -113,10 +91,8 @@ public actor RemoteAccess {
         if let applied, running, !RemoteAccessPolicy.needsRestart(previous: applied, next: settings) {
             return
         }
-        // A port outside 1…65535 is a typo, not a request for an ephemeral bind.
-        // `UInt16(clamping:)` mapped it to 0, which Network.framework reads as "any
-        // free port": the portal came up somewhere nobody could predict while
-        // Settings still claimed it was running on the number the user typed.
+        // A port outside 1…65535 is a typo, not a request for an ephemeral bind: `UInt16(clamping:)` mapped it to 0,
+        // which Network.framework reads as "any free port", binding somewhere nobody could predict.
         guard let port = UInt16(exactly: settings.remotePort), port > 0 else {
             GoelLog.remote.error("Web access port is out of range",
                                  .count(settings.remotePort, label: "port"))
@@ -144,10 +120,8 @@ public actor RemoteAccess {
             self.running = true
             self.failure = nil
         } else {
-            // Bind failed (port in use, privilege, …). Do not claim success — leave
-            // `applied` nil so the next apply with the same settings retries, and
-            // keep the reason so the UI can say what went wrong instead of showing
-            // a portal that isn't there.
+            // Bind failed (port in use, privilege, …). Leave `applied` nil so an identical apply retries, and keep
+            // the reason so the UI can say what went wrong instead of showing a portal that isn't there.
             self.applied = nil
             self.running = false
             self.failure = await server.lastStartFailure()
@@ -172,10 +146,8 @@ public actor RemoteAccess {
 
     public var isRunning: Bool { running }
 
-    /// Why web access is off after the last ``apply(settings:backend:)``, or nil
-    /// when it is running (or was stopped on purpose). The companion to
-    /// ``isRunning``: that says *whether*, this says *why not*, in words a person
-    /// can act on.
+    /// Why web access is off after the last ``apply(settings:backend:)``, or nil when running / stopped on purpose.
+    /// Companion to ``isRunning``: that says *whether*, this says *why not*, in words a person can act on.
     public var lastStartFailure: RemotePortalStartFailure? { failure }
 
     /// Bound port / LAN exposure from the live server, if any.

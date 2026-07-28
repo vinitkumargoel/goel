@@ -1,11 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Two HLS regressions that both end in a silently wrong download:
-///  * a resumed work directory reusing segment files fetched for a *different*
-///    rendition (segments are keyed only by playlist position), and
-///  * outbound requests dropping the task's captured cookies, `Referer` and
-///    custom headers, which the Add Download sheet promises are attached.
+/// Two HLS regressions that both end in a silently wrong download: a resumed work dir reusing segments
+/// from a *different* rendition (keyed only by position), and requests dropping cookies/Referer/headers.
 final class HLSResumeIdentityTests: XCTestCase {
 
     private var workDir: URL!
@@ -42,9 +39,8 @@ final class HLSResumeIdentityTests: XCTestCase {
         let segment = workDir.appendingPathComponent("seg-000000.bin")
         try Data([1, 2, 3]).write(to: segment)
 
-        // The user lowered the maximum video height between pause and resume, so
-        // the next start selects a different variant. Splicing the two renditions
-        // would break the remux (or the video at the join) and still report success.
+        // Max video height lowered between pause and resume, so the next start picks another variant.
+        // Splicing two renditions would break the remux (or the video at the join) and report success.
         try HLSEngine.prepareWorkDir(workDir, identity: identity(
             "https://cdn.example.com/720/index.m3u8", bandwidth: 2_400_000, height: 720))
         XCTAssertFalse(FileManager.default.fileExists(atPath: segment.path),
@@ -119,11 +115,8 @@ final class HLSResumeIdentityTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "bytes=100-149")
     }
 
-    /// Under CMAF single-file packaging the init header is a small slice at the
-    /// head of the very resource the fragments occupy. The map's `BYTERANGE` has
-    /// to survive parsing *and* the trip into ``HLSEngine/MediaPlan`` — if the
-    /// plan drops it, the init fetch becomes an unranged GET of the entire
-    /// stream, which then gets concatenated in front of the fragments.
+    /// Under CMAF single-file packaging the init header is a slice of the resource the fragments occupy,
+    /// so the map's `BYTERANGE` must survive into ``HLSEngine/MediaPlan`` or init GETs the whole stream.
     func testCMAFInitMapKeepsItsRangeFromPlaylistToRequest() throws {
         let playlist = """
         #EXTM3U

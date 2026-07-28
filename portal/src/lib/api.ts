@@ -11,14 +11,8 @@ import type {
   TaskRow,
 } from './types'
 
-/**
- * Typed client for the remote JSON API (see `docs/remote-api.md`).
- *
- * Auth is by session cookie, so every request is a plain same-origin fetch with
- * no credential handling here. The one exception the server makes — a `?token=`
- * on `GET /` promoted to a cookie — is handled by the shell before this module
- * ever runs.
- */
+/** Typed client for the remote JSON API (see `docs/remote-api.md`). Auth is by session cookie, so every request is a
+ * plain same-origin fetch; the one exception, `?token=` on `GET /`, is promoted to a cookie by the shell before this. */
 
 /** Distinguishes the failure modes callers actually branch on. */
 export type ApiFailure =
@@ -43,12 +37,8 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * A 403 is not only read-only mode: the add route also refuses an
- * internal-network target, an out-of-root save folder, and a cross-site POST.
- * The UI surfaces whatever the server said rather than guessing read-only,
- * which is why refusals are routed through a sink instead of being swallowed.
- */
+/** A 403 is not only read-only mode: add also refuses internal-network targets, out-of-root save folders and
+ * cross-site POSTs. Refusals go through a sink so the UI shows the server's words instead of guessing read-only. */
 type RefusalSink = (message: string) => void
 let onRefused: RefusalSink = () => {}
 
@@ -56,11 +46,8 @@ export function setRefusalHandler(fn: RefusalSink): void {
   onRefused = fn
 }
 
-/**
- * The server's own words for a failure. Error bodies are `text/plain` and one
- * short sentence; anything longer or of another type is some intermediary's
- * error page, not ours, and is not worth showing.
- */
+/** The server's own words for a failure. Error bodies are `text/plain` and one short sentence; anything longer
+ * or of another type is some intermediary's error page, not ours, and is not worth showing. */
 async function errorText(response: Response): Promise<string> {
   if (!response.headers.get('Content-Type')?.startsWith('text/plain')) return ''
   try {
@@ -94,9 +81,8 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
   }
 
   if (!response.ok) {
-    // 4xx routes answer with a sentence explaining what was wrong with the
-    // request — "A folder name cannot contain /". Discarding it in favour of
-    // "Request failed (400)" would leave the user with nothing to act on.
+    // 4xx routes answer with a sentence explaining the problem ("A folder name cannot contain /").
+    // Discarding it in favour of "Request failed (400)" would leave the user with nothing to act on.
     const message = (await errorText(response)) || `Request failed (${response.status})`
     throw new ApiError('http', message, response.status)
   }
@@ -155,9 +141,8 @@ export const api = {
     try {
       await post('/logout')
     } catch {
-      // A failed sign-out must not strand the user on a page that looks signed
-      // in. Fall through to the redirect either way; the cookie is the
-      // server's to invalidate and `/` will re-challenge.
+      // A failed sign-out must not strand the user on a page that looks signed in. Redirect either
+      // way; the cookie is the server's to invalidate and `/` will re-challenge.
     }
     location.href = '/'
   },

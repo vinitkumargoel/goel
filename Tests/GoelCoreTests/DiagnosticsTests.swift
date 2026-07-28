@@ -1,22 +1,14 @@
 import XCTest
 @testable import GoelCore
 
-/// Privacy tests for the observability core.
-///
-/// The product ships a written "no telemetry" guarantee, so the diagnostics
-/// bundle is the *only* thing that ever describes an install to anyone — and it
-/// only moves because a user copies it. These tests are the enforcement of that
-/// promise: they plant obvious secrets in every credential-bearing field of
-/// ``AppSettings`` and assert that not one byte of them survives into any
-/// rendering of the bundle, and that adding a new setting without classifying it
-/// fails the suite instead of quietly leaking.
+/// Privacy tests enforcing the shipped "no telemetry" guarantee: plant secrets in every
+/// credential-bearing ``AppSettings`` field and assert none survives into the diagnostics bundle.
 final class DiagnosticsTests: XCTestCase {
 
     // MARK: Fixtures
 
-    /// Unique, unmistakable needles. Each one is chosen so a substring search
-    /// cannot match by accident, and none of them is a settings *key* name —
-    /// key names legitimately appear in the report's "withheld" list.
+    /// Unique, unmistakable needles chosen so a substring search can't match by accident; none is a
+    /// settings *key* name, since key names legitimately appear in the report's "withheld" list.
     private enum Secret {
         static let token          = "TOKEN-b7f3d9e1c4a24f8e9d0c1b2a3e4f5061"
         static let passwordHash   = "v2$SALT99CAFEBABE$HASH99DEADBEEF"
@@ -139,10 +131,8 @@ final class DiagnosticsTests: XCTestCase {
 
     // MARK: The guard against future leaks
 
-    /// Fails when a field is added to `AppSettings` without anyone deciding
-    /// whether it is safe to put in a support bundle. This is the test that keeps
-    /// the allow-list honest: without it, the list silently rots and a later
-    /// `sftpPassphrase` or `apiKey` field is simply dropped with no signal.
+    /// Fails when an `AppSettings` field is added without anyone deciding it is safe for a support
+    /// bundle. Without it the allow-list rots and a later `sftpPassphrase`/`apiKey` leaks silently.
     func testEverySettingsFieldHasBeenClassified() {
         let actual = DiagnosticsRedaction.encodedSettingsKeys()
         let reviewed = DiagnosticsRedaction.reviewedSettingsKeys

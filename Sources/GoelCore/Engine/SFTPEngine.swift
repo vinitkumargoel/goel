@@ -1,13 +1,7 @@
 import Foundation
 
-/// SFTP downloads over libssh2 (through ``SFTPClient`` / the ``SSHBridge`` C
-/// shim). Structurally a twin of ``FTPEngine``: one blocking transfer per task
-/// on a dedicated thread, byte-offset resume from the partial file's on-disk
-/// size, per-task job serialization so a quick pause→resume never puts two
-/// writers on one file, and a containment check before deleting.
-///
-/// Credentials come from the URL's inline userinfo or the Keychain (via the
-/// connection store). Host keys are pinned trust-on-first-use in ``HostKeyStore``.
+/// SFTP over libssh2 (``SFTPClient``/``SSHBridge``); twin of ``FTPEngine``: one blocking transfer per task,
+/// offset resume, serialized jobs (no double writer). Creds: userinfo or Keychain; TOFU ``HostKeyStore``.
 actor SFTPEngine: DownloadEngine {
 
     public nonisolated let kind: DownloadKind = .sftp
@@ -143,10 +137,8 @@ actor SFTPEngine: DownloadEngine {
     private nonisolated func emit(_ id: UUID, _ event: EngineEvent) { hub.emit(id, event) }
 }
 
-/// Per-transfer state the SFTP callbacks reach: the output handle, the abort
-/// flag, and the shared ``TransferProgressMeter`` (announce/throttle/speed).
-/// Callbacks run on the transfer thread; `abort()` comes from the engine actor —
-/// hence the lock.
+/// Per-transfer state the SFTP callbacks reach: output handle, abort flag, ``TransferProgressMeter``.
+/// Callbacks run on the transfer thread; `abort()` comes from the engine actor — hence the lock.
 final class SFTPDownloadState: @unchecked Sendable {
     private let hub: EventHub
     private let id: UUID
@@ -184,9 +176,8 @@ final class SFTPDownloadState: @unchecked Sendable {
         }
     }
 
-    /// libssh2 progress: `sofar` is the absolute downloaded byte count (it starts
-    /// at `resumeFrom`). The shared meter announces the total once and throttles
-    /// progress; this only emits what it returns and honours the abort flag.
+    /// libssh2 progress: `sofar` is absolute (starts at `resumeFrom`). The meter announces the total
+    /// once and throttles; this emits only what it returns and honours the abort flag.
     func progress(total: Int64, sofar: Int64) -> Bool {
         lock.lock()
         let tick = meter.step(total: total, sofar: sofar, now: Date())

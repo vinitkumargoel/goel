@@ -1,10 +1,8 @@
 import SwiftUI
 import GoelCore
 
-/// The right detail panel — the "Hero Ring" layout. A narrow, tall column, so
-/// the progress is expressed as a big circular gauge you can read at a glance,
-/// with the live ↓/↑ rate beneath it, the essential facts as a short list, and a
-/// pinned action bar (pause/resume/retry, reveal, copy) that never scrolls away.
+/// The right detail panel — the "Hero Ring" layout: a big circular gauge, the live ↓/↑ rate, a
+/// short list of essential facts, and a pinned action bar that never scrolls away.
 struct DetailPanelView: View {
     @EnvironmentObject private var vm: AppViewModel
 
@@ -27,9 +25,8 @@ struct DetailPanelView: View {
             header(for: task)
             Divider()
 
-            // The tabs — `.small` keeps all five segments legible in the narrow
-            // 340pt column. *General* is the hero-ring overview; the rest are the
-            // same deep views as before.
+            // The tabs — `.small` keeps all five segments legible in the narrow 340pt column. *General* is
+            // the hero-ring overview; the rest are the same deep views as before.
             Picker("", selection: $vm.detailTab) {
                 ForEach(DetailTab.allCases) { tab in
                     Text(tab.rawValue).tag(tab)
@@ -113,10 +110,8 @@ struct DetailPanelView: View {
                 }
             }
             .padding(.top, 4)
-            // The panel's centrepiece: a 132pt gauge that, untreated, is two
-            // unnamed `Circle` shapes plus the strings "62%" and "complete".
-            // Collapse the whole assembly into one progress element carrying the
-            // percent, the byte counts and the estimate.
+            // The centrepiece: a 132pt gauge that, untreated, is two unnamed `Circle` shapes plus "62%".
+            // Collapse the assembly into one progress element carrying percent, bytes and estimate.
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits(.updatesFrequently)
             .accessibilityLabel("Download progress")
@@ -193,9 +188,8 @@ struct DetailPanelView: View {
             if let headers = task.requestHeaders, !headers.isEmpty {
                 KVRow(key: "Headers", value: "\(headers.count) custom")
             }
-            // Cookie STATE only — never the value, and deliberately not
-            // `copyable`. After a relaunch the value is gone by design, so this
-            // row's job is to make that absence explainable and fixable.
+            // Cookie STATE only — never the value, and deliberately not `copyable`. After a relaunch the
+            // value is gone by design, so this row's job is to make that absence explainable and fixable.
             if let cookieSource = task.cookieSource, cookieSource != .none {
                 KVRow(key: "Cookies",
                       value: task.cookieHeader.map { "\(CookieHeader.count(in: $0)) attached · \(cookieSource.displayName)" }

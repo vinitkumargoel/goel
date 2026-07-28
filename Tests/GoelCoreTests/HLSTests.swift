@@ -22,9 +22,8 @@ final class HLSTests: XCTestCase {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
     }
 
-    /// End-to-end: download a real (small) public HLS stream through the live
-    /// engine and confirm it produces a playable MP4 with a video track. Gated on
-    /// `GOEL_LIVE_NET=1` so the normal suite stays hermetic.
+    /// End-to-end: download a small public HLS stream through the live engine and confirm a playable
+    /// MP4 with a video track. Gated on `GOEL_LIVE_NET=1` so the normal suite stays hermetic.
     func testLiveHLSDownloadProducesPlayableMP4() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GOEL_LIVE_NET"] == "1",
                           "set GOEL_LIVE_NET=1 to run the live network test")
@@ -169,10 +168,8 @@ final class HLSTests: XCTestCase {
         XCTAssertNil(map?.byteRange, "a map without BYTERANGE covers the whole resource")
     }
 
-    /// Single-file/CMAF packaging puts the init header and every fragment in one
-    /// resource. The map's `BYTERANGE` must survive parsing, or the init fetch
-    /// degrades to an unranged GET of the entire (here 400 MB) stream file, which
-    /// then gets concatenated in front of the fragments into an unplayable result.
+    /// Single-file/CMAF packs header + fragments in one resource: the map's `BYTERANGE` must survive
+    /// parsing, or the init fetch becomes an unranged GET of the whole (400 MB) file, unplayable.
     func testParseFMP4InitMapKeepsByteRange() {
         let text = """
         #EXTM3U

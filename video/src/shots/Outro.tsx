@@ -1,45 +1,5 @@
-/* Shot 15 — the group photo.
- *
- * Card: outro-group-photo-launch
- * Exact reference implementation read: template/src/aifl/live/SceneOutroLive.tsx
- * (the card names the template scene; there is no demos/ directory for it)
- *
- * Parameters kept verbatim: nine elements, cues from 4 at 3f apart, each flying
- * 12f from a +/-300-500px offset, rendered in cue order so later arrivals stack;
- * the fly easing is `bezier(0.34, 1.4, 0.44, 1)` — the source comments record
- * that the previous curve "never crossed 1" and so never actually overshot, and
- * a landing that does not bounce is the failure this value fixes; in-flight pose
- * `rot * (2 - t)` and `scale * (1.12 - 0.12t)`; a ghost copy lagging 8% of the
- * path at blur 8; a landing glow blooming 0.35 -> 0 over 6f; the whole photo
- * layer under a crane, `rotateX 4 -> 0` with `scale 1.06 -> 1` over 40f then a
- * slow +0.035 push; the assembled elements stepping back 12% in opacity and 8%
- * in saturation across 42 -> 50 as the wordmark takes the stage; letters at
- * `delay = 42 + i*1.8` over 8f; the rule growing 58 -> 70 with 190px extension
- * lines shooting out 58 -> 66 and fading by 72; one letter-spacing breath at
- * 62 -> 66; 20 dust motes with every parameter derived from the index.
- *
- * Card's Q8 check — every feature the film showed needs a representative in the
- * photo, because the audience notices the one that is missing. Present: the app
- * chrome and sidebar (shots 2, 4), the queue row (4), the status bar's
- * throughput (5), the progress ring (6), the piece map (8), the SFTP pane (9),
- * the menu-bar popover (12), the web portal (13). Nine elements, nine beats.
- *
- * Card's dedupe rule: the sign-off line must not repeat anything the film has
- * already said. "Zero Homebrew dependencies · macOS + Linux" appears nowhere in
- * the captions, and the outro carries no narration caption of its own.
- *
- * Reskin only in the palette: the template's warm paper scrim, amber glows and
- * gold dust become the product's canvas, accent and cool light. The landing glow
- * blends with `screen` rather than `multiply`, because on a dark ground a
- * multiply glow is invisible. For the same reason each element carries a
- * hairline accent edge and a small brightness lift: the template's members were
- * light cards on paper and separated themselves, whereas nine dark panels on a
- * dark canvas read as nine holes unless they are given an edge.
- *
- * Budget: last element lands at 40, the wordmark is fully set by 57, the rule
- * and tagline finish by 80, and the shot runs 155 — 75f of sign-off hold, well
- * past the card's one-second floor.
- */
+/* Shot 15 — group photo (card outro-group-photo-launch, ref SceneOutroLive.tsx). Nine elements, one per film beat;
+ * easing `bezier(0.34, 1.4, 0.44, 1)` — the old never crossed 1 so never bounced; glow uses `screen`, dark-invisible multiply. */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { PageCam, CamKey } from '../lib/PageCam';

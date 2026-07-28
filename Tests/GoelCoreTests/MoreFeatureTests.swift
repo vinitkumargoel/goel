@@ -385,9 +385,8 @@ final class MoreFeatureTests: XCTestCase {
     func testHostKeyStorePinsAndResets() {
         let defaults = UserDefaults(suiteName: "goel.hostkey.test.\(UUID().uuidString)")!
         let store = HostKeyStore(defaults: defaults)
-        // A real pin is the 64 lowercase hex characters `gsb_hex_sha256` emits;
-        // the store rejects anything else so a malformed value can't reach the C
-        // shim, which skips verification outright for an empty fingerprint.
+        // A real pin is the 64 lowercase hex chars `gsb_hex_sha256` emits; anything else is rejected so a
+        // malformed value can't reach the C shim, which skips verification outright for an empty fingerprint.
         let pin = String(repeating: "ab", count: 32)
         XCTAssertNil(store.fingerprint(host: "h", port: 22))
         store.setFingerprint(pin, host: "H", port: 22)             // case-insensitive host
@@ -406,9 +405,8 @@ final class MoreFeatureTests: XCTestCase {
         XCTAssertEqual(SFTPBrowserPaths.parent(of: "/home"), "/")
     }
 
-    /// The rename-on-collision helper backing the upload overwrite prompt: a free
-    /// name is returned unchanged; a taken one gets " (n)" before the extension,
-    /// climbing until free. Drives the "Rename" choice in the conflict sheet.
+    /// The rename-on-collision helper behind the upload overwrite prompt: a free name is unchanged, a taken one gets
+    /// " (n)" before the extension, climbing until free. Drives the "Rename" choice in the conflict sheet.
     func testSFTPUniqueNameAvoidsCollisions() {
         // No collision → unchanged.
         XCTAssertEqual(SFTPBrowserPaths.uniqueName("report.pdf", existing: []), "report.pdf")
@@ -426,10 +424,8 @@ final class MoreFeatureTests: XCTestCase {
         XCTAssertEqual(SFTPBrowserPaths.uniqueName("assets", existing: ["assets"]), "assets (1)")
     }
 
-    /// The folder→remote mapping an upload uses to place each descendant: fold the
-    /// server-relative components onto the remote root via `join`. Verifies files
-    /// land at the right depth and the remote root anchors both "." (home) and
-    /// absolute bases.
+    /// The folder→remote mapping an upload uses: fold server-relative components onto the remote root via `join`.
+    /// Verifies files land at the right depth and the root anchors both "." (home) and absolute bases.
     func testSFTPFolderRemotePathMapping() {
         // A file two levels down under a home-relative upload root.
         XCTAssertEqual(["sub", "a.txt"].reduce("uploads/site", SFTPBrowserPaths.join),
@@ -476,9 +472,8 @@ final class MoreFeatureTests: XCTestCase {
         XCTAssertEqual(SFTPTarget(connection: conn, password: nil)?.port, 22)
     }
 
-    /// Only credential-free web-download schemes may auto-add from the browser
-    /// spool; `sftp:`/`ftp:` must be rejected there so a web page can't provoke
-    /// an authenticated outbound connection with the user's agent/Keychain.
+    /// Only credential-free web-download schemes may auto-add from the browser spool; `sftp:`/`ftp:` are rejected so
+    /// a web page can't provoke an authenticated outbound connection with the user's agent/Keychain.
     func testBrowserCaptureSafetyRejectsSFTPAndFTP() {
         XCTAssertTrue(DownloadSource.parse("https://x.example/a.bin")!.isBrowserCaptureSafe)
         XCTAssertTrue(DownloadSource.parse("http://x.example/a.bin")!.isBrowserCaptureSafe)
@@ -488,9 +483,8 @@ final class MoreFeatureTests: XCTestCase {
         XCTAssertFalse(DownloadSource.parse("ftp://host/f")!.isBrowserCaptureSafe)
     }
 
-    /// An inline `sftp://user:pass@host` password must never survive parsing:
-    /// SFTP secrets live in the Keychain, so the persisted/displayed locator
-    /// must not carry the secret, while user/host/port survive for the lookup.
+    /// An inline `sftp://user:pass@host` password must never survive parsing: SFTP secrets live in the Keychain,
+    /// so the persisted/displayed locator must not carry it, while user/host/port survive for the lookup.
     func testParseStripsInlineSFTPPassword() {
         let source = DownloadSource.parse("sftp://alice:hunter2@example.com:2222/f.bin")
         XCTAssertNotNil(source)

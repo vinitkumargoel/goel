@@ -1,11 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Direct tests for the progress re-base ledger extracted from
-/// `DownloadManager.apply(.progress)` into ``StatsAccumulator`` — the subtle
-/// regression rule that fires ~10×/sec/task and previously had no isolated
-/// coverage (it was only reachable by pushing crafted event streams through the
-/// whole actor).
+/// Direct tests for the progress re-base ledger moved from `DownloadManager.apply(.progress)` into
+/// ``StatsAccumulator`` — a rule firing ~10×/sec/task that was only reachable through the actor.
 final class StatsAccumulatorTests: XCTestCase {
     private typealias Mark = StatsAccumulator.Mark
 

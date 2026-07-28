@@ -1,17 +1,8 @@
 import SwiftUI
 import GoelCore
 
-/// The detail panel as it appears when docked to the **bottom** edge — the
-/// "Command Center" layout: wide and short, split into three side-by-side zones
-/// that each own the horizontal room a bottom dock gives you.
-///
-///  1. **Identity + actions** (fixed) — icon, name, kind/status, a live progress
-///     bar, and the primary controls (pause/resume/retry, reveal, copy).
-///  2. **Live telemetry** (fixed) — a rolling throughput sparkline with the
-///     current ↓ rate, and a strip of ↑ / ETA / swarm figures.
-///  3. **Tabbed detail** (flexible) — the five tabs. *General* is the headline
-///     percent + key facts; *Details / Progress / Files / Connections* are the
-///     same deep views the right dock shows, given the width to breathe.
+/// The detail panel docked to the **bottom** edge — the "Command Center" layout: identity +
+/// actions, live telemetry, and the five tabs, side by side across the width a bottom dock gives.
 struct DetailBottomPanel: View {
     @EnvironmentObject private var vm: AppViewModel
 
@@ -178,9 +169,8 @@ struct DetailBottomPanel: View {
         }
     }
 
-    /// *General* is a compact headline (percent + size) over the key facts, since
-    /// zones 1–2 already carry identity, progress and live speed. The other four
-    /// reuse the shared tab bodies at a comfortable width.
+    /// *General* is a compact headline over the key facts, since zones 1–2 already carry identity,
+    /// progress and live speed. The other four reuse the shared tab bodies at a comfortable width.
     @ViewBuilder
     private func tabBody(for task: DownloadTask) -> some View {
         switch vm.detailTab {
@@ -219,9 +209,8 @@ struct DetailBottomPanel: View {
             KVRow(key: "Save path", value: task.savePath, copyable: true)
             KVRow(key: "Source", value: task.sourceLocator, copyable: true)
 
-            // The overlaid download + upload speed history. Self-hiding until it
-            // has enough samples, so it only appears for actively-transferring
-            // tasks that have accumulated a history.
+            // The overlaid download + upload speed history. Self-hiding until it has enough samples, so it
+            // only appears for actively-transferring tasks with an accumulated history.
             TaskSpeedGraph(taskID: task.id)
                 .padding(.top, 14)
         }
@@ -246,9 +235,8 @@ struct DetailBottomPanel: View {
     }
 }
 
-/// The right/bottom dock toggle shared by both detail panels. The icon previews
-/// the *destination* dock; the choice is persisted, so it holds across
-/// selections and survives relaunch until the user flips it again.
+/// The right/bottom dock toggle shared by both detail panels. The icon previews the *destination*
+/// dock; the choice is persisted, so it survives relaunch until flipped again.
 struct PanelDockToggle: View {
     @EnvironmentObject private var vm: AppViewModel
 

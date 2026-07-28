@@ -2,12 +2,8 @@ import XCTest
 import GoelCore
 @testable import GoelApp
 
-/// Covers how a conversion picks the file it is going to write.
-///
-/// This is the one piece of ``FFmpegService`` that can be tested without ffmpeg
-/// installed, and it is also the piece that can silently destroy a user's file:
-/// two conversions running at once can want the same output name, and a
-/// "does it exist yet?" check answers both of them "no".
+/// How a conversion picks the file it writes — the one part of ``FFmpegService`` testable without
+/// ffmpeg, and the part that can destroy a file: an exists-check tells two concurrent jobs "no".
 final class FFmpegOutputNamingTests: XCTestCase {
 
     private var directory: URL!
@@ -48,11 +44,8 @@ final class FFmpegOutputNamingTests: XCTestCase {
                        "the pre-existing file is untouched")
     }
 
-    /// The reason the name is claimed with `O_EXCL` rather than merely tested.
-    ///
-    /// `talk.mp4` and `talk.mkv` both convert to `talk.webm`. With two jobs
-    /// running concurrently, an exists-check would hand the same path to both and
-    /// the second ffmpeg would quietly overwrite the first's work.
+    /// Why the name is claimed with `O_EXCL` rather than merely tested: `talk.mp4` and `talk.mkv`
+    /// both convert to `talk.webm`, and an exists-check hands the same path to both concurrent jobs.
     func testTwoSourcesWantingTheSameOutputNameGetDifferentFiles() {
         let first = FFmpegService.uniqueSibling(of: source("talk.mp4"), extension: "webm")
         let second = FFmpegService.uniqueSibling(of: source("talk.mkv"), extension: "webm")

@@ -1,13 +1,8 @@
 import Foundation
 import GoelCore
 
-/// Copy / cut / paste of remote items — within one server and between two.
-///
-/// The bytes always travel through this machine (see ``SFTPRelay`` for why), with
-/// one exception that matters a great deal in practice: a *move* inside a single
-/// server is a `RENAME`, which is one round trip regardless of how large the item
-/// is. So cutting and pasting a 40 GB folder into a sibling directory on the same
-/// server is instant, while copying it is a 40 GB transfer in each direction.
+/// Copy / cut / paste of remote items. Bytes travel through this machine, except a *move*
+/// inside one server, which is a RENAME — instant regardless of size.
 @MainActor
 extension AppViewModel {
 
@@ -35,11 +30,8 @@ extension AppViewModel {
 
     // MARK: Paste
 
-    /// Paste the clipboard into `directory` on `connection`.
-    ///
-    /// A cut is cleared once started, because the source is about to stop
-    /// existing and a second paste would then fail on every item. A copy stays,
-    /// so it can be pasted into several places — again matching Finder.
+    /// Paste the clipboard into `directory` on `connection`. A cut is cleared once started
+    /// (the source is about to vanish); a copy stays, so it can be pasted repeatedly.
     func pasteSFTPClipboard(into connection: SFTPConnection, directory: String) {
         guard let clip = sftpClipboard, !clip.isEmpty else { return }
         guard !clip.isSelfMove(toConnection: connection.id, directory: directory) else { return }
@@ -137,16 +129,8 @@ extension AppViewModel {
                                    source sourceClient: SFTPClient,
                                    destination destinationClient: SFTPClient,
                                    cancel: CancelFlag) async {
-        // Read and write halves must never share a connection: one libssh2
-        // session is one thread, and the download blocks waiting for the upload
-        // to drain the pipe. Two transfer roles guarantee two threads even when
-        // both sides are the same server.
-        //
-        // On one server those two connections come from the same pool budget, so
-        // they are reserved together *before* either is opened. Opening them one
-        // at a time would let two concurrent copies each take one half and then
-        // wait forever for the other's — a hang the Cancel button cannot reach,
-        // because both threads are parked inside blocking C calls.
+        // Read and write halves must never share a connection: one libssh2 session is one thread
+        // and would deadlock. On one server, reserve both together or two copies can hang.
         let readJob = UUID(), writeJob = UUID()
         let reader = sourceClient.forTransfer(readJob)
         let writer = destinationClient.forTransfer(writeJob)
@@ -173,9 +157,8 @@ extension AppViewModel {
             renameTransferRow(id, to: name)
 
             if plan.isMove && plan.sameServer {
-                // One round trip regardless of size. A server that refuses (the
-                // two paths are on different filesystems) falls through to the
-                // relay below, which is the only way across a mount boundary.
+                // One round trip regardless of size. A server that refuses (different filesystems)
+                // falls through to the relay, the only way across a mount boundary.
                 do {
                     try await writer.rename(plan.sourcePath, to: target)
                     setTransferProgress(id, bytes: plan.entry.size, total: plan.entry.size)
@@ -217,14 +200,8 @@ extension AppViewModel {
                     })
             }
 
-            // Only now is the source safe to remove: a move must never delete
-            // what it hasn't finished writing.
-            //
-            // A failure here is not the same failure as a copy that didn't land:
-            // every byte arrived, so the destination is complete and only the
-            // source's deletion is outstanding. Reporting a bare "failed" would
-            // invite the person to run the move again and end up with two copies,
-            // so say what actually happened instead.
+            // Only now is the source safe to remove. A failure here is not a failed copy — every
+            // byte arrived — so say so, or the user re-runs the move and ends up with two copies.
             if plan.isMove {
                 do {
                     try await reader.remove(plan.sourcePath, isDirectory: plan.entry.isDirectory)
@@ -282,13 +259,8 @@ struct RemoteCopyPlan {
     let sameServer: Bool
 }
 
-/// The running byte total of a tree copy, accumulated across files.
-///
-/// `SFTPRelay.copyTree` reports each file's own progress, so the row needs to
-/// add up finished files and the current one. Copied files run one at a time, so
-/// a single "current file" slot is enough.
-///
-/// `@unchecked Sendable`: both fields are only touched under `lock`.
+/// The running byte total of a tree copy. Files copy one at a time, so a single "current
+/// file" slot suffices. `@unchecked Sendable`: both fields are only touched under `lock`.
 final class CopiedBytes: @unchecked Sendable {
     private let lock = NSLock()
     private var completed: Int64 = 0

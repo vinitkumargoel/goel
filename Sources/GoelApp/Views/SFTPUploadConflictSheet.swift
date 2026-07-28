@@ -1,10 +1,8 @@
 import SwiftUI
 import GoelCore
 
-/// Shown before an upload would overwrite same-named remote items. Each colliding
-/// item gets an Overwrite / Rename / Skip choice (defaulting to Rename, the safe
-/// option), with an "Apply to all" shortcut. Non-colliding items in the same
-/// batch aren't listed — they upload regardless of what's chosen here.
+/// Shown before an upload would overwrite same-named remote items: Overwrite / Rename / Skip per
+/// item (defaulting to Rename), with "Apply to all". Non-colliding items upload regardless.
 struct SFTPUploadConflictSheet: View {
     let request: SFTPUploadConflictRequest
     let onResolve: ([UUID: SFTPUploadConflictRequest.Policy]) -> Void
@@ -63,9 +61,8 @@ struct SFTPUploadConflictSheet: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.accent)
-                    // Out of context these read as three bare verbs; say what
-                    // they apply to, since the "Apply to all" caption beside
-                    // them is a separate element.
+                    // Out of context these read as three bare verbs; say what they apply to, since the "Apply to
+                    // all" caption beside them is a separate element.
                     .accessibilityLabel("Apply \(policy.rawValue) to all items")
             }
         }

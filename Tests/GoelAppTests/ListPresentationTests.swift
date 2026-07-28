@@ -2,13 +2,8 @@ import XCTest
 import GoelCore
 @testable import GoelApp
 
-/// Covers the adapter between the sidebar/sort chrome and the pure
-/// ``TaskListQuery``.
-///
-/// The `.type` branch is the interesting one: it is the only caller of
-/// `TaskListQuery.visible(…, extraMatch:)`, so nothing in GoelCoreTests reaches
-/// it. If it regressed, a "by type" sidebar entry would show the wrong rows or
-/// none — a silent presentation failure with no error path at all.
+/// Covers the adapter between the sidebar/sort chrome and the pure ``TaskListQuery``. The `.type`
+/// branch is the only caller of `visible(…, extraMatch:)`; regressing it silently misfills the list.
 final class ListPresentationTests: XCTestCase {
 
     private func task(_ name: String,

@@ -1,7 +1,5 @@
-// origin: template/src/aifl/FlashCut.tsx — reskinned for a dark film.
-// The template's warm-white bloom belongs to a paper palette; on this canvas the
-// bloom is a cool accent-white so the flash reads as the product's own light.
-// Timing is unchanged: peak at 40% of the window, gone by the end.
+// origin: template/src/aifl/FlashCut.tsx — reskinned dark: the template's warm-white (paper palette)
+// bloom becomes a cool accent-white, the product's own light. Timing unchanged: peak at 40%, gone by end.
 import { AbsoluteFill, interpolate, useCurrentFrame } from 'remotion';
 
 /** Bright-field cut: a bloom that flashes over a hard cut, straddling the seam

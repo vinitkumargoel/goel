@@ -3,22 +3,14 @@ import Foundation
 import FoundationNetworking   // URLSession lives here on Linux
 #endif
 
-/// Client for the daemon's own web-portal API — the same 14 JSON routes the
-/// portal page and the browser extension use (see docs/remote-api.md).
-///
-/// The CLI adds no second control channel: everything `goel add`/`list`/`pause`
-/// does goes through the documented API over loopback, authenticated with the
-/// bearer token. That means there is exactly one authorisation path to reason
-/// about, and anything the CLI can do is something an operator can reproduce with
-/// `curl`.
+/// Client for the daemon's own web-portal API — the same JSON routes the portal and extension use.
+/// The CLI adds no second control channel, so there is exactly one authorisation path.
 struct API {
     let port: Int
     let token: String
 
-    /// Always 127.0.0.1: the CLI runs on the same host as the daemon, and the
-    /// portal always listens on loopback even when it also binds the LAN. Talking
-    /// to it over the network address would send the token across the wire for no
-    /// reason — over plain HTTP, at that.
+    /// Always 127.0.0.1: the CLI runs on the daemon's host and the portal always listens on loopback,
+    /// so using the network address would send the token across the wire over plain HTTP.
     private var base: String { "http://127.0.0.1:\(port)" }
 
     struct TaskRow: Decodable {

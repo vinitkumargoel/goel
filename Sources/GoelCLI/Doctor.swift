@@ -3,13 +3,8 @@ import Foundation
 import Glibc
 #endif
 
-/// `goel doctor` and `goel uninstall`.
-///
-/// Doctor exists because every failure this daemon has is invisible from the
-/// outside: a missing shared library, a save folder the service user cannot
-/// write, a port already taken, a LAN bind silently refused for want of a
-/// password. Each of those presents identically — "it doesn't work" — and each has
-/// a different fix. So each is checked, by name, with the fix printed next to it.
+/// `goel doctor` and `goel uninstall`. Every failure this daemon has is invisible from outside and
+/// presents identically as "it doesn't work", so each is checked by name with its fix printed.
 extension GoelCLI {
 
     struct Check {
@@ -31,10 +26,8 @@ extension GoelCLI {
                     : .fail("missing — reinstall: curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh")))
         }
 
-        // A missing shared library is the classic "installed but won't start", and
-        // the daemon's own error goes to the journal where nobody looks first. Check
-        // both binaries: they have different closures, and a CLI that cannot link is
-        // the one failure that stops this command from reporting anything at all.
+        // A missing shared library is the classic "installed but won't start", and the daemon's error goes
+        // to the journal. Check both binaries: a CLI that cannot link reports nothing at all.
         if Shell.which("ldd") != nil {
             var unresolved: [String] = []
             for binary in [Layout.daemonBinary, Layout.installRoot + "/bin/goel"]
@@ -62,9 +55,8 @@ extension GoelCLI {
         }
         let effective = Effective(config)
 
-        // ---- Config file permissions --------------------------------------
-        // It holds the portal password in plaintext. systemd reads it as root
-        // before dropping privileges, so nothing else needs access to it.
+        // Config file permissions: it holds the portal password in plaintext, and systemd reads it as
+        // root before dropping privileges, so nothing else needs access.
         if let attributes = try? manager.attributesOfItem(atPath: Layout.configFile),
            let mode = attributes[.posixPermissions] as? NSNumber {
             let permissions = mode.uint16Value & 0o777
@@ -104,14 +96,12 @@ extension GoelCLI {
         // ---- Port ---------------------------------------------------------
         checks.append(Check(name: "port \(effective.port)", result: portCheck(effective)))
 
-        // ---- ffmpeg -------------------------------------------------------
-        // Only HLS needs it, so its absence is a warning rather than a failure —
-        // but it is silent otherwise: an .m3u8 download simply fails later.
+        // ffmpeg: only HLS needs it, so its absence is a warning rather than a failure — but it is
+        // otherwise silent, and an .m3u8 download simply fails later.
         checks.append(Check(name: "ffmpeg", result: ffmpeg()))
 
-        // ---- LAN exposure sanity -----------------------------------------
-        // The daemon refuses a passwordless LAN bind and falls back to loopback.
-        // That is the right behaviour and completely silent from outside.
+        // LAN exposure sanity: the daemon refuses a passwordless LAN bind and falls back to loopback.
+        // Right behaviour, and completely silent from outside.
         if effective.allowLAN {
             let hasPassword = (config.value(forEnv: "GOEL_PASSWORD")?.isEmpty == false)
             checks.append(Check(
@@ -147,10 +137,8 @@ extension GoelCLI {
         }
     }
 
-    /// Deliberately does not name versioned packages. `libssh2-1` on Ubuntu 24.04
-    /// is `libssh2-1t64` on 26.04, and `libtorrent-rasterbar2.0` does not exist
-    /// there at all — printing a list that is wrong on the operator's own machine
-    /// is worse than teaching them the one command that is always right.
+    /// Deliberately does not name versioned packages — they differ across Ubuntu releases, and
+    /// printing a list that is wrong on the operator's own machine is worse than one always-right command.
     static var missingLibraryAdvice: String {
         """
         Find what provides each one and install it:
@@ -161,9 +149,8 @@ extension GoelCLI {
         """
     }
 
-    /// The drop-in has to exist AND still name the configured paths: a stale one is
-    /// as broken as a missing one, and both fail silently — the service starts and
-    /// every write is denied.
+    /// The drop-in has to exist AND still name the configured paths: a stale one is as broken as a
+    /// missing one, and both fail silently — the service starts and every write is denied.
     static func dropIn(_ effective: Effective) -> Check.Result {
         guard let contents = try? String(contentsOfFile: Layout.dropInFile, encoding: .utf8) else {
             return .warn("missing — the unit runs ProtectSystem=strict, so downloads will fail "
@@ -219,18 +206,8 @@ extension GoelCLI {
         return .pass("\(path)")
     }
 
-    /// Is something listening on the configured port, and is it us?
-    ///
-    /// The probe is retried for a few seconds, because the moment this check is
-    /// most often run is the moment it is least likely to be true: `goel doctor`
-    /// straight after an install. systemd reports the unit active as soon as it
-    /// has forked, so a single instantaneous probe could report "nothing is
-    /// listening" while the API check further down was about to reach that very
-    /// port — a report that contradicted itself, and a CI failure that came and
-    /// went depending on how fast the runner was.
-    ///
-    /// A daemon that is genuinely dead still fails; it just takes three seconds
-    /// to say so, which is a diagnostic worth waiting for.
+    /// Is something listening on the configured port, and is it us? Retried for a few seconds because
+    /// systemd reports the unit active as soon as it forks, so one instant probe contradicted itself.
     static func portCheck(_ effective: Effective) -> Check.Result {
         let deadline = Date().addingTimeInterval(3)
         while true {
@@ -290,9 +267,8 @@ extension GoelCLI {
             Out.line(Out.red("  \(Layout.configDir) — your configuration"))
             Out.line(Out.red("  \(Layout.stateDir) — the queue database AND downloaded files"))
             Out.line(Out.red("  the \(Layout.serviceUser) system user"))
-            // A configured save-dir can be anyone's home directory, so it is never
-            // deleted — but the line above promises to remove downloads, so say where
-            // the ones that survive actually are.
+            // A configured save-dir can be anyone's home directory, so it is never deleted — but the line
+            // above promises to remove downloads, so say where the survivors actually are.
             if let config = try? ConfigFile(),
                case let effective = Effective(config),
                !effective.saveDir.hasPrefix(Layout.stateDir) {

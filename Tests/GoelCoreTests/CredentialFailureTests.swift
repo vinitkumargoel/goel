@@ -1,12 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Edge cases around a credential store that *refuses* rather than simply having
-/// nothing stored — the denied-Keychain-prompt path.
-///
-/// The distinction matters because collapsing refusal into "no password" makes a
-/// connection go out with no credential; the server rejects it, and the user is
-/// told their password is wrong when it never left the machine.
+/// A credential store that *refuses* rather than having nothing stored — the denied-Keychain-prompt path. Collapsing
+/// refusal into "no password" sends a credential-less connection, and the user is told their password is wrong.
 final class CredentialFailureTests: XCTestCase {
 
     /// A fake that can be told to deny reads and/or writes, mimicking a user

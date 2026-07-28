@@ -1,29 +1,7 @@
 import Foundation
 
-/// The scheduler — the single brain that owns the unified download queue.
-///
-/// Public contract for callers that only need queue lifecycle / observation /
-/// mutation: ``DownloadQueue``. This actor is the production implementation;
-/// pure cores (``AutomationCore``, ``SchedulingPolicy``, …) live underneath.
-///
-/// It keeps one ordered list of ``DownloadTask``, routes each task to the right
-/// engine by `source.kind` (HTTP vs torrent), subscribes to every engine's
-/// `events(for:)` stream and folds those events back into the stored task, then
-/// republishes immutable snapshots so a UI can observe. It also enforces the
-/// active ``TrafficProfile``: no more than `maxSimultaneousDownloads` tasks
-/// download at once (the rest sit `.queued` and are promoted, in priority order,
-/// as slots free up), capped concurrent magnet-metadata resolutions, and the
-/// bandwidth/connection limits pushed down to both engines via `applyLimits`.
-///
-/// Beyond raw queueing it is the integration hub for every cross-cutting setting:
-/// it re-applies the engines' network/session configuration, holds a power
-/// assertion while downloads run, drives the watch-folder, schedules periodic
-/// backups, runs the optional antivirus screen on completed files, and resolves
-/// each download's save directory from the configured folder rule.
-///
-/// It is an `actor`, so all queue bookkeeping is serialized and it is `Sendable`
-/// for free. Engines are themselves actors, hence the `await`s. No UI framework
-/// is imported — the manager is pure model logic.
+/// The scheduler actor (public contract ``DownloadQueue``): one ordered ``DownloadTask`` list routed to
+/// engines by `source.kind`, folding their events into snapshots and enforcing ``TrafficProfile`` caps.
 public actor DownloadManager {
 
     // MARK: Engines
@@ -38,9 +16,8 @@ public actor DownloadManager {
 
     // MARK: State
 
-    /// The unified, ordered task list. The single source of truth.
-    /// `internal` (not `private`) so the `+Persistence` / `+SideEffects`
-    /// extensions in sibling files can read it; only this file mutates it.
+    /// The unified, ordered task list — the single source of truth. `internal` so the `+Persistence` /
+    /// `+SideEffects` sibling extensions can read it; only this file mutates it.
     var tasks: [DownloadTask] = []
 
     /// O(1) id → index into ``tasks``. Kept in sync by ``appendTask`` /
@@ -50,41 +27,28 @@ public actor DownloadManager {
     /// O(1) ``DownloadSource/dedupKey`` → task id. Kept in sync with the list.
     var dedupIndex: [String: UUID] = [:]
 
-    /// User configuration (active profile, snail flag, default folder, plus the
-    /// General/Network/BitTorrent/Notification/Power/Backup/Antivirus panes).
-    /// `internal` so the cross-cutting extensions can read it.
-    ///
-    /// This is the **effective** configuration: ``storedSettings`` with the
-    /// managed (MDM) overlay applied. Everything in the engine/scheduler reads
-    /// it, so a forced key cannot be bypassed by a code path that forgot to ask.
+    /// The **effective** user configuration: ``storedSettings`` with the managed (MDM) overlay applied.
+    /// Everything in the engine/scheduler reads it, so a forced key can't be bypassed by a forgetful path.
     var settings: AppSettings
 
-    /// The settings the *user* chose, exactly as edited — and the only thing
-    /// ever persisted. Keeping the user's own copy separate is what makes a
-    /// configuration profile reversible: remove the profile and their choice
-    /// comes back, instead of the last forced value being frozen in as if they
-    /// had picked it.
+    /// The settings the *user* chose, exactly as edited — and the only thing ever persisted. Keeping it
+    /// separate makes a configuration profile reversible: remove the profile, their own choice comes back.
     var storedSettings: AppSettings
 
-    /// The managed-preferences overlay in force. Re-read on app re-activation
-    /// (see ``refreshManagedPolicy()``), because a profile can be installed
-    /// while the app is running.
+    /// The managed-preferences overlay in force. Re-read on app re-activation (``refreshManagedPolicy()``)
+    /// because a profile can be installed while the app is running.
     var managedPolicy: ManagedPolicy
 
     /// Append-only compliance log. A no-op while `auditLogEnabled` is false,
     /// which is the default — see the file header on ``AuditLog``.
     let auditLog = AuditLog()
 
-    /// Optional on-disk store. When present, the queue and settings survive quit
-    /// & relaunch. Writes are dispatched off the actor so disk I/O never blocks
-    /// queue bookkeeping (and never the main actor).
+    /// Optional on-disk store: when present the queue and settings survive quit & relaunch. Writes are
+    /// dispatched off the actor so disk I/O never blocks queue bookkeeping (or the main actor).
     let store: PersistenceStore?
 
-    /// Tasks currently occupying a download slot — i.e. handed to an engine and
-    /// still in an active download phase (`.requestingMetadata` / `.downloading`).
-    /// A task leaves this set the moment it pauses, fails, completes, or starts
-    /// seeding, which is when a queued task may be promoted.
-    /// `internal` so `+Scheduling` / `+Events` can manage slot accounting.
+    /// Tasks occupying a download slot: handed to an engine and still `.requestingMetadata`/`.downloading`.
+    /// A task leaves on pause/fail/complete/seed, which is when a queued task may be promoted.
     var runningSlots: Set<UUID> = []
 
     /// Tasks that have been `add`-ed to their engine at least once. Distinguishes
@@ -94,9 +58,8 @@ public actor DownloadManager {
     /// Per-task event-stream consumers.
     var consumers: [UUID: Task<Void, Never>] = [:]
 
-    /// Pending auto-retry timers: one per failed task waiting out its backoff
-    /// before being re-queued (see ``AppSettings/autoRetryEnabled``). Cancelled
-    /// if the task is removed, manually retried, or resumed in the meantime.
+    /// Pending auto-retry timers: one per failed task waiting out its backoff (``AppSettings/autoRetryEnabled``).
+    /// Cancelled if the task is removed, manually retried, or resumed in the meantime.
     var autoRetryTasks: [UUID: Task<Void, Never>] = [:]
 
     /// Auto-retry backoff shape: `base · 2^(attempt-1)`, capped. Mirrors the
@@ -109,9 +72,8 @@ public actor DownloadManager {
 
     // MARK: Side-effect services
 
-    // Injected behind narrow `Sendable` ports (see `Ports/PlatformPorts.swift`) so
-    // the scheduler's decision logic is testable; the inits default them to the real
-    // adapters, so the app gets the live IOKit / DispatchSource / Process behaviour.
+    // Injected behind narrow `Sendable` ports (`Ports/PlatformPorts.swift`) so the decision logic is
+    // testable; the inits default to the real adapters (live IOKit / DispatchSource / Process).
 
     /// Holds (at most one) "prevent idle sleep" assertion while transfers run, and
     /// reports the power source.
@@ -139,10 +101,8 @@ public actor DownloadManager {
     /// scheduling is disabled — the scheduler gates promotion on this.
     var scheduleWindowOpen = true
 
-    /// The consolidated automation memory — the window/network paused-id ledgers,
-    /// the pre-window profile, and the RSS seen-keys — that the pure
-    /// ``AutomationCore`` reads and hands back each tick. It replaces the five
-    /// parallel ledgers this actor used to keep (which could drift apart).
+    /// Consolidated automation memory (window/network paused-id ledgers, pre-window profile, RSS seen-keys)
+    /// that ``AutomationCore`` reads and hands back each tick — replaces five ledgers that could drift.
     var automationMemory = AutomationCore.Memory()
 
     /// The RSS feed polling loop, when any feed is enabled.
@@ -177,26 +137,19 @@ public actor DownloadManager {
     /// ~30 s; status transitions flush immediately).
     var lastStatsFlush = Date.distantPast
 
-    /// Per-task byte counts already folded into ``stats``. Kept separately from
-    /// the task's own counters so a restart that begins above zero but below
-    /// the previous absolute count re-bases and keeps recording, instead of
-    /// silently losing the whole re-transferred interval. The re-base rule lives
-    /// in ``StatsAccumulator``.
+    /// Per-task byte counts already folded into ``stats``, kept apart from the task's own counters so a
+    /// restart below the previous absolute count re-bases instead of losing the interval (``StatsAccumulator``).
     typealias StatsMark = StatsAccumulator.Mark
     var statsMarks: [UUID: StatsMark] = [:]
 
-    /// Per-task sliding-window meters behind the displayed ↓/↑ rates. The
-    /// `.progress` handler feeds them the absolute byte counters and stores the
-    /// windowed average on the task — never the engine's raw 100–200 ms rate
-    /// (see ``SpeedMeter``). Dropped whenever a task leaves the transfer phase
-    /// so a later resume ramps a fresh window instead of averaging the gap.
+    /// Sliding-window meters behind the displayed ↓/↑ rates: the task stores the windowed average, never
+    /// the engine's raw 100–200 ms rate (``SpeedMeter``). Dropped on leaving transfer so resume ramps fresh.
     var speedMeters: [UUID: SpeedMeter] = [:]
 
     // MARK: Persistence pipeline
 
-    /// Serial on-disk writer (nil when there is no store). Behaviour façade lives
-    /// in `DownloadManager+Persistence.swift`; this property is `internal` so that
-    /// file can enqueue / drain it.
+    /// Serial on-disk writer (nil when there is no store). Behaviour façade lives in
+    /// `DownloadManager+Persistence.swift`; `internal` so that file can enqueue / drain it.
     let pipeline: PersistencePipeline?
 
     /// Bridges detached-writer failures back onto this actor's
@@ -224,10 +177,8 @@ public actor DownloadManager {
         self.hlsEngine = hlsEngine ?? HLSEngine(profile: settings.effectiveProfile)
         self.ftpEngine = ftpEngine ?? FTPEngine(profile: settings.effectiveProfile)
         self.sftpEngine = sftpEngine ?? SFTPEngine(profile: settings.effectiveProfile)
-        // The managed overlay is resolved once here so the very first read of
-        // `settings` — before any restore — already reflects MDM policy. Both
-        // rows are clamped on the same beat as ``adoptStoredSettings(_:)`` does,
-        // so an injected settings value can't reach an engine unvalidated.
+        // The overlay is resolved here so the first read of `settings`, before any restore, already
+        // reflects MDM policy; both rows are clamped as ``adoptStoredSettings(_:)`` does.
         let policy = ManagedPolicy.current()
         self.managedPolicy = policy
         let stored = settings.validated()
@@ -269,10 +220,8 @@ public actor DownloadManager {
         self.hlsEngine = HLSEngine(profile: settings.effectiveProfile)
         self.ftpEngine = FTPEngine(profile: settings.effectiveProfile)
         self.sftpEngine = SFTPEngine(profile: settings.effectiveProfile)
-        // The managed overlay is resolved once here so the very first read of
-        // `settings` — before any restore — already reflects MDM policy. Both
-        // rows are clamped on the same beat as ``adoptStoredSettings(_:)`` does,
-        // so an injected settings value can't reach an engine unvalidated.
+        // The overlay is resolved here so the first read of `settings`, before any restore, already
+        // reflects MDM policy; both rows are clamped as ``adoptStoredSettings(_:)`` does.
         let policy = ManagedPolicy.current()
         self.managedPolicy = policy
         let stored = settings.validated()
@@ -295,32 +244,16 @@ public actor DownloadManager {
 
     // MARK: Persistence
 
-    /// Restore the queue and settings from the on-disk ``store`` (if any).
-    ///
-    /// Call this once, right after construction, before adding new downloads.
-    /// Persisted settings replace the in-memory ones; persisted tasks are loaded
-    /// with their `bytesDownloaded`/`resumeData`/error/seeding state intact.
-    /// Tasks that were mid-flight (downloading / requesting metadata / queued) —
-    /// and tasks that were seeding — come back `.paused` so the user explicitly
-    /// resumes them (a restored seeding torrent runs no engine, so showing
-    /// "Seeding" would be a lie; paused is honest and resumable). Terminal and
-    /// already-paused tasks keep their state. No engine work is started here; the
-    /// restored settings are re-applied to the engines and side-effect services.
+    /// Restore queue + settings from ``store``. Call once after construction: mid-flight and seeding tasks
+    /// come back `.paused` (nothing runs an engine, so "Seeding" would be a lie); terminal ones keep state.
     public func restore() async {
         guard let store else { return }
         installPersistErrorBridge()
 
         do {
             let saved = try store.loadSettings()
-            // Adopt unconditionally — including the fresh-install case where
-            // `loadSettings()` returns nil. ``adoptStoredSettings(_:)`` is the only
-            // thing that ever configures ``auditLog``, so skipping it left the log
-            // at its disabled default while the effective ``settings`` — already
-            // carrying `init`'s managed overlay — said logging was on. The two
-            // layers then disagreed silently: an administrator's forced
-            // `auditLogEnabled = true` recorded nothing until the user happened to
-            // change some unrelated setting. Re-adopting the in-memory
-            // ``storedSettings`` is otherwise a no-op.
+            // Adopt unconditionally, even when `loadSettings()` returns nil: ``adoptStoredSettings(_:)``
+            // is the only thing that configures ``auditLog``; skipping it silently ignored forced policy.
             adoptStoredSettings(saved ?? storedSettings)
         } catch {
             notePersistenceError(error)
@@ -348,9 +281,8 @@ public actor DownloadManager {
         tasks = loaded.map(Self.normalizeRestored)
         rebuildTaskIndex()
 
-        // Drop any completed download whose file was deleted/moved while the app
-        // was closed, before the row can flash in the list (pruned tasks are
-        // removed from disk here; the survivors are persisted just below).
+        // Drop completed downloads whose file was deleted/moved while the app was closed, before the row
+        // can flash in the list (pruned tasks leave disk here; survivors are persisted just below).
         pruneMissingCompletedFiles()
 
         // Reflect any status normalisation back to disk.
@@ -367,9 +299,8 @@ public actor DownloadManager {
         publish()
     }
 
-    /// A human-readable persistence problem, surfaced to the UI (a failed disk
-    /// write means the queue silently diverges from disk — the user must know).
-    /// `internal` so `notePersistenceError` (in `+Persistence`) can set it.
+    /// A human-readable persistence problem surfaced to the UI — a failed write means the queue silently
+    /// diverges from disk. `internal` so `notePersistenceError` (in `+Persistence`) can set it.
     var persistenceWarning: String?
 
 
@@ -382,9 +313,8 @@ public actor DownloadManager {
         }
     }
 
-    // The persistence pipeline's behaviour (currentPersistenceWarning,
-    // notePersistenceError, persist, persistSettings, persistRemoval) lives in
-    // `DownloadManager+Persistence.swift`.
+    // The persistence pipeline's behaviour (currentPersistenceWarning, notePersistenceError, persist,
+    // persistSettings, persistRemoval) lives in `DownloadManager+Persistence.swift`.
 
     // MARK: Observation
 
@@ -399,9 +329,8 @@ public actor DownloadManager {
 
     // MARK: Download history
 
-    /// The archived completed downloads, newest first. Reads the store directly
-    /// (writes flow through the serial pipeline, so an entry archived a moment
-    /// ago may trail by one flush — fine for a browsing UI).
+    /// The archived completed downloads, newest first. Reads the store directly, so an entry archived a
+    /// moment ago may trail the serial write pipeline by one flush — fine for a browsing UI.
     public func history(limit: Int = 1000) -> [HistoryEntry] {
         guard let store else { return [] }
         return (try? store.loadHistory(limit: limit)) ?? []
@@ -431,9 +360,8 @@ public actor DownloadManager {
         observers[key] = continuation
         continuation.yield(tasks)
         continuation.onTermination = { [weak self] _ in
-            // Bound before the `Task` for the same reason as the watch-folder
-            // callback in `+SideEffects`: the capture list makes `self` a var,
-            // and CI's toolchain refuses to read one from concurrent code.
+            // Bound before the `Task` like the watch-folder callback in `+SideEffects`: the capture list
+            // makes `self` a var, and CI's toolchain refuses to read one from concurrent code.
             guard let self else { return }
             Task { await self.removeObserver(key) }
         }
@@ -450,10 +378,8 @@ public actor DownloadManager {
         for continuation in observers.values { continuation.yield(snapshot) }
     }
 
-    /// Throttle progress-driven snapshots to ~10 Hz. Structural/status changes
-    /// always publish immediately (via ``publish()``); only the high-frequency
-    /// `.progress`/`.fileProgress` stream is coalesced, so the UI isn't flooded
-    /// with whole-list snapshots dozens of times a second per task.
+    /// Throttle progress-driven snapshots to ~10 Hz. Structural/status changes still publish immediately
+    /// via ``publish()``; only `.progress`/`.fileProgress` is coalesced, so the UI isn't flooded.
     private var lastProgressPublish = Date.distantPast
     /// `internal` so `+Events` can coalesce progress snapshots.
     func throttledPublish() {
@@ -466,16 +392,8 @@ public actor DownloadManager {
 
     // MARK: Public actions
 
-    /// Add a download. If a task whose source resolves to the same identity
-    /// (``DownloadSource/dedupKey`` — the infohash for a magnet) already exists it
-    /// is **not** duplicated — the existing task is returned instead. When no
-    /// explicit `saveDirectory` is given the folder is chosen per the configured
-    /// ``AppSettings/defaultFolderRule``. The new task starts `.queued`; the
-    /// scheduler promotes it when a slot is free.
-    /// `startPaused` creates the task directly in `.paused` and skips the
-    /// scheduler entirely — the race-free form of "add then pause" (an
-    /// add-then-pause pair can lose to the scheduler's optimistic promotion,
-    /// leaving the engine actively downloading a task the caller wanted held).
+    /// Add a download, de-duplicated on ``DownloadSource/dedupKey`` (the existing task is returned) with the
+    /// folder from ``AppSettings/defaultFolderRule``. `startPaused` skips the scheduler: race-free hold.
     @discardableResult
     public func add(
         source: DownloadSource,
@@ -489,11 +407,8 @@ public actor DownloadManager {
         totalBytes: Int64? = nil,
         files: [TransferFile] = [],
         deselectedFileIDs: [Int]? = nil,
-        // A browser capture arrives with its session already in hand; letting it
-        // ride along on the create avoids a second hop where the first request
-        // could go out signed-out. The value is sanitised below and, like every
-        // cookie in this app, never reaches the store — see the storage
-        // rationale on ``DownloadTask/cookieHeader``.
+        // A browser capture already holds its session; riding along on the create avoids a first request
+        // going out signed-out. Sanitised below and never stored — see ``DownloadTask/cookieHeader``.
         cookieHeader: String? = nil,
         cookieSource: CookieSource? = nil,
         cookieHost: String? = nil,
@@ -508,12 +423,8 @@ public actor DownloadManager {
         // create-paused path as `startPaused`.
         let holdPaused = startPaused || scheduledAt != nil
         let directory = saveDirectory ?? defaultDirectory(for: source)
-        // Resolve the on-disk name conflict at creation time only — never on
-        // resume/retry, which reuse the stored name and rely on the partial file
-        // still living at the same path. Torrent names are placeholders until
-        // metadata resolves, so the policy applies to HTTP downloads only.
-        // A caller-supplied name (metalink `name=`) is sanitized like any
-        // untrusted input before it can influence the on-disk path.
+        // Resolve the on-disk name conflict at creation only — resume/retry reuse the stored name and the
+        // partial file's path. HTTP only (torrent names are placeholders); caller names are sanitized.
         let baseName = suggestedName.map {
             PathSafety.sanitizedName($0, fallback: Self.defaultName(for: source))
         } ?? Self.defaultName(for: source)
@@ -532,10 +443,8 @@ public actor DownloadManager {
             source: source,
             name: name,
             saveDirectory: directory,
-            // Seed the size/file list already resolved on the add screen so the
-            // task appears fully-formed instead of re-showing a "gathering" state
-            // for facts we already have. The engine still reconciles from truth as
-            // it runs; these are just a correct initial display.
+            // Seed the size/file list already resolved on the add screen so the task appears fully-formed
+            // instead of re-showing "gathering"; the engine still reconciles from truth as it runs.
             totalBytes: totalBytes,
             status: holdPaused ? .paused : .queued,
             priority: priority,
@@ -545,9 +454,8 @@ public actor DownloadManager {
             mirrors: Self.sanitizedMirrors(mirrors, primary: source),
             cookieHeader: cleanedCookie,
             cookieSource: cleanedCookie == nil ? CookieSource.none : (cookieSource ?? .browser),
-            // nil scope is not "no scope" — ``DownloadTask/sendsCookies(to:)``
-            // falls back to the task's own origin, which is what a capture for
-            // this exact URL means.
+            // nil scope is not "no scope" — ``DownloadTask/sendsCookies(to:)`` falls back to the task's
+            // own origin, which is what a capture for this exact URL means.
             cookieHost: cleanedCookie == nil ? nil : cookieHost,
             initialSkipFileIDs: (deselectedFileIDs?.isEmpty ?? true) ? nil : deselectedFileIDs,
             // `.auto` is the default in every other spelling; store nil so old and
@@ -581,26 +489,19 @@ public actor DownloadManager {
         return result.isEmpty ? nil : result
     }
 
-    /// Resolve a source's metadata for the add-confirmation screen, *without*
-    /// adding anything to the queue. HTTP/HLS probe the server for name + size;
-    /// torrents/magnets fetch the name, total size and file list (then discard the
-    /// throwaway handle). Always returns a preview — on failure it carries a `note`
-    /// and the best-effort name so the user can still choose to start.
+    /// Resolve a source's metadata for the add-confirmation screen *without* queueing anything. Always
+    /// returns a preview — on failure a `note` plus the best-effort name, so the user can still start.
     public func resolveMetadata(for source: DownloadSource, saveDirectory: String? = nil) async -> DownloadPreview {
         let directory = saveDirectory ?? defaultDirectory(for: source)
         let fallbackName = Self.defaultName(for: source)
         let kind = source.kind
         let engine = engine(for: source)
 
-        // The seam: ask the engine to resolve, never downcasting to a concrete
-        // type. Each engine reports what it could (or couldn't) find; the manager
-        // folds that into the preview, applying its own fallback name and the
-        // kind-specific note.
+        // The seam: ask the engine to resolve, never downcasting to a concrete type; the manager folds
+        // what it reports into the preview, applying its own fallback name and kind-specific note.
         guard let meta = await engine.resolveMetadata(for: source, in: directory) else {
-            // Nil means the engine couldn't resolve this time (server unreachable /
-            // no peers answered) or doesn't probe at all. Only an engine that
-            // ADVERTISES metadata resolution earns an explanatory note; otherwise
-            // the preview is a plain best-effort name.
+            // Nil means it couldn't resolve now (unreachable / no peers) or doesn't probe at all. Only an
+            // engine ADVERTISING metadata resolution earns a note; otherwise it's a best-effort name.
             let note = engine.capabilities.contains(.resolvesMetadata) ? Self.unresolvedNote(for: kind) : nil
             return DownloadPreview(
                 source: source, suggestedName: fallbackName, totalBytes: nil,
@@ -617,9 +518,8 @@ public actor DownloadManager {
             suggestedChecksum: meta.suggestedChecksum)
     }
 
-    /// The non-fatal note shown when a source's metadata couldn't be resolved up
-    /// front. Kind-specific so the wording matches the failure mode; the user can
-    /// always still start the download.
+    /// The non-fatal note shown when metadata couldn't be resolved up front. Kind-specific so the wording
+    /// matches the failure mode; the user can always still start the download.
     private static func unresolvedNote(for kind: DownloadKind) -> String? {
         switch kind {
         case .http, .ftp, .sftp:
@@ -638,16 +538,8 @@ public actor DownloadManager {
         schedule()
     }
 
-    /// The pause bookkeeping *without* the trailing snapshot/scheduler pass, so
-    /// ``pauseAll()`` can pause a whole queue and pay for both exactly once.
-    /// Returns whether the task was eligible and anything actually happened.
-    ///
-    /// The split matters at scale: ``publish()`` yields a fresh copy of the whole
-    /// list into every observer's unbounded stream, which makes the next in-place
-    /// status write copy the entire array, and ``schedule()`` re-filters and
-    /// re-sorts all N tasks. Per-task, that is quadratic and floods the UI with
-    /// snapshots it can't drain. Coalescing also stops the scheduler promoting a
-    /// queued task into a slot the loop is about to take back.
+    /// Pause bookkeeping *without* the trailing snapshot/scheduler pass, so ``pauseAll()`` pays for both
+    /// once: per-task it is quadratic, and it would let ``schedule()`` refill a slot being reclaimed.
     private func pauseTask(_ id: DownloadTask.ID) async -> Bool {
         guard let task = task(id) else { return false }
         guard task.status != .paused, !task.status.isTerminal else { return false }
@@ -678,9 +570,8 @@ public actor DownloadManager {
         schedule()
     }
 
-    /// The resume bookkeeping without the trailing snapshot/scheduler pass — the
-    /// counterpart of ``pauseTask(_:)``, for the same reason. Returns whether the
-    /// task was actually paused and has now been re-queued.
+    /// Resume bookkeeping without the trailing snapshot/scheduler pass — counterpart of ``pauseTask(_:)``,
+    /// same reason. Returns whether the task was actually paused and has now been re-queued.
     private func resumeTask(_ id: DownloadTask.ID) -> Bool {
         guard let i = index(of: id), tasks[i].status == .paused else { return false }
         tasks[i].status = .queued
@@ -689,9 +580,8 @@ public actor DownloadManager {
         return true
     }
 
-    /// Retry a failed task: clear the error and re-queue it (keeping any partial
-    /// bytes / resume cursor so it can continue), then let the scheduler promote
-    /// it. A no-op unless the task is currently `.failed`.
+    /// Retry a failed task: clear the error and re-queue it, keeping partial bytes / resume cursor so it
+    /// continues, then let the scheduler promote it. A no-op unless the task is currently `.failed`.
     public func retry(_ id: DownloadTask.ID) async {
         guard let i = index(of: id), case .failed = tasks[i].status else { return }
         // A deliberate manual retry supersedes any armed auto-retry and restarts
@@ -708,12 +598,8 @@ public actor DownloadManager {
         schedule()
     }
 
-    /// Arm an automatic retry for a task that just failed, if
-    /// ``AppSettings/autoRetryEnabled`` is on and its retry budget isn't spent.
-    /// Bumps the task's ``DownloadTask/retryAttempt`` and schedules a re-queue
-    /// after an exponential backoff; when the budget is exhausted the task is
-    /// left `.failed` for the user to retry by hand. Called from the `.failed`
-    /// status transition.
+    /// Arm an automatic retry for a just-failed task when ``AppSettings/autoRetryEnabled`` is on and the
+    /// budget isn't spent: bumps ``DownloadTask/retryAttempt``, re-queues after an exponential backoff.
     func scheduleAutoRetryIfNeeded(_ id: DownloadTask.ID) {
         guard settings.autoRetryEnabled, settings.autoRetryMaxAttempts > 0 else { return }
         guard let i = index(of: id), case .failed = tasks[i].status else { return }
@@ -731,9 +617,8 @@ public actor DownloadManager {
         }
     }
 
-    /// Fire a scheduled auto-retry once its backoff elapses: re-queue the task,
-    /// but only if it is *still* failed — the user may have removed, resumed, or
-    /// manually retried it while the timer was waiting.
+    /// Fire a scheduled auto-retry once its backoff elapses, but only if the task is *still* failed —
+    /// the user may have removed, resumed, or manually retried it while the timer waited.
     private func performAutoRetry(_ id: DownloadTask.ID) async {
         autoRetryTasks[id] = nil
         guard let i = index(of: id), case .failed = tasks[i].status else { return }
@@ -803,9 +688,8 @@ public actor DownloadManager {
         schedule()
     }
 
-    /// Resume every paused task. One snapshot and one scheduler pass for the whole
-    /// batch; the single ``schedule()`` promotes up to the simultaneous cap in
-    /// strict priority order, rather than first-resumed-first-served.
+    /// Resume every paused task with one snapshot and one scheduler pass, so ``schedule()`` promotes up
+    /// to the simultaneous cap in strict priority order rather than first-resumed-first-served.
     public func resumeAll() async {
         let ids = tasks.filter { $0.status == .paused }.map(\.id)
         var changed = false
@@ -817,19 +701,8 @@ public actor DownloadManager {
         schedule()
     }
 
-    /// Apply a settings change in one deep call: mutate a copy of the user's own
-    /// ``storedSettings``, push it through the full ``updateSettings(_:)`` cascade,
-    /// and return the resulting **effective** settings — so a caller never needs a
-    /// separate read-after-write round-trip to learn what was actually stored.
-    ///
-    /// The copy is seeded from ``storedSettings``, never from the policy-overlaid
-    /// ``settings``: ``updateSettings(_:)`` persists whatever it is handed, so
-    /// starting from the effective value would write an administrator's forced keys
-    /// into the user's own row on the next unrelated edit, and the forced value
-    /// would then survive the removal of the profile that imposed it (see
-    /// ``adoptStoredSettings(_:)`` and `persistSettings()`). ``setDefaultSaveDirectory(_:)``
-    /// and `setActiveProfile(_:)` already start from ``storedSettings`` for the
-    /// same reason.
+    /// Apply a settings change in one call and return the **effective** result. The copy is seeded from
+    /// ``storedSettings``, never the overlaid ``settings``, or forced MDM keys would outlive their profile.
     @discardableResult
     public func apply(_ change: @Sendable (inout AppSettings) -> Void) async -> AppSettings {
         var copy = storedSettings
@@ -838,28 +711,22 @@ public actor DownloadManager {
         return settings
     }
 
-    /// Switch the active traffic profile. Delegates to ``apply(_:)`` so the new
-    /// limits reach both engines and the scheduler re-runs (the simultaneous cap
-    /// may have changed), and returns the committed settings.
+    /// Switch the active traffic profile via ``apply(_:)``, so new limits reach both engines and the
+    /// scheduler re-runs (the simultaneous cap may have changed). Returns the committed settings.
     @discardableResult
     public func setProfile(_ name: String) async -> AppSettings {
         await apply { $0.selectedProfileName = name }
     }
 
-    /// Toggle the "snail" speed limit. When disabled, speeds become unlimited.
-    /// Delegates to ``apply(_:)`` so both engines are re-applied live, and returns
-    /// the committed settings.
+    /// Toggle the "snail" speed limit (disabled = unlimited). Delegates to ``apply(_:)`` so both engines
+    /// are re-applied live, and returns the committed settings.
     @discardableResult
     public func setSpeedLimitEnabled(_ enabled: Bool) async -> AppSettings {
         await apply { $0.speedLimitEnabled = enabled }
     }
 
-    /// Change the default save folder for future downloads, returning the
-    /// committed settings. The default-folder rule is read live by ``add`` for
-    /// each new download, so this only persists and publishes — it deliberately
-    /// does NOT run the full ``updateSettings`` cascade (which would needlessly
-    /// re-arm the watch-folder/backup timers and re-run the scheduler on a
-    /// directory-only change).
+    /// Change the default save folder, returning the committed settings. ``add`` reads the rule live, so
+    /// this only persists/publishes — no ``updateSettings`` cascade re-arming timers on a folder change.
     @discardableResult
     public func setDefaultSaveDirectory(_ path: String) async -> AppSettings {
         var updated = storedSettings
@@ -872,14 +739,8 @@ public actor DownloadManager {
 
     // MARK: Audit
 
-    /// Append one task transition to the compliance log, off the actor's own
-    /// critical path.
-    ///
-    /// Fire-and-forget on purpose: the log is a record *of* the queue, never a
-    /// gate *on* it, so a slow or unwritable audit directory must not stall a
-    /// download. ``AuditLog`` returns immediately when logging is disabled, which
-    /// is the default, and the ``AuditEvent`` initialiser — not any caller here —
-    /// is what applies the redaction rules.
+    /// Append one task transition to the compliance log, fire-and-forget: the log records the queue and
+    /// never gates it, so a slow audit directory can't stall a download. ``AuditEvent`` applies redaction.
     func recordAudit(_ action: AuditEvent.Action, task: DownloadTask) {
         guard settings.auditLogEnabled else { return }
         Task { [auditLog] in await auditLog.record(action, task: task) }
@@ -892,21 +753,8 @@ public actor DownloadManager {
 
     // MARK: Managed policy
 
-    /// Record the user's settings and recompute the effective ones through the
-    /// managed overlay. Every write to ``storedSettings`` goes through here, so
-    /// the two can never drift.
-    ///
-    /// The audit log is re-configured on the same beat because its policy lives
-    /// in the same settings object, and a managed profile is exactly the kind of
-    /// thing that turns it on.
-    ///
-    /// This is also the one place settings are validated. Every writer —
-    /// ``updateSettings(_:)``, ``apply(_:)``, ``setProfile(_:)``,
-    /// ``setActiveProfile(_:)``, ``setDefaultSaveDirectory(_:)``, ``restore()``
-    /// and ``importEnvelope(_:)`` — funnels through here, so a clamp installed
-    /// once covers the UI, the remote API, the daemon and a restored backup
-    /// alike. The overlay is validated *after* it is applied: a managed profile
-    /// forcing an out-of-range value must not be able to slip past the clamp.
+    /// The one funnel for writing ``storedSettings``: recomputes the effective row through the overlay,
+    /// re-configures ``auditLog``, and validates *after* the overlay so forced values can't skip a clamp.
     func adoptStoredSettings(_ newSettings: AppSettings) {
         storedSettings = newSettings.validated()
         settings = managedPolicy.apply(to: storedSettings).validated()
@@ -914,12 +762,8 @@ public actor DownloadManager {
         Task { [auditLog] in await auditLog.configure(auditConfiguration) }
     }
 
-    /// Re-read the managed-preferences overlay and re-apply it.
-    ///
-    /// Call on app re-activation: an administrator can install or remove a
-    /// configuration profile while the app is running, and a policy that only
-    /// took effect at launch would be a policy the user could dodge by never
-    /// quitting.
+    /// Re-read the managed-preferences overlay and re-apply it. Call on app re-activation: a launch-only
+    /// policy would be one the user could dodge by never quitting.
     public func refreshManagedPolicy() async {
         let policy = ManagedPolicy.current()
         guard policy != managedPolicy else { return }
@@ -933,11 +777,8 @@ public actor DownloadManager {
     /// annotate the controls an administrator has locked.
     public func currentManagedPolicy() -> ManagedPolicy { managedPolicy }
 
-    /// Replace the entire settings object and re-apply every dependent subsystem:
-    /// engine bandwidth/connection limits, HTTP network config, torrent session
-    /// config, the power assertion, the watch-folder, the backup schedule, and the
-    /// scheduler. The default-folder rule needs no re-application here — it is read
-    /// live by ``add(source:saveDirectory:priority:)`` for each new download.
+    /// Replace the settings object and re-apply every dependent subsystem (engine limits, network/session
+    /// config, power, watch-folder, backup, scheduler). The default-folder rule is read live by ``add``.
     public func updateSettings(_ newSettings: AppSettings) async {
         adoptStoredSettings(newSettings)
         persistSettings()
@@ -957,9 +798,8 @@ public actor DownloadManager {
     /// rarest-first piece download. No-op for HTTP/HLS tasks.
     public func setSequential(_ sequential: Bool, task id: DownloadTask.ID) async {
         guard let task = task(id) else { return }
-        // Only torrent engines control piece order; the intentional capability
-        // query replaces the old base-protocol no-op. The model flag is set
-        // regardless (it drives the streamability check).
+        // Only torrent engines control piece order; the capability query replaces the old base-protocol
+        // no-op. The model flag is set regardless — it drives the streamability check.
         await (engine(for: task.source) as? TorrentControlling)?.setSequential(sequential, task: id)
         if let i = index(of: id) {
             tasks[i].sequentialDownload = sequential
@@ -980,9 +820,8 @@ public actor DownloadManager {
     public func setTaskUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {
         guard let task = task(id) else { return }
         await (engine(for: task.source) as? TorrentControlling)?.setUploadLimit(bytesPerSec, task: id)
-        // Re-resolve the index AFTER the actor hop: `tasks` may have been mutated
-        // (e.g. a concurrent remove) while suspended, so a pre-await index could
-        // now point past the end or at a different task.
+        // Re-resolve the index AFTER the actor hop: `tasks` may have been mutated (concurrent remove)
+        // while suspended, so a pre-await index could now point past the end or at a different task.
         if let i = index(of: id) {
             tasks[i].uploadLimitBytesPerSec = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
             persist(tasks[i])
@@ -990,10 +829,8 @@ public actor DownloadManager {
         publish()
     }
 
-    /// Set a per-torrent seed-ratio limit. When seeding reaches it, the engine
-    /// stops the torrent and marks it completed. nil clears the per-task limit so
-    /// the traffic profile's global limit applies again; an explicit 0 means
-    /// "seed this one indefinitely" and overrides the profile.
+    /// Set a per-torrent seed-ratio limit; reaching it stops and completes the torrent. nil restores the
+    /// profile's global limit, an explicit 0 means "seed indefinitely" and overrides the profile.
     public func setSeedRatioLimit(_ ratio: Double?, task id: DownloadTask.ID) async {
         guard let task = task(id) else { return }
         await (engine(for: task.source) as? TorrentControlling)?.setSeedRatioLimit(ratio, task: id)
@@ -1041,10 +878,8 @@ public actor DownloadManager {
         }
     }
 
-    /// Set the per-task `Referer` and extra request headers (HTTP downloads).
-    /// Reserved and malformed header names are dropped; nil/empty clears each
-    /// field. Returns the reserved header names that were ignored, so the UI can
-    /// tell the user rather than silently discarding them.
+    /// Set the per-task `Referer` and extra request headers (HTTP). Reserved/malformed names are dropped,
+    /// nil/empty clears each field; returns the ignored reserved names so the UI can tell the user.
     @discardableResult
     public func setRequestOptions(referer: String?, headers: [String: String]?,
                                   task id: DownloadTask.ID) async -> [String] {
@@ -1058,20 +893,16 @@ public actor DownloadManager {
         tasks[i].requestHeaders = cleaned.isEmpty ? nil : cleaned
         persist(tasks[i])
         publish()
-        // Names the user supplied that we refused to store (reserved only —
-        // control-char/empty are malformed, not "reserved", and reported as such
-        // is more confusing than useful).
+        // Names the user supplied that we refused to store — reserved only; control-char/empty are
+        // malformed rather than "reserved", and reporting them as such is more confusing than useful.
         return raw.keys
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { Self.reservedHeaderNames.contains($0) }
             .sorted()
     }
 
-    /// Attach (or clear, with nil) the browser session cookies for a task.
-    /// The value is sanitised through ``CookieHeader`` and lives in memory only —
-    /// it is excluded from ``DownloadTask``'s `Codable` representation by design.
-    /// The non-secret provenance (`cookieSource`/`cookieHost`) *is* persisted, so
-    /// the row still needs a write.
+    /// Attach (or clear with nil) a task's browser session cookies: sanitised via ``CookieHeader`` and kept
+    /// in memory only (excluded from `Codable`). The non-secret `cookieSource`/`cookieHost` is persisted.
     public func setCookies(_ raw: String?, host: String?, source: CookieSource,
                            task id: DownloadTask.ID) async {
         guard let i = index(of: id) else { return }
@@ -1094,10 +925,8 @@ public actor DownloadManager {
         case ioError(String)      // the disk move failed (permissions, full, …)
     }
 
-    /// Rename a download's output file and display name. Renames the file on disk
-    /// (never clobbering an existing one — appends ` (n)` if needed). Not supported
-    /// for torrents (libtorrent owns their on-disk layout) or while a task is
-    /// actively transferring (the writer holds the old path).
+    /// Rename a download's file and display name, never clobbering an existing one (appends ` (n)`). Not
+    /// for torrents (libtorrent owns their layout) or active transfers (the writer holds the old path).
     @discardableResult
     public func rename(_ id: DownloadTask.ID, to newName: String) async -> RenameResult {
         guard let i = index(of: id) else { return .notFound }
@@ -1138,12 +967,8 @@ public actor DownloadManager {
         "host", "content-length", "connection", "transfer-encoding", "keep-alive",
         "upgrade", "te", "trailer", "referer", "authorization", "proxy-authorization",
         "proxy-connection",
-        // `cookie` is reserved not because the transport manages it, but because
-        // the plaintext headers editor persists into SQLite and into the
-        // shareable JSON export — a session cookie must never travel that way.
-        // ``setCookies(_:host:source:task:)`` is the supported path; it keeps the
-        // value in memory only. `setRequestOptions` reports reserved names back
-        // to the UI, so the user is told rather than silently ignored.
+        // `cookie` is reserved because the plaintext headers editor persists into SQLite and the shareable
+        // JSON export — a session cookie must never travel that way. Use ``setCookies(_:host:source:task:)``.
         "cookie"
     ]
 
@@ -1171,9 +996,8 @@ public actor DownloadManager {
 
     // MARK: Export / Import
 
-    /// A self-contained snapshot of the whole app: settings + every task with
-    /// its full state (progress, status, resume cursor). The JSON counterpart of
-    /// the locator-only text export in the File menu.
+    /// A self-contained snapshot of the whole app: settings + every task with full state (progress,
+    /// status, resume cursor). The JSON counterpart of the locator-only text export in the File menu.
     public func exportEnvelope() throws -> Data {
         let envelope = AppExport(settings: Self.exportSanitizedSettings(settings), tasks: tasks)
         let encoder = JSONEncoder()
@@ -1181,11 +1005,8 @@ public actor DownloadManager {
         return try encoder.encode(envelope)
     }
 
-    /// Settings with secrets stripped for a shareable/portable export. A backup
-    /// file may be synced, attached to a bug report, or moved between machines, so
-    /// the full-authority bearer token and the password hash must not travel in it
-    /// (``importEnvelope(_:)`` already refuses to *adopt* them; this stops them
-    /// leaving in the first place). The recipient sets their own on import.
+    /// Settings with secrets stripped for export: a backup may be synced or attached to a bug report, so
+    /// the bearer token and password hash must not travel in it (``importEnvelope(_:)`` won't adopt them).
     static func exportSanitizedSettings(_ s: AppSettings) -> AppSettings {
         var out = s
         out.remoteToken = ""
@@ -1193,29 +1014,16 @@ public actor DownloadManager {
         return out
     }
 
-    /// Import a snapshot produced by ``exportEnvelope()``: adopt its settings and
-    /// merge its tasks (skipping sources already in the queue). Restored tasks
-    /// come back `.paused` — like ``restore()`` — so nothing starts by surprise.
-    /// Returns the number of tasks actually added.
-    ///
-    /// Security: a backup file is untrusted input. Every task is re-sanitized, and
-    /// settings that can execute code, open or unlock a network listener, redirect
-    /// traffic, or move where files land (post-download script, antivirus and
-    /// ffmpeg executables, the whole `remote*` portal family, the proxy, the
-    /// default save folder, the audit directory, RSS feeds, watch folder) are NEVER
-    /// adopted from a file — the current values are kept, so a hostile "backup"
-    /// can't silently turn the app into an exfiltration or remote-control vector.
+    /// Import an ``exportEnvelope()`` snapshot: merge its tasks (skipping known sources), all `.paused`.
+    /// A backup is untrusted: settings that run code, open a port, redirect traffic or move files are never adopted.
     @discardableResult
     public func importEnvelope(_ data: Data) async throws -> Int {
         let envelope = try JSONDecoder().decode(AppExport.self, from: data)
         var added = 0
         for imported in envelope.tasks {
             let task = PersistenceStore.sanitizedForImport(imported)
-            // An envelope is untrusted input: two entries may carry the SAME task id
-            // (hand-edited, or two backups merged). `taskIndex` keys on the id, so the
-            // loser would become an unreachable zombie row — never pausable, removable
-            // or retryable — and the view model's snapshot fold keys on it too. Refuse
-            // the duplicate here rather than survive it downstream.
+            // An envelope is untrusted: two entries may carry the SAME task id. `taskIndex` keys on it,
+            // so the loser becomes an unreachable zombie row — refuse the duplicate here instead.
             guard index(of: task.id) == nil else { continue }
             guard dedupIndex[task.source.dedupKey] == nil else { continue }
             let t = Self.normalizeRestored(task)
@@ -1223,13 +1031,8 @@ public actor DownloadManager {
             persist(t)
             added += 1
         }
-        // `storedSettings`, not `settings`: the security-sensitive fields are
-        // restored from the user's OWN row, never from the policy-overlaid one.
-        // `updateSettings` persists whatever it is handed, so passing the
-        // effective row would write an administrator's forced keys in as if the
-        // user had chosen them — and they would outlive the profile.
-        // `adoptStoredSettings` re-applies the overlay on top, so the effective
-        // settings are unchanged.
+        // `storedSettings`, not `settings`: security-sensitive fields come from the user's OWN row, since
+        // persisting the overlaid one would freeze an admin's forced keys in and outlive the profile.
         await updateSettings(Self.sanitizedImportedSettings(envelope.settings, current: storedSettings))
         return added
     }
@@ -1250,14 +1053,8 @@ public actor DownloadManager {
         // ffmpeg path is an executable we run on demand — never adopt one from an
         // imported backup (it would be a code-execution vector).
         safe.ffmpegPath = current.ffmpegPath
-        // Network listeners and auto-fetch surfaces. The whole `remote*` family is
-        // forced back, not just the on/off switch: the portal's credentials
-        // (`remoteUsername`/`remotePasswordHash`), its auth policy
-        // (`remoteRequireAuth`/`remoteReadOnly`/`remoteTLS*`/`remoteLogin*`) and its
-        // reverse-proxy trust (`remoteTrustedHeaderAuthEnabled`/`remoteTrustedHeaderName`/
-        // `remoteTrustedProxies`, where a `0.0.0.0/0` entry trusts every client) are
-        // each on their own enough to hand a file's author control of an already
-        // enabled portal.
+        // Network listeners: the WHOLE `remote*` family is forced back, not just the on/off switch —
+        // credentials, auth policy and proxy trust (`0.0.0.0/0` trusts everyone) each hand over a portal.
         safe.remoteAccessEnabled = current.remoteAccessEnabled
         safe.remotePort = current.remotePort
         safe.remoteToken = current.remoteToken
@@ -1274,18 +1071,15 @@ public actor DownloadManager {
         safe.remoteTrustedHeaderAuthEnabled = current.remoteTrustedHeaderAuthEnabled
         safe.remoteTrustedHeaderName = current.remoteTrustedHeaderName
         safe.remoteTrustedProxies = current.remoteTrustedProxies
-        // Traffic interception. A proxy adopted from a file would silently route
-        // every HTTP/FTP/SFTP/torrent connection — with its URLs, `Cookie` headers
-        // and Basic-auth credentials — through a host the file's author chose, and
-        // would let them substitute the payload of any plain-HTTP download.
+        // Traffic interception: a proxy adopted from a file would route every connection — URLs, `Cookie`
+        // headers, Basic-auth — through a host its author chose, and could swap any plain-HTTP payload.
         safe.proxyMode = current.proxyMode
         safe.proxyType = current.proxyType
         safe.proxyHost = current.proxyHost
         safe.proxyPort = current.proxyPort
         safe.proxyAllProtocols = current.proxyAllProtocols
-        // Filesystem reach: the default save folder is also the containment root
-        // the remote portal validates every requested path against, and the audit
-        // directory is where the compliance record is written.
+        // Filesystem reach: the default save folder is also the containment root the remote portal
+        // validates every requested path against, and the audit directory holds the compliance record.
         safe.defaultSaveDirectory = current.defaultSaveDirectory
         safe.auditLogDirectory = current.auditLogDirectory
         safe.rssFeeds = current.rssFeeds
@@ -1303,17 +1097,15 @@ public actor DownloadManager {
         task id: DownloadTask.ID
     ) async {
         guard let task = task(id) else { return }
-        // Per-file priority is an engine capability; engines that don't honour it
-        // simply don't conform to FilePrioritizing (the intentional `as?` replaces
-        // the old per-engine no-ops). The model is updated regardless.
+        // Per-file priority is an engine capability: engines that don't honour it don't conform to
+        // FilePrioritizing (the `as?` replaces the old per-engine no-ops). The model updates regardless.
         await (engine(for: task.source) as? FilePrioritizing)?.setFilePriority(priority, fileID: fileID, task: id)
         if let i = index(of: id) {
             if let f = tasks[i].files.firstIndex(where: { $0.id == fileID }) {
                 tasks[i].files[f].priority = priority
             }
-            // The user has now taken explicit control of this file, so drop it from
-            // the one-shot add-time skip set — otherwise a later resume/relaunch
-            // would silently re-skip a file the user just re-enabled.
+            // The user has taken explicit control of this file, so drop it from the one-shot add-time
+            // skip set — otherwise a later resume/relaunch would silently re-skip what they re-enabled.
             tasks[i].initialSkipFileIDs?.removeAll { $0 == fileID }
             persist(tasks[i])
         }
@@ -1325,9 +1117,8 @@ public actor DownloadManager {
 
     // MARK: Default-folder rule
 
-    /// Resolve the save directory for a new download from
-    /// ``AppSettings/defaultFolderRule``, using ``AppSettings/defaultSaveDirectory``
-    /// as the base/fixed folder.
+    /// Resolve a new download's save directory from ``AppSettings/defaultFolderRule``, with
+    /// ``AppSettings/defaultSaveDirectory`` as the base/fixed folder.
     private func defaultDirectory(for source: DownloadSource) -> String {
         let base = settings.defaultSaveDirectory
         switch settings.defaultFolderRule {
@@ -1341,12 +1132,8 @@ public actor DownloadManager {
         }
     }
 
-    // Cross-cutting side effects (power assertion, watch folder, periodic backup,
-    // and post-completion hooks) live in `DownloadManager+SideEffects.swift`.
-    //
-    // Queue promotion (schedule / setOptimisticStatus / launch) lives in
-    // `DownloadManager+Scheduling.swift`; engine-event folding (subscribe / apply /
-    // handleStatusTransition) lives in `DownloadManager+Events.swift`.
+    // Side effects (power, watch folder, backup, post-completion hooks) live in `+SideEffects.swift`;
+    // queue promotion in `+Scheduling.swift`; engine-event folding in `+Events.swift`.
 
     // MARK: Helpers
 
@@ -1358,14 +1145,8 @@ public actor DownloadManager {
         return taskIndex[id]
     }
 
-    /// Rebuild ``taskIndex`` and ``dedupIndex`` from ``tasks``. Call after bulk replace.
-    ///
-    /// Built first-wins with an explicit loop, never `Dictionary(uniqueKeysWithValues:)`:
-    /// a database written by an older build can hold two tasks that today share a
-    /// ``DownloadSource/dedupKey`` (two magnets for one infohash differing only in
-    /// `dn=`/`tr=`), and a duplicate key would trap here — an unrecoverable crash on
-    /// every launch. First-wins also matches the `tasks.first(where:)` lookup this
-    /// map replaced.
+    /// Rebuild ``taskIndex``/``dedupIndex`` from ``tasks`` after a bulk replace. First-wins explicit loop,
+    /// never `Dictionary(uniqueKeysWithValues:)`: a legacy duplicate `dedupKey` would trap on every launch.
     func rebuildTaskIndex() {
         taskIndex.removeAll(keepingCapacity: true)
         dedupIndex.removeAll(keepingCapacity: true)
@@ -1390,9 +1171,8 @@ public actor DownloadManager {
         tasks.remove(at: i)
         taskIndex[removed.id] = nil
         if dedupIndex[key] == removed.id {
-            // A legacy queue can hold a second task under the same key — hand the
-            // entry to the survivor rather than leaving it unindexed (which would
-            // let the duplicate be added a third time).
+            // A legacy queue can hold a second task under the same key — hand the entry to the survivor
+            // rather than leaving it unindexed, which would let the duplicate be added a third time.
             dedupIndex[key] = tasks.first { $0.source.dedupKey == key }?.id
         }
         for j in i..<tasks.count {

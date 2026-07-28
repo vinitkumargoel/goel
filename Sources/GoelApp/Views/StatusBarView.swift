@@ -92,13 +92,8 @@ struct StatusBarView: View {
     }
 
     private var snail: some View {
-        // `speedLimitEnabled` is a ManagedPolicy key and this button is its only
-        // UI, so without this check a forced value is unenforceable here: the tap
-        // would flip the pill, the overlay would reassert the administrator's
-        // choice on the next apply, and the change would silently revert. Same
-        // reasoning as `.managed(…)` in Settings — the wording is substituted
-        // rather than layered on with that modifier because the button already
-        // carries its own `help` and hint, and one of each is all it can speak.
+        // `speedLimitEnabled` is a ManagedPolicy key and this button is its only UI, so without this
+        // check a forced value would silently revert on the next apply.
         let locked = vm.managedPolicy.isLocked(.speedLimitEnabled)
         return Button(action: vm.toggleSnail) {
             HStack(spacing: 6) {
@@ -120,10 +115,8 @@ struct StatusBarView: View {
         .buttonStyle(.plain)
         .disabled(locked)
         .help(locked ? AppViewModel.managedFootnote : "Toggle global speed limit")
-        // The control is a hand-drawn snail path — literally an unnamed `Shape`
-        // to VoiceOver — and its on/off state shows only as an orange fill. When
-        // it is locked, `help` is a pointer-only tooltip, so the reason has to be
-        // carried in the hint as well or the button is just dead to VoiceOver.
+        // The control is a hand-drawn snail path — an unnamed `Shape` to VoiceOver — and its state shows
+        // only as an orange fill. When locked, `help` is pointer-only, so the reason must be in the hint.
         .a11yButton("Global speed limit",
                     hint: locked ? AppViewModel.managedFootnote
                                  : "Activate to turn the speed limit on or off.")
@@ -132,9 +125,8 @@ struct StatusBarView: View {
                             : "Off, unlimited")
     }
 
-    /// One aggregate rate readout. `speed` is the raw bytes/sec the label was
-    /// formatted from — kept alongside so the spoken value can be built in words
-    /// rather than reverse-engineered out of the abbreviated string.
+    /// One aggregate rate readout. `speed` is the raw bytes/sec the label was formatted from, kept
+    /// alongside so the spoken value can be built in words rather than reverse-engineered.
     private func stat(symbol: String, speed: Double, color: Color) -> some View {
         HStack(spacing: 5) {
             Image(systemName: symbol).font(.system(size: 11))
@@ -185,11 +177,8 @@ struct StatusBarView: View {
 
 // MARK: - Snail glyph
 
-/// The speed-limit glyph the brief and mockup call "the snail" — a spiral shell,
-/// a humped body, and a raised antenna with an upward chevron. Ported faithfully
-/// from the design's inline SVG (visual.html), drawn in its 24×24 space and
-/// scaled to whatever frame the view assigns. No SF Symbol "snail" exists, so the
-/// path is reproduced here rather than shipped as an asset.
+/// The speed-limit glyph the mockup calls "the snail", ported faithfully from the design's inline
+/// SVG and drawn in its 24×24 space. No SF Symbol "snail" exists, so the path lives here.
 private struct Snail: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 24

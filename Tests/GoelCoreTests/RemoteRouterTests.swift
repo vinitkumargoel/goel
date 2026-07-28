@@ -55,11 +55,8 @@ final class FakeRemoteBackend: RemoteBackend, @unchecked Sendable {
         if let adapterIds { network.selected = adapterIds }
         if let streams { network.streamsPerAdapter = streams }
     }
-    /// Save-folder picker. Leaving `folderHome` nil keeps the protocol's default
-    /// refusal, which is what a backend with no filesystem behind it does.
-    ///
-    /// This fake has no confinement, because the real one has none either: any
-    /// path in `subfolders` is listable, and anything absent is "not a folder".
+    /// Save-folder picker; nil `folderHome` keeps the protocol's default refusal (no filesystem behind it).
+    /// No confinement here because the real one has none: `subfolders` is listable, absent = "not a folder".
     var folderHome: String?
     var folderDefault: String = "/home/goel/Downloads"
     var subfolders: [String: [String]] = [:]
@@ -235,9 +232,8 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertTrue(out.contains("\"aggregation\":true"))
     }
 
-    /// `GET` answers with `streamsPerAdapter`; posting that object back has to
-    /// work. It used to decode only `streams`, so the field — and its range
-    /// check — disappeared without a word.
+    /// `GET` answers with `streamsPerAdapter`, so posting that object back must work — it used to
+    /// decode only `streams`, silently dropping the field and its range check.
     func testAggregationUpdateAcceptsTheResponseSpellingOfStreams() async {
         let backend = FakeRemoteBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
@@ -329,9 +325,8 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertFalse(out.contains("\"parent\""), out)
     }
 
-    /// A nil backend answer means "not a folder", which is a 404 rather than a
-    /// 403 — there is no permission being asserted, the path simply is not there.
-    /// A 200 with an empty list would read as "that folder exists and is empty".
+    /// A nil backend answer means "not a folder" → 404, not 403 (no permission is being asserted);
+    /// a 200 with an empty list would read as "that folder exists and is empty".
     func testAMissingFolderIs404() async {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
         let out = str(await router.handle(request(

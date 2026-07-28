@@ -1,18 +1,7 @@
 import Foundation
 
-/// The production HTTP download engine.
-///
-/// Backs every `.url` source. It performs **segmented** (multi-connection)
-/// downloads by issuing parallel HTTP `Range` requests, writing each segment to
-/// its own offset in a preallocated file, and emitting aggregate progress. When
-/// the server cannot satisfy ranges — or omits a `Content-Length` — it falls
-/// back to a single streaming connection. It detects range support, validates
-/// resume cursors against `ETag`/`Last-Modified`, checks free disk space before
-/// writing, and tears down `URLSession` work cleanly on pause/remove.
-///
-/// The engine is an `actor`, so all of its mutable bookkeeping is serialized and
-/// it is `Sendable` for free. The synchronous `kind` requirement is satisfied by
-/// a `nonisolated let`.
+/// The production HTTP engine for every `.url` source: **segmented** parallel `Range` GETs written at
+/// offset, one stream without ranges/`Content-Length`. Resume cursors validated by `ETag`/`Last-Modified`.
 actor HTTPEngine: HTTPConfigurable {
 
     // MARK: Identity
@@ -23,59 +12,41 @@ actor HTTPEngine: HTTPConfigurable {
     /// resume data, but has no per-file priority (a URL download is one file).
     nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .producesResumeData] }
 
-    /// Lock-based fan-out of events to subscribers. Lives outside the actor's
-    /// isolation so the synchronous `events(for:)` requirement can be satisfied
-    /// by a `nonisolated` method.
+    /// Lock-based fan-out of events to subscribers, outside the actor's isolation so the synchronous
+    /// `events(for:)` requirement can be met by a `nonisolated` method.
     private nonisolated let hub = EventHub()
 
     // MARK: Dependencies
 
-    // The engine's download state is `internal` (not `private`) so the actor's
-    // sibling-file extensions (`+Probe` / `+Transfer` / `+Resume` / `+Disk`) can
-    // reach it. Swift's `private` is file-scoped, so a split actor has no narrower
-    // option; nothing here is exposed beyond the GoelCore module.
+    // Download state is `internal`, not `private`, so the sibling-file extensions (`+Probe` /
+    // `+Transfer` / `+Resume` / `+Disk`) reach it — `private` is file-scoped. Still module-local.
 
-    /// `var` (not `let`) because `applyNetworkConfig` swaps in a freshly built
-    /// session: a `URLSessionConfiguration` is immutable once a session exists,
-    /// so timeout / proxy / cookie / User-Agent changes require a new session.
+    /// `var` because `applyNetworkConfig` swaps in a fresh session: a `URLSessionConfiguration` is
+    /// immutable once a session exists, so timeout / proxy / cookie / UA changes need a new one.
     var session: URLSession
 
     /// The active traffic profile. Drives the per-server segment count and the
     /// download bandwidth cap.
     var profile: TrafficProfile
 
-    /// Network-layer configuration (timeout / proxy / User-Agent / cookies and
-    /// the retry budget). Applied to the `URLSession` and consumed by the retry
-    /// path. Defaults preserve the engine's built-in behaviour until the manager
-    /// pushes a config derived from the user's Network settings.
+    /// Network-layer config (timeout / proxy / User-Agent / cookies / retry budget) applied to the
+    /// `URLSession`. Defaults preserve built-in behaviour until the manager pushes user settings.
     var networkConfig = HTTPEngine.defaultNetworkConfig
 
     /// Multi-path aggregation snapshot pushed from ``DownloadManager``. Default
     /// inactive so tests and single-path downloads stay on URLSession.
     var aggregationConfig = AggregationEngineConfig.disabled
 
-    /// The user's "when a file exists" choice, pushed from ``DownloadManager``.
-    /// The post-probe rename below re-resolves the on-disk name, so it must honour
-    /// the same picker ``DownloadManager/makeTask`` reads — otherwise "Overwrite"
-    /// still produced `name (1).mp4` whenever a `Content-Disposition` name
-    /// collided. Defaults to the settings default so an unconfigured engine keeps
-    /// the safe, non-clobbering behaviour.
+    /// The user's "when a file exists" choice from ``DownloadManager``: the post-probe rename must
+    /// read the same picker as ``DownloadManager/makeTask``, or "Overwrite" still made `name (1).mp4`.
     var fileConflictPolicy = "rename"
 
-    /// Aggregate open-connection accounting across ALL concurrent downloads, so
-    /// the profile's global `maxConnections` and per-host `maxConnectionsPerServer`
-    /// caps hold in sum — not merely within a single task. Reserved when a
-    /// download's segments start and released when it finishes / pauses / fails.
-    /// Distinct from the per-download ``ConnectionGovernor`` (adaptive 429 shrink).
+    /// Open-connection accounting across ALL downloads so `maxConnections` / `maxConnectionsPerServer`
+    /// hold in sum. Distinct from the per-download ``ConnectionGovernor`` (adaptive 429 shrink).
     var connectionBudget = ConnectionBudget()
 
-    /// The engine-wide download pacer, threaded into every transfer's
-    /// ``TransferPlan/sharedLimiter`` so the profile's byte cap holds in SUM across
-    /// concurrent downloads — the whole-app "Max download speed" the Traffic pane
-    /// presents — instead of each download claiming the full cap for itself. A
-    /// per-task limit is chained in FRONT of this one (see
-    /// ``SegmentedTransfer/makeLimiter``), so it stays private to its task.
-    /// Retargeted in place by ``applyLimits(_:)``: it outlives any one download.
+    /// Engine-wide pacer threaded into every ``TransferPlan/sharedLimiter`` so the profile's cap holds
+    /// in SUM (the Traffic pane's "Max download speed"). Per-task limits chain in FRONT of it.
     let downloadPacer: RateLimiter
 
     // MARK: Per-task state
@@ -83,51 +54,32 @@ actor HTTPEngine: HTTPConfigurable {
     var tasks: [UUID: DownloadTask] = [:]
     private var jobs: [UUID: Task<Void, Never>] = [:]
 
-    /// The most recent resume cursor STREAMED out of each download's transfer.
-    /// `pause()` persists this (rather than a fresh synchronous snapshot), which
-    /// is up to ~1s stale — see the note there for why that stays correct.
+    /// The most recent resume cursor STREAMED out of each download's transfer; `pause()` persists
+    /// this rather than a synchronous snapshot, so it is up to ~1s stale (see the note there).
     private var streamedResume: [UUID: Data] = [:]
 
     /// Flush accumulated bytes to disk every 64 KiB. Seeds each transfer's
     /// ``TransferPlan/flushSize``.
     static let flushSize = 64 * 1024
 
-    /// The per-host TCP connection ceiling for the session. `URLSession` defaults
-    /// this to **6** on macOS — below the High profile's 16-way (and Medium's
-    /// 8-way) segment fan-out, so without raising it the extra range connections
-    /// to one host silently queue behind six and segmentation is capped at six.
-    /// Set to the widest profile's per-server cap so the app's own
-    /// ``ConnectionGovernor`` — not Foundation — is always the real limiter.
-    /// (On HTTP/2 origins Foundation multiplexes over one connection regardless;
-    /// this matters for the HTTP/1.1 file servers where segmentation actually
-    /// helps.)
+    /// Per-host TCP ceiling. `URLSession` defaults to **6** on macOS — below High's 16-way fan-out, so
+    /// extra range connections silently queue. Set wide so ``ConnectionGovernor``, not Foundation, caps.
     static let maxConnectionsPerHost = 16
 
     /// Hard sanity cap on a single download's declared size, to reject an
     /// absurd server `Content-Length` that would trigger a huge preallocation.
     static let maxDownloadSize: Int64 = 100 * 1024 * 1024 * 1024 // 100 GB
 
-    /// Sent on every request. Foundation's default `URLSession` emits no
-    /// `User-Agent` for a plain data/bytes task (or an opaque CFNetwork one),
-    /// and some CDNs / WAFs (e.g. Hetzner's edge) silently reset such
-    /// connections — surfacing as `NSURLErrorNetworkConnectionLost (-1005)`
-    /// even though the same URL works from `curl`. A real UA avoids that and
-    /// identifies the client politely.
+    /// Sent on every request: Foundation emits no `User-Agent` for data/bytes tasks, and some CDNs /
+    /// WAFs (Hetzner's edge) silently reset those as `NSURLErrorNetworkConnectionLost (-1005)`.
     static let userAgent = "GoelDownloader/1.0 (macOS)"
 
-    /// Max attempts per request before giving up. Servers commonly cap the
-    /// number of *concurrent* range connections per IP and answer the excess
-    /// with `429 Too Many Requests` (Hetzner does); connections also drop
-    /// transiently. A bounded exponential backoff lets a segment recover as
-    /// sibling segments finish and free the server's connection budget,
-    /// instead of failing the whole download. Validated against a server that
-    /// admits only ~3 concurrent connections per IP.
+    /// Max attempts per request. Servers cap *concurrent* range connections per IP and 429 the excess
+    /// (validated against ~3, Hetzner); bounded backoff lets a segment recover as siblings free slots.
     static let maxRequestAttempts = 10
 
-    /// The config an unconfigured engine runs with. Deliberately mirrors the
-    /// engine's historical hard-coded behaviour (full retry budget, built-in UA,
-    /// no proxy, cookies on) so that, until `applyNetworkConfig` is called, the
-    /// engine behaves exactly as before.
+    /// The config an unconfigured engine runs with: mirrors the historical hard-coded behaviour
+    /// (full retry budget, built-in UA, no proxy, cookies on) until `applyNetworkConfig` is called.
     static let defaultNetworkConfig = HTTPNetworkConfig(
         timeout: 60,
         retryCount: maxRequestAttempts,
@@ -195,10 +147,8 @@ actor HTTPEngine: HTTPConfigurable {
         guard let job = jobs[id] else { return }
         job.cancel()
         jobs[id] = nil
-        // Persist the most recently STREAMED resume cursor. Unlike the old
-        // synchronous snapshot this is up to ~1s stale, but resume re-validates
-        // the remote's ETag / Last-Modified before reusing any stored range, so a
-        // slightly old cursor stays correct (a changed remote simply restarts).
+        // Persist the most recently STREAMED resume cursor (~1s stale): resume re-validates the
+        // remote's ETag / Last-Modified before reusing a range, so a changed remote just restarts.
         if let data = streamedResume[id] {
             tasks[id]?.resumeData = data
             emit(id, .resumeDataUpdated(data))
@@ -208,9 +158,8 @@ actor HTTPEngine: HTTPConfigurable {
         // A paused transfer has no open connections: clear the count so the detail
         // panel doesn't keep claiming e.g. "16 connections" while idle.
         tasks[id]?.connectionCount = 0
-        // Note: the manager owns the .paused transition (it called pause()). We do
-        // NOT echo .statusChanged(.paused) — a stale echo arriving after a later
-        // resume would wrongly flip the task back to paused and strand it.
+        // The manager owns the .paused transition, so we do NOT echo .statusChanged(.paused):
+        // a stale echo arriving after a later resume would flip the task back to paused.
     }
 
     func resume(_ id: DownloadTask.ID) async {
@@ -224,9 +173,8 @@ actor HTTPEngine: HTTPConfigurable {
         let task = tasks[id]
         job?.cancel()
         jobs[id] = nil
-        // Drop the task from the map BEFORE the unwind suspension below: a
-        // concurrent resume() (guarded on `tasks[id] != nil`) would otherwise slot
-        // in a fresh job for a task we're tearing down, stranding a zombie job.
+        // Drop the task from the map BEFORE the unwind suspension below, or a concurrent resume()
+        // (guarded on `tasks[id] != nil`) slots in a fresh job for a task we're tearing down.
         tasks[id] = nil
         // Wait for the download task to actually unwind before deleting, so a
         // segment writer can't flush bytes to a path we've just unlinked.
@@ -240,26 +188,19 @@ actor HTTPEngine: HTTPConfigurable {
 
     func applyLimits(_ profile: TrafficProfile) async {
         self.profile = profile
-        // The engine-wide pacer is long-lived (in-flight downloads already hold a
-        // reference), so a profile change is retargeted in place rather than
-        // waiting for the next transfer to build a fresh limiter.
+        // The engine-wide pacer is long-lived (in-flight downloads hold a reference), so a profile
+        // change is retargeted in place rather than waiting for the next transfer's fresh limiter.
         await downloadPacer.setRate(profile.maxDownloadBytesPerSec)
     }
 
-    /// Apply network-layer settings. The bandwidth cap rides on `profile` (see
-    /// `applyLimits`); this handles timeout, proxy, User-Agent, cookies and the
-    /// retry budget. Session-level knobs require a brand-new `URLSession` because
-    /// a `URLSessionConfiguration` is frozen once a session is built, so we copy
-    /// the current configuration (preserving any injected protocol classes used
-    /// by tests), mutate it, and swap the session. In-flight downloads keep the
-    /// session they captured; the change takes effect on the next download.
+    /// Apply timeout / proxy / User-Agent / cookies / retry budget (bandwidth rides on `applyLimits`).
+    /// A `URLSessionConfiguration` freezes once used, so the config is copied, mutated and swapped in.
     func applyNetworkConfig(_ config: HTTPNetworkConfig) async {
         self.networkConfig = config
 
         let cfg = session.configuration
-        // Connection (idle) timeout. We intentionally do NOT lower
-        // `timeoutIntervalForResource` to the same value — that caps the whole
-        // transfer and would kill any download longer than `timeout` seconds.
+        // Connection (idle) timeout. Deliberately NOT applied to `timeoutIntervalForResource`, which
+        // caps the whole transfer and would kill any download longer than `timeout` seconds.
         cfg.timeoutIntervalForRequest = config.timeout
         // Preserve the raised per-host connection ceiling across config swaps (a
         // fresh configuration would otherwise revert to Foundation's default of 6).
@@ -274,19 +215,16 @@ actor HTTPEngine: HTTPConfigurable {
         cfg.httpCookieStorage = config.cookieAuthEnabled ? HTTPCookieStorage.shared : nil
 
         #if os(Linux)
-        // The CFNetwork proxy-dictionary keys don't exist in swift-corelibs-foundation.
-        // Honour a manual proxy via the standard http(s)_proxy environment variables,
-        // which URLSession-on-Linux (libcurl-backed) already reads.
+        // CFNetwork proxy-dictionary keys don't exist in swift-corelibs-foundation; honour a manual
+        // proxy via http(s)_proxy env vars, which libcurl-backed URLSession-on-Linux already reads.
         switch config.proxyMode {
         case "manual" where !config.proxyHost.isEmpty && config.proxyPort > 0:
             let proxy = "http://\(config.proxyHost):\(config.proxyPort)"
             setenv("http_proxy", proxy, 1)
             setenv("https_proxy", proxy, 1)
         default:
-            // "none" (explicit bypass) and "system" (fall back to ambient) both
-            // must clear any manual proxy we set earlier — otherwise a manual→system
-            // switch would silently keep routing every download (and libcurl's
-            // FTP engine) through the stale proxy for the rest of the process.
+            // "none" (bypass) and "system" (ambient) must clear any manual proxy set earlier, or
+            // manual→system keeps routing every download (and libcurl's FTP) through the stale proxy.
             unsetenv("http_proxy"); unsetenv("https_proxy")
         }
         #else
@@ -316,15 +254,12 @@ actor HTTPEngine: HTTPConfigurable {
         }
         #endif
 
-        // Park the outgoing session rather than letting it be deallocated: freeing a
-        // corelibs `URLSession` can abort the process (see ``SessionPool``). In-flight
-        // probes keep running on it and finish normally.
+        // Park the outgoing session rather than deallocating it: freeing a corelibs `URLSession` can
+        // abort the process (see ``SessionPool``). In-flight probes finish normally on it.
         SessionPool.retire(session)
 
-        // Rebuild the session with the SAME redirect sanitizer the initializers
-        // install — a configuration copy never carries the delegate, so omitting
-        // it here would silently drop cross-host `Authorization`/`Cookie`/`Referer`
-        // stripping for the probe path (this runs on launch and every settings change).
+        // Rebuild with the SAME redirect sanitizer: a configuration copy never carries the delegate,
+        // so omitting it silently drops cross-host `Authorization`/`Cookie`/`Referer` stripping.
         self.session = URLSession(configuration: cfg,
                                   delegate: RedirectSanitizer.shared, delegateQueue: nil)
     }
@@ -343,10 +278,8 @@ actor HTTPEngine: HTTPConfigurable {
         fileConflictPolicy = policy
     }
 
-    /// Resolve a URL's name + size for the preview, adapting the concrete
-    /// ``resolveMetadata(for:currentName:)`` probe to the engine-agnostic seam. The
-    /// URL-derived base name mirrors the scheduler's default-name rule so a failed
-    /// refinement returns the same fallback the manager would have chosen.
+    /// Resolve a URL's name + size for the preview, adapting ``resolveMetadata(for:currentName:)``
+    /// to the engine-agnostic seam. The base name mirrors the scheduler's default-name fallback.
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard case .url(let url) = source else { return nil }
         let last = url.lastPathComponent
@@ -398,12 +331,8 @@ actor HTTPEngine: HTTPConfigurable {
                                         extraHeaders: task.outboundHeaders(for: url))
 
             if let total = probe.totalBytes {
-                // On a resume/retry the partial file already holds the bytes
-                // recorded in the resume cursor, so only the remaining tail needs
-                // fresh space. Preflighting the full `total` would wrongly reject a
-                // mostly-complete large download on a disk that can hold the
-                // remainder but not the whole file again. Falls back to `total` when
-                // there is no usable cursor (a genuinely fresh download).
+                // Only the remaining tail needs fresh space: preflighting the full `total` would
+                // wrongly reject a mostly-complete download. Falls back to `total` with no cursor.
                 let alreadyOnDisk = Self.resumedBytesOnDisk(task.resumeData, total: total)
                 try checkDiskSpace(task.saveDirectory, needed: max(0, total - alreadyOnDisk))
             }
@@ -417,19 +346,8 @@ actor HTTPEngine: HTTPConfigurable {
                 mimeType: probe.contentType
             )))
 
-            // Refine the on-disk name now that response headers are known:
-            // `Content-Disposition` supplies the real filename, `Content-Type` a
-            // missing extension. Doing this before the first byte is written means
-            // there is no partial file to move — which is also why it is confined to
-            // a run that has downloaded nothing yet. `makeTask` resolves the on-disk
-            // name conflict "at creation time only — never on resume/retry, which
-            // reuse the stored name and rely on the partial file still living at the
-            // same path"; this is the other half of that rule. On a resume the partial
-            // already sits at `savePath`, so `PathSafety.uniqueName` would step OVER
-            // it to a free name: the cursor's bytes would no longer be at the
-            // destination, `SegmentedTransfer.destinationHoldsPreallocation` would
-            // refuse the cursor, and every pause/resume cycle would restart from byte
-            // zero under yet another name.
+            // Refine the on-disk name from `Content-Disposition`/`Content-Type`, but ONLY on a run
+            // that wrote nothing: on resume `uniqueName` steps over the partial and restarts at byte 0.
             let isFirstAttempt = task.resumeData == nil && task.bytesDownloaded == 0
             if isFirstAttempt,
                let better = Self.refinedName(current: task.name,
@@ -464,9 +382,8 @@ actor HTTPEngine: HTTPConfigurable {
                 ))
             }
 
-            // Per-request knobs captured once: the per-request settings (User-Agent,
-            // retry budget) the off-actor byte pumps can't read from actor state.
-            // Basic auth only ever rides over TLS (cleartext otherwise).
+            // Per-request knobs (User-Agent, retry budget) captured once: off-actor byte pumps can't
+            // read actor state. Basic auth only ever rides over TLS (cleartext otherwise).
             let authorization = url.scheme?.lowercased() == "https"
                 ? url.host.flatMap { credentials.basicAuthorization(forHost: $0) }
                 : nil
@@ -479,21 +396,14 @@ actor HTTPEngine: HTTPConfigurable {
                 extraHeaders: resolved.outboundHeaders(for: url)
             )
 
-            // Resolve this download's connection count from the cross-download
-            // budget and charge it to the aggregate accounting, releasing on EVERY
-            // exit — clean completion, failure, or pause/remove cancellation. The
-            // transfer itself owns no aggregate state, so the engine resolves the
-            // count here and hands it down via the plan.
+            // Resolve the connection count from the cross-download budget and charge it, releasing on
+            // EVERY exit. The transfer owns no aggregate state, so the engine resolves and hands down.
             let host = url.host
             let canSegment = probe.totalBytes != nil && probe.acceptsRanges
             var segmentCount = canSegment ? resolveSegmentCount(total: probe.totalBytes!, host: host) : 1
 
-            // Multi-path: when aggregation is active and the server supports
-            // ranges, open enough segments that each adapter gets real work.
-            // (Previously we clamped to resolveSegmentCount's 64 KiB floor first,
-            // which often collapsed to 1 segment → only one NIC was used.)
-            // The task's own choice wins over the server-wide default; `.auto` (or
-            // no choice at all) resolves back to whatever the policy decided.
+            // Multi-path: open enough segments that each adapter gets real work — clamping to
+            // resolveSegmentCount's 64 KiB floor collapsed to 1 segment. Task choice beats the default.
             let resolution = AggregationPolicy.bindTargets(
                 for: resolved.networkSelection,
                 defaultAdapters: aggregationConfig.isActive ? aggregationConfig.adapters : [],
@@ -503,10 +413,8 @@ actor HTTPEngine: HTTPConfigurable {
             }
             let boundAdapters = resolution.adapters
             if boundAdapters.count >= 2, !canSegment {
-                // ≥2 NICs resolved but the server hid range support: aggregation
-                // cannot start. The mid-flight prober watches only when a size +
-                // validator exist, so surface exactly what will happen instead of
-                // an idle-NIC mystery.
+                // ≥2 NICs but the server hid range support, so aggregation can't start. The mid-flight
+                // prober only watches when size + validator exist — say so, not an idle-NIC mystery.
                 let willReprobe = SegmentedTransfer.shouldAttemptUpgrade(
                     totalBytes: probe.totalBytes, acceptsRanges: probe.acceptsRanges,
                     etag: probe.etag, lastModified: probe.lastModified)
@@ -528,11 +436,8 @@ actor HTTPEngine: HTTPConfigurable {
                     globalRoom: globalRoom)
             }
 
-            // Only the task's OWN limit rides on the plan: the profile ceiling is
-            // enforced by `downloadPacer`, which every concurrent transfer shares so
-            // the cap holds in sum. Folding them together here (the old
-            // `effectiveDownloadCap`) gave each download a private copy of the
-            // profile cap, so N downloads reached N × it.
+            // Only the task's OWN limit rides on the plan; the profile ceiling is enforced by the
+            // shared `downloadPacer`. Folding them (old `effectiveDownloadCap`) let N downloads hit N×.
             let maxBytesPerSecond = resolved.speedLimitBytesPerSec ?? 0
 
             // Mirror URLs ride along for the segmented path (the manager already
@@ -557,9 +462,8 @@ actor HTTPEngine: HTTPConfigurable {
                 boundAdapters: boundAdapters,
                 connectTimeout: networkConfig.timeout
             )
-            // Mid-flight upgrade channel: attached unconditionally — the
-            // transfer's own gate (size + validators + no range support) is
-            // authoritative; plans built directly in tests default to nil.
+            // Mid-flight upgrade channel, attached unconditionally: the transfer's own gate
+            // (size + validators + no range support) is authoritative; test-built plans default nil.
             let extraGrants = ExtraGrantCounter()
             plan.requestExtraConnections = { [weak self] wanted in
                 guard let self, wanted > 0 else { return 0 }
@@ -569,25 +473,16 @@ actor HTTPEngine: HTTPConfigurable {
             }
             let planned = PlannedTransfer(plan: plan)
 
-            // Charge the cross-download budget with the connection count the
-            // transfer will ACTUALLY open, and release the same count on every
-            // exit. The resume path may restore a different range count than the
-            // freshly-resolved `segmentCount`, so reserve against the transfer's
-            // resolved fan-out rather than `segmentCount`. `PlannedTransfer.init`
-            // is synchronous, so the budget read above and this reservation remain
-            // atomic on the actor (no suspension between them).
+            // Charge the cross-download budget with the fan-out the transfer will ACTUALLY open —
+            // resume may restore a different count. `PlannedTransfer.init` is sync, so this is atomic.
             let reserved = planned.connectionCount
             reserveConnections(host: host, count: reserved)
-            // Balance to zero on EVERY exit: initial reservation + every mid-flight
-            // grant (the grant closure records into `extraGrants` before it returns,
-            // and it is only ever called from the transfer's main task, so every
-            // grant happens-before this defer).
+            // Balance to zero on EVERY exit: initial reservation + every mid-flight grant. The grant
+            // closure runs only on the transfer's main task, so each grant happens-before this defer.
             defer { releaseConnections(host: host, count: reserved + extraGrants.total) }
 
-            // Consume the transfer's progress on the actor: update our task and
-            // re-emit the SAME EngineEvents as before (.progress, .fileProgress,
-            // .resumeDataUpdated). The byte pumps run off-actor; this is the only
-            // place transfer state crosses back onto the engine.
+            // Consume the transfer's progress on the actor, re-emitting the same EngineEvents
+            // (.progress/.fileProgress/.resumeDataUpdated). Byte pumps run off-actor; only crossing.
             let progressStream = planned.progress
             let consumer = Task { [weak self] in
                 for await update in progressStream { await self?.applyProgress(id, update) }
@@ -605,11 +500,8 @@ actor HTTPEngine: HTTPConfigurable {
 
             try Task.checkCancellation()
 
-            // Integrity check: when an expected hash was supplied, verify the
-            // finished file before declaring success. `verify` is awaited so the
-            // CPU-bound hashing runs off the actor; a mismatch throws
-            // `.checksumMismatch`, which `DownloadError(mapping:)` passes straight
-            // through to the catch block below.
+            // Verify any expected hash before declaring success; awaited so hashing runs off the actor.
+            // A mismatch throws `.checksumMismatch`, passed straight through by `DownloadError(mapping:)`.
             if let expected = task.expectedChecksum {
                 tasks[id]?.downloadSpeed = 0
                 tasks[id]?.status = .verifying
@@ -618,10 +510,8 @@ actor HTTPEngine: HTTPConfigurable {
                 guard matched else { throw DownloadError.checksumMismatch }
             }
 
-            // Final forced progress: the streamed ticks are throttled, so the last
-            // flush may not have produced one — guarantee a 100% emit here. Clear
-            // the live connection count first so the detail panel doesn't keep
-            // showing open connections on a completed transfer.
+            // Final forced progress: streamed ticks are throttled, so guarantee a 100% emit here.
+            // Clear the live connection count so the detail panel stops showing open connections.
             tasks[id]?.bytesDownloaded = outcome.bytesWritten
             tasks[id]?.connectionCount = 0
             tasks[id]?.downloadSpeed = 0
@@ -635,9 +525,8 @@ actor HTTPEngine: HTTPConfigurable {
         } catch is CancellationError {
             // Our own pause()/remove() cancelled the job; they publish the state.
         } catch {
-            // Distinguish OUR cancellation (Task.isCancelled) from an EXTERNAL
-            // URLSession cancel (VPN reset, OS preemption): the latter must not be
-            // swallowed — it leaves the task stuck on "Downloading" forever.
+            // Distinguish OUR cancellation (Task.isCancelled) from an EXTERNAL URLSession cancel
+            // (VPN reset, OS preemption): swallowing the latter strands the task on "Downloading".
             if Task.isCancelled { return }
             let de: DownloadError
             if let ue = error as? URLError, ue.code == .cancelled {
@@ -652,21 +541,14 @@ actor HTTPEngine: HTTPConfigurable {
         }
     }
 
-    /// Bytes already persisted on disk for this download per its stored resume
-    /// cursor, used to preflight only the REMAINING free space a resume/retry
-    /// needs (the partial file already occupies the completed bytes). Returns 0 —
-    /// so a fresh download still checks the full size — when there is no cursor,
-    /// it doesn't decode, it describes a differently-sized remote, or it is
-    /// arithmetic nonsense. `internal` so the untrusted-cursor guards below are
-    /// assertable without driving a whole download.
+    /// Bytes already on disk per the stored resume cursor, so a resume preflights only the REMAINING
+    /// free space. Returns 0 (full-size check) on a missing, undecodable, mismatched or absurd cursor.
     static func resumedBytesOnDisk(_ resumeData: Data?, total: Int64) -> Int64 {
         guard let data = resumeData,
               let cursor = try? JSONDecoder().decode(SegmentedTransfer.ResumeCursor.self, from: data),
               cursor.totalBytes == total else { return 0 }
-        // Summed defensively: a cursor can arrive verbatim from an imported backup
-        // envelope, and `reduce(0, +)` traps on `Int64` overflow. Anything
-        // nonsensical reports 0, so the caller preflights the FULL size — the safe
-        // direction, and the same "no usable cursor" answer as the guards above.
+        // Summed defensively: a cursor can arrive verbatim from an imported backup and `reduce(0, +)`
+        // traps on `Int64` overflow. Anything nonsensical reports 0 → caller preflights the FULL size.
         var done: Int64 = 0
         for segment in cursor.completed {
             guard segment >= 0 else { return 0 }
@@ -677,16 +559,13 @@ actor HTTPEngine: HTTPConfigurable {
         return min(done, max(0, total))
     }
 
-    // Request building lives in `HTTPEngine+Requests.swift`.
-    // Server probing + the metadata preview live in `HTTPEngine+Probe.swift`.
-    // The cross-download connection budget lives in `HTTPEngine+Transfer.swift`;
-    // the per-download byte mechanics live in `SegmentedTransfer.swift`.
+    // Requests → `HTTPEngine+Requests.swift`; probing/preview → `HTTPEngine+Probe.swift`;
+    // connection budget → `HTTPEngine+Transfer.swift`; byte mechanics → `SegmentedTransfer.swift`.
 
     // MARK: Progress
 
-    /// Apply one throttled progress tick from the running transfer: update the
-    /// stored task and re-emit the engine's progress events. This is the single
-    /// place a transfer's state crosses back onto the actor.
+    /// Apply one throttled progress tick: update the stored task and re-emit progress events.
+    /// The single place a transfer's state crosses back onto the actor.
     private func applyProgress(_ id: UUID, _ update: TransferProgress) {
         guard tasks[id] != nil else { return }
         tasks[id]?.bytesDownloaded = update.bytesDownloaded

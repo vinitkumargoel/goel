@@ -66,9 +66,8 @@ struct SpeedStat: View {
     let color: Color
     var size: CGFloat = 12.5
     var minWidth: CGFloat? = nil
-    /// Which direction the arrow means, spoken. Defaults are derived from the
-    /// symbol so existing call sites need no change; pass explicitly when the
-    /// glyph is something other than a plain up/down arrow.
+    /// Which direction the arrow means, spoken. Defaults are derived from the symbol so existing call
+    /// sites need no change; pass explicitly when the glyph isn't a plain up/down arrow.
     var directionName: String? = nil
 
     var body: some View {
@@ -79,9 +78,8 @@ struct SpeedStat: View {
                 .frame(minWidth: minWidth, alignment: .trailing)
         }
         .foregroundStyle(speed > 0 ? color : Color.secondary)
-        // An arrow glyph plus "14.2 MB/s" is meaningless read aloud: VoiceOver
-        // names the arrow, not what it measures, and "—" is silent. Speak the
-        // direction and the rate in words instead.
+        // An arrow glyph plus "14.2 MB/s" is meaningless read aloud: VoiceOver names the arrow, not what
+        // it measures, and "—" is silent. Speak the direction and the rate in words.
         .a11yGroup(label: spokenDirection, value: A11y.speed(speed))
     }
 
@@ -276,9 +274,8 @@ struct FileTypeIcon: View {
                     .font(.system(size: size * 0.5, weight: .semibold))
                     .foregroundStyle(.white)
             )
-            // Colour-coded restatement of the file's kind. Every row that shows
-            // this tile also names the file, whose extension carries the same
-            // information — so hiding it removes noise, not meaning.
+            // Colour-coded restatement of the file's kind. Every row showing this tile also names the file,
+            // whose extension carries the same information — so hiding it removes noise, not meaning.
             .a11yDecorative()
     }
 }
@@ -293,13 +290,8 @@ struct KindBadge: View {
             .padding(.vertical, 1)
             .background(task.kindBadgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
             .foregroundStyle(task.kindBadgeColor)
-            // The chip's own tint sits under its text, so the fill eats contrast
-            // the palette had already spent: at the mockup's 20% the badge
-            // measured 2.94–4.20:1 across the four themes. 12% is the highest
-            // opacity at which the chip still reads as tinted while giving the
-            // text back most of its headroom (3.83–7.95:1). It does not clear
-            // 4.5:1 everywhere — see docs/vpat.md, SC 1.4.3.
-            // "BT" and "HLS" are read as letter soup; say the protocol.
+            // The chip's tint sits under its text, eating contrast: at the mockup's 20% it measured 2.94–4.20:1.
+            // 12% gives most of it back (3.83–7.95:1) but not everywhere — see docs/vpat.md, SC 1.4.3.
             .accessibilityLabel(task.accessibilityKindName)
     }
 }
@@ -326,9 +318,8 @@ struct MiniProgressBar: View {
             }
         }
         .frame(height: height)
-        // A bar that announces nothing is useless to a screen-reader user. Give
-        // it the progress trait and a spoken value; an indeterminate metadata
-        // fetch says so rather than reporting a misleading 0 percent.
+        // A bar that announces nothing is useless to a screen-reader user. Give it the progress trait
+        // and a spoken value; an indeterminate metadata fetch says so rather than reporting 0 percent.
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.updatesFrequently)
         .accessibilityLabel("Progress")
@@ -338,9 +329,8 @@ struct MiniProgressBar: View {
     }
 }
 
-/// The circular state button shown in each row (play / pause / retry / folder).
-/// Holds `vm` as a plain reference (not `@EnvironmentObject`) so it doesn't make
-/// every row re-render on each progress publish — see `DownloadRow`.
+/// The circular state button shown in each row (play / pause / retry / folder). Holds `vm` as a
+/// plain reference so it doesn't make every row re-render on each progress publish.
 struct StateButton: View {
     let task: DownloadTask
     let vm: AppViewModel

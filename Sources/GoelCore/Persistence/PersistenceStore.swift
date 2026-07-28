@@ -1,21 +1,8 @@
 import Foundation
 import GRDB
 
-/// On-disk persistence for the download list and user settings, backed by GRDB.
-///
-/// The store survives quit & relaunch (a v1 requirement): every ``DownloadTask``
-/// — including its resume position, error state and seeding state — and the
-/// ``AppSettings`` are written to a SQLite database so the queue can be restored
-/// exactly where the user left it.
-///
-/// Storage strategy is a pragmatic hybrid: each task is encoded to JSON and kept
-/// in a `data` blob (so the full Codable model — files, resumeData and all —
-/// round-trips losslessly and survives additive contract changes), alongside a
-/// few promoted columns (`id`, `addedAt`, `status`) for ordering and querying.
-/// Settings live in a single-row key/value table.
-///
-/// `DatabaseQueue` serializes all access internally, so the store is safe to call
-/// from any isolation domain; it is marked `@unchecked Sendable` on that basis.
+/// GRDB persistence so the queue and ``AppSettings`` survive quit & relaunch; `DatabaseQueue`
+/// serializes access (hence `@unchecked Sendable`). Tasks: JSON blob + promoted `id`/`addedAt`/`status`.
 public final class PersistenceStore: @unchecked Sendable {
 
     private let dbQueue: DatabaseQueue
@@ -108,12 +95,8 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
-    /// Load every persisted task, ordered by `addedAt` (oldest first).
-    ///
-    /// A single undecodable row (e.g. a blob written by a future/older schema, or
-    /// on-disk corruption) is skipped individually rather than failing the whole
-    /// load — mirroring ``loadHistory(limit:)`` — so one bad task can't wipe the
-    /// user's entire restored queue or break the export/backup escape hatch.
+    /// Load every persisted task, ordered by `addedAt` (oldest first). An undecodable row (foreign schema,
+    /// corruption) is skipped, like ``loadHistory(limit:)``, so one bad task can't wipe the whole queue.
     public func loadAllTasks() throws -> [DownloadTask] {
         try dbQueue.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT data FROM task ORDER BY addedAt ASC")
@@ -292,9 +275,8 @@ public final class PersistenceStore: @unchecked Sendable {
         return try encoder.encode(tasks)
     }
 
-    /// Encode an explicit task list to a self-contained JSON array. Used for
-    /// periodic backups of the live in-memory queue, without first round-tripping
-    /// through the database the way ``exportList()`` does.
+    /// Encode an explicit task list to self-contained JSON — periodic backups of the live in-memory
+    /// queue, without round-tripping through the database the way ``exportList()`` does.
     public func exportTasks(_ tasks: [DownloadTask]) throws -> Data {
         try encoder.encode(tasks)
     }
@@ -309,11 +291,8 @@ public final class PersistenceStore: @unchecked Sendable {
         return tasks
     }
 
-    /// Security: an imported file is untrusted input. Re-sanitize the `name` so
-    /// it can't carry a path-traversal payload, and reject a `saveDirectory`
-    /// that isn't an absolute, non-traversing path — a relative or `..`-laden
-    /// directory would otherwise resolve writes/deletes to an arbitrary
-    /// location. Such entries fall back to the system Downloads folder.
+    /// Security: imported files are untrusted. Re-sanitize `name` against path traversal and reject any
+    /// non-absolute or `..`-laden `saveDirectory` (arbitrary writes); those fall back to Downloads.
     public static func sanitizedForImport(_ task: DownloadTask) -> DownloadTask {
         var t = task
         t.name = PathSafety.sanitizedName(t.name, fallback: "download")

@@ -2,37 +2,23 @@ import Foundation
 
 // MARK: - Per-download network selection
 
-/// How ONE download should use the machine's network interfaces.
-///
-/// The server-wide policy (``AppSettings/aggregationEnabled`` and friends) decides
-/// what happens by default. This overrides it for a single task, which is the case
-/// a headless box actually has: two uplinks that are not equally good, and a
-/// download the operator wants pinned to one of them — or spread over both.
-///
-/// It survives as a single string in the task's JSON blob, in the `/api/add` body
-/// and behind `goel add --net`, so there is one grammar to learn rather than three:
-///
-///   - `auto`                    follow the server default
-///   - `single:wlp13s0`          every connection egresses that one interface
-///   - `aggregate`               spread across every eligible interface
-///   - `aggregate:eth0,wlan0`    spread across exactly these
+/// How ONE download uses the machine's interfaces, overriding ``AppSettings/aggregationEnabled``.
+/// One string grammar for JSON / `/api/add` / `--net`: `auto`, `single:wlp13s0`, `aggregate[:a,b]`.
 public enum NetworkSelection: Sendable, Equatable, Hashable {
     case auto
     case single(String)
     case aggregate([String])
 
-    /// Interface names are handed to `SO_BINDTODEVICE` / `IP_BOUND_IF` as C strings,
-    /// so they are validated here rather than at the syscall: `IFNAMSIZ` is 16
-    /// including the terminator, and only these characters ever appear in one.
+    /// Interface names go to `SO_BINDTODEVICE` / `IP_BOUND_IF` as C strings, so validate here, not
+    /// at the syscall: `IFNAMSIZ` is 16 including the terminator, and only these chars appear.
     public static func isValidInterfaceName(_ name: String) -> Bool {
         guard !name.isEmpty, name.count <= 15 else { return false }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_.:"))
         return name.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
-    /// Parse the wire/CLI form. Returns nil for anything malformed — callers report
-    /// that rather than silently falling back to `auto`, because "I asked for one
-    /// interface and got all of them" is exactly the surprise worth refusing.
+    /// Parse the wire/CLI form; nil for anything malformed so callers report rather than silently
+    /// falling back to `auto` — "I asked for one interface and got all of them" is worth refusing.
     public init?(spec raw: String) {
         let text = raw.trimmingCharacters(in: .whitespaces)
         if text.isEmpty || text.caseInsensitiveCompare("auto") == .orderedSame {
@@ -104,12 +90,8 @@ extension AggregationPolicy {
         }
     }
 
-    /// Turn a per-download selection into bind targets.
-    ///
-    /// - Parameters:
-    ///   - selection: the task's override; nil or `.auto` defers to `defaultAdapters`.
-    ///   - defaultAdapters: what the server-wide policy would have used.
-    ///   - available: every interface currently eligible to bind, aggregation on or off.
+    /// Turn a per-download `selection` into bind targets: nil/`.auto` defers to `defaultAdapters`
+    /// (what the server-wide policy would use); `available` is every currently bindable interface.
     public static func bindTargets(
         for selection: NetworkSelection?,
         defaultAdapters: [BoundAdapter],

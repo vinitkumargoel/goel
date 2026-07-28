@@ -3,14 +3,8 @@ import XCTest
 
 // MARK: - Stub URLProtocol
 
-/// A configurable in-memory HTTP server used to drive `HTTPEngine` deterministically.
-///
-/// It serves a fixed payload and can be switched between three behaviours:
-///  * range support + Content-Length (segmented path),
-///  * no range support but with Content-Length (single-connection fallback),
-///  * no Content-Length at all (streaming, unknown total).
-/// Bodies are delivered in chunks with an optional inter-chunk delay so tests can
-/// observe and interrupt in-flight progress.
+/// Configurable in-memory HTTP server driving `HTTPEngine` deterministically: ranges + Content-Length,
+/// length only, or neither; chunked bodies with a delay so tests can interrupt in-flight progress.
 final class StubURLProtocol: URLProtocol {
 
     struct Config {
@@ -25,15 +19,11 @@ final class StubURLProtocol: URLProtocol {
         /// Served as the `Content-Disposition` header when non-nil (drives the
         /// server-suggested filename).
         var contentDisposition: String? = nil
-        /// While delivering an UNRANGED `200` body, block once this many bytes have
-        /// been handed to the client and stay blocked until ``releaseUnrangedBody()``
-        /// (or the request is cancelled). Makes the mid-flight-upgrade tests causal
-        /// rather than timed: the stream physically cannot finish before the test has
-        /// observed the range probe and released it.
+        /// Block an UNRANGED `200` body after this many bytes until ``releaseUnrangedBody()`` or cancel.
+        /// Makes mid-flight-upgrade tests causal, not timed: the stream can't finish before the probe.
         var holdUnrangedBodyAt: Int? = nil
-        /// When set, UNRANGED `200`s serve this body (with its own `Content-Length`)
-        /// while ranged GETs keep serving ``data``. Lets a test express a
-        /// probe-vs-stream asymmetry (e.g. a stream longer than the probed size).
+        /// When set, UNRANGED `200`s serve this body (own `Content-Length`) while ranged GETs serve
+        /// ``data`` — expresses a probe-vs-stream asymmetry, e.g. a stream longer than the probed size.
         var unrangedData: Data? = nil
         /// When set, UNRANGED `200`s carry this `ETag` instead of ``etag`` — the
         /// stream half of the validator triangle, independent of what the probe sees.
@@ -60,9 +50,8 @@ final class StubURLProtocol: URLProtocol {
         lock.lock(); defer { lock.unlock() }; return _config
     }
 
-    /// User-Agent header observed on every request the engine issued. Used to
-    /// prove the engine never sends a request without a UA (see the WAF/-1005
-    /// regression).
+    /// User-Agent header observed on every request the engine issued — proves it never sends one
+    /// without a UA (see the WAF / -1005 regression).
     private static var _seenUserAgents: [String?] = []
     static func resetSeenUserAgents() { lock.lock(); _seenUserAgents = []; lock.unlock() }
     static func seenUserAgents() -> [String?] {
@@ -72,10 +61,8 @@ final class StubURLProtocol: URLProtocol {
         lock.lock(); _seenUserAgents.append(userAgent); lock.unlock()
     }
 
-    /// Number of upcoming ranged GETs to answer with `429 Too Many Requests`
-    /// (simulating a server that rate-limits concurrent range connections).
-    /// Each such request decrements the counter; once drained, requests are
-    /// served normally — so a client that retries with backoff still completes.
+    /// Number of upcoming ranged GETs to answer with `429 Too Many Requests`. Each decrements the
+    /// counter; once drained requests are served normally, so a client that backs off still completes.
     private static var _force429Count = 0
     static func forceNext429s(_ n: Int) { lock.lock(); _force429Count = n; lock.unlock() }
     private static func consume429() -> Bool {
@@ -102,10 +89,8 @@ final class StubURLProtocol: URLProtocol {
         lock.lock(); _seenRangeHeaders.append(range); lock.unlock()
     }
 
-    /// Answer the next `n` ranged GETs whose range spans MORE than one byte with a
-    /// full `200` body — the "range support flapped back" case. Single-byte ranges
-    /// (the midpoint probe) are exempt, so the knob can never eat the probe that
-    /// triggers the upgrade under test.
+    /// Answer the next `n` multi-byte ranged GETs with a full `200` — the "range support flapped back"
+    /// case. Single-byte (midpoint probe) ranges are exempt, so the knob can't eat the probe under test.
     private static var _force200MultiByteCount = 0
     static func force200ForMultiByteRangedGETs(_ n: Int) {
         lock.lock(); _force200MultiByteCount = n; lock.unlock()
@@ -156,9 +141,8 @@ final class StubURLProtocol: URLProtocol {
         if cfg.supportsRanges,
            let rangeHeader,
            let (start, end) = Self.parseRange(rangeHeader, total: total) {
-            // Flap-back: a server that momentarily forgets range support answers a
-            // ranged GET with the whole body. Only multi-byte ranges are eligible,
-            // so the single-byte midpoint probe still gets its 206.
+            // Flap-back: a server that momentarily forgets range support answers a ranged GET with the
+            // whole body. Only multi-byte ranges are eligible, so the midpoint probe still gets its 206.
             if end > start, Self.consumeForce200() {
                 if cfg.sendContentLength { headers["Content-Length"] = "\(total)" }
                 sendResponse(url: url, status: 200, headers: headers)
@@ -173,9 +157,8 @@ final class StubURLProtocol: URLProtocol {
             return
         }
 
-        // Full body -> 200. An UNRANGED 200 may serve its own body/ETag and may be
-        // parked mid-body, so the probe-vs-stream asymmetries the mid-flight
-        // upgrade has to survive are expressible.
+        // Full body -> 200. An UNRANGED 200 may serve its own body/ETag and park mid-body, expressing
+        // the probe-vs-stream asymmetries the mid-flight upgrade has to survive.
         let unranged = rangeHeader == nil
         let body = unranged ? (cfg.unrangedData ?? cfg.data) : cfg.data
         if unranged, let override = cfg.unrangedETagOverride { headers["ETag"] = override }
@@ -189,11 +172,8 @@ final class StubURLProtocol: URLProtocol {
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
     }
 
-    /// Bodies are delivered inline on URLSession's protocol loader thread, which
-    /// is SHARED across the session's requests. A parked body would therefore
-    /// wedge every other request — the mid-flight range probe above all — so a
-    /// held delivery moves to its own queue. Unheld deliveries keep the original
-    /// inline behaviour so existing tests are untouched.
+    /// Bodies deliver inline on URLSession's SHARED loader thread, so a parked body would wedge every
+    /// other request (the mid-flight range probe above all) — held deliveries get their own queue.
     private static let heldBodyQueue = DispatchQueue(label: "StubURLProtocol.held-body",
                                                      attributes: .concurrent)
 
@@ -207,10 +187,8 @@ final class StubURLProtocol: URLProtocol {
         let chunk = max(1, cfg.chunkSize)
         while offset < data.count {
             if stopped { return }
-            // Park the body at `holdAt` until the test releases it (or the client
-            // cancels). Spinning is fine: a held delivery runs on `heldBodyQueue`,
-            // so the loader thread stays free and other requests — the range probe
-            // above all — keep being served while this one waits.
+            // Park the body at `holdAt` until released (or cancelled). Spinning is fine: a held delivery
+            // runs on `heldBodyQueue`, so the loader thread stays free to serve the range probe.
             if let holdAt, offset >= holdAt {
                 while !Self.unrangedBodyReleased() && !stopped { usleep(10_000) }
                 if stopped { return }
@@ -416,12 +394,8 @@ final class HTTPEngineTests: XCTestCase {
             return nil
         }
         XCTAssertFalse(progressConnCounts.isEmpty)
-        // Single-connection fallback: no progress sample may report more than one
-        // active connection (more than one would mean segmentation kicked in), and
-        // at least one mid-transfer sample reports exactly 1. The terminal 100%
-        // emit reports 0 by design — the engine clears the live connection count on
-        // completion so the Connections panel doesn't show an open connection on a
-        // finished transfer.
+        // Single-connection fallback: no sample may report >1 connection (that would mean segmentation),
+        // and one mid-transfer sample reports exactly 1. The terminal 100% emit reports 0 by design.
         XCTAssertTrue(progressConnCounts.contains(1), "single-connection transfer must report one active connection")
         XCTAssertTrue(progressConnCounts.allSatisfy { $0 <= 1 }, "fallback must never open more than one connection")
 
@@ -457,10 +431,8 @@ final class HTTPEngineTests: XCTestCase {
 
     // MARK: (d2) Filename resolution from Content-Disposition / Content-Type
 
-    /// Reproduces the opaque-CDN-URL bug: the URL's last path component is a huge
-    /// query token (no extension, well over NAME_MAX), which previously failed the
-    /// write with "the file name … is invalid". The server's `Content-Disposition`
-    /// supplies the real name; the engine renames the task and saves correctly.
+    /// Reproduces the opaque-CDN-URL bug: a last path component over NAME_MAX with no extension used to
+    /// fail the write with "the file name … is invalid". `Content-Disposition` supplies the real name.
     func testRenamesFromContentDisposition() async throws {
         let payload = deterministicData(120 * 1024)
         StubURLProtocol.set(.init(
@@ -570,9 +542,8 @@ final class HTTPEngineTests: XCTestCase {
 
     func testPauseStopsProgress() async throws {
         let payload = deterministicData(512 * 1024)
-        // 64 chunks × 50ms ≈ 3.2s if served serially. `supportsRanges` lets the engine
-        // fetch ranges in parallel, so the wall-clock is that divided by however many
-        // segments the machine opens — the budget has to survive the widest split.
+        // 64 chunks × 50 ms ≈ 3.2 s serially, but `supportsRanges` lets the engine fetch in parallel —
+        // the wall-clock budget has to survive the widest segment split the machine opens.
         StubURLProtocol.set(.init(
             data: payload, supportsRanges: true, sendContentLength: true,
             etag: "\"v3\"", chunkSize: 8 * 1024, chunkDelayMicros: 50_000
@@ -591,9 +562,8 @@ final class HTTPEngineTests: XCTestCase {
 
         await engine.add(task)
 
-        // Pause as soon as ANY progress is observed, rather than after a fixed sleep.
-        // A fixed sleep raced the transfer: on a fast machine the parallel segments
-        // finished inside it, and the test then failed for having completed.
+        // Pause as soon as ANY progress is observed, not after a fixed sleep: a fixed sleep raced the
+        // transfer — on a fast machine the parallel segments finished inside it and the test failed.
         for _ in 0..<400 where box.get() == 0 {
             try await Task.sleep(nanoseconds: 5_000_000)
         }
@@ -614,10 +584,8 @@ final class HTTPEngineTests: XCTestCase {
 
     // MARK: Live network smoke test (opt-in)
 
-    /// End-to-end against the real Hetzner speed-test server, which both
-    /// rejects UA-less requests (-1005) and rate-limits concurrent ranges
-    /// (429) — the exact conditions that broke the app. Skipped unless
-    /// `GOEL_LIVE_NET=1` so the normal suite stays hermetic.
+    /// End-to-end against the real Hetzner speed-test server, which rejects UA-less requests (-1005) and
+    /// rate-limits concurrent ranges (429). Skipped unless `GOEL_LIVE_NET=1`, so the suite stays hermetic.
     func testLiveHetznerDownloadCompletes() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GOEL_LIVE_NET"] == "1",
                           "set GOEL_LIVE_NET=1 to run the live network test")

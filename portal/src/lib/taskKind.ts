@@ -16,16 +16,8 @@ export function kindLabel(kind: string): string {
 /** Drives the coloured tile next to a row. Purely cosmetic. */
 export type FileType = 'iso' | 'video' | 'archive' | 'app' | 'magnet' | 'doc'
 
-/**
- * Guess a file type from the name, with two deliberate special cases carried
- * over from the original portal:
- *
- *  - A torrent still fetching metadata has no real name yet, so it shows the
- *    magnet tile regardless of what the placeholder says.
- *  - A `.mkv` inside a torrent is still a video even though torrents get their
- *    own badge — the tile describes the payload, the badge describes the
- *    protocol.
- */
+/** Guess a file type from the name; a torrent still fetching metadata shows the magnet tile, and a
+ *  `.mkv` in a torrent is still video — the tile describes the payload, the badge the protocol. */
 export function fileType(task: Pick<TaskRow, 'name' | 'kind'> & { statusToken: StatusToken | '' }): FileType {
   const n = task.name.toLowerCase()
   if (task.statusToken === 'metadata') return 'magnet'
@@ -49,10 +41,8 @@ export function isActive(status: StatusToken): boolean {
   return ACTIVE.has(status)
 }
 
-/**
- * The single action a row's inline button offers, or null when there is nothing
- * useful to do (a completed or seeding task).
- */
+/** The single action a row's inline button offers, or null when there is nothing useful to do
+ *  (a completed or seeding task). */
 export type RowAction = 'pause' | 'resume' | 'retry'
 
 export function rowAction(status: StatusToken): RowAction | null {

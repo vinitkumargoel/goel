@@ -18,8 +18,7 @@ struct QRCodeView: View {
                 .background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
-                // A QR code is an image of a string — useless to anyone who
-                // can't point a camera at it, and silent to VoiceOver. Expose
+                // A QR code is an image of a string — useless without a camera and silent to VoiceOver. Expose
                 // the encoded address so it can be read out and copied instead.
                 .accessibilityLabel("QR code for \(text)")
         }

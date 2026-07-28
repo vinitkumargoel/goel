@@ -38,9 +38,8 @@ public struct TrafficProfile: Codable, Sendable, Hashable, Identifiable {
 
     public var isDownloadUnlimited: Bool { maxDownloadBytesPerSec <= 0 }
 
-    /// The effective per-task download cap in bytes/sec: this profile's global
-    /// ceiling tightened by an optional per-task limit. `0` on either side means
-    /// "unlimited"; when both are finite the smaller wins.
+    /// Effective per-task download cap (bytes/sec): profile ceiling tightened by an optional task
+    /// limit. `0` on either side means unlimited; when both are finite the smaller wins.
     public func effectiveDownloadCap(taskLimit: Int64?) -> Int64 {
         var cap = maxDownloadBytesPerSec
         if let taskLimit, taskLimit > 0 {
@@ -65,11 +64,8 @@ public struct TrafficProfile: Codable, Sendable, Hashable, Identifiable {
 
     public static let medium = TrafficProfile(
         name: "Medium",
-        // Medium is the default profile, so its download cap is the ceiling most
-        // users silently run under. 10 MiB/s (~84 Mbps) throttled anyone on modern
-        // broadband without them realising; 50 MiB/s (~419 Mbps) keeps Medium a
-        // genuine limiter while no longer capping typical fast connections. Users
-        // who want a truly hard limit pick Low; those who want none pick High.
+        // Default profile, so this cap is what most users silently run under: 10 MiB/s (~84 Mbps)
+        // throttled modern broadband unnoticed; 50 MiB/s (~419 Mbps) still limits without doing that.
         maxDownloadBytesPerSec: 50 * MB,
         maxUploadBytesPerSec: 1 * MB,
         maxConnections: 200,

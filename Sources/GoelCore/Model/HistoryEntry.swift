@@ -1,10 +1,7 @@
 import Foundation
 
-/// One finished download, archived at the moment it first completed. History
-/// outlives the queue: removing a task from the list (or the task list being
-/// cleared) never touches its history row, so "what did I download in March"
-/// keeps an answer. Entries are small on purpose — no resume blobs, no live
-/// counters — just what re-downloading or finding the file again needs.
+/// One finished download, archived when it first completed. History outlives the queue: removing or
+/// clearing tasks never touches its row. Small on purpose — only what re-downloading/finding needs.
 public struct HistoryEntry: Codable, Sendable, Identifiable, Hashable {
     /// The task's id at completion time (also the archive row's identity).
     public let id: UUID

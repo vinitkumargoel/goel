@@ -63,12 +63,8 @@ public struct SFTPVolumeSpace: Sendable, Hashable {
 /// Rendering and parsing of POSIX permission bits.
 public enum SFTPPermissions {
 
-    /// `rwxr-xr-x`-style rendering of the low 12 bits.
-    ///
-    /// setuid, setgid and the sticky bit replace the corresponding execute
-    /// character — `s`/`t` when execute is also set, `S`/`T` when it is not —
-    /// which is the convention `ls` uses and therefore the one people can read
-    /// without translating.
+    /// `rwxr-xr-x`-style rendering of the low 12 bits. setuid/setgid/sticky replace the execute
+    /// character — `s`/`t` when execute is set, `S`/`T` when not — the convention `ls` uses.
     public static func string(for mode: UInt32) -> String {
         var out = ""
         let triples: [(read: UInt32, write: UInt32, execute: UInt32, special: UInt32, letter: Character)] = [
@@ -89,9 +85,8 @@ public enum SFTPPermissions {
         return out
     }
 
-    /// Parse a 3- or 4-digit octal mode as typed by a person. Returns nil for
-    /// anything that isn't one, so a typo can never be applied as a *different*
-    /// valid mode.
+    /// Parse a 3- or 4-digit octal mode as typed by a person. Returns nil for anything else, so a
+    /// typo can never be applied as a *different* valid mode.
     public static func parse(octal text: String) -> UInt32? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard (3...4).contains(trimmed.count),

@@ -72,10 +72,8 @@ final class RemoteAccessTests: XCTestCase {
     func testApplyStartsAndStops() async {
         let manager = DownloadManager()
         let access = RemoteAccess()
-        // Kernel-reserved ports, so a concurrently running test process cannot be
-        // holding either of them — `allowLocalEndpointReuse` means a collision
-        // would not even be reported as a bind failure, it would just silently
-        // share the socket. See ``LoopbackPort``.
+        // Kernel-reserved ports so a concurrent test process can't hold either — with
+        // `allowLocalEndpointReuse` a collision silently shares the socket. See ``LoopbackPort``.
         let port = Int(LoopbackPort.reserve())
         let port2 = Int(LoopbackPort.reserve())
         var running = await access.isRunning

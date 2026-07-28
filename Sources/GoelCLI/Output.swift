@@ -39,11 +39,8 @@ enum CLIError: Error {
     }
 }
 
-/// Terminal output helpers.
-///
-/// Colour is suppressed when stdout is not a terminal, and when `NO_COLOR` is set
-/// — `goel status` gets piped into scripts and grepped, and escape codes there are
-/// noise at best and a broken comparison at worst.
+/// Terminal output helpers. Colour is suppressed when stdout is not a terminal and when `NO_COLOR`
+/// is set — `goel status` gets piped and grepped, where escape codes break comparisons.
 enum Out {
     static let colorful: Bool = {
         if ProcessInfo.processInfo.environment["NO_COLOR"] != nil { return false }

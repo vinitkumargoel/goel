@@ -2,10 +2,8 @@ import Foundation
 
 // MARK: - Engine configuration
 
-/// Pushes the user's settings down to the concrete engines — bandwidth/connection
-/// limits (the `DownloadEngine` protocol's `applyLimits`) plus the production
-/// engines' network/session config. Split out of ``DownloadManager`` so the
-/// scheduler proper stays focused on the queue.
+/// Pushes settings down to the concrete engines — `DownloadEngine.applyLimits` plus network/session
+/// config. Split out of ``DownloadManager`` so the scheduler proper stays focused on the queue.
 extension DownloadManager {
 
     /// Push the current effective profile's bandwidth/connection caps to both
@@ -19,13 +17,8 @@ extension DownloadManager {
         await sftpEngine.applyLimits(profile)
     }
 
-    /// Push limits *and* the network/session configuration derived from the
-    /// current settings to the engines. `applyLimits` is the bandwidth/connection
-    /// hot path (kept separate); each engine then configures through its OWN typed
-    /// seam, reached by an intentional capability query (`as? HTTPConfigurable`
-    /// etc.). An engine that doesn't implement a config slice simply doesn't
-    /// conform to its refinement — no shared union, no per-engine no-ops, no
-    /// concrete-type downcast.
+    /// Push limits *and* network/session config. `applyLimits` stays separate as the hot path; each engine
+    /// configures via its own typed seam (`as? HTTPConfigurable`) — no union, no concrete-type downcast.
     func applyEngineConfigs() async {
         await applyLimits()
         await (httpEngine as? HTTPConfigurable)?.configure(httpNetworkConfig())
@@ -93,13 +86,8 @@ extension DownloadManager {
         )
     }
 
-    /// Interfaces a *single task* may bind to, whatever the default policy decided.
-    ///
-    /// Wider than ``AggregationPolicy/usableAdapters(all:selectedIds:includeExpensive:includeVPN:)``:
-    /// it ignores the aggregation toggle, the saved adapter selection and the
-    /// expensive filter, because all three describe a default the user is now
-    /// overriding on purpose. It does **not** ignore proxy or VPN policy — binding a
-    /// socket to a NIC bypasses both, and a leak is not a preference.
+    /// Interfaces a *single task* may bind to. Ignores the aggregation toggle, saved selection and
+    /// expensive filter (defaults being overridden) but **not** proxy/VPN policy — a bind bypasses both.
     public static func bindableAdapters(
         settings: AppSettings,
         vpnDefaultRoute: Bool,
@@ -164,11 +152,8 @@ extension DownloadManager {
         )
     }
 
-    /// Re-apply the HTTP engine's per-server connection cap so the *aggregate* of
-    /// all concurrently running HTTP downloads stays within the profile's global
-    /// `maxConnections`, instead of every download independently claiming the full
-    /// per-server fan-out. Best-effort: already-running segment groups keep their
-    /// governor; the tighter cap takes effect for subsequently computed segments.
+    /// Re-apply the per-server cap so all concurrent HTTP downloads *in aggregate* stay within the
+    /// profile's global `maxConnections`. Best-effort: running segment groups keep their governor.
     func reapplyHTTPBudget() async {
         var profile = settings.effectiveProfile
         let activeHTTP = tasks.filter { $0.source.kind == .http && $0.status.isActive }.count

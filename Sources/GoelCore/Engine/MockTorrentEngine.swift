@@ -1,33 +1,7 @@
 import Foundation
 
-/// A **simulated** BitTorrent engine that backs every `.torrent` source
-/// (`.magnet` and `.torrentFile`).
-///
-/// It performs no real networking. Instead it drives a deterministic, time-based
-/// simulation that exercises every part of the unified `DownloadTask` model that
-/// the HTTP engine does not:
-///
-///  * a pre-metadata `.requestingMetadata` phase for magnets, resolving after a
-///    configurable delay into a realistic **multi-file** payload,
-///  * immediate metadata for `.torrentFile` sources,
-///  * periodic `.progress` carrying **both** download *and* upload activity and a
-///    fluctuating peer (`connectionCount`),
-///  * per-file `.fileProgress`,
-///  * a distinct **seeding** lifecycle: on reaching 100% it emits `.finished`
-///    then `.statusChanged(.seeding)` (never `.completed` directly) and keeps
-///    uploading until `shareRatio` reaches the applied profile's
-///    `seedRatioLimit`, at which point it transitions to `.completed`,
-///  * per-file selection: `setFilePriority(.skip,…)` drops a file from the wanted
-///    set, shrinking the effective work the simulation has to complete.
-///
-/// The simulation is fully driven by an injectable ``Simulation`` (tick interval,
-/// bytes-per-tick, metadata delay, peer range). Tests inject a fast tick so the
-/// whole lifecycle runs in milliseconds without real sleeps dominating; the
-/// `.demo` defaults give a pleasant live demo in the app.
-///
-/// Like `HTTPEngine` it is an `actor` (so all mutable bookkeeping is serialized
-/// and it is `Sendable` for free); the synchronous `kind` requirement is met by a
-/// `nonisolated let`, and `events(for:)` is satisfied by a `nonisolated` hub.
+/// **Simulated** BitTorrent `actor` for every `.torrent` source — no networking, just a deterministic
+/// injectable ``Simulation``: metadata, up/down progress, `.finished`, then seeding to `seedRatioLimit`.
 actor MockTorrentEngine: TorrentControlling {
 
     // MARK: Identity
@@ -38,10 +12,8 @@ actor MockTorrentEngine: TorrentControlling {
     /// honours per-file priority, but emits no resume-data blobs.
     nonisolated var capabilities: EngineCapabilities { [.resolvesMetadata, .perFilePriority] }
 
-    /// Lock-based fan-out of events to subscribers. Lives outside the actor's
-    /// isolation so the synchronous `events(for:)` requirement can be satisfied
-    /// by a `nonisolated` method. Uses the shared ``EventHub`` — the same
-    /// broadcaster every other engine holds.
+    /// Lock-based event fan-out, outside actor isolation so the synchronous `events(for:)` requirement
+    /// can be met by a `nonisolated` method. Shared ``EventHub`` — the broadcaster every engine holds.
     private nonisolated let hub = EventHub()
 
     // MARK: Tunables
@@ -98,20 +70,15 @@ actor MockTorrentEngine: TorrentControlling {
     private var jobs: [UUID: Task<Void, Never>] = [:]
     private var states: [UUID: SimState] = [:]
 
-    /// Last time a `.progress`/`.fileProgress` beat was emitted per task, used to
-    /// throttle progress emission to ~12 Hz. State still advances every tick; only
-    /// the *emission* is rate-limited, so a fast simulation doesn't flood the
-    /// manager's event stream (which would back up lifecycle events behind a long
-    /// progress backlog). Lifecycle events are always emitted, unthrottled.
+    /// Per-task last `.progress`/`.fileProgress` emit, throttling to ~12 Hz (lifecycle beats stay
+    /// unthrottled): state advances every tick, but a fast sim must not back the event stream up.
     private var lastProgressEmit: [UUID: Date] = [:]
     private static let progressEmitInterval: TimeInterval = 0.08
 
     // MARK: Init
 
-    /// - Parameters:
-    ///   - simulation: pace/shape of the simulation. Defaults to `.demo`.
-    ///   - profile: initial traffic profile (its `seedRatioLimit` decides when
-    ///     seeding stops). Defaults to `.high`.
+    /// - Parameter simulation: pace/shape of the simulation. Defaults to `.demo`.
+    /// - Parameter profile: traffic profile; its `seedRatioLimit` ends seeding. Defaults to `.high`.
     init(simulation: Simulation = .demo, profile: TrafficProfile = .high) {
         self.sim = simulation
         self.profile = profile
@@ -122,11 +89,8 @@ actor MockTorrentEngine: TorrentControlling {
     func add(_ task: DownloadTask) async {
         guard tasks[task.id] == nil else { return }
         tasks[task.id] = task
-        // Seed the simulation from the task's persisted progress so a torrent
-        // restored from disk doesn't replay phases it already finished: a task
-        // with known metadata skips the "requesting info" phase, and a fully
-        // downloaded one (e.g. a restored seeding torrent) jumps straight into
-        // the seeding loop instead of re-emitting the metadata/finished beats.
+        // Seed from persisted progress so a disk-restored torrent doesn't replay finished phases:
+        // known metadata skips "requesting info"; fully downloaded jumps straight to the seeding loop.
         var state = SimState()
         if task.totalBytes != nil { state.metadataResolved = true }
         if let total = task.totalBytes, total > 0, task.bytesDownloaded >= total {
@@ -145,9 +109,8 @@ actor MockTorrentEngine: TorrentControlling {
         tasks[id]?.downloadSpeed = 0
         tasks[id]?.uploadSpeed = 0
         tasks[id]?.connectionCount = 0   // a paused torrent has no live peers
-        // Note: the manager owns the .paused transition (it called pause()). We do
-        // NOT echo .statusChanged(.paused) — a stale echo arriving after a later
-        // resume would wrongly flip the task back to paused and strand it.
+        // The manager owns the .paused transition; no .statusChanged(.paused) echo — a stale one
+        // arriving after a later resume would flip the task back to paused and strand it.
     }
 
     func resume(_ id: DownloadTask.ID) async {
@@ -213,9 +176,8 @@ actor MockTorrentEngine: TorrentControlling {
     func forceRecheck(_ id: DownloadTask.ID) async {}
     func forceReannounce(_ id: DownloadTask.ID) async {}
 
-    /// Resolve metadata for the add-confirmation preview through the engine-agnostic
-    /// seam. The mock has no real network, so it returns the same synthesised
-    /// multi-file payload its run loop would produce, exercising the preview path.
+    /// Metadata for the add-confirmation preview via the engine-agnostic seam. No real network: returns
+    /// the same synthesised multi-file payload the run loop would produce, exercising the preview path.
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         let meta = Self.synthesizeMetadata(name: "")
         return EngineMetadata(name: meta.name, totalBytes: meta.total, files: meta.files)
@@ -227,14 +189,8 @@ actor MockTorrentEngine: TorrentControlling {
         task.files[idx].priority = priority
         tasks[id] = task
 
-        // Un-skipping a file can add new wanted bytes after the run loop has already
-        // passed its download gate — either while it is parked in the seeding loop
-        // (which never re-evaluates downloadComplete) or after completion (no job at
-        // all). A real client resumes the transfer in that case; the simulation must
-        // too, otherwise the now-wanted file would stay incomplete forever while the
-        // task keeps reporting 100%. Re-arm the run loop so the bytes are fetched.
-        // The .paused case is left to resume(), which re-enters run() and re-derives
-        // the wanted set itself.
+        // Un-skipping adds wanted bytes after the run loop passed its download gate (the seeding loop
+        // never re-checks downloadComplete), so re-arm it; .paused is left to resume() to re-derive.
         guard priority != .skip,
               wantedRemaining(id) > 0,
               tasks[id]?.status != .paused
@@ -472,9 +428,8 @@ actor MockTorrentEngine: TorrentControlling {
         let cap = profile.maxUploadBytesPerSec
         guard cap > 0, sim.tickInterval > 0 else { return base }
         let perTick = Int64(Double(cap) * sim.tickInterval)
-        // Mirror the download helper's floor: a tiny upload cap combined with a
-        // short tick interval can truncate `perTick` to 0, which would stall upload
-        // accounting and loop the seed phase forever (shareRatio never rises).
+        // Floor at 1: a tiny upload cap plus a short tick can truncate `perTick` to 0, stalling
+        // upload accounting so the seed phase loops forever (shareRatio never rises).
         return max(1, min(base, perTick))
     }
 

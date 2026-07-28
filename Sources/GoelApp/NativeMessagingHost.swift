@@ -1,32 +1,12 @@
 import Foundation
 import GoelCore
 
-/// The browser side of the extension bridge.
-///
-/// Browsers spawn the same GoelDownloader binary through a wrapper script that
-/// adds `--native-messaging-host`; `main.swift` routes that invocation here
-/// instead of starting the GUI. The protocol is WebExtensions native
-/// messaging: a 4-byte little-endian length followed by that many bytes of
-/// JSON, in both directions, over stdio.
-///
-/// Received URLs are validated through the normal source allowlist, spooled to
-/// a user-only directory, and the GUI instance is poked (via a content-free
-/// URL-scheme open) to drain the spool. The filesystem spool — not the
-/// world-triggerable URL scheme — is the trust boundary, so spooled adds don't
-/// need the web-origin confirmation banner.
-///
-/// A message may also carry the browser's `Cookie` header for that URL (the
-/// extension only sends it when the user has explicitly granted the optional
-/// `cookies` permission). That is what makes logged-in downloads work at all.
-/// Cookies are credentials, so they are sanitised here, written to a `0600` file
-/// inside the already-`0700` spool, expired after ``BrowserSpool/cookieMaxAge``,
-/// and deleted the moment the app reads them. They are never logged and never
-/// echoed back to the browser.
+/// The browser side of the extension bridge (4-byte length + JSON over stdio). URLs are
+/// allowlisted and spooled to a 0700 dir; cookies are sanitised, 0600, expiring, deleted on read.
 enum NativeMessagingHost {
 
-    /// Longest message we'll read; native messaging caps host-bound messages
-    /// at 4 GB but ours are one URL plus a cookie header, so anything huge is
-    /// garbage (``CookieHeader/maxLength`` caps the cookie at 8 KiB regardless).
+    /// Longest message we'll read. Native messaging caps host-bound messages at 4 GB, but ours are
+    /// one URL plus a cookie header, so anything huge is garbage.
     private static let maxMessageBytes: UInt32 = 1 << 20
 
     /// Serve messages until the browser closes the pipe. Never returns early.
@@ -39,16 +19,11 @@ enum NativeMessagingHost {
     private static func handle(_ message: [String: Any]) {
         guard let raw = message["url"] as? String,
               let source = DownloadSource.parse(raw),
-              // The spool auto-adds with no confirmation, so it must only carry
-              // credential-free web-download schemes — never an `sftp:`/`ftp:`
-              // link a web page could use to trigger an authenticated outbound
-              // connection. (Those schemes are still allowed via the add box.)
+              // The spool auto-adds with no confirmation, so it must only carry credential-free web-download
+              // schemes — never an `sftp:`/`ftp:` link a page could use to trigger an authenticated connection.
               source.isBrowserCaptureSafe,
-              // …and only at a host a *web page* is allowed to steer this app at.
-              // The scheme check says nothing about the destination, so without
-              // this a page could spool `http://127.0.0.1:<port>/…` and have the
-              // app fetch a service on this machine that was deliberately never
-              // exposed to the browser, with no user in the loop at all.
+              // …and only at a host a *web page* may steer this app at. Without this a page could spool
+              // `http://127.0.0.1:<port>/…` and have the app fetch a service never exposed to the browser.
               Self.captureTargetAllowed(source) else {
             writeMessage(["ok": false, "error": "unsupported url"])
             return
@@ -66,29 +41,23 @@ enum NativeMessagingHost {
         do {
             try BrowserSpool.enqueue(capture)
             pokeApp()
-            // Report only *whether* cookies were accepted. Echoing the value (or
-            // the names) back into the page's extension context would hand a
-            // compromised extension a read-back oracle for HttpOnly cookies.
+            // Report only *whether* cookies were accepted. Echoing the value or the names back would hand
+            // a compromised extension a read-back oracle for HttpOnly cookies.
             writeMessage(["ok": true, "cookies": cookie != nil])
         } catch {
             writeMessage(["ok": false, "error": "spool write failed"])
         }
     }
 
-    /// Whether a capture's fetch target is a host this app may be pointed at by a
-    /// page. Same rule the network portal applies to a caller-supplied add, and for
-    /// the same reason — neither caller is the person at the keyboard. A magnet
-    /// names no host, so there is nothing to screen. This is the spelling-only
-    /// check; the app re-screens the spool against resolved addresses when it
-    /// drains it, which is where the blocking lookup belongs.
+    /// Whether a capture's target is a host a page may point this app at — the same rule the portal
+    /// applies. Spelling-only; the app re-screens against resolved addresses when it drains.
     private static func captureTargetAllowed(_ source: DownloadSource) -> Bool {
         guard let url = source.fetchTargetURL else { return true }
         return NetworkGuard.isAllowedRemoteAddTarget(url)
     }
 
-    /// Keep a browser-supplied referrer only if it is a plain web URL of sane
-    /// length and carries no header-splitting characters. The engine sends this
-    /// verbatim as `Referer`, and the page that triggered the capture chose it.
+    /// Keep a browser-supplied referrer only if it is a plain web URL of sane length with no
+    /// header-splitting characters. The engine sends this verbatim as `Referer`.
     private static func sanitizedReferer(_ raw: String?) -> String? {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty, trimmed.utf8.count <= 2048,
@@ -137,12 +106,8 @@ enum NativeMessagingHost {
     }
 }
 
-/// One capture handed over by the browser: the URL, plus the request context the
-/// page needed for it to work at all.
-///
-/// ``cookieHeader`` is a bearer credential. It lives in memory and in one `0600`
-/// spool file that is deleted on read; it is never persisted with the task (see
-/// ``DownloadTask/cookieHeader``) and never logged.
+/// One capture handed over by the browser: the URL plus the request context the page needed.
+/// ``cookieHeader`` is a bearer credential — one 0600 spool file, deleted on read, never logged.
 struct BrowserCapture: Sendable, Equatable {
     var locator: String
     /// The page the download was started from, for hosts that gate on `Referer`.
@@ -170,12 +135,8 @@ enum BrowserSpool {
     /// queue in one tick; leftovers drain on the next poke or launch.
     private static let drainCap = 100
 
-    /// How long a spooled cookie stays usable. The URL keeps forever — a capture
-    /// made while the app was closed should still queue — but the *credential*
-    /// attached to it is dropped once it is this old, so a laptop that sits shut
-    /// for a week doesn't wake up with a stale session cookie on disk. An expired
-    /// cookie is also useless: the session it belonged to has almost certainly
-    /// rotated, and the download would fail with a confusing 403 either way.
+    /// How long a spooled cookie stays usable. The URL keeps forever, but the credential is dropped
+    /// once this old, so a laptop shut for a week doesn't wake with a stale session cookie on disk.
     static let cookieMaxAge: TimeInterval = 60 * 60
 
     static var directory: URL {
@@ -189,9 +150,8 @@ enum BrowserSpool {
 
     static func enqueue(_ capture: BrowserCapture) throws {
         let fm = FileManager.default
-        // Restrict the spool to the owner (0700): this directory is a no-confirmation
-        // command channel — any file dropped here queues a download — so it must not
-        // be group/world-writable on a shared machine.
+        // Restrict the spool to the owner (0700): this directory is a no-confirmation command channel,
+        // so it must not be group/world-writable on a shared machine.
         try fm.createDirectory(at: directory, withIntermediateDirectories: true,
                                attributes: [.posixPermissions: 0o700])
         try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
@@ -202,16 +162,13 @@ enum BrowserSpool {
         if let host = capture.cookieHost { object["cookieHost"] = host }
         let data = try JSONSerialization.data(withJSONObject: object)
         try data.write(to: file, options: .atomic)
-        // The file can hold a session cookie, so tighten it past the process
-        // umask. The enclosing directory is already 0700, so the brief post-write
-        // window is not reachable by another user — this is the second lock.
+        // The file can hold a session cookie, so tighten past the process umask. The enclosing
+        // directory is already 0700, so this is the second lock, not the only one.
         try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
 
-    /// Read, delete, and return the spooled locators (oldest first, capped).
-    /// Compatibility shim for callers that only want URLs — it **discards** the
-    /// captured referer and cookies, so a logged-in download added through it
-    /// will fail. Prefer ``drainCaptures()``.
+    /// Read, delete, and return the spooled locators (oldest first, capped). Compatibility shim: it
+    /// **discards** referer and cookies, so a logged-in download added through it fails. Prefer ``drainCaptures()``.
     static func drain() -> [String] {
         drainCaptures().map(\.locator)
     }

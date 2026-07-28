@@ -2,15 +2,8 @@ import XCTest
 import Foundation
 @testable import GoelCore
 
-/// Tests for the media-conversion logic: reading ffmpeg's progress stream and
-/// its banner, deriving percentage and ETA, sizing an audio extraction, and
-/// deciding whether a stream copy is worth attempting.
-///
-/// Every case runs against fixture strings captured from real ffmpeg output. No
-/// process is spawned — that is the whole reason this logic lives in `GoelCore`
-/// as pure functions while `GoelApp` owns the process plumbing. A test that
-/// needed ffmpeg installed would be skipped on CI and would therefore protect
-/// nothing.
+/// Media-conversion logic: ffmpeg's progress stream and banner, percentage/ETA, audio-extraction
+/// sizing, stream-copy viability. Fixture strings only — an ffmpeg-dependent test is skipped on CI.
 final class MediaProgressTests: XCTestCase {
 
     // MARK: - Progress blocks
@@ -37,9 +30,8 @@ final class MediaProgressTests: XCTestCase {
         XCTAssertFalse(samples[0].isFinal)
     }
 
-    /// The realistic failure mode: a pipe read lands mid-line. Splitting on
-    /// newlines and parsing each chunk independently drops or mangles roughly
-    /// every other reading, which is why the reader carries a tail.
+    /// The realistic failure mode: a pipe read lands mid-line. Parsing each newline chunk
+    /// independently mangles roughly every other reading, which is why the reader carries a tail.
     func testBlockSplitAcrossReadsIsStitchedBackTogether() {
         var reader = MediaProgressReader()
         let midpoint = oneBlock.index(oneBlock.startIndex, offsetBy: 47)
@@ -99,9 +91,8 @@ final class MediaProgressTests: XCTestCase {
         XCTAssertEqual(samples.count, 0, "a block with nothing usable in it emits nothing")
     }
 
-    /// `out_time_ms` is a long-standing ffmpeg misnomer: it carries microseconds
-    /// despite the name. Reading it as milliseconds reports progress 1000× fast,
-    /// which parks the bar at 100% within the first second of every job.
+    /// `out_time_ms` is a long-standing ffmpeg misnomer carrying microseconds. Read as milliseconds
+    /// it reports progress 1000× fast, parking the bar at 100% in the first second of every job.
     func testOutTimeMsIsTreatedAsMicroseconds() {
         var reader = MediaProgressReader()
         let samples = reader.consume("out_time_ms=90000000\nprogress=continue\n")
@@ -158,9 +149,8 @@ final class MediaProgressTests: XCTestCase {
         XCTAssertEqual(MediaDuration.audioCodec(banner: banner), "aac")
     }
 
-    /// A silent video has no audio stream. Answering nil rather than guessing lets
-    /// the caller re-encode (always correct) instead of attempting a copy that
-    /// cannot work.
+    /// A silent video has no audio stream. Answering nil rather than guessing lets the caller
+    /// re-encode (always correct) instead of attempting a copy that cannot work.
     func testNoAudioStreamYieldsNil() {
         let silent = """
           Duration: 00:00:30.00, start: 0.000000, bitrate: 900 kb/s
@@ -245,9 +235,8 @@ final class MediaProgressTests: XCTestCase {
         XCTAssertFalse(AudioExtractionFormat.flac.canCopy(sourceCodec: "aac"))
     }
 
-    /// The trap this gate exists for: ffmpeg's WAV muxer accepts an MP3 stream, so
-    /// an unconditional `-acodec copy` hands back a `.wav` that is really an MP3
-    /// in disguise. Only true PCM may be copied into WAV.
+    /// The trap this gate exists for: ffmpeg's WAV muxer accepts an MP3 stream, so an unconditional
+    /// `-acodec copy` hands back a `.wav` that is really an MP3. Only true PCM may be copied to WAV.
     func testWavRefusesToCopyALossyStream() {
         XCTAssertFalse(AudioExtractionFormat.wav.canCopy(sourceCodec: "mp3"))
         XCTAssertFalse(AudioExtractionFormat.wav.canCopy(sourceCodec: "aac"))
@@ -273,9 +262,8 @@ final class MediaProgressTests: XCTestCase {
         XCTAssertTrue(MediaContainer.likelyStreamCopy(from: "mov", to: "mp4"))
         XCTAssertTrue(MediaContainer.likelyStreamCopy(from: "MP4", to: "MKV"), "case-insensitive")
         XCTAssertTrue(MediaContainer.likelyStreamCopy(from: "webm", to: "webm"), "same container")
-        // WebM takes only VP8/VP9/AV1 + Opus/Vorbis, so crossing into or out of it
-        // is a re-encode far more often than not — labelling it "instant" would be
-        // a promise the conversion cannot keep.
+        // WebM takes only VP8/VP9/AV1 + Opus/Vorbis, so crossing into or out of it is usually a
+        // re-encode — labelling it "instant" would be a promise the conversion cannot keep.
         XCTAssertFalse(MediaContainer.likelyStreamCopy(from: "mp4", to: "webm"))
         XCTAssertFalse(MediaContainer.likelyStreamCopy(from: "webm", to: "mp4"))
     }

@@ -50,13 +50,8 @@ enum DetailTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// The `@MainActor` bridge between SwiftUI and the `DownloadManager` actor.
-///
-/// It owns the manager, subscribes to its snapshot stream, and republishes the
-/// task list and settings as `@Published` state so the views observe a single
-/// source of truth. Every mutation funnels back through async manager calls so
-/// the UI genuinely drives the core (adding a magnet spins up the mock torrent
-/// engine, an http URL starts the real `HTTPEngine`, etc.).
+/// The `@MainActor` bridge between SwiftUI and the `DownloadManager` actor: owns the
+/// manager, republishes its snapshots as `@Published`, and funnels mutations back to it.
 @MainActor
 final class AppViewModel: ObservableObject {
 
@@ -65,10 +60,8 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var tasks: [DownloadTask] = []
     @Published private(set) var settings = AppSettings() {
         didSet {
-            // Keep the global palette in sync with the persisted theme so every
-            // `Theme.accent`/`.green`/… call site resolves against the selected
-            // named theme. Runs on load, on theme change, and on any settings
-            // commit — cheap and idempotent.
+            // Keep the global palette in sync with the persisted theme so every `Theme.accent` call
+            // site resolves against the selected theme. Cheap and idempotent.
             let selected = AppTheme(settingsValue: settings.theme)
             if ThemePalette.current != selected {
                 ThemePalette.current = selected
@@ -108,9 +101,8 @@ final class AppViewModel: ObservableObject {
     /// the toolbar's bulk-select menu (all / none / completed) drives it.
     @Published var selection: Set<DownloadTask.ID> = []
 
-    /// The "primary" row within ``selection`` — the one whose details the detail
-    /// panel shows. Tracks the most recently clicked/added row, or `nil` for the
-    /// empty-selection state.
+    /// The "primary" row within ``selection`` — whose details the detail panel shows. Tracks
+    /// the most recently clicked/added row, or nil for the empty-selection state.
     @Published var primarySelection: DownloadTask.ID?
 
     @Published var filter: SidebarFilter = .all { didSet { recomputeVisible() } }
@@ -151,31 +143,24 @@ final class AppViewModel: ObservableObject {
     @Published var editingServer: SFTPConnection?
     @Published var isServerEditorPresented: Bool = false
 
-    /// Live reachability + host/IP/OS metadata for each saved server, keyed by id
-    /// and shown in the sidebar. Refreshed by the unauthenticated probe loop and
-    /// the lazy OS detection (see `AppViewModel+SFTPStatus`).
+    /// Live reachability + host/IP/OS metadata per saved server, shown in the sidebar.
+    /// Refreshed by the unauthenticated probe loop and the lazy OS detection.
     @Published var serverMeta: [SFTPConnection.ID: ServerMeta] = [:]
 
-    /// Server ids whose one-shot OS probe is currently running, so switching away
-    /// and back to a server mid-probe doesn't fire a duplicate `/etc/os-release`
-    /// read. Internal bookkeeping — deliberately not `@Published`.
+    /// Server ids whose one-shot OS probe is running, so switching away and back mid-probe
+    /// doesn't fire a duplicate read. Internal bookkeeping — deliberately not `@Published`.
     var osProbesInFlight: Set<SFTPConnection.ID> = []
 
-    /// Server ids with a "Test connection" probe in flight. Published because the
-    /// context menu greys the item out while one is running — each probe opens a
-    /// real authenticated session, so a menu held open must not be able to stack
-    /// half a dozen of them against one host.
+    /// Server ids with a "Test connection" probe in flight. Published because the menu greys
+    /// out while one runs — each opens a real session, so a held-open menu can't stack them.
     @Published var serverTestsInFlight: Set<SFTPConnection.ID> = []
 
     /// Server ids with a credential-free host-key read in flight, so a menu held
     /// open can't stack dialogs against one host.
     @Published var hostKeyReadsInFlight: Set<SFTPConnection.ID> = []
 
-    /// Bumped by ``reconnectServer(_:)``. The browser view's `.id()` folds this
-    /// in, so a reconnect tears the old `SFTPBrowserModel` down and builds a new
-    /// one against a freshly resolved client — which is what actually re-reads
-    /// the Keychain and re-authenticates. Without it, re-selecting a server the
-    /// user is already on is a no-op and "Reconnect" does nothing.
+    /// Bumped by ``reconnectServer(_:)``; the browser's `.id()` folds it in, so a reconnect
+    /// rebuilds the model against a fresh client. Without it "Reconnect" is a no-op.
     @Published private(set) var browserGeneration: Int = 0
 
     /// Start a new browser generation (see ``browserGeneration``).
@@ -183,10 +168,8 @@ final class AppViewModel: ObservableObject {
 
     // MARK: SFTP transfers (app-wide center — see AppViewModel+SFTPTransfers)
 
-    /// Uploads and browser-initiated downloads, owned here (not by the browser
-    /// view) so they survive closing/switching the server browser and stay
-    /// cancellable. Rendered by the browser's transfer strip and the status-bar
-    /// popover. Mutated only through the `AppViewModel+SFTPTransfers` helpers.
+    /// Uploads and browser-initiated downloads, owned here so they survive closing the
+    /// browser and stay cancellable. Mutated only through the `+SFTPTransfers` helpers.
     @Published var sftpTransfers: [SFTPTransfer] = []
 
     /// Remote items copied or cut, waiting to be pasted. One slot, like Finder's.
@@ -204,15 +187,12 @@ final class AppViewModel: ObservableObject {
     /// that server re-lists to reflect the change.
     @Published var sftpMutationTick: Int = 0
 
-    /// The running Task + cancel flag for each in-flight transfer, keyed by id.
-    /// Retained here (not by any view) so a transfer outlives the browser; the
-    /// entry is dropped when the transfer settles.
+    /// The running Task + cancel flag per in-flight transfer. Retained here (not by a view)
+    /// so a transfer outlives the browser; dropped when the transfer settles.
     var sftpTransferTasks: [UUID: (task: Task<Void, Never>, cancel: CancelFlag)] = [:]
 
-    /// In-flight per-file byte counts for a folder upload (transfer id → file
-    /// index → bytes). A folder now uploads several files at once, so completions
-    /// arrive out of order; summing this map yields the row's monotonic aggregate.
-    /// Cleared when the transfer settles.
+    /// In-flight per-file byte counts for a folder upload. Files upload concurrently so
+    /// completions arrive out of order; summing yields the row's monotonic aggregate.
     var sftpFolderBytes: [UUID: [Int: Int64]] = [:]
 
     // MARK: Speed history (sparklines)
@@ -226,24 +206,19 @@ final class AppViewModel: ObservableObject {
     /// The last ~2 minutes of global throughput, sampled at 1 Hz.
     @Published private(set) var globalSpeedHistory: [SpeedSample] = []
 
-    /// Combined ↓/↑ throughput for the menu-bar status item and the bottom
-    /// status bar, refreshed on the sampler's cadence. Both read *this* (not the
-    /// live raw sums) so their labels update ~2×/sec and never flicker.
+    /// Combined ↓/↑ throughput for the menu bar and status bar, refreshed on the sampler's
+    /// cadence. Both read *this*, not the live sums, so labels update ~2×/sec without flicker.
     @Published private(set) var displayedCombinedSpeed = SpeedSample(down: 0, up: 0)
 
     /// Per-task history for the detail panel's sparkline (active tasks only).
     private(set) var taskSpeedHistory: [DownloadTask.ID: [SpeedSample]] = [:]
 
-    /// The ↓/↑ throughput each task's speed *label* should display, refreshed by
-    /// ``takeSpeedSample()``. The values themselves are already ~3 s window
-    /// averages (``SpeedMeter``, applied in the manager); this map additionally
-    /// pins the *refresh cadence* to the sampler's tick, so labels don't redraw
-    /// on every 10 Hz model publish.
+    /// The ↓/↑ throughput each task's speed label shows. Values are already ~3 s averages;
+    /// this pins the *refresh cadence* to the sampler so labels don't redraw on every publish.
     @Published private(set) var displayedTaskSpeed: [DownloadTask.ID: SpeedSample] = [:]
 
-    /// The ↓/↑ speed the UI should show for `task`: the sampled value when one
-    /// exists, else the live value (covers a task's first moments, before the
-    /// sampler has run for it).
+    /// The ↓/↑ speed to show for `task`: the sampled value when one exists, else the live
+    /// value (covers a task's first moments, before the sampler has run for it).
     func displaySpeed(for task: DownloadTask) -> SpeedSample {
         displayedTaskSpeed[task.id] ?? SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
     }
@@ -257,25 +232,19 @@ final class AppViewModel: ObservableObject {
     private static let speedPersistEveryTicks = 20
     private var speedSampleTick = 0
     private var speedSampler: Task<Void, Never>?
-    /// The payload of the last ``persistSpeedHistory()`` write, so a tick that
-    /// would re-encode byte-identical data can skip the store entirely. The save
-    /// is a whole-blob rewrite, and a session whose downloads are all paused
-    /// while an SFTP transfer runs would otherwise rewrite the same bytes every
-    /// 10 s for as long as the transfer lasts.
+    /// The payload of the last ``persistSpeedHistory()`` write, so a tick re-encoding identical
+    /// data can skip the store — the save is a whole-blob rewrite.
     private var lastPersistedSpeedHistory: [String: [SpeedHistoryPoint]] = [:]
 
-    /// Light / Dark / System, derived from (and persisted through) the core
-    /// ``AppSettings/theme`` string so the choice survives relaunch. The setter
-    /// commits via ``update(_:)`` like every other persisted preference.
+    /// Light / Dark / System, derived from and persisted through ``AppSettings/theme`` so the
+    /// choice survives relaunch. The setter commits via ``update(_:)``.
     var theme: AppTheme {
         get { AppTheme(settingsValue: settings.theme) }
         set { update { $0.theme = newValue.settingsValue } }
     }
 
-    /// The **web portal's** theme, deliberately independent of ``theme`` (the local
-    /// look). Persisted through ``AppSettings/remoteTheme`` and used only to seed
-    /// the browser's default appearance — setting it never touches
-    /// ``ThemePalette/current``, so the desktop and the web run their own themes.
+    /// The **web portal's** theme, deliberately independent of ``theme``. Used only to seed the
+    /// browser's default appearance — setting it never touches ``ThemePalette/current``.
     var remoteTheme: AppTheme {
         get { AppTheme(settingsValue: settings.remoteTheme) }
         set { update { $0.remoteTheme = newValue.settingsValue } }
@@ -291,11 +260,8 @@ final class AppViewModel: ObservableObject {
     /// Whether a web portal password has been set.
     var hasRemotePassword: Bool { !settings.remotePasswordHash.isEmpty }
 
-    /// Where the detail panel is docked (right edge vs bottom edge), derived from
-    /// and persisted through ``AppSettings/detailPanelPosition`` so the choice
-    /// survives relaunch. The setter commits via ``update(_:)`` — which reflects
-    /// the new value locally this frame before the actor round-trip — so the panel
-    /// re-docks immediately and stays put until the user flips it again.
+    /// Where the detail panel is docked, persisted through ``AppSettings/detailPanelPosition``.
+    /// ``update(_:)`` reflects it locally this frame, so the panel re-docks immediately.
     var detailPanelPosition: DetailPanelPosition {
         get { DetailPanelPosition(settingsValue: settings.detailPanelPosition) }
         set { update { $0.detailPanelPosition = newValue.settingsValue } }
@@ -310,9 +276,8 @@ final class AppViewModel: ObservableObject {
     /// A transient banner shown after notable actions (mirrors the demo toasts).
     @Published var toast: String?
 
-    /// A pending confirmation rendered by the app's own ``ConfirmDialogView`` at
-    /// the window root (replacing the system `.confirmationDialog`). `nil` when
-    /// nothing is being confirmed.
+    /// A pending confirmation rendered by the app's own ``ConfirmDialogView`` at the window
+    /// root (replacing the system `.confirmationDialog`). nil when nothing is being confirmed.
     @Published var confirmRequest: ConfirmRequest?
 
     /// The payload for the custom confirm dialog: its copy, the destructive flag
@@ -335,12 +300,8 @@ final class AppViewModel: ObservableObject {
                                         isDestructive: destructive, onConfirm: onConfirm)
     }
 
-    /// Feedback destined for the **Settings window**. Settings is a separate
-    /// scene that does NOT render the main window's toast/confirm overlays, so a
-    /// `toast` or `confirmRequest` raised from a settings pane is invisible to a
-    /// user who is looking at Settings (the button appears to do nothing). Panes
-    /// route errors and confirmations through here instead, and `SettingsView`
-    /// presents it as a native alert on the Settings window itself.
+    /// Feedback destined for the **Settings window**, a separate scene that doesn't render the
+    /// main window's overlays — so panes route errors here and Settings shows a native alert.
     @Published var settingsAlert: SettingsAlert?
 
     struct SettingsAlert: Identifiable {
@@ -377,19 +338,8 @@ final class AppViewModel: ObservableObject {
     private let manager: DownloadManager
     private var updatesTask: Task<Void, Never>?
 
-    /// Which download engines are live, for the diagnostics report.
-    ///
-    /// `DownloadManager` builds all five engines eagerly in its initialiser, so
-    /// once ``start()`` has wired up the snapshot pump every kind is backed by a
-    /// running engine; before that the app is not observing anything yet and no
-    /// engine has been started. `updatesTask` is set last in `start()`, which
-    /// makes it the honest "we are live" edge.
-    ///
-    /// Deliberately *not* derived from the queue: an engine with no active task
-    /// is idle, not absent, and `DiagnosticsBundle` already reports the
-    /// active/total task counts per kind alongside this flag. Conflating the two
-    /// would make an idle engine indistinguishable from one that failed to come
-    /// up — exactly the distinction a support report needs to preserve.
+    /// Which download engines are live, for diagnostics. `updatesTask` is set last in `start()`,
+    /// making it the honest "we are live" edge. Not derived from the queue: idle ≠ absent.
     var runningEngineKinds: Set<DownloadKind> {
         updatesTask == nil ? [] : Set(DownloadKind.allCases)
     }
@@ -415,29 +365,24 @@ final class AppViewModel: ObservableObject {
     /// Deep façade over the embedded remote-control server (Settings → Remote Access).
     private let remoteAccess = RemoteAccess()
 
-    /// Why web access is not running, in words the Web Access pane can show, or
-    /// nil when the portal is up. A refused start is fail-closed and correct, but
-    /// reporting it as success is what left Settings offering "Open" and "Copy
-    /// Link" for a portal that never bound.
+    /// Why web access is not running, in words the Web Access pane can show, or nil when the
+    /// portal is up. Reporting a refused start as success left Settings offering a dead link.
     @Published private(set) var remotePortalFailure: String?
 
     /// The last link the clipboard monitor surfaced, so the same copy isn't
     /// offered twice (and a dismissed suggestion stays dismissed).
     private var lastClipboardHandled: String?
 
-    /// Whether the one-time launch auto-select has already run. Once it has,
-    /// clearing the selection ("Select none") sticks instead of snapping back to
-    /// the first row on the next snapshot.
+    /// Whether the one-time launch auto-select has run. Once it has, "Select none" sticks
+    /// instead of snapping back to the first row on the next snapshot.
     private var hasAutoSelected = false
 
-    /// Monotonic token identifying the most recent ``toastNow`` invocation, so a
-    /// later toast's timer never gets pre-empted by an earlier one that happens to
-    /// carry identical text.
+    /// Monotonic token identifying the most recent ``toastNow`` call, so a later toast's timer
+    /// is never pre-empted by an earlier one carrying identical text.
     private var toastGeneration = 0
 
-    /// The carry-over state for the snapshot pump — the notification-diff baselines
-    /// and the queue-drain edge — folded by the pure ``SnapshotReducer`` each tick.
-    /// Replaces the four separate, order-dependent mutable fields this used to keep.
+    /// Carry-over state for the snapshot pump — notification-diff baselines and the queue-drain
+    /// edge — folded by the pure ``SnapshotReducer`` each tick.
     private var reducerState = ReducerState()
 
     /// Finder-visible per-file progress (the Safari-style pie on the file).
@@ -446,20 +391,17 @@ final class AppViewModel: ObservableObject {
     /// Dock-icon badge + aggregate progress bar.
     private let dockProgress = DockProgressService()
 
-    /// The OS side-effect boundary (posting banners + the irreversible drain
-    /// action), injected so the pure ``SnapshotReducer`` decision can be exercised
-    /// without a real `NSApp.terminate` / `pmset` / AppleScript.
+    /// The OS side-effect boundary (banners + the irreversible drain action), injected so the
+    /// pure ``SnapshotReducer`` decision is testable without a real `NSApp.terminate`.
     private let system: SystemActions
 
-    /// The live instance, for entry points that can't be injected (the
-    /// AppleScript command classes). Weak: scripting must never keep a
-    /// discarded view model alive.
+    /// The live instance, for entry points that can't be injected (AppleScript command
+    /// classes). Weak: scripting must never keep a discarded view model alive.
     static private(set) weak var shared: AppViewModel?
 
     init(system: SystemActions = LiveSystemActions()) {
-        // File-backed persistence under Application Support, falling back to an
-        // ephemeral in-memory store if the directory can't be created — and
-        // surfacing a warning when it does, rather than silently losing state.
+        // File-backed persistence under Application Support, falling back to an in-memory store
+        // if the directory can't be created — and warning when it does, not silently losing state.
         let (store, warning) = Self.makeStore()
         self.manager = DownloadManager(store: store)
         self.persistenceWarning = warning
@@ -488,9 +430,8 @@ final class AppViewModel: ObservableObject {
         guard updatesTask == nil else { return }
         await manager.restore()
         settings = await manager.currentSettings
-        // Seed the delegate's gate from the restored preference, so the very first
-        // window close after launch already knows whether there is a menu-bar way
-        // back into the app. `update(_:)` keeps it current from here on.
+        // Seed the delegate's gate from the restored preference, so the first window close after
+        // launch already knows whether there is a menu-bar way back in.
         ActiveWorkGate.shared.menuBarVisible = settings.menuBarExtraEnabled
         syncMediaJobCenter()
         // Restore each download's persisted speed-chart samples so the throughput
@@ -512,9 +453,8 @@ final class AppViewModel: ObservableObject {
             // VPN/tunnel iface up (utun/ipsec/…) — separate from multi-path adapter
             // list, which intentionally excludes tunnels.
             let vpnActive = AdapterDirectory.hasActiveVPNInterface()
-            // Bound out here, not read as `self?.` inside the Task. The policy
-            // calls above go through `core` and must still run when the view
-            // model has gone; only the UI refresh depends on it being alive.
+            // Bound out here, not read as `self?.` inside the Task: the policy calls go through
+            // `core` and must still run when the view model has gone.
             let model = self
             Task {
                 await core.applyNetworkPolicy(expensive: expensive, constrained: constrained)
@@ -537,24 +477,20 @@ final class AppViewModel: ObservableObject {
         }
         await refreshAggregationState()
         startSpeedSampler()
-        // Returning to the app promptly reconciles the list with the filesystem:
-        // a download the user deleted or moved in Finder disappears without
-        // waiting for the manager's periodic sweep.
+        // Returning to the app reconciles the list with the filesystem, so a download deleted in
+        // Finder disappears without waiting for the periodic sweep.
         appActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
             guard let self else { return }
             let manager = self.manager
             Task { await manager.reconcileCompletedFiles() }
-            // An administrator can install or remove a configuration profile
-            // while the app is running; a policy that only took effect at launch
-            // would be one the user could dodge by never quitting.
+            // An administrator can install or remove a profile while the app runs; a policy that only
+            // took effect at launch could be dodged by never quitting.
             self.refreshManagedPolicy()
         }
-        // Best-effort flush of the speed-chart samples on quit. AppKit does not
-        // await fire-and-forget Tasks on willTerminate, so do not half-wire
-        // manager.shutdown() here. Periodic save remains the real guarantee;
-        // this narrows the last-few-seconds gap.
+        // Best-effort flush of speed samples on quit — AppKit doesn't await fire-and-forget Tasks
+        // on willTerminate. Periodic save is the real guarantee; this narrows the last-seconds gap.
         appTerminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -564,11 +500,8 @@ final class AppViewModel: ObservableObject {
         applyRemoteAccess()
         SparkleUpdaterService.shared.startIfConfigured()
         if !SparkleUpdaterService.shared.isConfigured, settings.autoCheckUpdates {
-            // Nobody is in the loop for the launch-time check, so it must carry
-            // the user's proxy and User-Agent like every other automatic fetch —
-            // otherwise the one request the user never asked for is also the one
-            // that ignores their egress setting. Snapshotted here rather than read
-            // inside the Task so the check uses the settings as they are now.
+            // Nobody is in the loop for the launch-time check, so it carries the user's proxy and
+            // User-Agent like every other automatic fetch. Snapshotted here so it uses current settings.
             let feed = settings.updateFeedURL
             let proxy = Self.proxySpec(from: settings)
             let agent = Self.updateUserAgent(from: settings)
@@ -580,10 +513,8 @@ final class AppViewModel: ObservableObject {
                 }
             }
         }
-        // Downloads handed over from outside the UI: URL scheme, magnet links,
-        // .torrent double-clicks, the Services menu, and the drop basket.
-        // Registering also drains anything that arrived before we were ready
-        // (a cold launch triggered by a link/file open).
+        // Downloads handed over from outside the UI: URL scheme, magnets, .torrent opens, Services,
+        // drop basket. Registering also drains anything that arrived before we were ready.
         NotificationCenter.default.addObserver(
             forName: ExternalAdd.notification, object: nil, queue: .main
         ) { [weak self] note in
@@ -596,9 +527,8 @@ final class AppViewModel: ObservableObject {
         // Anything the browser extension spooled while we weren't running
         // (including dev builds, where the URL-scheme poke can't reach us).
         drainBrowserSpool()
-        // Prime notification authorization so persisted "notify on completed/failed"
-        // preferences can actually deliver banners after a relaunch (not just after
-        // the user re-toggles a switch).
+        // Prime notification authorization so persisted "notify on completed/failed" preferences
+        // deliver banners after a relaunch, not just after the user re-toggles a switch.
         if settings.notifyOnAdded || settings.notifyOnCompleted || settings.notifyOnFailed {
             NotificationService.requestAuthorization()
         }
@@ -616,9 +546,8 @@ final class AppViewModel: ObservableObject {
                         self.tasks = snapshot
                         self.recomputeVisible()
                     }
-                    // Auto-select the first visible row exactly once, at launch, so
-                    // "Select none" sticks and the empty-detail state stays reachable
-                    // while downloads are active.
+                    // Auto-select the first visible row exactly once at launch, so "Select none" sticks and
+                    // the empty-detail state stays reachable while downloads are active.
                     if self.primarySelection == nil && !self.hasAutoSelected {
                         if let first = self.visibleTasks.first?.id {
                             self.hasAutoSelected = true
@@ -662,18 +591,16 @@ final class AppViewModel: ObservableObject {
         return tasks.first { $0.id == primarySelection }
     }
 
-    // Row selection (isSelected, selectOnly, toggleSelection, selectAll,
-    // selectCompleted, selectNone, visibleNeighbor) lives in
-    // `AppViewModel+Selection.swift`.
+    // Row selection (isSelected, selectOnly, toggleSelection, selectAll, selectCompleted,
+    // selectNone, visibleNeighbor) lives in `AppViewModel+Selection.swift`.
 
     // MARK: Aggregate stats (status bar)
 
     var totalDownloadSpeed: Double { tasks.reduce(0) { $0 + $1.downloadSpeed } }
     var totalUploadSpeed: Double { tasks.reduce(0) { $0 + $1.uploadSpeed } }
 
-    /// Live throughput from the SFTP transfer center (browser uploads/downloads),
-    /// which runs outside the download-manager task list. Only in-flight rows
-    /// count.
+    /// Live throughput from the SFTP transfer center, which runs outside the download-manager
+    /// task list. Only in-flight rows count.
     var sftpUploadSpeed: Double {
         sftpTransfers.reduce(0) { $0 + ($1.isActive && $1.direction == .upload ? $1.speed : 0) }
     }
@@ -829,10 +756,8 @@ final class AppViewModel: ObservableObject {
         let mirrors = preview.kind == .http ? mirrors : nil
         // Pre-add file deselection only applies to (multi-file) torrents.
         let skipFiles = preview.kind == .torrent ? deselectedFileIDs : nil
-        // Carry the metadata already gathered on the add screen into the task so
-        // the download doesn't re-derive it. For torrents the size/file list come
-        // from libtorrent's own handle (a seeded value would flicker against the
-        // poller's pre-metadata state), so only the resolved name is seeded there.
+        // Carry metadata gathered on the add screen into the task so the download doesn't re-derive
+        // it. Torrents seed only the name — size/files come from libtorrent's own handle.
         let seededBytes = preview.kind == .torrent ? nil : preview.totalBytes
         let seededFiles = preview.kind == .torrent ? [] : preview.files
         Task {
@@ -857,19 +782,11 @@ final class AppViewModel: ObservableObject {
 
     // MARK: Clipboard capture
 
-    /// Called by the clipboard monitor when new text is copied. Surfaces the first
-    /// downloadable *file* link as a suggestion banner — unless it's the same link
-    /// we already offered, or it's already in the queue.
-    ///
-    /// The passive banner deliberately skips web-page URLs (an article, a repo, a
-    /// search result the user copied to read, not to download): it offers only
-    /// sources that ``DownloadSource/looksLikeDownloadableFile`` accepts. The
-    /// explicit Add box still takes any allowed URL, so nothing is lost — this
-    /// only stops the banner nagging on ordinary browsing copies.
+    /// Called when new text is copied. Surfaces the first downloadable *file* link as a
+    /// suggestion banner, skipping web-page URLs so ordinary browsing copies don't nag.
     func handleClipboardChange(_ text: String) {
-        // Trust: clipboard is never auto-queued — only surfaces a suggestion.
-        // Content still filtered to downloadable-looking file URLs so ordinary
-        // page copies don't nag (explicit Add still accepts any allowed URL).
+        // Trust: clipboard is never auto-queued — only surfaces a suggestion. Content is filtered
+        // to downloadable-looking file URLs; explicit Add still accepts any allowed URL.
         let disposition = InboundAdd.classify(
             origin: .clipboard,
             payload: .init(lines: text)
@@ -900,11 +817,8 @@ final class AppViewModel: ObservableObject {
 
     // MARK: External adds
 
-    /// Handle a download handed over from outside the UI. Web-triggerable
-    /// sources (`goeldownloader://` links) surface as the suggestion banner so
-    /// the user confirms; explicit user actions queue directly. Local
-    /// `.torrent` file opens construct the source directly — the remote-input
-    /// parser deliberately rejects `file:` URLs.
+    /// Handle a download handed over from outside the UI. Web-triggerable `goeldownloader://`
+    /// sources surface as a banner for confirmation; explicit user actions queue directly.
     private func handleExternalAdd(_ payload: ExternalAdd.Payload) {
         NSApp.activate(ignoringOtherApps: true)
         if payload.drainBrowserSpool {
@@ -926,30 +840,22 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Queue everything the browser extension spooled through the
-    /// native-messaging host. The spool contents were validated by the host
-    /// and can only be written by local processes, so no confirmation banner —
-    /// the user already clicked "download" in their browser.
+    /// Queue everything the browser extension spooled through the native-messaging host. The
+    /// host validated it and only local processes can write it, so no confirmation banner.
     private func drainBrowserSpool() {
-        // Re-validate the scheme allowlist here too: the spool file is
-        // user-only, but auto-adding without confirmation must never initiate an
-        // authenticated `sftp:`/`ftp:` connection on a web page's behalf.
+        // Re-validate the scheme allowlist here too: the spool is user-only, but auto-adding must
+        // never open an authenticated `sftp:`/`ftp:` connection on a web page's behalf.
         let captures = BrowserSpool.drainCaptures().filter {
             DownloadSource.parse($0.locator)?.isBrowserCaptureSafe == true
         }
         guard !captures.isEmpty else { return }
-        // One add per capture rather than one batched add: each capture carries
-        // its own cookie scope and referrer, and a batch would have to flatten
-        // them into a single set — which is exactly the leak the host-exact
-        // scoping exists to prevent.
+        // One add per capture, not one batched add: each carries its own cookie scope and referrer,
+        // and batching would flatten them into one set — the leak host-exact scoping prevents.
         for capture in captures {
             guard let source = DownloadSource.parse(capture.locator) else { continue }
             Task {
-                // The host screen the native-messaging host applied was on the
-                // spelling only. Repeat it here against the addresses the name
-                // actually resolves to: a page that spools `http://localtest.me/…`
-                // is asking for this machine's loopback with the digits hidden
-                // behind DNS, and nothing downstream of an auto-add asks the user.
+                // The host screen the messaging host applied was on the spelling only. Repeat it against
+                // resolved addresses: `http://localtest.me/…` is loopback with the digits hidden behind DNS.
                 if let target = source.fetchTargetURL,
                    await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(target) == false { return }
                 let task = await manager.add(source: source, priority: .normal,
@@ -973,9 +879,8 @@ final class AppViewModel: ObservableObject {
     func resume(_ id: DownloadTask.ID) { Task { await manager.resume(id) } }
     func remove(_ id: DownloadTask.ID, deleteData: Bool) {
         let name = tasks.first { $0.id == id }?.name
-        // Move the primary to the adjacent visible row *before* the snapshot drops
-        // the deleted task, so selection lands on a neighbour that's actually in
-        // the filtered list rather than jumping to the raw-first task.
+        // Move the primary to the adjacent visible row *before* the snapshot drops the deleted
+        // task, so selection lands on a neighbour in the filtered list, not the raw-first task.
         let nextPrimary = visibleNeighbor(after: id)
         Task { await manager.remove(id, deleteData: deleteData) }
         selection.remove(id)
@@ -1019,15 +924,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Commit a settings change. Mutates a copy of ``settings``, pushes it through
-    /// the manager (which persists it and re-applies the engine configs), then
-    /// republishes the committed value and fires the app-layer side effects the
-    /// core deliberately doesn't own — login-item registration and notification
-    /// authorization. The manager round-trip runs off the main actor so editing a
-    /// settings field never blocks the UI.
-    /// Refresh adapter list + multi-path inactive reason (Settings UI + engine).
-    /// Only republishes / re-applies engines when something actually changed so a
-    /// 1 Hz live poll stays cheap and the list can update the moment a NIC appears.
+    /// Commit a settings change: push a mutated copy through the manager, republish it, and fire
+    /// the app-layer side effects the core doesn't own (login item, notification authorization).
     func refreshAggregationState() {
         let next = AdapterDirectory.enumerate()
         let vpn = AdapterDirectory.hasActiveVPNInterface()
@@ -1079,36 +977,16 @@ final class AppViewModel: ObservableObject {
         aggregationLiveTask = nil
     }
 
-    /// Commit a settings edit.
-    ///
-    /// `mutate` runs twice, on purpose. Once here against the **effective**
-    /// settings, so bound controls reflect the edit this frame; and once inside
-    /// the actor, where ``DownloadManager/apply(_:)`` runs it against the user's
-    /// own `storedSettings` — the only thing ever persisted.
-    ///
-    /// Handing the actor the already-mutated effective copy instead (`{ $0 = copy }`)
-    /// looks equivalent and is not: ``settings`` here is the managed (MDM) overlay
-    /// *applied* to the user's row, so a wholesale assignment would write an
-    /// administrator's forced keys into that row as if the user had chosen them,
-    /// and those values would then survive removal of the profile that imposed
-    /// them. Sending the mutation rather than the result is what keeps the user's
-    /// own settings round-tripping — hence `@escaping @Sendable`, which is what
-    /// lets the same closure cross into the actor.
+    /// Commit a settings edit. `mutate` runs twice on purpose — here against the effective
+    /// settings, and inside the actor against the user's own row, which is all that persists.
     func update(_ mutate: @escaping @Sendable (inout AppSettings) -> Void) {
         var copy = settings
         mutate(&copy)
-        // Clamp here as well as in the actor. `guard copy != settings` below
-        // compares the *pre*-clamp value, so an out-of-range edit that the actor
-        // would pull back to the value already held would be committed here and
-        // then silently reverted — one frame of a control showing a number the
-        // engine never got. Validating first makes the two sides agree.
+        // Clamp here as well as in the actor: `guard copy != settings` compares the pre-clamp
+        // value, so an out-of-range edit would commit here and be silently reverted.
         copy = copy.validated()
-        // Skip redundant commits. `@Published settings` fires on every assignment
-        // regardless of equality, so a no-op write (e.g. SwiftUI writing a control's
-        // current value back through its binding) would needlessly re-persist,
-        // re-apply engine configs, and re-publish — which, for scene-level bindings
-        // like the menu-bar toggle, can spin into an update loop. A true no-op is a
-        // no-op.
+        // Skip redundant commits: `@Published` fires on every assignment, so a no-op write would
+        // re-persist and re-publish — which for scene-level bindings can spin into an update loop.
         guard copy != settings else { return }
         let launchChanged = copy.launchAtLogin != settings.launchAtLogin
         let notificationsNewlyWanted =
@@ -1119,9 +997,8 @@ final class AppViewModel: ObservableObject {
         settings = copy
         clipboardMonitor?.isEnabled = copy.clipboardMonitorEnabled
         ActiveWorkGate.shared.menuBarVisible = copy.menuBarExtraEnabled
-        // The ffmpeg override and the concurrency cap can both be edited while a
-        // conversion is queued, so the center is re-synced on every commit rather
-        // than only at launch.
+        // The ffmpeg override and the concurrency cap can both be edited while a conversion is
+        // queued, so the center is re-synced on every commit rather than only at launch.
         syncMediaJobCenter()
         Task {
             settings = await manager.apply(mutate)
@@ -1166,9 +1043,8 @@ final class AppViewModel: ObservableObject {
 
     // MARK: Updates
 
-    /// Manual "Check for Updates…". Sparkle handles it (with its own UI) in
-    /// packaged builds configured with an appcast; everything else uses the
-    /// built-in HTTPS release-feed checker.
+    /// Manual "Check for Updates…". Sparkle handles it in packaged builds configured with an
+    /// appcast; everything else uses the built-in HTTPS release-feed checker.
     func checkForUpdates() {
         if SparkleUpdaterService.shared.checkForUpdates() { return }
         let feed = settings.updateFeedURL
@@ -1189,19 +1065,15 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// The user's proxy configuration as a `Sendable` snapshot, for the guarded
-    /// update fetch. The core keeps the same one-liner for its own auto-fetches
-    /// (`DownloadManager.proxySpec(from:)`), but that one is internal to
-    /// `GoelCore`; this is the UI layer's copy, not a second policy.
+    /// The user's proxy configuration as a `Sendable` snapshot for the guarded update fetch.
+    /// The core's equivalent is internal to `GoelCore`; this is the UI copy, not a second policy.
     private static func proxySpec(from settings: AppSettings) -> NetworkGuard.ProxySpec {
         NetworkGuard.ProxySpec(mode: settings.proxyMode, type: settings.proxyType,
                                host: settings.proxyHost, port: settings.proxyPort)
     }
 
-    /// The User-Agent for the update fetch: the user's configured string, with
-    /// the shipped default standing in when they have cleared the field — an
-    /// empty header is not "no preference", it is a request that several release
-    /// hosts (GitHub among them) simply refuse.
+    /// The User-Agent for the update fetch, falling back to the shipped default when the user
+    /// cleared the field — an empty header is not "no preference", and several hosts refuse it.
     private static func updateUserAgent(from settings: AppSettings) -> String {
         let trimmed = settings.userAgent.trimmingCharacters(in: .whitespaces)
         return trimmed.isEmpty ? "GoelDownloader/1.0 (macOS)" : trimmed
@@ -1221,9 +1093,8 @@ final class AppViewModel: ObservableObject {
         if sortKey == key { sortAscending.toggle() } else { sortKey = key; sortAscending = true }
     }
 
-    /// Open the downloaded payload with its default app (the media player for
-    /// video). Multi-file torrents open their largest wanted file — the movie,
-    /// not the .nfo (libtorrent file paths are relative to the save directory).
+    /// Open the downloaded payload with its default app. Multi-file torrents open their largest
+    /// wanted file — the movie, not the .nfo (paths are relative to the save directory).
     func openFile(_ task: DownloadTask) {
         NSWorkspace.shared.open(URL(fileURLWithPath: task.primaryFilePath))
     }
@@ -1252,12 +1123,8 @@ final class AppViewModel: ObservableObject {
 
     // MARK: Snapshot pump
 
-    /// Fold the manager's snapshot into user-visible effects: run the pure
-    /// ``SnapshotReducer`` (notification diff + the one-shot queue-drain edge)
-    /// against the carried ``reducerState``, then apply its decision through the
-    /// injected ``SystemActions``. The reducer removes the old order-dependence
-    /// between the drain check and the notification pass — both read the same
-    /// prior state — and makes the destructive shutdown edge testable in Core.
+    /// Fold the manager's snapshot into user-visible effects: run the pure ``SnapshotReducer``
+    /// against ``reducerState``, then apply its decision through the injected ``SystemActions``.
     private func pump(_ snapshot: [DownloadTask]) {
         let env = ReducerEnv(
             notify: NotifyPrefs(onAdded: settings.notifyOnAdded,
@@ -1268,10 +1135,8 @@ final class AppViewModel: ObservableObject {
             autoShutdownAction: settings.autoShutdownAction)
         let output = SnapshotReducer.reduce(reducerState, snapshot, env)
         reducerState = output.state
-        // Publish the one fact `AppDelegate` needs to refuse to quit on the last
-        // window closing. Reusing the reducer's own active-work computation keeps
-        // the two from drifting; SFTP transfers and media conversions are outside
-        // the queue snapshot, so they are folded in by `refreshActiveWorkGate`.
+        // Publish the one fact `AppDelegate` needs to refuse to quit on last-window-close. Reusing
+        // the reducer's computation stops drift; SFTP and media work is folded in separately.
         refreshActiveWorkGate()
         // Drain first (it may terminate the app), then the banners — matching the
         // original checkQueueDrained → emitNotifications ordering.
@@ -1284,9 +1149,8 @@ final class AppViewModel: ObservableObject {
 
     // MARK: Speed sampling
 
-    /// Sample aggregate and per-task throughput on a steady cadence for the
-    /// speed labels (every tick) and sparklines (1 Hz). Runs for the app's
-    /// lifetime; the ring caps keep memory flat.
+    /// Sample aggregate and per-task throughput on a steady cadence for speed labels (every
+    /// tick) and sparklines (1 Hz). Runs for the app's lifetime; ring caps keep memory flat.
     private func startSpeedSampler() {
         guard speedSampler == nil else { return }
         speedSampler = Task { [weak self] in
@@ -1299,9 +1163,8 @@ final class AppViewModel: ObservableObject {
     }
 
     private func takeSpeedSample() {
-        // Fully idle (no active task/transfer, a flat history, and a zeroed
-        // combined readout): skip the sample so the @Published writes don't
-        // re-render the whole app twice a second while it sits doing nothing.
+        // Fully idle (no active work, flat history, zeroed readout): skip the sample so the
+        // @Published writes don't re-render the whole app twice a second for nothing.
         let hasActive = tasks.contains { $0.status.isActive } || sftpTransfers.contains { $0.isActive }
         if !hasActive,
            globalSpeedHistory.allSatisfy({ $0 == SpeedSample(down: 0, up: 0) }),
@@ -1312,9 +1175,8 @@ final class AppViewModel: ObservableObject {
         // Histories advance at 1 Hz (every other tick) so the graphs keep
         // their time span; labels refresh every tick.
         let recordHistory = speedSampleTick.isMultiple(of: 2)
-        // The status-bar / menu-bar combined value: download queue + SFTP transfers.
-        // Equality-gate @Published writes so a steady rate does not rebuild the
-        // whole EnvironmentObject tree twice a second.
+        // The status-bar / menu-bar combined value: download queue + SFTP transfers. Equality-gated
+        // so a steady rate doesn't rebuild the whole EnvironmentObject tree twice a second.
         let nextCombined = SpeedSample(down: combinedDownloadSpeed, up: combinedUploadSpeed)
         if nextCombined != displayedCombinedSpeed { displayedCombinedSpeed = nextCombined }
         var sample = SpeedSample(down: 0, up: 0)
@@ -1341,31 +1203,15 @@ final class AppViewModel: ObservableObject {
             globalSpeedHistory.append(sample)
             if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }
         }
-        // Persist the per-task chart samples on a coarse cadence (~5 s) so a
-        // download's throughput graph resumes after relaunch. Only runs while
-        // something is active (the idle guard above returns before here), so a
-        // fully paused/completed session never overwrites the restored samples.
+        // Persist per-task chart samples on a coarse (~5 s) cadence so graphs resume after relaunch.
+        // Only while something is active, so a paused session never overwrites restored samples.
         if speedSampleTick.isMultiple(of: Self.speedPersistEveryTicks) {
             persistSpeedHistory()
         }
     }
 
-    /// Write the current per-task speed-chart samples to the store (task-id
-    /// string → sample ring), filtered to tasks that still exist so removed
-    /// downloads don't linger on disk.
-    ///
-    /// Two filters keep this cheap, because the store side is a whole-blob
-    /// re-encode and single-row rewrite, not a delta:
-    ///
-    /// * Terminal tasks are skipped. The point of persisting is that a download's
-    ///   throughput graph *resumes* after relaunch; a completed or failed row has
-    ///   nothing left to resume, and the app deliberately keeps finished rows in
-    ///   the list, so without this a user with hundreds of them would have every
-    ///   one of their frozen rings re-encoded every 10 s for the sake of the one
-    ///   download that is actually moving. Their samples stay in memory for the
-    ///   rest of the session, so the on-screen sparkline is unaffected.
-    /// * An unchanged payload is not written at all (see
-    ///   ``lastPersistedSpeedHistory``).
+    /// Write current per-task speed samples to the store, filtered to tasks that still exist.
+    /// Terminal tasks are skipped and an unchanged payload isn't written — the store re-encodes wholesale.
     private func persistSpeedHistory() {
         var out: [String: [SpeedHistoryPoint]] = [:]
         for task in tasks where !task.status.isTerminal {
@@ -1455,9 +1301,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    // Queue automation (auto-shutdown): the drain-edge DECISION now lives in the
-    // pure `SnapshotReducer` (folded by `pump`), and the irreversible OS EFFECT in
-    // `LiveSystemActions.perform(_:)` behind the `SystemActions` port.
+    // Queue automation (auto-shutdown): the drain-edge DECISION lives in the pure
+    // `SnapshotReducer`, the irreversible OS EFFECT in `LiveSystemActions.perform(_:)`.
 
     // MARK: Full-fidelity backup (JSON)
 
@@ -1475,17 +1320,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Import a backup produced by ``exportBackup(to:)``: adopts its settings
-    /// and merges its tasks (existing sources are skipped; restored tasks come
-    /// back paused).
-    ///
-    /// Asks first. A backup file is untrusted input — it can arrive by email,
-    /// sync or download rather than from this user's own export — and adopting
-    /// its settings is a wholesale, un-undoable replacement of preferences the
-    /// user tuned by hand. ``DownloadManager/importEnvelope(_:)`` already refuses
-    /// to take the security-sensitive fields from a file at all; this is the
-    /// other half of that guarantee, because a file picker communicates neither
-    /// what is about to change nor what is protected.
+    /// Import a backup from ``exportBackup(to:)``: adopts its settings, merges its tasks (paused).
+    /// Asks first — a backup file is untrusted input and adopting settings is un-undoable.
     func importBackup(from url: URL) {
         let data: Data
         do {
@@ -1536,15 +1372,8 @@ final class AppViewModel: ObservableObject {
         (try? JSONDecoder().decode(BackupSettingsOnly.self, from: data))?.settings
     }
 
-    /// Settings fields the import would genuinely change, named as they appear
-    /// in the backup file and sorted so the same file always reads the same way.
-    ///
-    /// Advisory only. It re-states, by key prefix, the refusal list in
-    /// `DownloadManager.sanitizedImportedSettings` — which is internal to the
-    /// core and so cannot be asked directly — purely so the dialog does not
-    /// promise changes the actor will decline to make. If the two ever drift the
-    /// worst case is a dialog that over- or under-counts; the refusal itself
-    /// happens in the actor, so a protected value still cannot arrive from a file.
+    /// Settings fields the import would genuinely change, named as in the backup file. Advisory
+    /// only: it restates the actor's refusal list so the dialog can't promise refused changes.
     private static func adoptableSettingChanges(from incoming: AppSettings,
                                                 current: AppSettings) -> [String] {
         guard incoming != current,
@@ -1566,18 +1395,15 @@ final class AppViewModel: ObservableObject {
         }.sorted()
     }
 
-    /// A settings value as its on-disk JSON object, so fields can be compared
-    /// without enumerating every one of them by hand (and without a new field
-    /// silently going unmentioned in the dialog).
+    /// A settings value as its on-disk JSON object, so fields can be compared without
+    /// enumerating each by hand (and without a new field silently going unmentioned).
     private static func jsonFields(_ settings: AppSettings) -> [String: Any]? {
         guard let data = try? JSONEncoder().encode(settings) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
-    /// The confirmation body: what changes, then what is protected regardless of
-    /// what the file asks for. The second half matters most — it is the answer to
-    /// "could this file quietly point my downloads through someone else's proxy
-    /// or unlock my remote portal?", and the answer is no.
+    /// The confirmation body: what changes, then what is protected regardless. The second half
+    /// answers "could this file re-point my downloads or unlock my portal?" — no.
     private static func importSummary(changes: [String]) -> String {
         let head: String
         switch changes.count {
@@ -1654,9 +1480,8 @@ final class AppViewModel: ObservableObject {
         toastNow(label.map { "Labelled “\($0)”" } ?? "Label removed")
     }
 
-    /// The shared single-field text prompt: an `NSAlert` carrying one
-    /// `NSTextField` accessory. Returns the entered string on confirm, `nil` on
-    /// cancel — call sites layer their own trimming/validation on top.
+    /// The shared single-field text prompt: an `NSAlert` with one `NSTextField` accessory.
+    /// Returns the entered string on confirm, nil on cancel; call sites add their own validation.
     @MainActor
     static func promptText(title: String, message: String, confirm: String,
                            initial: String, placeholder: String? = nil,
@@ -1708,9 +1533,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Batch-rename the eligible selected downloads using a template. `#` is
-    /// replaced with a running number (1, 2, …); the original extension is kept
-    /// when the template has none.
+    /// Batch-rename the eligible selected downloads using a template. `#` becomes a running
+    /// number; the original extension is kept when the template has none.
     func promptForBatchRename(tasks: [DownloadTask]) {
         let eligible = tasks.filter { $0.kind != .torrent && !$0.status.isActive }
         guard !eligible.isEmpty else { toastNow("Nothing eligible to rename"); return }
@@ -1835,25 +1659,12 @@ final class AppViewModel: ObservableObject {
 
     // MARK: Managed (MDM) policy
 
-    /// The managed-preferences overlay an administrator has deployed, for UI that
-    /// needs to disable and annotate the controls they have locked.
-    ///
-    /// Read here as well as in ``DownloadManager`` on purpose: the manager needs
-    /// it to *enforce* policy, the UI needs it to *explain* policy, and a forced
-    /// control that silently ignores the user's click is worse than one that says
-    /// who is in charge of it.
+    /// The managed-preferences overlay an administrator deployed, for UI that must disable and
+    /// annotate locked controls. The manager enforces policy; the UI has to explain it.
     @Published private(set) var managedPolicy: ManagedPolicy = ManagedPolicy.current()
 
-    /// Re-read the overlay and push it through the manager's settings cascade.
-    ///
-    /// The actor's cascade reaches the engines, but not everything policy governs
-    /// lives behind the actor: the remote-control portal is started, stopped and
-    /// restarted from *this* object's ``settings`` copy, which nothing refreshes
-    /// mid-session (the manager's snapshot stream carries tasks only). So pull the
-    /// effective settings back and re-apply remote access on the same beat —
-    /// otherwise the nine `remote*` managed keys, including the administrator's
-    /// `remoteAccessEnabled` kill switch, would take effect no earlier than the
-    /// next launch while the listener kept serving.
+    /// Re-read the overlay and push it through the manager's settings cascade, then re-apply
+    /// remote access — the portal runs off *this* copy, so the kill switch would else wait for relaunch.
     func refreshManagedPolicy() {
         managedPolicy = ManagedPolicy.current()
         let manager = self.manager
@@ -1867,11 +1678,8 @@ final class AppViewModel: ObservableObject {
     /// The footnote shown under a control an administrator has locked.
     static let managedFootnote = "Managed by your organisation."
 
-    /// Reveal the audit log's directory in Finder, creating nothing.
-    ///
-    /// Asks the ``AuditLog`` itself rather than recomputing the default path
-    /// here — the resolution rule (explicit directory, else Application Support)
-    /// lives in one place, and a second copy of it would eventually disagree.
+    /// Reveal the audit log's directory in Finder, creating nothing. Asks ``AuditLog`` for the
+    /// path rather than recomputing it — a second copy of that rule would eventually disagree.
     func revealAuditLogFolder() {
         let manager = self.manager
         Task {
@@ -1883,12 +1691,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// The plain-language reason ffmpeg can't be used, or nil when it can.
-    ///
-    /// The companion to ``ffmpegAvailable``: views use this to keep the Convert /
-    /// Extract-audio actions *visible* and explain why they won't run, instead of
-    /// silently omitting them — a missing menu item is indistinguishable from a
-    /// feature that never existed.
+    /// The plain-language reason ffmpeg can't be used, or nil when it can. Views keep Convert /
+    /// Extract Audio *visible* and explain — a missing menu item looks like a missing feature.
     var ffmpegUnavailableReason: String? {
         FFmpegService.unavailableReason(override: settings.ffmpegPath)
     }
@@ -1898,29 +1702,16 @@ final class AppViewModel: ObservableObject {
         FFmpegService.resolutionSummary(override: settings.ffmpegPath)
     }
 
-    /// Every in-flight conversion, and the only thing that can stop one.
-    ///
-    /// Held here so a single instance outlives the views that draw it: the dock
-    /// is a child of the window, and a job must survive the panel being toggled,
-    /// the selection changing, or the list being filtered out from under it.
-    /// Not `@Published`: a nested `ObservableObject` does not forward its changes
-    /// through the object that holds it, so publishing the (never-reassigned)
-    /// reference would announce nothing and imply otherwise. Views that draw job
-    /// state observe the center directly; ``mediaLiveCount`` below is the one
-    /// summary this object republishes.
+    /// Every in-flight conversion and the only thing that can stop one. Not `@Published`: a nested
+    /// ObservableObject doesn't forward changes, so views observe the center directly.
     let mediaJobs = MediaJobCenter()
 
-    /// How many conversions are queued or running.
-    ///
-    /// A deliberately coarse mirror, updated only when live work starts or stops.
-    /// Views observing `AppViewModel` cannot see into `mediaJobs`, but relaying
-    /// *every* change out of it would redraw the whole window once per progress
-    /// sample — several times a second, for a number that changes twice a job.
+    /// How many conversions are queued or running — a coarse mirror updated only when live work
+    /// starts or stops, since relaying every change would redraw the window per progress sample.
     @Published private(set) var mediaLiveCount = 0
 
-    /// Point the job center at the current ffmpeg and teach it how to report a
-    /// finished job. Called once from ``start()`` and again whenever settings
-    /// change, since the override can be edited at any time.
+    /// Point the job center at the current ffmpeg and teach it how to report a finished job.
+    /// Called from ``start()`` and on every settings change, since the override is editable.
     private func syncMediaJobCenter() {
         mediaJobs.ffmpegOverride = settings.ffmpegPath
         mediaJobs.concurrencyLimit = max(1, settings.mediaConcurrency)
@@ -1933,9 +1724,8 @@ final class AppViewModel: ObservableObject {
             self.refreshActiveWorkGate()
             self.refreshDockProgress()
         }
-        // The Dock tile is otherwise only refreshed by the download snapshot pump,
-        // which does not tick when the queue is idle — so a conversion running on
-        // its own would never reach the icon.
+        // The Dock tile is otherwise only refreshed by the download snapshot pump, which doesn't
+        // tick when the queue is idle — so a lone conversion would never reach the icon.
         mediaJobs.onTick = { [weak self] in
             self?.refreshDockProgress()
         }
@@ -1948,14 +1738,8 @@ final class AppViewModel: ObservableObject {
                             mediaFractions: mediaJobs.runningFractions)
     }
 
-    /// Recompute the "is anything in flight" flag `AppDelegate` reads at quit
-    /// time, from all three sources of work.
-    ///
-    /// Downloads come from the reducer's own computation (so the two can't
-    /// drift), SFTP transfers and media conversions are tracked outside the queue
-    /// snapshot and folded in here. Called both from the snapshot pump and from
-    /// the media job center, since a conversion can start while the download
-    /// queue is completely idle and never ticks.
+    /// Recompute the "is anything in flight" flag `AppDelegate` reads at quit time from all three
+    /// sources. Called from the media center too, since a conversion can run with an idle queue.
     private func refreshActiveWorkGate() {
         ActiveWorkGate.shared.hasActiveWork =
             reducerState.lastHadActiveWork
@@ -1963,18 +1747,12 @@ final class AppViewModel: ObservableObject {
             || mediaJobs.hasLiveWork
     }
 
-    /// Shortest conversion worth a banner. Anything quicker finished while the
-    /// user was still looking at the menu they started it from, and the card in
-    /// the dock has already told them.
+    /// Shortest conversion worth a banner. Anything quicker finished while the user was still
+    /// looking at the menu they started it from, and the dock card already told them.
     private static let mediaNotifyMinimumSeconds: TimeInterval = 20
 
-    /// Notify on a finished job, under the same three settings that govern every
-    /// other notification in the app.
-    ///
-    /// Each toggle is honoured separately — completion and failure are different
-    /// switches, and "only when I'm away" is the user's choice, not a hardcoded
-    /// `!NSApp.isActive`. Someone who turned failure notifications on and
-    /// inactive-only off asked to hear about a failed conversion while they watch.
+    /// Notify on a finished job under the same three settings as every other notification. Each
+    /// toggle is honoured separately — "only when I'm away" is a choice, not a hardcoded check.
     private func announceMediaJob(_ job: MediaJobCenter.Job) {
         let elapsed = (job.finishedAt ?? Date()).timeIntervalSince(job.startedAt)
         guard elapsed >= Self.mediaNotifyMinimumSeconds else { return }
@@ -1994,11 +1772,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Convert a finished media file into another container next to the original.
-    ///
-    /// Enqueues rather than spawning: the job center owns the process, so this
-    /// conversion can now be watched and stopped. A refusal (duplicate, missing
-    /// ffmpeg) is toasted, because there is no card to put it on.
+    /// Convert a finished media file into another container beside the original. Enqueues rather
+    /// than spawning, so it can be watched and stopped; a refusal is toasted, having no card.
     func convertFile(task: DownloadTask, toExtension ext: String) {
         let input = URL(fileURLWithPath: task.savePath)
         if let rejection = mediaJobs.enqueue(input: input, kind: .convert(ext: ext)) {
@@ -2024,9 +1799,8 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Localize a UI string key for the current language. Coverage is partial —
-    /// unmapped keys fall back to English and then the key itself, so wrapping a
-    /// literal is always safe even before its translation exists.
+    /// Localize a UI string key for the current language. Coverage is partial — unmapped keys
+    /// fall back to English then the key, so wrapping a literal is always safe.
     func localized(_ key: String) -> String {
         L10n.string(key, language: settings.language)
     }

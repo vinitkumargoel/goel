@@ -1,37 +1,10 @@
 import Foundation
 
-// ============================================================================
-// Audit log — a local, append-only compliance record.
-//
-// WHAT THIS IS. Regulated environments (finance, health, defence contractors,
-// anyone under SOC 2 / ISO 27001) have to answer "what left or entered this
-// machine, when, and under whose account?". This writes exactly that, as JSON
-// Lines, to a file on the same machine.
-//
-// WHAT THIS IS NOT — and this is a product guarantee, not a preference:
-//
-//   * It is NEVER transmitted. There is no uploader, no endpoint, no
-//     opportunistic "help us improve" batch. Nothing in this file opens a
-//     socket, and nothing anywhere else in the app reads these files back.
-//   * It is OFF BY DEFAULT. A personal user never produces a byte of it.
-//   * It is redacted at the point of construction, not at the point of reading:
-//     a record carries the URL's HOST ONLY. The path, the query string, the
-//     fragment, and any embedded `user:password@` never enter the record in the
-//     first place, so a leaked audit file cannot leak a signed download URL or
-//     a credential. See ``AuditEvent/redactedHost(from:)``.
-//
-// Anyone auditing this codebase for the "no telemetry" claim should be able to
-// read this header, grep the file for `URLSession`, find nothing, and move on.
-//
-// The format is JSON Lines (one self-contained JSON object per line) because it
-// is append-only by construction — a crash mid-write costs at most the last
-// line — and every SIEM, `jq` pipeline and spreadsheet import already reads it.
-// ============================================================================
+// Local append-only SOC 2 / ISO 27001 compliance record, JSON Lines (crash costs one line; SIEM/`jq`
+// read it). NEVER transmitted — no socket here. OFF by default. Host-only redaction at construction.
 
-/// One line of the audit log.
-///
-/// Field choice is deliberately minimal: enough to answer a compliance question,
-/// not enough to reconstruct what the user was actually looking at.
+/// One line of the audit log. Field choice is deliberately minimal: enough to answer a compliance
+/// question, not enough to reconstruct what the user was actually looking at.
 public struct AuditEvent: Codable, Sendable, Equatable {
 
     /// The three moments worth recording. Pause/resume/queue churn is noise for
@@ -47,9 +20,8 @@ public struct AuditEvent: Codable, Sendable, Equatable {
     public var action: Action
     /// The local account name. Who, not what.
     public var user: String
-    /// The remote **host only** — `releases.example.com`. Never a full URL.
-    /// `"magnet"` for magnet links (the info-hash identifies the content, so it
-    /// is withheld) and `"unknown"` when no host can be parsed.
+    /// The remote **host only** — `releases.example.com`, never a full URL. `"magnet"` for magnets
+    /// (the info-hash identifies the content, so it is withheld); `"unknown"` when unparsable.
     public var host: String
     /// The URL scheme (`https`, `sftp`, `magnet`, …). A protocol fact, not identity.
     public var scheme: String
@@ -57,15 +29,13 @@ public struct AuditEvent: Codable, Sendable, Equatable {
     public var kind: String
     /// Bytes transferred at the moment of the record. `0` for `added`.
     public var bytes: Int64
-    /// The destination **directory** — where data landed on this machine. The
-    /// file name is omitted: a directory answers "did it leave the approved
-    /// share?", a file name leaks the content.
+    /// The destination **directory** only. A directory answers "did it leave the approved share?";
+    /// the file name is omitted because it leaks the content.
     public var destination: String
     /// The task's UUID, so the three records for one download can be joined.
     public var taskID: String
-    /// For ``Action/failed``: a stable, non-identifying failure token such as
-    /// `http-403` or `diskFull`. `nil` otherwise — never a server message, which
-    /// routinely echoes the failing URL back.
+    /// For ``Action/failed``: a stable, non-identifying token like `http-403` or `diskFull`; `nil`
+    /// otherwise. Never a server message — those routinely echo the failing URL back.
     public var outcome: String?
 
     public init(timestamp: Date = Date(), action: Action, user: String, host: String,
@@ -85,13 +55,8 @@ public struct AuditEvent: Codable, Sendable, Equatable {
 
     // MARK: Redaction
 
-    /// The host of a locator, and nothing else.
-    ///
-    /// This is the single function that stands between the audit log and a leaked
-    /// pre-signed URL. It reads `URLComponents.host` — which by definition cannot
-    /// contain the path, query, fragment, or the `user:password@` userinfo — and
-    /// falls back to a constant rather than to the raw string, so a locator that
-    /// fails to parse still cannot smuggle itself into the file.
+    /// The host of a locator, and nothing else — all that stands between the log and a leaked
+    /// pre-signed URL. `URLComponents.host` excludes path/query/fragment/userinfo; unparsable ⇒ constant.
     public static func redactedHost(from locator: String) -> String {
         let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.lowercased().hasPrefix("magnet:") { return "magnet" }
@@ -146,30 +111,20 @@ public struct AuditEvent: Codable, Sendable, Equatable {
         return encoder
     }()
 
-    /// This record as one JSON Lines row, newline included.
-    ///
-    /// Pure, so the redaction contract can be asserted in tests without touching
-    /// the filesystem — which is exactly how ``EnterpriseTests`` proves that no
-    /// full URL survives.
+    /// This record as one JSON Lines row, newline included. Pure, so ``EnterpriseTests`` can assert
+    /// the redaction contract (no full URL survives) without touching the filesystem.
     public func jsonLine() throws -> String {
         let data = try Self.encoder.encode(self)
-        // A JSON string can carry an escaped `\n` but never a literal one, so the
-        // encoded form is guaranteed to be a single line; the newline we append
-        // is therefore always the record separator.
+        // A JSON string can carry an escaped `\n` but never a literal one, so the encoded form is
+        // always one line and the newline appended here is always the record separator.
         return String(decoding: data, as: UTF8.self) + "\n"
     }
 }
 
 // MARK: - Writer
 
-/// The append-only writer.
-///
-/// An actor because rotation is a read-modify-write over the same file that
-/// concurrent completions are appending to; serialising through the actor is
-/// what keeps a rotation from interleaving with an append and losing a record.
-///
-/// Disabled writers do no work at all: ``record(_:)`` returns before touching
-/// the disk, so the default configuration costs one boolean check per event.
+/// The append-only writer. An actor because rotation is a read-modify-write racing concurrent
+/// appends — interleaving would lose a record. Disabled writers return before touching disk.
 public actor AuditLog {
 
     /// Rotation and retention policy, mirrored from ``AppSettings``.
@@ -195,13 +150,8 @@ public actor AuditLog {
             self.retentionDays = max(0, retentionDays)
         }
 
-        /// Build the policy from user/managed settings. Kept here so the mapping
-        /// from ``AppSettings`` lives next to the thing it configures.
-        ///
-        /// The megabyte figure is re-clamped to `1…1024` on the way in even though
-        /// ``AppSettings/validated()`` already did it: `megabytes * 1024 * 1024`
-        /// **traps** on `Int` overflow, and a hard crash is too sharp an edge to
-        /// leave depending on a caller having gone through the boundary.
+        /// Build the policy from ``AppSettings``. Megabytes are re-clamped to `1…1024` even though
+        /// ``AppSettings/validated()`` did it: `megabytes * 1024 * 1024` **traps** on `Int` overflow.
         public init(settings: AppSettings) {
             let directory = settings.auditLogDirectory
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -238,11 +188,8 @@ public actor AuditLog {
         configuration.isEnabled ? resolvedDirectory() : nil
     }
 
-    /// Append one record. Silent no-op when disabled.
-    ///
-    /// Write failures are logged and swallowed: an unwritable audit directory is
-    /// an operator problem, and failing a user's download because a compliance
-    /// file could not be appended to would be a worse outcome than the gap.
+    /// Append one record; silent no-op when disabled. Write failures are logged and swallowed: an
+    /// unwritable audit directory is an operator problem, not grounds to fail a user's download.
     public func record(_ event: AuditEvent) {
         guard configuration.isEnabled else { return }
         guard let line = try? event.jsonLine() else { return }
@@ -282,10 +229,8 @@ public actor AuditLog {
         return directory
     }
 
-    /// Open-append-close rather than a cached `FileHandle`: the file is a
-    /// compliance artefact an operator may rotate, archive or `mv` out from under
-    /// us at any moment, and a cached descriptor would keep writing into the
-    /// unlinked inode without anyone noticing.
+    /// Open-append-close rather than a cached `FileHandle`: an operator may rotate/archive/`mv` this
+    /// compliance file at any moment, and a cached descriptor would write into the unlinked inode.
     private func append(_ data: Data, to url: URL) {
         let manager = FileManager.default
         if !manager.fileExists(atPath: url.path) {
@@ -358,9 +303,8 @@ public actor AuditLog {
         }
     }
 
-    /// Filesystem-safe ISO-8601 (no colons — they are legal on APFS but a
-    /// long-standing hazard on network shares and when the file is copied to a
-    /// Windows collector).
+    /// Filesystem-safe ISO-8601: no colons — legal on APFS, but a long-standing hazard on network
+    /// shares and when the file is copied to a Windows collector.
     private static let stampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

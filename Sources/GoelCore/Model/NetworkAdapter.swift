@@ -7,9 +7,8 @@ import Glibc
 
 // MARK: - Network adapter model
 
-/// One host network interface that may participate in multi-path downloads.
-/// Identity is the BSD/Linux interface **name** (e.g. `en0`) — never a bare IP —
-/// because egress scoping requires name/index bind (`IP_BOUND_IF` / `SO_BINDTODEVICE`).
+/// One host interface that may join multi-path downloads. Identity is the interface **name** (`en0`),
+/// never a bare IP: egress scoping requires name/index bind (`IP_BOUND_IF` / `SO_BINDTODEVICE`).
 public struct NetworkAdapter: Codable, Sendable, Hashable, Identifiable {
     public var id: String { bsdName }
 
@@ -104,10 +103,8 @@ public enum AggregationPolicy: Sendable {
         case expensiveBlocked = "Expensive adapters excluded"
     }
 
-    /// Whether aggregation may run given settings + usable adapters + profile + proxy.
-    ///
-    /// Proxy: both `manual` **and** `system` disable multi-path — the bound curl
-    /// path does not honour PAC/system proxy, so allowing multi-path would bypass it.
+    /// Whether aggregation may run given settings + usable adapters + profile + proxy. Both `manual` and
+    /// `system` proxy disable it: the bound curl path ignores PAC/system proxy and would bypass it.
     public static func shouldActivate(
         enabled: Bool,
         usableAdapterCount: Int,
@@ -153,10 +150,8 @@ public enum AggregationPolicy: Sendable {
         return all.map(\.bsdName)
     }
 
-    /// Interfaces that must never appear as multi-path download adapters.
-    /// **Does not include `utun`/`bridge`** — those are handled as VPN / tether
-    /// classification, not blanket-hidden (hiding `utun` broke VPN detection;
-    /// hiding `bridge` hid iPhone USB tethering).
+    /// Interfaces that must never be multi-path adapters. **Excludes `utun`/`bridge`** — hiding `utun`
+    /// broke VPN detection and hiding `bridge` hid iPhone USB tethering; both are classified instead.
     public static func isHiddenVirtual(_ bsdName: String) -> Bool {
         let n = bsdName.lowercased()
         if n == "lo" || (n.hasPrefix("lo") && n.count <= 4) { return true }
@@ -192,18 +187,8 @@ public enum AggregationPolicy: Sendable {
         return max(floor, min(want, cap))
     }
 
-    /// How many segments a multi-path download should open.
-    ///
-    /// Unlike the single-path planner (64 KiB floor + host budget only), this
-    /// **guarantees at least one segment per adapter** when the file is large
-    /// enough, so traffic is not pinned to a single NIC.
-    ///
-    /// - Parameters:
-    ///   - fileBytes: total size (must be known + ranged).
-    ///   - adapters: usable bind targets (≥ 2 when multi-path is active).
-    ///   - streamsPerAdapter: user setting (1…8).
-    ///   - maxConnectionsPerServer: traffic-profile cap.
-    ///   - globalRoom: remaining global connection slots.
+    /// Segments a multi-path download should open, from `fileBytes` (known + ranged), `adapters` (≥ 2),
+    /// `streamsPerAdapter` (1…8), `maxConnectionsPerServer` and `globalRoom`: ≥ 1 per adapter if size allows.
     public static func multiPathSegmentCount(
         fileBytes: Int64,
         adapters: Int,
@@ -230,9 +215,8 @@ public enum AggregationPolicy: Sendable {
 
 public enum AdapterDirectory {
 
-    /// Snapshot of currently up interfaces suitable for multi-path UI / binding.
-    /// Excludes loopback noise and pure virtual radios; **includes** bridge
-    /// (USB tether) and classifies VPN names but leaves them out of usable set.
+    /// Snapshot of up interfaces for multi-path UI / binding. Excludes loopback and virtual radios;
+    /// **includes** bridge (USB tether); classifies VPN names but leaves them out of the usable set.
     public static func enumerate() -> [NetworkAdapter] {
         rawEnumerate(includeVPNNames: false)
             .filter { $0.isUp && ($0.ipv4 != nil || $0.ipv6 != nil) }
@@ -248,15 +232,13 @@ public enum AdapterDirectory {
         }
     }
 
-    /// Full scan. When `includeVPNNames` is false, VPN ifaces are still classified
-    /// but the multi-path list drops them later; when true they stay in the map
-    /// for VPN detection even without routable addresses.
+    /// Full scan. `includeVPNNames: false` still classifies VPN ifaces (dropped later); `true` keeps
+    /// them in the map for VPN detection even without routable addresses.
     private static func rawEnumerate(includeVPNNames: Bool) -> [NetworkAdapter] {
         var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifaddrPtr) == 0, let first = ifaddrPtr else {
-            // Worth saying out loud: on Linux this needs AF_NETLINK, and a systemd
-            // RestrictAddressFamilies= without it turns every interface feature into
-            // a bare "none found" with no other clue.
+            // On Linux this needs AF_NETLINK: a systemd `RestrictAddressFamilies=` without it turns
+            // every interface feature into a bare "none found" with no other clue.
             GoelLog.app.error("Could not enumerate network interfaces",
                               .detail("getifaddrs failed (errno \(errno))"))
             return []

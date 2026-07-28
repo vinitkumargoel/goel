@@ -96,9 +96,8 @@ export function App() {
     void loadDetail(selectedId)
   }, [selectedId, loadDetail])
 
-  // Keep the open detail's header row live from the SSE snapshot. Without this
-  // the progress bar in the panel would only move on the 4s refetch while the
-  // list behind it updates continuously.
+  // Keep the open detail's header row live from the SSE snapshot; without this the panel's progress
+  // bar would only move on the 4s refetch while the list behind it updates continuously.
   useEffect(() => {
     if (selectedId == null) return
     const row = tasks.find((t) => t.id === selectedId)

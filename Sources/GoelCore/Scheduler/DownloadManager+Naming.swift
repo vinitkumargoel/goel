@@ -2,16 +2,12 @@ import Foundation
 
 // MARK: - Name & folder derivation
 
-/// Pure, source-derived naming helpers. Split out of ``DownloadManager`` so the
-/// scheduler proper stays focused on the queue; every name flows through
-/// ``PathSafety/sanitizedName(_:fallback:)`` so a hostile filename can never
-/// escape the save directory.
+/// Pure, source-derived naming helpers, split out of ``DownloadManager``. Every name flows through
+/// ``PathSafety/sanitizedName(_:fallback:)``, so a hostile filename can never escape the save directory.
 extension DownloadManager {
 
-    /// A sensible — and **safe** — initial display name derived purely from the
-    /// source. Every branch runs through ``PathSafety/sanitizedName(_:fallback:)``
-    /// so a hostile filename (e.g. a magnet `dn=../../.ssh/authorized_keys`) can
-    /// never become a `name` that escapes the save directory.
+    /// A **safe** initial display name derived purely from the source: every branch runs through
+    /// ``PathSafety/sanitizedName(_:fallback:)``, so a magnet `dn=../../.ssh/authorized_keys` can't escape.
     static func defaultName(for source: DownloadSource) -> String {
         switch source {
         case let .url(url):
@@ -28,9 +24,8 @@ extension DownloadManager {
         }
     }
 
-    /// A coarse content category derived from the source's apparent file
-    /// extension (torrents bucket together). Mirrors the app's file-type buckets
-    /// without importing the app layer.
+    /// A coarse content category from the source's apparent file extension (torrents bucket together).
+    /// Mirrors the app's file-type buckets without importing the app layer.
     static func categoryFolder(for source: DownloadSource) -> String {
         if source.kind == .torrent { return "Torrents" }
         let name = defaultName(for: source).lowercased()
@@ -44,9 +39,8 @@ extension DownloadManager {
         return "Other"
     }
 
-    /// A `.mp4` name for an HLS stream. The playlist file is usually a generic
-    /// `index.m3u8` / `playlist.m3u8`, so prefer the parent path component (the
-    /// title folder), falling back to the host.
+    /// A `.mp4` name for an HLS stream. The playlist is usually a generic `index.m3u8`/`playlist.m3u8`,
+    /// so prefer the parent path component (the title folder), falling back to the host.
     private static func hlsDisplayName(_ url: URL) -> String {
         let generic: Set<String> = ["index", "playlist", "master", "prog_index", "chunklist", "main", "video", "stream"]
         let leaf = url.deletingPathExtension().lastPathComponent
@@ -55,9 +49,8 @@ extension DownloadManager {
         if !leaf.isEmpty, !generic.contains(leaf.lowercased()) {
             stem = leaf
         } else if !parent.isEmpty, parent != "/" {
-            // Strip a video extension the parent folder may already carry (e.g.
-            // `.../trailer.mp4/index.m3u8`) so the appended `.mp4` below does not
-            // produce a doubled extension like `trailer.mp4.mp4`.
+            // Strip a video extension the parent folder may already carry (`.../trailer.mp4/index.m3u8`),
+            // or the `.mp4` appended below doubles it into `trailer.mp4.mp4`.
             let videoExts: Set<String> = ["mp4", "mkv", "avi", "mov", "webm", "m4v", "flv", "ts", "m3u8"]
             let ext = (parent as NSString).pathExtension.lowercased()
             stem = videoExts.contains(ext) ? (parent as NSString).deletingPathExtension : parent
@@ -67,17 +60,8 @@ extension DownloadManager {
         return PathSafety.sanitizedName(stem, fallback: "video") + ".mp4"
     }
 
-    /// Apply the file-conflict policy to a freshly derived name. Only an explicit
-    /// `overwrite` keeps the name as-is; `rename` — and anything unrecognised —
-    /// appends ` (1)`, ` (2)`, … before the extension until the path is free.
-    /// Bounded so a pathological directory can never spin forever.
-    ///
-    /// Deliberately fails **closed**. The previous shape (`policy == "rename"`
-    /// renames, everything else keeps the name) turned any unknown value into
-    /// permission to truncate the user's existing file, and an unknown value is
-    /// exactly what a persisted or imported settings blob can carry.
-    /// ``AppSettings/validated()`` coerces the field as well; this is the second
-    /// line, at the site that does the damage.
+    /// Apply the file-conflict policy. Fails **closed**: only an explicit `overwrite` keeps the name,
+    /// anything else appends ` (1)`, ` (2)`, … — an unknown value must not license truncating a file.
     static func resolveName(_ base: String, in directory: String, policy: String) -> String {
         guard policy == "overwrite" else { return PathSafety.uniqueName(base: base, in: directory) }
         return base

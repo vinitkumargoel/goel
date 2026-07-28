@@ -2,14 +2,8 @@ import XCTest
 import Foundation
 @testable import GoelCore
 
-/// Parsing tests for the media workflows: expanding a pasted playlist/channel
-/// URL into a checklist, and reading the `yt-dlp -F` rendition table.
-///
-/// Everything here runs against fixture strings captured from real yt-dlp output.
-/// No process is spawned and no network is touched — that is the whole reason the
-/// parsers live in `GoelCore` as pure functions while `GoelApp` owns the process
-/// plumbing. A test that needed yt-dlp installed would be skipped on CI and would
-/// therefore protect nothing.
+/// Parsing tests for the media workflows: playlist/channel URL expansion and the `yt-dlp -F` table.
+/// All fixture strings — no process, no network — since a test needing yt-dlp would be skipped on CI.
 final class MediaWorkflowTests: XCTestCase {
 
     // MARK: - Playlist URL recognition
@@ -161,9 +155,8 @@ final class MediaWorkflowTests: XCTestCase {
         XCTAssertNil(PlaylistExpander.parseFlatPlaylist("[1, 2, 3]"))
     }
 
-    /// A big channel must stop at the cap AND admit that it did — silently
-    /// showing 1 000 of 4 000 items and calling it "everything" is the failure
-    /// mode this flag exists to prevent.
+    /// A big channel must stop at the cap AND admit it — silently showing 1 000 of 4 000 items and
+    /// calling it "everything" is the failure mode this flag exists to prevent.
     func testOverCapListingIsTruncatedAndSaysSo() throws {
         let entries = (1...(PlaylistExpander.cap + 50)).map {
             ["id": "v\($0)", "title": "Video \($0)", "url": "https://example.com/v\($0)"]
@@ -208,9 +201,8 @@ final class MediaWorkflowTests: XCTestCase {
 
     // MARK: - yt-dlp -F table (modern layout)
 
-    /// Captured from `yt-dlp -F` on a normal YouTube page. Includes the log
-    /// preamble, the column header, the rule, a storyboard row, audio-only rows,
-    /// a muxed row and video-only rows — i.e. every shape the parser must handle.
+    /// Captured from `yt-dlp -F` on a normal YouTube page: log preamble, column header, rule, storyboard,
+    /// audio-only, muxed and video-only rows — every shape the parser must handle.
     private let modernTable = """
     [youtube] Extracting URL: https://www.youtube.com/watch?v=dQw4w9WgXcQ
     [info] Available formats for dQw4w9WgXcQ:
@@ -304,9 +296,8 @@ final class MediaWorkflowTests: XCTestCase {
 
     // MARK: - yt-dlp -F table (legacy youtube-dl layout)
 
-    /// Users who keep their own older yt-dlp/youtube-dl in /usr/local/bin get the
-    /// pipe-less layout. Supporting it costs twenty lines and avoids an empty
-    /// picker that looks like a bug.
+    /// An older yt-dlp/youtube-dl in /usr/local/bin emits the pipe-less layout; supporting it costs
+    /// twenty lines and avoids an empty picker that looks like a bug.
     private let legacyTable = """
     [info] Available formats for BaW_jenozKc:
     format code  extension  resolution note

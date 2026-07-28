@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Trust-rule cases for ``InboundAdd/classify`` — origin decides confirmation,
-/// content decides ignore vs act. Parse coverage is thin (reuses BatchExpander
-/// + DownloadSource); the heavy metalink path stays in the app layer.
+/// Trust-rule cases for ``InboundAdd/classify`` — origin decides confirmation, content decides ignore
+/// vs act. Parse coverage is thin (reuses BatchExpander + DownloadSource); metalink stays in the app.
 final class InboundAddTests: XCTestCase {
 
     // MARK: classify — urlScheme

@@ -1,44 +1,6 @@
 #!/bin/sh
-#
-# Goel° for Linux — one-line installer.
-#
-#   curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh
-#
-# Installs the headless download daemon as a systemd service and the `goel`
-# command to manage it. Everything it touches:
-#
-#   /opt/goel                     the release (binaries + bundled Swift runtime)
-#   /usr/local/bin/goel           symlink to the CLI
-#   /etc/goel/config              configuration, 0600, root-only
-#   /var/lib/goel                 queue database, generated token, downloads
-#   /etc/systemd/system/goel.*    the unit and the writable-paths drop-in
-#   a `goel` system user          no login shell, no home
-#
-# `sudo goel uninstall` reverses all of it.
-#
-# ---------------------------------------------------------------------------
-# WHY THIS IS ONE FUNCTION CALLED AT THE END
-#
-# `curl … | sh` executes the script as it arrives. If the connection drops
-# halfway, sh runs the half it received — which, for an installer, can mean
-# deleting the old install and never unpacking the new one. Everything therefore
-# lives inside main(), which is only invoked on the last line: a truncated
-# download defines a function and does nothing.
-# ---------------------------------------------------------------------------
-#
-# Environment overrides (all optional):
-#   GOEL_VERSION=1.0.4     install a specific version instead of the latest
-#   GOEL_TARBALL=/path.tgz  install from a local tarball (skips download; used to
-#                           test an unreleased build)
-#   GOEL_PORT=9090         portal port                       (default 8080)
-#   GOEL_LAN=true          serve to the network, not just loopback (default false)
-#   GOEL_SAVE_DIR=/srv/dl  download folder    (default /var/lib/goel/downloads)
-#   GOEL_NO_START=1        install but do not enable or start the service
-#   GOEL_SKIP_DEPS=1       do not touch apt (you are handling dependencies)
-#   GOEL_INSECURE=1        install even if the release publishes no checksum
-#
-# POSIX sh, tested under dash — but Debian-family only: apt, useradd, install,
-# ldd and `find -maxdepth` are all GNU/Debian rather than POSIX.
+# Goel° for Linux one-line installer: systemd daemon + `goel` CLI; `sudo goel uninstall` reverses it.
+# Everything is inside main(), called on the last line, so a truncated `curl | sh` does nothing. Debian-only.
 
 set -eu
 
@@ -52,21 +14,8 @@ DROPIN_DIR="/etc/systemd/system/goel.service.d"
 SERVICE_USER="goel"
 CLI_LINK="/usr/local/bin/goel"
 
-# Runtime dependencies, as ALTERNATIVES rather than fixed names.
-#
-# Package names for these move between distribution releases and a hardcoded list
-# is wrong somewhere almost immediately. Two things move independently:
-#
-#   * Debian's 64-bit-time_t transition renamed packages, so Ubuntu 24.04's
-#     `libssh2-1` is `libssh2-1t64` on 26.04 — same SONAME, different package.
-#   * OpenSSL and curl carry a major version in the name that eventually bumps.
-#
-# Each line below is one logical dependency: the first name that exists on THIS
-# machine is the one installed. libtorrent and Boost are deliberately absent —
-# their SONAME changes between releases, so they are bundled inside the tarball
-# instead (see Scripts/linux/package_daemon.sh).
-#
-# Verified against Ubuntu 24.04 (first names) and Ubuntu 26.04 (the t64 ones).
+# Runtime deps as ALTERNATIVES, one logical dep per line, first name that exists here wins: the t64
+# transition renamed packages (24.04 `libssh2-1` = 26.04 `libssh2-1t64`). libtorrent/Boost are bundled.
 DEPENDENCY_ALTERNATIVES="
 libssh2-1t64|libssh2-1
 libcurl4t64|libcurl4
@@ -74,10 +23,8 @@ libssl3t64|libssl3
 ffmpeg
 "
 
-# ---------------------------------------------------------------------------
-# Output. Colour only when stdout is a terminal — this script is often piped or
-# logged, and escape codes there are noise.
-# ---------------------------------------------------------------------------
+# Output. Colour only when stdout is a terminal — this script is often piped or logged, and escape
+# codes there are noise.
 if [ -t 1 ]; then
     B=$(printf '\033[1m'); R=$(printf '\033[31m'); G=$(printf '\033[32m')
     Y=$(printf '\033[33m'); D=$(printf '\033[2m'); N=$(printf '\033[0m')
@@ -90,7 +37,6 @@ step() { printf '%s==>%s %s\n' "$B" "$N" "$*"; }
 warn() { printf '%s!%s   %s\n' "$Y" "$N" "$*" >&2; }
 die()  { printf '%serror:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
 
-# ---------------------------------------------------------------------------
 # Preflight
 # ---------------------------------------------------------------------------
 require_root() {
@@ -139,11 +85,8 @@ safe_chown_tree() {
     chown -Rh "$SERVICE_USER:$SERVICE_USER" "$target"
 }
 
-# ---------------------------------------------------------------------------
-# Dependencies
-# ---------------------------------------------------------------------------
-# Is this exact package name installable here? LC_ALL=C because "Candidate:" is
-# translated — on a de_DE host every candidate would parse as absent.
+# Dependencies ---------------------------------------------------------------
+# Is this package installable here? LC_ALL=C because "Candidate:" is translated (de_DE reads absent).
 package_exists() {
     candidate=$(LC_ALL=C apt-cache policy "$1" 2>/dev/null | sed -n 's/^  Candidate: //p' | head -1)
     [ -n "$candidate" ] && [ "$candidate" != "(none)" ]
@@ -180,10 +123,8 @@ install_dependencies() {
     DEBIAN_FRONTEND=noninteractive apt-get update -qq || \
         warn "apt-get update failed; continuing with the package lists already present."
 
-    # Resolve the alternatives to concrete names for THIS distribution before
-    # asking apt for anything: `apt-get install` fails the whole transaction on a
-    # single unknown package, so one wrong name would leave every dependency
-    # uninstalled.
+    # Resolve alternatives to concrete names first: `apt-get install` fails the whole transaction
+    # on a single unknown package, so one wrong name leaves every dependency uninstalled.
     resolved=""
     missing=""
     # shellcheck disable=SC2086  # deliberate word splitting: one dependency per line
@@ -208,14 +149,8 @@ install_dependencies() {
     fi
 }
 
-# The authoritative dependency check: ask the dynamic linker, not the package
-# manager. This is distribution-independent and catches the case apt cannot — a
-# library present under a name nobody predicted, or genuinely absent.
-#
-# A daemon that cannot resolve its libraries will fail every start with a message
-# only visible in the journal, so this fails the install loudly instead.
-# Both binaries, not just the daemon: install_unit runs the CLI to write the
-# drop-in, so a CLI that cannot link has to be known about before then.
+# Authoritative dependency check: ask the dynamic linker, not apt — otherwise the daemon fails every
+# start with a journal-only message. Both binaries: install_unit runs the CLI to write the drop-in.
 LIBS_MISSING=0
 verify_libraries() {
     command -v ldd >/dev/null 2>&1 || return 0
@@ -240,7 +175,6 @@ verify_libraries() {
     LIBS_MISSING=1
 }
 
-# ---------------------------------------------------------------------------
 # Fetch
 # ---------------------------------------------------------------------------
 resolve_version() {
@@ -249,9 +183,8 @@ resolve_version() {
         return 0
     fi
     step "Finding the latest release"
-    # No jq dependency: pull tag_name out with sed. If GitHub is rate-limiting or
-    # the repo has no release, this comes back empty and we say so plainly rather
-    # than 404-ing on a URL built from nothing.
+    # No jq dependency: pull tag_name out with sed. Rate-limiting or no release leaves this empty,
+    # which we report plainly rather than 404-ing on a URL built from nothing.
     VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
         | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' \
         | head -1)
@@ -318,7 +251,6 @@ $escapes"
 $links"
 }
 
-# ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
 create_user() {
@@ -350,10 +282,8 @@ unpack() {
     [ -n "$inner" ] || die "unexpected tarball layout: no top-level directory."
     [ -x "$inner/bin/GoelDaemon" ] || die "unexpected tarball layout: no bin/GoelDaemon."
 
-    # Swap rather than overwrite. Extracting over a live install would leave a
-    # half-old, half-new tree if it failed partway; this way the old one is only
-    # removed once the new one is fully in place, and an upgrade never leaves the
-    # machine without a working copy for more than a rename.
+    # Swap rather than overwrite: extracting over a live install leaves a half-old tree if it fails
+    # partway. The old copy goes only once the new one is in place — downtime is one rename.
     rm -rf "$INSTALL_ROOT.new"
     mv "$inner" "$INSTALL_ROOT.new"
     if [ -e "$INSTALL_ROOT" ]; then
@@ -376,10 +306,8 @@ unpack() {
     [ -x "$INSTALL_ROOT/bin/goel" ] \
         || die "this tarball has no bin/goel — it predates the CLI. Install 1.0.4 or later."
 
-    # A WRAPPER, not a symlink. The CLI links against the Swift runtime bundled in
-    # /opt/goel/lib, which is on no system library path — a symlink would put `goel`
-    # on PATH and have it fail with "error while loading shared libraries" every time.
-    # Same job run.sh does for the daemon.
+    # A WRAPPER, not a symlink: the CLI links against the Swift runtime in /opt/goel/lib, which is on
+    # no system library path — a symlink would fail with "error while loading shared libraries".
     cat > "$CLI_LINK" <<WRAPPER
 #!/bin/sh
 # Installed by Goel°'s installer. Puts the bundled Swift runtime on the library
@@ -401,9 +329,8 @@ write_config() {
     fi
     step "Writing $CONFIG_FILE"
     UPGRADED=0
-    # Random credentials on first install. The alternative — a default password —
-    # would mean every Goel° server on the internet shares one, and the people
-    # most likely to leave it unchanged are the ones least able to afford that.
+    # Random credentials on first install: a default password would mean every Goel° server on the
+    # internet shares one, and those least likely to change it can least afford that.
     GENERATED_PASSWORD=$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | cut -c1-20)
     generated_token=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
     [ -n "$GENERATED_PASSWORD" ] || die "couldn't generate a password from /dev/urandom."
@@ -465,10 +392,8 @@ install_unit() {
     safe_chown_tree "$STATE_DIR"
     systemctl daemon-reload
 
-    # `goel config sync` writes the ProtectSystem=strict writable-paths drop-in.
-    # Delegated rather than duplicated: this script derived the download folder from
-    # $GOEL_SAVE_DIR while the config file it KEPT on upgrade said otherwise, so an
-    # upgrade rewrote the drop-in for the wrong path and every download failed.
+    # `goel config sync` writes the ProtectSystem=strict writable-paths drop-in. Delegated, not
+    # duplicated: deriving it from $GOEL_SAVE_DIR broke upgrades that KEPT a different config.
     if [ "$LIBS_MISSING" = "1" ]; then
         warn "skipping the writable-paths drop-in: the CLI cannot run yet (see above)."
         return 0
@@ -495,9 +420,8 @@ start_service() {
     # Keep systemctl's stderr: a malformed unit fails before the daemon ever runs,
     # so `journalctl -u goel` is empty and this is the only place the reason exists.
     enable_output=$(systemctl enable --now goel 2>&1) || true
-    # `--now` starts a stopped service but leaves a running one alone, so an upgrade
-    # over a live daemon would keep executing the binary that was just replaced —
-    # the new /opt/goel is on disk and none of it is running. Restart explicitly.
+    # `--now` starts a stopped service but leaves a running one alone, so an upgrade would keep
+    # executing the binary that was just replaced. Restart explicitly.
     restart_output=$(systemctl restart goel 2>&1) || true
     [ -z "$restart_output" ] || enable_output="$enable_output$restart_output"
     # Poll rather than sleep-and-hope: report what the unit actually did.

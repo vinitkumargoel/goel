@@ -1,12 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Regression cover for malformed `Range:` headers on `/stream`.
-///
-/// The header arrives straight off the wire from any client that can reach the
-/// portal, so `parseByteRange` must never be able to trap: a Swift runtime fault
-/// takes down the whole app (losing every in-flight transfer) or the daemon, and
-/// the caller cannot catch it. Every shape below must return a value or nil.
+/// Regression cover for malformed `Range:` headers on `/stream`: the header is off-the-wire untrusted,
+/// and a trap in `parseByteRange` kills the app/daemon uncatchably. Every shape must return a value or nil.
 final class RemoteStreamRangeTests: XCTestCase {
 
     /// `bytes=` with nothing after it — `split` drops empty subsequences, so the

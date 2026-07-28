@@ -1,14 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Regression tests for the settings-validation / automation / app-lifecycle pass.
-///
-/// The common thread is that every defect here was an *absent* boundary: no
-/// numeric validation anywhere, arithmetic that traps on a value a text field
-/// accepts, an antivirus that reported clean without reading the payload, and a
-/// file-conflict policy that read every unknown value as "overwrite". Each test
-/// below fails against the pre-fix behaviour — several by crashing the process,
-/// which is exactly what the shipped app did.
+/// Regression tests for the settings-validation / automation / app-lifecycle pass. Every defect was
+/// an *absent* boundary; each test fails against pre-fix behaviour, several by crashing the process.
 final class AppShellRemediationTests: XCTestCase {
 
     private let saveDir = NSTemporaryDirectory()
@@ -16,10 +10,8 @@ final class AppShellRemediationTests: XCTestCase {
     // MARK: AppSettings.validated() — numeric boundaries
 
     func testSimultaneousDownloadsZeroBecomesOneNotUnlimited() {
-        // `SchedulingPolicy`'s documented contract is "0 (or negative) means
-        // unlimited", so a user typing 0 into "Max simultaneous downloads" got the
-        // opposite of what they asked for. The policy is left alone; 0 simply can
-        // no longer reach it from settings.
+        // `SchedulingPolicy`'s contract is "0 (or negative) means unlimited", so typing 0 into "Max
+        // simultaneous downloads" gave the opposite. The policy is unchanged; 0 can't reach it now.
         var profile = TrafficProfile.medium
         profile.maxSimultaneousDownloads = 0
         XCTAssertEqual(profile.validated().maxSimultaneousDownloads, 1)
@@ -96,9 +88,8 @@ final class AppShellRemediationTests: XCTestCase {
     }
 
     func testDefaultsAreAlreadyValidSoNoInstallMoves() {
-        // The whole clamp is only safe if every shipped default already sits
-        // inside its range — otherwise the first launch after this change would
-        // silently rewrite the user's settings.
+        // The clamp is only safe if every shipped default already sits inside its range — otherwise
+        // the first launch after this change would silently rewrite the user's settings.
         let defaults = AppSettings()
         XCTAssertEqual(defaults, defaults.validated())
         for profile in TrafficProfile.defaults {
@@ -119,9 +110,8 @@ final class AppShellRemediationTests: XCTestCase {
     // MARK: AppSettings.validated() — string coercions
 
     func testUnsupportedLanguageIsRepairedRatherThanLeftBlank() {
-        // The picker used to offer हिन्दी and 日本語, which ship no strings table.
-        // A value persisted from that build must resolve to a language the picker
-        // still lists, or the control renders an empty trigger.
+        // The picker used to offer हिन्दी and 日本語, which ship no strings table. A value persisted
+        // from that build must resolve to a listed language, or the control renders an empty trigger.
         var s = AppSettings()
         s.language = "हिन्दी"
         XCTAssertEqual(s.validated().language, "English")
@@ -154,9 +144,8 @@ final class AppShellRemediationTests: XCTestCase {
     // MARK: Non-trapping arithmetic
 
     func testAuditConfigurationSurvivesAnAbsurdRotationSize() {
-        // `megabytes * 1024 * 1024` TRAPS on Int overflow — a hard crash reachable
-        // from the Audit Log pane's plain number field and from any imported
-        // backup. This test crashed the process before the clamp.
+        // `megabytes * 1024 * 1024` TRAPS on Int overflow — a hard crash reachable from the Audit
+        // Log pane's number field and from any imported backup. This test crashed before the clamp.
         var s = AppSettings()
         s.auditLogEnabled = true
         s.auditLogMaxFileMegabytes = Int.max
@@ -175,9 +164,8 @@ final class AppShellRemediationTests: XCTestCase {
     }
 
     func testImportedSettingsAreClampedBeforeTheSchedulingArithmetic() {
-        // `UInt64(hours) * 3600 * 1e9` and the RSS equivalent trap too, and neither
-        // field is reset by the import sanitiser — so a corrupt backup crashed the
-        // app on import. The boundary is `validated()`, which the import path runs.
+        // `UInt64(hours) * 3600 * 1e9` and the RSS equivalent trap too, and the import sanitiser
+        // resets neither — a corrupt backup crashed on import. `validated()` is the boundary.
         var hostile = AppSettings()
         hostile.backupIntervalHours = Int.max
         hostile.rssPollIntervalMinutes = Int.max
@@ -239,9 +227,8 @@ final class AppShellRemediationTests: XCTestCase {
         let existing = (dir as NSString).appendingPathComponent("payload.bin")
         try Data("original".utf8).write(to: URL(fileURLWithPath: existing))
 
-        // "skip" was documented in AppSettings and never implemented; it — and any
-        // other unrecognised value — used to fall through to keeping the name,
-        // i.e. truncating the user's file.
+        // "skip" was documented in AppSettings and never implemented; it — and any other
+        // unrecognised value — used to fall through to keeping the name, truncating the user's file.
         for policy in ["skip", "", "RENAME", "junk"] {
             let resolved = DownloadManager.resolveName("payload.bin", in: dir, policy: policy)
             XCTAssertNotEqual(resolved, "payload.bin", "policy \"\(policy)\" targeted the existing file")
@@ -444,9 +431,8 @@ final class AppShellRemediationTests: XCTestCase {
     }
 
     func testWindowOwnsATaskTheBatteryPolicyWouldOtherwiseClaim() {
-        // Single-owner ordering: window > network > power. A task paused by the
-        // closing window this tick must not also be recorded by the battery ledger,
-        // or reopening the window and recharging would each try to resume it.
+        // Single-owner ordering: window > network > power. A task paused by the closing window this
+        // tick must not also hit the battery ledger, or reopening and recharging both resume it.
         let a = UUID()
         var settings = batterySettings(threshold: 90)
         settings.scheduleEnabled = true

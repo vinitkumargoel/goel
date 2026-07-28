@@ -5,16 +5,12 @@ import UniformTypeIdentifiers
 
 // MARK: - Filename resolution (Content-Disposition / Content-Type)
 
-/// Pure, testable helpers that turn HTTP response headers into a good on-disk
-/// filename. Split out of ``HTTPEngine`` so the download driver stays focused on
-/// transfer mechanics; all three are `static` and side-effect free.
+/// Pure, side-effect-free `static` helpers turning HTTP response headers into an on-disk filename.
+/// Split out of ``HTTPEngine`` so the download driver stays focused on transfer mechanics.
 extension HTTPEngine {
 
-    /// Parse a filename out of a `Content-Disposition` header. Prefers the
-    /// RFC 5987 extended form (`filename*=UTF-8''…`, percent-decoded) and falls
-    /// back to the plain `filename="…"`. Returns nil if the header is absent or
-    /// carries no usable name. (Path components are stripped later by
-    /// `sanitizedName`, so a hostile `filename="../x"` can't escape.)
+    /// Filename from `Content-Disposition`: RFC 5987 `filename*=UTF-8''…` (percent-decoded) wins
+    /// over plain `filename="…"`; nil if absent. `sanitizedName` strips paths, so `../x` can't escape.
     static func filename(fromContentDisposition header: String?) -> String? {
         guard let header, !header.isEmpty else { return nil }
         var plain: String?
@@ -47,11 +43,8 @@ extension HTTPEngine {
         return UTType(mimeType: base)?.preferredFilenameExtension
     }
 
-    /// Compute a better on-disk name once response headers are known, or nil if
-    /// the current name is already the best we can do. The server-supplied
-    /// `Content-Disposition` name wins; otherwise the existing (URL-derived) name
-    /// is kept but gains an extension inferred from `Content-Type` when it has
-    /// none. The result is sanitized + length-clamped by `sanitizedName`.
+    /// Better on-disk name once headers are known, or nil if `current` is already best.
+    /// `Content-Disposition` wins; else URL-derived name gains a `Content-Type` ext; `sanitizedName` clamps.
     static func refinedName(current: String, suggestedName: String?, contentType: String?) -> String? {
         var name = current
         if let suggested = suggestedName {

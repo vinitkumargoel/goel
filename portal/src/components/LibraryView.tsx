@@ -31,11 +31,8 @@ export function LibraryView({
         </div>
       )}
 
-      {/* The hide-* classes must match the cells below exactly, and match the
-          narrow-viewport `grid-template-columns` in portal.css: at ≤920px the
-          grid drops to `1fr 96px 108px`, which is Status' width gone and Speed's
-          kept, so Status is the `hide-sm` column. Getting these out of step
-          leaves a header label with no column under it. */}
+      {/* hide-* must match the cells below AND portal.css's ≤920px `1fr 96px 108px` (Status'
+          width gone, Speed's kept), or a header label ends up with no column under it. */}
       <div className="lhead">
         <div>Name</div>
         <div className="r">Size</div>
@@ -79,11 +76,8 @@ interface RowProps {
   onContextMenu: (id: string, x: number, y: number) => void
 }
 
-/**
- * Memoised because the SSE stream replaces the whole task array several times a
- * second while downloads run. Without this every row re-renders on every
- * snapshot; with it, only rows whose own fields moved do.
- */
+/** Memoised: the SSE stream replaces the whole task array several times a second, so without this
+ * every row re-renders on every snapshot; with it, only rows whose own fields moved do. */
 const Row = memo(function Row({
   task,
   selected,

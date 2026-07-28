@@ -1,12 +1,10 @@
-// origin: template/src/aifl/Caption.tsx — reskinned for Goel° per DESIGN-SPEC §3
-// (Inter instead of the template's mono, accent square instead of amber, ink
-// tokens from Theme.swift). Motion is unchanged: 8f rise-in, 8f fade-out.
+// origin: template/src/aifl/Caption.tsx — reskinned for Goel° per DESIGN-SPEC §3 (Inter, accent
+// square, ink tokens from Theme.swift). Motion unchanged: 8f rise-in, 8f fade-out.
 import { interpolate, useCurrentFrame } from 'remotion';
 import { C, FONT } from '../theme';
 
-/** Screen-space narration caption: a strip at the bottom of the frame led by a
- * small accent square, with an optional quieter second line. Every claim the
- * film makes carries one of these, because the README plays it muted. */
+/** Screen-space narration caption: bottom strip led by a small accent square, optional quieter
+ * second line. Every claim the film makes carries one, because the README plays it muted. */
 export const Caption: React.FC<{
   text: string;
   sub?: string;

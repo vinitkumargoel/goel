@@ -2,13 +2,8 @@ import AppKit
 import Foundation
 import GoelCore
 
-/// The production ``SystemActions``: posts banners through ``NotificationService``
-/// and performs the irreversible queue-drain action (quit / sleep / shutdown).
-///
-/// It holds no state, so it is trivially `Sendable`; its methods are only ever
-/// called from the main-actor snapshot pump. Extracting this behind the port lets
-/// the pure ``SnapshotReducer`` decide *whether* to shut the Mac down while a test
-/// asserts the decision without ever spawning `pmset` or terminating the app.
+/// The production ``SystemActions``: posts banners and performs the irreversible drain action
+/// (quit / sleep / shutdown). Stateless, so the pure reducer's decision is testable without it.
 struct LiveSystemActions: SystemActions {
 
     func post(_ notifications: [AppNotification], sound: Bool) {
@@ -25,12 +20,8 @@ struct LiveSystemActions: SystemActions {
         }
     }
 
-    /// Both drain actions are things the user asked for once, minutes or hours
-    /// earlier, and then walked away from. Discarding the failure — `try?` on
-    /// the spawn, a nil error pointer on the script — meant a denied Automation
-    /// prompt or a failed spawn left the Mac awake with nothing anywhere saying
-    /// why. The banner is not a great channel, but it is the one this type
-    /// already owns, and it is strictly better than silence.
+    // Both drain actions were asked for hours earlier and then walked away from. Discarding the
+    // failure left the Mac awake with nothing saying why; a banner is imperfect but beats silence.
     func perform(_ intent: DrainIntent) {
         switch intent {
         case .quit:

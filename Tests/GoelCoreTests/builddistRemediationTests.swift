@@ -3,23 +3,8 @@
 #if !os(Linux)
 import XCTest
 
-/// Regression tests for the build / signing / distribution scripts.
-///
-/// WHY SHELL SCRIPTS ARE TESTED FROM XCTEST
-///
-/// Everything that decides whether a shipped `.app` actually launches and
-/// actually passes Gatekeeper lives in `Scripts/`, not in GoelCore. Those
-/// decisions have already failed once each — vendored dylibs targeting a newer
-/// macOS than the bundle advertises, a release signed with a certificate that is
-/// not valid for distribution, a `codesign --verify` whose failure was swallowed
-/// by `set -e` semantics — and in every case the build reported success. There
-/// is no Swift seam to test, so the scripts are read as the artefacts they are,
-/// and the one piece of real logic (the deployment-target comparator) is
-/// executed through its own `--self-test`.
-///
-/// `#filePath` is the compile-time source path, so the repo root is reachable
-/// regardless of where the test binary runs from — the same approach
-/// ThirdPartyNoticesFFmpegLGPLTests uses for the licence text.
+/// Regression tests for the `Scripts/` build/signing/distribution logic — each gate here has failed
+/// once with the build reporting success. `#filePath` locates the repo root wherever the binary runs.
 final class BuildDistRemediationTests: XCTestCase {
 
     private var repoRoot: URL {
@@ -51,11 +36,8 @@ final class BuildDistRemediationTests: XCTestCase {
 
     // MARK: - The deployment-target gate
 
-    /// The comparator is the whole of the minos gate, and it must order
-    /// versions numerically: compared as strings, "10.0" looks older than "9.0"
-    /// and "14.10" older than "14.2", either of which passes a bundle that dyld
-    /// will refuse to launch. The script's own table covers those cases plus
-    /// fail-closed handling of an unreadable version.
+    /// The comparator is the whole minos gate and must order versions numerically: as strings "10.0"
+    /// looks older than "9.0" and "14.10" older than "14.2", passing a bundle dyld refuses to launch.
     func testMinOSComparatorSelfTestPasses() throws {
         let (status, output) = try run("Scripts/check_min_os.sh", ["--self-test"])
         XCTAssertEqual(status, 0, "check_min_os.sh --self-test failed:\n\(output)")
@@ -63,10 +45,8 @@ final class BuildDistRemediationTests: XCTestCase {
         XCTAssertFalse(output.contains("FAIL"), output)
     }
 
-    /// A bundle whose Mach-Os need a newer macOS than its LSMinimumSystemVersion
-    /// must fail, and must name every offender rather than stopping at the
-    /// first — a build engineer fixing them one round-trip at a time is how the
-    /// gate gets disabled.
+    /// A bundle whose Mach-Os need a newer macOS than its LSMinimumSystemVersion must fail and name
+    /// every offender — fixing them one round-trip at a time is how the gate gets disabled.
     func testMinOSGateRejectsABundleThatOutRunsItsMinimumSystemVersion() throws {
         let fixture = try makeFixtureBundle(minimumSystemVersion: "10.0")
         defer { try? FileManager.default.removeItem(at: fixture) }
@@ -86,9 +66,8 @@ final class BuildDistRemediationTests: XCTestCase {
         XCTAssertEqual(status, 0, "the gate rejected a correct bundle:\n\(output)")
     }
 
-    /// The purpose strings are checked over the assembled bundle, because the
-    /// consequence of a missing one is a runtime kill (Apple events) or silently
-    /// dropped traffic (local network) rather than a build error.
+    /// Purpose strings are checked over the assembled bundle: a missing one is a runtime kill (Apple
+    /// events) or silently dropped traffic (local network), never a build error.
     func testMinOSGateRequiresTheTCCPurposeStrings() throws {
         let fixture = try makeFixtureBundle(minimumSystemVersion: "14.0",
                                             purposeStrings: false)
@@ -99,10 +78,8 @@ final class BuildDistRemediationTests: XCTestCase {
         XCTAssertTrue(output.contains("NSAppleEventsUsageDescription"), output)
     }
 
-    /// A `.app` containing a real Mach-O, built for macOS 14, and an Info.plist
-    /// that claims `minimumSystemVersion`. `/bin/ls` is a system binary with a
-    /// deployment target well above 10.0 and well below anything current, which
-    /// is exactly the shape of the defect being guarded against.
+    /// A `.app` with a real Mach-O and an Info.plist claiming `minimumSystemVersion`. `/bin/ls` targets
+    /// well above 10.0 and below anything current — exactly the shape of the defect being guarded.
     private func makeFixtureBundle(minimumSystemVersion: String,
                                    purposeStrings: Bool = true) throws -> URL {
         let fm = FileManager.default
@@ -145,10 +122,8 @@ final class BuildDistRemediationTests: XCTestCase {
 
     // MARK: - Info.plist assembly
 
-    /// macOS terminates a process that sends an Apple event with no
-    /// NSAppleEventsUsageDescription, so the "shut down when downloads finish"
-    /// drain used to kill the app instead of the Mac. The remaining keys cover
-    /// the networks and folders the app is actually pointed at.
+    /// macOS kills a process sending an Apple event with no NSAppleEventsUsageDescription — the "shut
+    /// down when downloads finish" drain used to kill the app instead of the Mac.
     func testGeneratedInfoPlistCarriesEveryPurposeStringTheAppNeeds() throws {
         let script = try read("Scripts/build_app.sh")
         for key in ["NSAppleEventsUsageDescription",
@@ -162,9 +137,8 @@ final class BuildDistRemediationTests: XCTestCase {
         }
     }
 
-    /// The advertised Bonjour service type must match the one
-    /// RemoteControlServer registers, or macOS drops the advertisement without
-    /// a word and the portal simply never appears on other devices.
+    /// The advertised Bonjour service type must match the one RemoteControlServer registers, or macOS
+    /// drops the advertisement without a word and the portal never appears on other devices.
     func testBonjourServiceTypeMatchesTheListener() throws {
         let script = try read("Scripts/build_app.sh")
         let server = try read("Sources/GoelCore/Remote/RemoteControlServer.swift")
@@ -176,9 +150,8 @@ final class BuildDistRemediationTests: XCTestCase {
                       "Info.plist must list the exact service type the listener registers")
     }
 
-    /// Without an ATS exception every plain-http transfer in a packaged build
-    /// fails with -1022 against a URL that works in curl — verified against a
-    /// bundled binary. NetworkGuard, not ATS, is what restricts the schemes.
+    /// Without an ATS exception every plain-http transfer in a packaged build fails with -1022 against
+    /// a URL that works in curl. NetworkGuard, not ATS, is what restricts the schemes.
     func testGeneratedInfoPlistPermitsThePlainHTTPDownloadsNetworkGuardAllows() throws {
         let script = try read("Scripts/build_app.sh")
         XCTAssertTrue(script.contains("NSAppTransportSecurity"),
@@ -190,10 +163,8 @@ final class BuildDistRemediationTests: XCTestCase {
 
     // MARK: - Signing and distribution
 
-    /// `security find-identity | head -1` picks whatever sorts first, which on
-    /// a developer Mac is an Apple Development certificate: valid for signing,
-    /// rejected by Gatekeeper everywhere else. A release must filter for
-    /// Developer ID Application and refuse rather than fall back.
+    /// `security find-identity | head -1` picks an Apple Development cert on a dev Mac — signs fine,
+    /// Gatekeeper rejects it elsewhere. A release must filter for Developer ID Application or refuse.
     func testReleaseSigningRequiresADeveloperIDIdentity() throws {
         let script = try read("Scripts/build_app.sh")
         XCTAssertTrue(script.contains("grep '^Developer ID Application:'"),
@@ -214,9 +185,8 @@ final class BuildDistRemediationTests: XCTestCase {
                       "signature verification must be checked explicitly")
     }
 
-    /// `codesign --verify` checks the seal, not the policy. Only spctl can say
-    /// whether a download will open on someone else's Mac, and only the
-    /// `source=` line distinguishes notarized from merely Developer-ID signed.
+    /// `codesign --verify` checks the seal, not the policy: only spctl says whether a download opens on
+    /// someone else's Mac, and only `source=` distinguishes notarized from merely Developer-ID signed.
     func testGatekeeperIsAssessedBeforeAnythingIsCalledADistributable() throws {
         let script = try read("Scripts/build_app.sh")
         XCTAssertTrue(script.contains("spctl -a -vvv -t exec"),
@@ -227,9 +197,8 @@ final class BuildDistRemediationTests: XCTestCase {
                       "the notarization ticket must be confirmed as stapled")
     }
 
-    /// Every build used to emit `dist/Goel-Downloader-<version>-macos-<arch>.zip`
-    /// whether or not it was signed for distribution, which is how ad-hoc builds
-    /// came to be published under release names.
+    /// Every build used to emit `dist/Goel-Downloader-<version>-macos-<arch>.zip` signed or not, which
+    /// is how ad-hoc builds came to be published under release names.
     func testOnlyADistributableBuildEmitsAReleaseArchive() throws {
         let script = try read("Scripts/build_app.sh")
         XCTAssertTrue(script.contains("if [ \"$DISTRIBUTABLE\" = 1 ]; then\n  VERSION="),
@@ -262,9 +231,8 @@ final class BuildDistRemediationTests: XCTestCase {
 
     // MARK: - Vendoring
 
-    /// bundle_dylibs.sh used to warn and exit 0 on a failed
-    /// `codesign --verify --deep --strict`, after which build_app.sh re-signed
-    /// and packaged a bundle whose seal was already broken.
+    /// bundle_dylibs.sh used to warn and exit 0 on a failed `codesign --verify --deep --strict`, after
+    /// which build_app.sh re-signed and packaged a bundle whose seal was already broken.
     func testVendoringFailsClosedOnABrokenSignature() throws {
         let script = try read("Scripts/bundle_dylibs.sh")
         XCTAssertFalse(script.contains("warning: codesign --verify --deep --strict reported issues"),
@@ -285,9 +253,8 @@ final class BuildDistRemediationTests: XCTestCase {
 
     // MARK: - Vendored binaries
 
-    /// yt-dlp is copied into a bundle that is then Developer-ID signed, and it
-    /// is the one bundled binary that carries the disable-library-validation /
-    /// allow-jit entitlements. It was downloaded with no digest at all.
+    /// yt-dlp is Developer-ID signed inside the bundle and is the one binary carrying the
+    /// disable-library-validation / allow-jit entitlements. It was downloaded with no digest at all.
     func testYtDlpDownloadIsPinnedAndVerified() throws {
         let script = try read("Scripts/fetch_ytdlp.sh")
         XCTAssertTrue(script.contains("YTDLP_SHA256"),
@@ -298,9 +265,8 @@ final class BuildDistRemediationTests: XCTestCase {
                       "a moving tag has no digest and must not be accepted")
     }
 
-    /// A warning followed by `exit 0` meant a yt-dlp that could not run for the
-    /// target architecture was signed and shipped, giving the user a
-    /// "Resolve with yt-dlp" button that is present and broken.
+    /// A warning then `exit 0` meant a yt-dlp that cannot run for the target arch got signed and
+    /// shipped, giving the user a "Resolve with yt-dlp" button that is present and broken.
     func testYtDlpArchAndSmokeTestFailuresAreTerminal() throws {
         let script = try read("Scripts/fetch_ytdlp.sh")
         XCTAssertFalse(script.contains("warning: bundled yt-dlp"),
@@ -311,9 +277,8 @@ final class BuildDistRemediationTests: XCTestCase {
                       "a cross-build must be able to state the arch it is building for")
     }
 
-    /// fetch_ffmpeg.sh ran unzip/tar over the downloaded bytes and only then
-    /// compared the digest. It ended fail-closed, but an archive parser had
-    /// already been pointed at unverified input.
+    /// fetch_ffmpeg.sh ran unzip/tar over the downloaded bytes and only then compared the digest —
+    /// fail-closed in the end, but an archive parser had already been pointed at unverified input.
     func testFFmpegArchiveIsVerifiedBeforeItIsUnpacked() throws {
         let script = try read("Scripts/fetch_ffmpeg.sh")
         guard let verifyIndex = script.range(of: "ACTUAL=\"$(sha256_of \"$TMP\")\""),
@@ -324,9 +289,8 @@ final class BuildDistRemediationTests: XCTestCase {
                           "the digest must be checked before the archive is opened")
     }
 
-    /// The SQLite amalgamation is compiled into the .so linked by the shipped
-    /// Linux daemon. It used to be located by scraping an HTML page, with no
-    /// pinned version and no digest.
+    /// The SQLite amalgamation is compiled into the .so linked by the shipped Linux daemon; it used to
+    /// be located by scraping an HTML page, with no pinned version and no digest.
     func testSQLiteAmalgamationIsPinnedAndVerified() throws {
         let script = try read("Scripts/linux/build-sqlite.sh")
         XCTAssertTrue(script.contains("SQLITE_SHA256"), "the amalgamation must be pinned")
@@ -337,9 +301,8 @@ final class BuildDistRemediationTests: XCTestCase {
 
     // MARK: - Licences and artifacts
 
-    /// All four are tracked files, so a missing one is a broken checkout rather
-    /// than a condition — and redistributing the native libraries without their
-    /// notices is a licence violation, not a cosmetic omission.
+    /// All four are tracked files, so a missing one is a broken checkout, not a condition — and shipping
+    /// the native libraries without their notices is a licence violation, not a cosmetic omission.
     func testBundledLicenceFilesAreRequiredNotBestEffort() throws {
         let script = try read("Scripts/build_app.sh")
         XCTAssertFalse(script.contains("[ -f LICENSE ] && cp LICENSE"),
@@ -353,10 +316,8 @@ final class BuildDistRemediationTests: XCTestCase {
         }
     }
 
-    /// The frozen `yt-dlp_macos` embeds mutagen, which is GPL-2.0-or-later.
-    /// The notices file used to describe everything inside that binary as
-    /// "permissively-licensed" and reproduced no GPL text at all — a licence
-    /// obligation recorded as already discharged.
+    /// The frozen `yt-dlp_macos` embeds mutagen (GPL-2.0-or-later), which the notices file used to call
+    /// "permissively-licensed" while reproducing no GPL text — an obligation recorded as discharged.
     func testGPLTextAccompaniesTheBundledYtDlp() throws {
         let notices = try read("THIRD-PARTY-NOTICES.md")
         XCTAssertTrue(notices.contains("mutagen"),
@@ -373,10 +334,8 @@ final class BuildDistRemediationTests: XCTestCase {
                       "the GPL text must be reachable from the table of obligations")
     }
 
-    /// Mere aggregation is the argument that makes bundling a GPL'd executable
-    /// acceptable inside a PolyForm Noncommercial app. It only holds while
-    /// yt-dlp stays a separate, optional, replaceable process — so the file has
-    /// to say that, and `BUNDLE_YTDLP=0` has to remain a real option.
+    /// "Mere aggregation" is what makes bundling a GPL'd executable acceptable in a PolyForm
+    /// Noncommercial app — only while yt-dlp stays optional, so `BUNDLE_YTDLP=0` must stay real.
     func testMereAggregationArgumentIsRecordedAndStillTrue() throws {
         let notices = try read("THIRD-PARTY-NOTICES.md")
         XCTAssertTrue(notices.contains("mere aggregation"),
@@ -386,9 +345,8 @@ final class BuildDistRemediationTests: XCTestCase {
                       "shipping without yt-dlp must remain possible for the argument to hold")
     }
 
-    /// The Linux tarball was assembled by hand: no build script, no licence
-    /// files, and — because the whole toolchain lib directory was copied — the
-    /// test-only libXCTest.so and libTesting.so.
+    /// The Linux tarball was assembled by hand: no build script, no licence files, and — from copying
+    /// the whole toolchain lib directory — the test-only libXCTest.so and libTesting.so.
     func testLinuxDaemonHasAPackagingScriptThatShipsLicencesAndNoTestLibraries() throws {
         let script = try read("Scripts/linux/package_daemon.sh")
         XCTAssertTrue(script.contains("libXCTest\\.so|libTesting\\.so"),
@@ -401,9 +359,8 @@ final class BuildDistRemediationTests: XCTestCase {
 
     // MARK: - CI
 
-    /// The two worst defects this project shipped were both invisible on the
-    /// machine that built them and would have been caught by one unsigned build
-    /// on a clean runner.
+    /// The two worst defects this project shipped were invisible on the machine that built them, and
+    /// would have been caught by one unsigned build on a clean runner.
     func testCIRunsTheGatesOnAMatchingRunner() throws {
         let workflow = try read(".github/workflows/ci.yml")
         XCTAssertTrue(workflow.contains("runs-on: macos-14"),
@@ -417,9 +374,8 @@ final class BuildDistRemediationTests: XCTestCase {
         XCTAssertTrue(workflow.contains("swift test"), "CI must run the test suite")
     }
 
-    /// A commit count is monotonic only over a complete history. On a shallow
-    /// clone it is 1 — below the version already shipped, which Sparkle would
-    /// read as older and never offer.
+    /// A commit count is monotonic only over a complete history; on a shallow clone it is 1 — below
+    /// the version already shipped, which Sparkle reads as older and never offers.
     func testShallowCloneCannotStampARegressingBundleVersion() throws {
         let script = try read("Scripts/build_app.sh")
         XCTAssertTrue(script.contains("git rev-parse --is-shallow-repository"),

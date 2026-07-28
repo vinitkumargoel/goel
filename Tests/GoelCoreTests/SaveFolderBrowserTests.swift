@@ -1,13 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// The save-folder picker's reach, and what stops it.
-///
-/// The picker deliberately has no configured root: it goes wherever the server
-/// process's own uid goes. That makes the permission bits the boundary, so these
-/// tests set real ones on real directories and check that the browser reports
-/// what the kernel would enforce — a picker that offers a folder the write then
-/// fails on is worse than one that never offered it.
+/// The save-folder picker has no configured root: it goes wherever the server uid goes, so permission
+/// bits are the boundary. Real bits on real dirs — offering a folder the write then fails on is worse.
 final class SaveFolderBrowserTests: XCTestCase {
 
     private var base: String = ""
@@ -232,9 +227,8 @@ final class SaveFolderBrowserTests: XCTestCase {
         }
     }
 
-    /// Still refused, and still refused rather than sanitised — the name is a
-    /// single component by construction, which is what lets `create` join it
-    /// without re-checking where the result landed.
+    /// Refused rather than sanitised — the name is a single component by construction, which is what
+    /// lets `create` join it without re-checking where the result landed.
     func testTraversalSlashesHiddenAndEmptyNamesAreRefused() {
         for name in ["", "   ", ".", "..", "../etc", "a/b", #"a\b"#, ".hidden", "a\nb", "a\0b"] {
             XCTAssertFalse(RemoteRouter.isPlainFolderName(name), name)

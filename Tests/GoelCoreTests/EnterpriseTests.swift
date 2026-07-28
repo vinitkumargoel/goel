@@ -1,15 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Tests for the enterprise layer: MDM-managed preference layering, the audit
-/// log's redaction contract, the portal's per-IP login throttle, and the
-/// trusted-header SSO gate.
-///
-/// Three of these are security tests in disguise. The redaction cases assert
-/// that a full URL — query string, credentials and all — cannot reach the audit
-/// file; the throttle cases assert that a brute-force attempt actually gets
-/// slower; the SSO cases assert that the header is inert until an operator has
-/// named the proxy that may assert it.
+/// Enterprise layer: MDM preference layering, audit-log redaction, per-IP login throttle, header SSO.
+/// Security tests in disguise — no full URL reaches the log, brute force slows, SSO is inert by default.
 final class EnterpriseTests: XCTestCase {
 
     // MARK: - Managed policy layering
@@ -169,9 +162,7 @@ final class EnterpriseTests: XCTestCase {
     }
 
     // MARK: - Audit log redaction
-    //
-    // These are the tests that back the promise in Deploy/README.md: the audit
-    // file records a host, and nothing more identifying than a host.
+    // Backs the Deploy/README.md promise: the audit file records a host, nothing more identifying.
 
     func testRedactedHostDropsPathQueryAndCredentials() {
         let locator = "https://user:s3cr3t@files.example.com/private/report.pdf?token=AKIAEXAMPLE&sig=deadbeef"
@@ -410,9 +401,8 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertNil(RemoteAuthService.trustedIdentity(request, client: "127.0.0.1", policy: policy))
     }
 
-    /// Once the proxy has presented its shared secret, the peer address is the
-    /// remaining discriminator: honoured from inside the trusted set, refused
-    /// from outside it or from an address we could not determine at all.
+    /// Once the proxy presents its shared secret the peer address is the remaining discriminator:
+    /// honoured inside the trusted set, refused outside it or from an undeterminable address.
     func testHeaderIsHonouredOnlyFromATrustedAddress() {
         let policy = TrustedIdentityHeaderPolicy(isEnabled: true,
                                                  trustedProxies: ["127.0.0.1", "10.20.0.0/16"],
@@ -432,10 +422,8 @@ final class EnterpriseTests: XCTestCase {
                      "an unknown peer address must not be trusted")
     }
 
-    /// A trusted peer address is not on its own proof of proxy origin: on the
-    /// deployment we document, everything else on the host can also dial
-    /// 127.0.0.1. Without the shared secret — or with a near-miss of it — a
-    /// trusted address must still buy nothing.
+    /// A trusted peer address alone isn't proof of proxy origin — everything else on the host can dial
+    /// 127.0.0.1 too. Without the shared secret (or with a near-miss) it must buy nothing.
     func testTrustedAddressWithoutTheProxySecretIsRefused() {
         let policy = TrustedIdentityHeaderPolicy(isEnabled: true, trustedProxies: ["127.0.0.1"],
                                                  sharedSecret: "proxy-secret")
@@ -451,9 +439,8 @@ final class EnterpriseTests: XCTestCase {
                      "a wrong proxy secret must not assert an identity")
     }
 
-    /// Header-value rules, checked against a policy that is otherwise fully
-    /// satisfied — so a nil here is the value being refused, not the request
-    /// falling at the shared-secret gate first.
+    /// Header-value rules against an otherwise fully satisfied policy — so a nil here is the value
+    /// being refused, not the request falling at the shared-secret gate first.
     func testMissingOrHostileHeaderValuesAreRefused() {
         let policy = TrustedIdentityHeaderPolicy(isEnabled: true, trustedProxies: ["127.0.0.1"],
                                                  sharedSecret: "proxy-secret")
@@ -469,9 +456,8 @@ final class EnterpriseTests: XCTestCase {
         XCTAssertNil(RemoteAuthService.trustedIdentity(signed("   "),
                                                        client: "127.0.0.1", policy: policy),
                      "a whitespace-only identity is empty once trimmed")
-        // A control character embedded in the value (CRLF is already eaten by the
-        // request parser as a header break, so it cannot reach this guard — the
-        // interesting case is a control byte that survives into the value).
+        // A control character embedded in the value — CRLF is already eaten by the request parser as
+        // a header break, so the interesting case is a control byte that survives into the value.
         XCTAssertNil(RemoteAuthService.trustedIdentity(signed("a.patel\u{01}admin"),
                                                        client: "127.0.0.1", policy: policy),
                      "control characters are a smuggling attempt, refused not sanitised")

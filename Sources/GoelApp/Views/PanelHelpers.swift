@@ -1,10 +1,8 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// Thin wrappers around the `NSOpenPanel`/`NSSavePanel` ritual so call sites
-/// state only what differs (kinds, prompts, content types) instead of repeating
-/// the make-panel / runModal / read-url boilerplate. Optional prompt/message/
-/// types are only applied when supplied, so each site keeps its exact flags.
+/// Thin wrappers around the `NSOpenPanel`/`NSSavePanel` ritual so call sites state only what
+/// differs. Optional prompt/message/types apply only when supplied, so each site keeps its flags.
 enum FilePicker {
     /// Pick a single existing directory.
     static func chooseDirectory(prompt: String? = nil, message: String? = nil) -> URL? {
@@ -51,11 +49,8 @@ enum FilePicker {
     }
 }
 
-/// Collect the URLs a drag carries, then hand them to `done` on the main queue
-/// once every provider has finished loading. Returns `false` (drop rejected)
-/// when no provider can supply a URL. `fileURLsOnly` matches the upload sites
-/// that accept only on-disk files: it both narrows the accepted providers to
-/// file-URL types and discards any non-file URL that loads.
+/// Collect the URLs a drag carries and hand them to `done` on the main queue once every provider
+/// loads. `fileURLsOnly` both narrows accepted providers and discards any non-file URL.
 func collectDroppedURLs(_ providers: [NSItemProvider], fileURLsOnly: Bool = false,
                         _ done: @escaping ([URL]) -> Void) -> Bool {
     let matching = providers.filter {

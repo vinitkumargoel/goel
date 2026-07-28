@@ -2,9 +2,8 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-/// The download-history archive: everything that ever completed, searchable,
-/// exportable as CSV, and re-downloadable — independent of whether the task
-/// still sits in the queue list.
+/// The download-history archive: everything that ever completed, searchable, exportable as CSV
+/// and re-downloadable — independent of whether the task still sits in the queue.
 struct HistoryView: View {
     @EnvironmentObject private var vm: AppViewModel
     @State private var entries: [HistoryEntry]?
@@ -109,9 +108,8 @@ struct HistoryView: View {
                         entry.totalBytes.map(A11y.bytes)))
             Spacer(minLength: 12)
             HStack(spacing: 4) {
-                // Four unlabelled glyphs per row. Across a full history that is a
-                // wall of identical "button"s with no way to tell which does
-                // what, or which entry it belongs to.
+                // Four unlabelled glyphs per row. Across a full history that is a wall of identical "button"s
+                // with no way to tell which does what, or which entry it belongs to.
                 iconButton("arrow.down.circle", help: "Download again",
                            label: "Download “\(entry.name)” again") {
                     vm.redownload(entry)

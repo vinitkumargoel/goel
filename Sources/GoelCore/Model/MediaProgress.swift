@@ -1,24 +1,12 @@
 import Foundation
 
-/// Everything about a media conversion that can be decided without launching a
-/// process: reading ffmpeg's progress stream, reading a duration out of its
-/// banner, turning those into a percentage and an ETA, predicting the output
-/// size, and deciding whether a stream copy is worth attempting.
-///
-/// This lives in `GoelCore` for the same reason ``PlaylistExpander`` and
-/// ``MediaFormatTable`` do: the parsing is the part that breaks, and a test that
-/// needed ffmpeg installed would be skipped on CI and would therefore protect
-/// nothing. `GoelApp/FFmpegService` owns the process plumbing and calls in here
-/// for every decision it makes.
+/// Every media-conversion decision needing no process: ffmpeg progress/duration parsing, percentage, ETA,
+/// size prediction, copy viability. In Core so it is CI-testable; `GoelApp/FFmpegService` does the process.
 
 // MARK: - Progress stream
 
-/// One reading from ffmpeg's `-progress` stream.
-///
-/// ffmpeg emits a block of `key=value` lines roughly twice a second, terminated
-/// by `progress=continue` (or `progress=end` for the final one). Every field is
-/// optional because ffmpeg omits what it has nothing to say about — a stream
-/// copy, for instance, often reports no `bitrate`.
+/// One reading from ffmpeg's `-progress` stream: `key=value` lines ~2×/sec ending `progress=continue`
+/// (or `=end`). Every field is optional — ffmpeg omits what it has nothing to say about.
 public struct MediaProgressSample: Equatable, Sendable {
 
     /// How far into the *source* ffmpeg has read, in seconds.
@@ -43,13 +31,8 @@ public struct MediaProgressSample: Equatable, Sendable {
     }
 }
 
-/// Incremental reader for ffmpeg's `-progress` output.
-///
-/// A pipe read returns whatever bytes happened to be buffered, which lands mid
-/// line and mid block far more often than not — so a naive "split on newline and
-/// parse" drops or mangles roughly every other reading. This buffers the tail of
-/// a partial line and only emits a sample when a block terminator arrives, which
-/// is the single most important correctness property of the whole progress path.
+/// Incremental reader for ffmpeg's `-progress` output. Pipe reads land mid-line and mid-block, so this
+/// buffers the partial tail and emits only on a block terminator — else every other reading is mangled.
 public struct MediaProgressReader {
 
     /// The unterminated tail of the last chunk, waiting for the rest of its line.
@@ -69,9 +52,8 @@ public struct MediaProgressReader {
     public mutating func consume(_ chunk: String) -> [MediaProgressSample] {
         var samples: [MediaProgressSample] = []
         let combined = carry + chunk
-        // `omittingEmptySubsequences: false` keeps the trailing empty piece that
-        // marks "the chunk ended exactly on a newline", so the carry is cleared
-        // rather than re-parsed.
+        // `omittingEmptySubsequences: false` keeps the trailing empty piece marking "chunk ended exactly
+        // on a newline", so the carry is cleared rather than re-parsed.
         var lines = combined.split(separator: "\n", omittingEmptySubsequences: false)
         carry = String(lines.removeLast())
         for line in lines {
@@ -89,10 +71,8 @@ public struct MediaProgressReader {
         let value = String(trimmed[trimmed.index(after: separator)...])
         switch key {
         case "out_time_us", "out_time_ms":
-            // Both keys are microseconds. `out_time_ms` is a long-standing ffmpeg
-            // misnomer — it has always carried microseconds despite the name, and
-            // reading it as milliseconds would report progress 1000× too fast.
-            // ffmpeg writes "N/A" before the first frame is muxed.
+            // Both keys are microseconds: `out_time_ms` is a long-standing ffmpeg misnomer, and reading
+            // it as milliseconds reports progress 1000× too fast. "N/A" before the first frame is muxed.
             if let micros = Double(value) {
                 pending.outTimeSeconds = micros / 1_000_000
                 pendingHasFields = true
@@ -149,13 +129,8 @@ public struct MediaProgressReader {
 
 public enum MediaDuration {
 
-    /// Pull the source length out of ffmpeg's own banner.
-    ///
-    /// `ffmpeg -i file` prints `Duration: 00:11:02.34, start: …` to **stderr** and
-    /// exits non-zero when no output is given — that non-zero exit is expected and
-    /// must not be read as a failure. This is the fallback for containers
-    /// AVFoundation cannot open (MKV, WebM), which is most of what a downloader
-    /// ends up holding.
+    /// Source length from `ffmpeg -i`'s banner (`Duration: 00:11:02.34, …` on **stderr**; its non-zero
+    /// exit is expected, not a failure). Fallback for the MKV/WebM that AVFoundation cannot open.
     public static func parse(banner: String) -> Double? {
         for line in banner.split(separator: "\n") {
             guard let range = line.range(of: "Duration:") else { continue }
@@ -170,16 +145,8 @@ public enum MediaDuration {
         return nil
     }
 
-    /// The first audio stream's codec name from the same banner, e.g. `aac`.
-    ///
-    /// The line reads
-    /// `Stream #0:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, …`
-    /// and only the bare codec name is wanted — the profile in parentheses and
-    /// the fourcc are noise for the copy decision.
-    ///
-    /// Returns nil when there is no audio stream at all, which is a meaningful
-    /// answer: extracting audio from a silent video should fail early with a
-    /// sentence rather than after a pointless ffmpeg run.
+    /// First audio stream's bare codec name from the banner's `Audio: aac (LC) (mp4a…)` — profile and
+    /// fourcc are noise for the copy decision. Nil means no audio stream: fail early, not after ffmpeg.
     public static func audioCodec(banner: String) -> String? {
         for line in banner.split(separator: "\n") {
             guard line.contains("Stream #"), let range = line.range(of: "Audio: ") else { continue }
@@ -196,25 +163,15 @@ public enum MediaDuration {
 
 public enum MediaEstimate {
 
-    /// Completed fraction, clamped to `0…1`.
-    ///
-    /// Returns nil when the total is unknown or zero — the UI must then show an
-    /// indeterminate bar and say the length is unknown rather than display an
-    /// invented percentage. The clamp matters: container durations are frequently
-    /// a few tenths short of the real stream, so an unclamped ratio parks at
-    /// "103%" for the last second of every job.
+    /// Completed fraction clamped to `0…1` — container durations run a few tenths short, so unclamped it
+    /// parks at "103%". Nil when the total is unknown or zero, so the UI shows an indeterminate bar.
     public static func fraction(processed: Double, total: Double?) -> Double? {
         guard let total, total > 0, processed.isFinite, processed >= 0 else { return nil }
         return min(1, processed / total)
     }
 
-    /// Seconds of wall clock remaining, or nil when there is nothing honest to
-    /// say yet.
-    ///
-    /// Uses ffmpeg's own `speed` (media-seconds per wall-second) rather than a
-    /// rate derived from elapsed time, so the estimate is right from the second
-    /// reading instead of converging over the first minute. Nil at 0% and at
-    /// completion — "∞ remaining" and "0s remaining" are both noise.
+    /// Wall-clock seconds remaining. Uses ffmpeg's own `speed` (media-s per wall-s), not a rate derived
+    /// from elapsed time, so it is right from the second reading. Nil at 0% and at completion: noise.
     public static func eta(processed: Double, total: Double?, speed: Double?) -> Double? {
         guard let total, total > 0, let speed, speed > 0 else { return nil }
         let remaining = total - processed
@@ -225,26 +182,15 @@ public enum MediaEstimate {
 
 // MARK: - Audio extraction targets
 
-/// The audio containers offered in the UI, plus the facts needed to size a job
-/// and to decide whether it can be done without re-encoding.
-///
-/// Here rather than in `GoelApp` so the size estimate and the copy decision are
-/// testable on CI, where there is neither a Mac app nor an ffmpeg. The *arguments*
-/// that realise those decisions are not here: building a command line is process
-/// plumbing, it belongs beside the code that spawns the process, and this module
-/// also builds for the Linux daemon, which has no business knowing ffmpeg's flags.
+/// Audio containers offered in the UI, plus what is needed to size a job and judge a copy. In Core, not
+/// `GoelApp`, so it is CI-testable without ffmpeg; command lines stay beside the code that spawns them.
 public enum AudioExtractionFormat: String, CaseIterable, Sendable {
     case mp3, m4a, flac, wav
 
     public var displayName: String { rawValue.uppercased() }
 
-    /// Roughly how many bytes one second of output occupies, for the size hint
-    /// shown in the menu and the free-space pre-flight.
-    ///
-    /// Deliberately approximate and deliberately **generous** for the lossy
-    /// formats: the number's job is to stop someone writing 1.2 GB of WAV onto a
-    /// disk with 400 MB free, and an estimate that undershoots fails at exactly
-    /// that job. Figures are for 44.1 kHz stereo.
+    /// Bytes per second of output, for the menu size hint and free-space pre-flight. Deliberately
+    /// **generous** for lossy formats — an undershoot lets 1.2 GB land on 400 MB free. 44.1 kHz stereo.
     public var approximateBytesPerSecond: Double {
         switch self {
         case .mp3:  return 24_000      // libmp3lame -q:a 2 ≈ 190 kbit/s VBR
@@ -260,13 +206,8 @@ public enum AudioExtractionFormat: String, CaseIterable, Sendable {
         return Int64(durationSeconds * approximateBytesPerSecond)
     }
 
-    /// Whether an already-decoded source track of `codec` can be lifted into this
-    /// container verbatim, with no re-encode and no generation loss.
-    ///
-    /// Codec names are ffprobe/ffmpeg's own (`aac`, `mp3`, `flac`, `pcm_s16le`),
-    /// compared case-insensitively. Unknown or empty means "don't assume" — the
-    /// caller then attempts a copy anyway and falls back, so a wrong answer here
-    /// costs a wasted sub-second process launch, never a wrong output file.
+    /// Whether a source track can be lifted into this container verbatim — no re-encode, no generation
+    /// loss. Codec names are ffmpeg's, case-insensitive; unknown means "don't assume", caller falls back.
     public func canCopy(sourceCodec: String?) -> Bool {
         guard let raw = sourceCodec?.trimmingCharacters(in: .whitespaces).lowercased(),
               !raw.isEmpty else { return false }
@@ -274,9 +215,8 @@ public enum AudioExtractionFormat: String, CaseIterable, Sendable {
         case .mp3:  return raw == "mp3"
         case .m4a:  return raw == "aac" || raw == "alac"
         case .flac: return raw == "flac"
-        // PCM into WAV is only a copy when the sample format already matches what
-        // the encoder would produce; anything else (24-bit, float, or any lossy
-        // codec) has to be converted.
+        // PCM into WAV copies only when the sample format already matches the encoder's output;
+        // 24-bit, float, or any lossy codec has to be converted.
         case .wav:  return raw == "pcm_s16le"
         }
     }
@@ -289,37 +229,23 @@ public enum MediaContainer {
     /// Containers Goel° offers as conversion targets.
     public static let convertTargets = ["mp4", "mkv", "webm", "mov"]
 
-    /// Whether a stream copy is *likely* to work going from one container to
-    /// another — used only to label the menu ("copy, instant"), never to decide
-    /// what ffmpeg is actually asked to do.
-    ///
-    /// The real decision is made by running ffmpeg with `-c copy` and falling back
-    /// to a re-encode if the muxer rejects the codec, because no static table can
-    /// know what codecs a given file actually holds. This function exists so the
-    /// common cases can be *labelled* honestly before the user commits.
+    /// Whether a container-to-container stream copy is *likely* — labels the menu ("copy, instant") only.
+    /// The real decision is ffmpeg `-c copy` with a re-encode fallback; no static table knows the codecs.
     public static func likelyStreamCopy(from source: String, to target: String) -> Bool {
         let from = source.lowercased(), to = target.lowercased()
         guard from != to else { return true }
-        // MP4/MOV/MKV are all happy with the H.264/H.265 + AAC families that make
-        // up essentially everything this app downloads. WebM is the odd one out:
-        // it accepts only VP8/VP9/AV1 + Vorbis/Opus, so anything crossing into or
-        // out of it is a re-encode far more often than not.
+        // MP4/MOV/MKV all accept the H.264/H.265 + AAC families that dominate here; WebM takes only
+        // VP8/VP9/AV1 + Vorbis/Opus, so crossing into or out of it is usually a re-encode.
         let broad: Set<String> = ["mp4", "mov", "mkv", "m4v"]
         return broad.contains(from) && broad.contains(to)
     }
 
-    /// Whether ffmpeg's failure output reads as "this codec can't go in that
-    /// container", which is the one failure a re-encode retry can fix.
-    ///
-    /// Matching on message text is unlovely, but ffmpeg returns exit status 1 for
-    /// every failure and offers nothing more structured. The alternative — always
-    /// retrying — would run a full re-encode after a genuine failure such as a
-    /// truncated source, turning a five-second error into a twenty-minute one.
+    /// Whether ffmpeg's stderr reads as "codec can't go in that container" — the one failure a re-encode
+    /// retry fixes. Text matching because every failure exits 1; retrying blindly costs 20 min on a dud.
     public static func isCodecIncompatibility(_ stderr: String) -> Bool {
         let text = stderr.lowercased()
-        // Each marker is a phrase ffmpeg only produces when a muxer has refused a
-        // stream it was handed verbatim. Kept narrow on purpose: a loose match
-        // here spends a full re-encode on a file that was never going to convert.
+        // Each marker is a phrase ffmpeg emits only when a muxer refused a stream handed to it verbatim.
+        // Narrow on purpose: a loose match spends a full re-encode on a file that was never convertible.
         let markers = [
             // mp4/mov: "Could not find tag for codec vorbis in stream #1,
             // codec not currently supported in container"
@@ -341,12 +267,8 @@ public enum MediaContainer {
 
 public enum MediaStall {
 
-    /// How long ffmpeg may report no forward progress before the UI flags it.
-    ///
-    /// Replaces a blind 30-minute kill. That timer murdered legitimate long
-    /// transcodes and let genuinely wedged ones sit for the full half hour, and
-    /// because it terminated the process itself the resulting message was the
-    /// generic "ffmpeg failed" — the user was told the wrong thing either way.
+    /// How long ffmpeg may report no forward progress before the UI flags it. Replaces a blind 30-minute
+    /// kill that murdered long transcodes, waited out wedged ones, and only ever said "ffmpeg failed".
     public static let threshold: TimeInterval = 300
 
     /// Whether a job that last advanced at `lastAdvance` should be flagged.
@@ -354,10 +276,8 @@ public enum MediaStall {
         now.timeIntervalSince(lastAdvance) >= threshold
     }
 
-    /// How long a *cancel* may be outstanding before the UI stops promising it is
-    /// about to happen. The app sends SIGTERM, waits two seconds, then SIGKILLs;
-    /// past this a SIGKILL has landed and the process still hasn't exited, which
-    /// means it is blocked somewhere no signal reaches.
+    /// How long a *cancel* may go unanswered before the UI stops promising it. SIGTERM, 2s, SIGKILL —
+    /// past this the SIGKILL has landed and the process is blocked somewhere no signal reaches.
     public static let stopGrace: TimeInterval = 6
 
     /// Whether a cancel requested at `requestedAt` has gone unanswered too long.

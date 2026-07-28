@@ -1,12 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Direct unit tests for ``SegmentedTransfer`` — the per-download transfer
-/// mechanics extracted out of ``HTTPEngine``. These drive the transfer WITHOUT
-/// the actor, against the in-memory ``StubURLProtocol`` (defined in
-/// `HTTPEngineTests.swift`), so the byte pumps, retry path, single-stream
-/// fallback and resume gating are exercised in isolation. The end-to-end
-/// `HTTPEngineTests` remain as integration coverage of the now-thin actor.
+/// Direct unit tests for ``SegmentedTransfer``, driven WITHOUT the actor against ``StubURLProtocol``
+/// (in `HTTPEngineTests.swift`): byte pumps, retry, single-stream fallback and resume gating in isolation.
 final class SegmentedTransferTests: XCTestCase {
 
     private var tempDir: URL!
@@ -182,12 +178,8 @@ final class SegmentedTransferTests: XCTestCase {
         XCTAssertEqual(restartRequests, 4, "a restart issues one ranged GET per segment")
     }
 
-    /// A resume cursor only describes bytes that live in the destination file. If
-    /// that file went away (Finder cleanup, disk cleaner, user tidying up) while the
-    /// download was paused, honouring the cursor would skip every "already done"
-    /// range, `preallocate` would recreate the file, and the resulting mostly-zero
-    /// file would still satisfy the `bytesWritten == total` net — a silent
-    /// corruption reported as success. A missing (or wrong-sized) file must restart.
+    /// A resume cursor only describes bytes in the destination file. If it vanished while paused,
+    /// honouring the cursor yields a mostly-zero file that still passes `bytesWritten == total`.
     func testResumeIsRefusedWhenPartialFileIsMissingOrWrongSize() async throws {
         let payload = deterministicData(256 * 1024)
         StubURLProtocol.set(.init(

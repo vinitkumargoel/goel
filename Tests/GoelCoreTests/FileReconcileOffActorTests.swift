@@ -1,13 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// The periodic sweep (``DownloadManager/reconcileCompletedFiles()``) now snapshots
-/// on the actor, `stat`s off it, and applies the result back — so that a slow or
-/// unresponsive volume can never block the actor that serializes every engine event.
-///
-/// These tests pin the behaviour that split introduced: the async path must reach
-/// the same verdicts as the synchronous startup prune, and a result that has gone
-/// stale while the probe was in flight must not overrule the newer state.
+/// ``DownloadManager/reconcileCompletedFiles()`` snapshots on the actor, `stat`s off it, and applies
+/// back, so a slow volume can't block the actor. Pins: same verdicts as the sync prune, no stale overrule.
 final class FileReconcileOffActorTests: XCTestCase {
 
     private var tempDirs: [String] = []
@@ -86,9 +81,8 @@ final class FileReconcileOffActorTests: XCTestCase {
         let pruned = await manager.task(gone.id)
         XCTAssertNil(pruned, "the deleted payload's row is dropped")
 
-        // The prune enqueues its delete on the serial persistence pipeline, which
-        // writes on a detached task. Drain it before reading the store back, or
-        // this assertion races the writer and only passes on an idle machine.
+        // The prune enqueues its delete on the serial persistence pipeline, which writes on a
+        // detached task. Drain it first, or this assertion races the writer and only passes idle.
         await manager.shutdown()
         XCTAssertFalse(try store.loadAllTasks().contains { $0.id == gone.id },
                        "the prune is written through to disk, not just the in-memory list")
@@ -121,9 +115,8 @@ final class FileReconcileOffActorTests: XCTestCase {
         await manager.shutdown()
     }
 
-    /// Repeated sweeps over the same already-pruned queue must be harmless — the
-    /// on-demand call (app reactivation) can overlap the periodic loop, so a stale
-    /// probe result may name a row that is already gone.
+    /// Repeated sweeps over an already-pruned queue must be harmless: the on-demand call (app
+    /// reactivation) can overlap the periodic loop, so a stale probe may name a row already gone.
     func testRepeatedSweepsAreIdempotent() async throws {
         let store = try PersistenceStore()
         let dir = makeTempDir()

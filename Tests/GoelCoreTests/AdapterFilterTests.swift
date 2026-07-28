@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// What may be offered as a download uplink. These are Linux-shaped cases: a box
-/// running Docker and Tailscale has a dozen interfaces with addresses, and all
-/// but one or two are dead ends.
+/// What may be offered as a download uplink. Linux-shaped cases: a box running Docker and Tailscale has
+/// a dozen interfaces with addresses, and all but one or two are dead ends.
 final class AdapterFilterTests: XCTestCase {
 
     func testContainerAndBridgePlumbingIsHidden() {

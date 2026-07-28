@@ -1,14 +1,8 @@
 import Foundation
 import GoelCore
 
-/// Publishes an `NSProgress` per actively-downloading task, keyed to its
-/// destination file, so Finder overlays the same progress pie Safari's
-/// downloads get — and the user can cancel from Finder (which pauses here).
-///
-/// Publication follows the task's live status exactly: a task entering
-/// `.downloading` publishes, anything else (pause, completion, failure,
-/// removal) unpublishes. Files must exist on disk before Finder will overlay
-/// them; the engines preallocate on start, so that's true from the first tick.
+/// Publishes an `NSProgress` per actively-downloading task so Finder draws its progress pie and
+/// can cancel (which pauses here). Follows task status exactly; engines preallocate, so files exist.
 @MainActor
 final class FileProgressPublisher {
 
@@ -25,9 +19,8 @@ final class FileProgressPublisher {
             live.insert(task.id)
             let progress = published[task.id] ?? makeProgress(for: task, onCancel: onCancel)
             progress.totalUnitCount = total
-            // `bytesDownloaded` can legitimately exceed `total` (revised
-            // Content-Length, stale probe, segmented overshoot); clamp once and
-            // reuse for both the count and the ETA so neither goes negative.
+            // `bytesDownloaded` can legitimately exceed `total` (revised Content-Length, stale probe,
+            // segmented overshoot); clamp once and reuse for both the count and the ETA.
             let delivered = min(task.bytesDownloaded, total)
             progress.completedUnitCount = delivered
             progress.setUserInfoObject(NSNumber(value: task.downloadSpeed), forKey: .throughputKey)

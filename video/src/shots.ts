@@ -1,9 +1,5 @@
-/* Frame-level timeline — DESIGN-SPEC.md §5, locked before implementation.
- *
- * Every downstream frame reference (captions, SFX pins, QA stills) is written
- * as `S.<name>.from + offset`, never as a bare number, so shifting one shot
- * shifts everything that hangs off it.
- */
+/* Frame-level timeline — DESIGN-SPEC.md §5, locked before implementation. Every downstream frame reference (captions,
+ * SFX pins, QA stills) is written `S.<name>.from + offset`, never a bare number, so shifting one shot shifts the rest. */
 
 type Shot = { from: number; dur: number; note: string };
 

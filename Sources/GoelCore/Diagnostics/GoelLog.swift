@@ -10,22 +10,8 @@ import Glibc
 import Darwin
 #endif
 
-// ============================================================================
-// GoelLog — the app's single logging front door.
-//
-// The product ships a written "no telemetry" guarantee, so nothing here ever
-// leaves the machine: on Apple platforms every line goes to the *local* unified
-// log (`log stream` / Console.app), and on Linux — where `os.Logger` does not
-// exist — to stderr, which the daemon's supervisor captures. There is no sink
-// that opens a socket, and adding one would break the guarantee.
-//
-// The API is deliberately awkward in exactly one way: the message must be a
-// `StaticString` (a literal), and every runtime value must be passed as a
-// ``GoelLogField`` that states its privacy class. You therefore CANNOT
-// accidentally interpolate a bearer token or a save path into a log line — the
-// compiler rejects it. That is the whole point of the type; see the privacy
-// rules on ``GoelLogField``.
-// ============================================================================
+// GoelLog — single logging front door. "No telemetry" guarantee: local unified log on Apple, stderr on Linux,
+// never a socket. Messages must be `StaticString` + ``GoelLogField``, so tokens/paths cannot be interpolated in.
 
 /// Severity, ordered. Mirrors `OSLogType` on Apple platforms and drives the
 /// stderr sink's floor everywhere else.
@@ -77,22 +63,8 @@ public enum GoelLogLevel: Int, Sendable, Comparable, CaseIterable {
     #endif
 }
 
-/// One labelled value attached to a log line, carrying its own privacy class.
-///
-/// **The rule this type exists to enforce.** Anything that identifies *what the
-/// user is doing or who they are* is `.private`: URLs and magnet links, file and
-/// folder paths, hostnames, usernames, tokens, header values, torrent names,
-/// peer addresses. Anything that describes *how the machine behaved* is
-/// `.public`: byte counts, speeds, durations, retry attempts, HTTP status codes,
-/// task states, error case names.
-///
-/// Private values are redacted by the unified log on Apple platforms (revealed
-/// only to an operator who explicitly enables it for this subsystem) and are
-/// printed as `<private>` by the stderr sink unless `GOEL_LOG_PRIVATE=1` is set
-/// for a local debugging session.
-///
-/// Prefer the named constructors below to the raw initialiser — they encode the
-/// classification decision once, in this file, instead of at every call site.
+/// One labelled log value carrying its privacy class: `.private` = who the user is / what they do (URLs, paths,
+/// hosts, names); `.public` = machine behaviour (bytes, speeds, codes). Prefer the named constructors below.
 public struct GoelLogField: Sendable, Equatable {
     public let label: String
     public let value: String
@@ -186,9 +158,8 @@ public extension GoelLogField {
         GoelLogField(label: label, value: value ? "true" : "false", isPrivate: false)
     }
 
-    /// The *case name* of a failure — never its associated message, which
-    /// routinely embeds the URL that failed. Pair with ``detail(_:label:)``
-    /// when the message itself is needed.
+    /// The *case name* of a failure — never its message, which routinely embeds the URL that failed.
+    /// Pair with ``detail(_:label:)`` when the message itself is needed.
     static func errorKind(_ error: DownloadError, label: String = "error") -> GoelLogField {
         GoelLogField(label: label, value: DiagnosticsErrorLabel.of(error), isPrivate: false)
     }
@@ -201,21 +172,16 @@ public extension GoelLogField {
 
 // MARK: - Namespace
 
-/// Subsystem/category namespace and the shared per-area loggers.
-///
-/// Categories mirror the real architecture so `log stream --predicate
-/// 'subsystem == "com.goel.downloader" && category == "engine.torrent"'`
-/// isolates exactly one component.
+/// Subsystem/category namespace and the shared per-area loggers. Categories mirror the real architecture so
+/// `log stream --predicate 'subsystem == "com.goel.downloader" && category == "engine.torrent"'` isolates one component.
 public enum GoelLog {
 
-    /// The unified-log subsystem. Falls back to the shipping bundle id when
-    /// there is no bundle (SwiftPM test runs, the Linux daemon) so filtering
-    /// predicates work identically in every context.
+    /// The unified-log subsystem. Falls back to the shipping bundle id when there is no bundle (SwiftPM
+    /// tests, the Linux daemon) so filtering predicates work identically in every context.
     public static let subsystem: String = Bundle.main.bundleIdentifier ?? "com.goel.downloader"
 
-    /// One category per architectural area. Raw values are the strings used in
-    /// log predicates and must stay stable — they are effectively public API for
-    /// anyone debugging a user's install over email.
+    /// One category per architectural area. Raw values are the strings used in log predicates and must stay
+    /// stable — effectively public API for anyone debugging a user's install over email.
     public enum Category: String, Sendable, CaseIterable {
         case engineHTTP    = "engine.http"
         case engineTorrent = "engine.torrent"
@@ -252,10 +218,8 @@ public enum GoelLog {
 
     // MARK: Fallback-sink configuration
 
-    /// Configuration for the non-Apple (stderr) sink only. On Apple platforms
-    /// the unified log does its own filtering and redaction — `log config
-    /// --subsystem com.goel.downloader --mode level:debug,private_data:on` — so
-    /// applying a second floor here would silently defeat that tooling.
+    /// Non-Apple (stderr) sink config only. Apple's unified log filters/redacts itself (`log config --subsystem
+    /// com.goel.downloader --mode level:debug,private_data:on`); a second floor here would defeat that tooling.
     enum Fallback {
         /// Lines below this level are dropped by the stderr sink. Defaults to
         /// `.notice` so a daemon's console stays readable.
@@ -265,10 +229,8 @@ public enum GoelLog {
             return level
         }()
 
-        /// Whether the stderr sink prints private values verbatim. Off unless
-        /// the operator opts in for a local debugging session — stderr usually
-        /// ends up in a journal or a log file that outlives the process, and
-        /// nothing should put a user's URLs there by default.
+        /// Whether the stderr sink prints private values verbatim. Off unless the operator opts in: stderr
+        /// usually lands in a journal/log file that outlives the process, so no user URLs there by default.
         static let revealsPrivateValues: Bool = {
             let raw = ProcessInfo.processInfo.environment["GOEL_LOG_PRIVATE"]?.lowercased()
             return raw == "1" || raw == "true" || raw == "yes"
@@ -279,13 +241,8 @@ public enum GoelLog {
     /// Matches the unified log's own wording so the two sinks read alike.
     static let privatePlaceholder = "<private>"
 
-    /// Splits fields into the public and private halves of a line.
-    ///
-    /// The two are rendered separately because `os.Logger` applies privacy per
-    /// interpolation segment, not per value: one `.public` blob and one
-    /// `.private` blob is the only way to get a single line where the redaction
-    /// boundary is exact. The stderr sink uses the same split so a line looks
-    /// the same on both platforms.
+    /// Splits fields into the public and private halves of a line. `os.Logger` applies privacy per
+    /// interpolation segment, so one `.public` + one `.private` blob is the only exact redaction boundary.
     static func split(_ fields: [GoelLogField]) -> (publicText: String, privateText: String) {
         var publicParts: [String] = []
         var privateParts: [String] = []
@@ -327,9 +284,8 @@ public enum GoelLog {
 
 // MARK: - Logger
 
-/// A per-category logging handle. Cheap to copy and safe to share; the Apple
-/// implementation holds one `os.Logger` for the lifetime of the process rather
-/// than rebuilding an `os_log_t` per call.
+/// A per-category logging handle. Cheap to copy and safe to share; the Apple implementation holds
+/// one `os.Logger` for the process lifetime rather than rebuilding an `os_log_t` per call.
 public struct GoelLogger: @unchecked Sendable {
 
     public let category: GoelLog.Category
@@ -412,12 +368,8 @@ public struct GoelLogger: @unchecked Sendable {
 
 // MARK: - Shared error labelling
 
-/// Maps a ``DownloadError`` to a stable, **non-identifying** token.
-///
-/// Used by both the logger and ``DiagnosticsBundle``: `DownloadError.message`
-/// embeds server text and, for `.network`, frequently the failing URL, so no
-/// diagnostic surface may ever use it. Only the case name — plus the HTTP status
-/// number, which is a protocol fact — survives.
+/// Maps a ``DownloadError`` to a stable, **non-identifying** token for the logger and ``DiagnosticsBundle``.
+/// `DownloadError.message` embeds server text and often the failing URL, so only the case name (+ HTTP status) survives.
 enum DiagnosticsErrorLabel {
     static func of(_ error: DownloadError) -> String {
         switch error {

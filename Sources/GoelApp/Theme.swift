@@ -1,18 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// The semantic palette used across the app (accent, status colors, badges).
-///
-/// Colors resolve against the **currently selected named theme**
-/// (``ThemePalette``), not just the system light/dark appearance. Selecting a
-/// theme in Settings updates ``ThemePalette/current`` and refreshes the UI, so
-/// every `Theme.accent`/`Theme.green`/… call site adopts that theme's identity
-/// with no per-view plumbing.
-///
-/// Each value is still backed by a dynamic `NSColor` so it tracks the theme's
-/// **base appearance** (Frost Light is an Aqua theme; Frost Dark / Dracula /
-/// Nord are Dark Aqua themes). Every palette was picked to keep normal text
-/// legible against that theme's canvas.
+/// The semantic palette (accent, status colors, badges). Colors resolve against the selected
+/// named theme, each backed by a dynamic `NSColor` so it also tracks the theme's base appearance.
 enum Theme {
     static var accent:      Color { ThemePalette.color(\.accent) }
     static var accentPress: Color { ThemePalette.color(\.accentPress) }
@@ -23,45 +13,25 @@ enum Theme {
     static var teal:        Color { ThemePalette.color(\.teal) }
     static var indigo:      Color { ThemePalette.color(\.indigo) }
 
-    /// An optional wash tint applied over the window canvas so themes with a
-    /// non-neutral background (Dracula's blue-gray, Nord's polar night) read as
-    /// that color even though the app's chrome is built from system materials.
-    /// `nil` for the Frost themes, which sit on the plain system canvas.
+    /// An optional wash tint over the window canvas so themes with a non-neutral background read as
+    /// that colour despite system materials. nil for the Frost themes.
     static var windowTint: Color? { ThemePalette.current.windowTint }
 
     // MARK: Legible ink on filled chips
 
-    /// The text colour to use *on top of* a solid ``accent`` fill — a selected
-    /// sidebar row, the active speed-profile pill.
-    ///
-    /// These call sites used to hard-code `Color.white`, which is only correct
-    /// when the fill is dark. Three of the four themes are dark themes, and a
-    /// dark theme's accent is a *light* colour by construction, so white text
-    /// landed on pale blue or lilac: measured 2.42:1 in Frost Dark, 2.41:1 in
-    /// Dracula, 2.00:1 in Nord, against the 4.5:1 WCAG AA needs. The sidebar's
-    /// selected row is the app's primary navigation control, so this was the
-    /// single worst contrast defect in the interface.
-    ///
-    /// Picking per fill rather than per theme takes all four to 5.9:1 or better
-    /// without touching a single palette value.
+    /// The text colour to use on top of a solid ``accent`` fill. Hard-coded white measured 2.0–2.4:1
+    /// on the three dark themes; picking per fill takes all four to 5.9:1 or better.
     static var onAccent: Color { ThemePalette.ink(on: \.accent) }
 
     /// As ``onAccent``, for the ``indigo`` fill used by selected server rows.
     static var onIndigo: Color { ThemePalette.ink(on: \.indigo) }
 
-    /// As ``onAccent``, for the ``red`` fill behind a destructive confirm button.
-    /// White on the dark themes' red measured 2.63–2.77:1 — the one button in the
-    /// app whose label you least want to misread.
+    /// As ``onAccent``, for the ``red`` fill behind a destructive confirm button. White on the dark
+    /// themes' red measured 2.63–2.77:1 — the one label you least want misread.
     static var onRed: Color { ThemePalette.ink(on: \.red) }
 
-    /// The de-emphasised ink for the *second* line of a filled row — a server's
-    /// host name under its nickname, a folder's item count.
-    ///
-    /// These call sites used `Color.white.opacity(0.6…0.75)`, which measured as
-    /// low as 3.75:1 even once the ink itself was correct. 0.85 is the lowest
-    /// opacity at which all four themes clear 4.5:1 (worst case 4.73:1 on Frost
-    /// Light's accent). The row's hierarchy still reads, because it is carried by
-    /// size and weight as much as by tint.
+    /// The de-emphasised ink for a filled row's second line. `white.opacity(0.6…0.75)` measured as
+    /// low as 3.75:1; 0.85 is the lowest opacity at which all four themes clear 4.5:1.
     static var onAccentSecondary: Color { onAccent.opacity(0.85) }
 
     /// As ``onAccentSecondary``, over the ``indigo`` fill.
@@ -72,38 +42,26 @@ enum Theme {
     static let hairline = Color.primary.opacity(0.10)
 }
 
-/// The full set of semantic colors for one named theme, each as a `light`/`dark`
-/// hex pair. Only one of the two is normally used (a theme has a single base
-/// appearance), but keeping both lets a value stay legible if the OS ever
-/// composites it under the opposite appearance.
+/// The full set of semantic colors for one named theme as `light`/`dark` hex pairs. Only one is
+/// normally used, but keeping both keeps a value legible under the opposite appearance.
 struct ThemeColors {
     struct Pair { let light: UInt32; let dark: UInt32 }
     let accent, accentPress, green, orange, red, yellow, purple, teal, indigo: Pair
 }
 
-/// Holds the active theme and resolves ``ThemeColors`` into SwiftUI `Color`s
-/// bound to that theme's base appearance. `current` is read on the main thread
-/// during view updates; the app sets it whenever the persisted theme changes.
+/// Holds the active theme and resolves ``ThemeColors`` into SwiftUI `Color`s bound to its base
+/// appearance. Read on the main thread during view updates; set when the persisted theme changes.
 enum ThemePalette {
-    /// The active theme. Defaults to Frost Dark; the app overrides this from the
-    /// persisted setting at launch and on every change.
-    ///
-    /// Marked `nonisolated(unsafe)` because it is read from view code that isn't
-    /// always main-actor isolated (e.g. `TaskDisplay`'s computed color helpers),
-    /// while writes only ever happen on the main thread from `AppViewModel`.
-    /// A single enum value read/write is effectively atomic, so this is safe.
+    /// The active theme (defaults to Frost Dark). `nonisolated(unsafe)` because view code that isn't
+    /// main-actor isolated reads it, while writes only ever happen on the main thread.
     nonisolated(unsafe) static var current: AppTheme = .frostDark
 
     static func color(_ key: KeyPath<ThemeColors, ThemeColors.Pair>) -> Color {
         current.resolvedColor(key)
     }
 
-    /// The ink — white or near-black — that contrasts better against one semantic
-    /// colour used as a *solid fill*.
-    ///
-    /// Resolved per appearance for the same reason ``color(_:)`` is: the fill is a
-    /// dynamic `NSColor`, so its ink has to flip in lockstep or a window
-    /// composited under the opposite appearance ends up with pale-on-pale text.
+    /// The ink — white or near-black — that contrasts better against one semantic colour used as a
+    /// solid fill. Resolved per appearance so it flips in lockstep with the dynamic fill.
     static func ink(on key: KeyPath<ThemeColors, ThemeColors.Pair>) -> Color {
         let pair = current.colors[keyPath: key]
         return Color.adaptive(light: WCAG.ink(on: pair.light),
@@ -111,16 +69,8 @@ enum ThemePalette {
     }
 }
 
-/// Contrast arithmetic from WCAG 2.1 §1.4.3, used to *choose* colours at runtime
-/// rather than to measure them after the fact.
-///
-/// This exists because the app has four independent themes, three of them dark,
-/// and a fill that is dark in one is light in another. Hard-coding an ink colour
-/// per call site guarantees at least one theme gets it wrong; deriving it means
-/// a future theme is legible the day it is added.
-///
-/// Pure arithmetic over values already on screen — nothing here reads settings,
-/// touches disk, or leaves the process.
+/// Contrast arithmetic from WCAG 2.1 §1.4.3, used to *choose* colours at runtime: with four
+/// themes, a hard-coded ink gets at least one wrong, and deriving it keeps future themes legible.
 enum WCAG {
 
     /// The two inks the app picks between. Pure black is avoided: it reads as a
@@ -159,10 +109,8 @@ extension Color {
         self.init(.sRGB, red: r, green: g, blue: b, opacity: alpha)
     }
 
-    /// A color that resolves to `light` under Aqua and `dark` under Dark Aqua,
-    /// tracking the window's effective appearance — including the theme the user
-    /// forces from Settings via `.preferredColorScheme`. Backed by a dynamic
-    /// `NSColor` so every call site adapts with no per-view `@Environment` reads.
+    /// A color resolving to `light` under Aqua and `dark` under Dark Aqua, tracking the window's
+    /// effective appearance. Backed by a dynamic `NSColor`, so no per-view `@Environment` reads.
     static func adaptive(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -211,9 +159,8 @@ enum FileType: String, CaseIterable, Hashable {
     }
 }
 
-/// Where the detail panel is docked — the right edge or the bottom edge —
-/// mirroring `AppSettings.detailPanelPosition`. The choice is persisted so it
-/// holds across selections and survives relaunch until the user flips it.
+/// Where the detail panel is docked — right edge or bottom — mirroring
+/// `AppSettings.detailPanelPosition`. Persisted, so it survives relaunch until the user flips it.
 enum DetailPanelPosition: String, CaseIterable, Identifiable {
     case right = "Right"
     case bottom = "Bottom"
@@ -229,10 +176,8 @@ enum DetailPanelPosition: String, CaseIterable, Identifiable {
     }
 }
 
-/// The selectable named themes surfaced in Settings > General. Each is a
-/// complete, independent look (not a light/dark pair): Frost ships a light and a
-/// dark variant, and Dracula and Nord are popular community palettes. The choice
-/// is persisted through ``AppSettings/theme`` so it survives relaunch.
+/// The selectable named themes in Settings > General. Each is a complete look, not a light/dark
+/// pair. Persisted through ``AppSettings/theme``.
 enum AppTheme: String, CaseIterable, Identifiable {
     case frostLight = "Frost Light"
     case frostDark = "Frost Dark"
@@ -240,9 +185,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case nord = "Nord"
     var id: String { rawValue }
 
-    /// The base appearance the theme sits on, driving `.preferredColorScheme` so
-    /// system chrome, materials, and text stay legible. Frost Light is the only
-    /// light theme; the rest are dark.
+    /// The base appearance the theme sits on, driving `.preferredColorScheme` so system chrome and
+    /// materials stay legible. Frost Light is the only light theme.
     var colorScheme: ColorScheme? {
         switch self {
         case .frostLight: return .light
@@ -254,11 +198,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
     var colors: ThemeColors {
         switch self {
         case .frostLight:
-            // Green, orange and yellow are each a shade darker than the mockup's
-            // values. As drawn they measured 3.76:1, 4.38:1 and 4.16:1 against
-            // the light canvas — under the 4.5:1 WCAG AA needs for the 10–12pt
-            // status text they are used on. Hue and saturation are unchanged, so
-            // the palette still reads as the same three colours.
+            // Green, orange and yellow are a shade darker than the mockup: as drawn they measured 3.76:1,
+            // 4.38:1 and 4.16:1, under AA for the 10–12pt status text. Hue and saturation are unchanged.
             return ThemeColors(
                 accent:      .init(light: 0x3F58D6, dark: 0x5B7CFA),
                 accentPress: .init(light: 0x2E45B8, dark: 0x4F6EF0),
@@ -294,11 +235,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
                 teal:        .init(light: 0x2AB7CE, dark: 0x8BE9FD),
                 indigo:      .init(light: 0x8B5CF6, dark: 0xBD93F9))
         case .nord:
-            // Official Nord palette on the #2e3440 polar-night canvas, with two
-            // exceptions: Aurora orange (#D08770) and purple (#B48EAD) measure
-            // 4.39:1 and 4.41:1 there, just under AA. Both are lifted by roughly
-            // one step in value — small enough that they still read as Nord,
-            // large enough to clear 4.5:1 (4.61:1 and 4.63:1).
+            // Official Nord palette on the #2e3440 canvas, except Aurora orange and purple (4.39:1 and
+            // 4.41:1, just under AA) lifted one step in value to clear 4.5:1 while still reading as Nord.
             return ThemeColors(
                 accent:      .init(light: 0x5E81AC, dark: 0x88C0D0),
                 accentPress: .init(light: 0x4C6E96, dark: 0x81A1C1),
@@ -322,9 +260,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Resolve one semantic color to a SwiftUI `Color` bound to this theme's base
-    /// appearance, so it renders the intended value even if composited under the
-    /// opposite appearance.
+    /// Resolve one semantic color to a SwiftUI `Color` bound to this theme's base appearance, so it
+    /// renders the intended value even if composited under the opposite one.
     func resolvedColor(_ key: KeyPath<ThemeColors, ThemeColors.Pair>) -> Color {
         let pair = colors[keyPath: key]
         return Color.adaptive(light: pair.light, dark: pair.dark)
@@ -336,9 +273,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
         rawValue.lowercased().replacingOccurrences(of: " ", with: "-")
     }
 
-    /// Reconstruct from the persisted `AppSettings.theme` token. Legacy tokens
-    /// ("system"/"light"/"dark") map onto the nearest new theme so existing
-    /// installs upgrade cleanly rather than resetting.
+    /// Reconstruct from the persisted `AppSettings.theme` token. Legacy tokens ("system"/"light"/
+    /// "dark") map onto the nearest new theme so existing installs upgrade rather than reset.
     init(settingsValue: String) {
         switch settingsValue {
         case "light": self = .frostLight

@@ -1,6 +1,5 @@
-/* Film tokens. Colour comes from Sources/GoelApp/Theme.swift (AppTheme.frostDark)
- * and website/tokens.css; motion comes from DESIGN-SPEC.md §3.
- * Nothing here is invented — see the spec table for each value's origin. */
+/* Film tokens. Colour from Sources/GoelApp/Theme.swift (AppTheme.frostDark) and website/tokens.css;
+ * motion from DESIGN-SPEC.md §3. Nothing invented — the spec table gives each value's origin. */
 
 export const C = {
   canvas: '#0b0c10',
@@ -41,10 +40,8 @@ export const FONT = {
   mono: '"IBM Plex Mono", ui-monospace, monospace',
 } as const;
 
-/* Motion tokens — DESIGN-SPEC §3. One voice, two registers: things that merely
- * move use `entry`/`camera`; things that LAND use `land` (y1 > 1 per the
- * library's hard ruling, which overrides the "professional trust = no bounce"
- * preset for landing metaphors). */
+/* Motion tokens — DESIGN-SPEC §3. Things that merely move use `entry`/`camera`; things that LAND use
+ * `land` (y1 > 1 per the library's hard ruling, overriding the "professional trust = no bounce" preset). */
 export const M = {
   dur: 21,
   entry: [0, 0, 0.2, 1] as const,

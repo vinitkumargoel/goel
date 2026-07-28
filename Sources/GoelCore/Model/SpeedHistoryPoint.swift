@@ -1,13 +1,7 @@
 import Foundation
 
-/// One persisted throughput sample — down/up rates in bytes/sec — used to
-/// restore a download's speed chart across quit & relaunch.
-///
-/// The UI samples throughput once a second into a small ring; that ring is
-/// written to the store (keyed by task id) so a chart continues from where it
-/// left off instead of starting blank on the next launch. Kept intentionally
-/// tiny and self-describing so the persisted blob stays compact and decodes
-/// unchanged as the model evolves.
+/// One persisted throughput sample (down/up bytes/sec): the UI's once-a-second ring, stored by task id,
+/// so a speed chart resumes across quit & relaunch instead of starting blank. Kept tiny and self-describing.
 public struct SpeedHistoryPoint: Codable, Sendable, Equatable {
     public var down: Double
     public var up: Double

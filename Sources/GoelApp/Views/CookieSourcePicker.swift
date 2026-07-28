@@ -1,24 +1,8 @@
 import SwiftUI
 import GoelCore
 
-/// Picks where a download's login cookies come from.
-///
-/// Downloads that sit behind a sign-in — paywalled files, private forums,
-/// university portals — return a login page instead of the file unless the
-/// request carries the browser's session cookies. This is the control that
-/// attaches them.
-///
-/// Deliberately a **standalone child view** with plain bindings and no view
-/// model: the add sheet, the detail panel and the preview below all drive it the
-/// same way, and it can be reasoned about (and previewed) on its own.
-///
-/// Two rules it enforces on the way in, so no caller has to remember them:
-/// * pasted text is normalised through ``CookieHeader/sanitized(_:)``, which
-///   drops anything that could split a request or blow a header budget;
-/// * the value is bound to `host`, so the engine will only ever send it there.
-///
-/// It shows cookie **names**, never values — a name says "you are signed in",
-/// a value *is* the sign-in.
+/// Picks where a download's login cookies come from. Pasted text is normalised through
+/// ``CookieHeader/sanitized(_:)`` and bound to `host`. Shows cookie **names**, never values.
 struct CookieSourcePicker: View {
 
     /// The host the download will hit; cookies are scoped to exactly this host.
@@ -36,9 +20,8 @@ struct CookieSourcePicker: View {
     /// Presence is what makes `.browser` meaningful.
     var capturedCookies: String?
 
-    /// The normalised value the caller should attach to the task — nil when the
-    /// user chose `.none`, or pasted nothing usable. The single output of this
-    /// view; callers must not read `pastedCookies` directly.
+    /// The normalised value the caller should attach to the task — nil when the user chose `.none`
+    /// or pasted nothing usable. The single output; callers must not read `pastedCookies`.
     var sanitizedCookieHeader: String? {
         switch source {
         case .none:    return nil
@@ -95,10 +78,8 @@ struct CookieSourcePicker: View {
         .accessibilityLabel("Cookie source")
     }
 
-    /// `SecureField` rather than a text field: a Cookie header pasted into a
-    /// shared screen or a screenshot is a working account credential, so it is
-    /// masked the same way a password is. One line is enough — a Cookie header
-    /// is one line by definition.
+    /// `SecureField`, not a text field: a Cookie header on a shared screen or in a screenshot is a
+    /// working account credential, so it is masked like a password. One line is enough.
     private var pasteField: some View {
         VStack(alignment: .leading, spacing: 4) {
             SecureField("sid=…; csrf=…", text: $pastedCookies)

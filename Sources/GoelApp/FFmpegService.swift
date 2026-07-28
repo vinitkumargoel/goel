@@ -1,20 +1,8 @@
 import Foundation
 import GoelCore
 
-/// Hand-off to `ffmpeg` for post-download media work: remuxing/converting a
-/// finished video and extracting its audio track.
-///
-/// A packaged build carries its OWN static ffmpeg inside `Contents/Resources`
-/// (see `Scripts/fetch_ffmpeg.sh`), because "no Homebrew required" is the whole
-/// promise of a self-contained .app — and for a long time it was not true here:
-/// the build script shipped no copy and this type auto-detected `/opt/homebrew`,
-/// so Convert and Extract Audio simply did not exist for anyone who had never
-/// installed Homebrew. That is the failure this file is written to make loud.
-///
-/// Resolution order is: the user's explicit Settings override, then the bundled
-/// copy, then the common system install locations. The override wins over the
-/// bundled binary on purpose — a user who typed a path did so to use THAT build
-/// (a newer one, or a GPL build with encoders the bundled LGPL one lacks).
+/// Hand-off to `ffmpeg` for post-download media work. Resolution order: the user's Settings
+/// override, the bundled copy, then system locations — the override wins deliberately.
 enum FFmpegService {
 
     /// Where the ffmpeg we are about to run came from. Carried in errors and the
@@ -30,11 +18,8 @@ enum FFmpegService {
         case missing(String)
     }
 
-    /// Candidate system install locations, in the order they are tried. `$PATH`
-    /// is deliberately NOT consulted: the app runs with whatever environment
-    /// Finder handed it, which is not the user's shell `PATH`, so searching it
-    /// would be theatre — and honouring an inherited `PATH` would let any
-    /// same-user process decide which binary a "Convert" click launches.
+    /// Candidate system install locations, in try order. `$PATH` is deliberately not consulted:
+    /// the app inherits Finder's environment, and honouring it would let any process pick the binary.
     private static let systemCandidates = [
         "/opt/homebrew/bin/ffmpeg",     // Homebrew, Apple silicon
         "/usr/local/bin/ffmpeg",        // Homebrew, Intel (and hand-installs)
@@ -51,18 +36,14 @@ enum FFmpegService {
     static func resolve(override: String = "") -> Availability {
         let fm = FileManager.default
         let trimmed = override.trimmingCharacters(in: .whitespacesAndNewlines)
-        // The override path comes from the settings DB (same-user-writable). Only
-        // accept it if it's a concrete absolute non-interpreter executable — never
-        // a relative $PATH name or a shell/script interpreter, which would turn a
-        // "Convert"/"Extract Audio" click into arbitrary code execution. Mirrors
-        // the guard AntivirusScanner already applies to its equivalent setting.
+        // The override comes from the settings DB (same-user-writable). Accept only a concrete absolute
+        // non-interpreter executable, or a "Convert" click becomes arbitrary code execution.
         if !trimmed.isEmpty {
             if ProcessSafety.isSafeExecutable(trimmed) {
                 return .found(URL(fileURLWithPath: trimmed), .override)
             }
-            // A bad override is the one case we must NOT quietly fall through on:
-            // the user typed a path, believes it is in effect, and would otherwise
-            // never learn why nothing changed.
+            // A bad override is the one case we must not quietly fall through on: the user typed a path,
+            // believes it is in effect, and would otherwise never learn why nothing changed.
             return .missing(overrideRejectionMessage(for: trimmed))
         }
 
@@ -70,10 +51,8 @@ enum FFmpegService {
             if fm.isExecutableFile(atPath: bundledPath) {
                 return .found(URL(fileURLWithPath: bundledPath), .bundled)
             }
-            // Present but not runnable: the copy survived into the bundle and then
-            // lost its execute bit (unzipped by a tool that drops permissions) or
-            // was stripped by an over-eager cleaner. Distinct message — "install
-            // ffmpeg" is the wrong advice here.
+            // Present but not runnable: the copy lost its execute bit (unzipped by a tool that drops
+            // permissions) or was stripped. Distinct message — "install ffmpeg" is the wrong advice.
             if fm.fileExists(atPath: bundledPath) {
                 return .missing("""
                     Goel°’s built-in media converter is present but macOS won’t run it. \
@@ -108,11 +87,8 @@ enum FFmpegService {
         return false
     }
 
-    /// The plain-language reason ffmpeg can't be used, or nil when it can.
-    ///
-    /// The UI should show this instead of hiding Convert / Extract Audio: a menu
-    /// item that silently isn't there teaches the user the app can't do the job,
-    /// which is both wrong and unfixable from their side.
+    /// The plain-language reason ffmpeg can't be used, or nil when it can. Show this instead of
+    /// hiding Convert / Extract Audio: a silently absent item teaches the user the app can't do it.
     static func unavailableReason(override: String = "") -> String? {
         if case .missing(let reason) = resolve(override: override) { return reason }
         return nil
@@ -139,9 +115,8 @@ enum FFmpegService {
              + "Clear the field to use the copy included with Goel°."
     }
 
-    /// One line describing where ffmpeg resolved from, for the Settings pane and
-    /// the diagnostics bundle. Never contains user content beyond the path they
-    /// themselves typed.
+    /// One line describing where ffmpeg resolved from, for the Settings pane and the diagnostics
+    /// bundle. Never contains user content beyond the path they typed themselves.
     static func resolutionSummary(override: String = "") -> String {
         switch resolve(override: override) {
         case .found(let url, .override): return "Using the ffmpeg you set in Settings: \(url.path)"
@@ -151,36 +126,22 @@ enum FFmpegService {
         }
     }
 
-    /// A finished conversion.
-    ///
-    /// `.cancelled` is a distinct case rather than a failure with a special
-    /// message: the user asked for the stop, so it is neither an error to report
-    /// nor a success to celebrate, and the two get different treatment in the UI.
+    /// A finished conversion. `.cancelled` is its own case, not a failure with a special message:
+    /// the user asked for the stop, so it is neither an error nor a success.
     enum Outcome: Sendable {
         /// The produced file, and whether it was made by copying the streams
         /// verbatim (fast and lossless) rather than re-encoding.
         case success(URL, usedStreamCopy: Bool)
-        /// A one-line summary for the card, and ffmpeg's full output for the
-        /// "Copy details" affordance.
-        ///
-        /// Two values rather than one because they answer different questions: the
-        /// summary has to fit on a card and be readable by a person who does not
-        /// know what a muxer is, while the detail is what gets pasted into a bug
-        /// report. Collapsing them means the disclosure box shows the user the
-        /// same truncated sentence they are already looking at.
+        /// A one-line summary for the card, plus ffmpeg's full output for "Copy details" — the summary
+        /// must fit and read plainly, the detail is what gets pasted into a bug report.
         case failure(summary: String, detail: String)
         case cancelled
     }
 
     // MARK: - Cancellation
 
-    /// A handle on one in-flight ffmpeg, so something outside this file can stop
-    /// it. Previously nothing held the `Process` at all, which is the reason
-    /// Convert and Extract Audio could not be cancelled.
-    ///
-    /// Created *before* the process launches and adopted after, so a cancel that
-    /// arrives during the launch window is honoured rather than lost. Lock-guarded
-    /// and `@unchecked Sendable`, matching ``ActiveWorkGate``'s house style.
+    /// A handle on one in-flight ffmpeg so something outside this file can stop it. Created *before*
+    /// launch and adopted after, so a cancel arriving in the launch window is honoured.
     final class Cancellation: @unchecked Sendable {
 
         private let lock = NSLock()
@@ -197,9 +158,8 @@ enum FFmpegService {
             lock.lock(); defer { lock.unlock() }; return cancelled
         }
 
-        /// Take ownership of a process that has been built but not yet run.
-        /// Returns false when a cancel already arrived, so the caller can skip the
-        /// launch entirely instead of spawning something it must immediately kill.
+        /// Take ownership of a process built but not yet run. Returns false when a cancel already
+        /// arrived, so the caller skips the launch instead of spawning something to kill at once.
         func adopt(_ process: Process) -> Bool {
             lock.lock(); defer { lock.unlock() }
             guard !cancelled else { return false }
@@ -227,14 +187,8 @@ enum FFmpegService {
             if canStop { terminateCurrent() }
         }
 
-        /// SIGTERM, then SIGKILL after a grace period. ffmpeg handles SIGTERM by
-        /// finalising and exiting, which is worth waiting a moment for; a build
-        /// wedged inside a decoder never gets there, hence the escalation.
-        ///
-        /// Deliberately does *not* set `cancelled`, so a watchdog can abandon one
-        /// wedged step — the probe — without condemning the job that follows it.
-        /// A file whose banner ffmpeg cannot produce in thirty seconds is still a
-        /// file worth trying to convert, just without a determinate bar.
+        /// SIGTERM, then SIGKILL after a grace period — ffmpeg finalises on SIGTERM, but a wedged decoder
+        /// never gets there. Deliberately does not set `cancelled`, so a stuck probe doesn't fail the job.
         func terminateCurrent() {
             lock.lock()
             let target = process
@@ -243,9 +197,8 @@ enum FFmpegService {
             target.terminate()
             DispatchQueue.global(qos: .utility)
                 .asyncAfter(deadline: .now() + Self.graceSeconds) {
-                    // `processIdentifier` reads back as 0 once the process has been
-                    // reaped, and `kill(0, …)` signals the entire process group —
-                    // i.e. Goel° itself. Never signal without a positive pid.
+                    // `processIdentifier` reads back as 0 once reaped, and `kill(0, …)` signals the whole process
+                    // group — i.e. Goel° itself. Never signal without a positive pid.
                     let pid = target.processIdentifier
                     guard target.isRunning, pid > 0 else { return }
                     kill(pid, SIGKILL)
@@ -266,32 +219,16 @@ enum FFmpegService {
         var audioCodec: String?
     }
 
-    /// Read duration and audio codec out of ffmpeg's own banner.
-    ///
-    /// `ffmpeg -i <file>` with no output prints its stream summary to stderr and
-    /// then exits **non-zero** ("At least one output file must be specified") —
-    /// that exit status is expected here and is not a failure.
-    ///
-    /// AVFoundation would answer the duration half of this faster and without a
-    /// process, but it cannot open MKV or WebM at all, and it cannot answer the
-    /// codec half without loading tracks. One uniform probe that works for every
-    /// container the app can download beats a fast path that covers half of them.
-    ///
-    /// Takes the job's ``Cancellation`` so that a probe is stoppable too. It is a
-    /// real process against a file that may live on a stalled network volume, and
-    /// leaving it outside the cancellation chain means a cancel during this phase
-    /// does nothing, the job wedges, and — with the concurrency cap counting it —
-    /// the whole queue stops. ``probeTimeout`` is the backstop for a probe that
-    /// hangs where no signal reaches it.
+    /// Read duration and audio codec from ffmpeg's banner (`ffmpeg -i` exits non-zero by design).
+    /// Takes the job's ``Cancellation`` so a probe on a stalled volume can't wedge the queue.
     static func probe(input: URL, override: String = "",
                       cancellation: Cancellation = Cancellation()) async -> Probe {
         guard case .found(let exe, _) = resolve(override: override) else { return Probe() }
         let process = Process()
         process.executableURL = exe
         process.environment = ProcessSafety.minimalEnvironment
-        // No `-loglevel error` here: the Duration and Stream lines this reads are
-        // printed at ffmpeg's default `info` level, so quietening it would silence
-        // the very output being parsed.
+        // No `-loglevel error` here: the Duration and Stream lines this parses are printed at
+        // ffmpeg's default `info` level, so quietening it would silence the output being read.
         process.arguments = ["-nostdin", "-hide_banner", "-i", input.path]
         let errPipe = Pipe()
         process.standardOutput = FileHandle.nullDevice
@@ -320,23 +257,16 @@ enum FFmpegService {
                      audioCodec: MediaDuration.audioCodec(banner: banner))
     }
 
-    /// How long `ffmpeg -i` gets to describe a file before it is assumed wedged.
-    /// Generous — a large file on a slow volume takes real time to scan — but
-    /// finite, because this runs before the user has any card to cancel from.
+    /// How long `ffmpeg -i` gets to describe a file before it is assumed wedged. Generous but
+    /// finite — this runs before the user has any card to cancel from.
     static let probeTimeout: TimeInterval = 30
 
-    /// Ceiling on the banner we will hold in memory.
-    ///
-    /// The banner is a handful of lines for a well-formed file, but the file came
-    /// off the internet: a malformed container can make ffmpeg emit warnings per
-    /// frame, and `readDataToEndOfFile` on that is an unbounded allocation driven
-    /// by a remote server. Everything worth parsing is in the first few hundred
-    /// bytes.
+    /// Ceiling on the banner held in memory: a malformed container can make ffmpeg emit warnings
+    /// per frame, so an unbounded read is driven by a remote server. The useful part is the first few hundred bytes.
     static let probeOutputLimit = 64 * 1024
 
-    /// Read at most `limit` bytes, then keep draining and discarding so the writer
-    /// never blocks on a full pipe (which would wedge the process we are waiting
-    /// on rather than ending it).
+    /// Read at most `limit` bytes, then keep draining and discarding so the writer never blocks on
+    /// a full pipe — which would wedge the process we are waiting on rather than ending it.
     private static func readCapped(_ handle: FileHandle, limit: Int) -> Data {
         var collected = Data()
         while true {
@@ -351,16 +281,8 @@ enum FFmpegService {
 
     // MARK: - Conversions
 
-    /// Convert `input` into a sibling file with extension `ext`. Never overwrites
-    /// the source.
-    ///
-    /// Tries a **stream copy first**. A container change (MP4 → MKV and friends)
-    /// can almost always be done by re-wrapping the existing streams, which takes
-    /// seconds and is bit-exact. Passing no codec flags at all — what this used to
-    /// do — makes ffmpeg pick encoders from the container defaults and re-encode
-    /// the video, spending minutes of CPU *and* losing a generation of quality on
-    /// a job that should have copied. The re-encode is kept as the fallback for
-    /// the cases where the target muxer genuinely refuses the source codec.
+    /// Convert `input` into a sibling file with extension `ext`; never overwrites the source. Tries a
+    /// **stream copy first** — a container change is usually a bit-exact re-wrap, not a re-encode.
     static func convert(input: URL, toExtension ext: String, override: String = "",
                         cancellation: Cancellation = Cancellation(),
                         onProgress: @escaping @Sendable (MediaProgressSample) -> Void = { _ in })
@@ -373,15 +295,8 @@ enum FFmpegService {
                   onProgress: onProgress)
     }
 
-    /// Extract the audio track of `input` into a sibling file of the chosen
-    /// format.
-    ///
-    /// `sourceCodec` (from ``probe(input:override:)``) gates the copy attempt
-    /// rather than the copy being tried unconditionally, because some muxers
-    /// accept more than their name suggests: WAV will happily wrap an MP3 stream,
-    /// so an unconditional `-acodec copy` would hand back a `.wav` that is really
-    /// an MP3 in disguise. When the codec is unknown we re-encode, which is always
-    /// correct if not always fastest.
+    /// Extract the audio track into a sibling file. `sourceCodec` gates the copy attempt because some
+    /// muxers accept more than their name suggests — WAV will wrap an MP3 and hand back a fake .wav.
     static func extractAudio(input: URL, format: AudioExtractionFormat, override: String = "",
                              sourceCodec: String? = nil,
                              cancellation: Cancellation = Cancellation(),
@@ -397,13 +312,8 @@ enum FFmpegService {
 
     // MARK: - Argument construction
 
-    /// The ffmpeg flags each audio target is produced with.
-    ///
-    /// Deliberately on this side of the module boundary. ``AudioExtractionFormat``
-    /// lives in `GoelCore` because the size estimate and the copy decision are
-    /// worth testing without a Mac app; the flags that carry those decisions out
-    /// are part of launching a process, and `GoelCore` also builds for the Linux
-    /// daemon, which never runs one.
+    /// The ffmpeg flags each audio target is produced with. On this side of the module boundary
+    /// because launching a process is app-layer; `GoelCore` also builds for the Linux daemon.
     enum AudioArguments {
 
         /// Arguments for a genuine re-encode into this format.
@@ -422,21 +332,16 @@ enum FFmpegService {
 
     // MARK: - Process plumbing
 
-    /// Run ffmpeg, preferring `copyArgs` and falling back to `encodeArgs`.
-    ///
-    /// The fallback is taken **only** when the failure output reads as a
-    /// container/codec mismatch. Retrying every failure would turn a five-second
-    /// error on a truncated source into a twenty-minute re-encode that fails the
-    /// same way at the end.
+    /// Run ffmpeg, preferring `copyArgs` and falling back to `encodeArgs` — but only when the failure
+    /// reads as a container/codec mismatch, or a truncated source becomes a 20-minute re-encode.
     private static func run(input: URL, outputExtension: String,
                             copyArgs: [String]?, encodeArgs: [String],
                             override: String,
                             cancellation: Cancellation,
                             onProgress: @escaping @Sendable (MediaProgressSample) -> Void)
         async -> Outcome {
-        // Surface the SAME explanation the UI uses for the disabled state, rather
-        // than a terse "not found — brew install" that is wrong for a user who
-        // has no Homebrew and shouldn't need one.
+        // Surface the SAME explanation the UI uses for the disabled state, rather than a terse
+        // "not found — brew install" that is wrong for a user who has no Homebrew.
         let exe: URL
         switch resolve(override: override) {
         case .found(let url, _): exe = url
@@ -446,9 +351,8 @@ enum FFmpegService {
             let reason = "The source file is missing."
             return .failure(summary: reason, detail: reason)
         }
-        // Claimed only once every reason to abort has been ruled out: the claim
-        // creates a real (empty) file, and leaving one of those next to the user's
-        // media because ffmpeg turned out to be missing would be its own small bug.
+        // Claimed only once every reason to abort is ruled out: the claim creates a real (empty) file,
+        // and leaving one beside the user's media because ffmpeg was missing would be its own bug.
         let output = uniqueSibling(of: input, extension: outputExtension)
 
         if let copyArgs {
@@ -476,10 +380,8 @@ enum FFmpegService {
                     discardPartial(at: output)
                     return .failure(summary: message(from: stderr), detail: stderr)
                 }
-                // Fall through to the re-encode. The partial is deliberately NOT
-                // deleted here: it is the reservation that stops a concurrent job
-                // for a different source from claiming this same output name, and
-                // ffmpeg's own `-y` overwrites it on the retry anyway.
+                // Fall through to the re-encode. The partial is deliberately NOT deleted: it reserves this
+                // output name against a concurrent job, and ffmpeg's `-y` overwrites it on the retry anyway.
             }
         }
 
@@ -503,13 +405,8 @@ enum FFmpegService {
         }
     }
 
-    /// Why an apparently-successful run did not actually produce a usable file,
-    /// or nil when it did.
-    ///
-    /// ffmpeg can exit 0 having written nothing — a source whose only stream was
-    /// filtered out by `-vn` is the everyday case: "extract audio" from a silent
-    /// video leaves a zero-byte file and a clean exit code. Reporting that as a
-    /// success puts a green card and a Reveal in Finder button on an empty file.
+    /// Why an apparently-successful run produced no usable file, or nil when it did. ffmpeg can exit 0
+    /// having written nothing — "extract audio" from a silent video leaves a zero-byte file.
     private static func outputProblem(at url: URL) -> String? {
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         guard let attributes else {
@@ -540,12 +437,8 @@ enum FFmpegService {
         process.executableURL = exe
         // Don't hand ffmpeg the app's full environment (mirrors AntivirusScanner).
         process.environment = ProcessSafety.minimalEnvironment
-        // -y: the output name is already unique, but be explicit. -nostdin so a
-        // prompt can never hang the process. -loglevel error keeps stderr small.
-        // -progress pipe:1 is the whole point of this rewrite: it makes ffmpeg
-        // report where it has got to, on stdout, in a machine-readable form. It
-        // used to be discarded to /dev/null, which is why there was no bar to
-        // draw. -nostats suppresses the human-readable duplicate on stderr.
+        // -y for explicitness, -nostdin so a prompt can't hang us, -loglevel error to keep stderr small.
+        // -progress pipe:1 is the point: machine-readable progress that used to go to /dev/null.
         process.arguments = ["-nostdin", "-loglevel", "error", "-y",
                              "-progress", "pipe:1", "-nostats",
                              "-i", input.path] + extraArgs + [output.path]
@@ -555,9 +448,8 @@ enum FFmpegService {
         process.standardOutput = outPipe
         process.standardError = errPipe
 
-        // The reader is stateful (it stitches blocks back together across chunk
-        // boundaries) and readabilityHandler fires on an arbitrary queue, so it
-        // gets its own lock rather than being touched from two places.
+        // The reader is stateful (it stitches blocks across chunk boundaries) and readabilityHandler
+        // fires on an arbitrary queue, so it gets its own lock rather than being touched from two places.
         let sink = ProgressSink(onProgress: onProgress)
         outPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -628,11 +520,8 @@ enum FFmpegService {
         try? FileManager.default.removeItem(at: url)
     }
 
-    /// The last, most specific part of ffmpeg's complaint, or a plain fallback.
-    ///
-    /// Truncated from the *end* because ffmpeg puts the actual error last and its
-    /// preamble first. The full text is kept by the caller for the "Copy details"
-    /// affordance; this is only the one-line summary.
+    /// The last, most specific part of ffmpeg's complaint, or a plain fallback. Truncated from the
+    /// *end* because ffmpeg puts the real error last; the caller keeps the full text.
     private static func message(from stderr: String) -> String {
         let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "ffmpeg failed." }
@@ -640,17 +529,8 @@ enum FFmpegService {
         return String(lastLine.suffix(200))
     }
 
-    /// A never-clobber sibling path: `name.ext`, then `name (1).ext`, … — claimed
-    /// atomically so two conversions running at the same time cannot pick it.
-    ///
-    /// A "does it exist? then use it" check is not enough here. Two different
-    /// sources can want the same output name (`talk.mp4` and `talk.mkv` both
-    /// convert to `talk.webm`), and with two jobs running concurrently both would
-    /// test the name in the same instant, both find it free, and the second
-    /// ffmpeg would quietly overwrite the first's work. So the name is claimed by
-    /// creating the file with `O_EXCL`: whichever job wins the syscall owns it,
-    /// and the loser moves on to the next candidate. ffmpeg's `-y` then overwrites
-    /// our zero-byte placeholder, and every failure path deletes it.
+    /// A never-clobber sibling path claimed atomically with `O_EXCL`, so two concurrent conversions
+    /// targeting the same output name can't both find it free and have the second overwrite the first.
     static func uniqueSibling(of input: URL, extension ext: String) -> URL {
         let dir = input.deletingLastPathComponent()
         let stem = input.deletingPathExtension().lastPathComponent
@@ -664,16 +544,12 @@ enum FFmpegService {
                 close(fd)
                 return candidate
             }
-            // Anything other than "it already exists" means we cannot write here
-            // at all (no such directory, read-only volume, no permission). Hand
-            // the path back and let ffmpeg produce the real diagnostic — it says
-            // *why* far better than we could guess from errno.
+            // Anything other than "it already exists" means we cannot write here at all. Hand the path back
+            // and let ffmpeg produce the real diagnostic — it says *why* far better than errno.
             if errno != EEXIST { return candidate }
         }
-        // Ten thousand siblings all taken. Returning `base.ext` here would hand
-        // back a name we know is occupied and let ffmpeg's `-y` destroy it, so
-        // fall through to a name nothing can already hold — ugly, but it is a
-        // file that exists rather than one that used to.
+        // Ten thousand siblings all taken. Returning `base.ext` would hand back a name we know is
+        // occupied and let `-y` destroy it, so fall through to one nothing can already hold.
         let fallback = dir.appendingPathComponent("\(base)-\(UUID().uuidString).\(ext)")
         let fd = open(fallback.path, O_CREAT | O_EXCL | O_WRONLY, 0o644)
         if fd >= 0 { close(fd) }

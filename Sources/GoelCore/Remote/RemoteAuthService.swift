@@ -46,53 +46,16 @@ public enum RemoteAuthService {
         return false
     }
 
-    /// Whether this request is a token deep-link landing on the portal root and
-    /// should be handed a session cookie.
-    ///
-    /// The QR code and "Copy Link" hand out `…/?token=<token>`, which authenticates
-    /// exactly one page load: the portal's own `fetch`, `EventSource` and
-    /// `<a download>` calls carry no token, so every one of them 401'd and the page
-    /// bounced straight back to `/login`. Promoting that first load to a normal
-    /// session makes the link work, survive a reload, and lets the client scrub the
-    /// secret out of the address bar. The token is not weakened by this: rotating it
-    /// already drops every session.
+    /// Whether a `…/?token=` deep-link landing on `/` should get a session cookie: the token authenticates
+    /// only that page load, so `fetch`/`EventSource` 401'd. No weakening — rotating the token drops sessions.
     public static func shouldPromoteTokenToSession(_ request: RemoteRequest, requireAuth: Bool,
                                                    sessionAuthed: Bool, tokenAuthed: Bool) -> Bool {
         requireAuth && !sessionAuthed && tokenAuthed
             && request.method == "GET" && request.path == "/"
     }
 
-    /// The identity asserted by a trusted upstream proxy, or `nil`.
-    ///
-    /// This is the cheap 90% of "enterprise SSO": Cloudflare Access, Authelia,
-    /// oauth2-proxy and most ingress controllers all authenticate the user
-    /// themselves and then forward the result in a header. Honouring that header
-    /// gets SAML/OIDC-backed sign-in for the portal without implementing either
-    /// protocol.
-    ///
-    /// It is also, if you get it wrong, a total authentication bypass — anyone who
-    /// can reach the port just sends the header. Four things guard it, and all
-    /// four must hold:
-    ///
-    /// 1. The operator turned it on (``TrustedIdentityHeaderPolicy/isEnabled``).
-    /// 2. ``TrustedIdentityHeaderPolicy/trustedProxies`` is non-empty — an empty
-    ///    list means "trust nobody", never "trust everybody".
-    /// 3. The connection's *socket* peer address is in that list. The peer address
-    ///    comes from the kernel, not from a header, so it cannot be spoofed by the
-    ///    client; `X-Forwarded-For` is deliberately not consulted for this.
-    /// 4. The request carries ``TrustedIdentityHeaderPolicy/sharedSecretHeader``
-    ///    matching ``TrustedIdentityHeaderPolicy/sharedSecret``, which is never
-    ///    empty when the feature is live.
-    ///
-    /// Rule 4 exists because rule 3 only discriminates when the proxy is on a
-    /// *different* host, and the deployment we actually ship docs for is the
-    /// opposite: portal bound to loopback with nginx/Authelia in front of it on the
-    /// same box. There the proxy's peer address is `127.0.0.1` — indistinguishable
-    /// from every other process on the machine, so any local user could `curl` the
-    /// header in and become whoever they liked. A secret the proxy holds and other
-    /// local processes do not is what restores the discriminator. It is compared in
-    /// constant time, and it lives in the environment rather than in settings for
-    /// the same reason as ``RemotePortalSecurity/tlsPassphrase``.
+    /// Identity asserted by a trusted upstream proxy, or nil — a bypass if wrong, so all four must hold:
+    /// enabled, non-empty `trustedProxies`, kernel peer IP in it, plus a shared secret (loopback proves nothing).
     public static func trustedIdentity(_ request: RemoteRequest, client: String,
                                        policy: TrustedIdentityHeaderPolicy) -> String? {
         guard policy.isEnabled, !policy.trustedProxies.isEmpty else { return nil }
@@ -123,21 +86,16 @@ public struct TrustedIdentityHeaderPolicy: Sendable, Equatable {
     public var headerName: String
     /// Literal IPs or IPv4 CIDR blocks allowed to assert that header.
     public var trustedProxies: [String]
-    /// Secret the proxy must present in ``sharedSecretHeader``. Empty disables
-    /// header SSO entirely — a peer address alone is not proof of proxy origin
-    /// when the proxy shares the host with everyone else, which is the deployment
-    /// we document.
+    /// Secret the proxy must present in ``sharedSecretHeader``. Empty disables header SSO entirely: a
+    /// peer address alone is no proof of origin when the proxy shares the host, as our docs deploy it.
     public var sharedSecret: String
 
-    /// Header carrying ``sharedSecret``. Fixed rather than configurable: the name
-    /// is not the discriminator, the secret is, and one less knob is one less way
-    /// to misconfigure an authentication path.
+    /// Header carrying ``sharedSecret``. Fixed, not configurable: the secret is the discriminator, not
+    /// the name, and one less knob is one less way to misconfigure an authentication path.
     public static let sharedSecretHeader = "x-goel-proxy-secret"
 
-    /// ``sharedSecret`` as the operator supplies it: a launchd
-    /// `EnvironmentVariables` entry or a `systemd` `EnvironmentFile`, never the
-    /// settings JSON — that file gets backed up, exported and attached to support
-    /// emails, and this value is a credential.
+    /// ``sharedSecret`` as the operator supplies it: launchd `EnvironmentVariables` or a `systemd`
+    /// `EnvironmentFile`, never the settings JSON — that file is backed up and mailed to support.
     public static var secretFromEnvironment: String {
         ProcessInfo.processInfo.environment["GOEL_PORTAL_PROXY_SECRET"] ?? ""
     }
@@ -155,12 +113,8 @@ public struct TrustedIdentityHeaderPolicy: Sendable, Equatable {
     public var isEffective: Bool { isEnabled && !trustedProxies.isEmpty && !sharedSecret.isEmpty }
 }
 
-/// Minimal address matching for the trusted-proxy list: exact text match (which
-/// covers IPv6 and loopback without pretending to parse them) plus IPv4 CIDR.
-///
-/// Deliberately small. This decides *who may assert an identity*, so a subtle
-/// bug here is an auth bypass; a matcher you can read in one sitting is worth
-/// more than one that understands every address form.
+/// Trusted-proxy address matching: exact text (covers IPv6/loopback without parsing them) + IPv4 CIDR.
+/// Deliberately small — it decides *who may assert an identity*, so a subtle bug here is an auth bypass.
 public enum IPMatcher {
 
     public static func matches(_ address: String, any patterns: [String]) -> Bool {
@@ -220,21 +174,8 @@ public enum IPMatcher {
 
 // MARK: - Per-client login throttle
 
-/// Per-IP brute-force protection for the portal's login route.
-///
-/// The portal used to count failures *globally*, which meant two things, both
-/// bad: an attacker hammering from one address locked the legitimate user out
-/// (a trivial denial of service), and the fixed 30-second penalty was cheap
-/// enough that an online guess against a weak password stayed practical.
-///
-/// This tracks failures per client address and applies exponential backoff:
-/// after ``freeAttempts`` misses the client is locked out for ``baseDelay``,
-/// doubling on every further miss up to ``maxDelay``. A correct password clears
-/// the client's record immediately, so a user who fat-fingers their password
-/// twice and then gets it right is never penalised.
-///
-/// It is a value type driven by an injected `now`, so the backoff curve can be
-/// tested deterministically instead of with `sleep`.
+/// Per-IP brute-force protection for the login route (global counting let one attacker lock everyone out).
+/// After ``freeAttempts`` misses: ``baseDelay``, doubling to ``maxDelay``; a correct password clears it.
 public struct RemoteLoginThrottle: Sendable, Equatable {
 
     /// The verdict for one login attempt.
@@ -253,9 +194,8 @@ public struct RemoteLoginThrottle: Sendable, Equatable {
     /// A quiet client is forgotten after this long, so a shared NAT address does
     /// not accumulate penalties forever.
     public var entryLifetime: TimeInterval
-    /// Hard cap on tracked clients. The keys are real TCP peer addresses (not
-    /// header-supplied), so this can only grow as fast as an attacker can open
-    /// sockets — but a cap keeps that bounded anyway.
+    /// Hard cap on tracked clients. Keys are real TCP peer addresses (not header-supplied), so growth
+    /// is bounded by how fast an attacker can open sockets — the cap bounds it anyway.
     public var maxTrackedClients: Int
 
     private struct Entry: Equatable {
@@ -276,9 +216,8 @@ public struct RemoteLoginThrottle: Sendable, Equatable {
         self.maxTrackedClients = max(16, maxTrackedClients)
     }
 
-    /// Build the policy from settings. Clients whose address could not be
-    /// determined share the `"unknown"` bucket, which is strictly safer than
-    /// exempting them.
+    /// Build the policy from settings. Clients with no determinable address share the `"unknown"`
+    /// bucket, which is strictly safer than exempting them.
     public init(settings: AppSettings) {
         self.init(freeAttempts: settings.remoteLoginMaxAttempts,
                   baseDelay: settings.remoteLoginBackoffSeconds)
@@ -323,9 +262,8 @@ public struct RemoteLoginThrottle: Sendable, Equatable {
         entries.removeAll()
     }
 
-    /// Take the tuning knobs from `other` while keeping this throttle's accumulated
-    /// failure records. Re-applying settings must not hand a locked-out attacker a
-    /// clean slate — which is exactly what assigning a freshly-built throttle would.
+    /// Take the tuning knobs from `other` but keep accumulated failure records: re-applying settings
+    /// must not hand a locked-out attacker the clean slate a freshly-built throttle would.
     public mutating func adoptPolicy(of other: RemoteLoginThrottle) {
         freeAttempts = other.freeAttempts
         baseDelay = other.baseDelay
@@ -345,9 +283,8 @@ public struct RemoteLoginThrottle: Sendable, Equatable {
         return normalised.isEmpty ? "unknown" : normalised
     }
 
-    /// Forget quiet clients, then — if still over the cap — the least recently
-    /// seen. Locked-out clients are kept preferentially: evicting them is what an
-    /// attacker would want.
+    /// Forget quiet clients, then (if still over the cap) the least recently seen. Locked-out clients
+    /// are kept preferentially: evicting them is what an attacker would want.
     private mutating func expire(now: Date) {
         entries = entries.filter { _, entry in
             if let until = entry.lockedUntil, until > now { return true }
@@ -368,13 +305,8 @@ public struct RemoteLoginThrottle: Sendable, Equatable {
 
 // MARK: - Portal security bundle
 
-/// Everything the hardened portal needs beyond the routing ``RemoteRouter/Config``.
-///
-/// Bundled into one value so the two I/O shells (Network.framework and NIO) take
-/// the same parameter, and so ``RemoteAccess`` has exactly one thing to build
-/// from settings. Defaults reproduce the portal's previous behaviour exactly: no
-/// TLS, header SSO off, and a throttle whose free-attempt count matches the old
-/// fixed lockout threshold.
+/// Everything the hardened portal needs beyond ``RemoteRouter/Config``, in one value so both I/O shells
+/// (Network.framework, NIO) take the same parameter. Defaults = previous behaviour: no TLS, SSO off.
 public struct RemotePortalSecurity: Sendable, Equatable {
 
     /// Per-IP login backoff.
@@ -408,12 +340,8 @@ public struct RemotePortalSecurity: Sendable, Equatable {
                   tlsIdentityPath: settings.remoteTLSIdentityPath)
     }
 
-    /// The passphrase for ``tlsIdentityPath``, taken from the environment.
-    ///
-    /// Deliberately **not** a setting: the settings file is plain JSON that gets
-    /// backed up, exported and attached to support emails. A launchd
-    /// `EnvironmentVariables` entry (or a `systemd` `EnvironmentFile` on Linux)
-    /// keeps the passphrase in the place an operator already secures.
+    /// Passphrase for ``tlsIdentityPath``, from the environment — deliberately **not** a setting: that
+    /// JSON gets backed up and mailed to support. Use launchd `EnvironmentVariables` / `EnvironmentFile`.
     public static var tlsPassphrase: String {
         ProcessInfo.processInfo.environment["GOEL_PORTAL_TLS_PASSPHRASE"] ?? ""
     }
@@ -429,12 +357,8 @@ public actor RemoteSessionStore {
     private var sessionSeconds = 120 * 60
     private var username = ""
 
-    /// Bumped every time the credentials this store authenticates against change.
-    ///
-    /// ``handleLogin`` suspends for the whole PBKDF2 verification, and this actor
-    /// happily services ``configure(username:passwordHash:sessionMinutes:invalidatingSessions:)``
-    /// during that hop. The epoch is the token that lets the resumed login notice
-    /// it is holding a snapshot of credentials that no longer exist.
+    /// Bumped whenever the credentials change. ``handleLogin`` suspends across PBKDF2 while this actor
+    /// still services `configure`, so the epoch lets a resumed login notice its snapshot is stale.
     private var credentialEpoch = 0
 
     /// Per-client brute-force backoff. Replaces the old single global counter,
@@ -443,23 +367,8 @@ public actor RemoteSessionStore {
 
     public init() {}
 
-    /// Adopt new credentials, optionally dropping every live session in the same
-    /// actor hop. The two MUST be one call: split across two `await`s, the shell
-    /// actor suspends in between and can service a login against the credentials
-    /// it is halfway through rotating.
-    ///
-    /// Being one hop is necessary but not sufficient: a login that is *already*
-    /// suspended inside its PBKDF2 verification resumes after this returns, so it
-    /// also has to be told the ground moved. Bumping ``credentialEpoch`` is that
-    /// signal — see the guard in ``handleLogin(_:client:)``. The epoch only moves
-    /// when the credential material actually changes (or the caller is dropping
-    /// sessions anyway), so an unrelated settings save cannot fail a login that
-    /// happens to be in flight.
-    ///
-    /// `sessionMinutes` is clamped to `5…43200` (five minutes to thirty days).
-    /// The floor is the existing "a session shorter than this is unusable" rule;
-    /// the ceiling is what stops `minutes * 60` **trapping** on `Int` overflow —
-    /// the field behind it is an unbounded text box in the Web Access pane.
+    /// Adopt new credentials + optional session drop in ONE actor hop (two `await`s would let a login slip
+    /// through); ``credentialEpoch`` catches in-flight ones. `sessionMinutes` clamped 5…43200: `*60` traps.
     public func configure(username: String, passwordHash: String, sessionMinutes: Int,
                           invalidatingSessions: Bool = false) {
         if invalidatingSessions { invalidateAll() }
@@ -471,9 +380,8 @@ public actor RemoteSessionStore {
         self.sessionSeconds = min(max(5, sessionMinutes), 43_200) * 60
     }
 
-    /// Adopt the login-throttle policy. Kept separate from ``configure`` because
-    /// changing the backoff curve must not silently forgive clients that are
-    /// currently locked out — the accumulated failure records are preserved.
+    /// Adopt the login-throttle policy. Separate from ``configure`` because changing the backoff curve
+    /// must not forgive currently locked-out clients: accumulated failure records are preserved.
     public func configure(throttle policy: RemoteLoginThrottle) {
         throttle.adoptPolicy(of: policy)
     }
@@ -490,16 +398,8 @@ public actor RemoteSessionStore {
         return true
     }
 
-    /// Verify a portal login for the client at `client` (the socket's peer
-    /// address, supplied by the I/O shell — never a header).
-    ///
-    /// The throttle is consulted **before** the password is verified, which
-    /// reverses the earlier "verify first so a correct credential always works"
-    /// ordering. That ordering only made sense while the lockout was global: a
-    /// user could be locked out by someone else's guessing, so refusing them
-    /// outright was unacceptable. Now the penalty follows the guessing address,
-    /// and checking first is what makes the throttle worth having — it means a
-    /// flood costs an attacker a dictionary lookup instead of a PBKDF2 run each.
+    /// Verify a portal login for `client` (the socket's peer address from the I/O shell, never a header).
+    /// The throttle is checked **before** the password, so a flood costs a lookup, not a PBKDF2 run each.
     public func handleLogin(_ request: RemoteRequest, client: String = "") async -> Data {
         let now = Date()
         if case .blocked(let retryAfter) = throttle.check(client, now: now) {
@@ -526,13 +426,8 @@ public actor RemoteSessionStore {
             activeVerifications -= 1
         }
 
-        // `userOK`/`passOK` were decided against a snapshot taken *before* the
-        // verification suspended, and this actor services `configure` during that
-        // suspension. Without this guard an admin rotating a leaked password would
-        // see `invalidateAll()` run and then have an in-flight login mint a brand
-        // new session for the password they just revoked — good for the full
-        // session lifetime. Refuse; the client can retry against the live
-        // credentials. No failure is recorded: the attempt was never judged.
+        // `userOK`/`passOK` came from a snapshot taken before the verification suspended, and `configure`
+        // can run during it: without this guard a revoked password could still mint a full-lifetime session.
         guard epoch == credentialEpoch else {
             return RemoteAuthService.jsonError(
                 status: "401 Unauthorized",
@@ -548,9 +443,8 @@ public actor RemoteSessionStore {
 
         let penalty = throttle.recordFailure(client, now: Date())
         if penalty > 0 {
-            // Public fields only: the peer address is private data under the
-            // logging rules, so the line records that a lockout happened and for
-            // how long, not who it hit.
+            // Public fields only: the peer address is private under the logging rules, so this
+            // records that a lockout happened and for how long, not who it hit.
             GoelLog.remote.notice("Portal login locked out after repeated failures",
                                   .duration(penalty, label: "lockoutSeconds"))
             return RemoteAuthService.jsonError(
@@ -569,10 +463,8 @@ public actor RemoteSessionStore {
         throttle.failureCount(client)
     }
 
-    /// Mint a session and return the `Set-Cookie` value for it. Used by a
-    /// successful password login and by a token deep-link the shell has already
-    /// authenticated — on that path no password is involved on purpose, because
-    /// the token *is* the credential.
+    /// Mint a session and return its `Set-Cookie`. Used by a password login and by an already-authenticated
+    /// token deep-link — no password on that path, on purpose: the token *is* the credential.
     public func issueSession() -> String {
         pruneSessions()
         let sid = RemotePassword.randomHex(bytes: 32)
@@ -580,9 +472,8 @@ public actor RemoteSessionStore {
         return "goel_session=\(sid); Path=/; HttpOnly; SameSite=Strict; Max-Age=\(sessionSeconds)"
     }
 
-    /// Clear the session cookie. Reports whether a live session was actually
-    /// dropped, so the caller only pays the generation bump — which winds down
-    /// every open stream on the server — for a real sign-out.
+    /// Clear the session cookie, reporting whether a live session was actually dropped — the caller
+    /// only pays the generation bump (which winds down every open stream) for a real sign-out.
     public func handleLogout(_ request: RemoteRequest) -> (response: Data, droppedSession: Bool) {
         var dropped = false
         if let sid = request.cookie("goel_session") { dropped = sessions.removeValue(forKey: sid) != nil }

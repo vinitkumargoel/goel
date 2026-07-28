@@ -1,71 +1,6 @@
 #!/usr/bin/env bash
-#
-# fetch_ffmpeg.sh — put a static ffmpeg binary inside the app bundle.
-#
-# WHY THIS EXISTS
-#
-# The app advertises "no Homebrew required", and every other native dependency
-# is vendored into the .app (see bundle_dylibs.sh). ffmpeg was the exception:
-# nothing shipped it, and FFmpegService auto-detected /opt/homebrew/bin/ffmpeg.
-# The result was that "Convert" and "Extract Audio" existed only for users who
-# already had Homebrew — i.e. not the audience a self-contained app is for — and
-# for everyone else the menu items simply were not there, with no explanation.
-# This script closes half of that gap; FFmpegService.swift closes the other half
-# by saying out loud when no ffmpeg is reachable.
-#
-# LICENCE — READ BEFORE CHANGING THE SOURCE
-#
-# ffmpeg can be configured as LGPL-2.1+ or, with --enable-gpl, as GPL-2.0+.
-# Goel° is distributed under PolyForm Noncommercial 1.0.0, which is NOT a
-# GPL-compatible licence: shipping a GPL-configured ffmpeg inside the .app would
-# be a licence violation, not a paperwork detail. So the LGPL configuration is
-# the only correct choice here, and this script ENFORCES it — it reads the
-# configuration banner out of the binary it fetched and refuses anything built
-# with --enable-gpl or --enable-nonfree. Set FFMPEG_ALLOW_GPL=1 only if the
-# project's own licence ever changes to something GPL-compatible.
-#
-# LGPL also requires that the user can replace the shipped library/binary. That
-# is satisfied here because ffmpeg is bundled as a separate executable (not
-# statically linked into the app) and Settings → "ffmpeg path" lets any user
-# point Goel° at their own build instead.
-#
-# WHERE THE BINARY COMES FROM
-#
-# There is no single upstream that publishes checksummed, LGPL-configured,
-# static macOS ffmpeg builds for both arm64 and x86_64 — the well-known macOS
-# build sites (evermeet.cx, osxexperts.net) ship GPL configurations. So the
-# source is explicit rather than guessed, in this order:
-#
-#   1. FFMPEG_LOCAL=/path/to/ffmpeg   — a binary you built or staged yourself
-#   2. Vendor/ffmpeg/<arch>/ffmpeg    — a checked-out vendored copy (untracked)
-#   3. FFMPEG_URL + FFMPEG_SHA256     — fetch and verify a specific asset
-#   4. the pinned table below         — once a maintainer records url+sha256
-#
-# To produce (1) from source, on the machine matching the target arch:
-#
-#   curl -fLO https://ffmpeg.org/releases/ffmpeg-7.1.tar.xz && tar xf ffmpeg-7.1.tar.xz
-#   cd ffmpeg-7.1 && ./configure --disable-gpl --disable-nonfree --disable-doc \
-#       --disable-debug --enable-shared=no --enable-static --disable-ffplay \
-#       --disable-network --enable-audiotoolbox --enable-videotoolbox
-#   make -j"$(sysctl -n hw.ncpu)"
-#   FFMPEG_LOCAL="$PWD/ffmpeg" Scripts/build_app.sh
-#
-# (--disable-network is deliberate: the bundled ffmpeg only ever reads local
-# files. A media tool that cannot open a socket cannot be talked into fetching
-# anything, and "no telemetry" is a product guarantee here.)
-#
-# Usage: Scripts/fetch_ffmpeg.sh <destination-file>
-#   e.g. Scripts/fetch_ffmpeg.sh "dist/Goel°.app/Contents/Resources/ffmpeg"
-#
-# Env:
-#   FFMPEG_LOCAL=<path>     stage this binary instead of downloading
-#   FFMPEG_URL=<url>        download this asset (requires FFMPEG_SHA256)
-#   FFMPEG_SHA256=<hex>     expected SHA-256 of the downloaded asset
-#   FFMPEG_ALLOW_GPL=1      accept a GPL/nonfree build (see the warning above)
-#   FFMPEG_OPTIONAL=1       warn and skip instead of failing when no source is
-#                           configured — the build still produces a working .app,
-#                           it just has no built-in converter
-#   FFMPEG_ARCH=<arch>      target arch (defaults to the host's)
+# fetch_ffmpeg.sh — stage a static ffmpeg into the bundle. MUST be LGPL: Goel°'s
+# PolyForm licence is GPL-incompatible, so the banner is checked and --enable-gpl refused.
 
 set -euo pipefail
 
@@ -73,13 +8,8 @@ DEST="${1:?usage: fetch_ffmpeg.sh <destination-file>}"
 ARCH="${FFMPEG_ARCH:-$(uname -m)}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# --- pinned remote assets ----------------------------------------------------
-#
-# Fill these in when a checksummed LGPL build is chosen for a release, then this
-# script needs no environment at all. `unpinned` means "no vetted asset for this
-# arch yet" — never a URL without its digest, because an unverified 70 MB binary
-# copied into a signed bundle is precisely the thing a build script exists to
-# prevent.
+# Pinned remote assets, filled in when a checksummed LGPL build is chosen. `unpinned`
+# means no vetted asset yet — never a URL without its digest.
 case "$ARCH" in
   arm64)
     PINNED_URL="unpinned"
@@ -116,9 +46,8 @@ give_up() {
   exit 1
 }
 
-# Everything a candidate binary must satisfy before it is allowed into the .app.
-# Runs against the staged file at $DEST, and removes it on any failure so a bad
-# copy can never be picked up by a later idempotent run.
+# Everything a candidate binary must satisfy before entering the .app. Runs against the
+# staged $DEST and removes it on any failure, so a bad copy can't be reused later.
 verify() {
   local expected_sha="${1:-}"
 
@@ -178,11 +107,8 @@ verify() {
   echo "    OK — ffmpeg ${version:-?} runs, $licence-configured"
 }
 
-# --- idempotence -------------------------------------------------------------
-#
-# A rebuild should not re-download 70 MB. A copy already in place is re-verified
-# rather than trusted, because it may be left over from a run with different
-# settings (a GPL build, or the other architecture).
+# A rebuild should not re-download 70 MB. An existing copy is re-verified rather than
+# trusted — it may be left over from a run with different settings or another arch.
 if [ -x "$DEST" ] && file "$DEST" | grep -q "Mach-O"; then
   echo "==> ffmpeg already bundled ($DEST) — verifying in place"
   verify ""
@@ -226,10 +152,8 @@ else
   # -L follow redirects, -f fail on HTTP error, --retry for flaky networks.
   # Mirrors fetch_ytdlp.sh so both vendoring steps behave identically.
   curl -fL --retry 3 --retry-delay 2 -o "$TMP" "$URL"
-  # The digest is checked against the ASSET as published, and it is checked HERE
-  # — before the archive branches below hand unverified bytes to unzip/tar.
-  # Unpacking first and verifying afterwards still ends fail-closed, but it has
-  # already run an archive parser over whatever arrived.
+  # The digest is checked against the asset as published, and checked HERE — before
+  # the branches below hand unverified bytes to unzip/tar.
   ACTUAL="$(sha256_of "$TMP")"
   if [ "$ACTUAL" != "$SHA" ]; then
     rm -f "$TMP"

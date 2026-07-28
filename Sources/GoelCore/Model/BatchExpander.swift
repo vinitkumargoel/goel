@@ -1,16 +1,7 @@
 import Foundation
 
-/// Expands the download-manager batch shorthand in a pasted line:
-///
-///  - `file[01-20].zip` — a numeric range, zero-padded to the width of its
-///    start bound (`[1-20]` counts 1…20 unpadded, `[01-20]` counts 01…20).
-///  - `file.{iso,sig}` — a comma alternation.
-///
-/// Multiple patterns in one line combine as a cartesian product. Expansion is
-/// capped so a hostile `[1-999999]` can't wedge the app — an over-cap pattern
-/// is returned verbatim (it will then fail URL parsing loudly rather than add
-/// a million tasks silently). Magnet links pass through untouched: their
-/// parameter soup can legally contain anything.
+/// Expands batch shorthand in a pasted line: `file[01-20].zip` ranges (padded to the start bound's width)
+/// and `file.{iso,sig}` alternations, cartesian-combined and capped; over-cap and magnets pass verbatim.
 public enum BatchExpander {
 
     /// The most tasks a single pasted line may expand into.
@@ -40,9 +31,8 @@ public enum BatchExpander {
         return results
     }
 
-    /// Expand the leftmost `[N-M]` or `{a,b,…}` pattern, or nil if none exists.
-    /// A numeric range wider than `cap` is treated as not-a-pattern (checked
-    /// *before* materializing it, so `[1-999999]` never allocates a million rows).
+    /// Expand the leftmost `[N-M]` or `{a,b,…}` pattern, or nil if none. A range wider than `cap` is
+    /// not-a-pattern, checked *before* materializing so `[1-999999]` never allocates a million rows.
     private static func expandFirstPattern(in line: String, cap: Int) -> [String]? {
         if let range = firstNumericRange(in: line) {
             let inner = String(line[line.index(after: range.lowerBound)..<line.index(before: range.upperBound)])
@@ -80,17 +70,7 @@ public enum BatchExpander {
 }
 
 // MARK: - Playlist / channel expansion
-//
-// `BatchExpander` above turns ONE pasted line into MANY download rows using
-// shorthand the user typed. Playlist expansion is the same idea with a different
-// oracle: the user pastes a playlist/channel URL and yt-dlp enumerates its items
-// for us. Keeping both in this file is deliberate — they are the two "one pasted
-// URL → a list of rows the user ticks" seams, they share the same cap discipline,
-// and the app's add-flow reaches for exactly one of them per pasted line.
-//
-// Everything here is a PURE function over text yt-dlp already produced. Nothing
-// in this file spawns a process or touches the network; the GoelApp layer owns
-// that and hands the output down. That is what makes it testable offline.
+// Same "one pasted URL → rows to tick" seam as `BatchExpander`, oracle is yt-dlp text; pure, no network.
 
 /// One entry of an expanded playlist — enough to show a checklist row and, once
 /// ticked, to queue a normal download.
@@ -101,9 +81,8 @@ public struct PlaylistItem: Sendable, Hashable, Identifiable {
     public let id: String
     public var title: String
     public var url: String
-    /// Runtime in whole seconds when the flat listing carried one. Flat playlist
-    /// listings frequently omit it (that is the point of `--flat-playlist`), so
-    /// treat nil as "unknown", never as zero.
+    /// Runtime in whole seconds when the listing carried one. `--flat-playlist` frequently omits it,
+    /// so nil means "unknown", never zero.
     public var durationSeconds: Int?
     /// 1-based position in the playlist, preserved so the checklist can show the
     /// user the same ordering the site does even after they filter or sort.
@@ -131,10 +110,8 @@ public struct PlaylistItem: Sendable, Hashable, Identifiable {
 public struct PlaylistExpansion: Sendable, Hashable {
     public var title: String
     public var items: [PlaylistItem]
-    /// True when the source listed more items than ``PlaylistExpander/cap`` and
-    /// the tail was dropped. The UI must say so — silently showing 1 000 of a
-    /// 4 000-video channel and calling it "everything" is a lie the user would
-    /// only discover after the fact.
+    /// Source listed more than ``PlaylistExpander/cap`` and the tail was dropped. The UI must say so —
+    /// showing 1 000 of a 4 000-video channel as "everything" is a lie found out only after the fact.
     public var truncated: Bool
 
     public init(title: String, items: [PlaylistItem], truncated: Bool = false) {
@@ -148,27 +125,18 @@ public struct PlaylistExpansion: Sendable, Hashable {
 /// so the add-flow knows when to offer expansion at all.
 public enum PlaylistExpander {
 
-    /// The most items one pasted playlist may expand into. A channel can hold
-    /// tens of thousands of videos; materialising all of them would freeze the
-    /// checklist and, if ticked, bury the queue. Higher than `BatchExpander.cap`
-    /// because these rows come from a real listing rather than a typo-prone
-    /// bracket pattern, but still bounded.
+    /// Max items one pasted playlist may expand into. A channel can hold tens of thousands; materialising
+    /// all would freeze the checklist and bury the queue. Above `BatchExpander.cap` — a real listing.
     public static let cap = 1_000
 
-    /// How deep a nested listing is followed. A channel URL expands into tab
-    /// playlists ("Videos", "Shorts", "Live"), each holding the actual entries —
-    /// so one level of nesting is normal and two is already pathological.
+    /// Nesting depth followed: a channel expands into tab playlists ("Videos", "Shorts", "Live") holding
+    /// the entries, so one level is normal and two is already pathological.
     private static let maxNestingDepth = 2
 
     // MARK: Recognition
 
-    /// Whether `raw` looks like a playlist, channel, album or user page — i.e.
-    /// somewhere "expand into a checklist" is a sensible offer.
-    ///
-    /// Deliberately conservative and purely syntactic: it never fetches anything,
-    /// and a false negative merely means the user does not see the button, while
-    /// a false positive would spawn a pointless yt-dlp run on an ordinary file
-    /// URL. Magnet links and non-http(s) schemes are rejected outright.
+    /// Whether `raw` looks like a playlist/channel/album/user page. Purely syntactic; non-http(s) rejected.
+    /// A false negative only hides the button; a false positive spawns a pointless yt-dlp run on a file.
     public static func looksLikePlaylist(_ raw: String) -> Bool {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let components = URLComponents(string: trimmed),
@@ -176,9 +144,8 @@ public enum PlaylistExpander {
               scheme == "http" || scheme == "https",
               let host = components.host?.lowercased() else { return false }
 
-        // A `list=` query parameter is the unambiguous YouTube playlist marker,
-        // including on a `watch?v=…&list=…` URL (which really is both a single
-        // video and a playlist — the picker lets the user choose).
+        // `list=` is the unambiguous YouTube playlist marker, including on `watch?v=…&list=…`
+        // (genuinely both a single video and a playlist — the picker lets the user choose).
         if components.queryItems?.contains(where: {
             $0.name.lowercased() == "list" && !($0.value ?? "").isEmpty
         }) == true { return true }
@@ -193,9 +160,8 @@ public enum PlaylistExpander {
         ]
         if segments.contains(where: { containerSegments.contains($0) }) { return true }
 
-        // Shapes that only mean "container" at the start of the path. `/videos`
-        // as a *segment* would match an ordinary /videos/clip.mp4 file URL, so
-        // these are anchored deliberately.
+        // Container shapes anchored to the path start: `/videos` as a bare *segment* would also match
+        // an ordinary /videos/clip.mp4 file URL.
         let containerPrefixes = ["/c/", "/user/", "/@", "/show/"]
         if containerPrefixes.contains(where: { path.hasPrefix($0) }) { return true }
 
@@ -212,13 +178,8 @@ public enum PlaylistExpander {
 
     // MARK: Parsing
 
-    /// Parse the JSON object `yt-dlp --flat-playlist -J <url>` writes to stdout.
-    ///
-    /// Returns nil when the payload is not a playlist — a single-video page
-    /// answers with a plain info dict, and the caller should fall back to the
-    /// ordinary one-URL add path rather than showing an empty checklist.
-    /// Unavailable entries (deleted/private videos come through as `null` or with
-    /// no URL) are skipped rather than shown as rows that cannot be downloaded.
+    /// Parse the JSON `yt-dlp --flat-playlist -J <url>` writes to stdout. Nil when not a playlist, so the
+    /// caller falls back to the one-URL path; unavailable entries (`null`/no URL) are skipped, not listed.
     public static func parseFlatPlaylist(_ text: String) -> PlaylistExpansion? {
         guard let data = text.data(using: .utf8) else { return nil }
         return parseFlatPlaylist(data)
@@ -277,13 +238,8 @@ public enum PlaylistExpander {
         return nil
     }
 
-    /// Parse the tab-separated fallback listing produced by
-    /// `yt-dlp --flat-playlist --print "%(id)s\t%(title)s\t%(url)s\t%(duration)s"`.
-    ///
-    /// This exists because `-J` buffers the WHOLE listing before printing a byte,
-    /// which on a large channel means a long silent wait; `--print` streams one
-    /// line per item. Fields after the URL are optional, and yt-dlp writes the
-    /// literal string `NA` for a value it does not have.
+    /// Parse `yt-dlp --flat-playlist --print "%(id)s\t%(title)s\t%(url)s\t%(duration)s"`. Exists because
+    /// `-J` buffers the WHOLE listing (long silent wait) while `--print` streams; missing values are `NA`.
     public static func parsePrintListing(_ text: String) -> [PlaylistItem] {
         var items: [PlaylistItem] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
@@ -307,11 +263,8 @@ public enum PlaylistExpander {
 
 // MARK: - yt-dlp format table
 
-/// One selectable rendition from `yt-dlp -F`.
-///
-/// The fields mirror the columns of that table rather than yt-dlp's JSON, because
-/// the table is what the user is choosing between; anything we could not parse is
-/// left nil and simply not shown instead of being guessed at.
+/// One selectable rendition from `yt-dlp -F`. Fields mirror that table's columns, not yt-dlp's JSON,
+/// because the table is what the user chooses between; unparsable values stay nil rather than guessed.
 public struct MediaFormat: Sendable, Hashable, Identifiable {
 
     /// yt-dlp's format selector (`137`, `bestaudio`, `hls-1080`). This is the
@@ -353,10 +306,8 @@ public struct MediaFormat: Sendable, Hashable, Identifiable {
     public var isAudioOnly: Bool { hasAudio && !hasVideo }
     public var isVideoOnly: Bool { hasVideo && !hasAudio }
 
-    /// True when this rendition can be downloaded as ONE file with no ffmpeg
-    /// merge step. The picker defaults to these: a video-only format looks like
-    /// the obvious "1080p" choice but yields a silent file unless it is muxed
-    /// with a separate audio stream afterwards.
+    /// ONE file, no ffmpeg merge — the picker defaults to these: a video-only format looks like the
+    /// obvious "1080p" choice but yields a silent file unless muxed with a separate audio stream.
     public var isSelfContained: Bool { hasVideo && hasAudio }
 
     /// `1080p60`, `720p`, `audio` — the short label a person scans for.
@@ -367,14 +318,8 @@ public struct MediaFormat: Sendable, Hashable, Identifiable {
     }
 }
 
-/// Parser for the human-readable `yt-dlp -F` table.
-///
-/// Reading the table rather than `--dump-json` is a deliberate trade: it is the
-/// exact list the user would see on the command line, it costs one cheap
-/// metadata pass, and yt-dlp keeps the column layout stable across releases. The
-/// cost is fragility, so the parser is written to DEGRADE rather than fail — an
-/// unrecognised row is skipped, never guessed at, and the picker always keeps a
-/// "Best available" option that needs no parsed row at all.
+/// Parser for the human-readable `yt-dlp -F` table (over `--dump-json`: the exact list the user sees, one
+/// cheap pass). Fragile, so it DEGRADES rather than fails — an unrecognised row is skipped, never guessed.
 public enum MediaFormatTable {
 
     /// Parse a whole `-F` capture, newest layout (pipe-separated columns) or the
@@ -403,13 +348,7 @@ public enum MediaFormatTable {
     }
 
     // MARK: Modern layout
-    //
-    //   ID  EXT RESOLUTION FPS CH |   FILESIZE   TBR PROTO | VCODEC  VBR ACODEC  ABR ASR MORE INFO
-    //   139 m4a audio only      2 |    1.29MiB   49k https | audio only  mp4a.40.5  49k 22k low, m4a_dash
-    //   137 mp4 1920x1080  30    |   50.85MiB 1955k https | avc1.640028 1955k video only     1080p
-    //
-    // The `|` separators are the only reliable landmarks — every other column can
-    // be blank — so segment on them first and only then tokenise.
+    // `|` separators are the only reliable landmarks (every other column can be blank); segment first.
 
     private static func parseModernRow(_ line: String) -> MediaFormat? {
         // "audio only" / "video only" are two-word cell values; fusing them keeps
@@ -427,9 +366,8 @@ public enum MediaFormatTable {
         // Storyboard/thumbnail rows (`mhtml`, `48x27`) are not downloadable media.
         guard ext.lowercased() != "mhtml" else { return nil }
 
-        // FPS and CH are both bare integers and either may be blank, so the first
-        // number after RESOLUTION is only a frame rate when there is a picture to
-        // have one — otherwise it is the channel count of an audio-only row.
+        // FPS and CH are both bare ints and either may be blank: the first number after RESOLUTION is a
+        // frame rate only when there is a picture — otherwise it is an audio-only row's channel count.
         let resolvedHeight = height(fromResolution: resolutionToken)
         let fps = resolvedHeight == nil ? nil
             : head.dropFirst(3).compactMap { Int($0) }.first.flatMap { $0 > 0 ? $0 : nil }
@@ -471,13 +409,7 @@ public enum MediaFormatTable {
     }
 
     // MARK: Legacy layout
-    //
-    //   format code  extension  resolution note
-    //   249          webm       audio only DASH audio  50k , opus @ 50k, 1.25MiB
-    //   137          mp4        1920x1080  1080p 2192k , avc1.640028, 30fps, video only, 47.94MiB
-    //
-    // Older yt-dlp builds and youtube-dl print this. Users who keep their own
-    // ancient copy in /usr/local/bin hit it, so it is worth the twenty lines.
+    // Space-separated `format code / ext / resolution / note`, still printed by youtube-dl and old yt-dlp.
 
     private static func parseLegacyRow(_ line: String) -> MediaFormat? {
         let fused = line
@@ -516,9 +448,8 @@ public enum MediaFormatTable {
         token.replacingOccurrences(of: "\u{2060}", with: " ")
     }
 
-    /// Whether `token` is the fused `audio only` / `video only` cell marker —
-    /// `kind` nil matches either. Compared by prefix because the legacy layout
-    /// runs these into the note as `video only,` with trailing punctuation.
+    /// Fused `audio only`/`video only` cell marker; nil `kind` matches either. Prefix-compared because
+    /// the legacy layout runs these into the note as `video only,` with trailing punctuation.
     private static func isMarker(_ token: String, _ kind: String?) -> Bool {
         guard let kind else {
             return token.hasPrefix("audio\u{2060}only") || token.hasPrefix("video\u{2060}only")

@@ -11,9 +11,8 @@ struct SFTPEntryInfo: Equatable {
     let linkTarget: String?
 }
 
-/// Goel's answer to Finder's ⌘I: everything the server knows about one item,
-/// including the things a listing alone can't show — a symlink's target, the
-/// owner and group, and a folder's real recursive size.
+/// Goel's answer to Finder's ⌘I: everything the server knows about one item, including what a
+/// listing can't show — a symlink's target, owner and group, and a folder's real recursive size.
 struct SFTPInfoPanel: View {
 
     let entry: SFTPEntry
@@ -85,9 +84,8 @@ struct SFTPInfoPanel: View {
     }
 
     private var kindLabel: String {
-        // A link is described by what it is *and* what it resolves to, because
-        // both matter: "Alias to folder" tells you it will open like a folder and
-        // that deleting it deletes only the link.
+        // A link is described by what it is *and* what it resolves to: "Alias to folder" tells you it
+        // opens like a folder and that deleting it deletes only the link.
         if entry.isSymlink { return entry.isDirectory ? "Alias to folder" : "Alias" }
         return entry.isDirectory ? "Folder" : "File"
     }
@@ -107,9 +105,8 @@ struct SFTPInfoPanel: View {
         }
     }
 
-    /// A directory's listed size is its inode's, not its contents' — showing it
-    /// would be actively misleading, so folders show the walked total instead and
-    /// say so while the walk is running.
+    /// A directory's listed size is its inode's, not its contents' — showing it would mislead, so
+    /// folders show the walked total and say so while the walk runs.
     private func sizeText(_ info: SFTPEntryInfo) -> String {
         guard info.attributes.isDirectory else { return info.attributes.size.byteString }
         if let folderSize { return folderSize.byteString }

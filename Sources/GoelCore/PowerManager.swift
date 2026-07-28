@@ -5,14 +5,8 @@ import IOKit.pwr_mgt
 import IOKit.ps
 #endif
 
-/// Keeps the machine awake while transfers run and reports whether we're on
-/// battery. macOS uses IOKit power assertions; Linux uses `systemd-inhibit`
-/// (sleep block) plus the sysfs power-supply tree. Both expose the same API, so
-/// the scheduler is unchanged.
-///
-/// `DownloadManager` (an `actor`) keeps a reference to this object, so it must be
-/// `Sendable`. Its only mutable state is guarded by an internal lock; hence the
-/// `@unchecked Sendable` conformance.
+/// Keeps the machine awake while transfers run and reports battery state: IOKit power assertions on
+/// macOS, `systemd-inhibit` + sysfs on Linux. `@unchecked Sendable` — mutable state is lock-guarded.
 public final class PowerManager: @unchecked Sendable {
 
     // MARK: State
@@ -38,9 +32,8 @@ public final class PowerManager: @unchecked Sendable {
 
     // MARK: Sleep prevention
 
-    /// Create or release the single "prevent idle sleep" hold. Passing the same
-    /// value repeatedly is safe: a second `true` keeps the existing hold, and
-    /// `false` with nothing held is a no-op.
+    /// Create or release the single "prevent idle sleep" hold. Idempotent: a second `true` keeps the
+    /// existing hold, and `false` with nothing held is a no-op.
     public func setPreventSleep(_ on: Bool) {
         lock.lock()
         defer { lock.unlock() }
@@ -129,13 +122,8 @@ public final class PowerManager: @unchecked Sendable {
         #endif
     }
 
-    /// Remaining battery charge as a whole percentage, `0…100`, or `nil` on a
-    /// machine with no battery (or when the level can't be read).
-    ///
-    /// Backs the "pause downloads below battery threshold" policy. `nil` is
-    /// deliberately *not* zero: a desktop must never look like a nearly-flat
-    /// laptop, so the automation reads a missing level as "full" and leaves the
-    /// queue alone.
+    /// Remaining battery charge `0…100`, or `nil` when there is no battery / it can't be read. `nil` is
+    /// deliberately not zero: a desktop must not look like a flat laptop and pause the queue.
     public var batteryPercent: Int? {
         #if canImport(IOKit)
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),

@@ -1,18 +1,8 @@
 import Foundation
 import AppKit
 
-// AppleScript / Automator / Shortcuts-via-Run-AppleScript surface.
-//
-// The packaged app's Info.plist enables scripting (`NSAppleScriptEnabled`)
-// and points `OSAScriptingDefinition` at `GoelDownloader.sdef`, whose command
-// entries name these classes. Apple events are delivered on the main thread,
-// so hopping straight into the main-actor view model is sound.
-//
-// Example:
-//   tell application "GoelDownloader"
-//       add download "https://example.com/file.zip"
-//       pause all downloads
-//   end tell
+// AppleScript / Automator surface. The packaged Info.plist enables `NSAppleScriptEnabled` and
+// points at GoelDownloader.sdef; Apple events arrive on the main thread, so hopping to it is sound.
 
 @objc(AddDownloadScriptCommand)
 final class AddDownloadScriptCommand: NSScriptCommand {

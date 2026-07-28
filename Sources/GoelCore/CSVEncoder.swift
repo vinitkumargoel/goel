@@ -4,22 +4,15 @@ import Foundation
 /// the quoting rule is tested at the boundary instead of hiding in an export path.
 public enum CSVEncoder {
 
-    /// Leading characters a spreadsheet reads as "this cell is a formula". A
-    /// download's name comes from the server's `Content-Disposition` and its
-    /// locator is the raw URL, so an exported history opened in Excel / Numbers /
-    /// Sheets would otherwise evaluate whatever the far end put there. Tab and
-    /// carriage return are included because the importer strips a leading
-    /// whitespace character, exposing the formula character behind it.
+    /// Leading characters a spreadsheet reads as "this cell is a formula". Name (`Content-Disposition`)
+    /// and URL are server-supplied; tab and CR count too, as importers strip leading whitespace first.
     private static let formulaLeaders: Set<Character> = ["=", "+", "-", "@", "\t", "\r"]
 
-    /// Quote a single field: wrap it in double-quotes when it contains a
-    /// separator, quote, or newline, doubling any embedded quotes. A field that
-    /// *starts* with a formula character is additionally neutralised.
+    /// Quote a field: wrap in double-quotes if it holds a separator, quote, or newline, doubling
+    /// embedded quotes. A field *starting* with a formula character is additionally neutralised.
     public static func field(_ raw: String) -> String {
-        // Neutralise a formula lead-in first: a leading apostrophe is the
-        // spreadsheet-standard "treat as text" marker, and force-quoting keeps the
-        // result a well-formed RFC-4180 field either way. Quoting alone would not
-        // help — the spreadsheet strips the quotes before evaluating.
+        // Neutralise a formula lead-in: a leading apostrophe is the standard "treat as text" marker
+        // and keeps RFC-4180 well-formed. Quoting alone fails — the sheet strips quotes before evaluating.
         if let first = raw.first, formulaLeaders.contains(first) {
             return "\"'" + raw.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }

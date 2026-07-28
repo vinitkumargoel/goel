@@ -4,20 +4,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// A thin C shim over libssh2 for SFTP: connect, host-key hashing, password /
-// ssh-agent auth, directory listing, and (resumable) file download/upload.
-// It exists because the libssh2 surface is C-only.
-//
-// THREAD AFFINITY. A `GSBSession` owns one `LIBSSH2_SESSION`, which libssh2 does
-// NOT make thread-safe. A session must therefore be opened, used and closed from
-// exactly one thread for its whole life. The Swift side guarantees this by
-// pinning each session to a dedicated thread and feeding it a serial command
-// queue (see `SFTPSessionActor`). Blocking by design.
-//
-// Sessions are long-lived on purpose: the handshake (TCP connect, key exchange,
-// host-key verification, authentication, SFTP channel init) costs several
-// round trips plus asymmetric crypto, so paying it per operation made every
-// folder click and every file in a folder upload wear a full handshake.
+// Thin C shim over libssh2 SFTP (C-only API). THREAD AFFINITY: `LIBSSH2_SESSION` is not thread-safe, so
+// `SFTPSessionActor` pins each session to one thread; sessions are long-lived as handshakes are costly.
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,18 +38,8 @@ typedef struct GSBResult {
     char message[256];      // human-readable detail
 } GSBResult;
 
-// Connection + auth parameters, used to OPEN a session.
-//   password    "" / NULL to skip password auth
-//   use_agent   nonzero to also try the running ssh-agent
-//   expected_fp hex SHA-256 to REQUIRE (mismatch -> GSB_ERR_HOSTKEY_MISMATCH);
-//               "" / NULL learns the key (trust-on-first-use) and returns it.
-//   private_key_path  "" / NULL to skip key auth; else a PEM/OpenSSH private key.
-//   public_key_path   "" / NULL derives the public half from the private key
-//                     (libssh2 does this for the OpenSSL backend).
-//   key_passphrase    "" / NULL for an unencrypted key.
-//
-// Methods are tried in order: password, private key, ssh-agent — each only if
-// configured. The first that succeeds wins.
+// Session-open parameters; "" / NULL disables a field (public_key_path then derives from the private).
+// expected_fp: hex SHA-256 to REQUIRE (else GSB_ERR_HOSTKEY_MISMATCH), "" = TOFU. Order: password, key, agent.
 typedef struct GSBAuth {
     const char *host;
     int port;
@@ -89,10 +67,8 @@ typedef long (*gsb_read_cb)(char *buf, long cap, void *userdata);
 // Progress callback: return 0 to continue, nonzero to abort.
 typedef int (*gsb_progress_cb)(void *userdata, long long total, long long sofar);
 
-// Directory-entry callback, once per child.
-//   is_link      nonzero when the entry itself is a symbolic link
-//   link_target  where the link points, or "" when not a link / unreadable
-//   is_dir       whether the entry resolves to a directory (targets followed)
+// Directory-entry callback, once per child. is_link: entry itself is a symlink; link_target: "" when
+// not a link / unreadable; is_dir: whether the entry RESOLVES to a directory (targets followed).
 typedef void (*gsb_entry_cb)(void *userdata, const char *name, int is_dir,
                              long long size, long long mtime, unsigned long perms,
                              int is_link, const char *link_target,
@@ -100,9 +76,8 @@ typedef void (*gsb_entry_cb)(void *userdata, const char *name, int is_dir,
 
 // ---- session lifecycle ----------------------------------------------------
 
-// Connect, verify the host key, authenticate, and open the SFTP channel.
-// Returns NULL on failure with `*r` filled (including `r->fingerprint` whenever
-// the key was read, so the caller can pin it). Close with gsb_session_close.
+// Connect, verify the host key, authenticate, open the SFTP channel. NULL on failure with `*r` filled
+// (incl. `r->fingerprint` whenever the key was read, so the caller can pin it). Close w/ gsb_session_close.
 GSBSession *gsb_session_open(const GSBAuth *auth, GSBResult *r);
 
 // Tear down the SFTP channel, disconnect and close the socket. NULL-safe.
@@ -112,9 +87,8 @@ void gsb_session_close(GSBSession *s);
 // session; the storage belongs to the session.
 const char *gsb_session_fingerprint(const GSBSession *s);
 
-// Cheap LOCAL liveness check — no round trip. Zero means the peer has closed the
-// connection or the socket has errored, so the caller should reopen. A nonzero
-// result means "not known to be dead", which is the most a local check can say.
+// Cheap LOCAL liveness check — no round trip. 0 = peer closed or socket errored, so reopen; nonzero
+// only means "not known to be dead", which is the most a local check can say.
 int gsb_session_alive(GSBSession *s);
 
 // ---- one-shot operations (open their own connection) ----------------------
@@ -122,10 +96,8 @@ int gsb_session_alive(GSBSession *s);
 // Connect + authenticate, then hang up (the "Test Connection" button).
 GSBResult gsb_probe(const GSBAuth *auth);
 
-// Connect, handshake and read the host key — then disconnect. NO credential is
-// ever offered, so this is safe against a host whose identity is not yet known:
-// it exists so the fingerprint can be shown for approval *before* the first
-// connection that would authenticate. Fills fingerprint; honours expected_fp.
+// Connect, handshake, read the host key, disconnect. NO credential is ever offered, so an unknown
+// host is safe: the fingerprint gets approved BEFORE any auth. Fills fingerprint; honours expected_fp.
 GSBResult gsb_hostkey(const GSBAuth *auth);
 
 // ---- session operations ---------------------------------------------------
@@ -154,9 +126,8 @@ GSBResult gsb_upload(GSBSession *s, const char *remote, long long total,
 GSBResult gsb_mkdir(GSBSession *s, const char *path);
 GSBResult gsb_remove(GSBSession *s, const char *path, int is_dir);
 
-// Rename / move `from` to `to` (works across directories on the same server).
-// Fails if the server rejects it — notably when the two paths are on different
-// filesystems, which the caller must handle by copying instead.
+// Rename / move `from` to `to` across directories on one server. Fails if the server rejects it —
+// notably across filesystems, which the caller must then handle by copying instead.
 GSBResult gsb_rename(GSBSession *s, const char *from, const char *to);
 
 // ---- metadata -------------------------------------------------------------

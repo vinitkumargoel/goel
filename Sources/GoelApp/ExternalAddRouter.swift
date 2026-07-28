@@ -2,28 +2,14 @@ import AppKit
 import Foundation
 import GoelCore
 
-/// Routes downloads arriving from outside the UI — the `goeldownloader://` URL
-/// scheme, `magnet:` links, double-clicked `.torrent` files, and the system
-/// Services menu — to the view model through one buffered channel.
-///
-/// Two safety properties live here:
-/// - **Cold-launch buffering.** `application(_:open:)` can fire before the view
-///   model registers its observer; posts made before `drainPending` are held
-///   and replayed, never dropped.
-/// - **Origin-based confirmation.** A `goeldownloader://` link is triggerable
-///   by any web page, so those adds are marked `needsConfirmation` and surface
-///   as a suggestion banner instead of silently queueing; explicit user
-///   actions (Services, drop basket, file opens) queue directly.
+/// Routes downloads arriving from outside the UI (URL scheme, magnets, .torrent opens, Services)
+/// through one buffered channel: cold-launch posts are replayed, and web-triggerable adds confirm.
 @MainActor
 enum ExternalAdd {
     static let notification = Notification.Name("GoelExternalAdd")
 
-    /// One delivery: raw add-lines to parse, or an explicit local `.torrent`
-    /// file URL (which deliberately bypasses `DownloadSource.parse`'s remote
-    /// scheme allowlist — it comes from a real user file-open, not a string).
-    /// `drainBrowserSpool` carries no content: it just tells the app to read
-    /// the on-disk spool the native-messaging host writes (the spool, not the
-    /// world-triggerable URL scheme, is the trust boundary for those adds).
+    /// One delivery: raw add-lines, or an explicit local `.torrent` URL (bypassing the remote scheme
+    /// allowlist). `drainBrowserSpool` is content-free — the on-disk spool is the trust boundary.
     struct Payload {
         var lines: String?
         var torrentFile: URL?
@@ -70,19 +56,16 @@ enum ExternalAdd {
     static func payload(from url: URL) -> Payload? {
         switch url.scheme?.lowercased() {
         case "goeldownloader":
-            // goeldownloader://drain-browser-queue — the native-messaging host
-            // poking us to read its spool. Deliberately content-free: a web
-            // page can trigger the drain, but only a local process can have
-            // put anything in the spool.
+            // goeldownloader://drain-browser-queue — the host poking us to read its spool. Content-free:
+            // a web page can trigger the drain, but only a local process can fill the spool.
             if url.host?.lowercased() == "drain-browser-queue" {
                 return fromDisposition(
                     InboundAdd.classify(origin: .browserSpool,
                                         payload: .init(drainBrowserSpool: true))
                 )
             }
-            // goeldownloader://add?url=<percent-encoded target>. Web pages can
-            // trigger this scheme, so the inner target is restricted to
-            // remote/magnet sources and the add asks for confirmation.
+            // goeldownloader://add?url=<percent-encoded target>. Web pages can trigger this scheme, so the
+            // inner target is restricted to remote/magnet sources and the add asks for confirmation.
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             guard let target = components?.queryItems?.first(where: { $0.name == "url" })?.value,
                   let inner = URL(string: target),
@@ -134,9 +117,8 @@ enum ExternalAdd {
     }
 }
 
-/// The Services-menu provider ("Download with GoelDownloader" on any selected
-/// text). Registered as `NSApp.servicesProvider`; the selector name must match
-/// the Info.plist `NSMessage` entry.
+/// The Services-menu provider ("Download with GoelDownloader"). Registered as
+/// `NSApp.servicesProvider`; the selector name must match the Info.plist `NSMessage` entry.
 final class GoelServicesProvider: NSObject {
     @objc func downloadWithGoel(_ pboard: NSPasteboard, userData: String,
                                 error: AutoreleasingUnsafeMutablePointer<NSString>) {

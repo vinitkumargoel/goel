@@ -3,25 +3,11 @@ import Network
 import SwiftUI
 import GoelCore
 
-// Diagnostics for the sidebar's server-status probes go through ``GoelLog/app``.
-// A failure here is intentionally non-fatal (a server just reads as offline /
-// carries no OS chip), so the "why" goes to the unified log rather than to the
-// UI. This used to be a second `os.Logger` with its own `server-status`
-// category; it now shares GoelLog's subsystem/category taxonomy so there is one
-// place to point a user at, and — more importantly — so the hostname travels as
-// a `.private` field instead of being interpolated in the clear.
+// Server-status diagnostics go through ``GoelLog/app``: a failure here is non-fatal, so the
+// "why" goes to the unified log — and the hostname travels as a `.private` field.
 
-/// Live reachability + lightweight metadata for a saved SFTP server, surfaced in
-/// the sidebar so a server reads as "live" at a glance and carries its host / IP /
-/// OS.
-///
-/// Reachability and IP are deliberately **unauthenticated**: a plain TCP connect
-/// to the SSH port and a DNS resolution. Probing every saved server on a timer
-/// therefore never spends an ssh-agent identity or a stored Keychain password (a
-/// real `SFTPClient.probe()` would authenticate — the exact credential spend the
-/// browser-capture allowlist guards against). OS detection is the one
-/// authenticated bit and runs only lazily, piggy-backing on an already-open
-/// browser session (see `AppViewModel+SFTPStatus`).
+/// Live reachability + lightweight metadata for a saved SFTP server. Reachability and IP are
+/// deliberately unauthenticated (TCP connect + DNS); only OS detection authenticates, and lazily.
 enum ServerReachability: Equatable {
     case unknown   // not yet probed
     case online    // TCP connect to the SSH port succeeded
@@ -58,18 +44,16 @@ struct ServerMeta: Equatable {
     var os: ServerOS?
 }
 
-/// A detected server operating system, parsed from `/etc/os-release`. Real distro
-/// logos would need bundled image assets; for now this maps the common ones to a
-/// tint + generic SF Symbol and shows the human `pretty` name.
+/// A detected server OS, parsed from `/etc/os-release`. Real distro logos would need bundled
+/// assets; for now the common ones map to a tint + generic SF Symbol plus the `pretty` name.
 struct ServerOS: Equatable {
     /// The `os-release` `ID`, lowercased — "ubuntu", "debian", "alpine", …
     var id: String
     /// `PRETTY_NAME` when present, e.g. "Ubuntu 22.04.3 LTS"; else a titrecased id.
     var pretty: String
 
-    /// A short chip label: the pretty name with the "GNU/Linux" token dropped
-    /// (Debian/Kali carry it mid-string) and doubled spaces collapsed, so the
-    /// sidebar chip stays compact.
+    /// A short chip label: the pretty name with the "GNU/Linux" token dropped (Debian/Kali carry it
+    /// mid-string) and doubled spaces collapsed, so the sidebar chip stays compact.
     var label: String {
         pretty
             .replacingOccurrences(of: "GNU/Linux ", with: "")
@@ -110,10 +94,8 @@ struct ServerOS: Equatable {
             guard !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { continue }
             let key = String(line[line.startIndex..<eq]).trimmingCharacters(in: .whitespaces)
             var value = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
-            // Strip a single layer of surrounding quotes (os-release quotes values
-            // that contain spaces). If the file was truncated mid-value the closing
-            // quote may be missing, so drop a dangling opening quote too rather than
-            // rendering it verbatim.
+            // Strip one layer of surrounding quotes (os-release quotes values with spaces). A file
+            // truncated mid-value may lack the closing quote, so drop a dangling opener rather than render it.
             if value.count >= 2, let first = value.first, (first == "\"" || first == "'"),
                value.last == first {
                 value = String(value.dropFirst().dropLast())
@@ -134,9 +116,8 @@ struct ServerOS: Equatable {
 
 // MARK: - Unauthenticated reachability + DNS
 
-/// A one-shot TCP reachability + DNS-resolution probe used by the sidebar's live
-/// indicator. No SSH handshake, no auth — just "is the port answering, and what
-/// does the host resolve to".
+/// A one-shot TCP reachability + DNS-resolution probe for the sidebar's live indicator. No SSH
+/// handshake, no auth — just "is the port answering, and what does the host resolve to".
 enum SFTPReachability {
 
     /// Connect to `host:port` over TCP and report whether it became ready within
@@ -193,16 +174,13 @@ enum SFTPReachability {
         }
     }
 
-    /// Resolve `host` to a numeric address string (IPv4 preferred). Returns the
-    /// input unchanged if it is already an IP literal, or nil if it can't resolve.
-    /// Runs the blocking `getaddrinfo` off the calling actor.
+    /// Resolve `host` to a numeric address string (IPv4 preferred); the input unchanged if already
+    /// an IP literal, nil if unresolvable. Runs the blocking `getaddrinfo` off the calling actor.
     static func resolveIP(host: String, timeout: TimeInterval = 4) async -> String? {
         guard !host.isEmpty else { return nil }
         let once = OnceFlag()
-        // Race the blocking lookup against a deadline: `getaddrinfo` has no timeout
-        // of its own, so a hung resolver would otherwise pin a background thread and
-        // stall the 20s sweep. If the deadline wins we return nil (the caller keeps
-        // the last good IP); the detached lookup is left to unwind and be discarded.
+        // Race the blocking lookup against a deadline: `getaddrinfo` has no timeout, so a hung resolver
+        // would pin a thread and stall the 20s sweep. On timeout the caller keeps its last good IP.
         return await withCheckedContinuation { cont in
             Task.detached(priority: .utility) {
                 let ip = blockingResolveIP(host)
@@ -214,9 +192,8 @@ enum SFTPReachability {
         }
     }
 
-    /// The blocking `getaddrinfo` lookup (IPv4 preferred). Returns the input
-    /// unchanged for an IP literal, or nil if the host can't resolve. Must run off
-    /// the calling actor.
+    /// The blocking `getaddrinfo` lookup (IPv4 preferred). Returns the input unchanged for an IP
+    /// literal, or nil if the host can't resolve. Must run off the calling actor.
     private static func blockingResolveIP(_ host: String) -> String? {
         var hints = addrinfo(ai_flags: 0, ai_family: AF_UNSPEC, ai_socktype: SOCK_STREAM,
                              ai_protocol: 0, ai_addrlen: 0, ai_canonname: nil,

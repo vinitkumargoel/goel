@@ -35,9 +35,8 @@ final class PersistenceTests: XCTestCase {
         .magnet("magnet:?xt=urn:btih:\(hash)&dn=Demo+Pack")
     }
 
-    /// A varied fixture set covering every storage-relevant shape: pre-metadata,
-    /// in-progress, paused-with-resume-data, failed (with a concrete reason),
-    /// seeding (upload bytes), completed, and a multi-file torrent.
+    /// A varied fixture set covering every storage-relevant shape: pre-metadata, in-progress,
+    /// paused-with-resume-data, failed, seeding (upload bytes), completed, and a multi-file torrent.
     private func sampleTasks() -> [DownloadTask] {
         let base = Date(timeIntervalSinceReferenceDate: 700_000_000)
 

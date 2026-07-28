@@ -1,21 +1,7 @@
 import XCTest
 
-/// Guards the LGPL paperwork for the bundled ffmpeg.
-///
-/// WHY THIS IS A TEST AND NOT JUST A DOCUMENT
-///
-/// `Resources/ffmpeg` is the only copyleft component in the shipped `.app`. LGPL-2.1 §4
-/// is not discharged by attribution: the binary must be accompanied by the licence text
-/// and by the corresponding source (or an offer of it). THIRD-PARTY-NOTICES.md is the
-/// artefact that carries both — it is the file redistributors are told to ship alongside
-/// the application. If someone trims it, re-generates it from the permissive-only
-/// inventory, or "tidies" the 500-line appendix away, the next DMG becomes a licence
-/// violation and nothing else in the build would notice. This test notices.
-///
-/// It reads the repository file directly rather than a bundled resource, because the
-/// notices file is a repository artefact rather than something GoelCore links against.
-/// `#filePath` is the compile-time source path, so the repo root is reachable regardless
-/// of where the test binary is run from.
+/// Guards the LGPL paperwork for the bundled ffmpeg: LGPL-2.1 §4 needs the licence text *and* a source
+/// offer in THIRD-PARTY-NOTICES.md; trimming it makes the next DMG a violation nothing else catches.
 final class ThirdPartyNoticesFFmpegLGPLTests: XCTestCase {
 
     /// `<repo>/Tests/GoelCoreTests/<this file>` → `<repo>/THIRD-PARTY-NOTICES.md`.

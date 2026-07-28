@@ -1,17 +1,11 @@
 import Foundation
 
-/// Pure parsers for the free-text the macOS app collects in its `NSAlert`
-/// prompts. Extracted out of `AppViewModel`'s modal methods — which build AppKit
-/// views and block on `runModal()` — so the actual input handling (running-number
-/// rename templates, `Name: value` header parsing, comma-separated tags) lives in
-/// the tested GoelCore layer instead of behind a modal in the untested app target.
-/// Each function is a pure `String -> value`; the prompt method keeps only the UI.
+/// Pure `String -> value` parsers for the free text the macOS app collects in `NSAlert` prompts. Split out
+/// of `AppViewModel`'s blocking `runModal()` methods so input handling is testable in GoelCore.
 public enum PromptParsing {
 
-    /// Expand a batch-rename `template` across `names`, one candidate per name.
-    /// `#` is replaced by a running number (1, 2, …). When the resulting name has
-    /// no extension, the corresponding original name's extension is appended so
-    /// the file stays openable.
+    /// Expand a batch-rename `template` per name; `#` becomes a running number (1, 2, …). An
+    /// extensionless result inherits the original's extension so the file stays openable.
     public static func batchRename(template: String, over names: [String]) -> [String] {
         names.enumerated().map { index, name in
             var candidate = template.replacingOccurrences(of: "#", with: String(index + 1))
@@ -23,10 +17,8 @@ public enum PromptParsing {
         }
     }
 
-    /// Parse a multi-line `Name: value` header block into a dictionary. Each line
-    /// is split on its first colon; the name and value are whitespace-trimmed; a
-    /// line with no colon or an empty name is skipped. Later duplicates win. The
-    /// engine still filters reserved header names downstream — this only parses.
+    /// Parse multi-line `Name: value` headers: split on the first colon, trim, skip colonless/empty
+    /// names, later duplicates win. The engine still filters reserved header names downstream.
     public static func requestHeaders(from text: String) -> [String: String] {
         var headers: [String: String] = [:]
         for line in text.split(separator: "\n") {
@@ -38,9 +30,8 @@ public enum PromptParsing {
         return headers
     }
 
-    /// Split a comma-separated tag string into trimmed, non-empty tags. Canonical
-    /// de-duplication/casing is applied downstream by `DownloadManager.setTags`;
-    /// this is just the text → list step.
+    /// Split a comma-separated tag string into trimmed, non-empty tags. Canonical de-duplication
+    /// and casing are applied downstream by `DownloadManager.setTags`.
     public static func tags(from text: String) -> [String] {
         text.split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

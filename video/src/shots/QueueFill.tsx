@@ -1,29 +1,5 @@
-/* Shot 4 — the queue fills.
- *
- * Card: row-embed
- * Exact reference implementation read: template/src/aifl/live/SceneDetail.tsx
- * (the card names the template scene, not a demos/ directory)
- *
- * Card parameters kept verbatim: cue = 12 + i*9, 12f flight, land = cue + 12;
- * `perspective(900px) translateY(-120*air) rotateX(16deg*air)`; scale
- * 1.06 -> 0.995 in flight then a 4f press-bounce to 1; the flying body is a
- * texture crop of the full-page capture (never a redrawn row — the card is
- * explicit that a redrawn row's text rendering differs visibly); the empty-slot
- * patch clears 2f after landing; the embed seam is a 2px accent line on the
- * BOTTOM EDGE ONLY, spreading from the centre over 5f on Easing.out(cubic) and
- * fading over 8f; the camera pans down throughout so the rows rain and the
- * camera move run in parallel.
- *
- * One improvement over the template, which the capture pipeline made possible:
- * the empty-slot patch is a crop of `app-empty-full.png` — the same page
- * rendered with an empty queue — rather than a flat colour guess. The slot the
- * row drops into is therefore the real empty-list surface, including its
- * zebra banding and separator.
- *
- * Arithmetic against the shot budget (the card's core sum): last row i=7 has
- * cue 75, lands 87, its seam is done by 95. At 125 frames that leaves 30f of
- * true rest.
- */
+/* Shot 4 — the queue fills. Card `row-embed`, params verbatim: cue = 12 + i*9, 12f flight, land = cue+12,
+ * scale 1.06->0.995 + 4f press-bounce, texture-crop bodies (never redrawn), 2px bottom seam. i=7 done f95. */
 import React from 'react';
 import { interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { PageCam, CamKey } from '../lib/PageCam';
@@ -153,10 +129,8 @@ export const QueueFill: React.FC<{ durationInFrames: number }> = () => {
                 width: seamW,
                 height: 2,
                 background: C.accent,
-                /* The template's own alpha, restored. At full opacity the 6px
-                   halo on eight stacked rows bled onto the sidebar and up
-                   through the divider above, so the queue grew a ladder of
-                   glowing rungs instead of eight seams. */
+                /* The template's own alpha, restored: at full opacity the 6px halo on eight stacked
+                   rows bled onto the sidebar, growing a ladder of glowing rungs instead of seams. */
                 boxShadow: `0 0 6px rgba(138,162,255,0.35)`,
                 borderRadius: 1,
                 opacity: seamOpacity,

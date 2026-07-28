@@ -1,9 +1,7 @@
 import Foundation
 
-/// The full-fidelity export envelope: settings plus every task with its
-/// complete state. Written by ``DownloadManager/exportEnvelope()`` and read
-/// back by ``DownloadManager/importEnvelope(_:)`` so a queue can move between
-/// machines (or survive a reinstall) without losing progress or preferences.
+/// Full-fidelity export envelope — settings plus every task with complete state, so a queue survives a
+/// machine move or reinstall. ``DownloadManager/exportEnvelope()`` writes it, `importEnvelope(_:)` reads it.
 struct AppExport: Codable, Sendable {
     /// Format version for forward compatibility.
     var version: Int

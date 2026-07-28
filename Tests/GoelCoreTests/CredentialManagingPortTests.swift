@@ -1,10 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Boundary tests unlocked by the ``CredentialManaging`` port: `SFTPConnectionStore`
-/// now injects the credential store (and, for tests, its file directory), so
-/// password persistence / removal is testable against an in-memory fake — without
-/// a live Keychain and without touching the user's real Application Support.
+/// Boundary tests unlocked by the ``CredentialManaging`` port: `SFTPConnectionStore` injects the
+/// store (and its directory), so persistence/removal runs on a fake — no Keychain, no real App Support.
 final class CredentialManagingPortTests: XCTestCase {
 
     /// A minimal in-memory ``CredentialManaging`` standing in for the Keychain.

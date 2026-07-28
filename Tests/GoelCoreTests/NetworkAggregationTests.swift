@@ -281,9 +281,8 @@ final class NetworkAggregationTests: XCTestCase {
 
     func testExtractHostSkipsUserinfoAttack() {
         var buf = [CChar](repeating: 0, count: 256)
-        // Classic open-redirect credential theft vector:
-        // Location: https://files.example.com:x@evil.example/
-        // Naive parsers treat host as files.example.com; curl connects to evil.
+        // Classic open-redirect credential-theft vector `https://files.example.com:x@evil.example/`:
+        // naive parsers read the host as files.example.com, while curl connects to evil.example.
         XCTAssertEqual(
             gcb_extract_host("https://files.example.com:x@evil.example/path", &buf, buf.count), 1)
         XCTAssertEqual(String(cString: buf), "evil.example")

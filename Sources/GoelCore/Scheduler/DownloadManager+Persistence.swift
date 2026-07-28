@@ -25,9 +25,8 @@ extension DownloadManager {
 
     /// Persist the current settings on the serial pipeline.
     func persistSettings() {
-        // The user's own choice, never the managed overlay — writing the forced
-        // values back would make an administrator's policy survive the removal
-        // of the profile that imposed it.
+        // The user's own choice, never the managed overlay: writing forced values back would make
+        // an administrator's policy survive removal of the profile that imposed it.
         pipeline?.enqueue(.saveSettings(storedSettings))
     }
 
@@ -51,10 +50,8 @@ extension DownloadManager {
         pipeline?.enqueue(.clearHistory)
     }
 
-    /// Persist the per-task speed-chart samples on the serial pipeline, so a
-    /// download's throughput chart resumes after relaunch instead of starting
-    /// blank. Called on a coarse cadence by the UI (the samples are a display
-    /// nicety, not queue state), keyed by task-id string.
+    /// Persist per-task speed-chart samples (keyed by task-id string) so a chart resumes after relaunch.
+    /// Called on a coarse cadence: the samples are a display nicety, not queue state.
     public func persistSpeedHistory(_ history: [String: [SpeedHistoryPoint]]) {
         pipeline?.enqueue(.saveSpeedHistory(history))
     }
@@ -66,9 +63,8 @@ extension DownloadManager {
         return (try? store.loadSpeedHistory()) ?? [:]
     }
 
-    /// Persist the transfer statistics on the serial pipeline. Progress-driven
-    /// calls are throttled to ~30 s of churn; pass `force: true` on meaningful
-    /// transitions (a completed download) to flush immediately.
+    /// Persist transfer statistics on the serial pipeline; progress-driven calls are throttled to
+    /// ~30 s. Pass `force: true` on meaningful transitions (a completed download) to flush now.
     func persistStats(force: Bool = false) {
         guard pipeline != nil else { return }
         let now = Date()

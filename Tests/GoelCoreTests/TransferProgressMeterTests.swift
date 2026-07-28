@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Boundary tests for the ``TransferProgressMeter`` shared by the FTP and SFTP
-/// engines — the announce-once / throttle / windowed-speed accounting, driven
-/// with an injected clock (previously reachable only through a live socket).
+/// Boundary tests for the ``TransferProgressMeter`` shared by the FTP and SFTP engines: announce-once,
+/// throttle, windowed speed — on an injected clock (previously reachable only through a live socket).
 final class TransferProgressMeterTests: XCTestCase {
 
     private let t0 = Date(timeIntervalSinceReferenceDate: 1_000_000)

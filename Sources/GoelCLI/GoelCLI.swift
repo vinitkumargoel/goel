@@ -3,19 +3,8 @@ import Foundation
 import Glibc
 #endif
 
-// ============================================================================
-// `goel` — the admin CLI for the headless Linux daemon.
-//
-// On macOS the SwiftUI app is the interface. On a server there is no interface at
-// all: before this, configuring the daemon meant hand-writing a systemd unit and
-// a wall of GOEL_* environment variables, and inspecting the queue meant curl
-// with a token dug out of a file. This is that, made a command.
-//
-// Two backends, no third control channel:
-//   - the service and its configuration → systemctl and /etc/goel/config
-//   - the queue                         → the portal's documented JSON API
-//     (docs/remote-api.md) over loopback, with the bearer token
-// ============================================================================
+// `goel` — the admin CLI for the headless Linux daemon. Two backends, no third control channel:
+// systemctl + /etc/goel/config for the service, and the portal's JSON API over loopback for the queue.
 
 @main
 struct GoelCLI {
@@ -139,9 +128,8 @@ struct GoelCLI {
     static func controlService(_ verb: String) throws {
         try requireRoot()
         try Service.control(verb)
-        // `systemctl start` returns as soon as the unit is spawned, so a bare
-        // "started" here would be a claim we have not checked. Give the daemon a
-        // moment to bind (or die) and report what actually happened.
+        // `systemctl start` returns as soon as the unit is spawned, so a bare "started" would be an
+        // unchecked claim. Give the daemon a moment to bind (or die) and report what happened.
         if verb != "stop" {
             waitForState(seconds: 5)
             let state = Service.activeState
@@ -297,9 +285,8 @@ struct GoelCLI {
             """)
     }
 
-    /// A configuration change only reaches the daemon on restart. Doing it
-    /// silently would be surprising; not doing it at all leaves the operator
-    /// believing a setting applied when it has not.
+    /// A configuration change only reaches the daemon on restart. Doing it silently would surprise;
+    /// not doing it leaves the operator believing a setting applied when it has not.
     static func restartIfRunning(reason: String) throws {
         guard Service.systemdAvailable, Service.isActive else {
             Out.line(Out.dim("The service is not running; the change applies on next start."))
@@ -411,9 +398,8 @@ struct GoelCLI {
         if result.added > 0 {
             Out.line(Out.green("Added \(result.added)") + (result.added == 1 ? " download" : " downloads"))
         }
-        // `refused` is the portal's internal-address guard rejecting a URL, which
-        // is a deliberate refusal and not an error — but it must be visible, or a
-        // batch quietly does less than asked.
+        // `refused` is the portal's internal-address guard rejecting a URL — a deliberate refusal, not an
+        // error — but it must be visible, or a batch quietly does less than asked.
         if result.refused > 0 {
             Out.line(Out.amber("Refused \(result.refused)") +
                      " — not a supported download URL, or it resolves to a loopback/metadata address.")
@@ -559,9 +545,8 @@ struct GoelCLI {
     static func ensureDirectory(_ path: String, owner: String) throws {
         let manager = FileManager.default
 
-        // A recursive chown follows a symlink NAMED on the command line (`-h` only
-        // covers links inside the tree), so a planted ~/downloads → /etc would hand
-        // the service account ownership of /etc. Refuse links outright.
+        // A recursive chown follows a symlink NAMED on the command line (`-h` only covers links inside
+        // the tree), so a planted ~/downloads → /etc would hand the service account /etc. Refuse links.
         var isSymlink = false
         if let type = try? manager.attributesOfItem(atPath: path)[.type] as? FileAttributeType {
             isSymlink = (type == .typeSymbolicLink)

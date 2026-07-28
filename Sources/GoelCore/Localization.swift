@@ -1,20 +1,11 @@
 import Foundation
 
-/// The app's localization seam. It resolves a user-facing string for the
-/// currently-selected UI language from the bundled `.lproj` tables, falling back
-/// to English and finally to the key itself, so a missing translation degrades
-/// gracefully instead of showing an empty label.
-///
-/// The app is only PARTIALLY localized today: this is the working infrastructure
-/// plus a real second language (German). Broadening coverage is additive — add
-/// keys to each `Localizable.strings` and route more view literals through
-/// ``AppSettings`` → `L10n`. Full ~100-language translation remains a dedicated
-/// follow-up; nothing here fakes translations that don't exist.
+/// Localization seam: resolves a string from the bundled `.lproj` tables, falling back to English then to
+/// the key, so misses degrade gracefully. Only PARTIALLY localized (en + de); broadening is additive.
 public enum L10n {
 
-    /// Human-readable language names offered in Settings, paired with their code.
-    /// Only `en` and `de` ship real tables today; the rest resolve to English
-    /// until their tables are added (honest: no empty stubs presented as done).
+    /// Language names offered in Settings, paired with their code. Only `en` and `de` ship real
+    /// tables; anything else resolves to English rather than presenting empty stubs as done.
     public static let supportedLanguages: [(name: String, code: String)] = [
         ("English", "en"),
         ("Deutsch", "de"),

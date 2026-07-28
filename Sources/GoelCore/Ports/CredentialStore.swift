@@ -8,20 +8,14 @@ import Glibc   // umask, for creating the Linux secrets file privately
 
 // MARK: - Per-host download credentials
 
-/// Supplies the `Authorization` header value for a host, if the user has
-/// stored credentials for it. Injected into ``HTTPEngine`` so protected
-/// direct downloads authenticate preemptively (HTTP Basic).
+/// Supplies the `Authorization` header value for a host with stored credentials. Injected into
+/// ``HTTPEngine`` so protected direct downloads authenticate preemptively (HTTP Basic).
 public protocol CredentialProviding: Sendable {
     func basicAuthorization(forHost host: String) -> String?
 }
 
-/// The credential *management* surface (create / read / delete / list), behind a
-/// protocol so consumers like ``SFTPConnectionStore`` and the settings pane depend
-/// on the port and can inject an in-memory fake instead of hard-instantiating the
-/// Keychain/file-backed concrete store. ``CredentialProviding`` is the read-only
-/// preemptive-Basic seam injected into ``HTTPEngine``; this is its management
-/// counterpart. The Keychain (macOS) vs `0600`-file (Linux) split stays hidden
-/// behind the port.
+/// The credential *management* surface (create/read/delete/list) behind a port, so ``SFTPConnectionStore``
+/// and the settings pane can inject a fake; the Keychain (macOS) vs `0600`-file (Linux) split stays hidden.
 public protocol CredentialManaging: Sendable {
     /// The username + password stored for `host`, or nil.
     func credential(forHost host: String) -> (username: String, password: String)?
@@ -40,13 +34,8 @@ public protocol CredentialManaging: Sendable {
     func storeCredential(username: String, password: String, host: String) -> CredentialWrite
 }
 
-/// The result of reading a stored secret.
-///
-/// This exists because collapsing every failure to `nil` is actively harmful:
-/// a denied Keychain prompt then looks identical to "no password saved", so the
-/// connection proceeds with no credential and the server's rejection is reported
-/// as a wrong password. The user is sent to re-type a password that was never
-/// the problem. ``denied`` is retryable — the prompt can be presented again.
+/// The result of reading a stored secret. Collapsing failures to `nil` is harmful: a denied Keychain
+/// prompt looks like "no password saved" and the user re-types a fine password. ``denied`` is retryable.
 public enum CredentialLookup: Sendable, Equatable {
     case found(username: String, password: String)
     /// Definitively no entry for this host.
@@ -126,12 +115,8 @@ public struct HostCredential: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-/// Per-host credential storage keyed by server host.
-///
-/// On macOS this is Keychain-backed (`kSecClassInternetPassword`); on Linux it is
-/// a `0600` JSON file under the user's config dir. The name is kept
-/// (`KeychainCredentialStore`) so call sites don't change; secrets are only ever
-/// read to build the `Authorization` header.
+/// Per-host credential storage keyed by server host: Keychain (`kSecClassInternetPassword`) on macOS,
+/// a `0600` JSON file on Linux. Name kept so call sites don't change; secrets only build `Authorization`.
 public final class KeychainCredentialStore: CredentialProviding, CredentialManaging, @unchecked Sendable {
 
     /// The service label distinguishing our items from other apps' entries.
@@ -151,13 +136,8 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
 
     // MARK: Management (macOS / Keychain)
 
-    /// Statuses worth retrying automatically: the keychain is momentarily locked
-    /// or unavailable (right after wake, or mid-unlock) and the same call a
-    /// moment later usually succeeds.
-    ///
-    /// A user *cancelling* the prompt is deliberately excluded — re-issuing the
-    /// request would re-prompt in a loop and harass them. That surfaces as
-    /// ``CredentialLookup/denied`` so the UI can offer one explicit Retry.
+    /// Statuses worth retrying automatically: keychain momentarily locked/unavailable (after wake or
+    /// mid-unlock). A *cancelled* prompt is excluded — re-issuing loops; it becomes ``CredentialLookup/denied``.
     private static func isTransient(_ status: OSStatus) -> Bool {
         status == errSecNotAvailable || status == errSecInteractionNotAllowed
     }
@@ -168,9 +148,8 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
             || status == errSecInteractionNotAllowed || status == errSecNotAvailable
     }
 
-    /// Run a keychain call, retrying transient refusals with a short backoff.
-    /// Bounded at 3 attempts / ~120 ms so a caller on the main thread can't stall
-    /// perceptibly.
+    /// Run a keychain call, retrying transient refusals with a short backoff. Bounded at 3 attempts
+    /// / ~120 ms so a caller on the main thread can't stall perceptibly.
     private func withRetry(attempts: Int = 3, _ operation: () -> OSStatus) -> OSStatus {
         var status = operation()
         var delay = 0.04
@@ -184,9 +163,8 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
         return status
     }
 
-    /// The username + password stored for `host`, or nil. Prefer
-    /// ``lookupCredential(forHost:)`` where a refusal must be distinguished
-    /// from an absent entry.
+    /// The username + password stored for `host`, or nil. Prefer ``lookupCredential(forHost:)``
+    /// where a refusal must be distinguished from an absent entry.
     public func credential(forHost host: String) -> (username: String, password: String)? {
         guard case .found(let user, let password) = lookupCredential(forHost: host) else { return nil }
         return (user, password)
@@ -224,10 +202,8 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
 
     @discardableResult
     public func storeCredential(username: String, password: String, host: String) -> CredentialWrite {
-        // Update-then-add, never delete-then-add. The old form deleted the
-        // existing item first, so a refused or failed `SecItemAdd` destroyed the
-        // stored password outright — a denied Keychain prompt silently wiped a
-        // working credential.
+        // Update-then-add, never delete-then-add: the old form deleted first, so a refused or failed
+        // `SecItemAdd` destroyed the stored password — a denied prompt silently wiped a working one.
         let base = baseQuery(host: host)
         let changes: [String: Any] = [
             kSecAttrAccount as String: username,
@@ -250,9 +226,8 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
 
     @discardableResult
     public func removeCredential(host: String) -> Bool {
-        // Keeps the documented "existed and was removed" semantics (so
-        // `errSecItemNotFound` is false, matching the Linux backend); the retry
-        // only covers a momentarily locked keychain.
+        // Keeps the documented "existed and was removed" semantics (`errSecItemNotFound` is false,
+        // matching the Linux backend); the retry only covers a momentarily locked keychain.
         withRetry { SecItemDelete(baseQuery(host: host) as CFDictionary) } == errSecSuccess
     }
 
@@ -317,9 +292,8 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
         return .ok(dict)
     }
 
-    /// Persist the store; returns whether it actually reached disk. Reports the
-    /// real outcome (unlike the always-`true` stub this replaced) so a disk-full /
-    /// read-only-config failure is diagnosable instead of silently swallowed.
+    /// Persist the store; returns whether it actually reached disk. Reports the real outcome (unlike
+    /// the always-`true` stub it replaced) so disk-full / read-only-config is diagnosable, not swallowed.
     private func save(_ dict: [String: Entry]) -> Bool {
         let url = storeURL
         try? FileManager.default.createDirectory(
@@ -341,9 +315,8 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         if let mode = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? NSNumber,
            mode.intValue & 0o077 != 0 {
-            // The permission bits are a property of the machine, not of the user's
-            // activity, so the octal mode stays public — it is the whole point of
-            // the warning that an operator can read it out of the log.
+            // The permission bits are a property of the machine, not the user's activity, so the
+            // octal mode stays public — the point of the warning is that an operator can read it.
             GoelLog.persistence.fault("Credentials file is not private",
                                       .state(String(mode.intValue, radix: 8), label: "mode"))
         }
@@ -356,10 +329,8 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
         return (e.username, e.password)
     }
 
-    /// Explicit override so a *present but unreadable* store reports `.failed`
-    /// rather than the default bridge's `.notFound` — otherwise a corrupt or
-    /// permission-denied file looks exactly like "no password saved", which is
-    /// the same misdiagnosis the macOS path guards against.
+    /// Explicit override so a *present but unreadable* store reports `.failed`, not the default
+    /// bridge's `.notFound` — a corrupt/permission-denied file must not look like "no password saved".
     public func lookupCredential(forHost host: String) -> CredentialLookup {
         Self.fileLock.lock(); defer { Self.fileLock.unlock() }
         switch loadState() {

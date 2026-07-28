@@ -1,12 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Boundary tests for the pure queue-promotion decision lifted out of
-/// `DownloadManager.schedule()` into ``SchedulingPolicy``. These exercise the
-/// subtle parts directly with plain values — priority order, FIFO tie-breaking,
-/// the simultaneous-download cap, the metadata-resolution cap (charging only a
-/// magnet that still lacks metadata), and the closed-window / no-free-slot gates
-/// — instead of driving the full actor with mock engines.
+/// Boundary tests for ``SchedulingPolicy``, the pure queue-promotion decision lifted out of
+/// `DownloadManager.schedule()`: priority, FIFO ties, both caps, and the window / free-slot gates.
 final class SchedulingPolicyTests: XCTestCase {
 
     private let url = DownloadSource.url(URL(string: "https://example.com/file.bin")!)

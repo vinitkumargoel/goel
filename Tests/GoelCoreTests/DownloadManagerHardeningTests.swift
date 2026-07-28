@@ -9,11 +9,8 @@ final class DownloadManagerHardeningTests: XCTestCase {
 
     // MARK: Import sanitisation
 
-    /// A hostile "backup" must not be able to point the app at a proxy it chose,
-    /// install portal credentials it knows, widen the portal's reverse-proxy
-    /// trust, or move where downloads and the audit record land. Every one of
-    /// these was adopted verbatim before, defeating ``importEnvelope(_:)``'s own
-    /// documented guarantee.
+    /// A hostile "backup" must not choose the proxy, install portal credentials, widen reverse-proxy trust, or move
+    /// where downloads and the audit record land. All were adopted verbatim before, defeating ``importEnvelope(_:)``.
     func testImportedSettingsNeverAdoptProxyPortalOrDirectoryFields() {
         var hostile = AppSettings()
         hostile.proxyMode = "manual"
@@ -71,10 +68,8 @@ final class DownloadManagerHardeningTests: XCTestCase {
 
     // MARK: Batched pause / resume
 
-    /// ``pauseAll()``/``resumeAll()`` now coalesce their snapshot and scheduler
-    /// passes instead of running one per task. The observable behaviour must be
-    /// unchanged: every eligible task ends up paused, the engine is told exactly
-    /// once per running task, and a following ``resumeAll()`` re-fills the slots.
+    /// ``pauseAll()``/``resumeAll()`` coalesce their snapshot and scheduler passes; behaviour must be unchanged —
+    /// every eligible task pauses, the engine is told exactly once per running task, and ``resumeAll()`` re-fills slots.
     func testPauseAllThenResumeAllCoversEveryTaskExactlyOnce() async throws {
         let http = FakeEngine(kind: .http)
         let profile = TrafficProfile(

@@ -1,8 +1,7 @@
 import Foundation
 
-/// A saved SFTP server the user can browse and transfer files with. The
-/// password is NOT stored here — it lives in the Keychain, keyed by the
-/// connection's identity — so persisting the list is safe.
+/// A saved SFTP server the user can browse and transfer files with. The password is NOT stored here —
+/// it lives in the Keychain, keyed by the connection's identity — so persisting the list is safe.
 public struct SFTPConnection: Codable, Sendable, Identifiable, Hashable {
     public var id: UUID
     public var name: String
@@ -13,9 +12,8 @@ public struct SFTPConnection: Codable, Sendable, Identifiable, Hashable {
     public var initialPath: String
     /// Try the running ssh-agent in addition to the stored password.
     public var useAgent: Bool
-    /// Filesystem path to an SSH private key to authenticate with, or nil for
-    /// password / agent auth only. The key's passphrase (if any) lives in the
-    /// Keychain under ``keyPassphraseKey``, never here.
+    /// Path to an SSH private key to authenticate with, or nil for password/agent auth only. Its
+    /// passphrase (if any) lives in the Keychain under ``keyPassphraseKey``, never here.
     public var privateKeyPath: String?
 
     public init(id: UUID = UUID(), name: String, host: String, port: Int = 22,
@@ -31,9 +29,8 @@ public struct SFTPConnection: Codable, Sendable, Identifiable, Hashable {
         self.privateKeyPath = privateKeyPath
     }
 
-    /// The Keychain lookup key for this server's password. Scoped by
-    /// user@host:port so two accounts on one host don't collide, and so an
-    /// ad-hoc `sftp://user@host/path` download resolves the same secret.
+    /// Keychain lookup key for this server's password, scoped by user@host:port so two accounts on one
+    /// host don't collide and an ad-hoc `sftp://user@host/path` download resolves the same secret.
     public var credentialKey: String { "\(username)@\(host):\(port)" }
 
     /// Keychain key for the private key's passphrase. Suffixed so it can never
@@ -52,9 +49,8 @@ public struct SFTPEntry: Sendable, Identifiable, Hashable {
     public var size: Int64
     public var modified: Date?
     public var permissions: UInt32
-    /// Whether the entry ITSELF is a symbolic link. `isDirectory` still describes
-    /// what it resolves to, so a link to a folder is both — which is what lets the
-    /// browser open it like a folder while still badging it as a link.
+    /// Whether the entry ITSELF is a symlink; `isDirectory` still describes what it resolves to, so a
+    /// link to a folder is both — the browser opens it like a folder yet still badges it as a link.
     public var isSymlink: Bool
     /// Where the link points, as the server reported it. Empty for non-links and
     /// for links whose target could not be read.
@@ -77,9 +73,8 @@ public struct SFTPEntry: Sendable, Identifiable, Hashable {
     }
 }
 
-/// Pure remote-path arithmetic for the SFTP browser. libssh2 resolves relative
-/// paths against the login home, so "." is home; children are joined and
-/// parents trimmed as plain POSIX strings.
+/// Pure remote-path arithmetic for the SFTP browser. libssh2 resolves relative paths against the login
+/// home, so "." is home; children are joined and parents trimmed as plain POSIX strings.
 public enum SFTPBrowserPaths {
     /// Append a child name to a directory path.
     public static func join(_ base: String, _ child: String) -> String {
@@ -94,24 +89,14 @@ public enum SFTPBrowserPaths {
         return String(path[path.startIndex..<slash])
     }
 
-    /// Whether a server-supplied listing name is safe to join onto a remote path:
-    /// no separators and no parent traversal, so a hostile entry can't steer an
-    /// upload or a move outside the browsed tree. Hidden ".config"-style names
-    /// stay allowed — only path structure is rejected.
+    /// Whether a server-supplied listing name is safe to join onto a remote path: no separators, no `..`,
+    /// so a hostile entry can't steer an upload outside the browsed tree. Hidden ".config" names stay.
     public static func isSafeChildName(_ name: String) -> Bool {
         !name.isEmpty && !name.contains("/") && name != "." && name != ".."
     }
 
-    /// A name not present in `existing`, appending " (n)" before the extension on
-    /// collision: "report.pdf" → "report (1).pdf", "archive.tar" → "archive (1).tar",
-    /// "notes" → "notes (1)". Used to rename an upload rather than overwrite a
-    /// same-named remote entry.
-    ///
-    /// `n` is capped: `existing` can come from a directory listing a server
-    /// controls, and an unbounded search would let one that returns a long
-    /// contiguous run of "name (1)"…"name (N)" spin the caller. Past the cap the
-    /// name is disambiguated with a random suffix instead, which still cannot
-    /// collide in practice and always terminates.
+    /// A name not in `existing`, appending " (n)" before the extension, so an upload renames rather than
+    /// overwrites. `n` is capped: `existing` is server-controlled; past the cap a random suffix is used.
     public static func uniqueName(_ name: String, existing: Set<String>) -> String {
         guard existing.contains(name) else { return name }
         let ns = name as NSString
@@ -136,19 +121,15 @@ public struct SFTPError: Error, Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
         case resolve, connect, handshake, hostKey, hostKeyMismatch
         case auth, sftp, open, io, aborted, mkdir, remove, rename, stat, unknown
-        /// The stored secret could not be read (Keychain prompt refused, keychain
-        /// locked, credential file unreadable). Distinct from ``auth`` because
-        /// nothing was ever sent to the server — retrying the read can fix it,
-        /// re-typing the password cannot.
+        /// Stored secret unreadable (prompt refused, keychain locked, file unreadable). Distinct from
+        /// ``auth``: nothing reached the server, so retrying the read can fix it, re-typing cannot.
         case credentialsUnavailable
     }
     public var kind: Kind
     /// Plain-language text written for the person using the app.
     public var message: String
-    /// The underlying libssh2 / OS text, when there is one. Kept out of
-    /// ``message`` so the UI can show it as secondary detail rather than
-    /// leading with a phrase like "Unable to exchange encryption keys", which
-    /// libssh2 emits for most handshake faults regardless of the real cause.
+    /// Underlying libssh2/OS text, kept out of ``message`` so the UI shows it as secondary — libssh2 emits
+    /// "Unable to exchange encryption keys" for most handshake faults regardless of the real cause.
     public var detail: String?
 
     public init(kind: Kind, message: String, detail: String? = nil) {
@@ -157,9 +138,8 @@ public struct SFTPError: Error, Sendable, Equatable {
         self.detail = detail
     }
 
-    /// Phrase a refused / failed secret read for the person using the app. The
-    /// wording deliberately steers away from "check your password": nothing was
-    /// sent to the server, so the password is not what's wrong.
+    /// Phrase a refused/failed secret read for the person using the app. Deliberately avoids "check your
+    /// password": nothing was sent to the server, so the password is not what's wrong.
     public static func credentialsUnavailable(_ lookup: CredentialLookup,
                                               host: String) -> SFTPError {
         let message: String

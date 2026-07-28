@@ -1,36 +1,5 @@
-/* Shot 11 — browser capture.
- *
- * Card: integration-hub-map
- * Exact demo read: demos/integration-hub-map/IntegrationHubMap.tsx
- *
- * Demo parameters kept verbatim: the page is a two-sided card that turns a full
- * rotateY 0 -> 180 over 35 frames on Easing.out(cubic) — a fast turn with a long
- * decelerating landing, one continuous move with no mid-way pause (the card
- * records that a 70f version and a version that paused at the edge were both
- * rejected, and that "even" means "unbroken", not literally linear); the edge
- * flash is a 2f spike that is back to zero within 4 (the long bloom plateau was
- * rejected); the pipes' rainbow gradients use `gradientUnits="userSpaceOnUse"`,
- * because a perfectly horizontal or vertical line has a zero-height bounding box
- * and object-bounding-box gradients silently drop those pipes entirely; the
- * pipe-glow filter carries an explicit userSpaceOnUse filter region for the same
- * reason; pipes grow over 9f; and the transport pulse runs at 4.6px per frame
- * with a per-pipe phase offset, forever.
- *
- * Card 命门 — the two-beat entry — is exact: all five marks appear on ONE frame
- * (tIcon 52), and 10 frames later all five pipes start on ONE frame (tPipe 62).
- * The card's case history is unambiguous: staggered connection was rejected
- * twice, and only "all at once, then all connected at once" was accepted. The
- * two beats stay >= 6f apart so they read as two, not one.
- *
- * Reskin: the demo's neon-purple field and third-party SaaS logos become the
- * film's canvas and the five browsers Goel° actually installs a capture
- * extension into. The marks are the same inline SVGs the product website
- * serves, so the film and the site show the same logos.
- *
- * The card's dividing line with glow-flyline-moves is respected: the light pipes
- * here are structure (five things attach to one thing), not the subject. The
- * subject is the turn.
- */
+/* Shot 11 — browser capture (card: integration-hub-map). 命门 two-beat entry: five marks on ONE frame
+ * (52), five pipes on ONE frame (62), >=6f apart. userSpaceOnUse: axis-aligned pipes have a 0-h bbox. */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C, FONT } from '../theme';

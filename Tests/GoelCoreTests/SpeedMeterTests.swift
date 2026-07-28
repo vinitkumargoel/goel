@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// ``SpeedMeter`` — the sliding-window average behind every displayed transfer
-/// rate. All tests drive the injected clock, so the window math is exercised
-/// deterministically.
+/// ``SpeedMeter`` — the sliding-window average behind every displayed transfer rate. Tests drive
+/// the injected clock, so the window math is exercised deterministically.
 final class SpeedMeterTests: XCTestCase {
 
     private let t0 = Date(timeIntervalSinceReferenceDate: 1_000)
@@ -21,9 +20,8 @@ final class SpeedMeterTests: XCTestCase {
     }
 
     func testBurstyCountersAverageFlat() {
-        // Bytes arrive in alternating half-second ticks — a 200 kB burst, then
-        // nothing. The instantaneous rate swings between 0 and 400 kB/s; the
-        // window average holds the true mean of 200 kB/s.
+        // Alternating half-second ticks: a 200 kB burst, then nothing. Instantaneous rate swings
+        // 0–400 kB/s; the window average holds the true mean of 200 kB/s.
         var meter = SpeedMeter()
         var total: Int64 = 0
         for i in 0...12 {

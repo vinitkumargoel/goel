@@ -57,9 +57,8 @@ enum SFTPFileIcon {
 
 // MARK: - Quick Look
 
-/// Presents a downloaded temp file in the system Quick Look panel. A single
-/// shared presenter drives `QLPreviewPanel` directly (set as its data source and
-/// made key), so Space / "Quick Look" peeks a remote file after it's fetched.
+/// Presents a downloaded temp file in the system Quick Look panel. One shared presenter drives
+/// `QLPreviewPanel` directly, so Space peeks a remote file once it's fetched.
 final class QuickLookPresenter: NSObject, QLPreviewPanelDataSource {
     static let shared = QuickLookPresenter()
     private var url: URL?

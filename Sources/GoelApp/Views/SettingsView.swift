@@ -3,12 +3,8 @@ import AppKit
 import UniformTypeIdentifiers
 import GoelCore
 
-/// The Preferences window, mirroring the brief's panels. General / Network /
-/// Traffic Limits / BitTorrent / Advanced are fully functional panes whose
-/// controls read from and write back to `vm.settings` (and through it the core),
-/// so every choice persists across relaunch. Antivirus also persists its config
-/// but carries a "soon" badge because the external-scanner step ships later.
-/// Browser & Remote Access remain reserved/deferred placeholders.
+/// The Preferences window. General / Network / Traffic Limits / BitTorrent / Advanced are fully
+/// functional and persist through `vm.settings`; Antivirus persists but ships its scanner later.
 struct SettingsView: View {
     @EnvironmentObject private var vm: AppViewModel
 
@@ -93,9 +89,8 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        // A pane requested from elsewhere (⌘K, the empty state) wins over the
-        // remembered selection. The request is cleared once consumed so asking
-        // for the same pane twice still navigates the second time.
+        // A pane requested from elsewhere (⌘K, the empty state) wins over the remembered selection. The
+        // request is cleared once consumed so asking for the same pane twice still navigates.
         .onChange(of: route.requestedPane) { _, requested in
             guard let requested else { return }
             selection = requested
@@ -107,9 +102,8 @@ struct SettingsView: View {
                 route.requestedPane = nil
             }
         }
-        // Settings is its own window and doesn't carry the main window's toast /
-        // confirm overlays — so surface settings feedback here: errors and
-        // confirmations as a modal alert, and success toasts as a bottom banner.
+        // Settings is its own window and doesn't carry the main window's overlays — so surface feedback
+        // here: errors and confirmations as a modal alert, successes as a bottom banner.
         .overlay(alignment: .bottom) { settingsToast }
         // The banner never takes focus, so without an announcement a
         // screen-reader user gets no confirmation that a setting took effect.
@@ -175,16 +169,14 @@ struct SettingsView: View {
 
     // MARK: Settings bindings
 
-    /// A two-way binding into an `AppSettings` field that commits through
-    /// ``AppViewModel/update(_:)`` so every edit persists and reaches the core.
-    /// Forwards to the shared ``setting(_:_:)`` so the get/set logic lives once.
+    /// A two-way binding into an `AppSettings` field that commits through ``AppViewModel/update(_:)``
+    /// so every edit persists and reaches the core. Forwards to the shared ``setting(_:_:)``.
     private func binding<T>(_ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {
         setting(vm, keyPath)
     }
 
-    /// A binding into a field of the *currently selected* traffic profile. Edits
-    /// write back into `settings.profiles` so the active profile's limits are
-    /// editable (not read-only) and re-applied to the engines.
+    /// A binding into a field of the *currently selected* traffic profile. Edits write back into
+    /// `settings.profiles`, so the active profile's limits are editable and re-applied to the engines.
     private func profileBinding<T>(_ keyPath: WritableKeyPath<TrafficProfile, T>) -> Binding<T> {
         Binding(
             get: { vm.settings.selectedProfile[keyPath: keyPath] },
@@ -197,14 +189,8 @@ struct SettingsView: View {
         )
     }
 
-    /// A megabytes-per-second view onto a profile's byte/sec field, so speeds are
-    /// edited in MB/s while the core keeps storing raw bytes (1 MB = 1024×1024).
-    ///
-    /// The field is a plain unbounded number `TextField`, and `Int64(Double)`
-    /// **traps** when the product doesn't fit (and on NaN/∞), so a long number
-    /// typed into "Max download speed" would terminate the app. Clamping to
-    /// 1 TB/s on the way in is only about not trapping — the profile's own
-    /// ceiling is enforced by ``TrafficProfile/validated()``.
+    /// A MB/s view onto a profile's byte/sec field. Clamped to 1 TB/s on the way in only because
+    /// `Int64(Double)` **traps** on overflow — the real ceiling is ``TrafficProfile/validated()``.
     private func megabytesBinding(_ keyPath: WritableKeyPath<TrafficProfile, Int64>) -> Binding<Double> {
         Binding(
             get: { Double(vm.settings.selectedProfile[keyPath: keyPath]) / 1_048_576 },
@@ -242,11 +228,8 @@ struct SettingsView: View {
                 // `SetRow` environment only reaches the `Setting*` wrappers.
                 .accessibilityLabel("Theme")
             }
-            // Offer exactly the languages that ship a strings table. The list used
-            // to include हिन्दी and 日本語, which have none and silently resolved to
-            // English — a promise the code contradicted. A value persisted from
-            // that build is repaired by ``AppSettings/validated()``, so the picker
-            // never renders an empty trigger for an option it no longer offers.
+            // Offer exactly the languages that ship a strings table. The list used to include ones with none,
+            // which silently resolved to English; ``AppSettings/validated()`` repairs a value persisted then.
             SetRow(name: "Language", desc: "English and Deutsch ship translations today.") {
                 Dropdown(selection: binding(\.language),
                          items: L10n.supportedLanguages.map { .option($0.name, $0.name) },
@@ -276,10 +259,8 @@ struct SettingsView: View {
             // chooser so the existing default-save-directory feature stays usable.
             if vm.settings.defaultFolderRule == "fixed" {
                 SetRow(name: "Fixed folder", desc: vm.settings.defaultSaveDirectory) {
-                    // A forced path is re-applied by the overlay the moment the
-                    // picker commits, so an enabled button would open a panel,
-                    // accept a folder, and leave the row reading the old one —
-                    // indistinguishable from a broken picker. Say who owns it.
+                    // A forced path is re-applied by the overlay the moment the picker commits, so an enabled button
+                    // would accept a folder and leave the row reading the old one. Say who owns it.
                     Button("Choose…") { chooseDefaultFolder() }
                         .accessibilityLabel("Choose fixed download folder")
                         .managed(.defaultSaveDirectory, vm.managedPolicy)
@@ -329,9 +310,8 @@ struct SettingsView: View {
                    desc: "Optional. Leave empty to use the copy included with Goel°. Enables Convert / Extract-audio on finished media.") {
                 SettingText(text: binding(\.ffmpegPath), width: 200)
             }
-            // Show which binary actually won (override → bundled → system), so a
-            // typo'd path or a missing bundle is visible where it is configured
-            // rather than only at the moment a conversion fails.
+            // Show which binary actually won (override → bundled → system), so a typo'd path or a missing
+            // bundle is visible where it is configured rather than only when a conversion fails.
             Text(vm.ffmpegResolutionSummary)
                 .scaledFont(size: 10)
                 .foregroundStyle(vm.ffmpegUnavailableReason == nil ? Color.secondary : Theme.orange)
@@ -357,10 +337,8 @@ struct SettingsView: View {
 
     // MARK: Network
 
-    /// The ``ManagedPolicy`` keys this pane renders a control for. `proxyHost` and
-    /// `proxyPort` only appear under "Manual", but they belong to the pane's key
-    /// set all the same — the notice is about the pane, not about what is on
-    /// screen this instant.
+    /// The ``ManagedPolicy`` keys this pane renders a control for. `proxyHost`/`proxyPort` appear only
+    /// under "Manual" but belong to the set anyway — the notice is about the pane, not the moment.
     private static let networkManagedKeys: [ManagedPolicy.Key] = [
         .proxyMode, .proxyType, .proxyHost, .proxyPort,
     ]
@@ -439,10 +417,8 @@ struct SettingsView: View {
 
     // MARK: Traffic Limits
 
-    /// The ``ManagedPolicy`` keys this pane renders a control for. The two byte
-    /// ceilings are included even though their fields stay editable — see the
-    /// note on the speed rows below — because a value that snaps back to the
-    /// fleet cap needs the same explanation a disabled control gets.
+    /// The ``ManagedPolicy`` keys this pane renders a control for. The two byte ceilings are included
+    /// though their fields stay editable, because a value that snaps back needs the same explanation.
     private static let trafficManagedKeys: [ManagedPolicy.Key] = [
         .selectedProfileName, .maxDownloadBytesPerSec, .maxUploadBytesPerSec,
     ]
@@ -461,12 +437,8 @@ struct SettingsView: View {
 
             let active = vm.settings.selectedProfile
             SectionHeader("Editing: \(active.name) profile")
-            // The two speed fields are deliberately *not* `.managed(…)`. A forced
-            // `maxDownloadBytesPerSec` is applied by ``ManagedPolicy/apply(to:)``
-            // as a clamp over every profile, not as an assignment: asking for
-            // less than the fleet ceiling is still the user's call, and disabling
-            // the field would take that away. The pane notice above carries the
-            // explanation for the case where a larger number snaps back.
+            // The two speed fields are deliberately not `.managed(…)`: a forced ceiling is applied as a
+            // clamp, not an assignment, so asking for less than the fleet cap is still the user's call.
             SetRow(name: "Max download speed", desc: "0 = unlimited.") {
                 HStack(spacing: 4) {
                     SettingDouble(value: megabytesBinding(\.maxDownloadBytesPerSec), width: 70)
@@ -529,9 +501,8 @@ struct SettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // `selectedProfileName` is assigned outright by the overlay, so a card
-        // tapped under a forced profile would highlight for one frame and then
-        // jump back. Better to show it as the administrator's choice.
+        // `selectedProfileName` is assigned outright by the overlay, so a card tapped under a forced
+        // profile would highlight for one frame and jump back. Better to show it as the admin's choice.
         .managed(.selectedProfileName, vm.managedPolicy)
     }
 
@@ -548,12 +519,8 @@ struct SettingsView: View {
             SetRow(name: "Watch folder for .torrent files", desc: "Auto-add new torrents that appear in a folder.") {
                 SettingSwitch(isOn: binding(\.btWatchFolderEnabled))
             }
-            // The watch is armed by `btWatchFolderPath`, not by the switch above:
-            // with no path the monitor stops immediately, so the toggle alone did
-            // nothing. This chooser is the only writer of that path — without it
-            // the feature could not be enabled by any user. The rest of the
-            // watch-folder options are hidden while it is off, so nothing is
-            // offered that cannot take effect.
+            // The watch is armed by `btWatchFolderPath`, not the switch above, and this chooser is that
+            // path's only writer — without it the feature could not be enabled by any user.
             if vm.settings.btWatchFolderEnabled {
                 SetRow(name: "Watched folder",
                        desc: vm.settings.btWatchFolderPath.isEmpty
@@ -598,9 +565,8 @@ struct SettingsView: View {
         }
     }
 
-    /// Why the configured proxy doesn't (fully) cover the torrent swarm. Stated
-    /// here rather than left silent: a user who set a proxy and sees nothing
-    /// would reasonably assume their peers go through it.
+    /// Why the configured proxy doesn't fully cover the torrent swarm. Stated rather than left
+    /// silent: a user who set a proxy and sees nothing would assume their peers go through it.
     private var swarmProxyGap: SwarmProxy.Gap? {
         SwarmProxy.resolve(NetworkGuard.ProxySpec(mode: vm.settings.proxyMode,
                                                   type: vm.settings.proxyType,
@@ -630,16 +596,8 @@ struct SettingsView: View {
             SetRow(name: "Allow sleep while seeding", desc: "") { SettingSwitch(isOn: binding(\.allowSleepWhileSeeding)) }
             SetRow(name: "Pause downloads below battery threshold", desc: "") {
                 HStack(spacing: 4) {
-                    // Entering a positive threshold enables the pause-on-battery
-                    // feature; entering 0 disables it. One control, both fields.
-                    //
-                    // The getter reports 0 while the feature is off, even though a
-                    // threshold is stored (20 by default). Showing the stored 20
-                    // made the control dead at its own displayed value: re-typing
-                    // 20 produced an identical `AppSettings`, `vm.update` dropped
-                    // it as a no-op, and the boolean was never flipped — so the
-                    // only way to switch the feature on was to enter some *other*
-                    // number. A displayed 0 means "off".
+                    // A positive threshold enables pause-on-battery; 0 disables it — one control, both fields. The
+                    // getter reports 0 while off, because showing the stored 20 made re-typing 20 a dropped no-op.
                     SettingInt(value: Binding(
                         get: {
                             vm.settings.pauseBelowBatteryThreshold
@@ -689,9 +647,8 @@ struct SettingsView: View {
                 ], width: 140)
             }
             SectionHeader("Updates")
-            // Scoped to the section rather than the pane: Updates is the only
-            // part of Advanced an administrator can reach, and a banner at the
-            // top would imply the notification and power rows were locked too.
+            // Scoped to the section rather than the pane: Updates is the only part of Advanced an
+            // administrator can reach, and a top banner would imply the notification and power rows were locked.
             ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.updatesManagedKeys)
             SetRow(name: "Check for updates automatically", desc: "Once at launch.") {
                 SettingSwitch(isOn: binding(\.autoCheckUpdates))
@@ -711,13 +668,8 @@ struct SettingsView: View {
 
     // MARK: Diagnostics
 
-    /// The support report, in the only shape the "no telemetry" guarantee
-    /// permits: assembled in memory when the user presses a button, handed
-    /// straight to them, and forgotten.
-    ///
-    /// Nothing here writes a file, schedules anything, or opens a socket. The
-    /// save panel is a deliberate friction point — the user picks the location,
-    /// so a report can never leave the machine without a conscious act.
+    /// The support report, in the only shape "no telemetry" permits: assembled in memory on a button
+    /// press, handed straight to the user, forgotten. The save panel is deliberate friction.
     @ViewBuilder
     private var diagnosticsSection: some View {
         SectionHeader("Diagnostics")
@@ -736,10 +688,8 @@ struct SettingsView: View {
     }
 
     private func makeDiagnostics() -> DiagnosticsBundle {
-        // `DiagnosticsBundle` cannot see the engines — they are owned above
-        // GoelCore — so the caller has to say. The view model reports its actual
-        // live engine set rather than inferring it from the queue, so an idle
-        // engine stays distinguishable from one that never came up.
+        // `DiagnosticsBundle` cannot see the engines — they are owned above GoelCore — so the caller
+        // says. The view model reports its live engine set, keeping idle distinguishable from absent.
         DiagnosticsBundle.make(settings: vm.settings,
                                tasks: vm.tasks,
                                runningEngineKinds: vm.runningEngineKinds)
@@ -782,6 +732,5 @@ struct SettingsView: View {
     }
 }
 
-// The reusable pane building blocks (PaneScaffold, SectionHeader, SetRow) and the
-// bound controls (SettingSwitch, SettingText, SettingInt, SettingDouble) live in
-// `SettingsControls.swift`.
+// The reusable pane building blocks (PaneScaffold, SectionHeader, SetRow) and the bound controls
+// (SettingSwitch/Text/Int/Double) live in `SettingsControls.swift`.

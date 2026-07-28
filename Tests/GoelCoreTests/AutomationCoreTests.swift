@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Boundary tests for the pure ``AutomationCore/decide(_:)`` — the download
-/// window, network policy, scheduled starts, and RSS dedup driven with plain
-/// values, no actor / clock / socket / store.
+/// Boundary tests for the pure ``AutomationCore/decide(_:)`` — download window, network policy,
+/// scheduled starts, RSS dedup — driven with plain values, no actor / clock / socket / store.
 final class AutomationCoreTests: XCTestCase {
 
     // 2026-07-05 is a Sunday (weekday 1); offset to the wanted weekday.
@@ -137,17 +136,14 @@ final class AutomationCoreTests: XCTestCase {
         // Both claimed by the window; network claims nothing (single attribution).
         XCTAssertEqual(Set(d.actions), [.pause(a, .window), .pause(b, .window)])
         XCTAssertEqual(d.memory.windowPausedIDs, [a, b])
-        // The network policy stays UNLATCHED because it paused nothing this tick.
-        // Latching on an empty set would consume the policy: when these tasks later
-        // resume over a still-expensive network, the pause branch would be skipped
-        // and they would never be re-paused. See `testNetworkClaimsTaskFreedByWindow`.
+        // The network policy stays UNLATCHED because it paused nothing this tick: latching on an
+        // empty set would consume it, so a later resume over an expensive network never re-pauses.
         XCTAssertFalse(d.memory.networkPaused)
         XCTAssertTrue(d.memory.networkPausedIDs.isEmpty)
     }
 
-    /// The reason the network policy must not latch on an empty set: once a task
-    /// the window had claimed is downloading again while the network is still
-    /// expensive, the network ledger has to be able to claim it.
+    /// The reason the network policy must not latch on an empty set: once a window-claimed task is
+    /// downloading again while the network is still expensive, the network ledger must claim it.
     func testNetworkClaimsTaskFreedByWindow() {
         let a = UUID()
         var s = windowSettings()

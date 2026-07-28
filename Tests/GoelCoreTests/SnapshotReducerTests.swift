@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Boundary tests for the pure ``SnapshotReducer`` — the notification diff and the
-/// destructive queue-drain edge, driven with plain values (no actor, no `NSApp`,
-/// no `pmset`/AppleScript ever spawned).
+/// Boundary tests for the pure ``SnapshotReducer`` — notification diff and the destructive
+/// queue-drain edge, driven with plain values (no actor, no `NSApp`, no `pmset`/AppleScript).
 final class SnapshotReducerTests: XCTestCase {
 
     private let aID = UUID()

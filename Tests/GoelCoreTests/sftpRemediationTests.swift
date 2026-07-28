@@ -1,17 +1,14 @@
 import XCTest
 @testable import GoelCore
 
-/// Regression cover for the SFTP fail-open paths: an overwrite guard that read a
-/// failed listing as "no conflicts", a pin store that forgot every host on one
-/// bad read, a transfer that reported success while short of its known size, and
-/// server-supplied names joined onto remote paths without a traversal guard.
+/// Regression cover for the SFTP fail-open paths: an overwrite guard reading a failed listing as "no conflicts", a pin
+/// store forgetting every host on one bad read, a short transfer reporting success, and unguarded path joins.
 final class SFTPRemediationTests: XCTestCase {
 
     // MARK: Overwrite planning (SFTP-01)
 
-    /// The whole point of ``DirectoryListing``: a directory we could not read is
-    /// not an empty directory. Folding the failure into an empty set is what made
-    /// the upload skip the overwrite prompt and truncate-create over live files.
+    /// The whole point of ``DirectoryListing``: an unreadable directory is not an empty one. Folding the failure into
+    /// an empty set made the upload skip the overwrite prompt and truncate-create over live files.
     func testOverwriteSplitRefusesAnUnavailableListing() {
         XCTAssertNil(SFTPOverwritePlan.split(names: ["a.txt", "b.txt"], against: .unavailable))
     }
@@ -66,9 +63,8 @@ final class SFTPRemediationTests: XCTestCase {
         XCTAssertEqual(store.lookup(host: "other.local", port: 22), .unavailable)
     }
 
-    /// An empty stored value made the C shim skip the comparison entirely
-    /// (`expected_fp[0]` is false), leaving the host permanently unverified while
-    /// still looking pinned.
+    /// An empty stored value made the C shim skip the comparison entirely (`expected_fp[0]` is false),
+    /// leaving the host permanently unverified while still looking pinned.
     func testEmptyStoredFingerprintReadsAsUnavailableNotNone() {
         let defaults = freshDefaults()
         defaults.set(["nas.local:22": ""], forKey: key)
@@ -83,9 +79,8 @@ final class SFTPRemediationTests: XCTestCase {
                        .unavailable)
     }
 
-    /// The destructive half: `setFingerprint` did `var map = all()` then wrote the
-    /// result back, so the first connection after a bad read replaced the whole
-    /// map with one entry and erased every other server's pin.
+    /// The destructive half: `setFingerprint` did `var map = all()` then wrote it back, so the first connection
+    /// after a bad read replaced the whole map with one entry and erased every other server's pin.
     func testWriteOnAnUnreadableStoreChangesNothing() {
         let defaults = freshDefaults()
         defaults.set(["nas.local:22": 17], forKey: key)

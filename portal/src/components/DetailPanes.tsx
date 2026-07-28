@@ -219,9 +219,8 @@ interface FilesPaneProps {
 export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: FilesPaneProps) {
   const t = detail.row
 
-  // A single-file transfer has no per-file rows to show, so the task itself
-  // stands in — with no checkbox, since skipping the only file would just be a
-  // slower way of pausing.
+  // A single-file transfer has no per-file rows, so the task stands in — no checkbox, since skipping
+  // the only file would just be a slower way of pausing.
   if (detail.files.length === 0) {
     return (
       <>

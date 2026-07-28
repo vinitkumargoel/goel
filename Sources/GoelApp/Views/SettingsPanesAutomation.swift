@@ -3,12 +3,8 @@ import AppKit
 import SafariServices
 import GoelCore
 
-// The automation/integration settings panes added on top of the original six:
-// Scheduler (auto-shutdown + download window), RSS auto-download, the real
-// Remote Access pane, the Browser integration pane (URL scheme + bookmarklet),
-// and the per-host credentials section used by the Network pane. Standalone
-// views (not SettingsView extensions), so they share the free `setting(_:_:)`
-// binding helper below rather than reaching into SettingsView's private API.
+// The automation/integration settings panes (Scheduler, RSS, Remote Access, Browser, per-host
+// credentials). Standalone views, so they share the free `setting(_:_:)` helper below.
 
 /// A two-way binding into `AppSettings` committing through `vm.update`. Shared
 /// by these panes and by `SettingsView.binding` so the get/set lives once.
@@ -238,8 +234,7 @@ struct RemoteAccessPane: View {
                             SecureField("", text: $newPassword)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 150)
-                                // `SetRow`'s environment name only reaches the
-                                // four `Setting*` wrappers; a raw `SecureField`
+                                // `SetRow`'s environment name only reaches the four `Setting*` wrappers; a raw `SecureField`
                                 // with an empty prompt is an anonymous field.
                                 .accessibilityLabel("New portal password")
                             Button("Set") {
@@ -286,10 +281,8 @@ struct RemoteAccessPane: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .frame(maxWidth: 150)
-                            // Visually truncated in the middle, so the *visible*
-                            // string isn't the token. Give the element the whole
-                            // value, spelled character by character — a 32-hex
-                            // token read as words is unusable.
+                            // Visually truncated in the middle, so the *visible* string isn't the token. Give the element
+                            // the whole value spelled character by character — a 32-hex token read as words is unusable.
                             .accessibilityLabel("API token")
                             .accessibilityValue(vm.settings.remoteToken.map { "\($0) " }.joined())
                         Button("Regenerate") {
@@ -386,9 +379,8 @@ struct RemoteAccessPane: View {
         )
     }
 
-    /// A comma-separated view onto the stored list. Blank entries are dropped so
-    /// a trailing comma can't become an empty — and therefore never-matching —
-    /// entry that looks like a configured proxy.
+    /// A comma-separated view onto the stored list. Blank entries are dropped so a trailing comma
+    /// can't become an empty — and therefore never-matching — entry that looks configured.
     private var trustedProxiesBinding: Binding<String> {
         Binding(
             get: { vm.settings.remoteTrustedProxies.joined(separator: ", ") },
@@ -401,10 +393,8 @@ struct RemoteAccessPane: View {
         )
     }
 
-    /// The scheme the portal is actually listening with. `RemoteControlServer`
-    /// binds TLS parameters when `remoteTLSEnabled` is set and fails closed rather
-    /// than falling back, so the socket then speaks *only* TLS — handing out an
-    /// `http://` link would make a correctly running portal look broken.
+    /// The scheme the portal is actually listening with. `RemoteControlServer` fails closed onto TLS
+    /// when enabled, so handing out an `http://` link would make a working portal look broken.
     private var scheme: String {
         vm.settings.remoteTLSEnabled ? "https" : "http"
     }
@@ -435,10 +425,8 @@ struct RemoteAccessPane: View {
         URL(string: "\(scheme)://127.0.0.1:\(vm.settings.remotePort)/?token=\(vm.settings.remoteToken)")
     }
 
-    // `nonisolated` because it is pure — a UUID and two string operations, no
-    // view state. Without it the method inherits main-actor isolation from
-    // `View`, and both call sites invoke it from inside `update`'s @Sendable
-    // closure, which older toolchains reject.
+    // `nonisolated` because it is pure — a UUID and two string operations. Without it the method
+    // inherits main-actor isolation from `View`, which older toolchains reject inside `update`.
     private nonisolated static func newToken() -> String {
         UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
@@ -539,10 +527,8 @@ struct BrowserIntegrationPane: View {
         }
     }
 
-    /// Jump straight to this app's entry in Safari's extension settings. This only
-    /// works from the packaged, signed `.app` (Safari must have registered the
-    /// bundled `.appex`); from a dev build it fails, so surface that instead of
-    /// leaving the button feeling dead.
+    /// Jump straight to this app's entry in Safari's extension settings. Only works from the packaged
+    /// signed `.app`; from a dev build it fails, so surface that rather than leave the button dead.
     private func openSafariExtensionPrefs() {
         SFSafariApplication.showPreferencesForExtension(
             withIdentifier: "com.goel.downloader.SafariExtension") { error in
@@ -628,12 +614,8 @@ struct CredentialsSection: View {
 
 // MARK: - Audit log
 
-/// The compliance-log pane.
-///
-/// Deliberately blunt about what this is and is not: the log is strictly local,
-/// off by default, and nothing here ever transmits anything. "No telemetry" is a
-/// product guarantee, and an *audit* feature is exactly where a user would
-/// reasonably fear it had been quietly walked back — so the pane says so.
+/// The compliance-log pane. Deliberately blunt: the log is strictly local, off by default, and
+/// never transmits. An audit feature is exactly where "no telemetry" would be feared walked back.
 struct AuditLogPane: View {
     @EnvironmentObject private var vm: AppViewModel
 

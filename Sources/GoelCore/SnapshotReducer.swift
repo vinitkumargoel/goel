@@ -1,20 +1,7 @@
 import Foundation
 
-/// The pure fold of a task-list snapshot into user-visible notifications and the
-/// one-shot queue-drain intent.
-///
-/// The app's view model used to run this as two `@MainActor` methods
-/// (`emitNotifications` + `checkQueueDrained`) that threaded four mutable fields
-/// and were, critically, **order-dependent**: the drain detector had to read the
-/// *pre-overwrite* statuses that the notification pass clobbered. That ordering
-/// hazard guarded a *destructive* side effect (a system shutdown) and ran only in
-/// production, untested.
-///
-/// Folding both passes into one pure function over an immutable snapshot removes
-/// the ordering hazard by construction (both are computed from the same `prev`
-/// state) and makes the destructive edge assertable without an actor, `NSApp`, or
-/// spawning `/usr/bin/pmset`. The single OS side effect is pushed behind the
-/// ``SystemActions`` port.
+/// Pure fold of a task snapshot into notifications plus the one-shot queue-drain intent. Replaces two
+/// order-dependent `@MainActor` passes whose hazard guarded a shutdown; effects go via ``SystemActions``.
 public enum SnapshotReducer {
 
     public static func reduce(_ prev: ReducerState,
@@ -23,9 +10,8 @@ public enum SnapshotReducer {
         // MARK: Queue-drain edge — reads the PRE-overwrite statuses.
         // Seeding never counts as active work (it can run indefinitely).
         let hasActiveWork = snapshot.contains { $0.status.isActiveWork }
-        // A task must have transitioned INTO `.completed` on this very tick — an
-        // old completed download sitting in the list must not turn a manual
-        // "Pause All" into a system shutdown.
+        // A task must have transitioned INTO `.completed` on this tick — an old completed download
+        // sitting in the list must not turn a manual "Pause All" into a system shutdown.
         let completedThisTick = snapshot.contains { task in
             task.status == .completed && prev.lastStatuses[task.id] != .completed
         }
@@ -36,9 +22,7 @@ public enum SnapshotReducer {
         }
 
         // MARK: Notifications — diff against the previous snapshot.
-        // The first snapshot only seeds the baseline (so restored tasks never fire
-        // "added" at launch); `notifyOnlyWhenInactive` suppresses banners while the
-        // app is frontmost. State is still updated in both cases (below).
+        // First snapshot only seeds the baseline (restored tasks never fire "added"); state updates anyway.
         var notifications: [AppNotification] = []
         let suppressed = env.notify.onlyWhenInactive && env.isAppActive
         if prev.hasSeenFirstSnapshot, !suppressed {
@@ -68,11 +52,8 @@ public enum SnapshotReducer {
 
         // MARK: Next state — always refreshed, even when suppressed / first tick.
         var state = prev
-        // Built last-wins with an explicit loop, never `Dictionary(uniqueKeysWithValues:)`:
-        // that initializer TRAPS on a repeated key, and a snapshot can carry two tasks
-        // under one id (a backup envelope is untrusted input — see `importEnvelope`).
-        // Last-wins is the rule the notification pass above already reads by, so both
-        // halves of the fold agree. Same reasoning as `DownloadManager.rebuildTaskIndex()`.
+        // Explicit last-wins loop, never `Dictionary(uniqueKeysWithValues:)`: that TRAPS on a repeated
+        // id, and untrusted `importEnvelope` input can carry two. Mirrors `rebuildTaskIndex()`.
         var statuses: [UUID: DownloadStatus] = [:]
         var verdicts: [UUID: String] = [:]
         statuses.reserveCapacity(snapshot.count)
@@ -174,10 +155,8 @@ public struct ReducerOutput: Equatable, Sendable {
 
 // MARK: - The one OS boundary
 
-/// The only side-effecting boundary the pump needs mocked: posting banners and
-/// performing the (irreversible) drain action. The *decision* is pure Core; the
-/// *effect* is the sole injected thing, so a test can assert the shutdown edge
-/// fires without a real `NSApp.terminate` / `pmset` / AppleScript.
+/// The only side-effecting boundary the pump needs mocked: posting banners and the irreversible drain
+/// action, so a test can assert the shutdown edge without a real `NSApp.terminate` / `pmset`.
 public protocol SystemActions: Sendable {
     func post(_ notifications: [AppNotification], sound: Bool)
     func perform(_ intent: DrainIntent)

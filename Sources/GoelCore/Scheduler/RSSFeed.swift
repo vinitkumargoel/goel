@@ -1,8 +1,7 @@
 import Foundation
 
-/// One RSS/Atom feed the auto-downloader watches. Items whose title matches
-/// ``titlePattern`` (case-insensitive substring; empty = every item) have their
-/// enclosure/link queued automatically.
+/// One RSS/Atom feed the auto-downloader watches. Items whose title matches ``titlePattern``
+/// (case-insensitive substring; empty = every item) get their enclosure/link queued automatically.
 public struct RSSFeed: Codable, Sendable, Hashable, Identifiable {
     public var id: UUID
     public var url: String

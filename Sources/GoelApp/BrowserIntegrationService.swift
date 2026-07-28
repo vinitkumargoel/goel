@@ -1,10 +1,8 @@
 import Foundation
 import GoelCore
 
-/// Installs the native-messaging plumbing the browser extension needs:
-/// a wrapper script that relaunches this binary in host mode, plus a host
-/// manifest in every installed browser's `NativeMessagingHosts` directory.
-/// Everything lands under the user's home — no privileges, fully reversible.
+/// Installs the native-messaging plumbing the browser extension needs: a wrapper script that
+/// relaunches this binary in host mode, plus a manifest per browser. All under the user's home.
 enum BrowserIntegrationService {
 
     /// Must match the extension's `sendNativeMessage` host name.
@@ -78,18 +76,15 @@ enum BrowserIntegrationService {
             : "Helper installed for \(installed.joined(separator: ", "))"
     }
 
-    /// The wrapper exists because host manifests can't pass arguments: browsers
-    /// spawn exactly `path`, so the script re-adds the host-mode flag. It also
-    /// survives the app moving (reinstall refreshes the embedded path).
+    /// The wrapper exists because host manifests can't pass arguments — browsers spawn exactly
+    /// `path`, so the script re-adds the host-mode flag. It also survives the app moving.
     private static func writeWrapperScript(under appSupport: URL) throws -> URL {
         let dir = appSupport.appendingPathComponent("GoelDownloader", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let script = dir.appendingPathComponent("native-messaging-host.sh")
         let binary = Bundle.main.executablePath ?? CommandLine.arguments[0]
-        // Single-quote the path (with the standard '\'' escape for embedded
-        // quotes): double quotes would still evaluate `$(…)`/backticks, so an
-        // app living under a hostile-looking folder name must not become
-        // shell code every time a browser spawns the host.
+        // Single-quote the path (with the standard '\'' escape): double quotes would still evaluate
+        // `$(…)`/backticks, so a hostile folder name must not become shell code on every spawn.
         let quoted = "'" + binary.replacingOccurrences(of: "'", with: "'\\''") + "'"
         let body = """
         #!/bin/sh

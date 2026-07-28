@@ -1,60 +1,11 @@
 #!/usr/bin/env bash
-#
-# check_min_os.sh — refuse a bundle that cannot start on the macOS it advertises.
-#
-# WHY THIS EXISTS
-#
-# dyld will not load a Mach-O whose LC_BUILD_VERSION `minos` is newer than the
-# running system, and it makes that decision *before* main() — so the failure is
-# not a degraded feature, it is a bundle that dies on launch with a dialog the
-# user cannot act on. Nothing else in the build notices: `swift build` prints a
-# link-time warning that scrolls past, `codesign --verify` is happy, the app runs
-# perfectly on the machine that built it, and the first person to find out is
-# somebody on an older Mac who downloaded it.
-#
-# The concrete way this happens here: bundle_dylibs.sh vendors libtorrent /
-# openssl / libssh2 straight out of Homebrew, and a Homebrew bottle is built for
-# the OS of the machine that poured it. Building on macOS 26 therefore produces a
-# bundle whose Info.plist says macOS 14 and whose libcrypto says macOS 26.
-#
-# HOW TO PRODUCE CORRECTLY-TARGETED DYLIBS
-#
-# This script only reports the mismatch; fixing it is a build-environment change:
-#
-#   * Build on a machine (or CI runner) whose Homebrew bottles match the
-#     deployment target — macos-14 runners pour sonoma bottles, which are
-#     minos 14.0. This is what .github/workflows/ci.yml does, and it is the
-#     cheapest correct answer.
-#   * Or build the native dependencies from source with the target pinned:
-#       MACOSX_DEPLOYMENT_TARGET=14.0 brew install --build-from-source \
-#           openssl@3 libssh2 libtorrent-rasterbar
-#     (boost is statically linked into libtorrent, so it follows automatically.)
-#
-# GOEL_LOCAL_DEV=1 downgrades the failure to a warning for a throwaway build on
-# the developer's own machine. It is NOT silent about it: the script then exits 3
-# rather than 0, so every caller can tell "passed" from "waived" and refuse to do
-# anything distribution-shaped with the bundle. That distinction was missing, and
-# the hole it left was real: a waived build was still notarized and stapled, and
-# make_dmg.sh accepted any stapled app, so the escape hatch reached a signed,
-# notarized, Gatekeeper-clean .dmg full of dylibs that cannot launch on the macOS
-# the bundle advertises.
-#
-# Exit status:
-#   0  every Mach-O runs on the advertised LSMinimumSystemVersion
-#   3  it does not, but GOEL_LOCAL_DEV=1 waived the failure — throwaway only
-#   1  a real failure (bad bundle, missing purpose strings, unreadable version)
-#
-# Usage:
-#   Scripts/check_min_os.sh <path/to/App.app>
-#   Scripts/check_min_os.sh --self-test     # exercise the comparator, no bundle needed
+# check_min_os.sh — refuse a bundle whose Mach-O `minos` exceeds the advertised
+# LSMinimumSystemVersion (dyld fails before main). Exit 0 pass, 3 waived, 1 failure.
 
 set -euo pipefail
 
-# --- version comparison ------------------------------------------------------
-#
-# Compared numerically, never lexically: "9.0" sorts after "10.0" as a string,
-# and "14.10" sorts before "14.2". Both mistakes silently pass a bundle that
-# cannot launch, which is the exact class of bug this script exists to catch.
+# Version comparison is numeric, never lexical: "9.0" sorts after "10.0" as a string
+# and "14.10" before "14.2" — both silently pass a bundle that cannot launch.
 
 # version_key <dotted-version> — print a comparable integer, or fail (status 1)
 # when the input is not a version this script is willing to reason about.
@@ -72,9 +23,8 @@ version_key() {
   printf '%d\n' "$(( 10#$major * 10000 + 10#$minor * 100 + 10#$patch ))"
 }
 
-# exceeds <limit> <found> — true when <found> needs a newer macOS than <limit>.
-# An unparseable version on either side counts as exceeding: a version this
-# script cannot read is a version it cannot vouch for.
+# exceeds <limit> <found> — true when <found> needs a newer macOS than <limit>. An
+# unparseable version counts as exceeding: what it cannot read it cannot vouch for.
 exceeds() {
   local limit_key found_key
   limit_key="$(version_key "${1:-}")" || return 0
@@ -82,11 +32,8 @@ exceeds() {
   [ "$found_key" -gt "$limit_key" ]
 }
 
-# --- self-test ---------------------------------------------------------------
-#
-# The comparator is the whole gate, and it runs on machines that have no bundle
-# and no signing identity (CI's pull-request job), so it carries its own
-# regression test rather than relying on a build to exercise it.
+# The comparator is the whole gate and runs on machines with no bundle and no signing
+# identity (CI's PR job), so it carries its own regression test.
 self_test() {
   local failures=0 c limit found expected got
   # limit|found|expected
@@ -137,11 +84,8 @@ if ! version_key "$LIMIT" >/dev/null; then
   exit 1
 fi
 
-# Every macOS deployment target recorded in a file, one per line. Universal
-# binaries carry one load command per slice, and the two spellings coexist:
-# LC_BUILD_VERSION reports `minos`, the older LC_VERSION_MIN_MACOSX reports
-# `version` (the bundled yt-dlp has one of each). The tool-version line that
-# follows `ntools` inside LC_BUILD_VERSION is deliberately not matched.
+# Every macOS deployment target in a file, one per line. Universal binaries carry one
+# load command per slice, and LC_BUILD_VERSION `minos` / LC_VERSION_MIN_MACOSX coexist.
 build_versions_of() {
   vtool -show-build-version "$1" 2>/dev/null | awk '
     /^ *cmd LC_BUILD_VERSION/      { mode = "build"; next }
@@ -152,17 +96,8 @@ build_versions_of() {
   '
 }
 
-# Everything inside the bundle that dyld may be asked to map — the whole of
-# Contents, recursively, rather than an allow-list of directories.
-#
-# The allow-list was MacOS / Frameworks / PlugIns / Resources, which covers where
-# things live today (Sparkle's nested XPC services, Updater.app and the Autoupdate
-# helper; the bundled yt-dlp and ffmpeg in Resources) and silently excused
-# anything added tomorrow: a `Contents/Library`, `Contents/XPCServices` or
-# `Contents/Helpers` would have gone unexamined, which is the same failure mode
-# with a different directory name. Walking everything cannot miss, and the cost is
-# nil — Resources was always the bulk of the file count anyway. `-type f` skips
-# the symlink farm inside a versioned framework.
+# Walk all of Contents recursively rather than an allow-list of directories — a new
+# Contents/Library or XPCServices would otherwise go unexamined. `-type f` skips symlinks.
 echo "==> Checking Mach-O deployment targets against LSMinimumSystemVersion $LIMIT"
 OFFENDERS=""
 CHECKED=0
@@ -203,9 +138,8 @@ if [ -n "$OFFENDERS" ]; then
   echo "       See the header of this script for how to produce correctly-targeted" >&2
   echo "       dylibs, or set GOEL_LOCAL_DEV=1 for a throwaway local build (which" >&2
   echo "       then refuses to emit a distributable archive)." >&2
-  # The escape hatch only relaxes THIS gate, and only for a build the caller has
-  # already marked as throwaway. The purpose-string gate below still runs: a
-  # missing Info.plist key is a repository defect, not a build-machine one.
+  # The escape hatch relaxes only THIS gate, and only for a throwaway build. The
+  # purpose-string gate still runs: a missing Info.plist key is a repo defect.
   if [ "${GOEL_LOCAL_DEV:-0}" != "1" ]; then
     exit 1
   fi
@@ -218,14 +152,8 @@ else
   echo "    OK — all $CHECKED Mach-O files run on macOS $LIMIT"
 fi
 
-# --- TCC purpose strings -----------------------------------------------------
-#
-# Second gate over the same assembled bundle, here because it is the same kind
-# of defect: a key that is missing from Info.plist produces a failure the build
-# cannot see and the user cannot diagnose. macOS *terminates* a process that
-# sends an Apple event without NSAppleEventsUsageDescription, and silently drops
-# local-network traffic without NSLocalNetworkUsageDescription — so both are
-# launch/runtime correctness, not paperwork.
+# Second gate on the same bundle: macOS terminates a process that sends an Apple event
+# without NSAppleEventsUsageDescription and drops local-network traffic without its key.
 echo "==> Checking TCC purpose strings"
 for key in NSAppleEventsUsageDescription NSLocalNetworkUsageDescription; do
   value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$INFO_PLIST" 2>/dev/null || true)"

@@ -1,33 +1,5 @@
-/* Shot 5 — throughput.
- *
- * Card: odometer-digit-roll
- * Exact demo read: demos/odometer-digit-roll/OdometerDigitRoll.tsx
- *
- * Card parameters kept verbatim: one overflow box per digit over a 0-9 strip of
- * 20 cells; `posAt` is a pure frame function; digit i begins its 16f
- * Easing.out(cubic) deceleration at 20 + i*7 frames, overshoots by half a row,
- * then springs back over 6f; two ghost copies at +/- half a row (opacity
- * 0.25 / 0.12) gated on the per-frame speed and unmounted the moment the reel
- * settles; the lock frame carries an 8f darken-pulse plus the 1.035 micro-scale
- * the card records as a deliberate late addition; tabular-nums throughout.
- *
- * Two card rulings honoured explicitly:
- *   - "the digits rolled must be the real value's digits" — the reels are 4 and
- *     3, the two digits of the 43 MB/s the status bar in shot 4 already showed.
- *     A viewer who pauses gets a consistent number.
- *   - "digits <= 6" — two reels, so the stagger costs 7f total.
- *
- * Palette inversion: the demo pulses ink -> #000 on paper. On this canvas the
- * lock pulse runs the other way, ink -> pure white, because "more emphatic" on
- * a dark field means brighter, not darker.
- *
- * The shot opens by pushing the camera into the status-bar readout that shot 4
- * established, so the full-screen number is a magnification of something the
- * viewer already saw rather than a new assertion. A FlashCut covers the seam.
- *
- * Budget: last reel locks at 75, pulse ends 83, and the shot runs 140 frames —
- * 57f of true rest against the card's >= 45f.
- */
+/* Shot 5 — throughput (card: odometer-digit-roll). Digit i decelerates 16f from 20+i*7, overshoots half a
+ * row, springs back 6f; reels read 4,3 (shot 4's 43 MB/s). Lock pulse goes ink→white: dark field. */
 import React from 'react';
 import {
   AbsoluteFill,
@@ -131,11 +103,8 @@ const DigitReel: React.FC<{ frame: number; i: number; color: string }> = ({ fram
 };
 
 /* Camera push: the whole page, driving into the status-bar readout. */
-/* The push ACCELERATES into the cut instead of the demo's ease-out. With an
-   ease-out the camera arrives by frame ~12 and the real status bar sits there
-   reading "43 MB/s" for ten frames before the odometer rolls up to it — the
-   answer given away before the question. Accelerating means the number is only
-   legible in the last few frames, and the flash cut at 22 absorbs the stop. */
+/* The push ACCELERATES into the cut instead of easing out: an ease-out parks on the real "43 MB/s"
+   status bar for ~10f, giving the answer away before the odometer rolls. FlashCut at 22 absorbs the stop. */
 const CAM: CamKey[] = [
   { frame: 0, cx: 740, cy: 610, zoom: 1.12 },
   { frame: 24, cx: 205, cy: 763, zoom: 4.6 },

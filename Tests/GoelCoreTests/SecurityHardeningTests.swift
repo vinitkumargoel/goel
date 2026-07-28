@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Regression tests for the security-audit hardening pass: credential stripping,
-/// path containment, cross-host header stripping, the PBKDF2 KDF upgrade, SSRF
-/// target filtering, export secret-stripping, and external-tool vetting.
+/// Regression tests for the security-audit hardening pass: credential stripping, path containment,
+/// cross-host header stripping, PBKDF2 KDF upgrade, SSRF filtering, export stripping, tool vetting.
 final class SecurityHardeningTests: XCTestCase {
 
     // MARK: H4 — FTP inline credentials are stripped from the persisted locator
@@ -95,10 +94,8 @@ final class SecurityHardeningTests: XCTestCase {
     }
 
     func testRedirectKeepsHeadersOnSameHostPlainHTTPHop() {
-        // A legacy/intranet host that only speaks http redirecting within itself is
-        // not a downgrade — nothing is lost that the first request didn't already
-        // expose — so the origin's credentials must survive the hop. Stripping here
-        // would send the follow-up unauthenticated and quietly save a login page.
+        // An http-only host redirecting within itself is not a downgrade — nothing leaks that the first
+        // request didn't. Stripping would send the hop unauthenticated and quietly save a login page.
         let orig = URL(string: "http://files.corp.local/download?id=5")!
         let redirect = request("http://files.corp.local/store/report.zip",
                                headers: ["Cookie": "session=1", "Authorization": "Basic x"])

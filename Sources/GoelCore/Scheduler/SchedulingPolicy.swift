@@ -1,29 +1,11 @@
 import Foundation
 
-/// The queue-promotion decision as a pure function, lifted out of the
-/// ``DownloadManager`` actor so it can be exercised with plain values (mirroring
-/// ``AutomationCore``). Given the current tasks, the occupied slots, the profile
-/// caps, and whether the download window is open, it returns the ordered list of
-/// task IDs to promote — nothing more. The actor still owns the mutations that
-/// follow (slot reservation, the resume flag, the optimistic status, the engine
-/// hand-off); this owns only the *decision*, which is the subtle part: priority
-/// order, FIFO tie-breaking, the simultaneous-download cap, and the
-/// metadata-resolution cap that charges only a magnet still lacking metadata.
+/// The queue-promotion decision as a pure function, lifted out of the ``DownloadManager`` actor so it
+/// is testable: priority order, FIFO ties, the simultaneous cap, the metadata cap. Mutations stay there.
 enum SchedulingPolicy {
 
-    /// The ordered IDs to promote into free download slots.
-    ///
-    /// - Parameters:
-    ///   - tasks: the full task list (only `.queued`, not-already-running tasks
-    ///     are eligible).
-    ///   - runningSlots: IDs currently occupying a download slot.
-    ///   - maxSimultaneousDownloads: the profile's simultaneous-download cap;
-    ///     `0` (or negative) means unlimited.
-    ///   - maxMetadataResolutions: the profile's concurrent metadata-resolution
-    ///     cap; `0` (or negative) means unlimited.
-    ///   - windowOpen: whether the configured download window is currently open.
-    /// - Returns: the IDs to promote, in the order they should start. Empty when
-    ///   the window is closed, no slots are free, or nothing is eligible.
+    /// The IDs to promote into free slots, in start order — only `.queued`, not-already-running tasks;
+    /// caps of `0` or less mean unlimited. Empty when the window is closed, no slot is free, or none eligible.
     static func promotions(
         tasks: [DownloadTask],
         runningSlots: Set<UUID>,
@@ -53,10 +35,8 @@ enum SchedulingPolicy {
         var promoted: [UUID] = []
         for task in candidates {
             guard freeSlots > 0 else { break }
-            // Only a magnet that STILL lacks metadata will actually occupy a
-            // metadata-resolution slot. An already-resolved (e.g. resumed) magnet
-            // must not be charged against the cap — doing so would wrongly hold
-            // back a fresh magnet that genuinely needs to resolve.
+            // Only a magnet that STILL lacks metadata occupies a resolution slot; charging an
+            // already-resolved (resumed) magnet would wrongly hold back one that needs to resolve.
             let needsMetadata = isMagnet(task.source) && !task.hasMetadata
             if needsMetadata, activeMetadata >= maxMetadata { continue }
 

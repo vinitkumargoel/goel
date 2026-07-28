@@ -2,35 +2,13 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-// ============================================================================
-// ⌘K command palette.
-//
-// The app has genuine depth — RSS auto-download, .torrent watch folders,
-// Metalink-style mirror failover, per-file torrent priority, multi-adapter
-// aggregation, AppleScript, the remote portal — and almost all of it is behind
-// a Settings pane, a detail-panel tab, or a menu the user has no reason to
-// open. Depth nobody can find is the same as depth that isn't there.
-//
-// The palette is one search field over every action *and* every place. Two
-// kinds of row, deliberately mixed:
-//
-// * **Commands** run something (Pause all, Show Drop Basket, Toggle theme).
-// * **Places** navigate — they open the Settings window on the right pane, or
-//   put the relevant surface on screen. These are what make buried features
-//   reachable by name, and they are the reason searching "rss", "watch folder"
-//   or "mirror" has to work even though no visible control says those words.
-//
-// Everything the palette does is reachable another way; nothing here is the
-// only path to a feature. It is a shortcut, not an API.
-// ============================================================================
+// ⌘K command palette: one search field over every action *and* every place, so depth buried in
+// Settings panes and menus is reachable by name. A shortcut, never the only path to a feature.
 
 // MARK: - Cross-scene plumbing
 
-/// Lets a menu command in another scene raise the palette over the main window.
-///
-/// `GoelCommands` lives in the `App` body and cannot reach ``RootView``'s state
-/// directly, so the toggle travels as a notification that the root observes.
-/// A one-way, payload-free signal is deliberately the whole contract.
+/// Lets a menu command in another scene raise the palette over the main window. `GoelCommands`
+/// can't reach ``RootView``'s state, so the toggle travels as a payload-free notification.
 enum CommandPaletteBus {
 
     static let toggleNotification = Notification.Name("goel.commandPalette.toggle")
@@ -40,12 +18,8 @@ enum CommandPaletteBus {
     }
 }
 
-/// The Settings pane a "place" row wants shown.
-///
-/// Opening the Settings *window* is the caller's job (`@Environment(\.openSettings)`
-/// is only available inside a view); this only carries **which** pane, which
-/// ``SettingsView`` picks up and selects. Keeping the two halves separate means
-/// a caller that merely wants to preselect a pane doesn't force a window open.
+/// The Settings pane a "place" row wants shown. Opening the *window* is the caller's job, so a
+/// caller that merely wants to preselect a pane doesn't force one open.
 @MainActor
 final class SettingsRoute: ObservableObject {
 
@@ -209,9 +183,8 @@ struct CommandPalette: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        // A key hint strip built from arrow and return glyphs. The same guidance
-        // is on the search field as an accessibility hint, where it is actually
-        // spoken; here the glyphs would just be read as symbol names.
+        // A key hint strip built from arrow and return glyphs. The same guidance is on the search
+        // field as an accessibility hint; here the glyphs would just be read as symbol names.
         .a11yDecorative()
     }
 
@@ -239,9 +212,8 @@ struct CommandPalette: View {
         run(matches[highlighted])
     }
 
-    /// Close first, then act: several commands present a sheet of their own, and
-    /// AppKit will not stack a second sheet on a window that is still showing
-    /// this one. The hop to the next run loop is what makes that ordering hold.
+    /// Close first, then act: several commands present a sheet, and AppKit won't stack one on a
+    /// window still showing this. The hop to the next run loop is what makes the ordering hold.
     private func run(_ command: PaletteCommand) {
         dismiss()
         DispatchQueue.main.async(execute: command.run)
@@ -259,9 +231,8 @@ struct CommandPalette: View {
                 guard let score = Self.score(command, needle) else { return nil }
                 return (command, score)
             }
-            // `sorted(by:)` is not stable, and an unstable sort here would let
-            // equally-scoring rows swap places on every keystroke. Carrying the
-            // declared position as the tie-break pins them.
+            // `sorted(by:)` is not stable, and an unstable sort would let equally-scoring rows swap places
+            // on every keystroke. Carrying the declared position as the tie-break pins them.
             .enumerated()
             .sorted { a, b in
                 a.element.1 == b.element.1 ? a.offset < b.offset : a.element.1 > b.element.1
@@ -269,13 +240,8 @@ struct CommandPalette: View {
             .map(\.element.0)
     }
 
-    /// Higher is better; `nil` means "no match at all".
-    ///
-    /// Three tiers rather than a general fuzzy matcher: a title prefix is what
-    /// the user meant, a word start inside the title or keywords is very likely
-    /// what they meant, and a plain substring anywhere is a long shot worth
-    /// keeping at the bottom. Subsequence matching was tried and rejected —
-    /// it made three-letter queries match almost everything.
+    /// Higher is better; nil means no match. Three tiers rather than a fuzzy matcher — subsequence
+    /// matching was tried and rejected because three-letter queries matched almost everything.
     private static func score(_ command: PaletteCommand, _ needle: String) -> Int? {
         let title = command.title.lowercased()
         if title.hasPrefix(needle) { return 300 }
@@ -291,9 +257,8 @@ struct CommandPalette: View {
 
     // MARK: The commands
 
-    /// Every row, in browse order. Built fresh on each update so titles that
-    /// depend on live state ("Pause all" vs the current traffic profile) stay
-    /// truthful.
+    /// Every row, in browse order. Built fresh on each update so titles that depend on live state
+    /// ("Pause all" vs the current traffic profile) stay truthful.
     private var commands: [PaletteCommand] {
         addCommands + downloadCommands + viewCommands + settingsCommands + discoverCommands
     }

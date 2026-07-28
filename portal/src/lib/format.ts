@@ -1,8 +1,5 @@
-/**
- * Display formatters. Ported from the hand-written portal JS with the same
- * rounding behaviour, so the numbers on screen do not shift under users who
- * knew the old build.
- */
+/** Display formatters. Ported from the hand-written portal JS with the same rounding behaviour, so
+ * the numbers on screen do not shift under users who knew the old build. */
 
 /** Binary units, matching the desktop app. `null` renders as an em dash. */
 export function fmtSize(bytes: number | null | undefined): string {

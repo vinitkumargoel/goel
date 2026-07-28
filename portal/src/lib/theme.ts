@@ -1,10 +1,7 @@
 import { BOOT } from './boot'
 
-/**
- * The four named themes, mirrored from `Theme.swift` and defined in
- * `styles/themes.css`. The desktop app sets the default a fresh browser starts
- * with; the choice made here is per-browser and independent of it.
- */
+/** The four named themes, mirrored from `Theme.swift` and defined in `styles/themes.css`. The desktop
+ * app sets a fresh browser's default; the choice made here is per-browser and independent of it. */
 export const THEMES = ['frost-light', 'frost-dark', 'dracula', 'nord'] as const
 
 export type Theme = (typeof THEMES)[number]
@@ -49,25 +46,16 @@ function writeStored(theme: Theme): void {
   }
 }
 
-/**
- * The theme to start from: the user's own choice if they have made one, else
- * the server's default.
- *
- * The distinction matters — a browser that has never picked a theme keeps
- * *following* the server, so changing the theme on the desktop moves it too.
- * That only works because nothing persists the server default on first paint.
- */
+/** The theme to start from: the user's own choice if made, else the server's default. A browser that
+ * never picked keeps *following* the desktop — which works only because that default is never stored. */
 export function initialTheme(): Theme {
   const stored = readStored()
   if (stored) return stored
   return isTheme(BOOT.theme) ? BOOT.theme : 'frost-dark'
 }
 
-/**
- * Themes are CSS variables keyed off `html[data-theme]`, so switching is one
- * attribute write and no re-render of anything that isn't already reading a
- * variable.
- */
+/** Themes are CSS variables keyed off `html[data-theme]`, so switching is one attribute write and no
+ * re-render of anything that isn't already reading a variable. */
 export function applyTheme(theme: Theme, persist: boolean): void {
   document.documentElement.dataset['theme'] = theme
   if (persist) writeStored(theme)

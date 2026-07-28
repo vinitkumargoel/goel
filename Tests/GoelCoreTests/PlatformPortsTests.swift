@@ -3,9 +3,8 @@ import XCTest
 
 // MARK: - In-memory port fakes
 
-/// A controllable ``PowerControlling`` with a settable battery state and a record of
-/// every ``setPreventSleep(_:)`` the scheduler made — so tests can both feed the
-/// keep-awake decision and observe that it was applied through the port.
+/// A controllable ``PowerControlling`` with settable battery state and a record of every
+/// ``setPreventSleep(_:)`` — tests can feed the keep-awake decision and observe it reaching the port.
 final class FakePower: PowerControlling, @unchecked Sendable {
     private let lock = NSLock()
     private var _onBattery: Bool

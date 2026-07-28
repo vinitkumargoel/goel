@@ -1,11 +1,5 @@
-/* Frozen demo fixture for the Goel° keynote film.
- *
- * Every value here is fictional and matches the queue shown in
- * Assets/screenshots/desktop.png, which the README already labels as
- * illustrative mock data. Nothing is fetched, nothing is live, and no
- * Date.now()/Math.random() appears anywhere — the capture must be
- * byte-reproducible across runs.
- */
+/* Frozen demo fixture for the Goel° keynote film. Every value is fictional and matches Assets/screenshots/desktop.png.
+ * Nothing is fetched or live, and no Date.now()/Math.random() appears — the capture must be byte-reproducible. */
 
 export const SVG_MAGNET =
   '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
@@ -19,9 +13,8 @@ export const SVG_VIDEO =
   '<rect x="2.5" y="6" width="14" height="12" rx="2.5"/>' +
   '<path d="M16.5 10.5 21.5 7.5v9l-5-3z"/></svg>';
 
-/* SF Symbols "opticaldisc.fill" — FileType.iso. The bare unicode ◎ drew two
-   concentric rings with a hole in the middle; the app's glyph is a ring with a
-   filled hub, and this icon is on screen three times in every list shot. */
+/* SF Symbols "opticaldisc.fill" — FileType.iso. The bare unicode ◎ drew two concentric rings with a hole; the
+   app's glyph is a ring with a filled hub, and this icon is on screen three times in every list shot. */
 export const SVG_DISC =
   '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
   ' stroke-width="1.9"><circle cx="12" cy="12" r="8.4"/>' +
@@ -129,9 +122,8 @@ export function mulberry32(seed) {
   };
 }
 
-/** 24 x 17 = 408 cells; `filled` fraction have the piece, 5 are in flight.
- *  0.72 matches the 41% shown for this torrent better than a near-full wall of
- *  green, and leaves the bento-light-up shot somewhere to travel. */
+/** 24 x 17 = 408 cells; `filled` fraction have the piece, 5 are in flight. 0.72 matches the torrent's 41% better
+ *  than a near-full wall of green, and leaves the bento-light-up shot somewhere to travel. */
 export function pieceStates(count = 408, filled = 0.72, seed = 0x60e1) {
   const rnd = mulberry32(seed);
   const order = Array.from({ length: count }, (_, i) => ({ i, k: rnd() }))
@@ -164,19 +156,8 @@ export const DEPS = ['libcurl', 'libssh2', 'OpenSSL', 'FFmpeg', 'yt-dlp', 'SQLit
 
 export const BROWSERS = ['chrome', 'safari', 'firefox', 'edge', 'brave'];
 
-/* ---------------------------------------------------------------------------
- * Icons.
- *
- * The app draws SF Symbols. The replica cannot link against them, and the
- * unicode lookalikes that stood in for them were the loudest tell in the
- * side-by-side against Assets/screenshots/desktop.png: "↓ Active" against the
- * app's `arrow.down.circle`, a solid "▾" against `chevron.down`, three bare
- * words in the toolbar where the app draws an icon before each label.
- *
- * These are hand-drawn to the same symbol names the app actually passes to
- * `Image(systemName:)` — see Views/SidebarView.swift and Views/AppToolbar.swift
- * — at SF's own optical weight (1.7px on a 24-unit grid ~= .regular at 13pt).
- * ------------------------------------------------------------------------- */
+/* Icons. Unicode lookalikes were the loudest tell against Assets/screenshots/desktop.png, so these are hand-drawn to
+ * the same `Image(systemName:)` names the app uses, at SF's optical weight (1.7px on a 24-unit grid ~= .regular 13pt). */
 const svg = (size, body, sw = 1.7) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"` +
   ` stroke="currentColor" stroke-width="${sw}" stroke-linecap="round"` +
@@ -197,9 +178,8 @@ export const ICON = {
   checkCircle: (s = 15) => svg(s, RING + '<path d="M8.2 12.2 11 15l4.9-5.6"/>'),
   /** `arrow.up.circle` — Seeding */
   arrowUpCircle: (s = 15) => svg(s, RING + '<path d="M12 16.1V7.9M8.7 11.2 12 7.9l3.3 3.3"/>'),
-  /* Video. The source passes `film`, but the shipped build in
-     Assets/screenshots/desktop.png draws the camcorder body — and the shipped
-     build is what this replica is judged against, so that is what it draws. */
+  /* Video. The source passes `film`, but the shipped build in Assets/screenshots/desktop.png draws the
+     camcorder body — and the shipped build is what this replica is judged against. */
   film: (s = 15) =>
     svg(s, '<rect x="2.8" y="6.6" width="12.6" height="10.8" rx="2.2"/>' +
            '<path d="M15.4 11 21 8v8l-5.6-3z"/>', 1.7),

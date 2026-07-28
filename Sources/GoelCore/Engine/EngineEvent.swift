@@ -1,8 +1,7 @@
 import Foundation
 
-/// Live updates an engine emits for a task. The manager applies these to its
-/// stored `DownloadTask` and republishes — the UI subscribes to the manager,
-/// not the engine.
+/// Live updates an engine emits for a task. The manager applies them to its stored `DownloadTask`
+/// and republishes — the UI subscribes to the manager, not the engine.
 public enum EngineEvent: Sendable, Equatable {
     /// Magnet/torrent metadata arrived: name, total size and the file list are
     /// now known. Resolves a `.requestingMetadata` task.
@@ -20,11 +19,8 @@ public enum EngineEvent: Sendable, Equatable {
     /// A single file's completed-byte count changed (multi-file transfers).
     case fileProgress(fileID: Int, bytesCompleted: Int64)
 
-    /// The engine determined a better on-disk name than the one derived at add
-    /// time — e.g. from an HTTP `Content-Disposition` header, or by inferring a
-    /// missing extension from `Content-Type`. The name is already sanitized,
-    /// length-clamped and conflict-resolved by the engine; the manager adopts it
-    /// verbatim (so the displayed name and the file on disk never diverge).
+    /// Better on-disk name than the add-time guess (`Content-Disposition`, or extension from
+    /// `Content-Type`). Already sanitized/clamped/deconflicted; adopted verbatim so name == file.
     case nameResolved(String)
 
     /// The engine moved the task to a new status (e.g. downloading -> seeding).
@@ -37,14 +33,12 @@ public enum EngineEvent: Sendable, Equatable {
     /// The task failed with a concrete reason.
     case failed(DownloadError)
 
-    /// The engine produced a fresh resume cursor (HTTP segment offsets +
-    /// ETag/Last-Modified validators). The manager persists this into the
-    /// task's `resumeData` so a download can continue across relaunches.
+    /// Fresh resume cursor (HTTP segment offsets + ETag/Last-Modified validators); the manager
+    /// persists it into the task's `resumeData` so a download survives relaunches.
     case resumeDataUpdated(Data)
 
-    /// A live snapshot of the task's transfer connections — HTTP segments or
-    /// torrent peers — for the detail panel. High-frequency and observational:
-    /// the manager folds it into the task without persisting.
+    /// Live snapshot of the task's connections (HTTP segments or torrent peers) for the detail panel.
+    /// High-frequency and observational: the manager folds it in without persisting.
     case connectionsUpdated([TaskConnection])
 
     /// Torrent swarm composition changed (peer/seed counts from the session).

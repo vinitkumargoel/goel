@@ -230,21 +230,15 @@ static size_t gcb_http_write_thunk(char *ptr, size_t size, size_t nmemb, void *u
         return 0; /* abort — do not write mismatched body into the segment slot */
     }
 
-    /* A final 200 to a *ranged* request means the server ignored Range: the body
-       is the whole file and useless to a segment. Abort on the first byte instead
-       of draining it — a flapped CDN edge would otherwise cost one full body per
-       retry. Redirect hops are followed manually (FOLLOWLOCATION off), so a 200
-       here is never an interstitial; the unranged mode is untouched. Returning 0
-       yields CURLE_WRITE_ERROR, NOT CURLE_ABORTED_BY_CALLBACK — deliberately, so
-       Response.aborted stays false and Swift cannot misread this as a pause. */
+    /* A final 200 to a *ranged* request means Range was ignored, so abort on the first byte
+    rather than drain a whole body. Returns 0 => CURLE_WRITE_ERROR, never "aborted". */
     if (!ctx->unranged && ctx->http_status == 200) {
         ctx->range_ignored = 1;
         return 0;
     }
 
-    /* Drain bodies that are not the success response (redirects, errors). A 200
-       to a *ranged* request means the server ignored Range and would pour the
-       whole file into one segment's slot, so only the unranged mode accepts it. */
+    /* Drain bodies that are not the success response (redirects, errors). A 200 to a ranged
+    request means Range was ignored, so only the unranged mode accepts it. */
     int ok_status = ctx->unranged ? 200 : 206;
     if (ctx->http_status != 0 && ctx->http_status != ok_status) {
         return n;

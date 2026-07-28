@@ -1,13 +1,8 @@
 import Foundation
 import TorrentBridge
 
-/// A real BitTorrent engine backed by libtorrent (via the `TorrentBridge` C shim).
-///
-/// One libtorrent session is created lazily on first use and shared by every
-/// torrent. Each task gets a `torrent_handle` plus a polling loop that reads a
-/// status snapshot ~once a second and folds it into ``EngineEvent``s, so the
-/// scheduler and UI treat torrents exactly like HTTP/HLS downloads. Magnets
-/// resolve metadata through libtorrent's DHT before the file list is known.
+/// A real BitTorrent engine backed by libtorrent (via the `TorrentBridge` C shim). One lazily-created
+/// session, shared; each task polls a status snapshot ~1/s into ``EngineEvent``s. Magnets use the DHT.
 actor TorrentEngine: TorrentControlling {
     public nonisolated let kind: DownloadKind = .torrent
 
@@ -17,9 +12,8 @@ actor TorrentEngine: TorrentControlling {
 
     private nonisolated let hub = EventHub()
 
-    /// libtorrent session configuration (DHT/LSD/PeX/uTP/encryption). PeX is a
-    /// per-torrent flag in libtorrent (there is no settings_pack key for it), so
-    /// it is carried here and applied at add time and to every live handle.
+    /// libtorrent session configuration (DHT/LSD/PeX/uTP/encryption). PeX is a per-torrent flag with no
+    /// settings_pack key, so it is carried here and applied at add time and to every live handle.
     struct SessionConfig: Sendable, Equatable {
         var enableDHT: Bool
         var enableLSD: Bool
@@ -115,18 +109,14 @@ actor TorrentEngine: TorrentControlling {
             gt_session_set_rate_limits(session,
                                        Int32(clamping: profile.maxDownloadBytesPerSec),
                                        Int32(clamping: profile.maxUploadBytesPerSec))
-            // Wire the profile's peer ceiling into the session so switching to a
-            // higher profile actually connects to more peers, not just a wider
-            // rate cap. (`connections_limit` was previously left at libtorrent's
-            // default regardless of profile.)
+            // Wire the profile's peer ceiling into the session so a higher profile connects to more
+            // peers, not just a wider rate cap (`connections_limit` used to stay at the default).
             gt_session_set_connections(session, Int32(clamping: profile.maxConnections))
         }
     }
 
-    /// Apply DHT/LSD/PeX/uTP/encryption. All of these are live-changeable, so a
-    /// running session adopts them immediately — a Settings toggle used to be
-    /// stored and then ignored for the rest of the app's lifetime while the UI
-    /// reported the new value as active.
+    /// Apply DHT/LSD/PeX/uTP/encryption. All are live-changeable, so a running session adopts them
+    /// immediately — a Settings toggle used to be stored and then ignored for the app's lifetime.
     func applySessionConfig(_ config: SessionConfig) {
         self.config = config
         guard let session else { return }
@@ -153,10 +143,8 @@ actor TorrentEngine: TorrentControlling {
             encryptionMode: session.encryptionMode))
     }
 
-    /// Push the user's proxy choice onto the libtorrent session. An unusable
-    /// configuration deliberately lands as "no proxy" rather than a half-applied
-    /// one — paired with the gap notice in Settings, so the swarm's real exit
-    /// path is never misreported.
+    /// Push the user's proxy choice onto the libtorrent session. An unusable configuration lands as
+    /// "no proxy" rather than half-applied, so the swarm's real exit path is never misreported.
     private func applySwarmProxy(to session: UnsafeMutableRawPointer) {
         let setting = SwarmProxy.resolve(httpProxy).setting
         setting.host.withCString { host in
@@ -177,10 +165,8 @@ actor TorrentEngine: TorrentControlling {
     }
 
     func setFilePriority(_ priority: FilePriority, fileID: Int, task id: UUID) async {
-        // Keep the engine's own task copy current so that a fresh poll (e.g. after
-        // a pause→resume in the same session) re-applies the LIVE priority, not the
-        // add-time one, and drop the file from the one-shot skip set so it is never
-        // silently re-skipped.
+        // Keep the engine's task copy current so a fresh poll (e.g. after pause→resume) re-applies the
+        // LIVE priority, not the add-time one, and drop the file from the one-shot skip set.
         if let f = tasks[id]?.files.firstIndex(where: { $0.id == fileID }) {
             tasks[id]?.files[f].priority = priority
         }
@@ -213,11 +199,8 @@ actor TorrentEngine: TorrentControlling {
     }
 
     func setSeedRatioLimit(_ ratio: Double?, task id: UUID) async {
-        // Stored on the task and enforced in the poll loop (libtorrent has no
-        // per-torrent ratio cap in its simple API): once seeding reaches the
-        // ratio, the poller pauses the torrent and marks it completed. nil falls
-        // back to the traffic profile's global limit; an explicit 0 is kept as
-        // "seed this one indefinitely" and overrides the profile.
+        // Stored on the task and enforced in the poll loop (libtorrent has no per-torrent ratio cap):
+        // at the ratio the poller pauses and completes. nil = profile's limit; explicit 0 = seed forever.
         tasks[id]?.seedRatioLimit = ratio
     }
 
@@ -225,20 +208,8 @@ actor TorrentEngine: TorrentControlling {
 
     // MARK: Metadata preview
 
-    /// Resolve a torrent's metadata (name, total size, file list) **without**
-    /// starting a tracked download. The torrent is added to the session only long
-    /// enough to fetch its metadata (instant for a `.torrent` file, a DHT/peer
-    /// round-trip for a magnet), then removed.
-    ///
-    /// The probe never touches the user's save folder: it gets a throwaway
-    /// directory of its own, is added in upload-only mode so it fetches no
-    /// payload, and is removed **without** the delete-files flag. Previewing a
-    /// `.torrent` for data already on disk used to wipe that data before the
-    /// user had pressed anything.
-    ///
-    /// Returns nil on timeout or cancellation; throws when the torrent could not
-    /// be added at all, so the caller can say *why* instead of implying "no peers
-    /// answered".
+    /// Resolve metadata (name, size, file list) **without** starting a tracked download: added briefly,
+    /// upload-only, into a throwaway dir, removed *without* delete-files. nil on timeout; throws on add.
     func resolveMetadata(
         for source: DownloadSource,
         timeout: TimeInterval = 60
@@ -267,15 +238,8 @@ actor TorrentEngine: TorrentControlling {
         return nil   // timed out before any peer supplied the metadata
     }
 
-    /// Resolve metadata for the add-confirmation preview through the engine-agnostic
-    /// seam, adapting the concrete ``resolveMetadata(for:timeout:)``. The torrent
-    /// name is sanitised here; an empty name lets the manager fold in its own
-    /// fallback. Returns nil when no peer supplied metadata in time; a hard add
-    /// failure comes back as an unreachable result carrying the real reason, so
-    /// the user isn't invited to queue something that can never work.
-    ///
-    /// `directory` is deliberately ignored: by construction the preview probes
-    /// into a throwaway directory of its own and never at the user's files.
+    /// Resolve metadata for the add-confirmation preview through the engine-agnostic seam. nil when no
+    /// peer answered in time; a hard add failure returns unreachable + the real reason. `directory` ignored.
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         do {
             guard let m = try await resolveMetadata(for: source) else { return nil }
@@ -308,9 +272,8 @@ actor TorrentEngine: TorrentControlling {
         return created
     }
 
-    /// Build a libtorrent handle for `task`. `metadataOnly` marks the add as a
-    /// preview probe: it fails closed on a torrent already in the session (rather
-    /// than aliasing the live one) and fetches no payload.
+    /// Build a libtorrent handle for `task`. `metadataOnly` marks the add as a preview probe: it fails
+    /// closed on a torrent already in the session (rather than aliasing it) and fetches no payload.
     private func makeHandle(
         for task: DownloadTask,
         metadataOnly: Bool = false
@@ -326,9 +289,8 @@ actor TorrentEngine: TorrentControlling {
         let saveDir = task.saveDirectory
         let handle: UnsafeMutableRawPointer?
 
-        // Fast resume: re-adding from libtorrent's own blob restores the lifetime
-        // upload total (and so the share ratio) and skips a full re-hash. Only
-        // for real adds — a preview must never inherit a running torrent's state.
+        // Fast resume: re-adding from libtorrent's own blob restores the lifetime upload total (and so
+        // the share ratio) and skips a re-hash. Real adds only — a preview must not inherit live state.
         if !metadataOnly, let restored = restoreFromResumeData(task, session: session, mode: mode) {
             return restored
         }
@@ -346,10 +308,8 @@ actor TorrentEngine: TorrentControlling {
             // libtorrent needs a local file; fetch a remote .torrent first.
             let isRemote = !url.isFileURL
             let localPath = isRemote ? try await downloadTorrentFile(url) : url.path
-            // `gt_add_torrent_file` parses the file synchronously, so a fetched
-            // remote copy (a UUID-named temp file) is no longer needed once we
-            // return. Delete it on every exit — success, add failure, or a
-            // cancelled/timed-out metadata preview — so temp files don't pile up.
+            // `gt_add_torrent_file` parses synchronously, so a fetched remote copy (a UUID temp file)
+            // is no longer needed. Delete on every exit — success, add failure, or cancelled preview.
             defer { if isRemote { try? FileManager.default.removeItem(atPath: localPath) } }
             handle = localPath.withCString { fp in
                 saveDir.withCString { sp in
@@ -370,10 +330,8 @@ actor TorrentEngine: TorrentControlling {
     }
 
     private func downloadTorrentFile(_ url: URL) async throws -> String {
-        // Fetch the remote `.torrent` body through the guarded auto-fetch path:
-        // it honours the user's proxy (so it never leaks their real IP), bounds the
-        // redirect chain, strips cross-host headers, and refuses link-local (cloud
-        // metadata) targets — unlike the bare `URLSession.shared` this replaced.
+        // Fetch the remote `.torrent` via the guarded auto-fetch path: honours the proxy (no real-IP
+        // leak), bounds redirects, strips cross-host headers, refuses link-local (cloud metadata).
         guard let data = await NetworkGuard.fetch(url: url, proxy: httpProxy,
                                                   userAgent: "GoelDownloader") else {
             throw DownloadError.network("Could not fetch the .torrent file")
@@ -387,9 +345,8 @@ actor TorrentEngine: TorrentControlling {
 
     // MARK: Fast resume
 
-    /// Where a task's libtorrent fast-resume blob lives. Application Support
-    /// rather than the save folder, so a user's download directory stays exactly
-    /// the payload they asked for.
+    /// Where a task's libtorrent fast-resume blob lives: Application Support rather than the save
+    /// folder, so a user's download directory stays exactly the payload they asked for.
     private func resumeFileURL(_ id: UUID) -> URL? {
         guard let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                                   in: .userDomainMask).first else { return nil }
@@ -424,10 +381,8 @@ actor TorrentEngine: TorrentControlling {
         return restored
     }
 
-    /// Persist libtorrent's fast-resume blob for a task. Best-effort and
-    /// deliberately periodic rather than at quit — AppKit does not await
-    /// fire-and-forget work on termination, so a save scheduled there would
-    /// simply not happen. A timeout leaves the previous blob in place.
+    /// Persist libtorrent's fast-resume blob. Best-effort and periodic rather than at quit — AppKit does
+    /// not await fire-and-forget work on termination. A timeout leaves the previous blob in place.
     private func saveResumeData(_ id: UUID) {
         guard let session, let handle = handles[id], let url = resumeFileURL(id) else { return }
         _ = url.path.withCString { gt_save_resume_data(session, handle, $0, 2_000) }
@@ -440,10 +395,8 @@ actor TorrentEngine: TorrentControlling {
         try? FileManager.default.removeItem(at: url)
     }
 
-    /// Drain libtorrent's alert queue and log any session-level failure it
-    /// reported. Today that is a listen socket the session couldn't open —
-    /// survivable, since it also listens on an ephemeral port, but until now it
-    /// went nowhere at all and the queue was never consumed.
+    /// Drain libtorrent's alert queue and log any session-level failure (today: a listen socket it could
+    /// not open — survivable via the ephemeral port, but previously it went nowhere and never drained).
     private func drainSessionAlerts() {
         guard let session else { return }
         var buf = [CChar](repeating: 0, count: 512)
@@ -472,20 +425,16 @@ actor TorrentEngine: TorrentControlling {
             guard let handle = handles[id] else { return }
             var status = GTStatus()
             guard gt_get_status(handle, &status) == 1 else {
-                // The handle is no longer valid — libtorrent evicted the torrent
-                // from the session behind our back. Fail closed instead of
-                // leaving the row frozen at its last status with no error, no
-                // slot released and no retry. (`remove` cancels this poller
-                // before freeing a handle, so ordinary teardown never lands here.)
+                // The handle is no longer valid — libtorrent evicted the torrent behind our back. Fail
+                // closed, or the row freezes with no error, no slot released, no retry. (`remove` first.)
                 hub.fail(id, .unknown("The torrent was removed from the BitTorrent session"))
                 pollers[id] = nil
                 return
             }
 
             if !metadataEmitted, status.has_metadata != 0 {
-                // Apply any pre-add file selection (skip/priority) BEFORE reading
-                // the file list back, so the emitted files reflect the user's
-                // choice rather than libtorrent's default-normal for every file.
+                // Apply any pre-add file selection (skip/priority) BEFORE reading the file list back,
+                // so emitted files reflect the user's choice, not libtorrent's default-normal.
                 applyStoredFilePriorities(id, handle)
                 let files = readFiles(handle)
                 emit(id, .metadataResolved(name: Self.cString(status.name),
@@ -502,9 +451,8 @@ actor TorrentEngine: TorrentControlling {
             emit(id, .swarmUpdated(peers: Int(status.num_peers), seeds: Int(status.num_seeds)))
             emit(id, .connectionsUpdated(readPeers(handle)))
 
-            // Piece availability and tracker state change more slowly than the
-            // byte counters — sample them less often to keep the per-second poll
-            // cheap on large torrents/swarms.
+            // Piece availability and tracker state change more slowly than the byte counters — sample
+            // them less often to keep the per-second poll cheap on large torrents/swarms.
             if metadataEmitted, tick % 2 == 0 {
                 let pieces = readPieces(handle)
                 if !pieces.isEmpty { emit(id, .piecesUpdated(pieces)) }
@@ -531,9 +479,8 @@ actor TorrentEngine: TorrentControlling {
                     emit(id, .statusChanged(.downloading)); lastPhase = .downloading
                 }
             case .paused:
-                // libtorrent pauses torrents itself (a fatal disk error, the
-                // seed-ratio stop below). Reporting those as "Downloading" is a
-                // stall the user has no way to read.
+                // libtorrent pauses torrents itself (a fatal disk error, the seed-ratio stop below).
+                // Reporting those as "Downloading" is a stall the user has no way to read.
                 if lastPhase != .paused {
                     emit(id, .statusChanged(.paused)); lastPhase = .paused
                 }
@@ -547,10 +494,8 @@ actor TorrentEngine: TorrentControlling {
                     // it fixes the lifetime upload total the ratio is measured against.
                     saveResumeData(id)
                 }
-                // Seed-ratio limit: the task's own, else the active traffic
-                // profile's global "stop seeding at ratio". Once reached, stop
-                // seeding and mark the task completed (its payload is already on
-                // disk).
+                // Seed-ratio limit: the task's own, else the active profile's global "stop seeding at
+                // ratio". Once reached, stop seeding and mark completed (payload is already on disk).
                 if let limit = Self.effectiveSeedRatio(task: tasks[id]?.seedRatioLimit,
                                                        profile: profile.seedRatioLimit),
                    status.downloaded_bytes > 0 {
@@ -565,9 +510,8 @@ actor TorrentEngine: TorrentControlling {
                 }
             }
 
-            // Fast resume, periodically: libtorrent's `all_time_upload` restarts
-            // at zero for a torrent added without its blob, and the manager
-            // assigns that straight over the persisted lifetime total.
+            // Save fast resume periodically: `all_time_upload` restarts at zero for a torrent added
+            // without its blob, and the manager assigns that straight over the persisted total.
             if metadataEmitted, tick > 0, tick % 60 == 0 { saveResumeData(id) }
 
             tick &+= 1
@@ -575,11 +519,8 @@ actor TorrentEngine: TorrentControlling {
         }
     }
 
-    /// Apply the stored per-file selection to a freshly-resolved handle, so it
-    /// takes effect before any of those files download. Covers two sources: files
-    /// carried on a resumed task that already hold a non-normal priority, and the
-    /// `initialSkipFileIDs` a user deselected on the add screen (before the file
-    /// list existed on the task).
+    /// Apply the stored per-file selection to a freshly-resolved handle, before any of those files
+    /// download: a resumed task's non-normal priorities, plus `initialSkipFileIDs` from the add screen.
     private func applyStoredFilePriorities(_ id: UUID, _ handle: UnsafeMutableRawPointer) {
         if let files = tasks[id]?.files {
             for file in files where file.priority != .normal {
@@ -591,11 +532,8 @@ actor TorrentEngine: TorrentControlling {
             for fid in skip {
                 gt_set_file_priority(handle, Int32(fid), Int32(Self.toLibtorrentPriority(.skip)))
             }
-            // One-shot: the skip is now reflected in the handle (and, once
-            // `readFiles` runs, in the persisted per-file priorities). Clear it so a
-            // later poll on this same handle — a pause→resume starts a brand-new
-            // poll() with `metadataEmitted` reset — cannot re-skip a file the user
-            // has since re-enabled.
+            // One-shot: the skip now lives in the handle (and, after `readFiles`, in the persisted
+            // priorities). Clear it so a later poll can't re-skip a file the user has since re-enabled.
             tasks[id]?.initialSkipFileIDs = nil
         }
     }
@@ -627,14 +565,12 @@ actor TorrentEngine: TorrentControlling {
         }
     }
 
-    /// Read the real piece bitfield and downsample it to `buckets` availability
-    /// fractions (0…1) for the Progress-tab grid. Huge torrents are capped and
-    /// averaged so the read stays cheap.
+    /// Read the real piece bitfield and downsample it to `buckets` availability fractions (0…1) for the
+    /// Progress-tab grid. Huge torrents are capped and averaged so the read stays cheap.
     private func readPieces(_ handle: UnsafeMutableRawPointer, buckets: Int = 120) -> [Double] {
         guard gt_piece_count(handle) > 0 else { return [] }
-        // gt_pieces downsamples the FULL piece bitfield into up to `buckets`
-        // fractional (0…255) availability values on the C++ side, so the map
-        // represents the whole torrent regardless of its piece count.
+        // gt_pieces downsamples the FULL piece bitfield into up to `buckets` fractional (0…255) values
+        // on the C++ side, so the map represents the whole torrent regardless of its piece count.
         var vals = [UInt8](repeating: 0, count: buckets)
         let n = Int(vals.withUnsafeMutableBufferPointer { gt_pieces(handle, $0.baseAddress, Int32(buckets)) })
         guard n > 0 else { return [] }
@@ -668,9 +604,8 @@ actor TorrentEngine: TorrentControlling {
         guard count > 0 else { return [] }
         var files: [TransferFile] = []
         files.reserveCapacity(count)
-        // Completed byte counts in one pass: asking `gt_file_info` for them
-        // per file rebuilds the whole vector each time, which is O(n²) over a
-        // torrent's file list — and this runs on the add-screen preview path.
+        // Completed byte counts in one pass: asking `gt_file_info` per file rebuilds the whole vector
+        // each time — O(n²) over a torrent's file list, and this runs on the add-screen preview path.
         var progress = [Int64](repeating: 0, count: count)
         let progressCount = Int(progress.withUnsafeMutableBufferPointer { buf in
             gt_file_progress(handle, buf.baseAddress, Int32(count))
@@ -726,11 +661,8 @@ actor TorrentEngine: TorrentControlling {
         }
     }
 
-    /// The seed-ratio limit that actually applies to a torrent: the task's own
-    /// when it has one, otherwise the active traffic profile's global "stop
-    /// seeding at ratio". An explicit `0` on the task means "seed this one
-    /// indefinitely" and beats the profile; a profile value of `0` means the
-    /// profile imposes no limit at all. Returns nil for "never stop".
+    /// The seed-ratio limit that applies: the task's own, else the active profile's global one. An
+    /// explicit `0` on the task means "seed indefinitely"; a profile `0` means no limit. nil = never stop.
     static func effectiveSeedRatio(task: Double?, profile: Double) -> Double? {
         if let task { return task > 0 ? task : nil }
         return profile > 0 ? profile : nil
@@ -739,9 +671,8 @@ actor TorrentEngine: TorrentControlling {
 
 // MARK: - Swarm proxy policy
 
-/// Pure mapping from the user's proxy choice to what libtorrent can actually do
-/// with the torrent swarm, plus the gap to state when the two don't match.
-/// Lives outside the engine so the decision is testable without a session.
+/// Pure mapping from the user's proxy choice to what libtorrent can do with the torrent swarm, plus the
+/// gap to state when the two don't match. Outside the engine so the decision is testable session-free.
 public enum SwarmProxy: Sendable {
 
     /// The subset of libtorrent's `settings_pack::proxy_type_t` we ever set.
@@ -769,9 +700,8 @@ public enum SwarmProxy: Sendable {
         case incompleteManual = "The manual proxy is missing a host or port, so the swarm goes out directly."
     }
 
-    /// Decide what to apply and what to admit. Fails closed: a proxy libtorrent
-    /// cannot honour becomes "no proxy" *and* a stated gap, rather than a
-    /// half-applied setting the user would read as private.
+    /// Decide what to apply and what to admit. Fails closed: a proxy libtorrent cannot honour becomes
+    /// "no proxy" *and* a stated gap, rather than a half-applied setting the user would read as private.
     public static func resolve(_ spec: NetworkGuard.ProxySpec) -> (setting: Setting, gap: Gap?) {
         let direct = Setting(kind: .none, host: "", port: 0, peerConnections: false)
         switch spec.mode {

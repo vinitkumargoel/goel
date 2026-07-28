@@ -1,32 +1,16 @@
 import XCTest
 @testable import GoelCore
 
-/// Regressions for the confused-deputy paths: every place something *other* than
-/// the person at the keyboard chooses a URL this app then fetches.
-///
-/// There were four, and they shared one root cause — the screen was a check on how
-/// an address was *spelled*, applied at exactly one call site.
-///
-///   * `NetworkGuard` matched `127.` and `::ffff:127.` as text, so
-///     `::ffff:7f00:1` (the same address in hex) and `::ffff:a9fe:a9fe` (the
-///     cloud-metadata address) sailed through, as did any hostname whose DNS
-///     record pointed at either.
-///   * `HLSPlaylist.resolve` checked the scheme only, so a playlist body could
-///     name `http://127.0.0.1:8899/api/tasks` as a segment and
-///     `http://169.254.169.254/…` as its AES key URI.
-///   * `RedirectSanitizer` stripped headers on a redirect and then followed it
-///     unconditionally, so any http URL that answers `302` reached both.
-///   * The browser-extension capture auto-added with no confirmation and no host
-///     check at all.
+/// Regressions for four confused-deputy paths (``NetworkGuard``, `HLSPlaylist.resolve`,
+/// `RedirectSanitizer`, extension capture) that all screened an address's *spelling* at one call site.
 final class SSRFRemediationTests: XCTestCase {
 
     private func url(_ s: String) -> URL { URL(string: s)! }
 
     // MARK: Address literals are parsed, not pattern-matched
 
-    /// The demonstrated bypasses. Each of these is loopback or the metadata
-    /// address written in a spelling that contains neither `127.` nor `169.254.`,
-    /// which is precisely why matching on text could never close them.
+    /// The demonstrated bypasses: loopback or the metadata address spelled without `127.` or
+    /// `169.254.`, which is precisely why matching on text could never close them.
     func testEveryLoopbackAndMetadataSpellingIsRefused() {
         let refused = [
             "http://127.0.0.1/x",
@@ -56,9 +40,8 @@ final class SSRFRemediationTests: XCTestCase {
         }
     }
 
-    /// A guard that refuses everything is not a guard. Public addresses, the
-    /// private LAN ranges (the whole point of "add the file on my NAS from my
-    /// phone"), and a hostname that merely *looks* numeric must all still work.
+    /// A guard that refuses everything is not a guard. Public addresses, private LAN ranges (the point
+    /// of "add the file on my NAS from my phone"), and hostnames that merely *look* numeric still work.
     func testOrdinaryTargetsAreStillAccepted() {
         let allowed = [
             "https://example.com/x",
@@ -98,10 +81,8 @@ final class SSRFRemediationTests: XCTestCase {
         XCTAssertNil(NetworkGuard.addressClass(ofLiteral: ""))
     }
 
-    /// A hostname pointing at loopback is the same request with the digits hidden
-    /// behind DNS, so the resolved addresses are screened too. `localhost` is used
-    /// as the fixture because it is the one name guaranteed to resolve to loopback
-    /// on every machine without reaching the network.
+    /// A hostname pointing at loopback is the same request with the digits hidden behind DNS, so
+    /// resolved addresses are screened too. `localhost`: resolves to loopback everywhere, no network.
     func testResolvedAddressesAreScreenedNotJustTheSpelling() async {
         let addresses = NetworkGuard.resolvedLiterals(of: "localhost") ?? []
         XCTAssertFalse(addresses.isEmpty, "localhost must resolve for this test to mean anything")
@@ -114,9 +95,8 @@ final class SSRFRemediationTests: XCTestCase {
         XCTAssertFalse(allowed, "a name resolving to loopback must be refused")
     }
 
-    /// A name that cannot be resolved is allowed through deliberately — with a
-    /// SOCKS5 proxy the app never resolves locally at all, so refusing every
-    /// unresolvable name would refuse every legitimate add made through a proxy.
+    /// An unresolvable name is allowed through deliberately — with a SOCKS5 proxy the app never
+    /// resolves locally, so refusing unresolvable names would refuse every legitimate add via proxy.
     func testUnresolvableNameIsNotTreatedAsHostile() async {
         let target = url("https://\(UUID().uuidString).invalid/file.bin")
         XCTAssertNil(NetworkGuard.resolvedLiterals(of: target.host ?? ""),
@@ -138,10 +118,8 @@ final class SSRFRemediationTests: XCTestCase {
 
     // MARK: Sub-resources — playlist children and redirect hops
 
-    /// A document's children are chosen by whoever served the document. Staying on
-    /// the same host is always fine (that host was reached deliberately, and every
-    /// relative URI resolves there); leaving it for loopback or the metadata range
-    /// is the pivot.
+    /// A document's children are chosen by whoever served it. Same host is fine (reached deliberately,
+    /// and every relative URI resolves there); leaving it for loopback or metadata is the pivot.
     func testSubresourceScreenAllowsSameHostAndRefusesAPivot() {
         let parent = url("https://cdn.example.com/video/index.m3u8")
         XCTAssertTrue(NetworkGuard.isAllowedSubresource(url("https://cdn.example.com/v/1.ts"), of: parent))
@@ -157,11 +135,8 @@ final class SSRFRemediationTests: XCTestCase {
                                                         of: localParent))
     }
 
-    /// The exact playlist from the report: segment URIs pointed at this machine's
-    /// own portal and an AES key URI pointed at the cloud-metadata service. A
-    /// segment the engine may not fetch rejects the whole playlist rather than
-    /// being dropped, because a stream short by one segment is still reported as a
-    /// finished download.
+    /// The exact playlist from the report: segments at this machine's portal, AES key URI at cloud
+    /// metadata. An unfetchable segment rejects the whole playlist — a short stream still reads "done".
     func testPlaylistCannotPointItsSegmentsAtLoopback() {
         let text = """
         #EXTM3U
@@ -215,9 +190,8 @@ final class SSRFRemediationTests: XCTestCase {
                        "https://cdn.example.com/video/key.bin")
     }
 
-    /// A `Location` header is server-chosen input. Following it blind turned every
-    /// download URL into an SSRF primitive, no matter how carefully the original
-    /// address had been screened.
+    /// A `Location` header is server-chosen input. Following it blind turned every download URL into
+    /// an SSRF primitive, no matter how carefully the original address had been screened.
     func testRedirectToLoopbackOrMetadataIsRefusedNotJustStripped() {
         let original = url("http://attacker.example/redir")
         for hop in ["http://127.0.0.1:8899/api/tasks",
@@ -248,9 +222,8 @@ final class SSRFRemediationTests: XCTestCase {
                                                    originalURL: localOriginal))
     }
 
-    /// Every redirect delegate must go through the refusing entry point; one of them
-    /// still calling `sanitize` directly would leave the hole open on that path
-    /// only, and each of the three serves a different set of engines.
+    /// Every redirect delegate must go through the refusing entry point; one still calling `sanitize`
+    /// directly leaves the hole open on that path, and each of the three serves different engines.
     func testEveryRedirectDelegateUsesTheRefusingEntryPoint() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -267,9 +240,8 @@ final class SSRFRemediationTests: XCTestCase {
 
     // MARK: The browser-capture spool
 
-    /// The spool auto-adds with no confirmation, so a page that can spool a URL can
-    /// make the app fetch it with no user in the loop. `fetchTargetURL` is what the
-    /// capture path screens; a magnet has none, which is why it is exempt.
+    /// The spool auto-adds with no confirmation, so a page that spools a URL makes the app fetch it
+    /// with no user in the loop. `fetchTargetURL` is what capture screens; a magnet has none.
     func testCaptureTargetsExposeTheAddressThatMustBeScreened() {
         let loopback = DownloadSource.parse("http://127.0.0.1:8899/api/tasks")
         XCTAssertNotNil(loopback?.fetchTargetURL)

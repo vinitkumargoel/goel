@@ -2,15 +2,8 @@ import Foundation
 
 // MARK: - Cross-download connection budget
 
-/// Aggregate open-connection accounting across concurrent HTTP downloads.
-///
-/// Distinct from ``ConnectionGovernor`` (per-download adaptive fan-out that
-/// shrinks on 429). This type enforces the traffic profile's global
-/// `maxConnections` and per-host `maxConnectionsPerServer` caps in sum —
-/// reserved when a download's segments start, released on finish / pause / fail.
-///
-/// Plain value type: owned by ``HTTPEngine`` (already an actor), so isolation
-/// comes free. Pure methods are unit-testable without spinning the engine.
+/// Cross-download connection accounting: enforces the profile's global `maxConnections` and per-host
+/// caps in sum (``ConnectionGovernor`` is the per-download one). Value type owned by ``HTTPEngine``.
 struct ConnectionBudget: Sendable, Equatable {
     var totalConnections = 0
     var connectionsByHost: [String: Int] = [:]
@@ -54,10 +47,8 @@ struct ConnectionBudget: Sendable, Equatable {
         max(1, maxConnections - totalConnections)
     }
 
-    /// Room for MID-FLIGHT extras: min of per-host and global free slots, floored at
-    /// 0 (not 1 — see ``HTTPEngine/grantExtraConnections(host:wanted:)``: the download
-    /// already holds a connection, so zero is an honest answer). Low profile grants
-    /// nothing.
+    /// Room for MID-FLIGHT extras: min of per-host and global free slots, floored at 0 — not 1, as the
+    /// download already holds one (``HTTPEngine/grantExtraConnections(host:wanted:)``). Low grants none.
     func extraRoom(host: String?, profile: TrafficProfile) -> Int {
         guard profile.enableExtraConnections else { return 0 }
         let hostFree = profile.maxConnectionsPerServer - hostInUse(host)
@@ -67,9 +58,8 @@ struct ConnectionBudget: Sendable, Equatable {
 
     // MARK: Segment count
 
-    /// Connection count this download may open, drawn from the profile + budget.
-    /// ``SegmentedTransfer`` applies the remaining (size-only) clamp on resume /
-    /// multi-path paths.
+    /// Connection count this download may open, from profile + budget. ``SegmentedTransfer`` applies
+    /// the remaining size-only clamp on resume / multi-path paths.
     func resolveSegmentCount(total: Int64, host: String?, profile: TrafficProfile) -> Int {
         // Low profile opts out of extra connections entirely.
         guard profile.enableExtraConnections else { return 1 }
@@ -77,9 +67,8 @@ struct ConnectionBudget: Sendable, Equatable {
         want = min(want, hostRoom(host: host, maxPerServer: profile.maxConnectionsPerServer))
         want = min(want, globalRoom(maxConnections: profile.maxConnections))
         let minSegment: Int64 = 64 * 1024
-        // `(total - 1) / minSegment + 1` rather than `(total + minSegment - 1) / …`:
-        // the latter overflows — and traps — on a declared size near `Int64.max`, and
-        // the size arrives from a server header.
+        // `(total - 1) / minSegment + 1`, not `(total + minSegment - 1) / …`: the latter overflows and
+        // traps on a server-supplied declared size near `Int64.max`.
         let bySize = total <= 0 ? 1 : Int(min(Int64(Int.max), (total - 1) / minSegment + 1))
         return max(1, min(want, bySize))
     }

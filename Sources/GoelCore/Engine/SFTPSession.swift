@@ -1,16 +1,11 @@
 import Foundation
 
-/// Factory for ``SFTPClient`` construction shared by the queued ``SFTPEngine``
-/// and the app browser transfer path. One place for credential resolution
-/// (Keychain / inline URL userinfo / explicit password) and host-key store wiring.
-///
-/// Path arithmetic stays on ``SFTPBrowserPaths``; host-key pin/learn stays inside
-/// ``SFTPClient`` / ``HostKeyStore``.
+/// ``SFTPClient`` factory shared by ``SFTPEngine`` and the browser transfer path: one place for
+/// credential resolution (Keychain / inline URL userinfo / explicit password) and host-key wiring.
 public enum SFTPSession {
 
-    /// Build a client for a saved connection. When `password` is nil the secret
-    /// is loaded from `store` (Keychain); pass an explicit value (including `""`)
-    /// to skip the lookup — used by the connection editor's "Test" button.
+    /// Client for a saved connection. Nil `password` loads the secret from `store` (Keychain);
+    /// an explicit value (including `""`) skips the lookup — used by the editor's "Test" button.
     public static func client(
         for connection: SFTPConnection,
         password: String? = nil,
@@ -26,9 +21,8 @@ public enum SFTPSession {
         return client
     }
 
-    /// Why a client could not be built, so a refused Keychain read is reported
-    /// (and retried) rather than silently becoming a connection with no
-    /// credential — which the server then rejects, blaming the password.
+    /// Why a client could not be built, so a refused Keychain read is reported and retried rather than
+    /// silently becoming a credential-less connection the server rejects, blaming the password.
     public enum Resolution: Sendable {
         case ready(SFTPClient)
         /// No host — nothing to connect to (see ``SFTPTarget/init(connection:password:keyPassphrase:)``).
@@ -37,12 +31,8 @@ public enum SFTPSession {
         case credentialsUnavailable(CredentialLookup)
     }
 
-    /// - Parameter credentialIdentity: whose stored secrets to read, when that
-    ///   differs from `connection`. Secrets are keyed by `user@host:port`, so
-    ///   while editing a server the typed host/username may no longer match the
-    ///   key the secret was saved under — the editor passes the *saved*
-    ///   connection here so "Test" still finds a password the user didn't retype.
-    ///   Defaults to `connection`.
+    /// - Parameter credentialIdentity: whose secrets to read (default `connection`). Secrets are keyed by
+    ///   `user@host:port`, so the editor passes the *saved* connection — "Test" finds an unretyped password.
     public static func resolve(
         for connection: SFTPConnection,
         password: String? = nil,
@@ -66,9 +56,8 @@ public enum SFTPSession {
         }
 
         var phrase = keyPassphrase
-        // Keyed off the *draft's* key path (is a key going to be used?) but read
-        // from the saved identity. A refusal on an unused passphrase entry must
-        // not block a password-only connection, hence the `privateKeyPath` guard.
+        // Keyed off the draft's key path but read from the saved identity: the `privateKeyPath`
+        // guard stops a refusal on an unused passphrase entry blocking a password-only connection.
         if phrase == nil, connection.privateKeyPath != nil {
             let lookup = store.keyPassphraseLookup(for: secretsOwner)
             switch lookup {
@@ -93,9 +82,8 @@ public enum SFTPSession {
         SFTPClient(target: target, hostKeys: hostKeys)
     }
 
-    /// Build a client from an `sftp://` URL. Password comes from inline userinfo
-    /// or the connection store (see ``SFTPTarget/init(url:)``). Nil when the URL
-    /// lacks a host/user.
+    /// Client from an `sftp://` URL; password from inline userinfo or the connection store
+    /// (see ``SFTPTarget/init(url:)``). Nil when the URL lacks a host/user.
     public static func client(
         for url: URL,
         hostKeys: HostKeyStore = .shared

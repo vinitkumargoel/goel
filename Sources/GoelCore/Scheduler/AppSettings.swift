@@ -1,21 +1,7 @@
 import Foundation
 
-/// User-facing, persistable configuration that drives the scheduler.
-///
-/// It holds the list of switchable traffic profiles, which one is active, the
-/// "snail" speed-limit toggle (when **off**, byte/sec caps are lifted — i.e.
-/// unlimited speed — while the connection/simultaneous limits still apply), and
-/// the default save folder used when a download is added without an explicit one.
-/// It also carries the General/Network/BitTorrent/Notification/Power/Backup/
-/// Antivirus preferences surfaced in the Settings window so every pane survives
-/// relaunch and can be re-applied to the engines.
-///
-/// It is a plain value type so it can be copied, diffed, encoded to disk, and
-/// safely handed across isolation boundaries.
-///
-/// Enum-like fields (theme, proxy mode, folder rule, encryption mode, …) are
-/// stored as plain `String` rather than typed enums because this type lives in
-/// `GoelCore` and must not depend on the app layer's `AppTheme`/picker types.
+/// User-facing, persistable config driving the scheduler: traffic profiles, the "snail" byte-cap
+/// toggle, save folder, every Settings pane. Enum-like fields are `String` — GoelCore can't see app types.
 public struct AppSettings: Codable, Sendable, Hashable {
 
     // MARK: Traffic
@@ -55,11 +41,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// `bySource` | `fixed`.
     public var defaultFolderRule: String
 
-    /// What to do when a file with the target name already exists at add time:
-    /// `overwrite` (truncate and replace) or `rename` (append ` (n)` to keep
-    /// both). Only those two are implemented, and anything else is treated as
-    /// `rename` — the non-destructive choice — by both
-    /// ``AppSettings/validated()`` and ``DownloadManager/resolveName(_:in:policy:)``.
+    /// Existing-file reaction at add time: `overwrite` or `rename` (append ` (n)`); anything else is
+    /// treated as `rename` by ``AppSettings/validated()`` and ``DownloadManager/resolveName(_:in:policy:)``.
     public var existingFileReaction: String
 
     /// Watch the clipboard and offer to add copied http(s)/magnet links.
@@ -82,10 +65,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// HTTP/HTTPS downloads (the SOCKS hop tunnels both schemes).
     public var proxyType: String
 
-    /// Reserved: route FTP/SFTP/BitTorrent through the manual proxy too. Not yet
-    /// wired to those engines (their transports need proxy support in the native
-    /// shims), so it is intentionally not surfaced in the UI. Persisted so the
-    /// setting survives once that follow-up lands.
+    /// Reserved: route FTP/SFTP/BitTorrent through the manual proxy too. Not wired to those engines
+    /// yet (their native shims need proxy support), so unsurfaced in the UI but persisted for later.
     public var proxyAllProtocols: Bool
 
     /// Manual proxy host (used only when ``proxyMode`` is `manual`).
@@ -103,10 +84,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Seconds to wait between retries.
     public var retryInterval: Double
 
-    /// Automatically re-queue a whole download that has *failed* and try it
-    /// again — up to ``autoRetryMaxAttempts`` times, waiting an exponentially
-    /// growing delay between attempts. Distinct from ``retryCount`` (the HTTP
-    /// engine's per-request budget within a single run). Off by default.
+    /// Auto re-queue a whole *failed* download, up to ``autoRetryMaxAttempts`` times with exponential
+    /// backoff. Distinct from ``retryCount`` (the HTTP engine's per-request budget). Off by default.
     public var autoRetryEnabled: Bool
 
     /// How many times a failed download is auto-retried before it is left in the
@@ -236,9 +215,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
 
     // MARK: Queue automation
 
-    /// What to do once the last download finishes: `none` | `quit` | `sleep` |
-    /// `shutdown`. One-shot — the app resets it to `none` after firing so a
-    /// forgotten toggle can't shut the Mac down days later.
+    /// What to do once the last download finishes: `none` | `quit` | `sleep` | `shutdown`. One-shot —
+    /// reset to `none` after firing so a forgotten toggle can't shut the Mac down days later.
     public var autoShutdownAction: String
 
     /// Only download inside a daily time window (pause active tasks outside it).
@@ -284,9 +262,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
 
     // MARK: Media tools
 
-    /// After a finished HTTP task's remote resource changes (ETag/Last-Modified/
-    /// size), automatically re-download it. Off by default — a deliberate opt-in
-    /// so a finished file is never silently replaced.
+    /// After a finished HTTP task's remote resource changes (ETag/Last-Modified/size), re-download
+    /// it. Off by default — a deliberate opt-in so a finished file is never silently replaced.
     public var autoRedownloadOnRemoteChange: Bool
 
     /// Download subtitles alongside yt-dlp video downloads.
@@ -298,17 +275,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Include machine-generated (auto) captions when no human subtitles exist.
     public var subtitleIncludeAutoGenerated: Bool
 
-    /// Explicit path to an `ffmpeg` binary for Convert / Extract-audio. Empty ⇒
-    /// use the copy bundled in `Contents/Resources`, falling back to the common
-    /// system install locations. `PATH` is never consulted — see `FFmpegService`.
+    /// Explicit path to an `ffmpeg` binary for Convert / Extract-audio. Empty ⇒ the copy bundled in
+    /// `Contents/Resources`, then common system locations. `PATH` is never consulted (`FFmpegService`).
     public var ffmpegPath: String
 
-    /// How many Convert / Extract-audio jobs may run at once.
-    ///
-    /// Two by default rather than "as many as you click". ffmpeg already spreads
-    /// one job across every core, so concurrent transcodes contend for the same
-    /// CPU and finish the batch no sooner — they only make each individual job
-    /// take longer and its ETA less useful.
+    /// How many Convert / Extract-audio jobs may run at once. Two by default: ffmpeg already spreads
+    /// one job over every core, so concurrent transcodes only lengthen each job and its ETA.
     public var mediaConcurrency: Int
 
     // MARK: Remote access
@@ -325,17 +297,15 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Listen on all interfaces (LAN) instead of localhost only.
     public var remoteAllowLAN: Bool
 
-    /// Require a username + password sign-in for the web portal (recommended).
-    /// When off, anyone who can reach the port has full control — only sane on a
-    /// loopback bind. The bearer ``remoteToken`` still works for scripts either way.
+    /// Require a username + password sign-in for the web portal (recommended). When off, anyone who
+    /// reaches the port has full control — only sane on loopback. ``remoteToken`` works either way.
     public var remoteRequireAuth: Bool
 
     /// The web portal login username.
     public var remoteUsername: String
 
-    /// The web portal password, stored as a versioned salted-iterated hash
-    /// (`"v1$saltHex$hashHex"`) — never plaintext. Empty means "no password set".
-    /// Written by the app via ``RemotePassword/hash(_:)``; verified server-side.
+    /// The web portal password as a versioned salted-iterated hash (`"v1$saltHex$hashHex"`), never
+    /// plaintext; empty = no password set. Written via ``RemotePassword/hash(_:)``, verified server-side.
     public var remotePasswordHash: String
 
     /// Serve the portal read-only: clients can view/stream but not add, remove,
@@ -345,11 +315,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// How long a web session cookie stays valid before re-login, in minutes.
     public var remoteSessionMinutes: Int
 
-    /// The web portal's theme, as an ``AppTheme`` token (e.g. `"frost-dark"`).
-    /// Deliberately **independent** of ``theme`` (the local app look): changing
-    /// one never touches the other, so the desktop and the browser can each run
-    /// their own appearance. Persisted here so it survives relaunch and is the
-    /// default a fresh browser adopts.
+    /// The web portal's theme, an ``AppTheme`` token (e.g. `"frost-dark"`). Deliberately independent
+    /// of ``theme`` — desktop and browser each keep their own appearance; persisted across relaunch.
     public var remoteTheme: String
 
     // MARK: RSS auto-download
@@ -374,73 +341,44 @@ public struct AppSettings: Codable, Sendable, Hashable {
     public var updateFeedURL: String
 
     // MARK: Remote portal hardening
-    //
-    // Everything below defaults to the behaviour the portal already had, so an
-    // existing install is byte-for-byte unaffected until an operator (or an MDM
-    // policy) turns something on.
+    // All below default to the portal's existing behaviour — an existing install is unaffected until opted in.
 
-    /// Serve the portal over HTTPS instead of plain HTTP.
-    ///
-    /// Off by default because it needs a certificate the app cannot invent: the
-    /// operator supplies a PKCS#12 identity via ``remoteTLSIdentityPath`` (see
-    /// `Deploy/README.md` for the one-line `openssl` recipe). When the identity
-    /// cannot be loaded the server refuses to fall back to cleartext — silently
-    /// downgrading a portal the operator asked to encrypt would be worse than
-    /// not starting.
+    /// Serve the portal over HTTPS. Off by default because it needs an operator-supplied PKCS#12
+    /// identity (``remoteTLSIdentityPath``); if it won't load, the server refuses to fall back to cleartext.
     public var remoteTLSEnabled: Bool
 
-    /// Absolute path to a PKCS#12 (`.p12`) bundle holding the portal's
-    /// certificate and private key. Its passphrase is read from the
-    /// `GOEL_PORTAL_TLS_PASSPHRASE` environment variable — deliberately *not*
-    /// from here, so no secret ever lands in the settings file, a backup, or a
-    /// diagnostics export.
+    /// Absolute path to a PKCS#12 (`.p12`) bundle with the portal's cert + private key. Its passphrase
+    /// comes from `GOEL_PORTAL_TLS_PASSPHRASE`, never here — no secret in settings, backups, exports.
     public var remoteTLSIdentityPath: String
 
-    /// Failed sign-ins allowed from one client address before the per-IP backoff
-    /// starts. The count is per address, so one attacker cannot lock everyone
-    /// else out of the portal.
+    /// Failed sign-ins allowed from one client address before the per-IP backoff starts. Counted per
+    /// address, so one attacker cannot lock everyone else out of the portal.
     public var remoteLoginMaxAttempts: Int
 
-    /// The first lockout, in seconds, once a client exceeds
-    /// ``remoteLoginMaxAttempts``. It doubles on each further failure up to a
-    /// fifteen-minute ceiling, which turns an online password guess from
-    /// "thousands per second" into "a handful per hour".
+    /// The first lockout, in seconds, once a client exceeds ``remoteLoginMaxAttempts``. Doubles per
+    /// failure to a 15-minute ceiling — an online guess goes from thousands/sec to a handful/hour.
     public var remoteLoginBackoffSeconds: Double
 
-    /// Trust an identity asserted by an upstream reverse proxy (Cloudflare
-    /// Access, Authelia, oauth2-proxy, an ingress doing SAML/OIDC) instead of
-    /// asking for the portal password.
-    ///
-    /// **Off by default, and it must stay that way unless the portal is genuinely
-    /// behind such a proxy.** A trusted header is an authentication bypass the
-    /// moment the port is reachable directly: anyone who can connect simply sends
-    /// the header themselves. ``remoteTrustedProxies`` is what makes it safe, and
-    /// the server refuses to honour the header while that list is empty.
+    /// Trust an identity asserted by an upstream reverse proxy (Cloudflare Access, Authelia, …) instead
+    /// of the portal password. Off by default: an auth bypass unless ``remoteTrustedProxies`` is set.
     public var remoteTrustedHeaderAuthEnabled: Bool
 
-    /// The header carrying the upstream-verified identity — e.g.
-    /// `X-Forwarded-User`, `Remote-User`, or `Cf-Access-Authenticated-User-Email`.
-    /// Compared case-insensitively.
+    /// The header carrying the upstream-verified identity — e.g. `X-Forwarded-User`, `Remote-User`,
+    /// `Cf-Access-Authenticated-User-Email`. Compared case-insensitively.
     public var remoteTrustedHeaderName: String
 
-    /// Client addresses permitted to assert ``remoteTrustedHeaderName``. Entries
-    /// are literal IPs (`10.0.0.7`, `::1`) or IPv4 CIDR blocks (`10.0.0.0/8`).
-    /// Empty means "trust nobody", which disables header SSO outright.
+    /// Client addresses permitted to assert ``remoteTrustedHeaderName``: literal IPs (`10.0.0.7`,
+    /// `::1`) or IPv4 CIDR blocks (`10.0.0.0/8`). Empty = "trust nobody", disabling header SSO.
     public var remoteTrustedProxies: [String]
 
     // MARK: Audit log
 
-    /// Append a local, redacted record of every task added / completed / failed.
-    ///
-    /// Off by default. This is a **compliance** feature, not telemetry: the log is
-    /// written to this machine's disk and nothing in the app ever reads it back,
-    /// uploads it, or includes it in an export. See ``AuditLog`` for the redaction
-    /// rules (host only — never a full URL, query string or credential).
+    /// Append a local, redacted record of every task added / completed / failed. Off by default: a
+    /// **compliance** feature, never uploaded or exported. ``AuditLog`` redacts to host only.
     public var auditLogEnabled: Bool
 
-    /// Directory the audit log is written to. Empty ⇒ the app's own Application
-    /// Support folder. Point it at a directory your backup or SIEM collector
-    /// already watches.
+    /// Directory the audit log is written to. Empty ⇒ the app's own Application Support folder;
+    /// point it at a directory your backup or SIEM collector already watches.
     public var auditLogDirectory: String
 
     /// Delete rotated audit files older than this many days. `0` disables
@@ -724,9 +662,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
         case auditLogRetentionDays, auditLogKeepFiles, auditLogMaxFileMegabytes
     }
 
-    /// Decodes every field with `decodeIfPresent`, falling back to the default
-    /// so OLD persisted blobs — written before these keys existed — still load
-    /// cleanly instead of throwing on a missing key.
+    /// Decodes every field with `decodeIfPresent`, falling back to the default so OLD persisted blobs
+    /// — written before these keys existed — still load cleanly instead of throwing on a missing key.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         profiles = try c.decodeIfPresent([TrafficProfile].self, forKey: .profiles) ?? TrafficProfile.defaults
@@ -846,11 +783,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
             ?? .medium
     }
 
-    /// The profile actually applied to the engines. Identical to
-    /// ``selectedProfile`` except that, when ``speedLimitEnabled`` is `false`,
-    /// the download/upload byte caps are forced to `0` (unlimited). The
-    /// simultaneous-download, connection and metadata caps are never touched by
-    /// the snail — those are queue policy, not bandwidth.
+    /// The profile actually applied to the engines: ``selectedProfile``, but with download/upload byte
+    /// caps forced to `0` when ``speedLimitEnabled`` is off. Queue/connection caps are never touched.
     public var effectiveProfile: TrafficProfile {
         guard !speedLimitEnabled else { return selectedProfile }
         var profile = selectedProfile

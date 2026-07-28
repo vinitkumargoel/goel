@@ -4,14 +4,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// Thin C shim over system libcurl. `curl_easy_setopt` is variadic (uncallable
-// from Swift). Blocking by design — Swift engines run each transfer on a
-// dedicated thread.
-//
-// Originally FTP/FTPS only; also exposes HTTP(S) ranged GET with *true*
-// interface egress scoping (IP_BOUND_IF on Apple, SO_BINDTODEVICE on Linux)
-// via CURLOPT_SOCKOPTFUNCTION — plain CURLOPT_INTERFACE source-IP bind is NOT
-// sufficient for multi-WAN on macOS.
+// Thin C shim over libcurl (`curl_easy_setopt` is variadic, so uncallable from Swift).
+// Blocking by design. Adds ranged GET with true interface egress scoping via SOCKOPTFUNCTION.
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,9 +30,7 @@ long long gcb_remote_size(const char *url, const char *userpwd, int require_tls,
 int gcb_is_aborted(int code);
 const char *gcb_error_message(int code);
 
-// ---------------------------------------------------------------------------
-// HTTP(S) ranged GET with interface-scoped egress (network aggregation)
-// ---------------------------------------------------------------------------
+// HTTP(S) ranged GET with interface-scoped egress (network aggregation).
 
 typedef struct GCBHTTPResult {
     int code;                    // CURLcode
@@ -52,22 +44,8 @@ typedef struct GCBHTTPResult {
     char last_modified[128];     /* Last-Modified of the final response, "" if none */
 } GCBHTTPResult;
 
-// Perform one HTTP(S) GET with Range: bytes=start-end (inclusive).
-//
-// `range_start < 0` ⇒ send no Range header at all and stream the whole body:
-// the interface-bound path for servers that do not support ranges.
-//
-// `ifname` — interface name for egress scoping. NULL/empty ⇒ no bind.
-// Apple: IP_BOUND_IF / IPV6_BOUND_IF (fails closed if neither setsockopt works).
-// Linux: SO_BINDTODEVICE.
-//
-// `expected_total` — when > 0, require Content-Range total to match and abort
-// before writing body on mismatch/missing total (multi-path integrity).
-//
-// Redirects: manual, max 10; secrets stripped on host change / https→http /
-// unparseable host (fail closed). Host parser handles userinfo and IPv6.
-//
-// `max_recv_bps` — leave 0 for multi-path (Swift RateLimiter owns aggregate).
+// One HTTP(S) GET with Range: bytes=start-end. `range_start < 0` streams the whole body;
+// `ifname` binds egress; `expected_total` verifies Content-Range; redirects manual, max 10.
 GCBHTTPResult gcb_http_range(const char *url,
                              long long range_start,
                              long long range_end,

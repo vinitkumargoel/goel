@@ -60,9 +60,8 @@ struct AppToolbar: View {
                     // A placeholder disappears the moment the field has text, so
                     // it can't be the only name the field has.
                     .accessibilityLabel("Search downloads")
-                    // ⌘F is the universal "find" gesture and the field was
-                    // previously only reachable by clicking it or tabbing the
-                    // whole toolbar.
+                    // ⌘F is the universal "find" gesture, and the field was previously only reachable by clicking
+                    // it or tabbing the whole toolbar.
                     .keyboardShortcut("f", modifiers: .command)
             }
             .padding(.horizontal, 10)

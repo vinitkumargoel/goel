@@ -2,24 +2,8 @@ import Foundation
 
 // MARK: - Rate limiter
 
-/// Shared, actor-isolated download pacer that enforces an AGGREGATE byte cap
-/// across every stream that pages through it.
-///
-/// It reserves a slice of a virtual timeline of length `byteCount / rate` for
-/// every flush. Because the timeline (`drainTime`) is shared and advanced
-/// atomically before each sleep, concurrent writers queue behind one another and
-/// their combined throughput converges on the cap — not `N ×` the cap. The sleep
-/// happens after the bytes are already buffered, so the slowed reads exert TCP
-/// backpressure on the sender. A cap of 0 means unlimited.
-///
-/// **Chaining.** A flush is often subject to two ceilings at once: the engine-wide
-/// profile cap, which must hold in SUM across concurrent downloads, and a single
-/// task's own limit, which is private to that task. They cannot be merged into one
-/// `min()` — that would either leak a task's slower limit onto its siblings or let
-/// each download claim the whole profile cap on its own. So a per-task limiter is
-/// built in front of the engine-wide one via ``init(bytesPerSecond:next:)`` and
-/// both reservations are made in series. The chain is short and acyclic, and
-/// `Task.sleep` releases isolation, so a forward `pace` cannot deadlock.
+/// Actor pacer capping AGGREGATE bytes/sec: flushes reserve slices of a shared `drainTime` timeline so
+/// writers sum to the cap, not N× (0 = unlimited). Per-task limits chain via `next`; `min()` would leak.
 actor RateLimiter {
     private var bytesPerSecond: Double
     /// The next pacer in the chain (e.g. the engine-wide ceiling behind a per-task
@@ -35,17 +19,14 @@ actor RateLimiter {
         self.drainTime = Date()
     }
 
-    /// Retarget a long-lived limiter (the engine-wide pacer outlives any one
-    /// download, so a profile change has to reach it in place). Bytes already
-    /// reserved keep their slot on the timeline; the new rate applies from the next
-    /// reservation.
+    /// Retarget a long-lived limiter in place (the engine-wide pacer outlives any one download).
+    /// Bytes already reserved keep their timeline slot; the new rate applies from the next reservation.
     func setRate(_ bytesPerSecond: Int64) {
         self.bytesPerSecond = Double(max(0, bytesPerSecond))
     }
 
-    /// Account for `byteCount` just delivered and sleep long enough to keep the
-    /// shared rate at or below the cap. Cancellation-aware: a pause/remove during
-    /// the sleep wakes it immediately (the caller's own checkCancellation reacts).
+    /// Account for `byteCount` delivered and sleep to hold the shared rate at/below the cap.
+    /// Cancellation-aware: a pause/remove during the sleep wakes it immediately.
     func pace(_ byteCount: Int) async {
         guard byteCount > 0 else { return }
         // An unlimited link still forwards: this limiter may exist only to carry

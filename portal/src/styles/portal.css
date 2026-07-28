@@ -1,11 +1,8 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 body{background:var(--bg-app);color:var(--text);overflow:hidden;height:100vh}
-/* The topbar/shell/statusbar stack used to be direct children of <body>, which
- * supplied the flex column they size against — .statusbar in particular is
- * `flex:0 0 36px` and collapses without it. React mounts them inside #root, so
- * the column moves here. Overlays (.scrim, .menu, .toasts) are position:fixed
- * and are unaffected by the extra level. */
+/* The topbar/shell/statusbar stack used to sit under <body>, which supplied the flex column they size
+ * against (.statusbar is `flex:0 0 36px` and collapses without it). React mounts them in #root. */
 #root{display:flex;flex-direction:column;height:100vh}
 button,input,select,textarea{font:inherit;color:inherit}
 svg{display:block}

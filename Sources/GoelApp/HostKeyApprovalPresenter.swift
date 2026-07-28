@@ -1,28 +1,15 @@
 import AppKit
 import GoelCore
 
-/// Asks the user to confirm a server's identity the first time Goel connects to
-/// it — before any credential is offered.
-///
-/// Without this, the first connection to an unknown host is pinned silently, so
-/// the one connection an attacker would actually target is the one that asks
-/// nothing. ``SFTPClient`` reads the key in a credential-free pre-flight
-/// (`gsb_hostkey`) and only authenticates once this returns true.
-///
-/// Presented with `NSAlert` rather than a SwiftUI sheet on purpose. First contact
-/// happens from wherever the connection was started — including the "Test" button
-/// *inside* the connection-editor sheet — and SwiftUI presentation is bound to a
-/// view hierarchy, so anything raised from `RootView` would be drawn behind that
-/// sheet and never seen (the defect that made "Reset pinned host key" unusable).
-/// An alert attached to whatever window is frontmost always appears above it.
+/// Asks the user to confirm a server's identity on first contact, before any credential is offered.
+/// `NSAlert`, not a SwiftUI sheet: first contact can happen from inside the connection editor.
 @MainActor
 final class HostKeyApprovalPresenter: HostKeyApproving {
 
     static let shared = HostKeyApprovalPresenter()
 
-    /// One prompt per endpoint at a time. A dropped batch opens several sessions
-    /// at once and every one of them reaches first contact, which would otherwise
-    /// stack one dialog per file; later arrivals wait for the first answer.
+    /// One prompt per endpoint at a time. A dropped batch opens several sessions that all reach
+    /// first contact, which would otherwise stack one dialog per file; later arrivals wait.
     private var pending: [String: [CheckedContinuation<Bool, Never>]] = [:]
 
     func approveFirstContact(host: String, port: Int, fingerprint: String) async -> Bool {
@@ -64,9 +51,8 @@ final class HostKeyApprovalPresenter: HostKeyApproving {
         }
     }
 
-    /// The fingerprint as selectable monospaced text. It is the entire point of
-    /// the prompt, so it has to be copyable next to the server's own output
-    /// rather than eyeballed out of a static string.
+    /// The fingerprint as selectable monospaced text. It is the whole point of the prompt, so it has
+    /// to be copyable next to the server's own output rather than eyeballed.
     private static func fingerprintView(_ fingerprint: String) -> NSView {
         let field = NSTextField(labelWithString: "SHA-256: \(fingerprint)")
         field.font = .monospacedSystemFont(ofSize: 11, weight: .regular)

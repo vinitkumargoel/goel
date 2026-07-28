@@ -2,16 +2,8 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-/// The menu-bar (status item) dropdown — the "Rich list · inline controls"
-/// concept. A compact popover with live ↓/↑ totals in the header, the active
-/// downloads as rich rows (type icon, progress, status, per-row speed, and a
-/// shared inline pause/resume button), and a footer to add a download, pause /
-/// start everything, or jump to the main window.
-///
-/// Rendered as a `.window`-style `MenuBarExtra` so it can host this custom
-/// SwiftUI UI rather than a plain `NSMenu`. It reuses the same row building
-/// blocks as the main list (``FileTypeIcon`` / ``KindBadge`` / ``MiniProgressBar``
-/// / ``StateButton``) so the look stays identical to the window.
+/// The menu-bar dropdown: live ↓/↑ totals, active downloads as rich rows, and a footer to add,
+/// pause/start everything, or open the main window. A `.window`-style `MenuBarExtra`.
 struct MenuBarView: View {
     @EnvironmentObject private var vm: AppViewModel
 
@@ -25,12 +17,8 @@ struct MenuBarView: View {
         vm.tasks.filter { $0.status.isActive }
     }
 
-    /// The rows the popover lists: every unfinished download — actively
-    /// transferring first, then the queued/paused ones waiting on a slot — so the
-    /// list is useful even when the concurrency cap leaves most downloads waiting
-    /// (previously only the 1–2 actively transferring rows showed, so the popover
-    /// looked empty while a queue was clearly in flight). Capped to keep the
-    /// popover compact; the full queue lives in the main window.
+    /// The rows the popover lists: every unfinished download, transferring first then queued — so it
+    /// stays useful when the concurrency cap leaves most waiting. Capped to keep the popover compact.
     private var listedTasks: [DownloadTask] {
         let active = vm.tasks.filter { $0.status.isActive }
         let pending = vm.tasks.filter { !$0.status.isActive && !$0.status.isTerminal }
@@ -54,12 +42,8 @@ struct MenuBarView: View {
                 emptyState
             } else {
                 ScrollView {
-                    // A plain `VStack`, not a `LazyVStack`: the height below is
-                    // derived from this stack's own measurement, and a lazy stack
-                    // asked for zero height would build no rows and report zero
-                    // back — a deadlock that leaves the list permanently collapsed.
-                    // The row count is capped (``maxListedRows`` + live transfers),
-                    // so building them all eagerly is cheap.
+                    // A plain `VStack`, not a `LazyVStack`: the height below is derived from this stack's own
+                    // measurement, and a lazy stack asked for zero height would build no rows and report zero back.
                     VStack(spacing: 0) {
                         ForEach(listedTasks) { task in
                             MenuBarDownloadRow(task: task, vm: vm)
@@ -78,10 +62,8 @@ struct MenuBarView: View {
                                 Divider()
                             }
                         }
-                        // Conversions keep the app alive after its last window is
-                        // closed, so they must be reachable from the menu bar —
-                        // otherwise Goel° sits in the Dock doing invisible work
-                        // that cannot be cancelled from anywhere.
+                        // Conversions keep the app alive after its last window closes, so they must be reachable from
+                        // the menu bar — otherwise Goel° sits in the Dock doing invisible, uncancellable work.
                         if vm.mediaLiveCount > 0 {
                             sectionLabel("Conversions")
                             MenuBarMediaSection(center: vm.mediaJobs)
@@ -102,13 +84,8 @@ struct MenuBarView: View {
         .frame(width: 340)
     }
 
-    /// Height to give the row list.
-    ///
-    /// A `.window`-style `MenuBarExtra` sizes its host to the content's *ideal*
-    /// height, and a `ScrollView` has no intrinsic height — with only a
-    /// `maxHeight` it collapsed to zero, so the popover showed its header and
-    /// footer with no rows between them even while downloads were clearly running.
-    /// Feeding back the measured content height (clamped) gives it a real size.
+    /// Height to give the row list. A `.window` `MenuBarExtra` sizes to the content's *ideal* height,
+    /// and a `ScrollView` has none — so the measured content height (clamped) is fed back.
     private var listHeight: CGFloat {
         min(max(measuredListHeight, Self.minListHeight), Self.maxListHeight)
     }
@@ -135,9 +112,8 @@ struct MenuBarView: View {
     // MARK: Header
 
     private var header: some View {
-        // Count what the popover actually lists (unfinished downloads + live SFTP
-        // transfers), so the header number matches the rows below rather than only
-        // the actively-transferring subset.
+        // Count what the popover actually lists (unfinished downloads + live SFTP transfers), so the
+        // header number matches the rows below rather than only the transferring subset.
         let count = listedTasks.count + activeTransfers.count + vm.mediaLiveCount
         return HStack(spacing: 12) {
             Text(count == 0 ? "Downloads" : "Downloads · \(count)")
@@ -227,12 +203,8 @@ struct MenuBarView: View {
         if activeTasks.isEmpty { vm.resumeAll() } else { vm.pauseAll() }
     }
 
-    /// Bring the app forward and surface its main downloads window (the popover
-    /// dismisses itself once focus leaves it). The status-bar popover is a panel
-    /// that can't become main, but the SwiftUI `Settings` scene's window is also
-    /// `canBecomeMain`, so it must be excluded explicitly — otherwise whichever
-    /// main-capable window happens to be frontmost (possibly Settings) gets
-    /// raised instead of the downloads window.
+    /// Bring the app forward and surface its main downloads window. The `Settings` scene's window is
+    /// also `canBecomeMain`, so it must be excluded explicitly or it may get raised instead.
     private func activateMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         // SwiftUI hosts the `Settings` scene under this well-known identifier.
@@ -251,11 +223,8 @@ private struct ListHeightKey: PreferenceKey {
     }
 }
 
-/// One rich row in the menu-bar popover: type icon, name + kind badge, a thin
-/// progress bar, a status/speed sub-line, and the shared inline state button.
-/// Mirrors the main list row but tuned for the narrow popover width. Holds `vm`
-/// as a plain reference (not `@EnvironmentObject`) so a row rebuilds only when
-/// its own `task` changes, not on every other task's progress tick.
+/// One rich row in the menu-bar popover, mirroring the main list row but tuned for the narrow
+/// width. Holds `vm` as a plain reference so it rebuilds only when its own `task` changes.
 private struct MenuBarDownloadRow: View {
     let task: DownloadTask
     let vm: AppViewModel
@@ -286,18 +255,8 @@ private struct MenuBarDownloadRow: View {
                     }
                 }
             }
-            // Same treatment as the main list row: name + badge + bar + status +
-            // rate collapse to one spoken item, and the inline state button stays
-            // a separate, reachable control beside it.
-            //
-            // The label is the row's *identity* — name, transport, state — and
-            // nothing that ticks. VoiceOver re-reads a whole element when its
-            // label changes, so `accessibilityRowLabel` (which folds the live
-            // percent and ETA into the label) made a focused row re-speak itself
-            // about once a second, and say the percent twice because the value
-            // already carries it. The moving numbers stay in the value, which
-            // `.updatesFrequently` lets a screen reader re-read on its own
-            // without disturbing the label.
+            // Same treatment as the main list row: everything collapses to one spoken item, the state button
+            // stays reachable, and the label carries identity only so the row doesn't re-speak every second.
             .a11yGroup(label: A11y.sentence(task.name,
                                             task.accessibilityKindName,
                                             task.accessibilityStatusName),
@@ -310,9 +269,8 @@ private struct MenuBarDownloadRow: View {
         .contentShape(Rectangle())
     }
 
-    /// The dominant per-row rate: download speed while fetching, upload speed
-    /// while seeding, nothing when idle. Reads the sampled display speed so the
-    /// row updates on the same calm cadence as the main list.
+    /// The dominant per-row rate: download speed while fetching, upload while seeding, nothing when
+    /// idle. Reads the sampled display speed so the row updates on the main list's calm cadence.
     private var trailingSpeed: (text: String, color: Color)? {
         let speed = vm.displaySpeed(for: task)
         if speed.down > 0 { return (speed.down.speedString, Theme.green) }
@@ -349,12 +307,8 @@ private struct MenuBarSFTPTransferRow: View {
     }
 }
 
-/// Live conversions in the menu-bar popover: name, percentage, and a stop button.
-///
-/// Its own view, observing ``MediaJobCenter`` directly, because a nested
-/// `ObservableObject` read through ``AppViewModel`` never invalidates the parent's
-/// body — the rows would render once and then freeze at whatever the first sample
-/// happened to say.
+/// Live conversions in the menu-bar popover. Its own view observing ``MediaJobCenter`` directly,
+/// because a nested `ObservableObject` read through ``AppViewModel`` never invalidates the parent.
 private struct MenuBarMediaSection: View {
 
     @ObservedObject var center: MediaJobCenter
@@ -402,30 +356,14 @@ private struct MenuBarMediaSection: View {
     }
 }
 
-/// The status-item label: two stacked lines — download speed on top, upload
-/// speed on bottom — while anything is transferring; a single glyph when idle.
-///
-/// Reads ``AppViewModel/displayedCombinedSpeed`` (the sampled window average)
-/// rather than the live raw totals, so the label stays calm and never flickers.
-///
-/// The two lines are drawn into a single `NSImage` rather than a SwiftUI
-/// `VStack`, because the macOS menu bar gives a `MenuBarExtra` label only one
-/// line's worth of vertical space and clips a two-line stack to its top row. A
-/// pre-rendered image of the full menu-bar thickness sidesteps that and always
-/// shows both rows.
-///
-/// The image is a **template** (`isTemplate = true`): macOS tints it to match
-/// the menu bar — dark on a light bar, light on a dark bar — the way every other
-/// menu-bar item behaves. (It used explicit green/teal, which disappeared
-/// against a green wallpaper / tinted menu bar.) The image also keeps a **fixed
-/// width** so the item never shifts as the numbers grow and shrink.
+/// The status-item label: stacked ↓/↑ speeds while transferring, one glyph when idle. Drawn into a
+/// single template `NSImage` because the menu bar clips a two-line SwiftUI stack; fixed width.
 struct MenuBarSpeedLabel: View {
     @ObservedObject var vm: AppViewModel
 
     var body: some View {
-        // The view model publishes at ~10 Hz, but the label's content depends only
-        // on the sampled `displayedCombinedSpeed`. Gate the (image-allocating)
-        // redraw on an Equatable subview so it rebuilds only when that changes.
+        // The view model publishes at ~10 Hz but the label depends only on `displayedCombinedSpeed`.
+        // Gate the image-allocating redraw on an Equatable subview so it rebuilds only when that changes.
         SpeedContent(sample: vm.displayedCombinedSpeed).equatable()
     }
 
@@ -435,8 +373,7 @@ struct MenuBarSpeedLabel: View {
 
         var body: some View {
             if sample.down > 0 || sample.up > 0 {
-                // The two speed lines are drawn into a bitmap (see the type's
-                // note on why), which is completely opaque to VoiceOver — it is
+                // The two speed lines are drawn into a bitmap, which is completely opaque to VoiceOver — it is
                 // pixels, not text. Restate both rates as the image's label.
                 Image(nsImage: MenuBarSpeedLabel.speedImage(down: sample.down, up: sample.up))
                     .accessibilityLabel(

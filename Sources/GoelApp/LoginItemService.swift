@@ -2,14 +2,8 @@ import Foundation
 import ServiceManagement
 import GoelCore
 
-/// Registers (or removes) GoelDownloader as a macOS login item so the
-/// Settings › General "Launch at login" toggle actually takes effect.
-///
-/// Uses `SMAppService.mainApp`, the modern (macOS 13+) replacement for the
-/// deprecated `SMLoginItemSetEnabled` helper-bundle dance. On macOS 12 and
-/// earlier the API is unavailable, so we no-op rather than crash. Registration
-/// failures are logged to stderr and otherwise swallowed — a login-item hiccup
-/// must never take down the app.
+/// Registers/removes GoelDownloader as a login item via `SMAppService.mainApp` (macOS 13+);
+/// no-ops on older systems. Failures are logged and swallowed — never take down the app.
 enum LoginItemService {
 
     /// Enables or disables launch-at-login for the running app bundle.

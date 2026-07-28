@@ -1,10 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Unit tests for ``AdapterGovernors`` — the per-adapter concurrency limiters
-/// used by multi-path segmented downloads. A 429 received via one NIC's source
-/// IP must shrink only that adapter's ceiling; the sibling adapters (and the
-/// download-wide governor) keep their full fan-out.
+/// Unit tests for ``AdapterGovernors``, the per-adapter limiters for multi-path segmented downloads:
+/// a 429 on one NIC's source IP shrinks only that adapter's ceiling; siblings keep their fan-out.
 final class AdapterGovernorsTests: XCTestCase {
 
     // MARK: Helpers
@@ -25,9 +23,8 @@ final class AdapterGovernorsTests: XCTestCase {
         ], limit: limit)
     }
 
-    /// Runs `body` in a child task and reports whether it finished within
-    /// `timeout` — a parked acquire must surface as a test failure, never as a
-    /// suite-wide hang.
+    /// Runs `body` in a child task and reports whether it finished within `timeout` — a parked
+    /// acquire must surface as a test failure, never as a suite-wide hang.
     private func completes(within timeout: TimeInterval = 2,
                            _ body: @escaping @Sendable () async throws -> Void) async -> Bool {
         let done = Flag()

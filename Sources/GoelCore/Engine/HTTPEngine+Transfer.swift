@@ -11,9 +11,8 @@ final class ExtraGrantCounter: @unchecked Sendable {
     var total: Int { lock.lock(); defer { lock.unlock() }; return count }
 }
 
-/// Thin wrappers that delegate to ``connectionBudget``. The byte-moving
-/// mechanics live in ``SegmentedTransfer`` / ``PlannedTransfer``; what stays
-/// here needs the engine's aggregate state on the actor.
+/// Thin wrappers delegating to ``connectionBudget``. Byte-moving lives in ``SegmentedTransfer`` /
+/// ``PlannedTransfer``; what stays here needs the engine's aggregate state on the actor.
 extension HTTPEngine {
 
     // MARK: Connection budget
@@ -30,10 +29,8 @@ extension HTTPEngine {
         connectionBudget.release(host: host, count: count)
     }
 
-    /// Charge up to `wanted` extra connections for a running download (W2 upgrade).
-    /// Raw room, no floor-of-1: the download already holds a connection, so zero is
-    /// an honest answer here (the initial planner's floor exists so a NEW download
-    /// never stalls — that rationale does not apply mid-flight).
+    /// Charge up to `wanted` extra connections for a running download (W2 upgrade). Raw room, no
+    /// floor-of-1: it already holds a connection, so 0 is honest — the planner's floor is for NEW ones.
     func grantExtraConnections(host: String?, wanted: Int) -> Int {
         let grant = min(max(0, wanted), connectionBudget.extraRoom(host: host, profile: profile))
         guard grant > 0 else { return 0 }

@@ -1,11 +1,8 @@
 import XCTest
 @testable import GoelCLI
 
-/// `/etc/goel/config` is a systemd `EnvironmentFile`. Every one of these tests
-/// exists because getting it wrong has a specific, unpleasant consequence: a
-/// mangled line means systemd hands the daemon a wrong value or refuses the file,
-/// and the service stops booting on the next restart — which `goel config set`
-/// triggers immediately, so the operator would watch it break as they typed.
+/// `/etc/goel/config` is a systemd `EnvironmentFile`: a mangled line means a wrong value or a refused
+/// file, so the service stops booting on the restart `goel config set` triggers immediately.
 final class ConfigFileTests: XCTestCase {
 
     private var path = ""
@@ -42,9 +39,8 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertNil(config.value(forEnv: "# a comment"))
     }
 
-    /// systemd strips one layer of matching quotes, so a value written quoted must
-    /// read back unquoted — otherwise `goel config get save-dir` shows `"/mnt/x"`
-    /// and a later `set` would re-quote the quotes.
+    /// systemd strips one layer of matching quotes, so a quoted value must read back unquoted —
+    /// otherwise `goel config get save-dir` shows `"/mnt/x"` and a later `set` re-quotes the quotes.
     func testStripsOneLayerOfQuotes() throws {
         try write("GOEL_SAVE_DIR=\"/mnt/my downloads\"\nGOEL_USERNAME='ad min'\n")
         let config = try ConfigFile(path: path)
@@ -132,9 +128,8 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertTrue(contents.contains("GOEL_PORT=1"))
     }
 
-    /// systemd splits an unquoted value on whitespace and treats `#` as a comment
-    /// even mid-line, so a path with a space or a password with a `#` MUST come
-    /// back out intact or the daemon boots with a truncated value.
+    /// systemd splits unquoted values on whitespace and treats `#` as a comment even mid-line, so a
+    /// spaced path or a `#` password MUST come back intact or the daemon boots with a truncated value.
     func testQuotesValuesSystemdWouldOtherwiseSplit() throws {
         try write("GOEL_PORT=8080\n")
         var config = try ConfigFile(path: path)

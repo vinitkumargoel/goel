@@ -1,37 +1,5 @@
-/* Shot 14 — four themes.
- *
- * Card: theme-switch-moves, 式 A `theme-sweep-toggle`
- * Exact demo read: demos/theme-switch-moves/ThemeSweepToggle.tsx
- *
- * Demo parameters kept verbatim: a 15 degree slanted clip-path boundary sweeping
- * top-left to bottom-right on Easing.out(poly(3)) — fast then easing off; the
- * boundary running from -20 all the way past 1920 + SLANT + 40 so the
- * bottom-right corner is genuinely reached (the card notes that under-sweeping
- * leaves a triangle of the old theme behind); a 4px white boundary line with an
- * 18px glow that is CONDITIONALLY UNMOUNTED once the sweep is over; and the
- * `scale` settle that seats the new theme.
- *
- * The card's hard requirement is met and is the reason this shot needed the
- * capture pipeline: each theme is a REAL capture of the same page rendered with
- * that theme's own token set. None of them is a filter over another. The card is
- * blunt that filter-inverted dark modes are simply wrong, and that the two
- * layouts must agree pixel for pixel or the sweep reads as a page change instead
- * of a re-skin — here they agree exactly, because they are the same DOM.
- *
- * Deviation from the card, stated plainly: the card allows one theme switch per
- * film, and this shot performs three. The product ships four themes and the
- * feature is "four themes", not "a dark mode"; one sweep can only ever show two.
- * The three sweeps run in one direction with one cadence, so they read as a
- * single continuous demonstration rather than as somebody toggling a setting
- * back and forth, which is the failure the card is actually guarding against.
- * The settle amplitude is 0.015 rather than 0.005 — the demo's own note says the
- * 0.995 it shipped with is too subtle to perceive and should be opened up — and
- * it overshoots outward rather than inward; see the comment at the settle.
- *
- * The storyboard also called for a DigitRoll of "4" here. It is dropped: the
- * caption already says "Four built-in themes", and the card for the odometer is
- * explicit that a film gets one number-roll as a main course (shot 5).
- */
+/* Shot 14 — four themes. Card `theme-sweep-toggle` verbatim: 15° clip-path swept past 1920+SLANT+40 on
+ * Easing.out(poly(3)), 4px boundary unmounted after. Each theme is a real capture, never a filter. */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C, FONT, PAGE } from '../theme';
@@ -99,12 +67,8 @@ export const ThemeSweep: React.FC<{ durationInFrames: number }> = () => {
         if (i < THEMES.length - 1 && frame > SWEEPS[i][1] + 2) return null;
 
         const p = interpolate(frame, [s0, s1], [-20, END], { ...CL, easing: Easing.out(Easing.poly(3)) });
-        /* The settle overshoots OUTWARD (1.015 -> 1), not inward. The demo's
-           0.985 shrink works on a card floating in a canvas; here the layer is
-           a full-bleed page, so shrinking it exposed a 14px strip of near-black
-           down both edges of the white Frost Light frame for the twelve frames
-           of the settle. Overshooting out is the same amplitude and the same
-           seat, and the excess is simply clipped by the shot's overflow. */
+        /* The settle overshoots OUTWARD (1.015 -> 1), not inward: on a full-bleed page the demo's 0.985
+           shrink exposed a 14px near-black strip down both edges of the white Frost Light frame. */
         const settle = interpolate(frame, [s1, s1 + 1, s1 + 12], [1, 1.015, 1], {
           ...CL,
           easing: Easing.out(Easing.cubic),

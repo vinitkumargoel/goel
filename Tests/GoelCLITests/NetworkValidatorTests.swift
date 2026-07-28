@@ -1,11 +1,8 @@
 import XCTest
 @testable import GoelCLI
 
-/// The CLI validates interface names locally so a typo is caught before it is
-/// written into `/etc/goel/config` (where the daemon would refuse to boot on it)
-/// or sent to the API. These mirror `NetworkSelection` in GoelCore — the two
-/// grammars are duplicated on purpose, so a test that they agree is the only
-/// thing keeping them from drifting.
+/// The CLI validates interface names locally so a typo is caught before it reaches `/etc/goel/config`
+/// (the daemon would refuse to boot). Grammar duplicates `NetworkSelection`; this test stops the drift.
 final class NetworkValidatorTests: XCTestCase {
 
     func testInterfaceNamesFollowIFNAMSIZ() {

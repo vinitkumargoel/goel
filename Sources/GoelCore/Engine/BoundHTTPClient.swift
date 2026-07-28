@@ -1,12 +1,8 @@
 import Foundation
 import CurlBridge
 
-/// Blocking HTTP(S) ranged GET pinned to a network interface via CurlBridge
-/// (`IP_BOUND_IF` / `SO_BINDTODEVICE`). Runs on a dedicated thread — never the
-/// cooperative pool — matching ``FTPEngine``.
-///
-/// Aggregate rate limiting is applied via Swift ``RateLimiter`` (curl's own
-/// per-handle cap stays 0) so N multi-path handles do not N× the user cap.
+/// Blocking HTTP(S) ranged GET pinned to an interface via CurlBridge (`IP_BOUND_IF`/`SO_BINDTODEVICE`),
+/// on a dedicated thread like ``FTPEngine``. Paced by Swift ``RateLimiter`` so N paths ≠ N× the user cap.
 enum BoundHTTPClient {
 
     struct Request: Sendable {
@@ -46,9 +42,8 @@ enum BoundHTTPClient {
         let handle: FileHandle
         let limiter: RateLimiter?
         let onBytes: (@Sendable (Int) -> Void)?
-        /// External stop signal (the mid-flight upgrade trip). Folded into
-        /// `aborted` so all three consumers — write thunk, progress thunk and
-        /// the final `Response.aborted` — observe it consistently.
+        /// External stop signal (the mid-flight upgrade trip), folded into `aborted` so all three
+        /// consumers — write thunk, progress thunk, final `Response.aborted` — observe it consistently.
         let shouldAbort: (@Sendable () -> Bool)?
         private let lock = NSLock()
         private var _aborted = false

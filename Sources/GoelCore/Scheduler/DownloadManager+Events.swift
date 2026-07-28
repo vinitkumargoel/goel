@@ -2,10 +2,8 @@ import Foundation
 
 // MARK: - Engine event ingestion
 
-/// Subscribes to each engine's event stream and folds events back into the
-/// stored task, then drives the status-transition bookkeeping (slot release,
-/// completion hooks, promotion of the next queued task). Split out of
-/// ``DownloadManager`` so the queue's reaction to engine events reads on its own.
+/// Subscribes to each engine's event stream and folds events back into the stored task, then drives
+/// status-transition bookkeeping (slot release, completion hooks, promotion of the next queued task).
 extension DownloadManager {
 
     func subscribe(_ id: UUID, to engine: any DownloadEngine) {
@@ -23,12 +21,8 @@ extension DownloadManager {
 
         switch event {
         case let .metadataResolved(name, totalBytes, files):
-            // Adopt the engine-resolved name (from DHT/peer metadata, Content-
-            // Disposition, …) while the task still carries only its source-derived
-            // placeholder — `DownloadTask.name` is never actually empty, so the old
-            // `isEmpty` check was dead code and left magnets stuck on "Magnet
-            // download". A user-supplied custom name (≠ the default) is preserved,
-            // and the adopted name is re-sanitized as defense-in-depth.
+            // Adopt the engine-resolved name (DHT/Content-Disposition) while the task holds only its
+            // placeholder — `name` is never empty, so `isEmpty` left magnets stuck. A custom name wins.
             if !name.isEmpty, tasks[i].name == Self.defaultName(for: tasks[i].source) {
                 tasks[i].name = PathSafety.sanitizedName(name, fallback: tasks[i].name)
             }
@@ -36,11 +30,8 @@ extension DownloadManager {
             tasks[i].files = files
 
         case let .progress(bytesDownloaded, bytesUploaded, _, _, connectionCount):
-            // Fold the byte deltas into the lifetime statistics against a per-task
-            // mark. A regression (retry/invalidated resume restarting below the
-            // previous count) re-bases the mark so history is never subtracted AND
-            // the re-transferred bytes still count — the rule lives in
-            // ``StatsAccumulator``.
+            // Fold byte deltas into lifetime stats against a per-task mark. A regression (retry/resume
+            // restarting lower) re-bases it so history is never subtracted — rule in ``StatsAccumulator``.
             let mark = statsMarks[id]
                 ?? StatsMark(down: tasks[i].bytesDownloaded, up: tasks[i].bytesUploaded)
             let folded = StatsAccumulator.fold(previous: mark,
@@ -50,12 +41,8 @@ extension DownloadManager {
             persistStats()
             tasks[i].bytesDownloaded = bytesDownloaded
             tasks[i].bytesUploaded = bytesUploaded
-            // The stored ↓/↑ rates are derived here from the byte counters — a
-            // sliding-window average (``SpeedMeter``), NOT the event's own speed
-            // fields. Engines measure over 100–200 ms, so their instantaneous
-            // rates swing with every TCP burst; the windowed average is what
-            // every reader (labels, ETA, sort, remote portal, Finder progress)
-            // should see. This is the single point where speeds enter the model.
+            // Stored ↓/↑ rates come from byte counters via a sliding window (``SpeedMeter``), not the
+            // event's own 100–200 ms fields which swing per TCP burst. The one point speeds enter model.
             let now = Date()
             var meter = speedMeters[id] ?? SpeedMeter()
             meter.record(down: bytesDownloaded, up: bytesUploaded, at: now)
@@ -76,24 +63,16 @@ extension DownloadManager {
             tasks[i].name = PathSafety.sanitizedName(name, fallback: tasks[i].name)
 
         case let .statusChanged(status):
-            // Guard against a stale pre-pause event resurrecting a paused task: an
-            // engine can have a "downloading"/"requesting metadata" event buffered
-            // in its stream from just before it was stopped. If the manager has
-            // authoritatively paused this task (it's `.paused` and no longer holds a
-            // slot), that late active-phase event must not un-pause it — the user's
-            // pause wins. Legitimate resumes pass through: they set `.queued` then an
-            // optimistic phase + a slot before the engine's event arrives, so the
-            // stored status is never `.paused` at that point.
+            // Guard a stale pre-pause event from resurrecting a paused task: if the manager has
+            // authoritatively paused (`.paused`, no slot), a late active-phase event must not un-pause.
             if Self.isDownloadingPhase(status),
                tasks[i].status == .paused,
                !runningSlots.contains(id) {
                 return
             }
             tasks[i].status = status
-            // A phase that transfers no payload shows no rate. Speeds are
-            // meter-derived (see `.progress`), so without this the last windowed
-            // average would linger through verifying/completed; dropping the
-            // meter also makes a later resume ramp a fresh window.
+            // A phase transferring no payload shows no rate: speeds are meter-derived (`.progress`),
+            // so without this the last average lingers; dropping the meter re-ramps a fresh window.
             switch status {
             case .downloading, .seeding: break
             default:
@@ -105,11 +84,8 @@ extension DownloadManager {
             break   // the subsequent .statusChanged carries the terminal/seeding state
 
         case let .failed(error):
-            // Same stale-echo guard as `.statusChanged`: an error an engine queued
-            // just before it was stopped can still be drained after the manager has
-            // authoritatively paused this task. If it's `.paused` and no longer holds
-            // a slot, that late failure must not clobber the user's pause (which would
-            // also block Resume, forcing a Retry).
+            // Same stale-echo guard as `.statusChanged`: an error queued just before the engine
+            // stopped must not clobber the user's pause — that would block Resume, forcing a Retry.
             if tasks[i].status == .paused, !runningSlots.contains(id) {
                 return
             }
@@ -140,15 +116,11 @@ extension DownloadManager {
             tasks[i].remoteInfo = info
         }
 
-        // P1: persist only on meaningful transitions — never on raw progress (a
-        // progress write 10×/sec/task is pure churn). `.finished` carries NO state
-        // change (the following `.statusChanged` does), so persisting it would
-        // write a stale `.downloading` snapshot that could land after — and clobber
-        // — the authoritative terminal write; exclude it too.
+        // P1: persist only on meaningful transitions — never raw progress (10×/sec/task is churn).
+        // `.finished` carries no state change, so it would write a stale snapshot over the terminal one.
         switch event {
-        // Progress/swarm/piece chatter is high-frequency — never persist those.
-        // `.resumeDataUpdated` still persists: it is the durable cursor + the
-        // concurrent byte count that would otherwise never hit disk until pause.
+        // Progress/swarm/piece chatter is high-frequency — never persist those. `.resumeDataUpdated`
+        // still persists: the durable cursor + concurrent byte count would otherwise wait for pause.
         case .progress, .fileProgress, .finished, .connectionsUpdated, .swarmUpdated,
              .trackersUpdated, .piecesUpdated:
             break
@@ -167,17 +139,14 @@ extension DownloadManager {
         }
     }
 
-    /// React to a task leaving the active-download phase: free its slot, stamp a
-    /// completion date, run completion side-effects, tear down the now-useless
-    /// event subscription on a terminal state, refresh the power assertion, and
-    /// promote the next queued task.
+    /// React to a task leaving the active-download phase: free its slot, stamp a completion date, run
+    /// completion side-effects, drop the subscription if terminal, refresh power, promote the next task.
     private func handleStatusTransition(_ id: UUID, _ status: DownloadStatus) {
         switch status {
         case .completed, .failed:
             runningSlots.remove(id)
-            // The task is finished — stop consuming its stream so a completed
-            // download doesn't leak a live consumer Task + continuation forever.
-            // (Seeding keeps its subscription: it's still active.)
+            // Finished — stop consuming its stream so a completed download doesn't leak a live
+            // consumer Task + continuation forever. (Seeding keeps its subscription: still active.)
             consumers[id]?.cancel()
             consumers[id] = nil
             if let i = index(of: id) { tasks[i].connections = nil }
@@ -203,9 +172,8 @@ extension DownloadManager {
             schedule()
         case .seeding:
             runningSlots.remove(id)
-            // The payload is complete the moment seeding begins — auto-delete the
-            // consumed local `.torrent` now if asked (it never reaches `.completed`
-            // while it seeds).
+            // The payload is complete the moment seeding begins — auto-delete the consumed local
+            // `.torrent` now if asked (it never reaches `.completed` while it seeds).
             if let i = index(of: id) { deleteSourceTorrentIfRequested(tasks[i]) }
             schedule()
         case .paused:

@@ -2,9 +2,8 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// The floating "drop basket": a small always-on-top panel that accepts link /
-/// file drags from any app (browsers especially) and queues them without the
-/// main window needing to be visible. Toggled from the View menu.
+/// The floating "drop basket": a small always-on-top panel that accepts link/file drags from any
+/// app and queues them without the main window being visible. Toggled from the View menu.
 @MainActor
 final class DropBasketController {
 
@@ -60,9 +59,8 @@ private struct DropBasketView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
-        // The basket only accepts pointer drags, so it cannot be operated
-        // without a pointer at all — but it should at least identify itself
-        // rather than appearing as an unnamed region in an unnamed panel.
+        // The basket only accepts pointer drags, so it cannot be operated without one — but it should
+        // at least identify itself rather than appear as an unnamed region in an unnamed panel.
         .a11yGroup(label: "Drop basket",
                    hint: "Drag links or torrent files here to queue them.")
         .frame(maxWidth: .infinity, maxHeight: .infinity)

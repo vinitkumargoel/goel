@@ -1,18 +1,8 @@
 import SwiftUI
 import GoelCore
 
-/// Lets the user pick WHICH rendition of a video-site page to download, instead
-/// of accepting whatever the resolver picks.
-///
-/// The existing `hlsMaxHeight` preference only caps HLS renditions and only in
-/// coarse steps; it cannot express "the 1080p VP9 one" or "just the audio". This
-/// view shows the same table `yt-dlp -F` prints, so the choice a user could make
-/// on the command line is available in the app.
-///
-/// Deliberately a **standalone child view**: it owns no app state, takes a URL
-/// in and hands a `MediaFormat?` back through `onSelect` (nil meaning "let
-/// yt-dlp choose"). That keeps it previewable in isolation and keeps the parent
-/// sheet free of the loading/error states this view manages itself.
+/// Lets the user pick WHICH rendition of a video-site page to download. Shows the same table
+/// `yt-dlp -F` prints; a standalone child view that hands a `MediaFormat?` back via `onSelect`.
 struct MediaFormatPicker: View {
 
     /// The page whose renditions are being listed.
@@ -22,9 +12,8 @@ struct MediaFormatPicker: View {
     /// caller should then omit `-f` entirely rather than guess a format id.
     var onSelect: (MediaFormat?) -> Void
 
-    /// Pre-supplied rows. When non-nil no yt-dlp process is started at all, which
-    /// is what makes the SwiftUI preview below work offline and lets a caller
-    /// that already listed formats reuse the result.
+    /// Pre-supplied rows. When non-nil no yt-dlp process is started at all, which is what makes the
+    /// SwiftUI preview work offline and lets a caller reuse a listing it already has.
     var preloadedFormats: [MediaFormat]?
 
     init(pageURL: URL,
@@ -172,9 +161,8 @@ struct MediaFormatPicker: View {
             .background(isSelected ? Theme.accent.opacity(0.10) : .clear)
         }
         .buttonStyle(.plain)
-        // A hand-drawn radio button: the filled-vs-empty circle and the accent
-        // wash are the whole selection signal. Collapse the row and carry the
-        // choice as a trait so it is announced rather than merely tinted.
+        // A hand-drawn radio button: the filled-vs-empty circle and accent wash are the whole selection
+        // signal. Collapse the row and carry the choice as a trait so it is announced, not merely tinted.
         .a11yGroup(label: quality, value: A11y.sentence(detail, trailing))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -258,13 +246,8 @@ struct MediaFormatPicker: View {
 
 // MARK: - Playlist checklist
 
-/// Lists every item behind a playlist/channel URL so the user ticks the ones
-/// they actually want, instead of the app queueing all 400 or none.
-///
-/// Lives beside ``MediaFormatPicker`` because it is the same shape of problem:
-/// one pasted URL, a list yt-dlp produced, a choice the user makes before
-/// anything is queued. Parsing is entirely in `GoelCore`'s ``PlaylistExpander``;
-/// this view only runs the tool and renders the result.
+/// Lists every item behind a playlist/channel URL so the user ticks what they want, instead of
+/// queueing all 400 or none. Parsing lives in ``PlaylistExpander``; this only runs and renders.
 struct PlaylistChecklistView: View {
 
     let playlistURL: URL
@@ -351,8 +334,7 @@ struct PlaylistChecklistView: View {
                         ))
                         .labelsHidden()
                         .toggleStyle(.checkbox)
-                        // `labelsHidden()` leaves a column of anonymous
-                        // checkboxes; the title beside each one is what it
+                        // `labelsHidden()` leaves a column of anonymous checkboxes; the title beside each one is what it
                         // actually ticks, so make it the checkbox's own name.
                         .accessibilityLabel("\(item.index). \(item.title)")
                         Text("\(item.index).")
@@ -385,9 +367,8 @@ struct PlaylistChecklistView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // A truncated listing must say so — showing 1 000 of a 4 000-video
-            // channel and calling it "everything" is a lie the user only finds
-            // out about later.
+            // A truncated listing must say so — showing 1 000 of a 4 000-video channel and calling it
+            // "everything" is a lie the user only finds out about later.
             if expansion.truncated {
                 Text("Only the first \(PlaylistExpander.cap) items are shown.")
                     .scaledFont(size: 10)
@@ -434,9 +415,8 @@ struct PlaylistChecklistView: View {
             switch outcome {
             case .expanded(let result):
                 expansion = result
-                // Everything ticked by default: the user pasted a playlist, so
-                // "all of it" is the likely intent, and unticking is easier than
-                // hunting for the ones you want.
+                // Everything ticked by default: the user pasted a playlist, so "all of it" is the likely intent,
+                // and unticking is easier than hunting for the ones you want.
                 selected = Set(result.items.map(\.id))
                 phase = .loaded
             case .notAPlaylist:

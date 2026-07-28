@@ -2,16 +2,8 @@
 import PackageDescription
 import Foundation
 
-// ============================================================================
-// Platform-conditional wiring.
-//
-// macOS builds exactly as before: SwiftUI app (`GoelApp`), Sparkle, and the
-// native libraries from Homebrew. Linux builds a headless `GoelDaemon` (the web
-// portal IS the UI) against the distro's own libtorrent/libssh2/libcurl via
-// pkg-config-equivalent flags, with swift-crypto + SwiftNIO standing in for
-// CryptoKit/CommonCrypto and Network.framework. `#if os(Linux)` here is evaluated
-// against the *build host*, which is what we want.
-// ============================================================================
+// Platform-conditional wiring: macOS builds the SwiftUI app against Homebrew libs,
+// Linux a headless daemon against distro libs. `#if os(Linux)` = the build host.
 
 #if os(Linux)
 
@@ -36,10 +28,8 @@ let sshC: [CSetting] = []
 let sshLink: [LinkerSetting] = [.unsafeFlags(["-lssh2"])]
 let curlLink: [LinkerSetting] = [.linkedLibrary("curl")]
 
-// GRDB on Linux needs a SQLite built with SQLITE_ENABLE_SNAPSHOT — Ubuntu's stock
-// libsqlite3 declares the `sqlite3_snapshot_*` symbols in its header but omits
-// them from the shared object, so GRDB fails to link. Point the linker at a
-// vendored snapshot-enabled build (set GOEL_SQLITE_DIR, else a repo-relative dir).
+// Ubuntu's libsqlite3 declares `sqlite3_snapshot_*` but omits them, so GRDB fails
+// to link — point at a vendored SQLITE_ENABLE_SNAPSHOT build (GOEL_SQLITE_DIR).
 let sqliteDir = ProcessInfo.processInfo.environment["GOEL_SQLITE_DIR"] ?? "Vendor/linux/sqlite"
 let linuxCoreLink: [LinkerSetting] = [
     .unsafeFlags(["-L\(sqliteDir)", "-Xlinker", "-rpath", "-Xlinker", sqliteDir]),
@@ -47,9 +37,8 @@ let linuxCoreLink: [LinkerSetting] = [
 
 #else
 
-// Homebrew prefix for the native libraries. Defaults to Apple Silicon's
-// /opt/homebrew; set GOEL_BREW_PREFIX=/usr/local to build against an Intel
-// (x86_64) Homebrew for a cross / Intel build.
+// Homebrew prefix for the native libraries; defaults to Apple Silicon's
+// /opt/homebrew. Set GOEL_BREW_PREFIX=/usr/local for an Intel build.
 let brewPrefix = ProcessInfo.processInfo.environment["GOEL_BREW_PREFIX"] ?? "/opt/homebrew"
 
 let torrentCxx: [CXXSetting] = [
@@ -141,28 +130,15 @@ var products: [Product] = [
     .library(name: "GoelCore", targets: ["GoelCore"]),
 ]
 
-// ---- The `goel` admin CLI -------------------------------------------------
-//
-// Deliberately dependency-free: it speaks to the daemon over the portal's own
-// HTTP API and to the init system through `systemctl`, so it needs neither
-// GoelCore nor the libtorrent/libssh2/OpenSSL chain. That keeps it buildable on
-// a box where the daemon's native dependencies are awkward, and keeps `goel
-// doctor` usable when the daemon itself will not start — which is exactly when
-// an operator needs it.
-//
-// It is built on macOS too, even though systemd only exists on Linux. The CLI is
-// a Linux tool, but the only CI that runs today is macOS, and a Linux-gated
-// target would never be compiled at all.
+// The `goel` admin CLI: dependency-free (portal HTTP + systemctl) so `goel doctor`
+// still works when the daemon won't start. Built on macOS too — only macOS CI exists.
 targets += [
     .executableTarget(name: "GoelCLI"),
-    // Both of these were macOS-only for no reason: neither touches GoelApp, and
-    // Linux — where the daemon and the `goel` command actually ship — had no test
-    // coverage at all as a result. Files needing Network.framework or the Keychain
-    // guard themselves with `#if !os(Linux)`.
+    // Not macOS-gated: Linux ships the daemon and `goel` but had no coverage. Files
+    // needing Network.framework or the Keychain guard with `#if !os(Linux)`.
     .testTarget(name: "GoelCoreTests", dependencies: ["GoelCore"]),
-    // `goel config set` rewrites /etc/goel/config, which systemd reads as the
-    // service's environment — a corrupted line there stops the daemon booting, so
-    // the parser and writer are tested rather than trusted.
+    // `goel config set` rewrites /etc/goel/config, systemd's environment for the
+    // service — a corrupt line stops the daemon booting, so it is tested, not trusted.
     .testTarget(name: "GoelCLITests", dependencies: ["GoelCLI"]),
 ]
 products += [
@@ -193,10 +169,8 @@ targets += [
             .process("Resources"),
         ]
     ),
-    // GoelApp is an executableTarget, but its top-level `main.swift` does not
-    // clash with a test host, so `@testable import GoelApp` works. Its pure
-    // helpers (version comparison, row presentation, list filtering) were
-    // untested purely because there was nowhere to put the tests.
+    // GoelApp's top-level `main.swift` doesn't clash with a test host, so `@testable
+    // import` works — its pure helpers were untested only for lack of somewhere to put them.
     .testTarget(name: "GoelAppTests", dependencies: ["GoelApp"]),
 ]
 products += [

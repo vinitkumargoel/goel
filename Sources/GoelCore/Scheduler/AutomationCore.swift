@@ -1,24 +1,11 @@
 import Foundation
 
-/// The pure decision core for the scheduler's timer-driven automation.
-///
-/// Given an immutable ``Snapshot`` — the current time, settings, a lightweight
-/// projection of the task list, the last-reported network path, any pre-fetched
-/// feed items, and the prior automation ``Memory`` — ``decide(_:)`` returns the
-/// ordered ``Action``s to apply **and** the next ``Memory``. The manager only
-/// applies the actions (re-validating each across its `await`s) and round-trips
-/// the memory; every day/time/network/schedule/RSS decision lives here, drivable
-/// by plain-value unit tests with no actor, clock, engine, socket, or store.
-///
-/// The five parallel bookkeeping ledgers the manager used to keep
-/// (`schedulePausedIDs`, `preScheduleProfileName`, `networkPaused`,
-/// `networkPausedIDs`, `rssSeenKeys`) are consolidated into the single
-/// ``Memory`` value, so they can never drift apart.
+/// Pure decision core for timer-driven automation: ``decide(_:)`` maps a ``Snapshot`` to ordered
+/// ``Action``s + the next ``Memory`` — one value, so the old five parallel ledgers cannot drift apart.
 enum AutomationCore {
 
-    /// The only per-task data ``decide(_:)`` needs — a projection, so the 24-field
-    /// ``DownloadTask`` never enters the decision core and test construction stays
-    /// trivial.
+    /// The only per-task data ``decide(_:)`` needs — a projection, so the 24-field ``DownloadTask``
+    /// never enters the decision core and test construction stays trivial.
     struct TaskPhase: Sendable, Equatable {
         var id: UUID
         /// In a download phase the window/network policies act on
@@ -142,13 +129,8 @@ enum AutomationCore {
         }
     }
 
-    /// The one entry point: pure and total over its ``Snapshot``.
-    ///
-    /// Policies are evaluated in a fixed order — download window, then network
-    /// awareness, then battery level, then per-task scheduled starts, then RSS —
-    /// and a task is pause-claimed by at most one ledger per tick (window beats
-    /// network beats power), so a paused id is attributed to a single owner and
-    /// recovers deterministically.
+    /// The one entry point: pure and total over its ``Snapshot``. Fixed policy order — window, network,
+    /// battery, scheduled starts, RSS — one ledger claims a task per tick, so recovery is deterministic.
     static func decide(_ s: Snapshot) -> Decision {
         var memory = s.memory
         var actions: [Action] = []
@@ -171,9 +153,8 @@ enum AutomationCore {
                 memory.windowPausedIDs = []
                 memory.windowOpen = true
             } else {
-                // Closing: restore the pre-window profile, then pause every
-                // downloading-phase task (recording it, so a hand-paused task is
-                // never resumed by the window).
+                // Closing: restore the pre-window profile, then pause every downloading-phase task,
+                // recording each so a hand-paused task is never resumed by the window.
                 if let previous = memory.preWindowProfile {
                     memory.preWindowProfile = nil
                     // Only restore if the window's own profile is still active — a
@@ -204,13 +185,8 @@ enum AutomationCore {
                 paused.insert(t.id)
                 claimedThisTick.insert(t.id)
             }
-            // Only latch the policy once it has actually paused something. If every
-            // downloading-phase task is already paused by another ledger (e.g. the
-            // window), latching now with an empty set would "consume" the policy —
-            // when those tasks later resume over the still-expensive network, this
-            // branch would be skipped (`memory.networkPaused` already true) and they
-            // would never be re-paused. Leaving it unlatched lets the next tick pause
-            // the resumed task.
+            // Latch only once something was actually paused: an empty latch would "consume" the policy —
+            // tasks resuming later over the still-expensive network would never be re-paused.
             if !paused.isEmpty {
                 memory.networkPaused = true
                 memory.networkPausedIDs = paused
@@ -222,11 +198,7 @@ enum AutomationCore {
         }
 
         // MARK: Power awareness
-        // "Pause downloads below battery threshold" — same latch/unlatch shape as
-        // the network policy, and third in the single-owner ordering (window >
-        // network > power) so a task paused by an earlier ledger is not re-claimed
-        // and is resumed by whoever actually paused it. A machine that reports no
-        // charge level (a desktop, or a read that failed) counts as full.
+        // Same latch shape as network; third in the ordering (window > network > power). No level = full.
         let batteryLow = s.settings.pauseBelowBatteryThreshold
             && s.onBattery
             && (s.batteryPercent ?? 100) <= s.settings.batteryThresholdPercent
@@ -271,10 +243,8 @@ enum AutomationCore {
         return Decision(actions: actions, memory: memory)
     }
 
-    /// Whether the download window is open at `date` under `settings`. Pure so
-    /// tests can drive the day/time matrix directly. A disabled schedule — or a
-    /// degenerate window whose start equals its end — is always open; an end
-    /// before the start wraps past midnight (22:00 → 07:00).
+    /// Whether the download window is open at `date` under `settings`. A disabled schedule, or one whose
+    /// start equals its end, is always open; an end before the start wraps past midnight (22:00 → 07:00).
     static func isWindowOpen(settings: AppSettings, date: Date,
                                     calendar: Calendar = .current) -> Bool {
         guard settings.scheduleEnabled else { return true }
@@ -287,11 +257,8 @@ enum AutomationCore {
         if start < end {
             return settings.scheduleDays.contains(today) && minutes >= start && minutes < end
         }
-        // Wrap-around window (e.g. 22:00 → 07:00). The evening portion (`>= start`)
-        // belongs to today; the early-morning portion (`< end`) belongs to the
-        // window that *started* the previous calendar day, so it must be gated on
-        // yesterday's weekday — otherwise an overnight window from an included day
-        // (e.g. Fri) wrongly closes at midnight when the next day (Sat) is excluded.
+        // Wrap-around window (22:00 → 07:00): the `< end` portion belongs to the window that *started*
+        // yesterday, so gate it on yesterday's weekday or a Fri-night window wrongly closes at midnight.
         if minutes >= start {
             return settings.scheduleDays.contains(today)
         }

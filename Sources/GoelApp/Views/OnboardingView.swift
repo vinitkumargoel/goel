@@ -2,38 +2,15 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-// ============================================================================
-// First-run onboarding.
-//
-// A new install opens on an empty list, and every way of getting links *into*
-// that list — the browser extension, the Drop Basket, the Link Grabber, the
-// remote portal — is discoverable only by opening a Settings pane nobody has a
-// reason to open yet. Three short panes fix that: pick where files land, wire
-// up the browser, and decide about clipboard capture.
-//
-// Two deliberate constraints:
-//
-// * It is shown **once**. The completion flag lives in `UserDefaults` rather
-//   than in ``AppSettings`` so that importing someone else's backup, or the
-//   settings file being reset, can never make a long-time user sit through the
-//   welcome flow again — and so nothing here can affect the download engine.
-// * Every pane is skippable and nothing it asks for is required. Closing it at
-//   pane one leaves a perfectly working app; the same choices all live in
-//   Settings afterwards.
-//
-// The licence line on the last pane is informational, exactly like the rest of
-// the licensing surface. It states the terms once, links to the commercial
-// page, and can be dismissed forever. It gates nothing.
-// ============================================================================
+// First-run onboarding: three skippable panes naming the ways links get in. Shown **once**, with
+// the flag in `UserDefaults` so a backup import can't replay it. The licence line gates nothing.
 
-/// Persistent flags for the first-run flow. Kept as plain `UserDefaults` keys
-/// (not ``AppSettings``) so they are local to this machine's install and can
-/// never travel through a backup export/import.
+/// Persistent flags for the first-run flow. Plain `UserDefaults` keys, not ``AppSettings``, so
+/// they stay local to this install and can never travel through a backup export/import.
 enum OnboardingState {
 
-    /// Bumped only when the flow gains a pane an existing user genuinely needs
-    /// to see. Storing a version rather than a Bool means a future revision can
-    /// re-show the flow deliberately instead of by accident.
+    /// Bumped only when the flow gains a pane an existing user genuinely needs to see. A version
+    /// rather than a Bool lets a future revision re-show the flow deliberately, not by accident.
     static let currentVersion = 1
 
     private static let completedVersionKey = "onboarding.completedVersion"
@@ -44,9 +21,8 @@ enum OnboardingState {
         UserDefaults.standard.integer(forKey: completedVersionKey) < currentVersion
     }
 
-    /// Record that the user has been through (or dismissed) the flow. Called on
-    /// every exit path — finishing, skipping, or closing the window — because a
-    /// welcome screen you have already declined must not come back.
+    /// Record that the user has been through (or dismissed) the flow. Called on every exit path,
+    /// because a welcome screen you have already declined must not come back.
     static func markCompleted() {
         UserDefaults.standard.set(currentVersion, forKey: completedVersionKey)
     }
@@ -201,10 +177,8 @@ struct OnboardingView: View {
                    value: "Step \(pane.rawValue + 1) of \(Pane.allCases.count)")
     }
 
-    /// The single licensing line the flow ends on. Informational only: it does
-    /// not gate the button beside it, it does not check anything, and once
-    /// dismissed it never returns. The same terms stay available forever in
-    /// Settings ▸ Licence, so dismissing this loses nothing.
+    /// The single licensing line the flow ends on. Informational only: it gates nothing, checks
+    /// nothing, and never returns once dismissed. The same terms stay in Settings ▸ Licence.
     private var licenceNotice: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "info.circle")
@@ -233,16 +207,14 @@ struct OnboardingView: View {
         .padding(.vertical, 7)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline))
-        // The whole pill opens the commercial page — the "Learn more" wording
-        // is part of the sentence, so it can't be its own control without
-        // breaking the line. The dismiss button above still wins its own hits.
+        // The whole pill opens the commercial page — "Learn more" is part of the sentence, so it can't
+        // be its own control without breaking the line. The dismiss button still wins its own hits.
         .contentShape(Rectangle())
         .onTapGesture { NSWorkspace.shared.open(OnboardingState.commercialURL) }
     }
 
-    /// The notice's wording, kept verbatim in one place. Built as a single
-    /// `Text` so the accent-coloured "Learn more" stays part of the same
-    /// sentence and wraps with it, rather than becoming a separate control.
+    /// The notice's wording, kept verbatim in one place. Built as a single `Text` so the accented
+    /// "Learn more" stays part of the sentence and wraps with it rather than becoming a control.
     private var noticeText: Text {
         Text("Free for personal use. Commercial use requires a licence — ")
             .foregroundStyle(.secondary)

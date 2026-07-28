@@ -1,10 +1,5 @@
-/* Builds the Goel° UI replica into the page.
- *
- * Each exported builder returns a DOM string; capture.mjs picks a page by
- * ?page= and a theme by ?theme=. Elements that the film needs to animate
- * separately carry data-cap="<name>" — capture.mjs reads those back as the
- * per-element cutout list and as layout.json bboxes.
- */
+/* Builds the Goel° UI replica: each builder returns a DOM string; capture.mjs picks ?page= and ?theme=.
+ * Elements needing separate animation carry data-cap="<name>" — read back as cutouts + layout.json bboxes. */
 import {
   ROWS, SIDEBAR, ICON, pieceStates, SFTP_REMOTE, SFTP_LOCAL,
   SVG_VIDEO, SVG_DISC, SVG_ARCHIVE,
@@ -293,9 +288,8 @@ export function buildPortal() {
   </div>`;
 }
 
-/** A compact transfer card — the object that flies between windows in shot 9.
- *  Same tokens as the app's own rows; a 17:1 table row does not read as a thing
- *  you can carry, and the messenger has to read as an object. */
+/** A compact transfer card — the object that flies between windows in shot 9. Same tokens as the
+ *  app's rows; a 17:1 table row does not read as a thing you can carry. */
 export function buildChip() {
   return `
   <div class="tchip" data-cap="chip">

@@ -1,13 +1,7 @@
 import Foundation
 
-/// Trust classifier for downloads arriving from outside the in-app Add box.
-///
-/// Callers hand over an ``Origin`` (who triggered the add) and a raw
-/// ``Payload``; ``classify`` decides whether to queue immediately, ask the
-/// user, poke the browser spool, or drop the request. The rules keep
-/// web-triggerable channels (`goeldownloader://`, clipboard suggestions) from
-/// silently enqueuing work while still letting explicit user actions and the
-/// local native-messaging spool through without friction.
+/// Trust classifier for adds arriving from outside the in-app Add box: ``classify`` maps an ``Origin``
+/// + ``Payload`` to queue/confirm/drain/drop, so web-triggerable channels can't silently enqueue.
 public enum InboundAdd: Sendable {
 
     /// Who initiated the add. Determines the confirmation bar, not the
@@ -55,17 +49,12 @@ public enum InboundAdd: Sendable {
         case ignore
     }
 
-    /// Classify trust. Rules:
-    /// - `browserSpool` origin or `drainBrowserSpool` → `drainSpool` when
-    ///   content-free; `enqueue` when the spool reader already supplied lines
-    /// - `urlScheme` → `needsConfirmation` if content present, else `ignore`
-    /// - `userExplicit` → `enqueue` if content present, else `ignore`
-    /// - `clipboard` → `needsConfirmation` if content present, else `ignore`
+    /// Classify trust: `browserSpool`/`drainBrowserSpool` → `drainSpool` (or `enqueue` if lines present),
+    /// `userExplicit` → `enqueue`, `urlScheme`/`clipboard` → `needsConfirmation`; no content → `ignore`.
     public static func classify(origin: Origin, payload: Payload) -> Disposition {
         if origin == .browserSpool || payload.drainBrowserSpool {
-            // Spool drain is normally a content-free poke. If a reader already
-            // lifted lines out of the spool, queue them directly — the trust
-            // boundary was the local native-messaging host that wrote the file.
+            // Normally a content-free poke; if a reader already lifted lines out, queue them —
+            // the trust boundary was the local native-messaging host that wrote the file.
             return payload.hasContent ? .enqueue(payload.withoutDrainFlag) : .drainSpool
         }
         switch origin {
@@ -78,9 +67,8 @@ public enum InboundAdd: Sendable {
         }
     }
 
-    /// Parse non-empty lines into ``DownloadSource`` values via the same
-    /// `BatchExpander` + ``DownloadSource/parse`` path the app uses for the
-    /// Add sheet. Metalink expansion stays in the app layer (network fetch).
+    /// Parse non-empty lines into ``DownloadSource`` via the same `BatchExpander` +
+    /// ``DownloadSource/parse`` path as the Add sheet. Metalink expansion stays in the app layer.
     public static func parseSources(from lines: String) -> [DownloadSource] {
         lines.split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }

@@ -2,11 +2,8 @@ import Foundation
 
 // MARK: - Network configuration
 
-/// Network-layer settings pushed into the engine from the user's preferences.
-/// The download bandwidth cap lives on `TrafficProfile` (see `applyLimits`); this
-/// carries the rest: connection timeout, proxy, User-Agent, cookies and the retry
-/// budget. Defaults match common product settings; the engine keeps its own,
-/// behaviour-preserving default until `applyNetworkConfig` is called.
+/// Network settings pushed into the engine from preferences: timeout, proxy, User-Agent, cookies,
+/// retry budget. The bandwidth cap lives on `TrafficProfile`; engine defaults hold until `applyNetworkConfig`.
 public struct HTTPNetworkConfig: Sendable, Equatable {
     public var timeout: Double
     public var retryCount: Int

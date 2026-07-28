@@ -6,17 +6,8 @@ import NIOPosix
 import FoundationNetworking
 #endif
 
-// ============================================================================
-// Linux transport for the remote-access server.
-//
-// Same public API and behaviour as the macOS `RemoteControlServer` (init / start /
-// stop), but the I/O shell is SwiftNIO instead of Network.framework: a
-// `ServerBootstrap` binds loopback (or 0.0.0.0 when LAN + sign-in are on), a
-// per-connection handler accumulates the raw HTTP request and hands it to the
-// actor, and a `ChannelSink` writes responses / SSE frames / byte-range chunks
-// back. All routing, auth, the JSON API and the portal page still come from the
-// pure `RemoteRouter`; the stateful session/login logic mirrors the macOS shell.
-// ============================================================================
+// Linux transport for the remote-access server: same API/behaviour as the macOS `RemoteControlServer`,
+// but the I/O shell is SwiftNIO. Routing/auth/JSON/portal still come from the pure `RemoteRouter`.
 
 public actor RemoteControlServer {
 
@@ -81,10 +72,8 @@ public actor RemoteControlServer {
                                      invalidatingSessions: credentialsChanged)
         await sessionStore.configure(throttle: security.throttle)
         if security.sso.isEnabled && !security.sso.isEffective {
-            // Name whichever precondition is missing — the proxy list, the shared
-            // secret (`GOEL_PORTAL_PROXY_SECRET`), or both — rather than always
-            // blaming the proxy list. Matches the macOS shell. `isEnabled` is true
-            // here, so at least one is empty and `missing` is never blank.
+            // Name whichever precondition is missing — proxy list, `GOEL_PORTAL_PROXY_SECRET`, or both.
+            // `isEnabled` is true here, so at least one is empty and `missing` is never blank.
             let missing = [security.sso.trustedProxies.isEmpty ? "trusted-proxies" : nil,
                            security.sso.sharedSecret.isEmpty ? "shared-secret" : nil]
                 .compactMap { $0 }.joined(separator: ",")
@@ -92,11 +81,8 @@ public actor RemoteControlServer {
                                  .state(missing, label: "missing"))
         }
 
-        // The daemon links SwiftNIO but not NIOSSL, so it cannot terminate TLS
-        // itself. Refuse to start rather than serve cleartext on a portal the
-        // operator asked to encrypt — on Linux the answer is a TLS-terminating
-        // reverse proxy (nginx / Caddy / Traefik) in front of the loopback bind,
-        // which is how these boxes are deployed anyway.
+        // The daemon links SwiftNIO but not NIOSSL, so it can't terminate TLS: refuse to start rather
+        // than serve cleartext — put a TLS-terminating reverse proxy in front of the loopback bind.
         if security.tlsEnabled {
             GoelLog.remote.error("Portal TLS is not supported by the Linux daemon — terminate TLS at a reverse proxy; refusing to serve cleartext")
             await stop()
@@ -106,10 +92,8 @@ public actor RemoteControlServer {
             return
         }
 
-        // Never expose the portal to the network unless sign-in is required AND a
-        // password actually exists. `requireAuth` alone is just the policy toggle;
-        // with no password the mutating API is still reachable on the LAN via the
-        // bearer token, so a passwordless config must stay loopback-only.
+        // Never expose to the network unless sign-in is required AND a password exists: `requireAuth`
+        // alone is just the toggle, and passwordless still leaves the mutating API on the LAN by token.
         let exposeLAN = allowLAN && config.requireAuth && !passwordHash.isEmpty
         if allowLAN && !exposeLAN {
             let why = config.requireAuth ? "no-portal-password" : "sign-in-disabled"
@@ -159,9 +143,8 @@ public actor RemoteControlServer {
         let ch = channel; channel = nil
         let g = group; group = nil
         guard ch != nil || g != nil else { return }
-        // Backstop: a hung NIO teardown must not wedge the actor forever (a
-        // subsequent start()/dispatch would deadlock behind it). Race the teardown
-        // against a timer and move on after 3s. Mirrors the macOS shell's backstop.
+        // Backstop: a hung NIO teardown must not wedge the actor forever (a later start()/dispatch
+        // would deadlock behind it), so race it against a 3s timer. Mirrors the macOS shell.
         await withTaskGroup(of: Void.self) { tg in
             tg.addTask {
                 try? await ch?.close()
@@ -180,9 +163,8 @@ public actor RemoteControlServer {
         return (p, boundExposeLAN ?? false)
     }
 
-    /// Why nothing is listening after the last `start`, or nil when the portal is
-    /// bound. The companion to ``boundState()``: that answers *whether* the portal
-    /// is up, this answers *why not* in words a person can act on.
+    /// Why nothing is listening after the last `start`, nil when bound. Companion to ``boundState()``:
+    /// that answers *whether* the portal is up, this answers *why not* in words a person can act on.
     public func lastStartFailure() -> StartFailure? { startFailure }
 
     // MARK: Dispatch (called by the per-connection handler once a request is whole)
@@ -245,9 +227,8 @@ public actor RemoteControlServer {
         let authed = await portalAuthed(request, client: client)
         let cfg = routerConfig
 
-        // Ahead of every gate: the login page cannot style itself or run its
-        // submit handler without these, and they are the same public bytes for
-        // everyone. See `RemoteRouter.staticAsset(path:)`.
+        // Ahead of every gate: the login page can't style itself or run its submit handler without
+        // these, and they're the same public bytes for everyone. See `RemoteRouter.staticAsset(path:)`.
         if request.method == "GET", let asset = RemoteRouter.staticAsset(path: request.path) {
             return asset
         }
@@ -264,10 +245,8 @@ public actor RemoteControlServer {
             }
             return await handleLogin(request, client: client)
         case ("GET", "/logout"), ("POST", "/logout"):
-            // Signing out drops the session AND bumps the generation, winding down
-            // every live event stream and byte-range download on the server. Ahead
-            // of the auth gate it let any unauthenticated caller do that from a bare
-            // `curl`; gate it with the same predicate every other route uses.
+            // Logout drops the session AND bumps the generation, winding down every live stream —
+            // ungated, any unauthenticated `curl` could do that, so it takes the usual auth predicate.
             guard router.authorize(request, sessionAuthed: authed) else {
                 return request.method == "GET"
                     ? Self.redirect(to: "/login")
@@ -314,9 +293,8 @@ public actor RemoteControlServer {
 
     private func handleLogout(_ request: RemoteRequest) async -> Data {
         let result = await sessionStore.handleLogout(request)
-        // Only a real sign-out needs the bump: it is what forces open SSE and
-        // byte-range loops to re-authenticate. Bumping it for a logout that dropped
-        // nothing turned one stray request into every client's dead stream.
+        // Only a real sign-out needs the bump (it forces open SSE/byte-range loops to re-authenticate);
+        // bumping on a logout that dropped nothing turned one stray request into every dead stream.
         if result.droppedSession { generation += 1 }
         return result.response
     }
@@ -425,9 +403,8 @@ public actor RemoteControlServer {
 
 // MARK: - NIO plumbing
 
-/// Writes response bytes / SSE frames / stream chunks back to a NIO channel. NIO
-/// `Channel` methods are thread-safe (they hop to the event loop), so the actor
-/// can drive this directly. `send` resolves once the write is flushed.
+/// Writes response bytes / SSE frames / stream chunks back to a NIO channel; `Channel` methods are
+/// thread-safe (they hop to the event loop) so the actor drives it directly. `send` awaits the flush.
 final class ChannelSink: @unchecked Sendable {
     private let channel: Channel
     init(_ channel: Channel) { self.channel = channel }
@@ -442,9 +419,8 @@ final class ChannelSink: @unchecked Sendable {
     func close() { channel.close(promise: nil) }
 }
 
-/// A tiny thread-safe counting semaphore used to cap concurrent connections at
-/// accept time (the NIO handlers run on the event loop, so this must be usable
-/// synchronously off the actor).
+/// Tiny thread-safe counting semaphore capping concurrent connections at accept time; NIO handlers
+/// run on the event loop, so it must be usable synchronously off the actor.
 final class ConnectionGate: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
@@ -463,9 +439,8 @@ final class ConnectionGate: @unchecked Sendable {
     }
 }
 
-/// Per-connection inbound handler: accumulates the raw HTTP request (headers, plus
-/// any `Content-Length` body), then hands the whole thing to the actor exactly
-/// once. An idle timeout closes a client that connects and sends nothing.
+/// Per-connection inbound handler: accumulates the raw HTTP request (headers + any `Content-Length`
+/// body) and hands it to the actor exactly once. An idle timeout closes a client that sends nothing.
 final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = ByteBuffer
 
@@ -502,9 +477,8 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        // Once dispatched, the response is owned by the actor/sink (which may hold
-        // the socket open for SSE/streaming). Ignore any further inbound bytes so a
-        // client can't grow this handler's buffer without bound on a duplex socket.
+        // Once dispatched the actor/sink owns the socket (SSE/streaming may hold it open); ignore
+        // further inbound bytes so a client can't grow this buffer without bound on a duplex socket.
         if dispatched { return }
         var incoming = unwrapInboundIn(data)
         if let bytes = incoming.readBytes(length: incoming.readableBytes) {

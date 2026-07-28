@@ -39,10 +39,8 @@ final class TorrentEngineTests: XCTestCase {
 
     // MARK: Live swarm (gated)
 
-    /// Download real bytes from a live swarm/webseed through libtorrent: resolve
-    /// metadata from the `.torrent`, connect, and transfer a few MB. Gated on
-    /// `GOEL_LIVE_NET=1`. Uses Debian's heavily-seeded netinst image (its torrent
-    /// also carries an HTTP webseed, so transfer is reliable even off-peak).
+    /// Download real bytes via libtorrent: resolve metadata, connect, transfer a few MB. Gated on
+    /// `GOEL_LIVE_NET=1`. Uses Debian netinst — heavily seeded, plus an HTTP webseed for off-peak.
     func testLiveTorrentDownloadsRealBytes() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GOEL_LIVE_NET"] == "1",
                           "set GOEL_LIVE_NET=1 to run the live network test")
@@ -84,9 +82,8 @@ final class TorrentEngineTests: XCTestCase {
                                     "must transfer real bytes from the swarm/webseed (got \(maxBytes))")
     }
 
-    /// Resolve a torrent's metadata for the add-confirmation preview without
-    /// committing a download: name, total size and a non-empty file list, with no
-    /// persistent handle left behind. Gated on `GOEL_LIVE_NET=1`.
+    /// Resolve torrent metadata for the add-confirmation preview without committing a download:
+    /// name, total size, non-empty file list, no handle left behind. Gated on `GOEL_LIVE_NET=1`.
     func testResolveMetadataLive() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GOEL_LIVE_NET"] == "1",
                           "set GOEL_LIVE_NET=1 to run the live network test")

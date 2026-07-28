@@ -50,9 +50,8 @@ public struct Checksum: Codable, Sendable, Hashable {
         raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    /// Parse a user-entered hash. When `algorithm` is omitted it is inferred from
-    /// the hex length (32 → MD5, 40 → SHA-1, 64 → SHA-256). Returns `nil` if the
-    /// string is not valid hex of a recognised length.
+    /// Parse a user-entered hash; when `algorithm` is omitted it is inferred from hex length
+    /// (32 → MD5, 40 → SHA-1, 64 → SHA-256). `nil` unless valid hex of a recognised length.
     public static func parse(_ raw: String, algorithm: ChecksumAlgorithm? = nil) -> Checksum? {
         let hex = normalize(raw)
         guard !hex.isEmpty, hex.allSatisfy(\.isHexDigit) else { return nil }
@@ -68,10 +67,7 @@ public struct Checksum: Codable, Sendable, Hashable {
 }
 
 /// Streams a file through a hash function and compares it to an expected digest.
-///
-/// Reads in fixed windows so multi-gigabyte files never load fully into memory,
-/// and checks for cancellation between chunks so a removed/paused task stops
-/// hashing promptly.
+/// Fixed windows keep multi-GiB files out of memory; cancellation is checked between chunks.
 enum ChecksumVerifier {
     /// Read window: 1 MiB.
     static let chunkSize = 1 << 20

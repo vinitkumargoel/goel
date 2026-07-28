@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// The `--net` / `network:` grammar is shared by the CLI, the JSON API and the
-/// persisted task blob, and it names an interface that reaches `SO_BINDTODEVICE`
-/// as a C string — so both halves (parse and reject) are worth pinning down.
+/// The `--net` / `network:` grammar is shared by the CLI, the JSON API and the persisted task blob,
+/// and names an interface reaching `SO_BINDTODEVICE` as a C string — pin both parse and reject.
 final class NetworkSelectionTests: XCTestCase {
 
     // MARK: Parsing

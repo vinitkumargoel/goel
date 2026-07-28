@@ -1,12 +1,8 @@
 import XCTest
 @testable import GoelApp
 
-/// Covers the version comparison behind "Check for Updates".
-///
-/// Every failure this guards against looks the same to the user: the app says
-/// "Up to date" while a newer release sits in the feed. Nothing else in the
-/// product notices, because reporting *no* update is indistinguishable from
-/// there being none.
+/// Covers the version comparison behind "Check for Updates". Every failure here looks the same to the
+/// user — "Up to date" while a newer release sits in the feed — and nothing else in the product notices.
 final class UpdateCheckerTests: XCTestCase {
 
     func testOrdersNumericallyNotLexically() {
@@ -45,10 +41,8 @@ final class UpdateCheckerTests: XCTestCase {
 
     // MARK: check()
 
-    /// `check` is `async` and reaches the network, so only the paths that
-    /// short-circuit before the fetch are exercised here — enough to pin the
-    /// contract that an unconfigured feed is reported as such rather than as a
-    /// failure or as "up to date".
+    /// `check` reaches the network, so only the paths that short-circuit before the fetch are tested:
+    /// an unconfigured feed must report `.notConfigured`, not a failure and not "up to date".
     func testBlankAndNonHTTPSFeedsAreNotConfiguredRatherThanFailed() async {
         var outcome = await UpdateChecker.check(feedURL: "")
         XCTAssertEqual(outcome, .notConfigured)

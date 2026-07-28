@@ -2,13 +2,8 @@ import Foundation
 
 // MARK: - Platform side-effect ports
 
-/// The three narrow `Sendable` seams that isolate ``DownloadManager`` from the
-/// platform side-effects it drives: holding the system "prevent idle sleep" power
-/// assertion, watching a folder for dropped `.torrent` files, and screening a
-/// finished file with an external antivirus. The scheduler depends only on these
-/// protocols, so its decision logic can be exercised with in-memory fakes; the
-/// production adapters below wrap the existing concrete types verbatim and are wired
-/// in by default, so nothing changes for the real app.
+/// The three narrow `Sendable` seams isolating ``DownloadManager`` from platform side-effects: idle-
+/// sleep assertion, watch folder, antivirus. Fakeable in tests; production adapters below wrap the real types.
 
 /// Drives the system "prevent idle sleep" power assertion and reports the current
 /// power source. Mirrors the subset of ``PowerManager`` the scheduler uses.
@@ -16,16 +11,14 @@ public protocol PowerControlling: Sendable {
     func setPreventSleep(_ on: Bool)
     var isOnBattery: Bool { get }
 
-    /// Remaining battery charge, 0…100, or `nil` on a machine with no battery (or
-    /// when the level can't be read). Backs the "pause below battery threshold"
-    /// policy, which without it had no number to compare against.
+    /// Remaining battery charge, 0…100, or `nil` with no battery / unreadable level. Backs the
+    /// "pause below battery threshold" policy, which without it had no number to compare against.
     var batteryPercent: Int? { get }
 }
 
 public extension PowerControlling {
-    /// A conformer that can't report a charge level reports none — the automation
-    /// then treats the machine as full and never pauses on battery level. Defaulted
-    /// so existing conformers (and the test fakes) compile unchanged.
+    /// A conformer that can't report a charge level reports none — automation then treats the machine
+    /// as full and never pauses on battery level. Defaulted so existing conformers compile unchanged.
     var batteryPercent: Int? { nil }
 }
 
@@ -44,12 +37,8 @@ public protocol FileScanning: Sendable {
 
 // MARK: - Production adapters
 
-/// Production ``PowerControlling`` backed by a live ``PowerManager``.
-///
-/// A `final class` — *not* a struct — because ``PowerManager/deinit`` releases the
-/// outstanding IOKit assertion: the adapter must keep the single instance alive for
-/// the manager's lifetime. A struct that copied-and-dropped the `PowerManager` would
-/// let the keep-awake hold vanish the moment a copy went out of scope.
+/// Production ``PowerControlling`` backed by a live ``PowerManager``. A `final class`, not a struct:
+/// ``PowerManager/deinit`` releases the IOKit assertion, so a dropped struct copy kills keep-awake.
 public final class SystemPowerControl: PowerControlling {
     private let manager: PowerManager
 
@@ -62,12 +51,8 @@ public final class SystemPowerControl: PowerControlling {
     public var batteryPercent: Int? { manager.batteryPercent }
 }
 
-/// Production ``FolderWatching`` backed by a live ``WatchFolderMonitor``.
-///
-/// A `final class` for the same lifetime reason as ``SystemPowerControl``: the
-/// monitor owns a running `DispatchSourceTimer` that its `deinit` cancels, so the
-/// adapter must hold the single instance for the manager's lifetime rather than
-/// dropping a struct copy out from under the live timer.
+/// Production ``FolderWatching`` backed by a live ``WatchFolderMonitor``. A `final class` for the
+/// same lifetime reason: its `deinit` cancels a live `DispatchSourceTimer` a struct copy would drop.
 public final class SystemFolderWatch: FolderWatching {
     private let monitor: WatchFolderMonitor
 

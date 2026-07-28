@@ -2,12 +2,8 @@ import Foundation
 
 // MARK: - Planned transfer
 
-/// Plan + transfer pair resolved after probe + budget segment resolution.
-///
-/// ``HTTPEngine/run`` sequence: probe → budget.resolve → build ``TransferPlan`` →
-/// ``PlannedTransfer`` → budget.reserve(`connectionCount`) → run. Keeps plan
-/// construction on the engine (needs session / credentials / aggregation) while
-/// exposing the fan-out the budget must charge before byte pumps start.
+/// Plan + transfer pair resolved after probe + budget segment resolution. ``HTTPEngine/run``:
+/// probe → budget.resolve → ``TransferPlan`` → here → budget.reserve(`connectionCount`) → run.
 struct PlannedTransfer: Sendable {
     let plan: TransferPlan
     let transfer: SegmentedTransfer

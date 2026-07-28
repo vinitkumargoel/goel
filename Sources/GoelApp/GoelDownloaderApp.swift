@@ -3,12 +3,8 @@ import AppKit
 import UniformTypeIdentifiers
 import GoelCore
 
-/// The application entry point (invoked from `main.swift`, which first routes
-/// `--native-messaging-host` invocations to the stdio extension bridge).
-///
-/// A small `NSApplicationDelegate` forces the process to behave like a normal
-/// foreground GUI app (dock icon + active window) since a bare SwiftUI
-/// executable can otherwise launch as a background accessory.
+/// The application entry point (from `main.swift`, which first routes `--native-messaging-host`
+/// to the stdio bridge). The delegate forces normal foreground GUI behaviour.
 struct GoelDownloaderApp: App {
 
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -21,9 +17,8 @@ struct GoelDownloaderApp: App {
                 .frame(minWidth: 1040, minHeight: 620)
                 .preferredColorScheme(viewModel.preferredColorScheme)
                 .task {
-                    // `start()` already restores settings and primes notification
-                    // authorization; once they're loaded, best-effort claim the
-                    // magnet/.torrent handler if the user asked us to be default.
+                    // `start()` already restores settings and primes notification authorization; once loaded,
+                    // best-effort claim the magnet/.torrent handler if the user asked us to be default.
                     await viewModel.start()
                     Self.registerDefaultTorrentHandlersIfWanted(viewModel.settings.btMakeDefaultClient)
                 }
@@ -39,10 +34,8 @@ struct GoelDownloaderApp: App {
                 .frame(width: 760, height: 560)
         }
 
-        // The optional menu-bar status item (the "Rich list" concept). Its
-        // presence is bound to the persisted `menuBarExtraEnabled` preference, so
-        // the General-pane toggle inserts/removes it live. `.window` style hosts
-        // the custom SwiftUI popover instead of a plain menu.
+        // The optional menu-bar status item, bound to the persisted `menuBarExtraEnabled` preference
+        // so the General toggle inserts/removes it live. `.window` style hosts the SwiftUI popover.
         MenuBarExtra(isInserted: menuBarInserted) {
             MenuBarView()
                 .environmentObject(viewModel)
@@ -53,31 +46,22 @@ struct GoelDownloaderApp: App {
         .menuBarExtraStyle(.window)
     }
 
-    /// Drives whether the status-bar item is shown, mirrored to the persisted
-    /// ``AppSettings/menuBarExtraEnabled`` preference. Dragging the item out of
-    /// the menu bar (⌘-drag) flips the binding, which writes the preference back
-    /// off so the Settings toggle stays in sync.
+    /// Drives whether the status-bar item shows, mirrored to ``AppSettings/menuBarExtraEnabled``.
+    /// ⌘-dragging the item out flips the binding, writing the preference back off.
     private var menuBarInserted: Binding<Bool> {
         Binding(
             get: { viewModel.settings.menuBarExtraEnabled },
             set: { newValue in
-                // SwiftUI reconciles `isInserted` on every scene update and can
-                // write the *current* value straight back. Because `@Published
-                // settings` publishes on every assignment (it does not dedupe by
-                // equality), an unguarded write here would publish → re-evaluate
-                // the scene → write again … a synchronous update loop that
-                // overflows the stack. Only commit a genuine change.
+                // SwiftUI reconciles `isInserted` on every scene update and can write the current value back.
+                // `@Published` doesn't dedupe, so an unguarded write loops until the stack overflows.
                 guard newValue != viewModel.settings.menuBarExtraEnabled else { return }
                 viewModel.update { $0.menuBarExtraEnabled = newValue }
             }
         )
     }
 
-    /// Best-effort registration as the system handler for `magnet:` links and
-    /// `.torrent` files, gated on the BitTorrent "make default client" preference.
-    /// Everything here is guarded and any failure is ignored — an unregistered or
-    /// not-yet-installed build simply won't be offered as a handler, which must
-    /// never surface as an error to the user.
+    /// Best-effort registration as the system handler for `magnet:` and `.torrent`, gated on the
+    /// BitTorrent preference. Every failure is ignored — this must never surface as an error.
     private static func registerDefaultTorrentHandlersIfWanted(_ wanted: Bool) {
         guard wanted else { return }
         let appURL = Bundle.main.bundleURL
@@ -100,16 +84,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.setActivationPolicy(.regular)
         app.activate(ignoringOtherApps: true)
 
-        // Close the trust-on-first-use hole for the GUI: with an approver
-        // installed, `SFTPClient` reads an unknown server's host key in a
-        // credential-free pre-flight and waits for the user's decision before it
-        // authenticates. GoelCore's default is nil — classic learn-on-first-
-        // connect — which is the only workable policy where there is nobody to
-        // ask, so the daemon, the `sftp://` URL paths and the tests keep it.
+        // Close the trust-on-first-use hole for the GUI: with an approver installed, `SFTPClient` waits
+        // for the user before authenticating. GoelCore's nil default suits the daemon, which has nobody to ask.
         HostKeyTrust.shared.approver = HostKeyApprovalPresenter.shared
 
-        // Return freed heap pages to the OS on system memory pressure, so a
-        // transient spike (a big transfer, a directory walk) doesn't leave the
+        // Return freed heap pages to the OS on memory pressure, so a transient spike doesn't leave the
         // resident footprint inflated. Non-destructive — only already-free pages.
         memoryRelief.start()
 
@@ -125,28 +104,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Closing the last window quits — unless downloads are still running *and*
-    /// the menu-bar item is showing, in which case the app stays resident and
-    /// keeps transferring. The popover's "Open Goel°" button is the way back to a
-    /// window. With the menu-bar item switched off there is no way back, so
-    /// staying resident would strand the user with an invisible process; the app
-    /// quits, and ``applicationShouldTerminate(_:)`` asks first.
+    /// Closing the last window quits unless downloads are running *and* the menu-bar item is showing.
+    /// With it off there is no way back, so staying resident would strand an invisible process.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         !(ActiveWorkGate.shared.hasActiveWork && ActiveWorkGate.shared.menuBarVisible)
     }
 
-    /// Confirm before quitting on top of work in progress.
-    ///
-    /// Not a duplicate of the check above: that one decides whether a window close
-    /// should quit at all, this one covers every other route out — ⌘Q, the Dock
-    /// menu, a log-out. The queue's own auto-shutdown drain reaches
-    /// `NSApp.terminate(nil)` only once nothing is active, so `hasActiveWork` is
-    /// already false there and no alert interrupts it.
+    /// Confirm before quitting on top of work in progress. Not a duplicate of the check above: that
+    /// one covers window close, this covers ⌘Q, the Dock menu and log-out.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard ActiveWorkGate.shared.hasActiveWork else { return .terminateNow }
-        // A conversion is not a download: it can't be resumed next launch, and
-        // abandoning one leaves a half-written file behind. Say which of the two
-        // is actually running rather than warning about the wrong thing.
+        // A conversion is not a download: it can't resume next launch and abandoning it leaves a
+        // half-written file. Say which of the two is running rather than warning about the wrong thing.
         let converting = MainActor.assumeIsolated { AppViewModel.shared?.mediaJobs.hasLiveWork } ?? false
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -160,10 +129,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
         guard converting else { return .terminateNow }
-        // Hold the quit open just long enough for each ffmpeg to stop and its
-        // partial file to be removed. Terminating immediately would orphan the
-        // child process and leave the half-written output on disk — the cleanup
-        // runs when the process exits, and that needs the app to still be alive.
+        // Hold the quit open just long enough for each ffmpeg to stop and its partial to be removed.
+        // Terminating at once would orphan the child — cleanup runs on exit, and needs us alive.
         Task { @MainActor in
             AppViewModel.shared?.mediaJobs.cancelAll()
             await AppViewModel.shared?.mediaJobs.waitForShutdown()
@@ -172,17 +139,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
-    /// The user switched to another app: download latency no longer matters, so
-    /// give any freed-but-resident heap pages back to the OS. Off the main thread
-    /// so the walk never stalls the UI.
+    /// The user switched away: download latency no longer matters, so return freed-but-resident heap
+    /// pages to the OS. Off the main thread so the walk never stalls the UI.
     func applicationDidResignActive(_ notification: Notification) {
         memoryRelief.reclaimAsync()
     }
 
-    /// Opened URLs: the `goeldownloader://` scheme, `magnet:` links (when we're
-    /// the default handler) and double-clicked `.torrent` files. Posts are
-    /// buffered until the view model subscribes, so a cold launch via a link
-    /// or file never drops the add.
+    /// Opened URLs: the `goeldownloader://` scheme, `magnet:` links and double-clicked `.torrent`
+    /// files. Buffered until the view model subscribes, so a cold launch never drops the add.
     func application(_ application: NSApplication, open urls: [URL]) {
         Task { @MainActor in
             for url in urls {
@@ -193,9 +157,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Picks the icon variant matching the current effective appearance and sets
-    /// it as the dock icon. Falls back silently to the bundled default if a
-    /// resource is missing — a missing icon must never crash the app.
+    /// Pick the icon variant matching the current appearance and set it as the dock icon. Falls back
+    /// silently to the bundled default — a missing icon must never crash the app.
     private func applyDockIcon() {
         let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let preferred = isDark ? "AppIcon-Dark" : "AppIcon-Light"
@@ -269,13 +232,8 @@ struct GoelCommands: Commands {
         }
     }
 
-    /// The About box, with the licence stated in it.
-    ///
-    /// The packaged app carries the same wording in `NSHumanReadableCopyright`,
-    /// but a source build has no such key, and this is the one place a user is
-    /// likely to look for the terms. Supplying the credits explicitly means the
-    /// panel says the same thing either way. Informational text only — nothing
-    /// here checks or enforces anything.
+    /// The About box, with the licence stated in it. A source build has no `NSHumanReadableCopyright`,
+    /// so supplying credits explicitly makes the panel read the same either way.
     private func showAboutPanel() {
         let credits = NSAttributedString(
             string: "Free for personal use. Commercial and business use requires a paid licence.\n"

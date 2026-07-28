@@ -8,9 +8,8 @@ struct Ran {
     var ok: Bool { status == 0 }
 }
 
-/// Thin `Process` wrapper. Everything this CLI does to the init system goes
-/// through `systemctl`/`journalctl` rather than talking to D-Bus, because that is
-/// what an operator would type and what they can therefore verify by hand.
+/// Thin `Process` wrapper. Everything this CLI does to the init system goes through
+/// `systemctl`/`journalctl` rather than D-Bus, because that is what an operator can verify by hand.
 enum Shell {
     @discardableResult
     static func run(_ executable: String, _ arguments: [String],
@@ -100,9 +99,8 @@ enum Service {
         var arguments = ["-u", Layout.serviceName, "-n", "\(lines)", "--no-pager"]
         if follow { arguments.append("-f") }
         let result = Shell.run("journalctl", arguments, passthrough: true)
-        // Ctrl-C is how `-f` is meant to end. Foundation reports the RAW signal
-        // number for a signalled child, not the shell's 128+n — so checking only for
-        // 130 turned an ordinary Ctrl-C into "journalctl exited 2". Accept both.
+        // Ctrl-C is how `-f` is meant to end. Foundation reports the RAW signal number for a signalled
+        // child, not the shell's 128+n — so checking only for 130 turned Ctrl-C into "exited 2".
         let cleanExits: Set<Int32> = [SIGINT, SIGTERM, 128 + SIGINT, 128 + SIGTERM]
         if !result.ok && !cleanExits.contains(result.status) {
             throw CLIError.message("journalctl exited \(result.status)")
@@ -113,14 +111,8 @@ enum Service {
         guard systemdAvailable else { throw CLIError.noSystemd }
     }
 
-    /// Rewrite the drop-in that lists the paths the service may write to.
-    ///
-    /// The unit sets `ProtectSystem=strict`, which makes the entire filesystem
-    /// read-only except what is named here — so the writable set has to be
-    /// derived from configuration, and it has to be rewritten whenever the save
-    /// or watch folder changes. Getting this wrong is silent: the daemon starts
-    /// and then every download fails to write, which looks like a permissions
-    /// bug anywhere but here.
+    /// Rewrite the drop-in listing the paths the service may write to. `ProtectSystem=strict` makes
+    /// everything else read-only, and getting this wrong is silent: every download fails to write.
     static func writePathsDropIn(_ effective: Effective) throws {
         var paths = [Layout.stateDir, effective.saveDir]
         paths.append((effective.databasePath as NSString).deletingLastPathComponent)

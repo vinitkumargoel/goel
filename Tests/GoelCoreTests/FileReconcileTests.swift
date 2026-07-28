@@ -1,10 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// The filesystem-reconciliation rule (see `DownloadManager+FileReconcile`):
-/// a completed download whose file the user deleted or moved is dropped from the
-/// list, while ambiguous cases (unmounted volume / moved download folder) and
-/// non-completed tasks are left untouched.
+/// The filesystem-reconciliation rule (`DownloadManager+FileReconcile`): a completed download whose file
+/// was deleted or moved is dropped; ambiguous cases (unmounted volume) and non-completed tasks are kept.
 final class FileReconcileTests: XCTestCase {
 
     private var tempDirs: [String] = []
@@ -105,9 +103,8 @@ final class FileReconcileTests: XCTestCase {
         XCTAssertNotNil(unmounted2, "an absent directory is ambiguous → kept")
         XCTAssertNotNil(paused2, "a non-completed download is never pruned")
 
-        // The prune is also written through to disk, not just the in-memory list.
-        // Drain the serial persistence pipeline first: it writes on a detached
-        // task, so reading the store straight away races the writer.
+        // The prune must reach disk, not just the in-memory list. Drain the persistence pipeline first:
+        // it writes on a detached task, so reading the store straight away races the writer.
         await manager.shutdown()
         XCTAssertFalse(try store.loadAllTasks().contains { $0.id == gone.id })
     }

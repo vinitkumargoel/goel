@@ -2,34 +2,11 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-// ============================================================================
-// Settings ▸ Licence.
-//
-// READ THIS BEFORE CHANGING ANYTHING HERE.
-//
-// This pane is INFORMATIONAL AND NOTHING ELSE. It states the terms, says who
-// needs a paid licence, and offers a way to ask for one. It does not — and must
-// never — verify a key, count days, compare a date, hide a feature, degrade
-// behaviour, nag on a timer, or send a single byte anywhere.
-//
-// That is a product decision, not an oversight. Compliance for Goel° is
-// honour-based, and the reasoning is stated in LICENSE-COMMERCIAL.md: a false
-// positive from a licence check — a paying customer locked out of their own
-// downloads at the worst possible moment — costs far more than the revenue any
-// check could plausibly recover. Every user runs the identical binary with the
-// identical capabilities.
-//
-// The one editable field below is a free-text note the *user* keeps for their
-// *own* audit file. It is never read by any other code path, never validated,
-// never transmitted, and leaving it blank changes nothing whatsoever. It lives
-// in `UserDefaults`, not ``AppSettings``, so it cannot reach the download
-// engine, the settings export, or the diagnostics bundle.
-// ============================================================================
+// Settings ▸ Licence. INFORMATIONAL ONLY: it never verifies a key, counts days, hides a feature,
+// nags, or sends a byte anywhere. Compliance is honour-based — see LICENSE-COMMERCIAL.md.
 
-/// Local, user-owned licensing notes. Deliberately outside ``AppSettings``:
-/// nothing in the engine, the backup export, or ``DiagnosticsBundle`` should be
-/// able to see these, and keeping them here makes that structural rather than a
-/// rule someone has to remember.
+/// Local, user-owned licensing notes. Deliberately outside ``AppSettings`` so the engine, the
+/// backup export and ``DiagnosticsBundle`` structurally cannot see them.
 enum LicenseNotes {
 
     private static let referenceKey = "licence.commercialReference"
@@ -62,9 +39,8 @@ struct LicensePane: View {
     @State private var reference: String = LicenseNotes.reference
     @State private var holder: String = LicenseNotes.holder
 
-    /// Whether the "who needs one" detail is expanded. Collapsed by default so
-    /// a personal user — the overwhelming majority — sees one short answer and
-    /// moves on rather than a wall of legal text.
+    /// Whether the "who needs one" detail is expanded. Collapsed by default so a personal user — the
+    /// overwhelming majority — sees one short answer rather than a wall of legal text.
     @State private var showsDetail = false
 
     var body: some View {
@@ -177,9 +153,8 @@ struct LicensePane: View {
 
     // MARK: The guarantees
 
-    /// The other half of honour-based licensing: stating plainly what the app
-    /// will never do to you. These are product guarantees, and the code has to
-    /// keep matching them.
+    /// The other half of honour-based licensing: stating plainly what the app will never do to you.
+    /// These are product guarantees, and the code has to keep matching them.
     private var neverPanel: some View {
         VStack(alignment: .leading, spacing: 7) {
             ForEach(Self.guarantees, id: \.self) { line in
@@ -193,9 +168,8 @@ struct LicensePane: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
-                // A green ✗ is a deliberately odd pairing — it means "this never
-                // happens", which is good news. Read as a bare symbol name it is
-                // actively misleading, so state the sense in words.
+                // A green ✗ is a deliberately odd pairing — it means "this never happens", which is good news.
+                // Read as a bare symbol name it is actively misleading, so state the sense in words.
                 .a11yGroup(label: "Guarantee, never: \(line)")
             }
         }
@@ -268,9 +242,8 @@ struct LicensePane: View {
         }
     }
 
-    /// A legal text copied into `Contents/Resources` by the build script. Both
-    /// `.txt` (what the script writes) and `.md` (a source checkout) are tried,
-    /// and `nil` simply hides the button — a missing file is never an error.
+    /// A legal text copied into `Contents/Resources` by the build script. Both `.txt` and `.md` are
+    /// tried, and nil simply hides the button — a missing file is never an error.
     private static func bundledText(named name: String) -> URL? {
         for ext in ["txt", "md"] {
             if let url = Bundle.main.url(forResource: name, withExtension: ext) {

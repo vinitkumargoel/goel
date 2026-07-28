@@ -1,15 +1,5 @@
-/**
- * Wire types for the remote JSON API.
- *
- * These mirror the `Encodable` structs in
- * `Sources/GoelCore/Remote/RemoteRouter.swift` field-for-field — `TaskRow`,
- * `TaskDetail`, `FileRow`, `TrackerRow`, `ConnRow`, `HistoryRow`, `ConfigRow`
- * and `RemoteNetworkState`. If you change a field there, change it here; there
- * is no code generation across the boundary and nothing else will catch it.
- *
- * Swift `Int64?`/`Double?` become `number | null` rather than `number |
- * undefined`: `JSONEncoder` omits nothing here, it emits an explicit null.
- */
+/** Wire types for the remote JSON API, mirroring the `Encodable` structs in
+ * `Sources/GoelCore/Remote/RemoteRouter.swift` field-for-field — no codegen; `Int64?` → `number | null`. */
 
 /** `RemoteRouter.statusToken(_:)` — the stable tokens, not the display names. */
 export type StatusToken =
@@ -167,13 +157,8 @@ export interface FolderEntry {
   writable: boolean
 }
 
-/**
- * One level of the save-folder tree. Paths are absolute, server-side.
- *
- * There is no root: the picker reaches wherever the server process's user
- * reaches. `readable`/`writable` are the filesystem's answers, not a policy —
- * never re-derive them here.
- */
+/** One level of the save-folder tree; paths are absolute and server-side, with no root — the picker
+ * reaches wherever the server user does. `readable`/`writable` are the filesystem's answers, not policy. */
 export interface FolderListing {
   /** The folder being listed. */
   path: string

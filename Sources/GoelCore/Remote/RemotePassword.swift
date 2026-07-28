@@ -5,28 +5,20 @@ import CryptoKit
 import Crypto
 #endif
 
-/// Password hashing + verification and random-secret minting for the web portal.
-///
-/// The portal login password is never stored in the clear. It is kept as a
-/// versioned, salted, iterated digest — `"v2$saltHex$hashHex"` — so a leaked
-/// settings file doesn't hand out the password. New hashes use **PBKDF2-HMAC-
-/// SHA256** (`v2`), the standard, HMAC-based construction; legacy `v1` hashes (a
-/// bare iterated SHA-256) still verify so existing passwords keep working and are
-/// transparently re-hashed to `v2` the next time the password is set.
+/// Portal password hashing/verification and random-secret minting. Never stored in the clear: kept as
+/// `"v2$saltHex$hashHex"` PBKDF2-HMAC-SHA256; legacy `v1` (iterated SHA-256) verifies and re-hashes on set.
 public enum RemotePassword {
 
-    /// PBKDF2 iteration count. High enough that a single verify is tens of
-    /// milliseconds (fine for an interactive login, painful to brute force), low
-    /// enough not to stall the request loop.
+    /// PBKDF2 iteration count: a verify costs tens of milliseconds — fine interactively, painful to
+    /// brute force — while still not stalling the request loop.
     private static let iterations = 210_000
     private static let version = "v2"
     private static let legacyVersion = "v1"
     /// SHA-256 derived-key length (one PBKDF2 output block).
     private static let dkLen = 32
 
-    /// Hash a plaintext password into a storable `"v2$saltHex$hashHex"` string
-    /// with a fresh 16-byte random salt. Returns `""` for an empty password so
-    /// callers can treat "no password set" uniformly.
+    /// Hash a password into `"v2$saltHex$hashHex"` with a fresh 16-byte random salt. Returns `""`
+    /// for an empty password so callers treat "no password set" uniformly.
     public static func hash(_ password: String) -> String {
         guard !password.isEmpty else { return "" }
         let salt = randomBytes(16)
@@ -34,9 +26,8 @@ public enum RemotePassword {
         return "\(version)$\(salt.hexEncoded)$\(digest.hexEncoded)"
     }
 
-    /// Constant-time check of a plaintext password against a stored hash string.
-    /// Handles both the current `v2` (PBKDF2) and legacy `v1` (iterated SHA-256)
-    /// formats. Any malformed/empty stored value fails closed.
+    /// Constant-time check against a stored hash, handling current `v2` (PBKDF2) and legacy `v1`
+    /// (iterated SHA-256). Any malformed or empty stored value fails closed.
     public static func verify(_ password: String, against stored: String) -> Bool {
         let parts = stored.split(separator: "$", maxSplits: 2, omittingEmptySubsequences: false)
         guard parts.count == 3,
@@ -51,10 +42,8 @@ public enum RemotePassword {
         return RemoteRouter.constantTimeEquals(actual, expected)
     }
 
-    /// PBKDF2-HMAC-SHA256 with a single 32-byte output block (RFC 2898). HMAC keyed
-    /// by the password makes this the standard construction rather than a bare
-    /// hash chain, and uses only CryptoKit/swift-crypto primitives (no CommonCrypto,
-    /// no extra dependency).
+    /// PBKDF2-HMAC-SHA256, one 32-byte output block (RFC 2898). HMAC keyed by the password, not a bare
+    /// hash chain, and built only from CryptoKit/swift-crypto primitives (no CommonCrypto dependency).
     private static func pbkdf2(password: String, salt: Data) -> Data {
         let key = SymmetricKey(data: Data(password.utf8))
         // U_1 = HMAC(password, salt || INT_32_BE(1))
@@ -79,9 +68,8 @@ public enum RemotePassword {
         return data
     }
 
-    /// A cryptographically-random lowercase-hex secret of `bytes` bytes — used for
-    /// session identifiers and the bearer token. `SystemRandomNumberGenerator` is
-    /// CSPRNG-backed on Apple platforms.
+    /// Cryptographically-random lowercase-hex secret of `bytes` bytes, for session ids and the bearer
+    /// token. `SystemRandomNumberGenerator` is CSPRNG-backed on Apple platforms.
     public static func randomHex(bytes: Int = 32) -> String {
         randomBytes(bytes).hexEncoded
     }

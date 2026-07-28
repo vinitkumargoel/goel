@@ -1,35 +1,5 @@
-/**
- * Goel° marketing site — Worker in front of the static assets.
- *
- * The site is 99% static files (served straight from `website/`). This script exists
- * for exactly one dynamic route: `POST /api/enquiry`, the commercial-licensing form on
- * `commercial.html`. Everything else falls through to `env.ASSETS`.
- *
- * Design constraints, matching the product's own guarantees:
- *   · No analytics, no tracking, no third-party pixels. The only thing recorded is the
- *     enquiry itself, and only because the person deliberately typed it and pressed send.
- *   · No database. The enquiry is forwarded to the owner and then forgotten — this Worker
- *     holds no state between requests.
- *   · The IP address is NOT forwarded. Seat count and country come from the form, which is
- *     all the quote needs.
- *
- * ────────────────────────────────────────────────────────────────────────────────
- *  OWNER: THIS IS THE ONLY PART YOU MUST CONFIGURE.
- *
- *  Pick ONE delivery destination and set it as a Worker secret, then redeploy:
- *
- *    A) A generic webhook (Slack, Discord, Zapier, n8n, your own endpoint):
- *         wrangler secret put ENQUIRY_WEBHOOK_URL
- *       The enquiry is POSTed there as JSON.
- *
- *    B) Email via MailChannels / Resend / Postmark — add the provider call inside
- *       `deliver()` below and set whatever key it needs as a secret.
- *
- *  Until a destination is configured the endpoint still accepts and validates the form
- *  (so the page is never broken), logs the enquiry to `wrangler tail`, and returns 202 —
- *  but nothing is delivered anywhere. Configure it before you announce the page.
- * ────────────────────────────────────────────────────────────────────────────────
- */
+/** Marketing-site Worker for the one dynamic route, `POST /api/enquiry` (rest → `env.ASSETS`). No
+ *  analytics, no DB, no IP forwarded. OWNER: set `ENQUIRY_WEBHOOK_URL` or add a provider in `deliver()`. */
 
 /** Where the mailto fallback on the page points. Kept in sync by hand. */
 const FALLBACK_MAILBOX = "licensing@vinitk.dev";
@@ -58,14 +28,8 @@ export default {
   },
 };
 
-/**
- * Validate and forward one licensing enquiry.
- *
- * Accepts JSON (what commercial.html sends when JavaScript is available) or
- * `application/x-www-form-urlencoded` (what the browser sends when it is not, because
- * the form is a real `<form method="post" action="/api/enquiry">`). The no-JS path gets
- * an HTML thank-you page rather than a JSON blob it cannot render.
- */
+/** Validate and forward one licensing enquiry. Accepts JSON (JS path) or x-www-form-urlencoded (the
+ *  form is a real `<form method="post">`); the no-JS path gets an HTML thank-you, not a JSON blob. */
 async function handleEnquiry(request, env, ctx) {
   const contentType = request.headers.get("content-type") || "";
   const wantsHTML = !contentType.includes("application/json");
@@ -122,13 +86,8 @@ async function handleEnquiry(request, env, ctx) {
   );
 }
 
-/**
- * Forward the enquiry to the owner's destination.
- *
- * OWNER: replace or extend this with your provider of choice. Failures are logged
- * rather than thrown — the buyer already has their acknowledgement, and a lost webhook
- * must not surface as an error on the page.
- */
+/** Forward the enquiry to the owner's destination. OWNER: swap in your provider here. Failures are
+ *  logged rather than thrown — the buyer already has their acknowledgement. */
 async function deliver(payload, env) {
   const webhook = env.ENQUIRY_WEBHOOK_URL;
 
@@ -196,11 +155,8 @@ function html(message, status) {
   });
 }
 
-/**
- * The form is same-origin, so CORS is not needed for the site itself. This exists only
- * so a preflight from a mirror or a staging origin gets a coherent answer instead of a
- * bare 405 — it grants nothing beyond the one endpoint.
- */
+/** The form is same-origin so CORS is unneeded; this only gives a mirror/staging preflight a coherent
+ *  answer instead of a bare 405 — it grants nothing beyond the one endpoint. */
 function preflight() {
   return new Response(null, {
     status: 204,

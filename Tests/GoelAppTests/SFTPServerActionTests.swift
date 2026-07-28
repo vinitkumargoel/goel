@@ -2,11 +2,8 @@ import XCTest
 import GoelCore
 @testable import GoelApp
 
-/// The pure half of the sidebar's server session actions. The stateful half
-/// (disconnect/reconnect) lives on the main-actor view model and is exercised in
-/// the app; what is worth pinning here is the address this hands to another
-/// application, because that is where a hostile-looking saved username stops
-/// being Goel's problem and starts being `NSWorkspace`'s.
+/// The pure half of the sidebar's server session actions. Worth pinning here is the address handed to
+/// another app — where a hostile saved username stops being Goel's problem and becomes `NSWorkspace`'s.
 final class SFTPServerActionTests: XCTestCase {
 
     func testDefaultPortIsOmittedAndNonDefaultIsKept() {
@@ -16,9 +13,8 @@ final class SFTPServerActionTests: XCTestCase {
                        "ssh://vinit@example.com:2222")
     }
 
-    /// The reason this is built with `URLComponents` and not interpolation: a
-    /// username containing `@` must stay in the user half of the URL rather than
-    /// re-pointing the address at an attacker-chosen host.
+    /// Why `URLComponents` and not interpolation: a username containing `@` must stay in the user
+    /// half of the URL rather than re-pointing the address at an attacker-chosen host.
     func testUsernameCannotReshapeTheHost() {
         let url = AppViewModel.sshURL(username: "vinit@evil.example", host: "example.com", port: 22)
         XCTAssertEqual(url?.host, "example.com")
@@ -44,11 +40,7 @@ final class SFTPServerActionTests: XCTestCase {
     }
 
     // MARK: Host-key comparison
-    //
-    // This classification picks between an informational dialog and a critical
-    // "something is answering in this server's place" one, so both directions
-    // matter: a real key change must be called out, and everything short of
-    // evidence must not be.
+    // Both directions matter: a real key change must be called out, anything short of evidence not.
 
     private static let keyA = String(repeating: "a", count: 64)
     private static let keyB = String(repeating: "b", count: 64)

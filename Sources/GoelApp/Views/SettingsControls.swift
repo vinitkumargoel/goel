@@ -55,19 +55,8 @@ struct SetRow<Control: View>: View {
             Spacer()
             control
         }
-        // ── Naming every settings control, once ─────────────────────────────
-        // A `SetRow` puts the control's name in a `Text` on the left and the
-        // control itself on the right, and every bound control below calls
-        // `labelsHidden()`. Visually the pairing is obvious; structurally there
-        // is none, so each of the ~150 switches and fields in Preferences was an
-        // anonymous "switch" / "text field" with the name a separate string
-        // somewhere before it.
-        //
-        // Rather than touch every call site, the row publishes its name through
-        // the environment and the four bound control types below adopt it as
-        // their accessibility label. Anything else placed in a row (a button, a
-        // `Dropdown`, a stack of several controls) is untouched and keeps
-        // whatever label it defines itself.
+        // Naming every settings control once: `SetRow` puts the name in a `Text` and every bound control
+        // calls `labelsHidden()`, so the row publishes its name through the environment instead.
         .environment(\.settingRowName, name)
         .padding(.vertical, 10)
         Divider()
@@ -111,13 +100,8 @@ struct SettingText: View {
     }
 }
 
-/// A numeric field bound to a settings integer.
-///
-/// Grouping is off. `.number` alone inserts the locale's thousands separator,
-/// which turned port 8899 into “8,899” — wrong for a port, which is an
-/// identifier and not a quantity, and unhelpful in every other row here too:
-/// these are values you type back, and a separator you did not type is noise
-/// at best and a re-entry hazard at worst.
+/// A numeric field bound to a settings integer. Grouping is off: `.number` inserts the locale's
+/// thousands separator, turning port 8899 into "8,899" — these are values you type back.
 struct SettingInt: View {
     @Binding var value: Int
     var width: CGFloat = 80
@@ -129,9 +113,8 @@ struct SettingInt: View {
     }
 }
 
-/// A numeric field bound to a settings double (timeouts, intervals, speeds, ratio).
-///
-/// Ungrouped for the same reason as `SettingInt` above.
+/// A numeric field bound to a settings double (timeouts, intervals, speeds, ratio). Ungrouped
+/// for the same reason as `SettingInt` above.
 struct SettingDouble: View {
     @Binding var value: Double
     var width: CGFloat = 80
@@ -147,20 +130,13 @@ struct SettingDouble: View {
 
 extension View {
 
-    /// Disable a control an administrator has *forced* through a configuration
-    /// profile, and say so on hover.
-    ///
-    /// Only `isLocked` keys are disabled. A managed key that is merely a
-    /// *default* (supplied but not forced) stays editable by design — that is
-    /// the difference between "your organisation set this up for you" and "your
-    /// organisation requires this", and collapsing the two would make every
-    /// deployed default feel like a lockout.
+    /// Disable a control an administrator has *forced* through a profile, and say so on hover. Only
+    /// `isLocked` keys; a managed *default* stays editable, which is a different thing entirely.
     @ViewBuilder
     func managed(_ key: ManagedPolicy.Key, _ policy: ManagedPolicy) -> some View {
         if policy.isLocked(key) {
-            // `help` is a hover tooltip and therefore pointer-only: without the
-            // hint, a locked control is simply a dimmed switch that ignores you,
-            // with no reachable explanation.
+            // `help` is a hover tooltip and therefore pointer-only: without the hint, a locked control is
+            // just a dimmed switch that ignores you, with no reachable explanation.
             self.disabled(true)
                 .help(AppViewModel.managedFootnote)
                 .accessibilityHint(AppViewModel.managedFootnote)

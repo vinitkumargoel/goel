@@ -1,19 +1,8 @@
 import Foundation
 import GoelCore
 
-/// Owns every in-flight media conversion, so that one can be watched and stopped.
-///
-/// The feature this replaces had no object representing a running conversion at
-/// all: ``AppViewModel`` spawned a detached `Task`, dropped the handle, and the
-/// `Process` lived and died as a local inside ``FFmpegService``. Nothing in the
-/// app could reach a running job, which is why there was no progress to draw and
-/// no way to cancel — the missing progress bar was a symptom, not the disease.
-///
-/// This type is that missing owner. It keeps a job per conversion, caps how many
-/// run at once, refuses duplicates, holds the cancellation handles, and cleans up
-/// partial output. `@MainActor` throughout: it is read directly by SwiftUI and
-/// the job list is small, so an actor hop per update would buy nothing but
-/// interleaving bugs.
+/// Owns every in-flight media conversion so one can be watched and stopped — previously no object
+/// represented a running job at all. Caps concurrency, refuses duplicates, cleans up partials.
 @MainActor
 final class MediaJobCenter: ObservableObject {
 
@@ -87,12 +76,8 @@ final class MediaJobCenter: ObservableObject {
         /// so instead of leaving a card that reads "Stopping…" forever.
         var cancelRequestedAt: Date?
 
-        /// Whether cancelling this job actually deleted a half-written file.
-        ///
-        /// False when it was still queued, or was cancelled before ffmpeg had
-        /// claimed an output name. The card used to assert "Partial file removed"
-        /// unconditionally, which told the user something untrue about their disk
-        /// in the most common cancel of all — the one two seconds after the click.
+        /// Whether cancelling this job actually deleted a half-written file. False when it was still
+        /// queued — the card used to claim "Partial file removed" for the commonest cancel of all.
         var removedPartial = false
 
         /// Full ffmpeg output for the failure card's "Copy details".
@@ -118,19 +103,15 @@ final class MediaJobCenter: ObservableObject {
             state == .running && MediaStall.isStalled(lastAdvance: lastAdvance, now: now)
         }
 
-        /// True when a cancel has been outstanding longer than a stop should ever
-        /// take. SIGTERM, two seconds, then SIGKILL — past that, the process is
-        /// somewhere no signal reaches (uninterruptible I/O on a stalled volume is
-        /// the realistic case) and the card needs to offer the user a way out
-        /// rather than sit on "Stopping…" indefinitely.
+        /// True when a cancel has outlasted SIGTERM + SIGKILL. Past that the process is somewhere no
+        /// signal reaches, and the card must offer a way out rather than sit on "Stopping…".
         func isStopStuck(now: Date = Date()) -> Bool {
             guard state == .cancelling, let cancelRequestedAt else { return false }
             return MediaStall.isStopStuck(requestedAt: cancelRequestedAt, now: now)
         }
 
-        /// Two requests collide when they would produce the same thing from the
-        /// same source — that is what makes a second click a duplicate rather
-        /// than a second job.
+        /// Two requests collide when they would produce the same thing from the same source — that is
+        /// what makes a second click a duplicate rather than a second job.
         var dedupeKey: String { "\(input.path)→\(kind.outputExtension)" }
     }
 
@@ -138,9 +119,8 @@ final class MediaJobCenter: ObservableObject {
 
     @Published private(set) var jobs: [Job] = []
 
-    /// How many conversions run at once. ffmpeg already saturates every core on a
-    /// single job, so a third concurrent transcode makes each one slower without
-    /// finishing the batch any sooner.
+    /// How many conversions run at once. ffmpeg already saturates every core on one job, so a third
+    /// concurrent transcode makes each slower without finishing the batch sooner.
     var concurrencyLimit: Int = 2 {
         didSet { pumpQueue() }
     }
@@ -151,38 +131,30 @@ final class MediaJobCenter: ObservableObject {
 
     var liveCount: Int { jobs.filter { $0.state.isLive }.count }
 
-    /// Completed fractions of the running jobs that know their own length. Jobs
-    /// with no declared duration are omitted rather than reported as zero — a
-    /// missing number is not the same as no progress.
+    /// Completed fractions of running jobs that know their own length. Jobs with no declared
+    /// duration are omitted rather than reported as zero — a missing number is not no progress.
     var runningFractions: [Double] {
         jobs.filter { $0.state == .running }.compactMap(\.fraction)
     }
 
-    /// Where ffmpeg is (the user's Settings override). Kept in sync by the view
-    /// model rather than read from settings here, so this type stays free of the
-    /// settings cascade.
+    /// Where ffmpeg is (the user's Settings override). Kept in sync by the view model rather than
+    /// read from settings here, so this type stays free of the settings cascade.
     var ffmpegOverride = ""
 
     /// Called when a job reaches a terminal state, so the view model can raise a
     /// notification without this type knowing about notifications.
     var onFinish: ((Job) -> Void)?
 
-    /// Called whenever ``hasLiveWork`` may have flipped.
-    ///
-    /// A callback rather than the view model observing this object: the app's
-    /// active-work gate is refreshed from the download snapshot pump, which only
-    /// ticks when the *download* queue changes. A conversion started with an empty
-    /// queue would otherwise never reach the gate, and quitting would kill ffmpeg
-    /// without asking — exactly the bug this whole change exists to close.
+    /// Called whenever ``hasLiveWork`` may have flipped. A callback, because the active-work gate is
+    /// driven by the download pump — a conversion with an empty queue would otherwise never reach it.
     var onLiveWorkChanged: (() -> Void)?
 
     /// Called once a second while anything is live, for surfaces that poll rather
     /// than observe (the Dock tile).
     var onTick: (() -> Void)?
 
-    /// Cancellation handles, keyed by job. Separate from `Job` because `Job` is an
-    /// `Equatable` value type that SwiftUI diffs, and a live process handle has no
-    /// business inside it.
+    /// Cancellation handles, keyed by job. Separate from `Job` because that is an `Equatable` value
+    /// type SwiftUI diffs, and a live process handle has no business inside it.
     private var cancellations: [UUID: FFmpegService.Cancellation] = [:]
 
     /// Drives the stall flag and the elapsed readout without every job needing its
@@ -210,12 +182,8 @@ final class MediaJobCenter: ObservableObject {
         }
     }
 
-    /// Queue a conversion. Returns nil when accepted, or the reason it was not.
-    ///
-    /// Duplicate detection is the reason this returns something at all: without
-    /// it, the total absence of feedback made clicking Convert twice the obvious
-    /// thing to do, and the app rewarded that with two ffmpeg processes racing to
-    /// write `clip.mkv` and `clip (1).mkv`.
+    /// Queue a conversion; nil when accepted, else the reason it wasn't. Duplicate detection is why
+    /// this returns anything — with no feedback, clicking Convert twice raced two ffmpegs.
     @discardableResult
     func enqueue(input: URL, kind: Job.Kind) -> Rejection? {
         if let reason = FFmpegService.unavailableReason(override: ffmpegOverride) {
@@ -256,10 +224,8 @@ final class MediaJobCenter: ObservableObject {
             jobs[index].state = .cancelling
             jobs[index].cancelRequestedAt = Date()
             cancellations[id]?.cancel()
-            // The slot is free the moment the stop is requested, since a
-            // `.cancelling` job no longer counts against the cap. Without this
-            // pump the next queued job would wait for the *outcome* of the cancel
-            // to arrive, which is exactly the delay the cap change removed.
+            // The slot is free the moment the stop is requested, since a `.cancelling` job no longer counts
+            // against the cap. Without this pump the next job would wait for the cancel's outcome.
             pumpQueue()
         case .cancelling, .finished, .failed, .cancelled:
             break
@@ -273,13 +239,8 @@ final class MediaJobCenter: ObservableObject {
         stopTickerIfIdle()
     }
 
-    /// Drop a card whose cancel is not completing, releasing its queue slot.
-    ///
-    /// The escape hatch for a `.cancelling` job that a SIGKILL could not end.
-    /// Offered only once ``Job/isStopStuck(now:)`` is true, and it is honest about
-    /// what it does *not* do: the process is already condemned and will exit if it
-    /// ever comes back from whatever it is blocked in, but Goel° stops waiting on
-    /// it, stops counting it, and stops showing a card that cannot change.
+    /// Drop a card whose cancel is not completing, releasing its queue slot. Offered only once
+    /// ``Job/isStopStuck(now:)``; honest that the process is condemned, we simply stop waiting on it.
     func forceDismiss(_ id: UUID) {
         guard let job = jobs.first(where: { $0.id == id }), job.state == .cancelling else { return }
         jobs.removeAll { $0.id == id }
@@ -289,18 +250,14 @@ final class MediaJobCenter: ObservableObject {
         onLiveWorkChanged?()
     }
 
-    /// Cancel everything. Used when the user confirms Quit with work in flight, so
-    /// each ffmpeg is stopped properly and its partial file removed rather than
-    /// being orphaned by the app's exit.
+    /// Cancel everything. Used when the user confirms Quit with work in flight, so each ffmpeg is
+    /// stopped properly and its partial removed rather than orphaned by the app's exit.
     func cancelAll() {
         for job in jobs where job.state.isLive { cancel(job.id) }
     }
 
-    /// How long ``waitForShutdown()`` will hold a quit open.
-    ///
-    /// Generous enough to cover SIGTERM plus the SIGKILL escalation, short enough
-    /// that a wedged ffmpeg can never stop the user quitting. Overshooting it
-    /// costs an orphaned partial file; blocking forever would cost the app.
+    /// How long ``waitForShutdown()`` holds a quit open: enough for SIGTERM plus SIGKILL, short
+    /// enough that a wedged ffmpeg can never stop the user quitting.
     static let shutdownGrace: TimeInterval = 4
 
     /// Wait for cancelled jobs to actually finish, so their partial files are
@@ -326,14 +283,8 @@ final class MediaJobCenter: ObservableObject {
 
     // MARK: - Queue pump
 
-    /// Start as many queued jobs as the concurrency cap allows.
-    ///
-    /// `.cancelling` jobs are **not** counted. Their ffmpeg is briefly still
-    /// burning CPU, so counting them is defensible on resource grounds — but a
-    /// cancel that never completes would then hold its slot forever, and with the
-    /// cap set to 1 a single wedged stop silently disables the whole feature. A
-    /// short over-subscription bounded by how many jobs the user chose to cancel
-    /// is much the smaller cost.
+    /// Start as many queued jobs as the cap allows. `.cancelling` jobs are not counted: a cancel that
+    /// never completes would hold its slot forever and, at cap 1, disable the feature entirely.
     private func pumpQueue() {
         var running = jobs.filter { $0.state == .running }.count
         for index in jobs.indices where jobs[index].state == .queued {
@@ -353,23 +304,15 @@ final class MediaJobCenter: ObservableObject {
         cancellations[id] = cancellation
         let override = ffmpegOverride
 
-        // Captured strongly on purpose. The task is not stored on this object, so
-        // there is no cycle to break, and a weak capture would have to be re-read
-        // inside the `@Sendable` progress callback — which is exactly the pattern
-        // Swift 6 rejects. The center is owned by the view model and lives as long
-        // as the app does, so "outliving self" is not a real case here.
+        // Captured strongly on purpose: the task isn't stored here so there is no cycle, and a weak
+        // capture would have to be re-read inside the `@Sendable` callback — which Swift 6 rejects.
         Task {
-            // Probe first: the duration turns an indeterminate spinner into a real
-            // percentage, and the audio codec decides whether the track can be
-            // lifted out without re-encoding.
-            // The same `cancellation` the conversion will use, so a cancel pressed
-            // during this phase reaches the probe process instead of being ignored
-            // until it happens to exit.
+            // Probe first: the duration turns a spinner into a real percentage, and the codec decides whether
+            // audio can be lifted without re-encoding. Shares `cancellation` so a cancel reaches the probe.
             let probe = await FFmpegService.probe(input: job.input, override: override,
                                                   cancellation: cancellation)
-            // Checked before anything else: a job cancelled during the probe must
-            // report as cancelled, not fall through into a pre-flight that would
-            // label it "not enough space".
+            // Checked before anything else: a job cancelled during the probe must report as cancelled, not
+            // fall through into a pre-flight that would label it "not enough space".
             if cancellation.isCancelled {
                 // No output name had been claimed yet, so there is nothing to say
                 // was cleaned up.
@@ -380,9 +323,8 @@ final class MediaJobCenter: ObservableObject {
             }
             await MainActor.run { self.applyProbe(id: id, probe: probe) }
 
-            // Free-space pre-flight. Extracting WAV from a two-hour video writes
-            // over a gigabyte; finding that out from ffmpeg's ENOSPC after twenty
-            // minutes is the worst possible time to learn it.
+            // Free-space pre-flight: extracting WAV from a two-hour video writes over a gigabyte, and
+            // learning that from ffmpeg's ENOSPC after twenty minutes is the worst possible time.
             if case .extractAudio(let format) = job.kind,
                let needed = format.estimatedBytes(durationSeconds: probe.durationSeconds),
                let free = Self.availableSpace(near: job.input),
@@ -431,9 +373,8 @@ final class MediaJobCenter: ObservableObject {
         }
         if let size = sample.totalSize { jobs[index].bytesWritten = size }
         if let speed = sample.speed { jobs[index].speed = speed }
-        // `progress=end` arrives while ffmpeg is still flushing and being reaped —
-        // a second or two before the outcome does. Snapping the bar here is what
-        // stops it resting at 97% through that gap and then vanishing.
+        // `progress=end` arrives while ffmpeg is still flushing and being reaped. Snapping the bar
+        // here stops it resting at 97% through that gap and then vanishing.
         if sample.isFinal, let total = jobs[index].totalSeconds {
             jobs[index].processedSeconds = total
         }
@@ -456,17 +397,15 @@ final class MediaJobCenter: ObservableObject {
         switch outcome {
         case .success(let url, let usedStreamCopy):
             jobs[index].state = .finished(url, usedStreamCopy: usedStreamCopy)
-            // A finished job's bar must read 100%, which the last progress sample
-            // does not always deliver (ffmpeg can exit before the final block is
-            // flushed through the pipe).
+            // A finished job's bar must read 100%, which the last progress sample doesn't always
+            // deliver (ffmpeg can exit before the final block is flushed through the pipe).
             if let total = jobs[index].totalSeconds {
                 jobs[index].processedSeconds = total
             }
         case .failure(let summary, let detail):
             jobs[index].state = .failed(summary)
-            // The card shows `summary`; `log` is what "Copy details" puts on the
-            // pasteboard, so it holds ffmpeg's untruncated output. Storing the
-            // summary in both made the disclosure a copy of the line above it.
+            // The card shows `summary`; `log` is what "Copy details" puts on the pasteboard, so it holds
+            // ffmpeg's untruncated output. Storing the summary in both made the disclosure a duplicate.
             jobs[index].log = detail
         case .cancelled:
             jobs[index].state = .cancelled
@@ -478,12 +417,8 @@ final class MediaJobCenter: ObservableObject {
 
     // MARK: - Auto-dismiss
 
-    /// How long a card that needs no reading stays up before clearing itself.
-    ///
-    /// Long enough to notice the result and click Reveal in Finder, short enough
-    /// that a batch of twenty conversions doesn't leave twenty cards stacked over
-    /// the window. Failures are excluded: those exist to be read, and a message
-    /// that deletes itself is the problem this whole change set up to fix.
+    /// How long a card that needs no reading stays up. Long enough to notice and click Reveal,
+    /// short enough that twenty conversions don't stack. Failures are excluded — those get read.
     static let autoDismissDelay: TimeInterval = 12
 
     private func scheduleAutoDismiss(_ id: UUID) {
@@ -511,9 +446,8 @@ final class MediaJobCenter: ObservableObject {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard let self else { return }
                 guard self.hasLiveWork else { return }
-                // `objectWillChange` rather than mutating a field: nothing has
-                // actually changed except the clock, and the derived values
-                // (elapsed, stalled) read `Date()` at render time.
+                // `objectWillChange` rather than mutating a field: nothing has changed except the clock, and
+                // the derived values (elapsed, stalled) read `Date()` at render time.
                 self.objectWillChange.send()
                 self.onTick?()
             }

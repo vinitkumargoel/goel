@@ -13,15 +13,8 @@ interface TasksState {
   live: boolean
 }
 
-/**
- * The live task list.
- *
- * `GET /api/events` pushes a full snapshot on every change, so there is no
- * patching to get wrong — each message replaces the array. Polling exists only
- * as a fallback for when the stream is down (a proxy that buffers SSE, a
- * sleeping laptop), and stops as soon as it comes back; running both at once
- * would double the load on the daemon for no extra freshness.
- */
+/** The live task list. `GET /api/events` pushes a full snapshot per change, so there is no patching —
+ * polling is a fallback only while the stream is down, and stops when it returns (both = double load). */
 export function useTasks(): TasksState & { refresh: () => Promise<void> } {
   const [tasks, setTasks] = useState<TaskRow[]>([])
   const [live, setLive] = useState(false)

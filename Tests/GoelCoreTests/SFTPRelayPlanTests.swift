@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// The parts of the relay that are pure: what a walk is allowed to hide, and
-/// what it must refuse. Everything here guards against a copy that quietly
-/// leaves something out and then reports success.
+/// The pure parts of the relay: what a walk may hide and what it must refuse. Guards against a copy
+/// that quietly leaves something out and then reports success.
 final class SFTPRelayPlanTests: XCTestCase {
 
     private func plan(skipped: [String]) -> SFTPRelay.TreePlan {

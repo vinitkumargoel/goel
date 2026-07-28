@@ -2,10 +2,8 @@ import XCTest
 import GoelCore
 @testable import GoelApp
 
-/// Covers the pure presentation helpers on ``DownloadTask``. They decide the
-/// type badge, the sidebar "by type" buckets and which context-menu items the
-/// user is offered, so a wrong answer here is a visibly wrong row or a missing
-/// action — with nothing logged.
+/// Covers the pure presentation helpers on ``DownloadTask`` — type badge, sidebar buckets, context-menu
+/// items — where a wrong answer is a visibly wrong row or a missing action, with nothing logged.
 final class TaskDisplayTests: XCTestCase {
 
     private func task(_ name: String,

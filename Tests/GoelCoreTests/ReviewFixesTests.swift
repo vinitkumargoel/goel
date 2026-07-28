@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Regression tests for the issues surfaced in the 360° code review:
-/// path-traversal sanitisation, the scheme allowlist, retry, disk-space gating,
-/// and resume-validator safety.
+/// Regression tests from the 360° code review: path-traversal sanitisation, scheme allowlist,
+/// retry, disk-space gating, and resume-validator safety.
 final class ReviewFixesTests: XCTestCase {
 
     private let saveDir = NSTemporaryDirectory()

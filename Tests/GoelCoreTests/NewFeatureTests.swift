@@ -1,9 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Tests for the feature batch: time-of-day scheduling, transfer statistics,
-/// backup pruning, RSS parsing, the export envelope, and model decode
-/// compatibility for the new optional fields.
+/// Tests for the feature batch: time-of-day scheduling, transfer statistics, backup pruning, RSS
+/// parsing, the export envelope, and model decode compatibility for the new optional fields.
 final class NewFeatureTests: XCTestCase {
 
     // MARK: Download window
@@ -221,10 +220,8 @@ final class NewFeatureTests: XCTestCase {
     // MARK: Review-fix regressions
 
     func testTorrentSuffixRespectsSchemeAllowlist() {
-        // file:/data: .torrent locators must be rejected by the remote-input
-        // parser; only http(s) .torrent URLs reach the torrent-file fetcher.
-        // An ftp .torrent URL parses (FTP is a supported engine now) but must
-        // route as a plain FTP file download, never into the fetcher.
+        // Only http(s) .torrent URLs reach the torrent-file fetcher; file:/data: are rejected outright.
+        // An ftp .torrent parses (FTP is supported) but routes as a plain FTP download, not the fetcher.
         XCTAssertNil(DownloadSource.parse("file:///Users/x/evil.torrent"))
         if case .torrentFile = DownloadSource.parse("ftp://host/evil.torrent") {
             XCTFail("ftp .torrent URL must not route to the torrent-file fetcher")

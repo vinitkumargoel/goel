@@ -1,10 +1,5 @@
-// The sign-in form's behaviour, served as a static asset from /assets/ so the
-// portal's Content-Security-Policy can forbid inline script everywhere.
-//
-// Deliberately plain ES5-shaped JavaScript with no build step and no React: it
-// is thirty lines that run before anyone is signed in, and pulling the whole
-// bundle in front of the login page would slow down the one screen every user
-// sees first.
+// The sign-in form, served as a static asset from /assets/ so the portal's CSP can forbid inline
+// script everywhere. Plain ES5, no build step or React — the bundle would slow the first screen.
 ;(function () {
   const form = document.getElementById('f')
   if (!form) return

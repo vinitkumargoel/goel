@@ -2,9 +2,8 @@ import Foundation
 
 // MARK: - Disk / filesystem
 
-/// Filesystem preflight: directory creation and the free-space gate. Split out
-/// of ``HTTPEngine``; the space gate is `static` and pure so it is unit-testable.
-/// (Destination sizing lives once as the static ``SegmentedTransfer/preallocate``.)
+/// Filesystem preflight for ``HTTPEngine``: directory creation plus a `static`, pure (unit-testable)
+/// free-space gate. Destination sizing lives once as ``SegmentedTransfer/preallocate``.
 extension HTTPEngine {
 
     func ensureDirectory(_ path: String) throws {
@@ -15,10 +14,8 @@ extension HTTPEngine {
         try Self.validateDiskSpace(directory: directory, needed: needed)
     }
 
-    /// Pure, testable disk-space gate. Rejects absurd sizes (cap), and — crucially
-    /// — THROWS when the volume can't be queried instead of silently assuming
-    /// unlimited space (which bypassed the guard entirely and let a multi-GB
-    /// download start against a full disk).
+    /// Pure, testable disk-space gate. Caps absurd sizes and THROWS when the volume can't be queried,
+    /// rather than assuming unlimited space — that bypass let multi-GB downloads start on a full disk.
     static func validateDiskSpace(
         directory: String,
         needed: Int64,

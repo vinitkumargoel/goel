@@ -1,14 +1,7 @@
 import Foundation
 
-/// Optional narrow port over the unified download queue.
-///
-/// ``DownloadManager`` is the production implementation. Prefer the concrete
-/// manager (or ``RemoteBackend`` for the portal) unless a caller needs only
-/// lifecycle / observation / basic mutation. Not yet injected at app/daemon
-/// call sites — add a typed dependency when a second implementation appears.
-///
-/// Requirements are `async` so an actor can witness them (same pattern as
-/// ``RemoteBackend``).
+/// Optional narrow port over the unified download queue. ``DownloadManager`` is the production impl;
+/// not yet injected anywhere. Requirements are `async` so an actor can witness them, as ``RemoteBackend``.
 public protocol DownloadQueue: AnyObject, Sendable {
     // MARK: Lifecycle
 

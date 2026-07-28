@@ -1,28 +1,5 @@
-/* Shot 12 — the menu bar.
- *
- * Card: command-palette-summon
- * Exact demo read: demos/command-palette-summon/CommandPaletteSummon.tsx
- *
- * Demo parameters kept verbatim: the world dims to 45% and blurs 10px across
- * frames 12 -> 22; the panel starts 20px high and drops with a real overshoot —
- * 9f out-cubic down to +8px, then 6f inOut-cubic back to 0 — because the card is
- * explicit that without the overshoot the whole thing reads as a fade and the
- * ceremony is gone; the panel's own opacity resolves over 7f; the candidate rows
- * stagger 4f apart, each rising 12px over 8f.
- *
- * Two of the card's six phases are deliberately not staged, and it is worth
- * saying why rather than leaving it to be noticed: phase 5 (typing narrows the
- * list) and the blinking caret have no counterpart here. This is a menu-bar
- * popover, not a search field — there is nothing to type into. What the card
- * treats as its remaining backbone (dim, overshoot drop, staggered rows, a held
- * final state) is all present, and the card's own instruction that the candidate
- * rows must carry real feature names is satisfied literally: these are the four
- * live transfers from the queue the film has been following since shot 4, with
- * their real progress bars.
- *
- * Budget: rows finish at 52, the selection settles by 70, and the shot runs 100
- * frames — 30f of true rest.
- */
+/* Shot 12 — menu bar (card: command-palette-summon). World dims to 45% + blur 10px over f12→22; the
+ * panel drops with a real overshoot (9f out-cubic to +8px, 6f inOut back) or it just reads as a fade. */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C, PAGE } from '../theme';

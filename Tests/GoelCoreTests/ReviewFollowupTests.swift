@@ -1,10 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Locks in the safety-critical pure logic added with the FDM-parity features:
-/// the "never silently replace a finished file" change detector, the request-
-/// header sanitiser (reserved + header-splitting protection), tag normalisation,
-/// and the tag/label union.
+/// Locks in the FDM-parity pure logic: the "never silently replace a finished file" change detector,
+/// the request-header sanitiser (reserved + header-splitting), tag normalisation, and tag/label union.
 final class ReviewFollowupTests: XCTestCase {
 
     // MARK: remoteResourceChanged — the "err toward NOT touching the file" guarantee

@@ -2,12 +2,8 @@ import XCTest
 import GoelCore
 @testable import GoelApp
 
-/// The parts of a conversion job that are pure derivation — what the card reads
-/// off a `Job` to decide what to draw and what to say.
-///
-/// These need no process and no ffmpeg, which is the point: every one of them
-/// used to be a claim the UI made about a job with nothing checking it, and two
-/// of them ("Partial file removed", "Stopping…") were claims that could be false.
+/// Pure derivations the card reads off a `Job` — no process, no ffmpeg. Each was once an unchecked UI
+/// claim, and two ("Partial file removed", "Stopping…") could be false.
 @MainActor
 final class MediaJobTests: XCTestCase {
 
@@ -67,9 +63,8 @@ final class MediaJobTests: XCTestCase {
 
     // MARK: Stuck cancel
 
-    /// The card offers a force-dismiss only once a cancel has demonstrably not
-    /// worked. Offering it immediately would train people to use it on the
-    /// perfectly normal one-second stop.
+    /// The card offers force-dismiss only once a cancel has demonstrably not worked; offering it sooner
+    /// would train people to use it on the perfectly normal one-second stop.
     func testStopIsNotStuckDuringTheNormalGrace() {
         var j = job(.cancelling)
         j.cancelRequestedAt = Date()
@@ -151,12 +146,8 @@ final class MediaJobTests: XCTestCase {
 
 // MARK: - Queue behaviour
 
-/// The center's queueing decisions, exercised synchronously.
-///
-/// `enqueue` runs entirely on the main actor and the work it starts is an
-/// unawaited `Task`, so a test body that never suspends sees the queue exactly as
-/// it stands the instant after each call — no processes have had a chance to run.
-/// Every test cancels what it started, and the inputs are throwaway temp files.
+/// The center's queueing decisions, exercised synchronously: `enqueue` is main-actor and starts an
+/// unawaited `Task`, so a test body that never suspends sees the queue before any process can run.
 @MainActor
 final class MediaJobCenterQueueTests: XCTestCase {
 
@@ -164,9 +155,8 @@ final class MediaJobCenterQueueTests: XCTestCase {
     private var center: MediaJobCenter!
 
     override func setUpWithError() throws {
-        // These need a real ffmpeg because `enqueue` refuses everything without
-        // one — correctly, since a queue of jobs that can never run is worse than
-        // an error. The naming and parsing tests carry the no-ffmpeg coverage.
+        // These need a real ffmpeg: `enqueue` correctly refuses everything without one, since a queue
+        // that can never run is worse than an error. Naming/parsing tests carry no-ffmpeg coverage.
         try XCTSkipIf(FFmpegService.unavailableReason() != nil,
                       "no ffmpeg on this machine")
         directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -187,9 +177,8 @@ final class MediaJobCenterQueueTests: XCTestCase {
         return url
     }
 
-    /// The bug that made clicking Convert twice the obvious thing to do: with no
-    /// feedback at all, a second click used to start a second ffmpeg racing the
-    /// first for the same output name.
+    /// The bug that made clicking Convert twice the obvious thing to do: with no feedback at all, a
+    /// second click used to start a second ffmpeg racing the first for the same output name.
     func testASecondIdenticalRequestIsRefused() {
         let input = source("talk.mp4")
         XCTAssertNil(center.enqueue(input: input, kind: .convert(ext: "mkv")))

@@ -1,10 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// The relay pipe is what stands between a fast source and a slow destination.
-/// Its contract is small but every clause matters: bytes come out in order and
-/// intact, the writer is actually blocked when the buffer is full, and a failure
-/// on either side wakes the other rather than deadlocking a copy forever.
+/// The relay pipe between a fast source and a slow destination: bytes come out in order and intact, a
+/// full buffer really blocks the writer, and a failure on either side wakes the other, never deadlocks.
 final class SFTPRelayPipeTests: XCTestCase {
 
     /// Drive `pipe.read` until end-of-stream and return everything it produced.
@@ -64,9 +62,8 @@ final class SFTPRelayPipeTests: XCTestCase {
             unblocked.fulfill()
         }.start()
 
-        // Nothing has read yet, so the producer cannot have got past the second
-        // write. Sampled rather than waited on, because an expectation may only
-        // be waited on once and it is needed again below.
+        // Nothing has read yet, so the producer cannot be past the second write. Sampled, not waited on:
+        // an expectation may only be waited on once and it is needed again below.
         Thread.sleep(forTimeInterval: 0.2)
         XCTAssertFalse(secondWriteReturned.isSet,
                        "the writer should still be parked on a full pipe")

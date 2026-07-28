@@ -2,10 +2,8 @@ import Foundation
 
 // MARK: - Range-support probe & metadata preview
 
-/// Server probing: discovers total size, range support and validators (ETag /
-/// Last-Modified) via a cheap HEAD then a one-byte ranged GET, and serves the
-/// add-confirmation metadata preview. Split out of ``HTTPEngine`` so the transfer
-/// driver isn't interleaved with header parsing.
+/// Server probing: total size, range support and validators (ETag / Last-Modified) via HEAD then a
+/// one-byte ranged GET, plus the metadata preview. Split from ``HTTPEngine`` to keep parsing separate.
 extension HTTPEngine {
 
     struct ProbeResult {
@@ -24,10 +22,8 @@ extension HTTPEngine {
         var digest: Checksum?
     }
 
-    /// Probe a URL for the add-confirmation preview: returns the best filename
-    /// (Content-Disposition / inferred extension) and the total size, plus whether
-    /// the server was reachable. Performs the same HEAD/ranged-GET probe a real
-    /// download would, but writes nothing and creates no task.
+    /// Probe for the add-confirmation preview: best filename (Content-Disposition / inferred ext),
+    /// total size and reachability. Same HEAD/ranged-GET probe as a real download, but writes nothing.
     public func resolveMetadata(for url: URL, currentName: String)
         async -> (name: String, totalBytes: Int64?, reachable: Bool, checksum: Checksum?) {
         guard let result = try? await probe(url) else {
@@ -47,10 +43,8 @@ extension HTTPEngine {
         return (refined ?? currentName, result.totalBytes, true, checksum)
     }
 
-    /// Fetch `<url>.sha256` — the conventional published-checksum sidecar — and
-    /// parse the leading hex digest out of it. Only attempted for plain path
-    /// URLs (a signed/query URL almost never has a sidecar, and appending to it
-    /// would corrupt the token). Failures are silent: this is a bonus, not a step.
+    /// Fetch the `<url>.sha256` sidecar and parse its leading hex digest. Plain path URLs only —
+    /// appending to a signed/query URL would corrupt the token. Failures are silent: a bonus, not a step.
     private func sidecarChecksum(for url: URL) async -> Checksum? {
         guard url.query == nil,
               !url.lastPathComponent.isEmpty,
@@ -74,9 +68,8 @@ extension HTTPEngine {
         return nil
     }
 
-    /// Decode a published integrity header into the verifier's hex ``Checksum``.
-    /// Supports RFC 3230 `Digest: sha-256=<base64>`, RFC 9530 `Repr-Digest:
-    /// sha-256=:<base64>:` (structured-field byte sequence), and `Content-MD5`.
+    /// Decode a published integrity header into the verifier's hex ``Checksum``: RFC 3230 `Digest`,
+    /// RFC 9530 `Repr-Digest` (`sha-256=:<base64>:` byte sequence), and `Content-MD5`.
     static func checksum(fromHeaders http: HTTPURLResponse) -> Checksum? {
         for name in ["Repr-Digest", "Digest"] {
             guard let raw = http.value(forHTTPHeaderField: name) else { continue }
@@ -128,23 +121,13 @@ extension HTTPEngine {
            let http = resp as? HTTPURLResponse,
            (200..<300).contains(http.statusCode) {
             let r = interpretHead(http)
-            // Only short-circuit when HEAD has already PROVEN range support. Many
-            // servers carry Content-Length but emit `Accept-Ranges` on GET only;
-            // for those, fall through to the ranged GET so a real 206 can still
-            // unlock segmentation instead of silently dropping to one connection.
+            // Short-circuit only when HEAD PROVED range support: many servers emit `Accept-Ranges`
+            // on GET only, so fall through to the ranged GET rather than drop to one connection.
             if r.acceptsRanges { return r }
         }
 
-        // Fall back to a one-byte ranged GET, which reveals both range support
-        // (a 206 + Content-Range) and the total size.
-        //
-        // We must NOT use `session.data(for:)` here: a server that ignores the
-        // `Range` header and answers 200 with the whole body would make that API
-        // buffer the ENTIRE remote file into memory before returning — turning a
-        // cheap metadata probe into an OOM risk for large files. Drive the
-        // delegate-based streamer instead, which resolves as soon as the response
-        // headers arrive (and applies backpressure), then abort the task without
-        // ever draining the body.
+        // One-byte ranged GET reveals range support (206 + Content-Range) and total size. NOT
+        // `session.data(for:)`: a server ignoring `Range` returns the whole body → OOM; stream instead.
         var get = makeRequest(url, userAgent: networkConfig.userAgent,
                               referer: referer, extraHeaders: extraHeaders)
         get.setValue("bytes=0-0", forHTTPHeaderField: "Range")
@@ -159,11 +142,8 @@ extension HTTPEngine {
         return interpretRangedGet(http)
     }
 
-    /// A declared size only counts when it is a real, non-negative byte count. A
-    /// hostile or broken `Content-Length` / `Content-Range` of `-1` would otherwise
-    /// ride into ``SegmentedTransfer/preallocate``, whose `UInt64(size)` conversion
-    /// traps. `nil` means "size unknown", which drops the download to a single
-    /// stream — the safe direction.
+    /// Only a real, non-negative byte count counts: a hostile `-1` would trap the `UInt64(size)`
+    /// conversion in ``SegmentedTransfer/preallocate``. `nil` = unknown size, dropping to one stream (safe).
     private static func declaredSize(_ raw: String?) -> Int64? {
         guard let value = raw.flatMap({ Int64($0) }), value >= 0 else { return nil }
         return value

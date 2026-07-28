@@ -3,24 +3,8 @@ import CurlBridge
 
 // MARK: - Segmented transfer
 
-/// The per-download transfer engine, extracted from ``HTTPEngine`` so the byte
-/// mechanics are directly unit-testable without the actor's task lifecycle.
-///
-/// It moves the bytes of a single download: segmented (multi-connection) when the
-/// server supports ranges and the total size is known, or a single streaming
-/// connection otherwise. Segments are written to their own offset in a
-/// preallocated file; a per-download ``ConnectionGovernor`` adapts the fan-out to
-/// the server's real concurrency ceiling and a shared ``RateLimiter`` paces the
-/// aggregate throughput. Resume cursors are validated against `ETag` /
-/// `Last-Modified` so a changed remote restarts rather than corrupts.
-///
-/// It owns NO cross-download state: the global / per-host ``ConnectionBudget`` and
-/// task bookkeeping stay on ``HTTPEngine``, which resolves ``TransferPlan/segmentCount``
-/// from that budget before wrapping a ``PlannedTransfer`` here. The byte pumps run
-/// off any actor (this is a plain `Sendable` class, not an actor) and hop to an
-/// internal ledger actor only once per flush — to accumulate per-segment bytes,
-/// build the resume cursor and throttle progress — keeping the hot path off the
-/// executor.
+/// Per-download byte engine split from ``HTTPEngine`` for testability: segmented when ranges + size are
+/// known, else one stream; cursors validated vs `ETag`/`Last-Modified`; owns no cross-download state.
 final class SegmentedTransfer: Sendable {
 
     let plan: TransferPlan
@@ -37,11 +21,8 @@ final class SegmentedTransfer: Sendable {
     /// Bytes already on disk per segment index when resuming; empty otherwise.
     private let restoredBytes: [Int: Int64]
 
-    /// The number of connections this transfer will open. ``HTTPEngine`` reserves
-    /// this against the cross-download budget so the reservation matches the real
-    /// fan-out on both the fresh and the resume path (a restored cursor may carry a
-    /// different range count than the freshly-resolved ``TransferPlan/segmentCount``).
-    /// Single-stream transfers use one connection.
+    /// Connections this transfer opens; ``HTTPEngine`` reserves exactly this against the cross-download
+    /// budget, since a restored cursor's range count may differ from ``TransferPlan/segmentCount``.
     var connectionCount: Int { segmented ? plannedRanges.count : 1 }
 
     init(plan: TransferPlan) {
@@ -50,14 +31,8 @@ final class SegmentedTransfer: Sendable {
         self.progress = AsyncStream<TransferProgress> { cont = $0 }
         self.continuation = cont
 
-        // Resolve segmented-vs-single and the segment layout up front — cursor
-        // decode + validation + range math, plus one `stat` of the destination to
-        // confirm a cursor's bytes are still on disk — so the caller can reserve
-        // the matching `connectionCount` before `run()`; the mutating file I/O
-        // (preallocate) stays in `run()`.
-        // A negative `totalBytes` is a broken (or hostile) `Content-Length` /
-        // `Content-Range`; treat it as "size unknown" and drop to a single stream
-        // rather than feed it to the range math and `preallocate`.
+        // Resolve segmented-vs-single up front (cursor decode/validate, range math, one `stat`) so the
+        // caller can reserve `connectionCount`; a negative `totalBytes` is hostile → single stream.
         guard let total = plan.totalBytes, total >= 0, plan.acceptsRanges else {
             self.segmented = false
             self.plannedRanges = []
@@ -76,16 +51,12 @@ final class SegmentedTransfer: Sendable {
            Self.validatorsAllowResume(
                 cursorETag: cursor.etag, cursorLastModified: cursor.lastModified,
                 probeETag: plan.etag, probeLastModified: plan.lastModified),
-           // Multi-path needs ≥1 range per adapter. A stale single-segment resume
-           // from before aggregation was enabled would pin everything to one NIC.
-           // The mid-flight upgrade legitimately produces single-range cursors too
-           // (a W == 0 trip with a zero grant); rejecting those here is harmless —
-           // nothing was on disk — not a bug.
+           // Multi-path needs ≥1 range per adapter; a stale pre-aggregation single-segment resume would
+           // pin everything to one NIC. Rejecting the upgrade's W==0 single-range cursors is harmless.
            !(multiPath && cursor.ranges.count < plan.boundAdapters.count
              && cursor.completed.allSatisfy { $0 == 0 }),
-           // …and the bytes the cursor claims are on disk must actually still be
-           // there (see ``destinationHoldsPreallocation``). Checked last: it is the
-           // only condition that touches the filesystem.
+           // …and the cursor's claimed on-disk bytes must still be there (``destinationHoldsPreallocation``).
+           // Checked last: the only condition that touches the filesystem.
            Self.destinationHoldsPreallocation(plan.destination, total: total) {
             // Remote unchanged and cursor sound: continue from where we left off.
             self.segmented = true
@@ -105,19 +76,15 @@ final class SegmentedTransfer: Sendable {
 
     // MARK: Entry point
 
-    /// Run the transfer to completion. Chooses single-stream vs segmented purely
-    /// from the plan's flags (no total size or no range support -> single). The
-    /// progress stream is always finished on exit so a consumer's `for await`
-    /// terminates whether we complete, fail, or are cancelled.
+    /// Run to completion; single vs segmented comes purely from the plan's flags (no size or no ranges
+    /// -> single). The progress stream is always finished on exit so `for await` terminates either way.
     func run() async throws -> TransferOutcome {
         defer { continuation.finish() }
-        // `segmented` is only ever set alongside a present, non-negative
-        // `totalBytes`; binding it here states that in the type system instead of
-        // force-unwrapping a value parsed out of a server header.
+        // `segmented` is only set alongside a present, non-negative `totalBytes`; binding it here says
+        // so in the type system instead of force-unwrapping a value parsed from a server header.
         guard segmented, let total = plan.totalBytes else {
-            // Pinned to an interface but unable to split: URLSession cannot bind, so
-            // the whole body goes through the curl path instead of silently
-            // ignoring the pin and egressing the default route.
+            // Pinned to an interface but unsplittable: URLSession cannot bind, so the whole body takes
+            // the curl path rather than silently ignoring the pin and egressing the default route.
             if let adapter = plan.boundAdapters.first {
                 return try await runSingleBound(adapter)
             }
@@ -129,11 +96,8 @@ final class SegmentedTransfer: Sendable {
 
     // MARK: Pacing
 
-    /// The pacer this transfer's flushes go through: the task's own cap (when it
-    /// has one) chained in front of the engine-wide pacer, so the profile ceiling
-    /// holds in SUM across concurrent downloads while a per-task limit stays
-    /// private to this transfer. Either may be absent; `nil` means unlimited.
-    /// `static` (and `internal`) so the selection is assertable without moving bytes.
+    /// Pacer for this transfer's flushes: the task's own cap chained in front of the engine-wide one,
+    /// so the profile ceiling holds in SUM across downloads. nil = unlimited; `static` so it's assertable.
     static func makeLimiter(_ plan: TransferPlan) -> RateLimiter? {
         guard plan.maxBytesPerSecond > 0 else { return plan.sharedLimiter }
         return RateLimiter(bytesPerSecond: plan.maxBytesPerSecond, next: plan.sharedLimiter)
@@ -141,10 +105,8 @@ final class SegmentedTransfer: Sendable {
 
     // MARK: Segmented download
 
-    /// `ranges`/`restored` are the init-resolved layout for the normal callers;
-    /// the mid-flight upgrade passes a synthesized layout instead (completed
-    /// prefix + freshly-cut tail) with `upgraded: true`, which arms the
-    /// ranged-200 flap-back retry in the segment pumps.
+    /// `ranges`/`restored` are the init-resolved layout; the mid-flight upgrade instead passes a
+    /// synthesized one (completed prefix + fresh tail) with `upgraded: true`, arming the ranged-200 retry.
     private func runSegmented(total: Int64, ranges: [Range64],
                               restored: [Int: Int64], upgraded: Bool) async throws -> TransferOutcome {
         try Self.preallocate(plan.destination, size: total)
@@ -160,17 +122,8 @@ final class SegmentedTransfer: Sendable {
         // One governor per download: it begins at the requested fan-out and
         // adapts down to the server's real concurrent-connection ceiling.
         let governor = ConnectionGovernor(limit: ranges.count)
-        // Segments spread across the primary + mirrors round-robin; a mirror
-        // that misbehaves is demoted and its segment retries elsewhere.
-        // An UPGRADED transfer stays on the primary. Mirrors are admitted on the
-        // strength of a Content-Range total alone, which is fine when every byte
-        // comes from the pool — but here bytes [0, W-1] are already on disk from
-        // the primary stream, and both edges of the validator triangle were checked
-        // against the primary only. Letting the tail come from a same-sized but
-        // differently-contented mirror (in-place rsync, staggered release) would
-        // splice two entities into one file and still report `.completed`. This
-        // also preserves what `TransferPlan.mirrors` documents: a download that
-        // started single-stream stays on the primary.
+        // Segments round-robin across primary + mirrors; misbehaving mirrors are demoted. An UPGRADED
+        // transfer stays on the primary: bytes [0, W-1] came from it, so a same-sized mirror would splice.
         let pool = MirrorPool(primary: plan.url, mirrors: upgraded ? [] : plan.mirrors)
         // Pin segments to bound adapters via CurlBridge bind-if. One adapter is a
         // valid plan — a task pinned to a single NIC still has to egress it.
@@ -214,9 +167,8 @@ final class SegmentedTransfer: Sendable {
         }
 
         let bytesWritten = await ledger.totalBytes()
-        // Aggregate completeness net: every segment individually verified its range
-        // above, but assert the whole file is accounted for before reporting success
-        // so a silent gap can never be emitted as `.completed`.
+        // Aggregate completeness net: each segment verified its own range, but assert the whole file is
+        // accounted for before reporting success so a silent gap can never be emitted as `.completed`.
         guard bytesWritten == total else {
             throw DownloadError.network("Incomplete download: wrote \(bytesWritten) of \(total) bytes")
         }
@@ -224,10 +176,8 @@ final class SegmentedTransfer: Sendable {
         return TransferOutcome(bytesWritten: bytesWritten, resumeData: resumeData, usedSegments: ranges.count)
     }
 
-    /// The byte pump runs OFF any actor (this is a plain class) — otherwise every
-    /// segment would serialize through an executor (one hop per byte), defeating
-    /// the whole point of segmented downloading. It hops to the ledger actor (via
-    /// `await ledger.advance`) only once per ~`flushSize` flush.
+    /// The byte pump runs OFF any actor (plain class) — otherwise every segment would serialize through
+    /// an executor, one hop per byte. It hops to the ledger only once per ~`flushSize` flush.
     private func downloadSegment(session: URLSession, governor: ConnectionGovernor, limiter: RateLimiter?,
                                  ledger: Ledger, pool: MirrorPool, index: Int,
                                  from start: Int64, to end: Int64, fileURL: URL,
@@ -235,14 +185,12 @@ final class SegmentedTransfer: Sendable {
         let settings = plan.settings
         let flushSize = plan.flushSize
         let handle = try FileHandle(forWritingTo: fileURL)
-        // Bytes of THIS segment already flushed to disk in this run. On a retry
-        // we resume from `start + written`, so progress is never double-counted
-        // and already-stored bytes are not re-fetched.
+        // Bytes of THIS segment already flushed to disk this run. A retry resumes from `start + written`,
+        // so progress is never double-counted and already-stored bytes are not re-fetched.
         var written: Int64 = 0
         var attempt = 0
-        // Holds the request currently in flight so the cancellation handler can
-        // abort the underlying URLSession task (pause/remove), not merely the
-        // Swift task — the delegate-driven body would otherwise keep draining.
+        // Holds the in-flight request so the cancellation handler can abort the underlying URLSession
+        // task (pause/remove), not merely the Swift task — the delegate body would keep draining.
         let streamerBox = StreamerBox()
         do {
             try await withTaskCancellationHandler {
@@ -253,10 +201,8 @@ final class SegmentedTransfer: Sendable {
                     let url = await pool.url(segment: index, attempt: attempt)
                     let isMirror = url != plan.url
 
-                    // Wait for a connection slot. The governor adapts the ceiling to
-                    // what the server actually tolerates (see ``ConnectionGovernor``).
-                    // Each `acquire()` below is balanced by exactly one `release()` on
-                    // every exit path of this attempt.
+                    // Wait for a connection slot; the governor adapts the ceiling to what the server
+                    // tolerates. Each `acquire()` is balanced by exactly one `release()` on every exit.
                     try await governor.acquire()
                     var req = request(for: url)
                     req.setValue("bytes=\(segStart)-\(end)", forHTTPHeaderField: "Range")
@@ -287,20 +233,16 @@ final class SegmentedTransfer: Sendable {
                         continue
                     case .reject:
                         if upgraded, http.statusCode == 200, attempt < settings.maxAttempts {
-                            // Range support flapped back mid-upgrade (cold edge). The
-                            // probe that triggered this phase just saw a 206, so a warm
-                            // edge exists; retry with backoff instead of failing a
-                            // download that was completing without us.
+                            // Range support flapped back mid-upgrade (cold edge). The probe
+                            // just saw a 206, so a warm edge exists; retry with backoff.
                             streamer.cancelTask()                        // never drain the full body
                             if isMirror { await pool.demote(url) }
                             await governor.release()
                             try await backoff(attempt: attempt, response: http, retryInterval: settings.retryInterval)
                             continue
                         }
-                        // A ranged GET answered with a non-206 (e.g. a full 200 body)
-                        // is unusable for a segment (see ``classify``). A mirror that
-                        // can't do ranges is demoted and the segment retries elsewhere;
-                        // the primary fails visibly.
+                        // A ranged GET answered non-206 (e.g. a full 200 body) is unusable for a
+                        // segment; a mirror that can't range is demoted, the primary fails visibly.
                         streamer.cancelTask()
                         await governor.release()
                         if isMirror, attempt < settings.maxAttempts {
@@ -344,14 +286,8 @@ final class SegmentedTransfer: Sendable {
                     }
 
                     await governor.release()
-                    // `pumpBody` returned without throwing, but a clean completion
-                    // does NOT prove the whole range arrived: a close-delimited body
-                    // (no Content-Length, not chunked) or a body ended by an early
-                    // zero-length chunk surfaces to `ChunkStreamer` as a no-error
-                    // `didCompleteWithError`, so the pump loop simply ends. Only
-                    // finish the segment once the full requested range is on disk;
-                    // otherwise the unfetched tail would be left as a silent gap of
-                    // zero bytes in the preallocated file.
+                    // A clean `pumpBody` return does NOT prove the whole range arrived: a close-delimited
+                    // or early-zero-chunk body ends without error, leaving a silent zero-byte gap.
                     if start + written > end { break }                   // segment complete
                     if attempt >= settings.maxAttempts {
                         throw DownloadError.network(
@@ -375,10 +311,8 @@ final class SegmentedTransfer: Sendable {
 
     // MARK: Multi-path (interface-bound) segmented download
 
-    /// Same segment pump as ``downloadSegment`` but each attempt uses
-    /// ``BoundHTTPClient`` (CurlBridge + IP_BOUND_IF / SO_BINDTODEVICE) so
-    /// traffic egresses a chosen adapter. Adapters are assigned round-robin and
-    /// demoted on bind/auth failures; mirrors still provide URL failover.
+    /// Same segment pump as ``downloadSegment`` but each attempt uses ``BoundHTTPClient`` (CurlBridge +
+    /// IP_BOUND_IF / SO_BINDTODEVICE) to egress a chosen adapter; round-robin, demoted on bind failure.
     private func downloadSegmentBound(
         governor: ConnectionGovernor, adapterGovernors: AdapterGovernors,
         limiter: RateLimiter?,
@@ -406,9 +340,8 @@ final class SegmentedTransfer: Sendable {
                     await ledger.setAdapter(segment: index, id: adapter.bsdName, label: adapter.label)
 
                     try await governor.acquire()
-                    // Global THEN adapter, always in that order; a cancellation
-                    // parked on the adapter governor must hand the already-claimed
-                    // global slot back before rethrowing, or the slot leaks.
+                    // Global THEN adapter, always: a cancellation parked on the adapter
+                    // governor must hand the claimed global slot back, or the slot leaks.
                     do { try await adapterGovernors.acquire(adapter.bsdName) }
                     catch { await governor.release(); throw error }
                     var reqSettings = settings
@@ -430,12 +363,8 @@ final class SegmentedTransfer: Sendable {
                         expectedTotal: plan.totalBytes
                     )
 
-                    // curl's write callback cannot await; it tallies and this pump
-                    // folds the bytes into the ledger every 200 ms so progress ticks
-                    // — and the 1 Hz resume cursor — reflect what is already on disk
-                    // mid-attempt. onBytes fires only after the write succeeded, and
-                    // C drains every non-accepted body without reaching the write
-                    // callback, so the tally is exactly the bytes on disk.
+                    // curl's write callback cannot await, so it tallies and this pump folds bytes into
+                    // the ledger every 200 ms; onBytes fires post-write, so the tally == bytes on disk.
                     let tally = ByteTally()
                     let pump = Task { [tally] in
                         while !Task.isCancelled {
@@ -476,12 +405,8 @@ final class SegmentedTransfer: Sendable {
                     // Must precede the curl-error branch: the C early abort for a
                     // ranged 200 surfaces as CURLE_WRITE_ERROR.
                     if response.rangeIgnored {
-                        // Server ignored Range (flap-back). C aborted on the first body
-                        // byte, so nothing was written or tallied. Retryable in the
-                        // upgraded phase (and for mirrors, as the old classify-reject
-                        // already allowed); terminal 200 on the primary otherwise —
-                        // identical to today's error, minus the full-body drain the
-                        // old path paid.
+                        // Server ignored Range (flap-back); C aborted on the first body byte, so
+                        // nothing was written. Retryable when upgraded or on a mirror; else terminal.
                         if isMirror { await pool.demote(url) }
                         await adapterGovernors.release(adapter.bsdName)
                         await governor.release()
@@ -492,9 +417,8 @@ final class SegmentedTransfer: Sendable {
                         throw DownloadError.httpStatus(200)
                     }
 
-                    // Curl transport errors. The tally pump already credited the
-                    // ledger (Σ onBytes == bytesWritten); only the retry-resume
-                    // offset is committed here, so no byte is counted twice.
+                    // Curl transport errors. The tally pump already credited the ledger (Σ onBytes ==
+                    // bytesWritten); only the retry-resume offset commits here, so nothing is doubled.
                     if response.curlCode != 0 {
                         if response.bytesWritten > 0 {
                             written += response.bytesWritten
@@ -515,10 +439,8 @@ final class SegmentedTransfer: Sendable {
                     switch Self.classify(status, ranged: true) {
                     case .retry:
                         if isMirror { await pool.demote(url) }
-                        // Per-IP pushback belongs to the path that received it: only
-                        // this adapter's ceiling shrinks; the download-wide governor
-                        // keeps the aggregate at ranges.count so healthy NICs are
-                        // never starved by one throttled source address.
+                        // Per-IP pushback belongs to the path that got it: only this adapter's
+                        // ceiling shrinks, so healthy NICs are never starved by one throttled source.
                         await adapterGovernors.throttleDown(adapter.bsdName)
                         await adapterGovernors.release(adapter.bsdName)
                         await governor.release()
@@ -531,13 +453,8 @@ final class SegmentedTransfer: Sendable {
                         if status == 401 || status == 403 {
                             await adapters.demote(adapter)
                         }
-                        // Ranged-200 flap-back with an EMPTY body. The `rangeIgnored`
-                        // branch above catches the usual shape, but C only sets that
-                        // flag from the write thunk — a 200 carrying zero bytes never
-                        // invokes it and lands here instead. Same situation, same
-                        // answer as the URLSession pump: the probe that armed this
-                        // phase just saw a 206, so a warm edge exists and failing the
-                        // whole upgraded download would be wrong.
+                        // Ranged-200 flap-back with an EMPTY body: C only sets `rangeIgnored` from the
+                        // write thunk, so a zero-byte 200 lands here. Same answer — the probe saw 206.
                         if upgraded, status == 200, attempt < settings.maxAttempts {
                             if isMirror { await pool.demote(url) }
                             try await backoff(attempt: attempt, response: nil,
@@ -566,9 +483,8 @@ final class SegmentedTransfer: Sendable {
                         }
                     }
 
-                    // The ledger already holds these bytes via the tally pump; only
-                    // the offset bookkeeping the completeness check reads is
-                    // committed here.
+                    // The ledger already holds these bytes via the tally pump; only the offset
+                    // bookkeeping that the completeness check reads is committed here.
                     if response.bytesWritten > 0 {
                         written += response.bytesWritten
                     }
@@ -606,9 +522,8 @@ final class SegmentedTransfer: Sendable {
     // MARK: Single-connection download
 
     private func runSingle() async throws -> TransferOutcome {
-        // SF8: truncate to zero on (re)create — `createFile` is a no-op when the
-        // file already exists, which would leave stale trailing bytes if the new
-        // download is shorter. `Data().write` both creates and truncates.
+        // SF8: truncate to zero on (re)create — `createFile` no-ops when the file exists, leaving stale
+        // trailing bytes if the new download is shorter. `Data().write` both creates and truncates.
         try Data().write(to: plan.destination)
 
         let ledger = Ledger(continuation: continuation, meta: nil,
@@ -629,24 +544,16 @@ final class SegmentedTransfer: Sendable {
         }
 
         let bytesWritten = await ledger.totalBytes()
-        // When the server declared a size (Content-Length known but ranges not
-        // supported), verify the whole body actually arrived — a close-delimited
-        // stream can end cleanly while short, and reporting that as `.completed`
-        // would be silent truncation. A genuinely size-unknown stream (totalBytes
-        // == nil) has nothing to check against.
+        // When the server declared a size but no ranges, verify the whole body arrived: a close-delimited
+        // stream can end cleanly while short, and reporting that `.completed` is silent truncation.
         if let total = plan.totalBytes, bytesWritten != total {
             throw DownloadError.network("Incomplete download: wrote \(bytesWritten) of \(total) bytes")
         }
         return TransferOutcome(bytesWritten: bytesWritten, resumeData: nil, usedSegments: 1)
     }
 
-    /// Single-connection download pinned to one interface.
-    ///
-    /// Used when the task names an interface but the transfer cannot be segmented
-    /// (no size, or no range support). Unlike ``runSingle`` this goes through
-    /// CurlBridge, because `URLSession` has no equivalent of `SO_BINDTODEVICE`.
-    /// The body cannot resume, so — like ``runSingle`` — only the connect/status
-    /// phase retries; once bytes are on disk a failure is terminal.
+    /// Single-connection download pinned to one interface (no size / no ranges). Uses CurlBridge, as
+    /// `URLSession` has no `SO_BINDTODEVICE`; only connect/status retries — bytes on disk are terminal.
     private func runSingleBound(_ adapter: BoundAdapter) async throws -> TransferOutcome {
         try Data().write(to: plan.destination)
 
@@ -663,12 +570,8 @@ final class SegmentedTransfer: Sendable {
 
         let upgrade = spawnUpgradeProber()
         defer { upgrade?.task.cancel() }              // covers completion, failure, cancellation
-        // The trip is read by all three of BoundHTTPClient's abort consumers, so
-        // whichever runs first stops curl: mid-body that is the write thunk
-        // (CURLE_WRITE_ERROR), pre-body the progress thunk. Either way
-        // `Response.aborted` re-reads the closure, so the branch below is taken
-        // regardless of which channel fired — that, not a single guaranteed curl
-        // code, is what makes the trip unmissable.
+        // All three of BoundHTTPClient's abort consumers read the trip, so whichever runs first stops
+        // curl; `Response.aborted` re-reads the closure, which is what makes the trip unmissable.
         let shouldAbort: (@Sendable () -> Bool)?
         if let upgrade {
             let signal = upgrade.signal
@@ -712,31 +615,15 @@ final class SegmentedTransfer: Sendable {
             if trailing > 0 { await ledger.advance(segment: 0, by: trailing) }
 
             if response.aborted {
-                // Signal-abort is an upgrade; task-cancellation abort stays a
-                // pause/remove. If both raced, cancellation wins — the engine's
-                // pause owns the transition.
+                // Signal-abort is an upgrade; task-cancellation abort stays a pause/remove.
+                // If both raced, cancellation wins — the engine's pause owns the transition.
                 if let upgrade, upgrade.signal.isTripped, !Task.isCancelled {
                     try handle.close()                       // flush failure = real failure
                     let written = await ledger.totalBytes()
                     switch Self.classify(response.httpStatus, ranged: false) {
                     case .accept:
-                        // Stream edge of the validator triangle: ranged tail bytes may
-                        // only be mixed under a prefix provably from the same entity.
-                        // The two edges see different representations though — the
-                        // probe rides URLSession (Accept-Encoding: gzip…) while this
-                        // stream rides curl (identity, see gcb_http_headers), and
-                        // Apache/nginx suffix or weaken the ETag per encoding — so a
-                        // mismatch here routinely means "same file, different
-                        // representation", NOT a changed remote. Failing the download
-                        // on it would break transfers that complete fine without the
-                        // upgrade, and it would not self-heal: the retry re-probes to
-                        // the same unranged verdict and trips again.
-                        // Dropping the unprovable prefix and re-fetching over ranges
-                        // is both correct (every byte then comes from the ranged
-                        // entity) and still faster than the single stream it replaces.
-                        // written == total is settled first: the trip landed on the
-                        // final flush, so there is nothing to segment and
-                        // `upgradeToSegmented` short-circuits to the finished outcome.
+                        // Stream edge of the validator triangle: probe (URLSession/gzip) and stream
+                        // (curl/identity) see different ETags, so a mismatch drops the prefix, not the run.
                         let keepsPrefix = written == 0 || written == upgrade.total
                             || Self.validatorsAllowResume(
                                 cursorETag: plan.etag, cursorLastModified: plan.lastModified,
@@ -750,9 +637,8 @@ final class SegmentedTransfer: Sendable {
                         return try await upgradeToSegmented(
                             total: upgrade.total, written: keepsPrefix ? written : 0)
                     case .retry:
-                        // The unranged GET is being 429/5xx'd while ranges just
-                        // probed 206: upgrading IS the retry. written == 0 (error
-                        // bodies drain in C).
+                        // The unranged GET is being 429/5xx'd while ranges just probed 206:
+                        // upgrading IS the retry. written == 0 (error bodies drain in C).
                         return try await upgradeToSegmented(total: upgrade.total, written: written)
                     case .reject:
                         if response.httpStatus == 0 {
@@ -760,10 +646,8 @@ final class SegmentedTransfer: Sendable {
                             // nothing on disk (written == 0), no status to honour.
                             return try await upgradeToSegmented(total: upgrade.total, written: written)
                         }
-                        // A terminal status (401/403/404…) surfaces as itself instead
-                        // of being laundered through an upgrade whose segments would
-                        // re-fail against the same host after a pointless
-                        // grant/release cycle.
+                        // A terminal status (401/403/404…) surfaces as itself rather than being
+                        // laundered through an upgrade whose segments would re-fail on the same host.
                         throw DownloadError.httpStatus(response.httpStatus)
                     }
                 }
@@ -814,18 +698,14 @@ final class SegmentedTransfer: Sendable {
         let flushSize = plan.flushSize
         let streamerBox = StreamerBox()
         try await withTaskCancellationHandler {
-            // Retry only the connect/status phase: the no-range fallback can't
-            // resume a partial body, so a mid-stream drop is terminal (the body
-            // read below is deliberately outside this retry loop, so it never
-            // silently restarts and double-counts progress).
+            // Retry only the connect/status phase: the no-range fallback can't resume a partial body,
+            // so a mid-stream drop is terminal (the body read sits outside this loop deliberately).
             var result: (HTTPURLResponse, AsyncThrowingStream<Data, Error>, ChunkStreamer)?
             var attempt = 0
             while true {
                 try Task.checkCancellation()
-                // A stream stuck in connect/status retries (server 503s the
-                // unranged GET while happily 206ing ranges) must still honour a
-                // trip — nothing has streamed yet, so W == 0 and there is no
-                // entity edge to verify.
+                // A stream stuck in connect/status retries (503 on the unranged GET while ranges
+                // 206) must still honour a trip — W == 0, so there is no entity edge to verify.
                 if let upgrade, upgrade.isTripped { throw UpgradeInterrupt() }
                 attempt += 1
                 let req = Self.makeRequest(url, settings: settings)
@@ -852,10 +732,8 @@ final class SegmentedTransfer: Sendable {
             // The loop exits only via `break` (result assigned) or by throwing.
             guard let (http, bytes, streamer) = result else { return }
 
-            // The 200 actually streaming must be the entity the probe described:
-            // the on-disk prefix and any ranged tail fetched after an upgrade must
-            // come from one representation. On mismatch the stream is left to
-            // complete untouched (today's behavior); only the upgrade is disabled.
+            // The streaming 200 must be the entity the probe described, so the prefix and any ranged
+            // tail share one representation. On mismatch only the upgrade is disabled, not the stream.
             let pumpUpgrade: UpgradeSignal?
             if let upgrade {
                 let entityTied = Self.validatorsAllowResume(
@@ -881,13 +759,8 @@ final class SegmentedTransfer: Sendable {
                                    upgrade: pumpUpgrade)
                 try handle.close()
             } catch let interrupt as UpgradeInterrupt {
-                // The upgrade route is the one error path whose on-disk bytes are
-                // KEPT: `ledger.totalBytes()` becomes a completed prefix segment that
-                // `runSegmented` skips and never re-fetches. A close(2) failure here
-                // (NFS/SMB surfacing a late write error) would leave a hole inside
-                // [0, W-1] that the tail segments never cover and the completeness
-                // check — which only sums the ledger — cannot see. Same rule the
-                // bound twin already applies: flush failure = real failure.
+                // The upgrade is the one error path whose on-disk bytes are KEPT as a completed prefix
+                // segment, so a close(2) failure would leave an invisible hole: flush failure = failure.
                 streamer.cancelTask()
                 try handle.close()
                 throw interrupt
@@ -901,21 +774,14 @@ final class SegmentedTransfer: Sendable {
         }
     }
 
-    /// Drain `bytes` into `handle`, flushing to disk every `flushSize` and folding
-    /// each flush into `ledger` (under `segment`) and the rate `limiter`. Shared by
-    /// both pumps so the flush/throttle loop lives once. `written` accumulates the
-    /// bytes flushed in THIS call, updated incrementally so that if the stream
-    /// throws mid-body the ledger has already counted the flushed prefix and a
-    /// segment retry can resume from the right offset without double-counting.
-    /// Cancellation is checked once per flush; the caller owns cancel/close on the
-    /// error path (each pump handles a mid-body failure differently).
+    /// Drain `bytes` into `handle`, flushing every `flushSize` and folding each flush into `ledger`
+    /// (under `segment`) and `limiter`. `written` updates incrementally so a mid-body throw can resume.
     private func pumpBody(_ bytes: AsyncThrowingStream<Data, Error>, into handle: FileHandle,
                           streamer: ChunkStreamer, ledger: Ledger, segment: Int,
                           limiter: RateLimiter?, flushSize: Int, written: inout Int64,
                           upgrade: UpgradeSignal? = nil) async throws {
-        // Body arrives as `Data` chunks from the task delegate (not one byte per
-        // `await`), so appends are memcpys and the loop isn't CPU-bound. `consumed`
-        // releases backpressure credit as each chunk leaves the stream.
+        // Body arrives as `Data` chunks from the task delegate (not per-byte `await`), so appends are
+        // memcpys and the loop isn't CPU-bound. `consumed` releases backpressure credit per chunk.
         var buffer = Data()
         buffer.reserveCapacity(flushSize)
         for try await chunk in bytes {
@@ -926,10 +792,8 @@ final class SegmentedTransfer: Sendable {
                 try handle.write(contentsOf: buffer)
                 written += Int64(buffer.count)
                 await ledger.advance(segment: segment, by: buffer.count)
-                // Pace against the profile's aggregate download cap. The pacer
-                // behind this one is shared across all segments AND across every
-                // concurrent download, so combined throughput converges on the cap
-                // (no-op when unlimited).
+                // Pace against the profile's aggregate download cap. The pacer behind this one is
+                // shared across all segments AND all downloads, so combined throughput hits the cap.
                 await limiter?.pace(buffer.count)
                 buffer.removeAll(keepingCapacity: true)
                 // Stop exactly at a flush boundary: `written` then equals the bytes
@@ -991,9 +855,8 @@ final class SegmentedTransfer: Sendable {
         return etag != nil || lastModified != nil
     }
 
-    /// Layout for a single stream upgrading to segments: a completed prefix
-    /// [0, written) restored as segment 0 (omitted when nothing was flushed), and
-    /// the remainder cut with the same clamp math a fresh plan would use.
+    /// Layout for a single stream upgrading to segments: completed prefix [0, written) restored as
+    /// segment 0 (omitted when nothing flushed), remainder cut with a fresh plan's clamp math.
     static func upgradedLayout(total: Int64, written: Int64, connections: Int,
                                minSegment: Int64 = 64 * 1024) -> (ranges: [Range64], restored: [Int: Int64]) {
         let remainder = max(0, total - written)
@@ -1004,9 +867,8 @@ final class SegmentedTransfer: Sendable {
         return ([Range64(start: 0, end: written - 1)] + tail, [0: written])
     }
 
-    /// nil when the plan can never upgrade (gate fails, or the engine supplied no
-    /// budget channel — so every plan built without the closure keeps today's
-    /// behavior bit-for-bit). Caller owns cancellation: `defer { upgrade?.task.cancel() }`.
+    /// nil when the plan can never upgrade (gate fails, or no engine budget channel — so plans built
+    /// without the closure behave bit-for-bit as before). Caller owns `defer { upgrade?.task.cancel() }`.
     private func spawnUpgradeProber() -> (task: Task<Void, Never>, signal: UpgradeSignal, total: Int64)? {
         guard plan.requestExtraConnections != nil,
               Self.shouldAttemptUpgrade(totalBytes: plan.totalBytes,
@@ -1032,12 +894,8 @@ final class SegmentedTransfer: Sendable {
         return (task, signal, total)
     }
 
-    /// One ranged header probe at the file midpoint. MUST use the openStream +
-    /// cancelTask pattern (see ``HTTPEngine/probe``): a server that ignores Range
-    /// answers 200 with the WHOLE body, and any buffering API would pull it into
-    /// memory. Headers are all we read. Uses URLSession even for interface-bound
-    /// plans — the engine's initial probe already egresses the default route
-    /// (pins govern payload bytes, not metadata probes).
+    /// One ranged header probe at the file midpoint. MUST use openStream + cancelTask: a server that
+    /// ignores Range answers 200 with the WHOLE body. URLSession even for bound plans (metadata, not payload).
     static func probeMidpointRange(plan: TransferPlan, total: Int64) async -> Bool {
         let box = StreamerBox()
         return await withTaskCancellationHandler {
@@ -1046,13 +904,8 @@ final class SegmentedTransfer: Sendable {
             req.setValue("bytes=\(m)-\(m)", forHTTPHeaderField: "Range")
             guard let (http, _, streamer) = try? await openStream(
                 session: plan.session, request: req,
-                // Close the cancel-vs-register race: a cancellation that fired
-                // between the handler install and this registration found a nil
-                // box (no-op); re-checking here — synchronously on the prober's
-                // task, BEFORE openStream resumes the URLSession task — aborts it
-                // so a cancelled prober never leaves a stray midpoint GET waiting
-                // on headers (same reason ConnectionGovernor.acquire re-checks
-                // under isolation).
+                // Close the cancel-vs-register race: re-check here, synchronously and BEFORE
+                // openStream resumes the task, so a cancelled prober leaves no stray midpoint GET.
                 register: { box.set($0); if Task.isCancelled { box.cancel() } }
             ) else { return false }
             streamer.cancelTask()          // headers only — never drain the body
@@ -1066,37 +919,28 @@ final class SegmentedTransfer: Sendable {
         } onCancel: { box.cancel() }
     }
 
-    /// Kill-the-stream → charge budget → re-enter the segmented phase with a
-    /// synthesized layout (completed prefix + freshly-cut tail). `preallocate`
-    /// EXTENDS the W-byte file to `total`, preserving the prefix — this path must
-    /// never revisit the singles' `Data().write` truncation.
+    /// Kill the stream → charge budget → re-enter segmented with a synthesized layout. `preallocate`
+    /// EXTENDS the W-byte file to `total`, preserving the prefix — never the singles' `Data().write`.
     private func upgradeToSegmented(total: Int64, written: Int64) async throws -> TransferOutcome {
         if written == total {
             // The trip landed on the stream's final flush: nothing left to segment.
             return TransferOutcome(bytesWritten: written, resumeData: nil, usedSegments: 1)
         }
-        // The streamed 200 is a separate response with its own framing and can
-        // be LONGER than the probed size (mid-deploy: edge A declared 10 MiB/v1,
-        // edge B streamed 12 MiB/v2). Success is written == total ONLY; an
-        // overshoot must fail exactly like runSingle's completeness net — never
-        // be returned as `.completed`, and never reach preallocate (which would
-        // truncate real bytes).
+        // The streamed 200 has its own framing and can be LONGER than the probed size (mid-deploy edge
+        // skew). Success is written == total ONLY; an overshoot must fail, never reach preallocate.
         guard written < total else {
             throw DownloadError.network("Incomplete download: wrote \(written) of \(total) bytes")
         }
         try Task.checkCancellation()                 // don't charge budget for a paused task
         let multiPath = plan.boundAdapters.count >= 2
         let minSegment: Int64 = multiPath ? 32 * 1024 : 64 * 1024
-        // The transfer already holds 1 reserved connection, so it asks for
-        // `sizeCap - 1` extras; the ENGINE owns profile/host/global clamping
-        // inside the closure. A zero grant still upgrades (1 tail segment): the
-        // download becomes resumable with cursors, which single-stream never was.
+        // The transfer already holds 1 reserved connection, so it asks for `sizeCap - 1` extras; the
+        // ENGINE clamps. A zero grant still upgrades (1 tail segment) — cursors make it resumable.
         let sizeCap = Self.clampSegmentCount(Self.upgradeMaxConnections,
                                              total: total - written, minSegment: minSegment)
         let granted = await plan.requestExtraConnections?(max(0, sizeCap - 1)) ?? 0
-        // Fan-out is 1 + granted, never inflated to the adapter count: opening
-        // more segments than the budget charged would falsify the engine's
-        // accounting. If granted < adapters−1, a NIC idles; budget wins.
+        // Fan-out is 1 + granted, never inflated to the adapter count: opening more segments than the
+        // budget charged would falsify engine accounting. If granted < adapters−1 a NIC idles.
         let layout = Self.upgradedLayout(total: total, written: written,
                                          connections: 1 + granted, minSegment: minSegment)
         let streams = layout.ranges.count - (written > 0 ? 1 : 0)
@@ -1111,10 +955,8 @@ final class SegmentedTransfer: Sendable {
 
     // MARK: Request building & retry policy
 
-    /// Builds a request carrying the client `User-Agent` (and the preemptive
-    /// `Authorization` header for protected hosts). All outbound requests must
-    /// go through here so none are sent UA-less (a missing UA causes some
-    /// CDNs / WAFs to reset the connection, surfacing as -1005).
+    /// Builds a request carrying the client `User-Agent` (plus preemptive `Authorization`). ALL outbound
+    /// requests go through here: a missing UA makes some CDNs/WAFs reset the connection, seen as -1005.
     static func makeRequest(_ url: URL, settings: RequestSettings) -> URLRequest {
         var req = URLRequest(url: url)
         req.setValue(settings.userAgent, forHTTPHeaderField: "User-Agent")
@@ -1130,14 +972,12 @@ final class SegmentedTransfer: Sendable {
         return req
     }
 
-    /// A request for any pool URL. The stored `Authorization` was resolved for
-    /// the PRIMARY host — it must never ride to a mirror on a different host
-    /// (that would hand the user's credentials to whoever runs the mirror).
+    /// A request for any pool URL. The stored `Authorization` was resolved for the PRIMARY host and must
+    /// never ride to a mirror on another host — that hands the user's credentials to its operator.
     private func request(for url: URL) -> URLRequest {
         var settings = plan.settings
-        // The Authorization / Referer / custom headers were resolved for the
-        // PRIMARY host — none of them may ride to a mirror on a different host
-        // (that would leak the user's credentials/context to the mirror operator).
+        // Authorization / Referer / custom headers were resolved for the PRIMARY host; none may ride to
+        // a mirror on a different host (leaking the user's credentials/context to its operator).
         if url.host?.lowercased() != plan.url.host?.lowercased() {
             settings.authorization = nil
             settings.referer = nil
@@ -1146,17 +986,8 @@ final class SegmentedTransfer: Sendable {
         return Self.makeRequest(url, settings: settings)
     }
 
-    /// Open `request` and return its response headers together with a stream of
-    /// body `Data` chunks and the ``ChunkStreamer`` driving it. This replaces
-    /// `URLSession.bytes(for:)`, whose one-byte-per-`await` iteration is
-    /// CPU-bound and caps throughput on fast links: a delegate delivers large
-    /// `Data` chunks with no per-byte overhead, and the streamer applies TCP
-    /// backpressure (suspending the task when the consumer falls behind).
-    ///
-    /// `register` runs synchronously with the streamer *before* the task starts,
-    /// so a task-cancellation handler that captured the box can abort even during
-    /// the initial connect. The awaited response resolves on the first response
-    /// header (or throws if the task fails before one arrives).
+    /// Open `request`, returning headers, a stream of body `Data` chunks and its ``ChunkStreamer``:
+    /// `URLSession.bytes` is per-byte CPU-bound. `register` runs before the task starts, so cancel works.
     static func openStream(
         session: URLSession, request: URLRequest,
         register: (ChunkStreamer) -> Void
@@ -1165,15 +996,8 @@ final class SegmentedTransfer: Sendable {
         var bodyContinuation: AsyncThrowingStream<Data, Error>.Continuation!
         let body = AsyncThrowingStream<Data, Error> { bodyContinuation = $0 }
         #if os(Linux)
-        // swift-corelibs-foundation does not honour the per-task
-        // `URLSessionTask.delegate`; only a SESSION-level delegate receives
-        // `didReceive(response:)` / `didReceive(data:)`. Without this the segmented
-        // transfer would attach its `ChunkStreamer` to the task, get no callbacks,
-        // and write zero bytes. This used to mean a session per stream, which is
-        // one `URLSession` deallocation per segment — and freeing a corelibs
-        // session can abort the process (see ``SessionPool``). One kept-forever
-        // session carries every stream instead, with a router fanning the
-        // session-level callbacks back out to the streamer that owns each task.
+        // swift-corelibs-foundation ignores per-task delegates — only a SESSION delegate gets callbacks,
+        // and freeing a corelibs session can abort the process, so one kept session routes every stream.
         let config = session.configuration
         let streamSession = SessionPool.session(
             key: "segment-stream/"
@@ -1208,34 +1032,28 @@ final class SegmentedTransfer: Sendable {
         status == 429 || status == 500 || status == 502 || status == 503 || status == 504
     }
 
-    /// The accept / retry / reject decision for a freshly-opened response,
-    /// shared by the segmented and single-stream pumps so the acceptance rule
-    /// cannot drift between them.
+    /// The accept / retry / reject decision for a freshly-opened response, shared by the segmented and
+    /// single-stream pumps so the acceptance rule cannot drift between them.
     enum StatusClass: Equatable { case accept, retry, reject }
 
-    /// Curl says "Could not connect to server" without saying through *what*. An
-    /// interface with an address but a dead upstream is a common multi-NIC state,
-    /// and naming it is the difference between a fixable report and a mystery.
+    /// Curl says "Could not connect to server" without saying through *what*. An interface with an
+    /// address but a dead upstream is a common multi-NIC state; naming it makes the report fixable.
     static func transportError(_ curlCode: Int, via adapter: BoundAdapter?) -> String {
         let message = String(cString: gcb_error_message(Int32(curlCode)))
         guard let adapter else { return message }
         return "\(message) (via \(adapter.label))"
     }
 
-    /// Classify a response status for the pump about to read its body. A ranged
-    /// (segmented) pump accepts ONLY `206` — a `200` full body would make every
-    /// segment write the whole file at its own offset and corrupt the result; a
-    /// single-stream pump accepts any `2xx`. Retryable statuses (rate-limit /
-    /// gateway errors) are `.retry` regardless of mode; everything else `.reject`.
+    /// Classify a response status for the pump about to read its body: a ranged pump accepts ONLY `206`
+    /// (a 200 full body would corrupt every offset), single-stream any `2xx`; retryables are `.retry`.
     static func classify(_ status: Int, ranged: Bool) -> StatusClass {
         if isRetryableStatus(status) { return .retry }
         let accepted = ranged ? (status == 206) : (200..<300).contains(status)
         return accepted ? .accept : .reject
     }
 
-    /// Network-level errors that a retry can plausibly recover from (a dropped
-    /// connection, a timeout, a refused/transient host). Deliberately excludes
-    /// `.cancelled` (our own pause/remove) and non-network errors (disk, etc.).
+    /// Network errors a retry can plausibly recover from (dropped connection, timeout, transient host).
+    /// Deliberately excludes `.cancelled` (our own pause/remove) and non-network errors (disk, etc.).
     static func isTransient(_ error: Error) -> Bool {
         guard let u = error as? URLError else { return false }
         switch u.code {
@@ -1248,10 +1066,8 @@ final class SegmentedTransfer: Sendable {
         }
     }
 
-    /// Sleeps before the next attempt: honours a numeric `Retry-After` header
-    /// when present, otherwise exponential backoff. Jitter de-synchronises a
-    /// burst of segments that were all rate-limited at once (thundering herd).
-    /// `Task.sleep` throws on cancellation, so pause/remove still interrupt.
+    /// Sleeps before the next attempt: numeric `Retry-After` when present, else exponential backoff with
+    /// jitter (de-synchronises a rate-limited herd). `Task.sleep` throws, so pause/remove still interrupt.
     private func backoff(attempt: Int, response: HTTPURLResponse?, retryInterval: Double) async throws {
         var seconds = min(6.0, pow(2.0, Double(attempt - 1)) * 0.4)
         // A configured retry interval acts as a floor on the wait (0 = leave the
@@ -1286,10 +1102,8 @@ final class SegmentedTransfer: Sendable {
 
     // MARK: Resume validators
 
-    /// Pure, testable resume-validation gate. If neither side offers an `ETag`
-    /// nor a `Last-Modified`, there is nothing to verify the remote file is
-    /// unchanged — so we DO NOT resume (a silent swap would corrupt the file);
-    /// we restart from scratch instead.
+    /// Pure, testable resume gate. With no `ETag` and no `Last-Modified` on either side nothing proves
+    /// the remote is unchanged, so we DO NOT resume (a silent swap would corrupt) — we restart instead.
     static func validatorsAllowResume(
         cursorETag: String?, cursorLastModified: String?,
         probeETag: String?, probeLastModified: String?
@@ -1299,28 +1113,16 @@ final class SegmentedTransfer: Sendable {
         return false
     }
 
-    /// Is the destination still the preallocated file the cursor describes?
-    ///
-    /// A ``ResumeCursor`` records how many bytes of each range were fetched, but the
-    /// bytes themselves live in the destination file — and the segmented path is the
-    /// only one that resumes from a side-channel record instead of the on-disk size
-    /// (see ``RemoteTransferPrep/openForResume``). If the partial file was deleted,
-    /// moved or replaced while the download was paused, ``preallocate`` would silently
-    /// recreate it, every "already done" range would be skipped, and the resulting
-    /// mostly-zero file would still satisfy the `bytesWritten == total` net and be
-    /// reported as `.completed`. So require the file to exist at exactly the size
-    /// ``preallocate`` gave it; anything else falls through to a fresh start.
+    /// Is the destination still the preallocated file the cursor describes? A deleted/moved partial gets
+    /// silently recreated by ``preallocate``, so a mostly-zero file would pass the net as `.completed`.
     static func destinationHoldsPreallocation(_ url: URL, total: Int64) -> Bool {
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         guard let size = (attributes?[.size] as? NSNumber)?.int64Value else { return false }
         return size == total
     }
 
-    /// Guard a decoded resume cursor before trusting its ranges/offsets for file
-    /// seeks: a corrupted or tampered on-disk cursor must trigger a fresh start,
-    /// never an out-of-bounds seek (a negative offset traps `UInt64(_:)`). Verifies
-    /// `completed` aligns with `ranges`, every range is ordered and within
-    /// `[0, total)`, and each segment's completed-byte count fits its range.
+    /// Guard a decoded cursor before trusting its ranges/offsets for seeks: corruption must force a fresh
+    /// start, never an out-of-bounds seek (a negative offset traps `UInt64(_:)`). Checks bounds and counts.
     static func cursorIsWellFormed(_ cursor: ResumeCursor, total: Int64) -> Bool {
         guard cursor.completed.count == cursor.ranges.count else { return false }
         for (i, r) in cursor.ranges.enumerated() {
@@ -1359,10 +1161,8 @@ final class SegmentedTransfer: Sendable {
 
     // MARK: - Mirror pool
 
-    /// Distributes segments across the primary + mirrors and tracks which of
-    /// them have misbehaved. Demoted URLs are skipped; if everything ends up
-    /// demoted the slate is wiped (the pool must never go empty — the primary
-    /// deserves another chance before the whole download fails).
+    /// Distributes segments across primary + mirrors and tracks misbehaving ones. Demoted URLs are
+    /// skipped; if all are demoted the slate is wiped — the pool must never go empty.
     actor MirrorPool {
         private let urls: [URL]
         private var demoted: Set<URL> = []
@@ -1387,17 +1187,13 @@ final class SegmentedTransfer: Sendable {
 
     // MARK: - Ledger
 
-    /// The single point of mutable transfer state. The byte pumps hop here once
-    /// per flush to accumulate per-segment bytes, build the resume cursor and
-    /// throttle progress — so the hot path stays off any shared executor and the
-    /// counters are race-free.
+    /// The single point of mutable transfer state. Pumps hop here once per flush to accumulate segment
+    /// bytes, build the cursor and throttle progress — the hot path stays off shared executors.
     private actor Ledger {
         private let continuation: AsyncStream<TransferProgress>.Continuation
         private let meta: CursorMeta?
-        /// Declared size of the whole transfer, when the server gave one. The
-        /// segmented path also carries it in ``meta``; the single-stream path has
-        /// no range plan, so this is the only way it can report a real progress
-        /// fraction for its one connection row (nil when the size is unknown).
+        /// Declared size of the whole transfer when the server gave one. The single-stream path has no
+        /// range plan, so this is its only way to report a real progress fraction (nil if unknown).
         private let expectedTotal: Int64?
         private var segmentBytes: [Int: Int64]
         /// Running sum of `segmentBytes` — O(1) total instead of reduce-per-flush.
@@ -1451,9 +1247,8 @@ final class SegmentedTransfer: Sendable {
                 connections: maybeConnections(now: now, overallSpeed: speed)))
         }
 
-        /// A per-segment snapshot for the detail panel's Connections/Progress
-        /// tabs, throttled to ~1 Hz. Single-stream transfers (no range plan)
-        /// report one connection row.
+        /// A per-segment snapshot for the detail panel's Connections/Progress tabs, throttled to ~1 Hz.
+        /// Single-stream transfers (no range plan) report one connection row.
         private func maybeConnections(now: Date, overallSpeed: Double) -> [TaskConnection]? {
             let dt = now.timeIntervalSince(lastConnectionsEmit)
             guard dt >= 1.0 else { return nil }
@@ -1462,11 +1257,8 @@ final class SegmentedTransfer: Sendable {
                 lastConnectionsBytes = segmentBytes
             }
             guard let meta else {
-                // Single stream: the one row *is* the whole transfer, so its
-                // progress is the overall fraction. (It used to report a constant
-                // 0%, which read as a stalled connection while the download was
-                // plainly advancing.) A size-unknown stream has no fraction to
-                // report and honestly stays at 0.
+                // Single stream: the one row *is* the whole transfer, so its progress is the overall
+                // fraction (it used to sit at a constant 0%, reading as stalled). Unknown size stays 0.
                 let done = segmentBytes[0] ?? 0
                 let fraction = (expectedTotal ?? 0) > 0
                     ? min(1, Double(done) / Double(expectedTotal!)) : 0
@@ -1547,9 +1339,8 @@ struct TransferPlan: Sendable {
     /// transfer so the profile's cap holds in sum rather than per download.
     var sharedLimiter: RateLimiter? = nil
     var flushSize: Int
-    /// Alternative URLs for the same bytes. Only the segmented path uses them
-    /// (a 206's Content-Range total proves a mirror serves the same file; the
-    /// single-stream path has no such check, so it stays on the primary).
+    /// Alternative URLs for the same bytes. Only the segmented path uses them (a 206's Content-Range
+    /// total proves a mirror serves the same file; single-stream has no such check, so it stays put).
     var mirrors: [URL] = []
     /// When non-empty **and** ranges are used, segments bind to these adapters
     /// via CurlBridge egress scoping (network aggregation). Empty ⇒ URLSession path.
@@ -1558,10 +1349,8 @@ struct TransferPlan: Sendable {
     var connectTimeout: Double = 30
     /// Mid-flight range re-probe cadence (see ``UpgradeProbing``).
     var upgradeProbing = UpgradeProbing()
-    /// Engine-supplied channel to charge additional connections against the
-    /// cross-download budget mid-flight. Receives the wanted count, returns the
-    /// granted count (0...wanted). nil (tests, non-engine callers) disables the
-    /// mid-flight upgrade entirely.
+    /// Engine-supplied channel to charge extra connections against the cross-download budget mid-flight;
+    /// takes the wanted count, returns granted (0...wanted). nil (tests) disables the upgrade entirely.
     var requestExtraConnections: (@Sendable (Int) async -> Int)? = nil
 }
 
@@ -1608,34 +1397,11 @@ struct TransferProgress: Sendable {
 
 // MARK: - Delegate-based chunked body reader
 
-/// Bridges a `URLSessionDataTask`'s delegate callbacks into an
-/// `AsyncThrowingStream<Data>` of body chunks — replacing `URLSession.bytes`,
-/// whose one-`UInt8`-per-`await` iteration is CPU-bound and caps throughput on
-/// fast links. Chunks arrive as `Data` (append = memcpy), so the byte pump is
-/// network/disk-bound, not executor-bound.
-///
-/// **Flow control.** Bytes handed to the delegate but not yet pulled by the
-/// consumer are counted; past a high-water mark the task is `suspend()`ed and
-/// resumed once the consumer drains below the low-water mark. So a rate-limited
-/// or disk-bound consumer exerts real TCP backpressure instead of buffering the
-/// whole file in memory (`AsyncBytes` got this for free by pulling per byte).
-///
-/// **Redirects.** A per-task delegate supersedes the session delegate for its
-/// task, so this replicates ``RedirectSanitizer``'s cross-host `Authorization`
-/// stripping — otherwise a redirect could carry Basic credentials off-host.
-///
-/// Thread-safety: delegate callbacks arrive on the session's serial delegate
-/// queue while the consumer runs on the transfer's task; the shared counters and
-/// continuations are guarded by `lock`, so this is a sound `@unchecked Sendable`.
+/// Turns `URLSessionDataTask` delegate callbacks into an `AsyncThrowingStream<Data>` — `URLSession.bytes`
+/// is per-byte CPU-bound. Watermarks give TCP backpressure; redirects strip cross-host auth; `lock` guards.
 #if os(Linux)
-/// Fans one session's delegate callbacks out to the ``ChunkStreamer`` that owns
-/// each task.
-///
-/// swift-corelibs-foundation ignores `URLSessionTask.delegate`, so the delegate
-/// must live on the session — but a session per stream means a `URLSession`
-/// deallocation per segment, and freeing one can abort the process (see
-/// ``SessionPool``). Task identifiers are unique within a session, which is what
-/// makes a single shared session with this router equivalent.
+/// Fans one session's delegate callbacks out to the ``ChunkStreamer`` that owns each task: corelibs
+/// ignores `URLSessionTask.delegate`, and freeing a per-stream session can abort (see ``SessionPool``).
 final class StreamRouter: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     static let shared = StreamRouter()
 
@@ -1709,12 +1475,8 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
         lock.lock(); bodyCont = body; self.task = task; lock.unlock()
     }
 
-    /// Register the response continuation; after this the task may be resumed.
-    /// Registering a continuation on a streamer whose task ALREADY completed must
-    /// resume it here: `didCompleteWithError` has run and will never fire again, so
-    /// parking it would suspend the caller forever. A cancellation landing between
-    /// `register` (which may abort the task) and this call makes that window
-    /// reachable by construction, not by luck.
+    /// Register the response continuation; after this the task may be resumed. If the task ALREADY
+    /// completed, resume here — `didCompleteWithError` will never fire again and parking hangs forever.
     func setResponseContinuation(_ cont: CheckedContinuation<HTTPURLResponse, Error>) {
         lock.lock()
         if done {
@@ -1763,14 +1525,8 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         lock.lock()
         outstanding += data.count
-        // `suspend()` MUST happen under the same lock that publishes `suspended`.
-        // Doing it after the unlock opens a lost-wakeup window: the consumer runs
-        // on the transfer's task, and it can drain below `lowWater`, observe
-        // `suspended == true`, clear it and call `resume()` on a task that has not
-        // suspended yet (a no-op) — after which our `suspend()` lands and nothing
-        // is left to undo it, stalling the segment forever. `consumed(_:)` calls
-        // `resume()` outside the lock and takes no other lock, so there is no
-        // inversion to deadlock against.
+        // `suspend()` MUST happen under the lock that publishes `suspended`, else a consumer can drain,
+        // clear the flag and `resume()` a not-yet-suspended task — lost wakeup, the segment stalls.
         if !suspended && outstanding >= highWater {
             suspended = true
             dataTask.suspend()
@@ -1803,20 +1559,14 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) {
-        // A server-initiated redirect to a different host (or an https→http
-        // downgrade) must not carry the user's per-task secrets to whoever the new
-        // host is: this strips Authorization, Referer, Cookie AND every custom
-        // per-task header (API keys etc.), keeping only neutral transport headers.
-        // It also refuses the hop outright when the new host is loopback or the
-        // link-local/metadata range — a `Location` is chosen by the server, so
-        // following it blindly turns any download into an SSRF primitive.
+        // A redirect to another host (or an https→http downgrade) must not carry per-task secrets: strip
+        // Authorization/Referer/Cookie/custom headers, and refuse loopback + link-local — else SSRF.
         completionHandler(RedirectSanitizer.followed(request, originalURL: task.originalRequest?.url))
     }
 }
 
-/// A thread-safe holder for a segment's currently-active ``ChunkStreamer`` so a
-/// task-cancellation handler can abort whichever request is in flight (each retry
-/// attempt swaps in a fresh streamer).
+/// A thread-safe holder for a segment's currently-active ``ChunkStreamer``, so a task-cancellation
+/// handler can abort whichever request is in flight (each retry attempt swaps in a fresh streamer).
 final class StreamerBox: @unchecked Sendable {
     private let lock = NSLock()
     private var current: ChunkStreamer?

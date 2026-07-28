@@ -32,22 +32,19 @@ extension AppViewModel {
         isServerEditorPresented = true
     }
 
-    /// Persist a server (password nil = keep the stored one) and refresh the list.
-    /// Returns what happened to the secrets so the editor can report a Keychain
-    /// refusal instead of dismissing on a save the user cannot rely on.
+    /// Persist a server (password nil = keep the stored one) and refresh the list. Reports
+    /// what happened to the secrets so the editor can surface a Keychain refusal.
     @discardableResult
     func saveServer(_ connection: SFTPConnection, password: String?,
                     keyPassphrase: String? = nil) -> CredentialWrite {
-        // The previously saved endpoint matters as much as the new one: renaming a
-        // host or user leaves a pooled connection under the OLD key that nothing
-        // else would ever reach.
+        // The previously saved endpoint matters as much as the new one: renaming a host or user
+        // leaves a pooled connection under the OLD key that nothing else would reach.
         let previous = server(connection.id)
         let outcome = SFTPConnectionStore.shared.save(connection, password: password,
                                                       keyPassphrase: keyPassphrase)
         reloadServers()
-        // Pooled connections capture their credentials when they are opened, so
-        // an edited password or key would otherwise keep reconnecting with the
-        // old one until the app restarted.
+        // Pooled connections capture credentials when opened, so an edited password or key
+        // would otherwise keep reconnecting with the old one until restart.
         dropPooledConnections(for: connection, and: previous)
         return outcome
     }
@@ -114,13 +111,7 @@ extension AppViewModel {
     }
 
     // MARK: Session actions (sidebar context menu)
-    //
-    // A note on what "connected" means here. ``SFTPClient`` is a value type and
-    // the C shim opens its own socket per call (`gsb_open` … `gsb_teardown`), so
-    // there is no long-lived session to hang up on. What *is* long-lived is the
-    // browsing state: the mounted `SFTPBrowserModel`, its cached listing and
-    // remembered path, and any in-flight transfers. These three actions manage
-    // that state, which is what a user means by connect/disconnect/reconnect.
+    // No long-lived session exists (the shim opens a socket per call); these manage browsing state.
 
     /// True when this server has something to disconnect *from*: it is the one
     /// being browsed, or it still has a transfer running.
@@ -128,13 +119,11 @@ extension AppViewModel {
         selectedServer == id || sftpTransfers.contains { $0.connectionID == id && $0.isActive }
     }
 
-    /// Tear down everything holding this server open: stop its transfers and
-    /// leave its browser. Asks first when transfers would be killed — the same
-    /// bargain ``requestCancelSFTPTransfer(_:)`` strikes for a single row.
+    /// Tear down everything holding this server open: stop its transfers and leave its
+    /// browser. Asks first when transfers would be killed.
     func disconnectServer(_ id: SFTPConnection.ID) {
-        // Reachable with nothing to do: the menu item is disabled in that state,
-        // but the VoiceOver action that mirrors it carries no disabled state, so
-        // the guard lives here rather than in the view.
+        // Reachable with nothing to do: the menu item is disabled then, but the mirroring
+        // VoiceOver action carries no disabled state, so the guard lives here not in the view.
         guard let connection = server(id), isServerEngaged(id) else { return }
         let active = activeTransfers(for: id)
         guard !active.isEmpty else {
@@ -151,10 +140,8 @@ extension AppViewModel {
             destructive: true
         ) { [weak self] in
             guard let self else { return }
-            // Re-read rather than closing over the list the sheet was built from.
-            // A queued upload can start while the sheet is open — cancelling the
-            // stale snapshot would leave that one running under a "Disconnected"
-            // toast, which is the one thing this action promises not to do.
+            // Re-read rather than closing over the sheet's list: a queued upload can start while
+            // the sheet is open, and cancelling a stale snapshot would leave it running.
             for transfer in self.activeTransfers(for: id) { self.cancelSFTPTransfer(transfer.id) }
             self.finishDisconnect(id)
         }
@@ -170,17 +157,14 @@ extension AppViewModel {
         if selectedServer == id { closeServerBrowser() }
         if sftpBrowserNavigation?.connectionID == id { sftpBrowserNavigation = nil }
         serverTestsInFlight.remove(id)
-        // Drop the one-shot OS-probe guard. Detection is also gated on `os` still
-        // being nil, so this only matters for a probe that hadn't answered yet:
-        // it lets a later reconnect try again instead of being blocked forever by
-        // one this teardown outran.
+        // Drop the one-shot OS-probe guard. Detection is also gated on `os` being nil, so this
+        // only lets a later reconnect retry a probe this teardown outran.
         osProbesInFlight.remove(id)
         toastNow("Disconnected")
     }
 
-    /// Re-open this server from scratch: a new browser against a freshly resolved
-    /// client (so a changed password or key is picked up), plus an immediate
-    /// reachability sweep. Works whether or not the server is currently open.
+    /// Re-open this server from scratch: a new browser against a freshly resolved client
+    /// (so a changed password or key is picked up), plus an immediate reachability sweep.
     func reconnectServer(_ id: SFTPConnection.ID) {
         guard server(id) != nil else { return }
         sftpBrowserNavigation = nil
@@ -192,11 +176,8 @@ extension AppViewModel {
         Task { await refreshServerStatuses() }
     }
 
-    /// Open a real authenticated session and report what happened.
-    ///
-    /// The sidebar's live dot is a bare TCP connect — it never logs in, so a
-    /// server with a stale password or an unapproved host key still shows green.
-    /// This is the one action that answers "will this actually work?".
+    /// Open a real authenticated session and report what happened — the sidebar's dot is a
+    /// bare TCP connect, so a stale password still shows green. This answers "will it work?".
     func testServerConnection(_ connection: SFTPConnection) {
         let id = connection.id
         guard !serverTestsInFlight.contains(id) else { return }
@@ -224,20 +205,14 @@ extension AppViewModel {
 
     // MARK: Host key
 
-    /// True when this server has a pin to show or forget. `.unavailable` counts:
-    /// an unreadable record is exactly the state "Forget Host Key" exists to
-    /// clear, and hiding the item there would strand the user.
+    /// True when this server has a pin to show or forget. `.unavailable` counts: an unreadable
+    /// record is exactly what "Forget Host Key" exists to clear.
     func hasHostKeyRecord(_ connection: SFTPConnection) -> Bool {
         HostKeyStore.shared.lookup(host: connection.host, port: connection.port) != .none
     }
 
-    /// Show the pinned host key next to the one the server is presenting now.
-    ///
-    /// The live read is deliberately credential-free — `password: ""` skips the
-    /// Keychain lookup entirely, and ``SFTPClient/hostKeyFingerprint()`` hangs up
-    /// before offering anything. Asking the user to authorize a Keychain read just
-    /// to look at a public fingerprint would be backwards, and the case that most
-    /// needs this dialog is the one where the credentials no longer work.
+    /// Show the pinned host key beside the one the server presents now. Deliberately
+    /// credential-free (`password: ""` skips the Keychain) — this is public fingerprint data.
     func showHostKey(_ connection: SFTPConnection) {
         let id = connection.id
         guard !hostKeyReadsInFlight.contains(id) else { return }
@@ -263,25 +238,16 @@ extension AppViewModel {
             }
             guard let self else { return }
             self.hostKeyReadsInFlight.remove(id)
-            // Read the pin *after* the round-trip, not before it. A first-contact
-            // approval on another connection to this host can pin a key during
-            // those seconds, and a dialog captioned "Pinned" showing a key that is
-            // no longer the pin is worse than one that admits it doesn't know.
+            // Read the pin *after* the round-trip: another connection can pin a key during those
+            // seconds, and a dialog captioned "Pinned" showing a stale key is worse than admitting doubt.
             HostKeyInspector.present(endpoint: endpoint,
                                      pinned: HostKeyStore.shared.lookup(host: host, port: port),
                                      live: live)
         }
     }
 
-    /// Forget the pinned fingerprint, so the next connection asks about the key
-    /// again — the recovery after a legitimate rekey, and the only way out of a
-    /// pin record Goel can no longer read (both fail closed and block every
-    /// connection). Same action as the connection editor's "Reset pinned host
-    /// key"; this is the route that doesn't require opening the editor.
-    ///
-    /// Always confirmed: forgetting a pin drops the protection that makes a
-    /// swapped host key visible, and the next connection will accept whatever
-    /// answers on the strength of the user's approval alone.
+    /// Forget the pinned fingerprint so the next connection asks again — the recovery after a
+    /// legitimate rekey. Always confirmed: it drops the protection that makes a swap visible.
     func forgetHostKey(_ connection: SFTPConnection) {
         let host = connection.host, port = connection.port
         requestConfirm(
@@ -311,13 +277,8 @@ extension AppViewModel {
         Self.sshURL(username: connection.username, host: connection.host, port: connection.port)
     }
 
-    /// The pure builder behind ``sshURL(for:)``, kept `nonisolated static` so the
-    /// escaping is testable without standing up a whole view model.
-    ///
-    /// Built through `URLComponents` rather than string interpolation: this URL is
-    /// handed to `NSWorkspace`, and a username carrying an `@`, a `/` or a space
-    /// would otherwise re-point the host half of the address at something the user
-    /// never saved. The port is omitted at 22 so the common case reads cleanly.
+    /// The pure builder behind ``sshURL(for:)``. Uses `URLComponents`, not interpolation: a
+    /// username with `@`, `/` or a space would otherwise re-point the host half.
     nonisolated static func sshURL(username: String, host: String, port: Int) -> URL? {
         guard !host.isEmpty else { return nil }
         var components = URLComponents()
@@ -328,10 +289,8 @@ extension AppViewModel {
         return components.url
     }
 
-    /// Hand the server to Terminal (or whatever claims `ssh://`).
-    ///
-    /// This leaves Goel: the external client uses its own `known_hosts`, not the
-    /// fingerprint pinned in ``HostKeyStore``, and will do its own trust prompt.
+    /// Hand the server to Terminal (or whatever claims `ssh://`). This leaves Goel: the
+    /// external client uses its own `known_hosts` and does its own trust prompt.
     func openServerInTerminal(_ connection: SFTPConnection) {
         guard let url = sshURL(for: connection) else {
             toastNow("This server’s address can’t be opened in Terminal")
@@ -345,24 +304,14 @@ extension AppViewModel {
         #endif
     }
 
-    /// Build a usable client for a connection, resolving the Keychain password.
-    /// Returns nil if the connection is malformed (no host) *or* the stored
-    /// secret couldn't be read. Silent by design — it is called during view
-    /// construction, where a toast would fire on every render. User-initiated
-    /// actions should use ``sftpClientReportingFailure(for:)`` instead.
+    /// Build a client for a connection, resolving the Keychain password; nil if malformed or
+    /// unreadable. Silent by design — called during view construction. See the reporting variant.
     func sftpClient(for connection: SFTPConnection) -> SFTPClient? {
         SFTPSession.client(for: connection)
     }
 
-    /// Resolve a client **once**, returning either it or the reason it failed.
-    ///
-    /// A single entry point on purpose: each resolution can raise its own
-    /// Keychain authorization prompt, so a "get the client, then ask why it
-    /// failed" pair would prompt the user twice for one action. Callers must not
-    /// combine `sftpClient(for:)` with a separate message lookup.
-    ///
-    /// A refused Keychain prompt previously surfaced as "This server is
-    /// misconfigured", sending the user to re-check settings that were fine.
+    /// Resolve a client **once**, returning it or the reason it failed. Each resolution can
+    /// raise its own Keychain prompt, so never pair this with a separate message lookup.
     func sftpClientOrFailure(for connection: SFTPConnection) -> (client: SFTPClient?, failure: String?) {
         switch SFTPSession.resolve(for: connection) {
         case .ready(let client):

@@ -24,9 +24,8 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
   const [single, setSingle] = useState('')
   const [busy, setBusy] = useState(false)
   const [picking, setPicking] = useState(false)
-  // Only needed to shorten the chosen path for display (`~/…` rather than the
-  // full absolute path). Null until the first listing arrives — and the folder
-  // field starts empty, so nothing is shown wrong in the meantime.
+  // Only needed to shorten the chosen path for display (`~/…`). Null until the first listing
+  // arrives — the folder field starts empty, so nothing is shown wrong in the meantime.
   const [home, setHome] = useState<string | null>(null)
   const urlRef = useRef<HTMLTextAreaElement>(null)
 
@@ -57,10 +56,8 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
   const eligible: NetworkAdapter[] = net?.adapters.filter((a) => a.eligible) ?? []
   const showNetworkChoice = eligible.length >= 2
 
-  /**
-   * Collapse the picker into a `NetworkSelection` spec the API understands.
-   * Returns null when the choice is unusable, having already said why.
-   */
+  /** Collapse the picker into a `NetworkSelection` spec the API understands. Returns null
+   *  when the choice is unusable, having already said why. */
   function networkSpec(): string | null {
     if (!showNetworkChoice) return 'auto'
     if (mode === 'single') return single ? `single:${single}` : 'auto'
@@ -144,9 +141,8 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
               <label className="flabel">
                 Save to <span className="chip chip-w">Server folder</span>
               </label>
-              {/* Read-only on purpose. A typed absolute path is easy to get
-                  subtly wrong and is refused only after the whole request is
-                  composed; browsing makes the wrong value unreachable. */}
+              {/* Read-only on purpose: a typed absolute path is refused only after the whole
+                  request is composed, so browsing makes the wrong value unreachable. */}
               <div className="finput pkfield">
                 <span className={`pkval${folder ? '' : ' dim'}`} title={folder || undefined}>
                   {folder ? folderLabel(folder, home) : 'Default downloads folder'}

@@ -3,9 +3,8 @@ import GoelCore
 
 // MARK: - Multi-selection
 
-/// Row selection: the highlighted set plus the "primary" row whose details the
-/// detail panel shows. Split out of `AppViewModel.swift` so the bridge proper
-/// stays focused on the manager round-trips.
+/// Row selection: the highlighted set plus the "primary" row the detail panel shows.
+/// Split out so `AppViewModel.swift` stays focused on the manager round-trips.
 @MainActor
 extension AppViewModel {
 
@@ -48,9 +47,8 @@ extension AppViewModel {
         primarySelection = nil
     }
 
-    /// The visible row that should take over the primary selection when `id` is
-    /// removed: the next row down, or the previous one if `id` was last, or `nil`
-    /// if the visible list becomes empty.
+    /// The visible row that takes over the primary selection when `id` is removed: the next
+    /// row down, the previous one if `id` was last, or nil if the list becomes empty.
     func visibleNeighbor(after id: DownloadTask.ID) -> DownloadTask.ID? {
         guard let idx = visibleTasks.firstIndex(where: { $0.id == id }) else {
             return visibleTasks.first(where: { $0.id != id })?.id

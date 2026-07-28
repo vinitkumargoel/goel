@@ -1,9 +1,7 @@
 import Foundation
 
-/// Which kind of work a connection is carrying. Roles exist so that a long
-/// background scan or a large transfer can never make the browser feel stuck:
-/// each gets its own connection, and libssh2's one-thread-per-session rule then
-/// keeps them genuinely independent.
+/// Which kind of work a connection carries. Each role gets its own connection so a background scan
+/// or big transfer can't stall the browser — libssh2's one-thread-per-session rule keeps them apart.
 public enum SFTPSessionRole: Hashable, Sendable {
     /// Folder listings and the small mutations a person triggers directly. Must
     /// stay responsive above everything else.
@@ -15,13 +13,8 @@ public enum SFTPSessionRole: Hashable, Sendable {
     case transfer(UUID)
 }
 
-/// Hands out connections keyed by server and role, and enforces a ceiling on how
-/// many a single server may be asked to hold open at once.
-///
-/// The cap matters: OpenSSH's default `MaxStartups` is 10:30:100 and `MaxSessions`
-/// 10, so a burst of transfer jobs against one host could otherwise trip a
-/// server's limits and start refusing connections — which the user would
-/// experience as random failures, not as backpressure.
+/// Hands out connections keyed by server and role, capping how many one server holds open at once.
+/// OpenSSH defaults (`MaxStartups` 10:30:100, `MaxSessions` 10) would otherwise refuse — random failures.
 public actor SFTPSessionPool {
 
     public static let shared = SFTPSessionPool()
@@ -47,10 +40,8 @@ public actor SFTPSessionPool {
 
     private var channels: [ChannelKey: SFTPSessionChannel] = [:]
 
-    /// The most connections one server may hold at once. Interactive and
-    /// background are always admitted; only transfer jobs queue behind the cap,
-    /// because starving a folder listing to run a fifth simultaneous upload is
-    /// the wrong trade.
+    /// Most connections one server may hold at once. Interactive and background are always admitted;
+    /// only transfer jobs queue — starving a folder listing for a fifth upload is the wrong trade.
     private let maxPerServer: Int
 
     /// One transfer job waiting for room on a server. `count` is how many slots
@@ -63,28 +54,20 @@ public actor SFTPSessionPool {
     /// Jobs waiting for a slot, oldest first, per server.
     private var waiters: [ServerKey: [Waiter]] = [:]
 
-    /// Slots promised but not yet backed by an open channel. A relay reserves
-    /// both its halves before opening either, so two concurrent relays can never
-    /// each take one half and then wait forever for the other's.
+    /// Slots promised but not yet backed by an open channel. A relay reserves both halves before
+    /// opening either, so two concurrent relays can't each take one and deadlock.
     private var reserved: [ServerKey: Int] = [:]
 
-    /// Six fits the widest thing the app actually does: one interactive
-    /// connection, one background one, and the four parallel streams of a folder
-    /// transfer. It stays under OpenSSH's default `MaxSessions` of 10 so a single
-    /// Goel window can't exhaust a server on its own.
+    /// Six covers the widest case: 1 interactive + 1 background + 4 parallel folder-transfer streams,
+    /// while staying under OpenSSH's default `MaxSessions` of 10 so one window can't exhaust a server.
     public init(maxPerServer: Int = 6) {
         self.maxPerServer = max(2, maxPerServer)
     }
 
     // MARK: Handing out channels
 
-    /// The channel for this server and role, creating it on first use.
-    ///
-    /// `expected` is the pinned host-key fingerprint the connection must match.
-    /// A cached channel built for different credentials or a different pin is
-    /// torn down and rebuilt rather than reused, so re-approving a server's key
-    /// after a rekey — or fixing its password — takes effect on the next
-    /// operation instead of at the next app launch.
+    /// The channel for this server and role, created on first use. `expected` is the pinned host-key
+    /// fingerprint; a cached channel with different creds/pin is rebuilt, so fixes apply immediately.
     func channel(for target: SFTPTarget, role: SFTPSessionRole,
                  expected: String?) async -> SFTPSessionChannel {
         let server = ServerKey(target)
@@ -111,19 +94,14 @@ public actor SFTPSessionPool {
 
         let created = SFTPSessionChannel(target: target, expected: expected)
         channels[key] = created
-        // The channel now occupies the slot in its own right, so the reservation
-        // that admitted it is spent — without waking a waiter, since nothing was
-        // actually freed.
+        // The channel now occupies the slot itself, so the reservation is spent — no waiter is
+        // woken, since nothing was actually freed.
         if claimsOwnSlot { consumeReserved(server, count: 1) }
         return created
     }
 
-    /// Claim `count` slots on one server together, waiting until that many are
-    /// free. Both halves of a relay copy must be admitted at once: taking them
-    /// one at a time lets two concurrent relays each hold one and then block
-    /// forever on the other's.
-    ///
-    /// Every call must be balanced by ``release(_:count:)``.
+    /// Claim `count` slots at once (both halves of a relay together — one at a time lets two relays
+    /// deadlock holding one each). Every call must be balanced by ``release(_:count:)``.
     func reserve(_ target: SFTPTarget, count: Int) async {
         guard count > 0 else { return }
         await awaitSlot(ServerKey(target), count: count)
@@ -139,17 +117,15 @@ public actor SFTPSessionPool {
     func releaseTransfer(_ id: UUID, target: SFTPTarget) {
         let server = ServerKey(target)
         let key = ChannelKey(server: server, role: .transfer(id))
-        // Only a job that actually opened a channel frees a slot. Waking a waiter
-        // for one that never did — an intra-server move settled by a rename, say
-        // — would admit a connection past the cap.
+        // Only a job that actually opened a channel frees a slot; waking a waiter for one that
+        // never did (an intra-server move settled by a rename) would admit a connection past the cap.
         guard let channel = channels.removeValue(forKey: key) else { return }
         channel.shutdown()
         wakeWaiters(server)
     }
 
-    /// Drop every connection to one server — used when its credentials are
-    /// edited, when its pinned key is reset, or when the user removes it. The
-    /// next operation reconnects with whatever is configured then.
+    /// Drop every connection to one server — on credential edit, pinned-key reset, or removal.
+    /// The next operation reconnects with whatever is configured then.
     public func disconnectAll(matching target: SFTPTarget) {
         let server = ServerKey(target)
         for (key, channel) in channels where key.server == server {
@@ -164,9 +140,8 @@ public actor SFTPSessionPool {
         for channel in channels.values { channel.shutdown() }
         channels.removeAll()
         reserved.removeAll()
-        // Every waiter owns a continuation; abandoning one would hang its task
-        // forever. They resume without slots, which is safe because the pool is
-        // being torn down.
+        // Abandoning a waiter's continuation would hang its task forever. Resuming without slots
+        // is safe here because the pool is being torn down.
         for queue in waiters.values { for w in queue { w.continuation.resume() } }
         waiters.removeAll()
     }
@@ -207,9 +182,8 @@ public actor SFTPSessionPool {
         wakeWaiters(server)
     }
 
-    /// Admit as many queued waiters as now fit, oldest first, stopping at the
-    /// first that doesn't — keeping the queue FIFO so a two-slot relay is never
-    /// jumped indefinitely.
+    /// Admit as many queued waiters as now fit, oldest first, stopping at the first that doesn't —
+    /// FIFO so a two-slot relay is never jumped indefinitely.
     private func wakeWaiters(_ server: ServerKey) {
         while let queue = waiters[server], let next = queue.first {
             guard liveCount(server) + next.count <= maxPerServer else { return }

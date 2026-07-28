@@ -1,10 +1,7 @@
 import Foundation
 
-/// Assigns network adapters to HTTP segments (round-robin) and demotes flaky
-/// ones — mirrors ``MirrorPool`` but for egress interfaces.
-///
-/// Weighted rebalance is intentionally **not** here: ``ConnectionGovernor`` is
-/// monotonic-decreasing; adaptive weights are a separate Phase‑3 mechanism.
+/// Round-robins network adapters across HTTP segments and demotes flaky ones — ``MirrorPool`` for egress.
+/// Weighted rebalance is deliberately absent: ``ConnectionGovernor`` is monotonic-decreasing (Phase‑3).
 actor AdapterPool {
     private let adapters: [BoundAdapter]
     private var demoted: Set<String> = []

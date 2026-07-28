@@ -2,11 +2,8 @@ import Foundation
 import GoelCore
 import UserNotifications
 
-/// Thin wrapper over `UNUserNotificationCenter` for the user-facing notifications
-/// the Settings > Advanced pane toggles drive (download added / completed / failed).
-///
-/// Every call is guarded so it degrades to a silent no-op when the user has not
-/// granted authorization — the app must never crash or block on a denied prompt.
+/// Thin wrapper over `UNUserNotificationCenter` for the notifications the Advanced pane toggles.
+/// Every call is guarded, degrading to a silent no-op when authorization was not granted.
 enum NotificationService {
 
     /// Asks the system for alert + sound permission. The grant result is handled
@@ -42,10 +39,8 @@ enum NotificationService {
         }
     }
 
-    /// A logo attachment for the notification banner. The bundled icon is copied
-    /// to a unique temp file first because `UNNotificationAttachment` takes
-    /// ownership of (moves) the file it's handed and can't move a read-only
-    /// bundle resource. Returns nil (silently, no attachment) if anything fails.
+    /// A logo attachment for the banner. The icon is copied to a unique temp file first because
+    /// `UNNotificationAttachment` moves what it's handed and can't move a read-only bundle resource.
     private static func iconAttachment() -> UNNotificationAttachment? {
         guard let src = ResourceBundles.app?.url(forResource: "AppIcon-Light", withExtension: "png") else { return nil }
         let tmp = FileManager.default.temporaryDirectory

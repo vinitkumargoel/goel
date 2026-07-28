@@ -1,10 +1,8 @@
 import XCTest
 @testable import GoelCore
 
-/// Hardening regressions for the HLS parser and media engine: a hostile or
-/// malformed playlist arrives as network bytes, before the user has confirmed
-/// anything, so every one of these used to be a process trap or a silent
-/// degradation that still reported the download as finished.
+/// Hardening regressions for the HLS parser/media engine: hostile or malformed playlists arrive as
+/// network bytes pre-confirmation, and each of these was once a process trap or a silent bad "success".
 final class HLSRemediationTests: XCTestCase {
 
     private let base = URL(string: "https://cdn.example.com/video/index.m3u8")!
@@ -238,9 +236,8 @@ final class HLSRemediationTests: XCTestCase {
         XCTAssertNil(plain[0].key)
     }
 
-    /// RFC 8216 §4.3.2.5: the key that applies to an `#EXT-X-MAP` is the most
-    /// recent one *preceding* it — not the first segment's, which the engine
-    /// used to reach for (decrypting a plaintext header, or using a later key).
+    /// RFC 8216 §4.3.2.5: an `#EXT-X-MAP`'s key is the most recent one *preceding* it, not the first
+    /// segment's — the engine used to decrypt a plaintext header or apply a later key.
     func testInitMapCarriesThePrecedingKeyOnly() {
         let keyed = """
         #EXTM3U

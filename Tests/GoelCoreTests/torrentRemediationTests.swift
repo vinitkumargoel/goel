@@ -6,9 +6,8 @@ import Crypto
 #endif
 @testable import GoelCore
 
-/// Regressions for the BitTorrent engine: the metadata preview must never touch
-/// the user's files or their running torrents, an unusable proxy must be stated
-/// rather than assumed, and the seed-ratio fallback must be decidable on paper.
+/// BitTorrent engine regressions: the metadata preview must never touch the user's files or running
+/// torrents, an unusable proxy must be stated not assumed, seed-ratio fallback decidable on paper.
 final class TorrentRemediationTests: XCTestCase {
 
     private var tempDir: URL!
@@ -25,10 +24,8 @@ final class TorrentRemediationTests: XCTestCase {
 
     // MARK: The preview must not touch the user's data
 
-    /// The blocker: previewing a `.torrent` for data the user already has on
-    /// disk used to remove the torrent with libtorrent's `delete_files` flag, so
-    /// re-adding a finished torrent to re-seed it wiped the payload before the
-    /// user pressed anything.
+    /// The blocker: previewing a `.torrent` whose data is already on disk used to remove it with
+    /// libtorrent's `delete_files`, so re-adding a finished torrent to re-seed wiped the payload.
     func testMetadataPreviewDoesNotDeleteExistingPayload() async throws {
         let saveDir = tempDir.appendingPathComponent("save", isDirectory: true)
         try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
@@ -55,9 +52,8 @@ final class TorrentRemediationTests: XCTestCase {
         withExtendedLifetime(engine) {}
     }
 
-    /// And it must not write into the save folder either: the probe belongs in a
-    /// throwaway directory of its own, so no future regression can reach the
-    /// user's files through it.
+    /// And it must not write into the save folder: the probe belongs in a throwaway directory of its
+    /// own, so no future regression can reach the user's files through it.
     func testMetadataPreviewLeavesTheSaveDirectoryUntouched() async throws {
         let saveDir = tempDir.appendingPathComponent("untouched", isDirectory: true)
         try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
@@ -74,10 +70,8 @@ final class TorrentRemediationTests: XCTestCase {
         withExtendedLifetime(engine) {}
     }
 
-    /// Previewing a torrent that is ALREADY in the session used to hand back the
-    /// live torrent's handle (libtorrent's default duplicate behaviour), so
-    /// tearing the probe down evicted the user's running download. The preview
-    /// must fail closed instead, and the running task must survive it.
+    /// Previewing an ALREADY-added torrent used to hand back the live handle (libtorrent's duplicate
+    /// default), so tearing down the probe evicted the running download. It must fail closed instead.
     func testMetadataPreviewOfARunningTorrentDoesNotEvictIt() async throws {
         let saveDir = tempDir.appendingPathComponent("running", isDirectory: true)
         try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
@@ -110,9 +104,8 @@ final class TorrentRemediationTests: XCTestCase {
         XCTAssertFalse(failed, "the preview must not knock the running torrent out of the session")
     }
 
-    /// A hard add failure (a corrupt `.torrent`) must carry its real reason. It
-    /// used to collapse into "No peers answered in time — you can still start",
-    /// which invites the user to queue something that can never work.
+    /// A hard add failure (corrupt `.torrent`) must carry its real reason; it used to collapse into
+    /// "No peers answered in time — you can still start", inviting a queue of something unworkable.
     func testMetadataPreviewReportsWhyItFailed() async throws {
         let corrupt = tempDir.appendingPathComponent("corrupt.torrent")
         try Data("not a torrent at all".utf8).write(to: corrupt)
@@ -127,10 +120,8 @@ final class TorrentRemediationTests: XCTestCase {
         withExtendedLifetime(engine) {}
     }
 
-    /// `TransferFile.path` is documented as the path relative to the save folder.
-    /// The bridge used to report only the last component, so two files named the
-    /// same in different subfolders were indistinguishable in the picker and over
-    /// the remote portal.
+    /// `TransferFile.path` is relative to the save folder. The bridge used to report only the last
+    /// component, so same-named files in different subfolders collided in the picker and portal.
     func testResolvedFilesCarryTheirRelativePath() async throws {
         let fixture = try writeMultiFileTorrent()
         let engine = TorrentEngine(profile: .low, config: .init(enableDHT: false, enableLSD: false))
@@ -147,9 +138,8 @@ final class TorrentRemediationTests: XCTestCase {
 
     // MARK: Fast resume
 
-    /// Pausing a torrent must leave a libtorrent resume blob behind, so the next
-    /// launch restores the lifetime upload total instead of overwriting it with
-    /// a fresh zero (and re-hashing every piece).
+    /// Pausing must leave a libtorrent resume blob, so the next launch restores the lifetime upload
+    /// total instead of overwriting it with a fresh zero (and re-hashing every piece).
     func testPauseWritesAFastResumeBlob() async throws {
         let saveDir = tempDir.appendingPathComponent("resume", isDirectory: true)
         try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)

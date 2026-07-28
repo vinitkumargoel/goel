@@ -2,9 +2,8 @@ import SwiftUI
 import AppKit
 import GoelCore
 
-// The five detail-panel tab bodies (General, Details, Progress, Files,
-// Connections) and their shared rows. Split out of `DetailPanelView.swift` so the
-// panel shell stays small; each tab is rendered by `DetailPanelView.content`.
+// The five detail-panel tab bodies (General, Details, Progress, Files, Connections) and their
+// shared rows. Split out so the panel shell stays small.
 
 // MARK: - Shared rows
 
@@ -39,9 +38,8 @@ struct KVRow: View {
                 .a11yButton("Copy \(key.lowercased())")
             }
         }
-        // Key and value are a pair — read as "Save path, /Users/…", not as two
-        // adjacent strings whose relationship the listener has to infer. The
-        // copy button stays a separate, reachable element.
+        // Key and value are a pair — read as "Save path, /Users/…", not two adjacent strings whose
+        // relationship the listener must infer. The copy button stays separately reachable.
         .accessibilityElement(children: .contain)
         .accessibilityLabel(key)
         .accessibilityValue(value)
@@ -289,11 +287,8 @@ struct ProgressTab: View {
                             .frame(width: 13, height: 13)
                     }
                 }
-                // Each cell is a 13pt unnamed rectangle whose only content is a
-                // colour. A large torrent puts several hundred of them in a row,
-                // so leaving them exposed buries the rest of the panel behind
-                // hundreds of meaningless stops — worse than silence. The map is
-                // a picture of a distribution; speak the distribution.
+                // Each cell is a 13pt unnamed rectangle whose only content is a colour, and a large torrent puts
+                // hundreds in a row. Speak the distribution rather than every meaningless stop.
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Piece map")
                 .accessibilityValue(
@@ -534,17 +529,14 @@ struct ConnectionsTab: View {
         }
     }
 
-    /// A transfer row. `down` is a live bytes/sec figure (rendered in MB/s); the
-    /// third column is `trailing` (a peer's upload speed, or an HTTP segment's
-    /// completion) tinted with `trailingColor`. `subtitle` shows the peer's
-    /// client name under the address when present.
+    /// A transfer row. `down` is a live bytes/sec figure; the third column is `trailing` (a peer's
+    /// upload speed, or an HTTP segment's completion) tinted with `trailingColor`.
     private func connRow(label: String, subtitle: String?, down: Double,
                          trailing: String, trailingColor: Color) -> some View {
         connRowBody(label: label, subtitle: subtitle, down: down,
                     trailing: trailing, trailingColor: trailingColor)
-            // Address, client name, rate and a bare trailing figure, read as one
-            // peer/segment. Without this each row is four stops, and the rate is
-            // an abbreviation ("2.4 MB/s") rather than words.
+            // Address, client name, rate and trailing figure read as one peer/segment. Without this each
+            // row is four stops, and the rate is an abbreviation rather than words.
             .a11yGroup(
                 label: A11y.sentence(label, subtitle.flatMap { $0.isEmpty || $0 == "peer" ? nil : $0 }),
                 value: A11y.sentence(A11y.speed(down), trailing))

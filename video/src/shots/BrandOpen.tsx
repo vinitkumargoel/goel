@@ -1,32 +1,12 @@
-/* Shot 1 — brand open.
- *
- * Card: letterspace-materialize (gallery style-key `letterspace-materialize`)
- * Exact demo read: demos/letterspace-materialize/LetterspaceMaterialize.tsx
- * Ambient bed: glow-flyline-moves / `glow-orb-ambient`
- *
- * Card params preserved verbatim: all characters share ONE progress `p` (same
- * start frame, same finish frame, zero per-char stagger — the card's 命门),
- * pathLength-normalised continuous growth (no masked segments), thin strokes,
- * wide letter-spacing, easeInOut draw curve, >=30f settled hold (f62 -> f92,
- * during which the ambient bed is frozen too — see REST).
- *
- * Reskin: the demo draws SUPERHUMAN in caps on a dusk gradient. Goel°'s
- * wordmark is mixed-case with a raised degree, so the skeleton glyphs below are
- * drawn for G/o/e/l/° in the demo's 78x64 frame and stroke weight. Case is a
- * skinning choice; every timing and continuity parameter is the demo's.
- */
+/* Shot 1 — brand open. Card `letterspace-materialize` + `glow-orb-ambient` bed; params verbatim: ONE
+ * shared progress `p` (zero stagger — the card's 命门), thin strokes, >=30f settled hold (f62->f92). */
 import React from 'react';
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, Easing } from 'remotion';
 import { C, FONT } from '../theme';
 import { mulberry32 } from '../lib/helpers/rand';
 
-/* Skeleton glyphs on the demo's 64-unit cap height (glyph face y 5-59).
-   Single-line strokes — font outlines are double-line and read wrong drawn.
-   `vx`/`vw` crop each glyph's viewBox to its own ink plus a uniform BEARING, so
-   the visual gap between any two neighbours is the same. The demo could get away
-   with one fixed 78-wide box because SUPERHUMAN is ten glyphs of near-equal
-   width; here `l` (1 unit of ink) and `°` (28) would otherwise float in the
-   middle of boxes sized for `G` (55), and the word stops reading as a word. */
+/* Skeleton glyphs on the demo's 64-unit cap height; single-line strokes (font outlines read wrong drawn).
+   `vx`/`vw` crop each viewBox to its ink + a uniform BEARING, so `l` (1 unit) and `°` (28) don't float. */
 const BEARING = 4;
 const GLYPHS: Record<string, { d: string; vx: number; vw: number }> = {
   G: { d: 'M 64 16 C 56 5, 21 3, 14 20 C 7 38, 18 60, 40 59 C 58 58, 65 48, 65 36 L 45 36', vx: 11, vw: 55 },
@@ -38,24 +18,12 @@ const GLYPHS: Record<string, { d: string; vx: number; vw: number }> = {
 
 const WORD = ['G', 'o', 'e', 'l', '°'];
 const START = 6; // unified start frame — no per-char offset
-/* Rendered at the demo's 64px cap height on a 1080 canvas the word is far too
-   small for a brand open, so the whole set is drawn 1.85x larger. Scaling the
-   SVG viewport (not a CSS transform) scales the stroke with it, so the card's
-   thin-stroke ratio survives verbatim.
-
-   Tracking: the demo's ink-to-ink gap is 46 units on a 64-unit cap height —
-   0.72em. That is a ten-letter all-caps mark; on a four-glyph mixed-case one it
-   spaces the word into rubble. GAP is set so ink-to-ink lands at 0.55em, which
-   is still unambiguously the card's "wide letter-spacing" register and is the
-   widest value at which "Goel" still reads as one word. */
+/* 1.85x the demo's 64px cap height, scaled via the SVG viewport (not CSS) so the card's thin-stroke
+   ratio survives. GAP puts ink-to-ink at 0.55em — the demo's 0.72em rubbles a four-glyph mark. */
 const GS = 1.85;
 const GAP = 0.55 * 64 - 2 * BEARING;
-/* Unified finish frame. The demo draws over 52f; this is 46, and the six frames
-   come off the front and back of the draw rather than out of the hold, because
-   the card's `>=30f settled hold` is a hard parameter and the 52 is not. With
-   START=6 the word is complete at f52, the glow has annealed by f60, the tagline
-   has landed by f62 and the exit does not begin until f92 — thirty frames in
-   which nothing on screen moves at all, which is what a brand open is for. */
+/* Unified finish frame: 46f, not the demo's 52 — the six come off the draw, never the hold, since
+   `>=30f settled hold` is the hard parameter. START=6 ⇒ word done f52, tagline f62, exit f92. */
 const DUR = 46;
 
 /* glow-orb-ambient: slow drifting soft orbs as the backdrop bed. Deterministic
@@ -74,12 +42,8 @@ const ORBS = Array.from({ length: 7 }, (_, i) => {
   };
 });
 
-/* The bed comes to rest with the wordmark. Left running, the orbs drift through
-   the whole hold and then hard-cut at the shot boundary, so the "settled hold"
-   is settled everywhere except the background and the cut has a visible jump in
-   it. Easing the bed's own clock to a stop at f62 freezes the frame properly:
-   from f62 the composition is literally identical frame to frame, and the cut
-   into the app shot is a cut from a still. */
+/* The bed rests with the wordmark: left running, the orbs drift through the hold and hard-cut at the
+   shot boundary. Easing their clock to a stop at f62 makes every later frame literally identical. */
 const REST = 62;
 const orbClock = (frame: number): number =>
   frame < 40
