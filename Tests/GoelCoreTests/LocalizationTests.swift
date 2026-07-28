@@ -46,11 +46,15 @@ final class LocalizationTests: XCTestCase {
     func testEveryLiteralKeyInSourceIsInTheBaseTable() throws {
         let table = try baseTable()
         var absent: [String] = []
+        var scanned = 0
         for url in try swiftSources() {
-            for key in try literalKeys(in: url) where table[key] == nil {
-                absent.append("\(url.lastPathComponent): \"\(key)\"")
+            for key in try literalKeys(in: url) {
+                scanned += 1
+                if table[key] == nil { absent.append("\(url.lastPathComponent): \"\(key)\"") }
             }
         }
+        // Without this the audit passes trivially if the scanner or the source path ever breaks.
+        XCTAssertGreaterThan(scanned, 1000, "The key scanner found almost nothing to audit.")
         XCTAssert(absent.isEmpty, """
             \(absent.count) L10n.t key(s) are missing from en.lproj/Localizable.strings. \
             Run `python3 Scripts/extract-l10n-keys.py`.

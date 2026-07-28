@@ -21,23 +21,31 @@ extension RemoteRouter {
         """#
     }
 
+    /// `login.js` is served as a static asset outside the Vite bundle, so it cannot import the
+    /// portal's translations. Its three failure messages ride along as `data-` attributes
+    /// instead — escaped like any other value, since a translation may contain `"` or `<`.
     static func loginPage(theme: String, error: String?) -> String {
         let themeAttr = AppThemeToken.sanitize(theme)
         let errHTML = error.map { #"<div class="err">\#(htmlEscape($0))</div>"# } ?? ""
+        let failed = htmlEscape(L10n.t("Sign-in failed"))
+        let credentials = htmlEscape(L10n.t("Wrong username or password"))
+        let offline = htmlEscape(L10n.t("Could not reach the server"))
         return #"""
-        <!doctype html><html lang="en" data-theme="\#(themeAttr)"><head>
+        <!doctype html><html lang="\#(L10n.languageCode(for: L10n.currentLanguage))" data-theme="\#(themeAttr)"><head>
         <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Goel° — Sign in</title>
+        <title>\#(htmlEscape(L10n.t("Goel° — Sign in")))</title>
         <link rel="icon" type="image/svg+xml" href="\#(faviconDataURI)">
         <link rel="stylesheet" href="\#(PortalBundle.loginCSSPath)">
         </head><body>
-        <form class="card" id="f" autocomplete="on">
-          <div class="brand"><span class="mk">\#(logoSVG)</span><h1>Goel° Web</h1><div class="sub">Sign in to control your downloads</div></div>
+        <form class="card" id="f" autocomplete="on"
+              data-msg-failed="\#(failed)" data-msg-credentials="\#(credentials)"
+              data-msg-offline="\#(offline)">
+          <div class="brand"><span class="mk">\#(logoSVG)</span><h1>Goel° Web</h1><div class="sub">\#(htmlEscape(L10n.t("Sign in to control your downloads")))</div></div>
           \#(errHTML)
-          <div class="fld"><label>Username</label><input id="u" name="username" autocomplete="username" autofocus></div>
-          <div class="fld"><label>Password</label><input id="p" name="password" type="password" autocomplete="current-password"></div>
-          <button type="submit">Sign in</button>
-          <div class="foot">Goel° download manager<br><span class="warn">⚠</span> Plain HTTP — use only on a trusted network or behind TLS.</div>
+          <div class="fld"><label>\#(htmlEscape(L10n.t("Username")))</label><input id="u" name="username" autocomplete="username" autofocus></div>
+          <div class="fld"><label>\#(htmlEscape(L10n.t("Password")))</label><input id="p" name="password" type="password" autocomplete="current-password"></div>
+          <button type="submit">\#(htmlEscape(L10n.t("Sign in")))</button>
+          <div class="foot">\#(htmlEscape(L10n.t("Goel° download manager")))<br><span class="warn">⚠</span> \#(htmlEscape(L10n.t("Plain HTTP — use only on a trusted network or behind TLS.")))</div>
         </form>
         <script src="\#(PortalBundle.loginJSPath)"></script>
         </body></html>

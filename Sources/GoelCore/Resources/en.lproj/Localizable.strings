@@ -334,6 +334,7 @@
 "Copy source link for %@" = "Copy source link for %@";
 "Copy tracker URL" = "Copy tracker URL";
 "Copy web portal link" = "Copy web portal link";
+"Could not reach the server" = "Could not reach the server";
 "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app." = "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app.";
 "Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@" = "Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@";
 "Couldn’t check what’s already in %@ — nothing was uploaded." = "Couldn’t check what’s already in %@ — nothing was uploaded.";
@@ -584,6 +585,8 @@
 "Goel will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test." = "Goel will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test.";
 "Goel° can watch for http(s) and magnet links you copy and offer them in a banner. It only ever offers — nothing downloads without you clicking Add." = "Goel° can watch for http(s) and magnet links you copy and offer them in a banner. It only ever offers — nothing downloads without you clicking Add.";
 "Goel° commercial licence enquiry" = "Goel° commercial licence enquiry";
+"Goel° download manager" = "Goel° download manager";
+"Goel° — Sign in" = "Goel° — Sign in";
 "Grab Links from Page…" = "Grab Links from Page…";
 "Grab links from a page" = "Grab links from a page";
 "Grid" = "Grid";
@@ -900,6 +903,7 @@
 "Piece map · %1$@/%2$@ complete" = "Piece map · %1$@/%2$@ complete";
 "Piece order" = "Piece order";
 "Pinned key cleared — Goel will ask you to confirm the key on the next connection." = "Pinned key cleared — Goel will ask you to confirm the key on the next connection.";
+"Plain HTTP — use only on a trusted network or behind TLS." = "Plain HTTP — use only on a trusted network or behind TLS.";
 "Play in Goel°" = "Play in Goel°";
 "Play sound" = "Play sound";
 "Playlist" = "Playlist";
@@ -1128,8 +1132,11 @@
 "Shown" = "Shown";
 "Shut Down" = "Shut Down";
 "Shut down" = "Shut down";
+"Sign in" = "Sign in";
+"Sign in to control your downloads" = "Sign in to control your downloads";
 "Sign-in cookies" = "Sign-in cookies";
 "Sign-in cookies for a download" = "Sign-in cookies for a download";
+"Sign-in failed" = "Sign-in failed";
 "Single sign-on (advanced)" = "Single sign-on (advanced)";
 "Single-file HTTP download — the one-file case of the unified multi-file model." = "Single-file HTTP download — the one-file case of the unified multi-file model.";
 "Site logins" = "Site logins";
@@ -1380,6 +1387,7 @@
 "Work is still in progress." = "Work is still in progress.";
 "Write" = "Write";
 "Wrong passwords from one address are slowed exponentially. The delay is per-address, so one attacker can’t lock everybody else out." = "Wrong passwords from one address are slowed exponentially. The delay is per-address, so one attacker can’t lock everybody else out.";
+"Wrong username or password" = "Wrong username or password";
 "Yes" = "Yes";
 "Yes (Accept-Ranges)" = "Yes (Accept-Ranges)";
 "You are a charity, school, university, or public research, safety or health body." = "You are a charity, school, university, or public research, safety or health body.";

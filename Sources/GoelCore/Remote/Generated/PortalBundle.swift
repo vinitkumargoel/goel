@@ -7,7 +7,7 @@ public enum PortalBundle {
     /// Content-addressed: changing the bundle changes the URL, so a stale cache can't be served.
     public static let jsName = "portal-1f1155937fca057b.js"
     public static let cssName = "portal-75b04df0d0a94e78.css"
-    public static let loginJSName = "login-2c3d8d9b6ac2e398.js"
+    public static let loginJSName = "login-148cdcf3a3397406.js"
     public static let loginCSSName = "login-a2349da38d066ebe.css"
 
     public static let jsPath = "/assets/\(jsName)"
@@ -49,6 +49,10 @@ sftp://user@host/path/file.zip`,urlHint:"Paste multiple lines to batch-add. Torr
   const form = document.getElementById('f')
   if (!form) return
 
+  // Inlined verbatim by the codegen, so this file never sees the portal's translations.
+  // RemotePortalPage renders the localized text into these attributes and always emits all three.
+  const msg = form.dataset
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault()
     const button = form.querySelector('button')
@@ -66,15 +70,16 @@ sftp://user@host/path/file.zip`,urlHint:"Paste multiple lines to batch-add. Torr
         location.href = '/'
         return
       }
-      const j = await r.json().catch(() => ({ error: 'Sign-in failed' }))
-      show(j.error || 'Wrong username or password')
+      const j = await r.json().catch(() => ({ error: msg.msgFailed }))
+      show(j.error || msg.msgCredentials)
     } catch (_) {
-      show('Could not reach the server')
+      show(msg.msgOffline)
     }
     button.disabled = false
   })
 
   function show(message) {
+    if (!message) return
     let el = document.querySelector('.err')
     if (!el) {
       el = document.createElement('div')

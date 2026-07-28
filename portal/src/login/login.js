@@ -3,6 +3,10 @@
   const form = document.getElementById('f')
   if (!form) return
 
+  // Inlined verbatim by the codegen, so this file never sees the portal's translations.
+  // RemotePortalPage renders the localized text into these attributes and always emits all three.
+  const msg = form.dataset
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault()
     const button = form.querySelector('button')
@@ -20,15 +24,16 @@
         location.href = '/'
         return
       }
-      const j = await r.json().catch(() => ({ error: 'Sign-in failed' }))
-      show(j.error || 'Wrong username or password')
+      const j = await r.json().catch(() => ({ error: msg.msgFailed }))
+      show(j.error || msg.msgCredentials)
     } catch (_) {
-      show('Could not reach the server')
+      show(msg.msgOffline)
     }
     button.disabled = false
   })
 
   function show(message) {
+    if (!message) return
     let el = document.querySelector('.err')
     if (!el) {
       el = document.createElement('div')
