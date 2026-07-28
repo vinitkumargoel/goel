@@ -139,6 +139,29 @@ final class SecurityHardeningTests: XCTestCase {
         XCTAssertFalse(ProcessSafety.isSafeExecutable("ffmpeg"), "relative $PATH name refused")
         XCTAssertFalse(ProcessSafety.isSafeExecutable(""), "empty refused")
         XCTAssertFalse(ProcessSafety.isSafeExecutable("/nonexistent/tool"))
+        XCTAssertFalse(ProcessSafety.isSafeExecutable("/tmp"),
+                       "a directory carries the execute bit but is not a program")
+        XCTAssertFalse(ProcessSafety.isSafeExecutable("/usr/bin"))
         XCTAssertTrue(ProcessSafety.isSafeExecutable("/bin/ls"))
+    }
+
+    /// Homebrew installs ffmpeg as a symlink into ../Cellar, so refusing symlinks would break the
+    /// commonest real install — but the directory check must not be dodgeable through one either.
+    func testSymlinksAreFollowedToWhatTheyActuallyPointAt() throws {
+        let fm = FileManager.default
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("procsafety-\(UUID().uuidString)")
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+
+        let toProgram = dir.appendingPathComponent("ffmpeg")
+        let toDirectory = dir.appendingPathComponent("dirlink")
+        try fm.createSymbolicLink(atPath: toProgram.path, withDestinationPath: "/bin/ls")
+        try fm.createSymbolicLink(atPath: toDirectory.path, withDestinationPath: "/tmp")
+
+        XCTAssertTrue(ProcessSafety.isSafeExecutable(toProgram.path),
+                      "a symlink to a real program is how Homebrew ships ffmpeg")
+        XCTAssertFalse(ProcessSafety.isSafeExecutable(toDirectory.path),
+                       "a symlink must not launder a directory past the check")
     }
 }

@@ -86,69 +86,40 @@ final class NetworkSelectionTests: XCTestCase {
         names.map { BoundAdapter(bsdName: $0, displayName: $0) }
     }
 
-    func testAutoDefersToThePolicy() {
-        let result = AggregationPolicy.bindTargets(
-            for: .auto, defaultAdapters: bound("eth0"), available: bound("eth0", "wlan0"))
-        XCTAssertEqual(result.adapters.map(\.bsdName), ["eth0"])
-        XCTAssertNil(result.note)
-    }
-
-    func testNilSelectionBehavesLikeAuto() {
-        let result = AggregationPolicy.bindTargets(
-            for: nil, defaultAdapters: [], available: bound("eth0", "wlan0"))
-        XCTAssertTrue(result.adapters.isEmpty)
-        XCTAssertNil(result.note)
-    }
-
-    func testSinglePinsEvenWithAggregationOff() {
-        let result = AggregationPolicy.bindTargets(
-            for: .single("wlan0"), defaultAdapters: [], available: bound("eth0", "wlan0"))
-        XCTAssertEqual(result.adapters.map(\.bsdName), ["wlan0"])
-        XCTAssertNil(result.note)
-    }
-
-    func testMissingInterfaceFallsBackAndSaysSo() {
-        let result = AggregationPolicy.bindTargets(
-            for: .single("usb0"), defaultAdapters: bound("eth0"), available: bound("eth0"))
-        XCTAssertEqual(result.adapters.map(\.bsdName), ["eth0"])
-        XCTAssertEqual(result.note, "usb0 is not available — using the default route instead.")
-    }
-
-    func testAggregateWithNoNamesUsesEverythingAvailable() {
-        let result = AggregationPolicy.bindTargets(
-            for: .aggregate([]), defaultAdapters: [], available: bound("eth0", "wlan0"))
-        XCTAssertEqual(result.adapters.map(\.bsdName), ["eth0", "wlan0"])
-        XCTAssertNil(result.note)
-    }
-
-    func testAggregateKeepsTheNamedOrderAndReportsSkips() {
-        let result = AggregationPolicy.bindTargets(
-            for: .aggregate(["wlan0", "eth0", "usb0"]),
-            defaultAdapters: [], available: bound("eth0", "wlan0"))
-        XCTAssertEqual(result.adapters.map(\.bsdName), ["wlan0", "eth0"])
-        XCTAssertEqual(result.note, "Skipping usb0 — not available.")
-    }
-
-    func testAggregateDownToOneInterfaceStillRunsOnIt() {
-        let result = AggregationPolicy.bindTargets(
-            for: .aggregate(["eth0", "usb0"]), defaultAdapters: [], available: bound("eth0"))
-        XCTAssertEqual(result.adapters.map(\.bsdName), ["eth0"])
-        XCTAssertEqual(result.note, "Running on one interface — usb0 unavailable.")
-    }
-
-    func testAggregateWithNothingLeftFallsBackToTheDefault() {
-        let result = AggregationPolicy.bindTargets(
-            for: .aggregate(["usb0"]), defaultAdapters: bound("eth0"), available: bound("eth0"))
-        XCTAssertEqual(result.adapters.map(\.bsdName), ["eth0"])
-        XCTAssertEqual(result.note,
-                       "Cannot split this download — usb0 unavailable. Using the default route.")
-    }
-
-    func testAggregateWithNoEligibleInterfacesAtAll() {
-        let result = AggregationPolicy.bindTargets(
-            for: .aggregate([]), defaultAdapters: [], available: [])
-        XCTAssertTrue(result.adapters.isEmpty)
-        XCTAssertEqual(result.note,
-                       "Cannot split this download — no interfaces are eligible. Using the default route.")
+    /// Every binding outcome, including the exact note the UI shows — a reworded note is a UI regression.
+    func testBindTargetsResolvesEverySelectionAgainstWhatIsAvailable() {
+        let cases: [(label: String, selection: NetworkSelection?,
+                     defaults: [BoundAdapter], available: [BoundAdapter],
+                     expected: [String], note: String?)] = [
+            ("auto defers to the policy",
+             .auto, bound("eth0"), bound("eth0", "wlan0"), ["eth0"], nil),
+            ("nil behaves like auto",
+             nil, [], bound("eth0", "wlan0"), [], nil),
+            ("single pins even with aggregation off",
+             .single("wlan0"), [], bound("eth0", "wlan0"), ["wlan0"], nil),
+            ("a missing interface falls back and says so",
+             .single("usb0"), bound("eth0"), bound("eth0"), ["eth0"],
+             "usb0 is not available — using the default route instead."),
+            ("aggregate with no names uses everything available",
+             .aggregate([]), [], bound("eth0", "wlan0"), ["eth0", "wlan0"], nil),
+            ("aggregate keeps the named order and reports skips",
+             .aggregate(["wlan0", "eth0", "usb0"]), [], bound("eth0", "wlan0"), ["wlan0", "eth0"],
+             "Skipping usb0 — not available."),
+            ("aggregate down to one interface still runs on it",
+             .aggregate(["eth0", "usb0"]), [], bound("eth0"), ["eth0"],
+             "Running on one interface — usb0 unavailable."),
+            ("aggregate with nothing left falls back to the default",
+             .aggregate(["usb0"]), bound("eth0"), bound("eth0"), ["eth0"],
+             "Cannot split this download — usb0 unavailable. Using the default route."),
+            ("aggregate with no eligible interfaces at all",
+             .aggregate([]), [], [], [],
+             "Cannot split this download — no interfaces are eligible. Using the default route."),
+        ]
+        for c in cases {
+            let result = AggregationPolicy.bindTargets(
+                for: c.selection, defaultAdapters: c.defaults, available: c.available)
+            XCTAssertEqual(result.adapters.map(\.bsdName), c.expected, c.label)
+            XCTAssertEqual(result.note, c.note, c.label)
+        }
     }
 }

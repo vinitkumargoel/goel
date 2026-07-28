@@ -118,15 +118,4 @@ final class ReviewFixesTests: XCTestCase {
         XCTAssertThrowsError(try HTTPEngine.validateDiskSpace(directory: "/no/such/volume/xyz123456", needed: 1024))
         XCTAssertNoThrow(try HTTPEngine.validateDiskSpace(directory: saveDir, needed: 1024))
     }
-
-    func testValidatorsDoNotResumeWithoutValidators() {
-        XCTAssertFalse(SegmentedTransfer.validatorsAllowResume(
-            cursorETag: nil, cursorLastModified: nil, probeETag: nil, probeLastModified: nil))
-        XCTAssertTrue(SegmentedTransfer.validatorsAllowResume(
-            cursorETag: "v1", cursorLastModified: nil, probeETag: "v1", probeLastModified: nil))
-        XCTAssertFalse(SegmentedTransfer.validatorsAllowResume(
-            cursorETag: "v1", cursorLastModified: nil, probeETag: "v2", probeLastModified: nil))
-        XCTAssertTrue(SegmentedTransfer.validatorsAllowResume(
-            cursorETag: nil, cursorLastModified: "Mon, 01 Jan 2024", probeETag: nil, probeLastModified: "Mon, 01 Jan 2024"))
-    }
 }

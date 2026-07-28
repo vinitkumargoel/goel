@@ -10,58 +10,44 @@ final class HLSRemediationTests: XCTestCase {
                      name: "stream.mp4", saveDirectory: NSTemporaryDirectory())
     }
 
-    func testIntMaxByteRangeIsRejectedInsteadOfTrapping() {
-        let text = """
-        #EXTM3U
-        #EXTINF:4.0,
-        #EXT-X-BYTERANGE:9223372036854775807@9223372036854775807
-        stream.mp4
-        """
-        XCTAssertNil(HLSParser.parse(text, baseURL: base),
-                     "an unbounded BYTERANGE must be a clean parse failure, never an overflow trap")
-    }
-
-    func testIntMaxMapByteRangeIsRejectedInsteadOfTrapping() {
-        let text = """
-        #EXTM3U
-        #EXT-X-MAP:URI="stream.mp4",BYTERANGE="9223372036854775807@9223372036854775807"
-        #EXTINF:4.0,
-        stream.mp4
-        """
-        XCTAssertNil(HLSParser.parse(text, baseURL: base))
-    }
-
-    func testHugeButParseableByteRangeIsRejected() {
-        let text = """
-        #EXTM3U
-        #EXTINF:4.0,
-        #EXT-X-BYTERANGE:1024@4503599627370496
-        stream.mp4
-        """
-        XCTAssertNil(HLSParser.parse(text, baseURL: base))
-    }
-
-    func testMalformedByteRangeOffsetIsRejectedNotSilentlyReplaced() {
-        let text = """
-        #EXTM3U
-        #EXT-X-MAP:URI="stream.mp4",BYTERANGE="1184@0"
-        #EXTINF:4.0,
-        #EXT-X-BYTERANGE:501760@abc
-        stream.mp4
-        """
-        XCTAssertNil(HLSParser.parse(text, baseURL: base),
-                     "a malformed offset must not silently resolve to the previous range's end")
-    }
-
-    func testNegativeAndZeroLengthByteRangesAreRejected() {
-        for value in ["-1", "0", "1024@-4096"] {
-            let text = """
-            #EXTM3U
-            #EXTINF:4.0,
-            #EXT-X-BYTERANGE:\(value)
-            stream.mp4
-            """
-            XCTAssertNil(HLSParser.parse(text, baseURL: base), "BYTERANGE:\(value) must not parse")
+    /// A hostile BYTERANGE must be a clean parse failure — never an overflow trap, never a silent substitution.
+    func testUnusableByteRangesAreRejected() {
+        let cases: [(label: String, text: String)] = [
+            ("Int.max segment range", """
+             #EXTM3U
+             #EXTINF:4.0,
+             #EXT-X-BYTERANGE:9223372036854775807@9223372036854775807
+             stream.mp4
+             """),
+            ("Int.max map range", """
+             #EXTM3U
+             #EXT-X-MAP:URI="stream.mp4",BYTERANGE="9223372036854775807@9223372036854775807"
+             #EXTINF:4.0,
+             stream.mp4
+             """),
+            ("huge but parseable offset", """
+             #EXTM3U
+             #EXTINF:4.0,
+             #EXT-X-BYTERANGE:1024@4503599627370496
+             stream.mp4
+             """),
+            ("malformed offset must not resolve to the previous range's end", """
+             #EXTM3U
+             #EXT-X-MAP:URI="stream.mp4",BYTERANGE="1184@0"
+             #EXTINF:4.0,
+             #EXT-X-BYTERANGE:501760@abc
+             stream.mp4
+             """),
+        ] + ["-1", "0", "1024@-4096"].map { value in
+            ("BYTERANGE:\(value)", """
+             #EXTM3U
+             #EXTINF:4.0,
+             #EXT-X-BYTERANGE:\(value)
+             stream.mp4
+             """)
+        }
+        for c in cases {
+            XCTAssertNil(HLSParser.parse(c.text, baseURL: base), "\(c.label) must not parse")
         }
     }
 
