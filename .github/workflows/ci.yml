@@ -104,6 +104,7 @@ jobs:
         working-directory: portal
         run: |
           npm ci
+          npm test
           npm run build
 
       - name: Fail if the committed portal bundle is stale
@@ -114,6 +115,12 @@ jobs:
             git diff --stat -- Sources/GoelCore/Remote/Generated/PortalBundle.swift
             exit 1
           fi
+
+      # LocalizationTests already fails on a key that reached source without reaching the
+      # table. This catches the other direction — rows left behind by a deleted call site,
+      # and hand-edits to a generated file — which no test can see.
+      - name: Fail if the committed base strings table is stale
+        run: python3 Scripts/extract-l10n-keys.py --check
 
       - name: Build
         run: |

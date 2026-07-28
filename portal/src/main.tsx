@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { I18nextProvider } from 'react-i18next'
 import { App } from './App'
+import i18n from './i18n'
 import { applyTheme, initialTheme } from './lib/theme'
 import './styles/themes.css'
 import './styles/portal.css'
@@ -21,6 +23,8 @@ if (!container) throw new Error('#root is missing from the page shell')
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <I18nextProvider i18n={i18n}>
+      <App />
+    </I18nextProvider>
   </StrictMode>,
 )

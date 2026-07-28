@@ -36,7 +36,7 @@ enum YtDlpResolver {
     static func resolveMedia(_ url: URL, formatSelector: String? = nil) async -> ResolveOutcome {
         guard let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else {
-            return .failed("That isn’t a web page address.")
+            return .failed(L10n.t("That isn’t a web page address."))
         }
         if Task.isCancelled { return .cancelled }
 
@@ -46,20 +46,20 @@ enum YtDlpResolver {
                                     "-f", formatSelector ?? "b", url.absoluteString],
                                    timeoutSeconds: 45)
         } catch LaunchFailure.notInstalled {
-            return .failed("yt-dlp isn’t available, so Goel° can’t resolve that page.")
+            return .failed(L10n.t("yt-dlp isn’t available, so Goel° can’t resolve that page."))
         } catch {
-            return .failed("Couldn’t start yt-dlp.")
+            return .failed(L10n.t("Couldn’t start yt-dlp."))
         }
         if Task.isCancelled { return .cancelled }
         guard result.status == 0 else {
             return .failed(message(from: result.stderr,
-                                   fallback: "yt-dlp couldn’t resolve that page."))
+                                   fallback: L10n.t("yt-dlp couldn’t resolve that page.")))
         }
         guard let object = try? JSONSerialization.jsonObject(with: result.stdout) as? [String: Any],
               let mediaString = object["url"] as? String,
               let media = URL(string: mediaString),
               ["http", "https"].contains(media.scheme?.lowercased() ?? "") else {
-            return .failed("yt-dlp didn’t report a single downloadable stream for that page.")
+            return .failed(L10n.t("yt-dlp didn’t report a single downloadable stream for that page."))
         }
         return .resolved(Resolved(
             title: (object["title"] as? String) ?? "video",
@@ -85,7 +85,7 @@ enum YtDlpResolver {
                                   languages: String, includeAuto: Bool) async -> SubtitleOutcome {
         guard let executable else { return .failed("yt-dlp not found.") }
         guard let scheme = pageURL.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else { return .failed("Unsupported URL.") }
+              scheme == "http" || scheme == "https" else { return .failed(L10n.t("Unsupported URL.")) }
         if Task.isCancelled { return .none }
 
         let langs = languages
@@ -109,7 +109,9 @@ enum YtDlpResolver {
         process.arguments = args
         process.standardOutput = FileHandle.nullDevice
         process.standardError = errPipe
-        do { try process.run() } catch { return .failed("Couldn’t launch yt-dlp: \(error.localizedDescription)") }
+        do { try process.run() } catch {
+            return .failed(L10n.t("Couldn’t launch yt-dlp: %@", error.localizedDescription))
+        }
         let watchdog = Task {
             try? await Task.sleep(nanoseconds: 90_000_000_000)
             if process.isRunning { process.terminate() }
@@ -131,7 +133,7 @@ enum YtDlpResolver {
         guard process.terminationStatus == 0 else {
             let msg = String(data: errData, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return .failed(msg?.isEmpty == false ? String(msg!.suffix(200)) : "yt-dlp couldn’t fetch subtitles.")
+            return .failed(msg?.isEmpty == false ? String(msg!.suffix(200)) : L10n.t("yt-dlp couldn’t fetch subtitles."))
         }
         let after = Set((try? fm.contentsOfDirectory(atPath: directory)) ?? [])
         let subExtensions = ["vtt", "srt", "ass", "ssa", "lrc"]
@@ -206,27 +208,27 @@ enum YtDlpResolver {
     static func listFormats(_ url: URL) async -> FormatListOutcome {
         guard let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else {
-            return .failed("That isn’t a web page address.")
+            return .failed(L10n.t("That isn’t a web page address."))
         }
         let result: ToolRun
         do {
             result = try await run(["-F", "--no-playlist", "--no-warnings", url.absoluteString],
                                    timeoutSeconds: 45)
         } catch LaunchFailure.notInstalled {
-            return .failed("yt-dlp isn’t available, so Goel° can’t list the available qualities.")
+            return .failed(L10n.t("yt-dlp isn’t available, so Goel° can’t list the available qualities."))
         } catch {
-            return .failed("Couldn’t start yt-dlp.")
+            return .failed(L10n.t("Couldn’t start yt-dlp."))
         }
         // Must precede the status guard: a cancelled run's terminated process exits non-zero.
         if Task.isCancelled { return .formats([]) }
         guard result.status == 0 else {
             return .failed(message(from: result.stderr,
-                                   fallback: "yt-dlp couldn’t read that page."))
+                                   fallback: L10n.t("yt-dlp couldn’t read that page.")))
         }
         let text = String(data: result.stdout, encoding: .utf8) ?? ""
         let formats = MediaFormatTable.parse(text)
         guard !formats.isEmpty else {
-            return .failed("yt-dlp didn’t report any downloadable formats for that page.")
+            return .failed(L10n.t("yt-dlp didn’t report any downloadable formats for that page."))
         }
         return .formats(formats)
     }
@@ -241,27 +243,27 @@ enum YtDlpResolver {
     static func expandPlaylist(_ url: URL) async -> PlaylistOutcome {
         guard let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else {
-            return .failed("That isn’t a web page address.")
+            return .failed(L10n.t("That isn’t a web page address."))
         }
         let result: ToolRun
         do {
             result = try await run(["--flat-playlist", "-J", "--no-warnings", url.absoluteString],
                                    timeoutSeconds: 240)
         } catch LaunchFailure.notInstalled {
-            return .failed("yt-dlp isn’t available, so Goel° can’t list what’s in that playlist.")
+            return .failed(L10n.t("yt-dlp isn’t available, so Goel° can’t list what’s in that playlist."))
         } catch {
-            return .failed("Couldn’t start yt-dlp.")
+            return .failed(L10n.t("Couldn’t start yt-dlp."))
         }
         if Task.isCancelled { return .notAPlaylist }
         guard result.status == 0 else {
             return .failed(message(from: result.stderr,
-                                   fallback: "yt-dlp couldn’t read that playlist."))
+                                   fallback: L10n.t("yt-dlp couldn’t read that playlist.")))
         }
         guard let expansion = PlaylistExpander.parseFlatPlaylist(result.stdout) else {
             return .notAPlaylist
         }
         guard !expansion.items.isEmpty else {
-            return .failed("That playlist doesn’t list any downloadable items.")
+            return .failed(L10n.t("That playlist doesn’t list any downloadable items."))
         }
         return .expanded(expansion)
     }
@@ -273,6 +275,6 @@ enum YtDlpResolver {
         return DownloadPreview(
             source: source, suggestedName: name, totalBytes: nil,
             isEstimatedSize: source.kind == .hls, kind: source.kind,
-            note: "Resolved by yt-dlp — the stream URL may expire; start the download soon.")
+            note: L10n.t("Resolved by yt-dlp — the stream URL may expire; start the download soon."))
     }
 }

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '../i18n'
 import { ApiError, api } from '../lib/api'
 import type { FolderListing } from '../lib/types'
 import { FolderIcon, FolderPlusIcon } from './Icons'
@@ -18,6 +20,7 @@ export function FolderPicker({
   onClose,
   onWarn,
 }: FolderPickerProps) {
+  const { t } = useTranslation()
   const [listing, setListing] = useState<FolderListing | null>(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
@@ -48,13 +51,14 @@ export function FolderPicker({
       .catch((e: unknown) => {
         if (seq !== seqRef.current) return
         setLoading(false)
+        // `i18n.t`, not the hook's `t`: adding it as a dep would rebuild this callback and re-fire the mount effect.
         if (path !== undefined) {
           load(undefined)
-          warnRef.current(e instanceof Error ? e.message : 'Could not open that folder')
+          warnRef.current(e instanceof Error ? e.message : i18n.t('folderPicker.openError'))
           return
         }
         setFailed(true)
-        warnRef.current(e instanceof Error ? e.message : 'Could not list folders')
+        warnRef.current(e instanceof Error ? e.message : i18n.t('folderPicker.listError'))
       })
   }, [])
 
@@ -82,7 +86,7 @@ export function FolderPicker({
   function create() {
     const name = newName.trim()
     if (!name) {
-      warnRef.current('Name the folder first')
+      warnRef.current(t('folderPicker.nameFirst'))
       return
     }
     const parent = listing?.path
@@ -116,7 +120,7 @@ export function FolderPicker({
           <div className="mic">
             <FolderIcon />
           </div>
-          <h3>Choose a folder</h3>
+          <h3>{t('folderPicker.title')}</h3>
         </div>
 
         {listing && listing.places.length > 0 && (
@@ -126,7 +130,7 @@ export function FolderPicker({
                 key={p.path}
                 className={`pkplace${p.path === listing.path ? ' on' : ''}`}
                 disabled={!p.readable}
-                title={p.readable ? p.path : `${p.path} — no permission to open`}
+                title={p.readable ? p.path : t('folderPicker.noPermission', { path: p.path })}
                 onClick={() => load(p.path)}
               >
                 {p.name}
@@ -140,12 +144,12 @@ export function FolderPicker({
         </div>
 
         <div className="mbody pkbody">
-          {failed && <p className="fhint">Could not read that folder.</p>}
+          {failed && <p className="fhint">{t('folderPicker.readError')}</p>}
 
           {listing?.parent && (
             <button className="pkrow up" onClick={() => load(listing.parent ?? undefined)}>
               <FolderIcon />
-              <span>Up one level</span>
+              <span>{t('folderPicker.upOneLevel')}</span>
             </button>
           )}
 
@@ -154,21 +158,21 @@ export function FolderPicker({
               key={f.path}
               className={`pkrow${f.readable ? '' : ' locked'}`}
               disabled={!f.readable}
-              title={f.readable ? f.path : `${f.path} — no permission to open`}
+              title={f.readable ? f.path : t('folderPicker.noPermission', { path: f.path })}
               onClick={() => load(f.path)}
             >
               <FolderIcon />
               <span className="ell">{f.name}</span>
-              {!f.readable && <span className="pkno">no access</span>}
+              {!f.readable && <span className="pkno">{t('folderPicker.noAccess')}</span>}
             </button>
           ))}
 
           {listing && listing.folders.length === 0 && !loading && (
             <p className="fhint">
-              No subfolders here.{' '}
+              {t('folderPicker.noSubfolders')}{' '}
               {canCreate && listing.writable
-                ? 'Use this folder, or make a new one.'
-                : 'Use this folder.'}
+                ? t('folderPicker.useOrCreate')
+                : t('folderPicker.useThis')}
             </p>
           )}
 
@@ -182,10 +186,10 @@ export function FolderPicker({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') create()
                 }}
-                placeholder="New folder name"
+                placeholder={t('folderPicker.newFolderPlaceholder')}
               />
               <button className="btn" onClick={create}>
-                Create
+                {t('common.create')}
               </button>
             </div>
           )}
@@ -194,20 +198,20 @@ export function FolderPicker({
         <div className="mfoot">
           {canCreate && listing?.writable && !naming && (
             <button className="btn ghost" onClick={() => setNaming(true)}>
-              <FolderPlusIcon /> New folder
+              <FolderPlusIcon /> {t('folderPicker.newFolder')}
             </button>
           )}
           <div className="sp" />
           <button className="btn" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             className="btn primary"
             disabled={!listing || !listing.writable}
-            title={listing && !listing.writable ? 'No permission to write here' : undefined}
+            title={listing && !listing.writable ? t('folderPicker.noWritePermission') : undefined}
             onClick={() => listing && onPick(listing.path, listing)}
           >
-            Use this folder
+            {t('folderPicker.usePick')}
           </button>
         </div>
       </div>
@@ -215,14 +219,16 @@ export function FolderPicker({
   )
 }
 
+/** Plain function, called outside React too — reads the shared instance rather than a hook. */
 export function folderLabel(path: string, home: string | null): string {
-  if (path === '/') return 'Computer'
+  if (path === '/') return i18n.t('folderPicker.computer')
   const parts = (rest: string) => rest.split('/').filter(Boolean)
   if (home) {
     const base = home.replace(/\/+$/, '')
-    if (path === base) return 'Home'
+    const homeLabel = i18n.t('folderPicker.home')
+    if (path === base) return homeLabel
     if (path.startsWith(base + '/')) {
-      return ['Home', ...parts(path.slice(base.length + 1))].join(' / ')
+      return [homeLabel, ...parts(path.slice(base.length + 1))].join(' / ')
     }
   }
   return parts(path).join(' / ') || path

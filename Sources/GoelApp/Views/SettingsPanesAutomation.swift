@@ -15,41 +15,41 @@ struct SchedulerPane: View {
     @EnvironmentObject private var vm: AppViewModel
 
     var body: some View {
-        PaneScaffold(title: "Scheduler",
-                     subtitle: "Download windows, scheduled profiles, and what happens when the queue finishes.") {
-            SectionHeader("When downloads finish")
-            SetRow(name: "Then", desc: "One-shot — resets to “Do nothing” after it fires.") {
+        PaneScaffold(title: L10n.t("Scheduler"),
+                     subtitle: L10n.t("Download windows, scheduled profiles, and what happens when the queue finishes.")) {
+            SectionHeader(L10n.t("When downloads finish"))
+            SetRow(name: L10n.t("Then"), desc: L10n.t("One-shot — resets to “Do nothing” after it fires.")) {
                 Dropdown(selection: setting(vm, \.autoShutdownAction), items: [
-                    .option("none", "Do nothing"),
-                    .option("quit", "Quit Goel°"),
-                    .option("sleep", "Sleep"),
-                    .option("shutdown", "Shut down"),
+                    .option("none", L10n.t("Do nothing")),
+                    .option("quit", L10n.t("Quit Goel°")),
+                    .option("sleep", L10n.t("Sleep")),
+                    .option("shutdown", L10n.t("Shut down")),
                 ], width: 180)
             }
 
-            SectionHeader("Download window")
-            SetRow(name: "Only download during a daily window",
-                   desc: "Outside the window active downloads pause and queued ones wait.") {
+            SectionHeader(L10n.t("Download window"))
+            SetRow(name: L10n.t("Only download during a daily window"),
+                   desc: L10n.t("Outside the window active downloads pause and queued ones wait.")) {
                 SettingSwitch(isOn: setting(vm, \.scheduleEnabled))
             }
             if vm.settings.scheduleEnabled {
-                SetRow(name: "Start", desc: "") {
+                SetRow(name: L10n.t("Start"), desc: "") {
                     Dropdown(selection: setting(vm, \.scheduleStartMinute), items: Self.timeOptions, width: 110)
                 }
-                SetRow(name: "End", desc: "An end before the start wraps past midnight.") {
+                SetRow(name: L10n.t("End"), desc: L10n.t("An end before the start wraps past midnight.")) {
                     Dropdown(selection: setting(vm, \.scheduleEndMinute), items: Self.timeOptions, width: 110)
                 }
-                SetRow(name: "Days", desc: "") {
+                SetRow(name: L10n.t("Days"), desc: "") {
                     Dropdown(selection: daysBinding, items: [
-                        .option("all", "Every day"),
-                        .option("weekdays", "Weekdays"),
-                        .option("weekend", "Weekends"),
+                        .option("all", L10n.t("Every day")),
+                        .option("weekdays", L10n.t("Weekdays")),
+                        .option("weekend", L10n.t("Weekends")),
                     ], width: 130)
                 }
-                SetRow(name: "Profile inside the window",
-                       desc: "Switch traffic profiles while the window is open (restored after).") {
+                SetRow(name: L10n.t("Profile inside the window"),
+                       desc: L10n.t("Switch traffic profiles while the window is open (restored after).")) {
                     Dropdown(selection: setting(vm, \.scheduleProfileName),
-                             items: [Dropdown<String>.Item.option("", "Keep current")]
+                             items: [Dropdown<String>.Item.option("", L10n.t("Keep current"))]
                                 + vm.settings.profiles.map { .option($0.name, $0.name) },
                              width: 140)
                 }
@@ -91,57 +91,58 @@ struct RSSPane: View {
     @State private var newStartPaused = false
 
     var body: some View {
-        PaneScaffold(title: "RSS Feeds",
-                     subtitle: "Watch feeds and queue new items automatically (podcasts, releases, torrent feeds).") {
-            SetRow(name: "Check feeds every", desc: "") {
+        PaneScaffold(title: L10n.t("RSS Feeds"),
+                     subtitle: L10n.t("Watch feeds and queue new items automatically (podcasts, releases, torrent feeds).")) {
+            SetRow(name: L10n.t("Check feeds every"), desc: "") {
                 Dropdown(selection: setting(vm, \.rssPollIntervalMinutes), items: [
-                    .option(15, "15 minutes"),
-                    .option(30, "30 minutes"),
-                    .option(60, "Hour"),
-                    .option(360, "6 hours"),
+                    .option(15, L10n.t("15 minutes")),
+                    .option(30, L10n.t("30 minutes")),
+                    .option(60, L10n.t("Hour")),
+                    .option(360, L10n.t("6 hours")),
                 ], width: 130)
             }
 
-            SectionHeader("Feeds")
+            SectionHeader(L10n.t("Feeds"))
             if vm.settings.rssFeeds.isEmpty {
-                Text("No feeds yet — add one below.")
+                Text(L10n.t("No feeds yet — add one below."))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 6)
             }
             ForEach(vm.settings.rssFeeds) { feed in
                 SetRow(name: feed.url,
-                       desc: feed.titlePattern.isEmpty
-                           ? "Every item\(feed.startPaused ? " · added paused" : "")"
-                           : "Titles containing “\(feed.titlePattern)”\(feed.startPaused ? " · added paused" : "")") {
+                       desc: (feed.titlePattern.isEmpty
+                           ? L10n.t("Every item")
+                           : L10n.t("Titles containing “%@”", feed.titlePattern))
+                           + (feed.startPaused ? L10n.t(" · added paused") : "")) {
                     HStack(spacing: 10) {
                         SettingSwitch(isOn: feedEnabledBinding(feed.id))
                         Button {
                             vm.update { $0.rssFeeds.removeAll { $0.id == feed.id } }
-                            vm.toastNow("Feed removed")
+                            vm.toastNow(L10n.t("Feed removed"))
                         } label: {
                             Image(systemName: "trash")
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
-                        .help("Remove feed")
-                        .a11yButton("Remove feed \(feed.url)")
+                        .help(L10n.t("Remove feed"))
+                        .a11yButton(L10n.t("Remove feed %@", feed.url))
                     }
                 }
             }
 
-            SectionHeader("Add a feed")
-            SetRow(name: "Feed URL", desc: "RSS 2.0 or Atom.") {
+            SectionHeader(L10n.t("Add a feed"))
+            SetRow(name: L10n.t("Feed URL"), desc: L10n.t("RSS 2.0 or Atom.")) {
                 SettingText(text: $newURL, width: 220)
             }
-            SetRow(name: "Title contains", desc: "Leave empty to take every item.") {
+            SetRow(name: L10n.t("Title contains"), desc: L10n.t("Leave empty to take every item.")) {
                 SettingText(text: $newPattern, width: 160)
             }
-            SetRow(name: "Add items paused", desc: "Review matches before any bytes move.") {
+            SetRow(name: L10n.t("Add items paused"), desc: L10n.t("Review matches before any bytes move.")) {
                 SettingSwitch(isOn: $newStartPaused)
             }
             SetRow(name: "", desc: "") {
-                Button("Add Feed") { addFeed() }
+                Button(L10n.t("Add Feed")) { addFeed() }
                     .disabled(URL(string: newURL.trimmingCharacters(in: .whitespaces))?.host == nil)
             }
         }
@@ -169,7 +170,7 @@ struct RSSPane: View {
         newURL = ""
         newPattern = ""
         newStartPaused = false
-        vm.toastNow("Feed added")
+        vm.toastNow(L10n.t("Feed added"))
     }
 }
 
@@ -185,158 +186,158 @@ struct RemoteAccessPane: View {
     ]
 
     var body: some View {
-        PaneScaffold(title: "Web Access",
-                     subtitle: "Run the full download manager in a browser — add, stream, and manage everything from your phone or another Mac.") {
+        PaneScaffold(title: L10n.t("Web Access"),
+                     subtitle: L10n.t("Run the full download manager in a browser — add, stream, and manage everything from your phone or another Mac.")) {
             ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.managedKeys)
 
-            SetRow(name: "Enable web portal",
-                   desc: "Serves the browser UI and JSON API on the port below.") {
+            SetRow(name: L10n.t("Enable web portal"),
+                   desc: L10n.t("Serves the browser UI and JSON API on the port below.")) {
                 SettingSwitch(isOn: enabledBinding)
                     .managed(.remoteAccessEnabled, vm.managedPolicy)
             }
             if vm.settings.remoteAccessEnabled {
-                SetRow(name: "Port", desc: "TCP port the embedded server listens on.") {
+                SetRow(name: L10n.t("Port"), desc: L10n.t("TCP port the embedded server listens on.")) {
                     SettingInt(value: setting(vm, \.remotePort), width: 70)
                 }
 
-                SetRow(name: "Require sign-in",
-                       desc: "Prompt for a username and password (recommended). Off = open access — only safe on localhost.") {
+                SetRow(name: L10n.t("Require sign-in"),
+                       desc: L10n.t("Prompt for a username and password (recommended). Off = open access — only safe on localhost.")) {
                     SettingSwitch(isOn: setting(vm, \.remoteRequireAuth))
                         .managed(.remoteRequireAuth, vm.managedPolicy)
                 }
                 if vm.settings.remoteRequireAuth {
-                    SetRow(name: "Username", desc: "") {
+                    SetRow(name: L10n.t("Username"), desc: "") {
                         SettingText(text: setting(vm, \.remoteUsername), width: 150)
                     }
-                    SetRow(name: "Password",
+                    SetRow(name: L10n.t("Password"),
                            desc: vm.hasRemotePassword
-                               ? "A password is set. Type a new one to change it."
-                               : "No password set yet — sign-in will fail until you set one.") {
+                               ? L10n.t("A password is set. Type a new one to change it.")
+                               : L10n.t("No password set yet — sign-in will fail until you set one.")) {
                         HStack(spacing: 8) {
                             SecureField("", text: $newPassword)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 150)
-                                .accessibilityLabel("New portal password")
-                            Button("Set") {
+                                .accessibilityLabel(L10n.t("New portal password"))
+                            Button(L10n.t("Set")) {
                                 vm.setRemotePassword(newPassword)
                                 newPassword = ""
                             }
                             .disabled(newPassword.isEmpty)
-                            .accessibilityLabel("Set portal password")
+                            .accessibilityLabel(L10n.t("Set portal password"))
                         }
                     }
                 }
 
-                SetRow(name: "Allow access from the network",
-                       desc: "Off = this Mac only (localhost). On = any device on your LAN.") {
+                SetRow(name: L10n.t("Allow access from the network"),
+                       desc: L10n.t("Off = this Mac only (localhost). On = any device on your LAN.")) {
                     SettingSwitch(isOn: setting(vm, \.remoteAllowLAN))
                         .managed(.remoteAllowLAN, vm.managedPolicy)
                 }
-                SetRow(name: "Read-only mode",
-                       desc: "Let clients view and stream, but not add, remove, or change downloads.") {
+                SetRow(name: L10n.t("Read-only mode"),
+                       desc: L10n.t("Let clients view and stream, but not add, remove, or change downloads.")) {
                     SettingSwitch(isOn: setting(vm, \.remoteReadOnly))
                         .managed(.remoteReadOnly, vm.managedPolicy)
                 }
-                SetRow(name: "Session timeout",
-                       desc: "Minutes a browser stays signed in before re-login.") {
+                SetRow(name: L10n.t("Session timeout"),
+                       desc: L10n.t("Minutes a browser stays signed in before re-login.")) {
                     SettingInt(value: setting(vm, \.remoteSessionMinutes), width: 70)
                 }
 
-                SetRow(name: "Web theme",
-                       desc: "The portal's look. Independent of the app theme — the desktop and the browser each keep their own.") {
+                SetRow(name: L10n.t("Web theme"),
+                       desc: L10n.t("The portal's look. Independent of the app theme — the desktop and the browser each keep their own.")) {
                     Picker("", selection: $vm.remoteTheme) {
                         ForEach(AppTheme.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
                     .frame(width: 150)
-                    .accessibilityLabel("Web portal theme")
+                    .accessibilityLabel(L10n.t("Web portal theme"))
                 }
 
-                SetRow(name: "API token",
-                       desc: "For scripts and the browser extension. People should use the sign-in above.") {
+                SetRow(name: L10n.t("API token"),
+                       desc: L10n.t("For scripts and the browser extension. People should use the sign-in above.")) {
                     HStack(spacing: 8) {
                         Text(vm.settings.remoteToken)
                             .font(.system(size: 11, design: .monospaced))
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .frame(maxWidth: 150)
-                            .accessibilityLabel("API token")
+                            .accessibilityLabel(L10n.t("API token"))
                             .accessibilityValue(vm.settings.remoteToken.map { "\($0) " }.joined())
-                        Button("Regenerate") {
+                        Button(L10n.t("Regenerate")) {
                             vm.settingsConfirm(
-                                title: "Regenerate the API token?",
-                                message: "Existing portal links and the paired browser extension stop working until you copy the new token to them.",
-                                confirmTitle: "Regenerate",
+                                title: L10n.t("Regenerate the API token?"),
+                                message: L10n.t("Existing portal links and the paired browser extension stop working until you copy the new token to them."),
+                                confirmTitle: L10n.t("Regenerate"),
                                 destructive: true
                             ) {
                                 vm.update { $0.remoteToken = Self.newToken() }
-                                vm.toastNow("New API token generated")
+                                vm.toastNow(L10n.t("New API token generated"))
                             }
                         }
-                        .accessibilityLabel("Regenerate API token")
+                        .accessibilityLabel(L10n.t("Regenerate API token"))
                     }
                 }
                 if let failure = vm.remotePortalFailure {
-                    SetRow(name: "Web access is not running", desc: failure) { EmptyView() }
+                    SetRow(name: L10n.t("Web access is not running"), desc: failure) { EmptyView() }
                 }
-                SetRow(name: "Open portal", desc: "Open it here, or from another device on your LAN.") {
+                SetRow(name: L10n.t("Open portal"), desc: L10n.t("Open it here, or from another device on your LAN.")) {
                     HStack(spacing: 8) {
-                        Button("Open") { if let url = controlURL { NSWorkspace.shared.open(url) } }
+                        Button(L10n.t("Open")) { if let url = controlURL { NSWorkspace.shared.open(url) } }
                             .disabled(controlURL == nil || vm.remotePortalFailure != nil)
-                            .accessibilityLabel("Open web portal in browser")
-                        Button("Copy Link") {
+                            .accessibilityLabel(L10n.t("Open web portal in browser"))
+                        Button(L10n.t("Copy Link")) {
                             if let url = controlURL { vm.copyToPasteboard(url.absoluteString) }
                         }
                         .disabled(controlURL == nil || vm.remotePortalFailure != nil)
-                        .accessibilityLabel("Copy web portal link")
+                        .accessibilityLabel(L10n.t("Copy web portal link"))
                     }
                 }
-                SectionHeader("Hardening")
-                SetRow(name: "Serve over HTTPS",
-                       desc: "Encrypt the portal with a PKCS#12 identity. If the identity can’t be loaded the server refuses to start rather than falling back to cleartext.") {
+                SectionHeader(L10n.t("Hardening"))
+                SetRow(name: L10n.t("Serve over HTTPS"),
+                       desc: L10n.t("Encrypt the portal with a PKCS#12 identity. If the identity can’t be loaded the server refuses to start rather than falling back to cleartext.")) {
                     SettingSwitch(isOn: setting(vm, \.remoteTLSEnabled))
                         .managed(.remoteTLSEnabled, vm.managedPolicy)
                 }
                 if vm.settings.remoteTLSEnabled {
-                    SetRow(name: "Identity (.p12) path",
-                           desc: "Its passphrase is read from the GOEL_PORTAL_TLS_PASSPHRASE environment variable — Goel° never stores it.") {
+                    SetRow(name: L10n.t("Identity (.p12) path"),
+                           desc: L10n.t("Its passphrase is read from the GOEL_PORTAL_TLS_PASSPHRASE environment variable — Goel° never stores it.")) {
                         SettingText(text: setting(vm, \.remoteTLSIdentityPath), width: 200)
                             .managed(.remoteTLSIdentityPath, vm.managedPolicy)
                     }
                 }
-                SetRow(name: "Failed sign-ins before backoff",
-                       desc: "Wrong passwords from one address are slowed exponentially. The delay is per-address, so one attacker can’t lock everybody else out.") {
+                SetRow(name: L10n.t("Failed sign-ins before backoff"),
+                       desc: L10n.t("Wrong passwords from one address are slowed exponentially. The delay is per-address, so one attacker can’t lock everybody else out.")) {
                     SettingInt(value: setting(vm, \.remoteLoginMaxAttempts), width: 70)
                 }
-                SetRow(name: "Backoff (seconds)",
-                       desc: "The first delay after the limit is hit; it doubles from there.") {
+                SetRow(name: L10n.t("Backoff (seconds)"),
+                       desc: L10n.t("The first delay after the limit is hit; it doubles from there.")) {
                     SettingInt(value: backoffSecondsBinding, width: 70)
                 }
 
-                SectionHeader("Single sign-on (advanced)")
-                SetRow(name: "Trust a proxy’s identity header",
-                       desc: "For an SSO reverse proxy that authenticates users itself. Only enable it behind such a proxy — otherwise anyone can set the header.") {
+                SectionHeader(L10n.t("Single sign-on (advanced)"))
+                SetRow(name: L10n.t("Trust a proxy’s identity header"),
+                       desc: L10n.t("For an SSO reverse proxy that authenticates users itself. Only enable it behind such a proxy — otherwise anyone can set the header.")) {
                     SettingSwitch(isOn: setting(vm, \.remoteTrustedHeaderAuthEnabled))
                         .managed(.remoteTrustedHeaderAuthEnabled, vm.managedPolicy)
                 }
                 if vm.settings.remoteTrustedHeaderAuthEnabled {
-                    SetRow(name: "Header name", desc: "e.g. X-Forwarded-User.") {
+                    SetRow(name: L10n.t("Header name"), desc: L10n.t("e.g. X-Forwarded-User.")) {
                         SettingText(text: setting(vm, \.remoteTrustedHeaderName), width: 180)
                             .managed(.remoteTrustedHeaderName, vm.managedPolicy)
                     }
-                    SetRow(name: "Trusted proxies",
-                           desc: "Comma-separated IPs/CIDRs. Checked against the kernel-supplied peer address. EMPTY MEANS TRUST NOBODY — the header is ignored until you list one.") {
+                    SetRow(name: L10n.t("Trusted proxies"),
+                           desc: L10n.t("Comma-separated IPs/CIDRs. Checked against the kernel-supplied peer address. EMPTY MEANS TRUST NOBODY — the header is ignored until you list one.")) {
                         SettingText(text: trustedProxiesBinding, width: 200)
                             .managed(.remoteTrustedProxies, vm.managedPolicy)
                     }
                 }
 
                 if vm.settings.remoteAllowLAN {
-                    SetRow(name: "Scan from your phone",
+                    SetRow(name: L10n.t("Scan from your phone"),
                            desc: lanURL == nil
-                               ? "Advertised via Bonjour. No LAN address detected right now."
-                               : "Point the camera at the code to open the portal. Also advertised via Bonjour.") {
+                               ? L10n.t("Advertised via Bonjour. No LAN address detected right now.")
+                               : L10n.t("Point the camera at the code to open the portal. Also advertised via Bonjour.")) {
                         if let lanURL {
                             QRCodeView(text: lanURL.absoluteString)
                         }
@@ -410,84 +411,84 @@ struct BrowserIntegrationPane: View {
     @State private var installResult: String?
 
     var body: some View {
-        PaneScaffold(title: "Browser Integration",
-                     subtitle: "Capture downloads from your browser, or send links here by hand.") {
-            SectionHeader("Chrome, Edge, Brave & Firefox")
-            SetRow(name: "1. Install the messaging helper",
-                   desc: installResult ?? "Lets the extension talk to this app — nothing works without it. Writes per-browser manifests in your Library; no admin needed. Open a browser at least once first, and click this again if you ever move the app.") {
-                Button("Install Helper") {
+        PaneScaffold(title: L10n.t("Browser Integration"),
+                     subtitle: L10n.t("Capture downloads from your browser, or send links here by hand.")) {
+            SectionHeader(L10n.t("Chrome, Edge, Brave & Firefox"))
+            SetRow(name: L10n.t("1. Install the messaging helper"),
+                   desc: installResult ?? L10n.t("Lets the extension talk to this app — nothing works without it. Writes per-browser manifests in your Library; no admin needed. Open a browser at least once first, and click this again if you ever move the app.")) {
+                Button(L10n.t("Install Helper")) {
                     installResult = BrowserIntegrationService.installHostManifests()
                 }
             }
-            SetRow(name: "2. Load the extension",
-                   desc: "Chrome/Edge/Brave/Vivaldi/Arc: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox 128+: about:debugging → Load Temporary Add-on → the folder’s manifest.json (Firefox forgets it on quit).") {
-                Button("Show Folder") {
+            SetRow(name: L10n.t("2. Load the extension"),
+                   desc: L10n.t("Chrome/Edge/Brave/Vivaldi/Arc: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox 128+: about:debugging → Load Temporary Add-on → the folder’s manifest.json (Firefox forgets it on quit).")) {
+                Button(L10n.t("Show Folder")) {
                     if let folder = BrowserIntegrationService.extensionFolder {
                         NSWorkspace.shared.activateFileViewerSelecting([folder])
                     } else {
-                        vm.settingsMessage("Browser Extension",
-                            "The bundled extension folder is only available in the packaged app, not a dev build.")
+                        vm.settingsMessage(L10n.t("Browser Extension"),
+                            L10n.t("The bundled extension folder is only available in the packaged app, not a dev build."))
                     }
                 }
             }
-            SetRow(name: "3. Restart the browser",
-                   desc: "Browsers read the helper’s manifest only at startup, so quit and reopen the browser fully — otherwise the extension reports that it can’t reach this app.") {
+            SetRow(name: L10n.t("3. Restart the browser"),
+                   desc: L10n.t("Browsers read the helper’s manifest only at startup, so quit and reopen the browser fully — otherwise the extension reports that it can’t reach this app.")) {
                 EmptyView()
             }
-            SetRow(name: "4. Capture",
-                   desc: "Click the extension’s toolbar button to toggle capture of all downloads, or right-click any link → “Download with Goel°”. For files behind a login, use “(stay signed in)” and accept the cookie prompt.") {
+            SetRow(name: L10n.t("4. Capture"),
+                   desc: L10n.t("Click the extension’s toolbar button to toggle capture of all downloads, or right-click any link → “Download with Goel°”. For files behind a login, use “(stay signed in)” and accept the cookie prompt.")) {
                 EmptyView()
             }
 
             SectionHeader("Safari")
-            SetRow(name: "1. Open Safari’s extensions",
-                   desc: "Safari finds the extension bundled inside this app — no helper and no loading needed. If you just installed the app, quit and reopen Safari once so it appears.") {
-                Button("Open Safari Extensions") { openSafariExtensionPrefs() }
+            SetRow(name: L10n.t("1. Open Safari’s extensions"),
+                   desc: L10n.t("Safari finds the extension bundled inside this app — no helper and no loading needed. If you just installed the app, quit and reopen Safari once so it appears.")) {
+                Button(L10n.t("Open Safari Extensions")) { openSafariExtensionPrefs() }
             }
-            SetRow(name: "2. Turn it on",
-                   desc: "Enable “Goel° Capture” in the list, and allow it on the sites you use. An unsigned (ad-hoc) build also needs Safari → Develop menu → “Allow Unsigned Extensions” each session.") {
+            SetRow(name: L10n.t("2. Turn it on"),
+                   desc: L10n.t("Enable “Goel° Capture” in the list, and allow it on the sites you use. An unsigned (ad-hoc) build also needs Safari → Develop menu → “Allow Unsigned Extensions” each session.")) {
                 EmptyView()
             }
-            SetRow(name: "3. Capture",
-                   desc: "Right-click a link → “Download with Goel°”. Safari-captured links open here with a quick confirmation.") {
+            SetRow(name: L10n.t("3. Capture"),
+                   desc: L10n.t("Right-click a link → “Download with Goel°”. Safari-captured links open here with a quick confirmation.")) {
                 EmptyView()
             }
-            SetRow(name: "What Safari can’t do",
-                   desc: "No capture toggle (Safari has no downloads API) and no signed-in downloads: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for either.") {
+            SetRow(name: L10n.t("What Safari can’t do"),
+                   desc: L10n.t("No capture toggle (Safari has no downloads API) and no signed-in downloads: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for either.")) {
                 EmptyView()
             }
 
-            SectionHeader("Help")
-            SetRow(name: "Full instructions",
-                   desc: "Per-browser steps, what each browser supports, and fixes for the common failures.") {
-                Button("Open Guide") {
+            SectionHeader(L10n.t("Help"))
+            SetRow(name: L10n.t("Full instructions"),
+                   desc: L10n.t("Per-browser steps, what each browser supports, and fixes for the common failures.")) {
+                Button(L10n.t("Open Guide")) {
                     if let url = URL(string: "https://github.com/vinitkumargoel/goel/blob/main/docs/browser-extension.md") {
                         NSWorkspace.shared.open(url)
                     }
                 }
             }
 
-            SectionHeader("Without the extension")
-            SetRow(name: "URL scheme",
-                   desc: "goeldownloader://add?url=… opens and queues the link (packaged app).") {
-                Button("Copy Example") {
+            SectionHeader(L10n.t("Without the extension"))
+            SetRow(name: L10n.t("URL scheme"),
+                   desc: L10n.t("goeldownloader://add?url=… opens and queues the link (packaged app).")) {
+                Button(L10n.t("Copy Example")) {
                     vm.copyToPasteboard("goeldownloader://add?url=https%3A%2F%2Fexample.com%2Ffile.zip")
                 }
             }
-            SetRow(name: "Bookmarklet",
-                   desc: "Drag-save as a bookmark; clicking it sends the current page here.") {
-                Button("Copy Bookmarklet") {
+            SetRow(name: L10n.t("Bookmarklet"),
+                   desc: L10n.t("Drag-save as a bookmark; clicking it sends the current page here.")) {
+                Button(L10n.t("Copy Bookmarklet")) {
                     vm.copyToPasteboard(Self.bookmarklet)
                 }
             }
-            SetRow(name: "Services menu",
-                   desc: "Select a link in any app → right-click → Services → “Download with Goel°”.") {
+            SetRow(name: L10n.t("Services menu"),
+                   desc: L10n.t("Select a link in any app → right-click → Services → “Download with Goel°”.")) {
                 EmptyView()
             }
-            SetRow(name: "Drop basket",
-                   desc: "A small always-on-top target for dragging links out of the browser (⌘⇧B).") {
-                Button("Show") { DropBasketController.shared.toggle() }
-                    .accessibilityLabel("Show drop basket")
+            SetRow(name: L10n.t("Drop basket"),
+                   desc: L10n.t("A small always-on-top target for dragging links out of the browser (⌘⇧B).")) {
+                Button(L10n.t("Show")) { DropBasketController.shared.toggle() }
+                    .accessibilityLabel(L10n.t("Show drop basket"))
             }
         }
     }
@@ -497,8 +498,8 @@ struct BrowserIntegrationPane: View {
             withIdentifier: "com.goel.downloader.SafariExtension") { error in
             guard error != nil else { return }
             Task { @MainActor in
-                vm.settingsMessage("Safari Extension",
-                    "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app.")
+                vm.settingsMessage(L10n.t("Safari Extension"),
+                    L10n.t("Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app."))
             }
         }
     }
@@ -514,49 +515,49 @@ struct CredentialsSection: View {
     private let store: any CredentialManaging = KeychainCredentialStore()
 
     var body: some View {
-        SectionHeader("Site logins")
-        Text("Stored in your Keychain. Sent as HTTP Basic auth when a download matches the host.")
+        SectionHeader(L10n.t("Site logins"))
+        Text(L10n.t("Stored in your Keychain. Sent as HTTP Basic auth when a download matches the host."))
             .scaledFont(size: 11.5)
             .foregroundStyle(.tertiary)
             .padding(.bottom, 4)
 
         ForEach(entries) { entry in
-            SetRow(name: entry.host, desc: "User: \(entry.username)") {
+            SetRow(name: entry.host, desc: L10n.t("User: %@", entry.username)) {
                 Button {
                     vm.settingsConfirm(
-                        title: "Remove the saved login for \(entry.host)?",
-                        message: "The stored username and password are deleted from your Keychain.",
-                        confirmTitle: "Remove",
+                        title: L10n.t("Remove the saved login for %@?", entry.host),
+                        message: L10n.t("The stored username and password are deleted from your Keychain."),
+                        confirmTitle: L10n.t("Remove"),
                         destructive: true
                     ) {
                         store.removeCredential(host: entry.host)
                         refresh()
-                        vm.toastNow("Login removed")
+                        vm.toastNow(L10n.t("Login removed"))
                     }
                 } label: {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .help("Remove login")
-                .a11yButton("Remove saved login for \(entry.host)")
+                .help(L10n.t("Remove login"))
+                .a11yButton(L10n.t("Remove saved login for %@", entry.host))
             }
         }
 
-        SetRow(name: "Host", desc: "e.g. files.example.com") {
+        SetRow(name: L10n.t("Host"), desc: L10n.t("e.g. files.example.com")) {
             SettingText(text: $newHost, width: 180)
         }
-        SetRow(name: "Username", desc: "") {
+        SetRow(name: L10n.t("Username"), desc: "") {
             SettingText(text: $newUser, width: 180)
         }
-        SetRow(name: "Password", desc: "") {
+        SetRow(name: L10n.t("Password"), desc: "") {
             SecureField("", text: $newPassword)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 180)
-                .accessibilityLabel("Password for the new site login")
+                .accessibilityLabel(L10n.t("Password for the new site login"))
         }
         SetRow(name: "", desc: "") {
-            Button("Add Login") {
+            Button(L10n.t("Add Login")) {
                 let host = newHost.trimmingCharacters(in: .whitespaces).lowercased()
                 guard !host.isEmpty, !newUser.isEmpty else { return }
                 store.setCredential(username: newUser, password: newPassword, host: host)
@@ -582,39 +583,39 @@ struct AuditLogPane: View {
     ]
 
     var body: some View {
-        PaneScaffold(title: "Audit Log",
-                     subtitle: "An append-only record of downloads added, completed, and failed — written to a file on this Mac and nowhere else.") {
+        PaneScaffold(title: L10n.t("Audit Log"),
+                     subtitle: L10n.t("An append-only record of downloads added, completed, and failed — written to a file on this Mac and nowhere else.")) {
             ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.managedKeys)
 
-            SetRow(name: "Keep an audit log",
-                   desc: "Off by default. Nothing is recorded, and nothing is ever sent anywhere — Goel° has no telemetry.") {
+            SetRow(name: L10n.t("Keep an audit log"),
+                   desc: L10n.t("Off by default. Nothing is recorded, and nothing is ever sent anywhere — Goel° has no telemetry.")) {
                 SettingSwitch(isOn: setting(vm, \.auditLogEnabled))
                     .managed(.auditLogEnabled, vm.managedPolicy)
             }
             if vm.settings.auditLogEnabled {
-                SetRow(name: "Folder",
-                       desc: "Leave empty for Application Support/GoelDownloader/Audit. File names and hosts are recorded; URLs are reduced to their host.") {
+                SetRow(name: L10n.t("Folder"),
+                       desc: L10n.t("Leave empty for Application Support/GoelDownloader/Audit. File names and hosts are recorded; URLs are reduced to their host.")) {
                     SettingText(text: setting(vm, \.auditLogDirectory), width: 200)
                         .managed(.auditLogDirectory, vm.managedPolicy)
                 }
-                SetRow(name: "Rotate at (MB)",
-                       desc: "The live file is rotated once it passes this size.") {
+                SetRow(name: L10n.t("Rotate at (MB)"),
+                       desc: L10n.t("The live file is rotated once it passes this size.")) {
                     SettingInt(value: setting(vm, \.auditLogMaxFileMegabytes), width: 70)
                         .managed(.auditLogMaxFileMegabytes, vm.managedPolicy)
                 }
-                SetRow(name: "Rotated files to keep",
-                       desc: "Older ones are deleted.") {
+                SetRow(name: L10n.t("Rotated files to keep"),
+                       desc: L10n.t("Older ones are deleted.")) {
                     SettingInt(value: setting(vm, \.auditLogKeepFiles), width: 70)
                         .managed(.auditLogKeepFiles, vm.managedPolicy)
                 }
-                SetRow(name: "Keep for (days)",
-                       desc: "Rotated files older than this are deleted. 0 keeps them forever.") {
+                SetRow(name: L10n.t("Keep for (days)"),
+                       desc: L10n.t("Rotated files older than this are deleted. 0 keeps them forever.")) {
                     SettingInt(value: setting(vm, \.auditLogRetentionDays), width: 70)
                         .managed(.auditLogRetentionDays, vm.managedPolicy)
                 }
-                SetRow(name: "Reveal in Finder",
-                       desc: "Turning the log off never deletes what is already written — that record is not Goel°’s to discard.") {
-                    Button("Show Audit Folder") { vm.revealAuditLogFolder() }
+                SetRow(name: L10n.t("Reveal in Finder"),
+                       desc: L10n.t("Turning the log off never deletes what is already written — that record is not Goel°’s to discard.")) {
+                    Button(L10n.t("Show Audit Folder")) { vm.revealAuditLogFolder() }
                 }
             }
         }

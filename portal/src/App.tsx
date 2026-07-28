@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AddDialog } from './components/AddDialog'
 import { ContextMenu, type MenuEntry, type MenuState } from './components/ContextMenu'
 import { DetailPanel } from './components/DetailPanel'
@@ -38,6 +39,7 @@ const DETAIL_POLL_MS = 4000
 const PANEL_BREAKPOINT = 920
 
 export function App() {
+  const { t } = useTranslation()
   const [view, setView] = useState<View>('library')
   const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
@@ -66,12 +68,10 @@ export function App() {
   const copy = useCallback(
     (text: string) => {
       void copyText(text).then((ok) =>
-        ok
-          ? toast('Copied', 'copy')
-          : toast('Couldn’t copy — select the text manually', 'warn'),
+        ok ? toast(t('toast.copied'), 'copy') : toast(t('toast.copyFailed'), 'warn'),
       )
     },
-    [toast],
+    [toast, t],
   )
 
   const loadDetail = useCallback(async (id: string) => {
@@ -151,49 +151,48 @@ export function App() {
         if (action === 'pause') await api.pause(id)
         else if (action === 'resume') await api.resume(id)
         else await api.retry(id)
-        toast({ pause: 'Paused', resume: 'Resumed', retry: 'Retried' }[action])
+        toast(
+          { pause: t('toast.paused'), resume: t('toast.resumed'), retry: t('toast.retried') }[
+            action
+          ],
+        )
         await refresh()
       } catch {
         // Already surfaced by the api layer.
       }
     },
-    [refresh, toast],
+    [refresh, toast, t],
   )
 
   const removeTask = useCallback(
     async (id: string, withData: boolean) => {
-      if (
-        withData &&
-        !confirm(
-          "Delete the downloaded files from disk too? This permanently removes them and can't be undone.",
-        )
-      ) {
+      if (withData && !confirm(t('library.confirmRemoveWithData'))) {
         return
       }
       try {
         await api.remove(id, withData)
         if (selectedId === id) setSelectedId(null)
-        toast(withData ? 'Removed with data' : 'Removed', 'trash')
+        toast(withData ? t('toast.removedWithData') : t('toast.removed'), 'trash')
         await refresh()
       } catch {
         // Already surfaced by the api layer.
       }
     },
-    [refresh, selectedId, toast],
+    [refresh, selectedId, toast, t],
   )
 
   const readd = useCallback(
     async (source: string) => {
       try {
         await api.add({ url: source })
-        toast('Re-added to queue')
+        toast(t('toast.readded'))
         setView('library')
         await refresh()
       } catch {
         // Already surfaced by the api layer.
       }
     },
-    [refresh, toast],
+    [refresh, toast, t],
   )
 
   const setFilePriority = useCallback(
@@ -222,20 +221,20 @@ export function App() {
     (id: string): MenuEntry[] => [
       {
         key: 'rm',
-        label: 'Remove from list',
+        label: t('menu.removeFromList'),
         icon: <TrashIcon />,
         danger: true,
         action: () => void removeTask(id, false),
       },
       {
         key: 'rmd',
-        label: 'Remove with data',
+        label: t('menu.removeWithData'),
         icon: <TrashIcon />,
         danger: true,
         action: () => void removeTask(id, true),
       },
     ],
-    [removeTask],
+    [removeTask, t],
   )
 
   const openRowMenu = useCallback(
@@ -249,21 +248,21 @@ export function App() {
       if (canWrite && action) {
         entries.push({
           key: 'act',
-          label: action[0]!.toUpperCase() + action.slice(1),
+          label: t(`common.${action}`),
           icon: action === 'pause' ? <PauseIcon /> : action === 'retry' ? <RetryIcon /> : <PlayIcon />,
           action: () => void runAction(id, action),
         })
       }
       entries.push({
         key: 'copy',
-        label: 'Copy source link',
+        label: t('menu.copySourceLink'),
         icon: <LinkIcon />,
         action: () => copy(task.source),
       })
       if (task.streamable) {
         entries.push({
           key: 'stream',
-          label: 'Stream',
+          label: t('common.stream'),
           icon: <StreamIcon />,
           action: () => window.open(streamURL(id), '_blank', 'noopener,noreferrer'),
         })
@@ -272,12 +271,12 @@ export function App() {
         entries.push({ separator: true })
         entries.push({
           key: 'recheck',
-          label: 'Force recheck',
+          label: t('menu.forceRecheck'),
           icon: <RecheckIcon />,
           action: () => {
             void api
               .recheck(id)
-              .then(() => toast('Rechecking'))
+              .then(() => toast(t('toast.rechecking')))
               .catch(() => {})
           },
         })
@@ -287,25 +286,33 @@ export function App() {
       }
       setMenu({ x, y, entries })
     },
-    [tasks, canWrite, copy, runAction, removeEntries, toast],
+    [tasks, canWrite, copy, runAction, removeEntries, toast, t],
   )
 
-  const openUserMenu = useCallback((anchor: DOMRect) => {
-    setMenu({
-      x: anchor.right - 210,
-      y: anchor.bottom + 6,
-      entries: [
-        { key: 'set', label: 'Settings', icon: <FileIcon />, action: () => setView('settings') },
-        {
-          key: 'out',
-          label: 'Sign out',
-          icon: <LogoutIcon />,
-          danger: true,
-          action: () => void api.logout(),
-        },
-      ],
-    })
-  }, [])
+  const openUserMenu = useCallback(
+    (anchor: DOMRect) => {
+      setMenu({
+        x: anchor.right - 210,
+        y: anchor.bottom + 6,
+        entries: [
+          {
+            key: 'set',
+            label: t('common.settings'),
+            icon: <FileIcon />,
+            action: () => setView('settings'),
+          },
+          {
+            key: 'out',
+            label: t('common.signOut'),
+            icon: <LogoutIcon />,
+            danger: true,
+            action: () => void api.logout(),
+          },
+        ],
+      })
+    },
+    [t],
+  )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -368,7 +375,11 @@ export function App() {
             />
           )}
           {view === 'history' && (
-            <HistoryView canWrite={canWrite} onReadd={readd} onRemoved={() => toast('Entry removed', 'trash')} />
+            <HistoryView
+              canWrite={canWrite}
+              onReadd={readd}
+              onRemoved={() => toast(t('toast.entryRemoved'), 'trash')}
+            />
           )}
           {view === 'settings' && (
             <SettingsView
@@ -400,12 +411,10 @@ export function App() {
       </div>
 
       <div className="statusbar">
-        <span className="sb-dim">
-          {tasks.length} download{tasks.length === 1 ? '' : 's'}
-        </span>
+        <span className="sb-dim">{t('statusbar.downloads', { count: tasks.length })}</span>
         <div className="sp" />
         <span className="sb-dim">
-          Signed in · <span>{BOOT.username}</span>
+          {t('statusbar.signedIn')} · <span>{BOOT.username}</span>
         </span>
       </div>
 
@@ -423,8 +432,8 @@ export function App() {
               setAddOpen(false)
               setFilter('all')
               selectView('library')
-              toast(added > 1 ? `Added ${added} downloads` : 'Added to queue')
-              if (refused > 0) toast(`${refused} refused — internal network address`, 'warn')
+              toast(t('toast.added', { count: added }))
+              if (refused > 0) toast(t('toast.refused', { count: refused }), 'warn')
               void refresh()
             }}
           />

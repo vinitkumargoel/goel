@@ -43,7 +43,7 @@ struct CookieSourcePicker: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.accent)
                 .a11yDecorative()
-            Text("Sign-in cookies")
+            Text(L10n.t("Sign-in cookies"))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .accessibilityAddTraits(.isHeader)
@@ -61,7 +61,7 @@ struct CookieSourcePicker: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .accessibilityLabel("Cookie source")
+        .accessibilityLabel(L10n.t("Cookie source"))
     }
 
     /// `SecureField`, never a plain field: a Cookie header is a working credential on any shared screen.
@@ -70,9 +70,9 @@ struct CookieSourcePicker: View {
             SecureField("sid=…; csrf=…", text: $pastedCookies)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12, design: .monospaced))
-                .accessibilityLabel("Cookie header")
-                .accessibilityHint("Paste the Cookie request header from your browser's developer tools.")
-            Text("In your browser: DevTools ▸ Network ▸ the download request ▸ copy the Cookie request header.")
+                .accessibilityLabel(L10n.t("Cookie header"))
+                .accessibilityHint(L10n.t("Paste the Cookie request header from your browser's developer tools."))
+            Text(L10n.t("In your browser: DevTools ▸ Network ▸ the download request ▸ copy the Cookie request header."))
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -93,7 +93,7 @@ struct CookieSourcePicker: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
-            .a11yGroup(label: names.isEmpty ? "Warning" : "Cookies attached",
+            .a11yGroup(label: names.isEmpty ? L10n.t("Warning") : L10n.t("Cookies attached"),
                        value: summaryText(names: names))
         }
     }
@@ -102,14 +102,17 @@ struct CookieSourcePicker: View {
     private func summaryText(names: [String]) -> String {
         guard !names.isEmpty else {
             return source == .browser
-                ? "No cookies were captured with this link. Re-copy it from the browser extension."
-                : "Nothing usable pasted yet."
+                ? L10n.t("No cookies were captured with this link. Re-copy it from the browser extension.")
+                : L10n.t("Nothing usable pasted yet.")
         }
         let shown = names.prefix(4).joined(separator: ", ")
-        let more = names.count > 4 ? " +\(names.count - 4) more" : ""
-        let where_ = host.map { " to \($0)" } ?? ""
-        return "\(names.count) cookie\(names.count == 1 ? "" : "s")\(where_) — \(shown)\(more). "
-            + "Kept in memory for this download only: never saved to disk, never written to logs."
+        let more = names.count > 4 ? L10n.t(" +%d more", names.count - 4) : ""
+        let where_ = host.map { L10n.t(" to %@", $0) } ?? ""
+        let count = names.count == 1
+            ? L10n.t("%d cookie", names.count)
+            : L10n.t("%d cookies", names.count)
+        return L10n.t("%1$@%2$@ — %3$@%4$@. ", count, where_, shown, more)
+            + L10n.t("Kept in memory for this download only: never saved to disk, never written to logs.")
     }
 }
 

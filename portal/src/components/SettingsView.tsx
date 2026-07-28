@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { api } from '../lib/api'
 import { BOOT } from '../lib/boot'
 import { applyTheme, THEME_ACCENT, THEME_LABEL, THEMES, type Theme } from '../lib/theme'
@@ -14,38 +15,37 @@ interface SettingsViewProps {
 }
 
 export function SettingsView({ theme, onTheme, canWrite, onToast }: SettingsViewProps) {
+  const { t } = useTranslation()
+
   return (
     <div className="view">
       <div className="pad">
-        <div className="ph">Settings</div>
-        <div className="psub">
-          These apply to your browser. Server options (port, sign-in, password) are managed in the
-          desktop app under Settings → Web Access.
-        </div>
+        <div className="ph">{t('common.settings')}</div>
+        <div className="psub">{t('settings.subtitle')}</div>
 
         <div className="card pd">
           <div className="srow">
             <div className="sinfo">
-              <div className="sname">Web theme</div>
+              <div className="sname">{t('settings.theme.name')}</div>
               <div className="sdesc">
-                Independent of the desktop app — this choice is remembered in <b>this browser</b>{' '}
-                only. The desktop sets the default a new browser starts with.
+                <Trans i18nKey="settings.theme.desc" components={{ bold: <b /> }} />
               </div>
             </div>
           </div>
           <div className="seg">
-            {THEMES.map((t) => (
+            {/* Theme names are product nomenclature shared with the desktop app, so they stay verbatim. */}
+            {THEMES.map((name) => (
               <button
-                key={t}
-                className={t === theme ? 'on' : ''}
+                key={name}
+                className={name === theme ? 'on' : ''}
                 onClick={() => {
-                  applyTheme(t, true)
-                  onTheme(t)
-                  onToast(`Theme: ${THEME_LABEL[t]}`)
+                  applyTheme(name, true)
+                  onTheme(name)
+                  onToast(t('settings.theme.toast', { theme: THEME_LABEL[name] }))
                 }}
               >
-                <span className="sw" style={{ background: THEME_ACCENT[t] }} />
-                {THEME_LABEL[t]}
+                <span className="sw" style={{ background: THEME_ACCENT[name] }} />
+                {THEME_LABEL[name]}
               </button>
             ))}
           </div>
@@ -55,33 +55,33 @@ export function SettingsView({ theme, onTheme, canWrite, onToast }: SettingsView
           <div className="srow">
             <div className="sinfo">
               <div className="sname">
-                Access{' '}
+                {t('settings.access.name')}{' '}
                 <span className={`chip ${BOOT.readOnly ? 'chip-d' : 'chip-w'}`}>
-                  {BOOT.readOnly ? 'Read-only' : 'Full control'}
+                  {BOOT.readOnly ? t('settings.access.readOnly') : t('settings.access.fullControl')}
                 </span>
               </div>
               <div className="sdesc">
-                Signed in as <b>{BOOT.username}</b>.{' '}
+                <Trans
+                  i18nKey="settings.access.signedInAs"
+                  values={{ username: BOOT.username }}
+                  components={{ bold: <b /> }}
+                />{' '}
                 {BOOT.readOnly
-                  ? 'This session can view and stream but not change downloads.'
-                  : 'This session can add, remove, and manage downloads.'}
+                  ? t('settings.access.descReadOnly')
+                  : t('settings.access.descFull')}
               </div>
             </div>
           </div>
           <div className="srow">
             <div className="sinfo">
               <div className="sname">
-                Managed on the desktop{' '}
+                {t('settings.desktop.name')}{' '}
                 <span className="chip chip-d">
                   <WarnIcon />
-                  Desktop
+                  {t('settings.desktop.chip')}
                 </span>
               </div>
-              <div className="sdesc">
-                Port, sign-in username/password, LAN access, read-only, and session length live in
-                the app (Settings → Web Access). A native folder picker, Reveal in Finder, clipboard
-                capture, and notifications also stay on the Mac running Goel°.
-              </div>
+              <div className="sdesc">{t('settings.desktop.desc')}</div>
             </div>
           </div>
         </div>
@@ -91,12 +91,12 @@ export function SettingsView({ theme, onTheme, canWrite, onToast }: SettingsView
         <div className="card pd">
           <div className="srow">
             <div className="sinfo">
-              <div className="sname">Sign out</div>
-              <div className="sdesc">End this browser session.</div>
+              <div className="sname">{t('common.signOut')}</div>
+              <div className="sdesc">{t('settings.signOut.desc')}</div>
             </div>
             <div className="sctl">
               <button className="btn" onClick={() => void api.logout()}>
-                <LogoutIcon /> Sign out
+                <LogoutIcon /> {t('common.signOut')}
               </button>
             </div>
           </div>
@@ -107,6 +107,7 @@ export function SettingsView({ theme, onTheme, canWrite, onToast }: SettingsView
 }
 
 function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: string) => void }) {
+  const { t } = useTranslation()
   const [net, setNet] = useState<NetworkState | null>(null)
   const [failed, setFailed] = useState(false)
   const [ticked, setTicked] = useState<string[]>([])
@@ -140,7 +141,7 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
     try {
       // Adopt the echoed state, never `body`: the server can settle on something else.
       adopt(await api.updateNetwork(body))
-      onToast('Network settings saved')
+      onToast(t('settings.network.saved'))
     } catch {
       // Already surfaced by the api layer.
     }
@@ -150,7 +151,7 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
     return (
       <div className="card pd">
         <p className="fhint" style={{ padding: 14 }}>
-          Could not read the network configuration.
+          {t('settings.network.readError')}
         </p>
       </div>
     )
@@ -160,7 +161,7 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
     return (
       <div className="card pd">
         <p className="fhint" style={{ padding: 8 }}>
-          Loading network…
+          {t('settings.network.loading')}
         </p>
       </div>
     )
@@ -177,15 +178,15 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
       <div className="srow">
         <div className="sinfo">
           <div className="sname">
-            Split downloads across interfaces{' '}
+            {t('settings.network.splitName')}{' '}
             <span className={`chip ${net.aggregation ? 'chip-w' : 'chip-d'}`}>
-              {net.aggregation ? 'On' : 'Off'}
+              {net.aggregation ? t('common.on') : t('common.off')}
             </span>
           </div>
           <div className="sdesc">
             {canSplit
-              ? 'Opens connections on several interfaces at once. Faster only when each interface has its own upstream link — two adapters behind the same router share one pipe and are usually slower together than the faster one alone.'
-              : 'This machine has one usable interface, so there is nothing to split across.'}
+              ? t('settings.network.splitDesc')
+              : t('settings.network.splitDescSingle')}
           </div>
         </div>
         <div className="sctl">
@@ -194,17 +195,18 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
               className={`btn${net.aggregation ? '' : ' primary'}`}
               onClick={() => void save({ aggregation: !net.aggregation })}
             >
-              {net.aggregation ? 'Turn off' : 'Turn on'}
+              {net.aggregation ? t('common.turnOff') : t('common.turnOn')}
             </button>
           )}
         </div>
       </div>
 
+      {/* `net.reason` is the daemon's diagnostic text, interpolated as-is. */}
       {net.aggregation && net.reason && (
         <div className="srow">
           <div className="sinfo">
             <div className="sdesc" style={{ color: 'var(--red)' }}>
-              <WarnIcon /> Not splitting right now — {net.reason}
+              <WarnIcon /> {t('settings.network.notSplitting', { reason: net.reason })}
             </div>
           </div>
         </div>
@@ -214,9 +216,10 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
         <div className="srow">
           <div className="sinfo">
             <div className="sdesc">
-              GOEL_AGGREGATION is set in <b>/etc/goel/config</b>, so a change made here is reverted
-              the next time the service restarts. Run <b>goel config set aggregation on|off</b> on
-              the server to make it permanent.
+              <Trans
+                i18nKey="settings.network.lockedDesc"
+                components={{ path: <b />, cmd: <b /> }}
+              />
             </div>
           </div>
         </div>
@@ -224,11 +227,8 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
 
       <div className="srow">
         <div className="sinfo">
-          <div className="sname">Interfaces</div>
-          <div className="sdesc">
-            Ticked interfaces are the ones a split may use. Leave them all ticked to use every
-            eligible one.
-          </div>
+          <div className="sname">{t('settings.network.interfaces')}</div>
+          <div className="sdesc">{t('settings.network.interfacesDesc')}</div>
         </div>
       </div>
       <div style={{ padding: '0 2px 12px' }}>
@@ -258,7 +258,7 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
                 }
               />
               <AdapterLine adapter={a} />
-              {!a.eligible && <span className="chip chip-d">Unavailable</span>}
+              {!a.eligible && <span className="chip chip-d">{t('settings.network.unavailable')}</span>}
             </label>
           )
         })}
@@ -266,11 +266,8 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
 
       <div className="srow">
         <div className="sinfo">
-          <div className="sname">Connections per interface</div>
-          <div className="sdesc">
-            More streams help on high-latency links and hurt against servers that throttle per
-            connection.
-          </div>
+          <div className="sname">{t('settings.network.streamsName')}</div>
+          <div className="sdesc">{t('settings.network.streamsDesc')}</div>
         </div>
         <div className="sctl">
           <select
@@ -292,15 +289,13 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
       {canWrite && (
         <div className="srow">
           <div className="sinfo">
-            <div className="sdesc">
-              Applies to new downloads; running ones keep the interfaces they started on.
-            </div>
+            <div className="sdesc">{t('settings.network.applyDesc')}</div>
           </div>
           <div className="sctl">
             <button
               className="btn primary"
               disabled={nothingTicked}
-              title={nothingTicked ? 'Tick at least one interface' : undefined}
+              title={nothingTicked ? t('settings.network.tickAtLeastOne') : undefined}
               onClick={() =>
                 void save({
                   // All-ticked sends `[]` (the "every eligible" sentinel) so a NIC added later isn't excluded.
@@ -309,7 +304,7 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
                 })
               }
             >
-              Save
+              {t('common.save')}
             </button>
           </div>
         </div>

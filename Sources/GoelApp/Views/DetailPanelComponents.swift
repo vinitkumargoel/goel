@@ -19,7 +19,7 @@ struct ProgressRing: View {
                 .animation(.easeInOut(duration: 0.4), value: fraction)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Progress")
+        .accessibilityLabel(L10n.t("Progress"))
         .accessibilityValue(A11y.percent(fraction))
     }
 }
@@ -67,15 +67,16 @@ struct ThroughputGraph: View {
                 .stroke(color, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Recent throughput")
+        .accessibilityLabel(L10n.t("Recent throughput"))
         .accessibilityValue(spokenSummary)
     }
 
     private var spokenSummary: String {
-        guard !samples.isEmpty else { return "No samples yet" }
+        guard !samples.isEmpty else { return L10n.t("No samples yet") }
         let peak = samples.max() ?? 0
         let mean = samples.reduce(0, +) / Double(samples.count)
-        return "average \(A11y.speed(mean)), peak \(A11y.speed(peak)), over the last \(samples.count) seconds"
+        return L10n.t("average %1$@, peak %2$@, over the last %3$@ seconds",
+                      A11y.speed(mean), A11y.speed(peak), String(samples.count))
     }
 }
 
@@ -131,7 +132,7 @@ struct DetailStatusPill: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .a11yGroup(label: "Status", value: task.accessibilityStatusName)
+        .a11yGroup(label: L10n.t("Status"), value: L10n.t(task.accessibilityStatusName))
     }
 }
 
@@ -143,21 +144,21 @@ struct DetailActionButtons: View {
     var body: some View {
         HStack(spacing: 8) {
             primary
-            button("Folder", "folder",
-                   spoken: "Show \(task.name) in Finder") { vm.revealInFinder(task) }
-            button("Copy", "doc.on.doc",
-                   spoken: "Copy source link for \(task.name)") { vm.copyToPasteboard(task.sourceLocator) }
+            button(L10n.t("Folder"), "folder",
+                   spoken: L10n.t("Show %@ in Finder", task.name)) { vm.revealInFinder(task) }
+            button(L10n.t("Copy"), "doc.on.doc",
+                   spoken: L10n.t("Copy source link for %@", task.name)) { vm.copyToPasteboard(task.sourceLocator) }
             if !fill { Spacer(minLength: 0) }
         }
     }
 
     @ViewBuilder private var primary: some View {
         if task.status.isActive {
-            button("Pause", "pause.fill", spoken: "Pause \(task.name)", prominent: true) { vm.pause(task.id) }
+            button(L10n.t("Pause"), "pause.fill", spoken: L10n.t("Pause %@", task.name), prominent: true) { vm.pause(task.id) }
         } else if task.status == .paused || task.status == .queued {
-            button("Resume", "play.fill", spoken: "Resume \(task.name)", prominent: true) { vm.resume(task.id) }
+            button(L10n.t("Resume"), "play.fill", spoken: L10n.t("Resume %@", task.name), prominent: true) { vm.resume(task.id) }
         } else if case .failed = task.status {
-            button("Retry", "arrow.clockwise", spoken: "Retry \(task.name)", prominent: true) { vm.retry(task.id) }
+            button(L10n.t("Retry"), "arrow.clockwise", spoken: L10n.t("Retry %@", task.name), prominent: true) { vm.retry(task.id) }
         }
     }
 
@@ -194,9 +195,9 @@ extension DownloadTask {
 
     var swarmSummary: (label: String, value: String) {
         if kind == .torrent {
-            let seeds = seedCount.map { " · \($0) seeds" } ?? ""
-            return ("Peers", "\(connectionCount)\(seeds)")
+            let seeds = seedCount.map { " · " + L10n.t("%d seeds", $0) } ?? ""
+            return (L10n.t("Peers"), "\(connectionCount)\(seeds)")
         }
-        return ("Connections", "\(connectionCount)")
+        return (L10n.t("Connections"), "\(connectionCount)")
     }
 }

@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import GoelCore
 
 struct InAppPlayerView: View {
     let item: AppViewModel.PlayerItem
@@ -22,15 +23,15 @@ struct InAppPlayerView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .accessibilityLabel("Now playing, \(item.title)")
+                    .accessibilityLabel(L10n.t("Now playing, %@", item.title))
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                Button("Done") {
+                Button(L10n.t("Done")) {
                     player.pause()
                     onClose()
                 }
                 .keyboardShortcut(.cancelAction)
-                .accessibilityLabel("Close player")
+                .accessibilityLabel(L10n.t("Close player"))
             }
             .padding(10)
             VideoPlayer(player: player)

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { streamURL } from '../lib/api'
 import { fileType, isActive, kindLabel } from '../lib/taskKind'
 import type { FilePriority, TaskDetail } from '../lib/types'
@@ -50,6 +51,8 @@ export function DetailPanel({
   onToggleFile,
   onCyclePriority,
 }: DetailPanelProps) {
+  const { t } = useTranslation()
+
   return (
     <div className={`detail${open ? '' : ' hidden'}`}>
       {detail ? (
@@ -68,8 +71,8 @@ export function DetailPanel({
       ) : (
         <div className="empty" style={{ padding: '40px 26px' }}>
           <FileIcon />
-          <h4>No download selected</h4>
-          <p>Pick a download to see its files, peers, progress and options.</p>
+          <h4>{t('detail.emptyTitle')}</h4>
+          <p>{t('detail.emptyBody')}</p>
         </div>
       )}
     </div>
@@ -88,8 +91,9 @@ function Loaded({
   onToggleFile,
   onCyclePriority,
 }: Omit<DetailPanelProps, 'open' | 'detail'> & { detail: TaskDetail }) {
-  const t = detail.row
-  const type = fileType(t)
+  const { t } = useTranslation()
+  const row = detail.row
+  const type = fileType(row)
 
   return (
     <div>
@@ -99,64 +103,65 @@ function Loaded({
             <FileTypeIcon type={type} />
           </div>
           <div style={{ minWidth: 0 }}>
-            <div className="dname">{t.name}</div>
+            <div className="dname">{row.name}</div>
+            {/* `row.status` is server-rendered copy; the daemon owns its wording. */}
             <div className="dsub">
-              {t.status} · {kindLabel(t.kind)}
+              {row.status} · {kindLabel(row.kind)}
             </div>
           </div>
-          <button className="dx" onClick={onClose} aria-label="Close panel">
+          <button className="dx" onClick={onClose} aria-label={t('detail.closePanel')}>
             <CloseIcon />
           </button>
         </div>
 
         <div className="dact">
-          {canWrite && isActive(t.statusToken) && (
-            <button className="mbtn" onClick={() => onAction(t.id, 'pause')}>
+          {canWrite && isActive(row.statusToken) && (
+            <button className="mbtn" onClick={() => onAction(row.id, 'pause')}>
               <PauseIcon />
-              Pause
+              {t('common.pause')}
             </button>
           )}
-          {canWrite && t.statusToken === 'paused' && (
-            <button className="mbtn accent" onClick={() => onAction(t.id, 'resume')}>
+          {canWrite && row.statusToken === 'paused' && (
+            <button className="mbtn accent" onClick={() => onAction(row.id, 'resume')}>
               <PlayIcon />
-              Resume
+              {t('common.resume')}
             </button>
           )}
-          {canWrite && t.statusToken === 'failed' && (
-            <button className="mbtn accent" onClick={() => onAction(t.id, 'retry')}>
+          {canWrite && row.statusToken === 'failed' && (
+            <button className="mbtn accent" onClick={() => onAction(row.id, 'retry')}>
               <RetryIcon />
-              Retry
+              {t('common.retry')}
             </button>
           )}
 
-          {t.streamable && (
+          {row.streamable && (
             <>
               <button
                 className="mbtn"
-                onClick={() => window.open(streamURL(t.id), '_blank', 'noopener,noreferrer')}
+                onClick={() => window.open(streamURL(row.id), '_blank', 'noopener,noreferrer')}
               >
                 <StreamIcon />
-                Stream
+                {t('common.stream')}
               </button>
-              <a className="mbtn" href={streamURL(t.id)} download>
+              <a className="mbtn" href={streamURL(row.id)} download>
                 <DownloadIcon />
-                Download
+                {t('common.download')}
               </a>
             </>
           )}
 
-          <button className="mbtn" onClick={() => onCopy(t.source)}>
+          <button className="mbtn" onClick={() => onCopy(row.source)}>
             <LinkIcon />
-            Copy link
+            {t('common.copyLink')}
           </button>
 
           {canWrite && (
             <button
               className="mbtn danger"
-              onClick={(e) => onRemove(t.id, { x: e.clientX, y: e.clientY })}
+              onClick={(e) => onRemove(row.id, { x: e.clientX, y: e.clientY })}
             >
               <TrashIcon />
-              Remove
+              {t('common.remove')}
             </button>
           )}
         </div>
@@ -169,7 +174,7 @@ function Loaded({
             className={`tab${name === tab ? ' active' : ''}`}
             onClick={() => onTab(name)}
           >
-            {name[0]!.toUpperCase() + name.slice(1)}
+            {t(`detail.tabs.${name}`)}
           </div>
         ))}
       </div>

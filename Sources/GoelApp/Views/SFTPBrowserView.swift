@@ -98,39 +98,39 @@ struct SFTPBrowserView: View {
                               onClose: { closeInfo() })
             }
         }
-        .alert("New Folder", isPresented: $showNewFolder) {
-            TextField("Name", text: $newFolderName)
-            Button("Cancel", role: .cancel) { newFolderName = "" }
-            Button("Create") {
+        .alert(L10n.t("New Folder"), isPresented: $showNewFolder) {
+            TextField(L10n.t("Name"), text: $newFolderName)
+            Button(L10n.t("Cancel"), role: .cancel) { newFolderName = "" }
+            Button(L10n.t("Create")) {
                 let name = newFolderName
                 newFolderName = ""
-                Task { if await model.makeDirectory(named: name) { vm.toastNow("Folder created") } }
+                Task { if await model.makeDirectory(named: name) { vm.toastNow(L10n.t("Folder created")) } }
             }
         }
-        .alert("Delete “\(pendingDelete?.name ?? "")”?",
+        .alert(L10n.t("Delete “%@”?", pendingDelete?.name ?? ""),
                isPresented: Binding(get: { pendingDelete != nil },
                                     set: { if !$0 { pendingDelete = nil } })) {
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-            Button("Delete", role: .destructive) {
+            Button(L10n.t("Cancel"), role: .cancel) { pendingDelete = nil }
+            Button(L10n.t("Delete"), role: .destructive) {
                 if let entry = pendingDelete {
-                    Task { if await model.delete(entry) { vm.toastNow("Deleted “\(entry.name)”") } }
+                    Task { if await model.delete(entry) { vm.toastNow(L10n.t("Deleted “%@”", entry.name)) } }
                 }
                 pendingDelete = nil
             }
         } message: {
             Text(pendingDelete?.isDirectory == true
-                 ? "The folder must be empty."
-                 : "This permanently removes the file from the server.")
+                 ? L10n.t("The folder must be empty.")
+                 : L10n.t("This permanently removes the file from the server."))
         }
-        .alert("Rename “\(renaming?.name ?? "")”",
+        .alert(L10n.t("Rename “%@”", renaming?.name ?? ""),
                isPresented: Binding(get: { renaming != nil },
                                     set: { if !$0 { renaming = nil } })) {
-            TextField("Name", text: $renameText)
-            Button("Cancel", role: .cancel) { renaming = nil }
-            Button("Rename") {
+            TextField(L10n.t("Name"), text: $renameText)
+            Button(L10n.t("Cancel"), role: .cancel) { renaming = nil }
+            Button(L10n.t("Rename")) {
                 if let entry = renaming {
                     let newName = renameText
-                    Task { if await model.rename(entry, to: newName) { vm.toastNow("Renamed") } }
+                    Task { if await model.rename(entry, to: newName) { vm.toastNow(L10n.t("Renamed")) } }
                 }
                 renaming = nil
             }
@@ -144,17 +144,17 @@ struct SFTPBrowserView: View {
                     .font(.system(size: 12, weight: .semibold))
             }
             .buttonStyle(.plain)
-            .help("Back to downloads")
-            .a11yButton("Back to downloads")
+            .help(L10n.t("Back to downloads"))
+            .a11yButton(L10n.t("Back to downloads"))
 
             Button { Task { await model.goBack() } } label: { Image(systemName: "chevron.backward") }
-                .disabled(!model.canGoBack).help("Back")
+                .disabled(!model.canGoBack).help(L10n.t("Back"))
                 .keyboardShortcut("[", modifiers: .command)
-                .a11yButton("Back")
+                .a11yButton(L10n.t("Back"))
             Button { Task { await model.goForward() } } label: { Image(systemName: "chevron.forward") }
-                .disabled(!model.canGoForward).help("Forward")
+                .disabled(!model.canGoForward).help(L10n.t("Forward"))
                 .keyboardShortcut("]", modifiers: .command)
-                .a11yButton("Forward")
+                .a11yButton(L10n.t("Forward"))
 
             Image(systemName: "lock.rectangle.on.rectangle").foregroundStyle(Theme.indigo)
                 .a11yDecorative()
@@ -166,15 +166,15 @@ struct SFTPBrowserView: View {
             Spacer(minLength: 8)
             Picker("", selection: $isGrid) {
                 Image(systemName: "list.bullet").tag(false)
-                    .accessibilityLabel("List")
+                    .accessibilityLabel(L10n.t("List"))
                 Image(systemName: "square.grid.2x2").tag(true)
-                    .accessibilityLabel("Grid")
+                    .accessibilityLabel(L10n.t("Grid"))
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(width: 78)
-            .help("Switch between list and grid view")
-            .accessibilityLabel("View style")
+            .help(L10n.t("Switch between list and grid view"))
+            .accessibilityLabel(L10n.t("View style"))
 
             sortMenu
 
@@ -182,30 +182,30 @@ struct SFTPBrowserView: View {
                 Image(systemName: "arrow.up")
             }
             .disabled(model.isAtRoot)
-            .help("Parent folder")
+            .help(L10n.t("Parent folder"))
             .keyboardShortcut(.upArrow, modifiers: .command)
-            .a11yButton("Parent folder")
+            .a11yButton(L10n.t("Parent folder"))
 
             Button { chooseUploadItems() } label: { Image(systemName: "arrow.up.doc") }
-                .help("Upload files or folders")
-                .a11yButton("Upload files or folders")
+                .help(L10n.t("Upload files or folders"))
+                .a11yButton(L10n.t("Upload files or folders"))
             Button { showNewFolder = true } label: { Image(systemName: "folder.badge.plus") }
-                .help("New folder")
+                .help(L10n.t("New folder"))
                 .keyboardShortcut("n", modifiers: [.command, .shift])
-                .a11yButton("New folder")
+                .a11yButton(L10n.t("New folder"))
             Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
-                .help("Refresh")
+                .help(L10n.t("Refresh"))
                 .keyboardShortcut("r", modifiers: .command)
-                .a11yButton("Refresh")
+                .a11yButton(L10n.t("Refresh"))
             if model.isLoading {
                 ProgressView().controlSize(.small)
-                    .accessibilityLabel("Loading folder")
+                    .accessibilityLabel(L10n.t("Loading folder"))
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .background(.regularMaterial)
-        .accessibilityLabel("Server browser toolbar")
+        .accessibilityLabel(L10n.t("Server browser toolbar"))
     }
 
     private var breadcrumbBar: some View {
@@ -224,31 +224,31 @@ struct SFTPBrowserView: View {
                             .foregroundStyle(isLast ? Color.primary : Color.secondary)
                     }
                     .buttonStyle(.plain).disabled(isLast)
-                    .accessibilityLabel(isLast ? "Current folder, \(crumb.label)"
-                                               : "Go to \(crumb.label)")
+                    .accessibilityLabel(isLast ? L10n.t("Current folder, %@", crumb.label)
+                                               : L10n.t("Go to %@", crumb.label))
                 }
             }
         }
         .frame(maxWidth: 340, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Folder path")
+        .accessibilityLabel(L10n.t("Folder path"))
     }
 
     private var sortMenu: some View {
         Menu {
-            Button(sortItemLabel("Name", "name")) { setSort("name") }
-            Button(sortItemLabel("Size", "size")) { setSort("size") }
-            Button(sortItemLabel("Date Modified", "modified")) { setSort("modified") }
+            Button(sortItemLabel(L10n.t("Name"), "name")) { setSort("name") }
+            Button(sortItemLabel(L10n.t("Size"), "size")) { setSort("size") }
+            Button(sortItemLabel(L10n.t("Date Modified"), "modified")) { setSort("modified") }
             Divider()
-            Toggle("Show Hidden Files", isOn: $showHidden)
+            Toggle(L10n.t("Show Hidden Files"), isOn: $showHidden)
         } label: {
             Image(systemName: "arrow.up.arrow.down")
         }
         .menuIndicator(.hidden)
         .frame(width: 24)
-        .help("Sort & display options")
-        .accessibilityLabel("Sort and display options")
-        .accessibilityValue("\(sortKeyRaw), \(sortAscending ? "ascending" : "descending")")
+        .help(L10n.t("Sort & display options"))
+        .accessibilityLabel(L10n.t("Sort and display options"))
+        .accessibilityValue("\(sortKeyRaw), \(sortAscending ? L10n.t("ascending") : L10n.t("descending"))")
     }
 
     private func sortItemLabel(_ title: String, _ key: String) -> String {
@@ -260,7 +260,7 @@ struct SFTPBrowserView: View {
 
     private var breadcrumbs: [Crumb] {
         let path = model.path
-        if path == "." || path.isEmpty { return [Crumb(label: "Home", path: ".")] }
+        if path == "." || path.isEmpty { return [Crumb(label: L10n.t("Home"), path: ".")] }
         if path == "/" { return [Crumb(label: "/", path: "/")] }
         if path.hasPrefix("/") {
             var crumbs = [Crumb(label: "/", path: "/")]
@@ -271,7 +271,7 @@ struct SFTPBrowserView: View {
             }
             return crumbs
         }
-        var crumbs = [Crumb(label: "Home", path: ".")]
+        var crumbs = [Crumb(label: L10n.t("Home"), path: ".")]
         var acc = ""
         for part in path.split(separator: "/", omittingEmptySubsequences: true) {
             acc = acc.isEmpty ? String(part) : acc + "/" + part
@@ -316,22 +316,22 @@ struct SFTPBrowserView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .a11yDecorative()
-            TextField("Filter this folder", text: $searchText)
+            TextField(L10n.t("Filter this folder"), text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .onSubmit(openSoleSearchResult)
-                .accessibilityLabel("Filter this folder")
-                .accessibilityHint("Press return to open the only match.")
+                .accessibilityLabel(L10n.t("Filter this folder"))
+                .accessibilityHint(L10n.t("Press return to open the only match."))
             if !searchText.isEmpty {
                 Text("\(visibleEntries.count)")
                     .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
                     .foregroundStyle(.tertiary)
-                    .accessibilityLabel("\(visibleEntries.count) matches")
+                    .accessibilityLabel(L10n.t("%d matches", visibleEntries.count))
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 12))
                 }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help("Clear filter")
-                .a11yButton("Clear filter")
+                .buttonStyle(.plain).foregroundStyle(.secondary).help(L10n.t("Clear filter"))
+                .a11yButton(L10n.t("Clear filter"))
             }
         }
         .padding(.horizontal, 9).padding(.vertical, 5)
@@ -513,7 +513,7 @@ struct SFTPBrowserView: View {
     private func applyPermissions(_ entry: SFTPEntry, _ mode: UInt32) {
         Task {
             if await model.setPermissions(entry, mode: mode) {
-                vm.toastNow("Permissions updated")
+                vm.toastNow(L10n.t("Permissions updated"))
                 entryInfo = await model.info(for: entry)
             }
         }
@@ -526,21 +526,21 @@ struct SFTPBrowserView: View {
 
     private func downloadTargets(_ entries: [SFTPEntry]) {
         let items = entries.filter { SFTPBrowserPaths.isSafeChildName($0.name) }
-        guard !items.isEmpty else { vm.toastNow("Select items to download"); return }
+        guard !items.isEmpty else { vm.toastNow(L10n.t("Select items to download")); return }
         let dir = downloadsDir()
         for item in items {
             vm.startDownload(item, from: model.connection, remoteDir: model.path, toLocalDir: dir)
         }
-        vm.toastNow(items.count == 1 ? "Downloading “\(items[0].name)” to Downloads"
-                                     : "Downloading \(items.count) items to Downloads")
+        vm.toastNow(items.count == 1 ? L10n.t("Downloading “%@” to Downloads", items[0].name)
+                                     : L10n.t("Downloading %d items to Downloads", items.count))
     }
 
     private func deleteTargets(_ entries: [SFTPEntry]) {
         guard entries.count > 1 else { pendingDelete = entries.first; return }
         vm.requestConfirm(
-            title: "Delete \(entries.count) items?",
-            message: "This permanently removes them from the server.",
-            confirmTitle: "Delete", destructive: true
+            title: L10n.t("Delete %d items?", entries.count),
+            message: L10n.t("This permanently removes them from the server."),
+            confirmTitle: L10n.t("Delete"), destructive: true
         ) {
             Task {
                 // Count them: an unreported refusal mid-batch reads as a clean sweep.
@@ -548,9 +548,9 @@ struct SFTPBrowserView: View {
                 for e in entries where await model.delete(e) { deleted += 1 }
                 selection.removeAll()
                 if deleted == entries.count {
-                    vm.toastNow("Deleted \(deleted) items")
+                    vm.toastNow(L10n.t("Deleted %d items", deleted))
                 } else {
-                    vm.toastNow("Deleted \(deleted) of \(entries.count) items — the rest couldn’t be removed.")
+                    vm.toastNow(L10n.t("Deleted %1$d of %2$d items — the rest couldn’t be removed.", deleted, entries.count))
                 }
             }
         }
@@ -560,7 +560,7 @@ struct SFTPBrowserView: View {
 
     private func quickLook(_ entry: SFTPEntry) {
         guard !entry.isDirectory, let client else { return }
-        guard entry.size < previewByteCap else { vm.toastNow("Too large to preview"); return }
+        guard entry.size < previewByteCap else { vm.toastNow(L10n.t("Too large to preview")); return }
         let safe = PathSafety.sanitizedName(entry.name)
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("GoelQL-\(UUID().uuidString)", isDirectory: true)
@@ -569,7 +569,7 @@ struct SFTPBrowserView: View {
         let remote = SFTPBrowserModel.join(model.path, entry.name)
         // `entry.size` is the server's claim: a reported 0 would stream unbounded data to temp.
         let cap = ByteCap(limit: previewByteCap)
-        vm.toastNow("Preparing preview…")
+        vm.toastNow(L10n.t("Preparing preview…"))
         Task {
             do {
                 try await client.downloadToFile(remote: remote, localURL: tmp,
@@ -578,13 +578,13 @@ struct SFTPBrowserView: View {
                 }
                 guard cap.underLimit else {
                     try? FileManager.default.removeItem(at: dir)
-                    await MainActor.run { vm.toastNow("Too large to preview") }
+                    await MainActor.run { vm.toastNow(L10n.t("Too large to preview")) }
                     return
                 }
                 await MainActor.run { QuickLookPresenter.shared.present(tmp) }
             } catch {
                 try? FileManager.default.removeItem(at: dir)
-                let message = cap.underLimit ? "Couldn’t preview “\(entry.name)”" : "Too large to preview"
+                let message = cap.underLimit ? L10n.t("Couldn’t preview “%@”", entry.name) : L10n.t("Too large to preview")
                 await MainActor.run { vm.toastNow(message) }
             }
         }
@@ -593,7 +593,7 @@ struct SFTPBrowserView: View {
     private func copyToPasteboard(_ string: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(string, forType: .string)
-        vm.toastNow("Copied")
+        vm.toastNow(L10n.t("Copied"))
     }
 
     private func remotePath(_ entry: SFTPEntry) -> String { SFTPBrowserModel.join(model.path, entry.name) }
@@ -606,12 +606,12 @@ struct SFTPBrowserView: View {
 
     @ViewBuilder
     private func moveMenu(_ entry: SFTPEntry) -> some View {
-        Menu("Move to") {
+        Menu(L10n.t("Move to")) {
             if !model.isAtRoot {
-                Button("⬆︎ Parent folder") {
+                Button(L10n.t("⬆︎ Parent folder")) {
                     Task {
                         if await model.move(entry, toDirectory: SFTPBrowserModel.parent(of: model.path)) {
-                            vm.toastNow("Moved “\(entry.name)”")
+                            vm.toastNow(L10n.t("Moved “%@”", entry.name))
                         }
                     }
                 }
@@ -622,13 +622,13 @@ struct SFTPBrowserView: View {
                 $0.isDirectory && $0.id != entry.id && SFTPBrowserPaths.isSafeChildName($0.name)
             }
             if folders.isEmpty {
-                Text("No subfolders")
+                Text(L10n.t("No subfolders"))
             } else {
                 ForEach(folders) { folder in
                     Button(folder.name) {
                         Task {
                             if await model.move(entry, toDirectory: SFTPBrowserModel.join(model.path, folder.name)) {
-                                vm.toastNow("Moved to “\(folder.name)”")
+                                vm.toastNow(L10n.t("Moved to “%@”", folder.name))
                             }
                         }
                     }
@@ -640,8 +640,8 @@ struct SFTPBrowserView: View {
     private var statusFooter: some View {
         HStack(spacing: 8) {
             if !selection.isEmpty {
-                Text("\(selection.count) selected").foregroundStyle(Theme.accent)
-                Button("Clear") { selection.removeAll() }
+                Text(L10n.t("%d selected", selection.count)).foregroundStyle(Theme.accent)
+                Button(L10n.t("Clear")) { selection.removeAll() }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
             } else {
                 Text(itemSummary)
@@ -651,9 +651,9 @@ struct SFTPBrowserView: View {
             if totalBytes > 0 { Text(totalBytes.byteString).foregroundStyle(.secondary) }
             if let space = volumeSpace, space.totalBytes > 0 {
                 Text("·").foregroundStyle(.tertiary)
-                Text("\(space.freeBytes.byteString) free")
+                Text(L10n.t("%@ free", space.freeBytes.byteString))
                     .foregroundStyle(.secondary)
-                    .help("\(space.usedBytes.byteString) of \(space.totalBytes.byteString) used on this volume")
+                    .help(L10n.t("%1$@ of %2$@ used on this volume", space.usedBytes.byteString, space.totalBytes.byteString))
             }
         }
         .font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.secondary)
@@ -665,9 +665,9 @@ struct SFTPBrowserView: View {
         let folders = visibleEntries.filter(\.isDirectory).count
         let files = visibleEntries.count - folders
         var parts: [String] = []
-        if folders > 0 { parts.append("\(folders) folder\(folders == 1 ? "" : "s")") }
-        if files > 0 { parts.append("\(files) file\(files == 1 ? "" : "s")") }
-        return parts.isEmpty ? "Empty" : parts.joined(separator: " · ")
+        if folders > 0 { parts.append(folders == 1 ? L10n.t("%d folder", folders) : L10n.t("%d folders", folders)) }
+        if files > 0 { parts.append(files == 1 ? L10n.t("%d file", files) : L10n.t("%d files", files)) }
+        return parts.isEmpty ? L10n.t("Empty") : parts.joined(separator: " · ")
     }
 
     private var entryList: some View {
@@ -689,8 +689,8 @@ struct SFTPBrowserView: View {
     }
 
     @ViewBuilder private var emptyAreaMenu: some View {
-        Button("New Folder") { showNewFolder = true }
-        Button("Upload…") { chooseUploadItems() }
+        Button(L10n.t("New Folder")) { showNewFolder = true }
+        Button(L10n.t("Upload…")) { chooseUploadItems() }
         if let clip = vm.sftpClipboard, !clip.isEmpty {
             Button(clip.pasteLabel) {
                 vm.pasteSFTPClipboard(into: model.connection, directory: model.path)
@@ -698,8 +698,8 @@ struct SFTPBrowserView: View {
             .disabled(!vm.canPasteSFTP(into: model.connection, directory: model.path))
         }
         Divider()
-        Button(showHidden ? "Hide Hidden Files" : "Show Hidden Files") { showHidden.toggle() }
-        if !selection.isEmpty { Button("Deselect All") { selection.removeAll() } }
+        Button(showHidden ? L10n.t("Hide Hidden Files") : L10n.t("Show Hidden Files")) { showHidden.toggle() }
+        if !selection.isEmpty { Button(L10n.t("Deselect All")) { selection.removeAll() } }
     }
 
     private var listBody: some View {
@@ -718,11 +718,11 @@ struct SFTPBrowserView: View {
     private var columnHeaders: some View {
         HStack(spacing: 10) {
             Color.clear.frame(width: 18)
-            sortHeader("Name", key: "name")
+            sortHeader(L10n.t("Name"), key: "name")
                 .frame(maxWidth: .infinity, alignment: .leading)
-            sortHeader("Size", key: "size")
+            sortHeader(L10n.t("Size"), key: "size")
                 .frame(width: 72, alignment: .trailing)
-            sortHeader("Date Modified", key: "modified")
+            sortHeader(L10n.t("Date Modified"), key: "modified")
                 .frame(width: 92, alignment: .trailing)
         }
         .padding(.horizontal, 14)
@@ -730,7 +730,7 @@ struct SFTPBrowserView: View {
         .background(.regularMaterial)
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Sort by column")
+        .accessibilityLabel(L10n.t("Sort by column"))
     }
 
     private func sortHeader(_ title: String, key: String) -> some View {
@@ -747,10 +747,10 @@ struct SFTPBrowserView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(sortKeyRaw == key
-            ? "\(title), sorted \(sortAscending ? "ascending" : "descending")"
-            : "Sort by \(title)")
-        .accessibilityHint(sortKeyRaw == key ? "Activate to reverse the order."
-                                             : "Activate to sort by this column.")
+            ? L10n.t("%1$@, sorted %2$@", title, sortAscending ? L10n.t("ascending") : L10n.t("descending"))
+            : L10n.t("Sort by %@", title))
+        .accessibilityHint(sortKeyRaw == key ? L10n.t("Activate to reverse the order.")
+                                             : L10n.t("Activate to sort by this column."))
     }
 
     private var gridBody: some View {
@@ -765,24 +765,24 @@ struct SFTPBrowserView: View {
 
     private func entryLabel(_ entry: SFTPEntry) -> String {
         let kind = entry.isSymlink
-            ? (entry.isDirectory ? "Alias to folder" : "Alias")
-            : (entry.isDirectory ? "Folder" : "File")
-        return "\(kind), \(entry.name)"
+            ? (entry.isDirectory ? L10n.t("Alias to folder") : L10n.t("Alias"))
+            : (entry.isDirectory ? L10n.t("Folder") : L10n.t("File"))
+        return L10n.t("%1$@, %2$@", kind, entry.name)
     }
 
     private func symlinkBadge(_ entry: SFTPEntry) -> some View {
         Image(systemName: "arrow.up.forward")
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(.tertiary)
-            .help(entry.linkTarget.isEmpty ? "Symbolic link"
-                                           : "Symbolic link to \(entry.linkTarget)")
+            .help(entry.linkTarget.isEmpty ? L10n.t("Symbolic link")
+                                           : L10n.t("Symbolic link to %@", entry.linkTarget))
             .a11yDecorative()
     }
 
     private func entryValue(_ entry: SFTPEntry) -> String {
         A11y.sentence(
             entry.isDirectory ? nil : A11y.bytes(entry.size),
-            entry.modified.map { "modified \($0.formatted(date: .abbreviated, time: .shortened))" })
+            entry.modified.map { L10n.t("modified %@", $0.formatted(date: .abbreviated, time: .shortened)) })
     }
 
     private func row(_ entry: SFTPEntry) -> some View {
@@ -811,7 +811,7 @@ struct SFTPBrowserView: View {
         .padding(.vertical, 6)
         .background(entryHighlight(hovered: hovered, dropping: dropping, selected: selected))
         .a11yGroup(label: entryLabel(entry), value: entryValue(entry),
-                   hint: entry.isDirectory ? "Activate to open." : "Activate to select.")
+                   hint: entry.isDirectory ? L10n.t("Activate to open.") : L10n.t("Activate to select."))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { primaryAction(entry) }
         .contentShape(Rectangle())
@@ -841,7 +841,7 @@ struct SFTPBrowserView: View {
             Text(entry.name)
                 .font(.system(size: 12)).lineLimit(2).multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
-            Text(entry.isDirectory ? "Folder" : entry.size.byteString)
+            Text(entry.isDirectory ? L10n.t("Folder") : entry.size.byteString)
                 .font(.system(size: 10)).monospacedDigit().foregroundStyle(.tertiary)
         }
         .padding(.vertical, 14).padding(.horizontal, 8)
@@ -860,7 +860,7 @@ struct SFTPBrowserView: View {
                               lineWidth: (dropping || selected) ? 2 : 1)
         )
         .a11yGroup(label: entryLabel(entry), value: entryValue(entry),
-                   hint: entry.isDirectory ? "Activate to open." : "Activate to select.")
+                   hint: entry.isDirectory ? L10n.t("Activate to open.") : L10n.t("Activate to select."))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { primaryAction(entry) }
         .contentShape(Rectangle())
@@ -908,49 +908,49 @@ struct SFTPBrowserView: View {
     private func rowMenu(_ entry: SFTPEntry) -> some View {
         let targets = actionTargets(for: entry)
         if targets.count > 1 {
-            Button("Download \(targets.count) Items") { downloadTargets(targets) }
+            Button(L10n.t("Download %d Items", targets.count)) { downloadTargets(targets) }
             Divider()
             clipboardMenuItems(targets)
             Divider()
-            Button("Delete \(targets.count) Items", role: .destructive) { deleteTargets(targets) }
+            Button(L10n.t("Delete %d Items", targets.count), role: .destructive) { deleteTargets(targets) }
         } else {
             if entry.isDirectory {
-                Button("Open") { Task { await model.open(entry) } }
+                Button(L10n.t("Open")) { Task { await model.open(entry) } }
                 Divider()
-                Button("Download Folder to Downloads") { downloadTargets([entry]) }
-                Button("Download Folder to…") { chooseDownloadFolder(for: entry) }
+                Button(L10n.t("Download Folder to Downloads")) { downloadTargets([entry]) }
+                Button(L10n.t("Download Folder to…")) { chooseDownloadFolder(for: entry) }
             } else {
-                Button("Download to Downloads") { downloadTargets([entry]) }
-                Button("Download to…") { chooseDownloadFolder(for: entry) }
-                Button("Add to Download Queue") {
+                Button(L10n.t("Download to Downloads")) { downloadTargets([entry]) }
+                Button(L10n.t("Download to…")) { chooseDownloadFolder(for: entry) }
+                Button(L10n.t("Add to Download Queue")) {
                     vm.enqueueSFTPDownload(connection: model.connection, remotePath: remotePath(entry))
                 }
-                Button("Quick Look") { quickLook(entry) }
+                Button(L10n.t("Quick Look")) { quickLook(entry) }
             }
             Divider()
-            Button("Get Info") { showInfo(entry) }
+            Button(L10n.t("Get Info")) { showInfo(entry) }
             clipboardMenuItems([entry])
             Divider()
-            Button("Rename…") { renaming = entry; renameText = entry.name }
+            Button(L10n.t("Rename…")) { renaming = entry; renameText = entry.name }
             moveMenu(entry)
-            Button("Copy Path") { copyToPasteboard(remotePath(entry)) }
-            Button("Copy sftp:// Link") { copyToPasteboard(sftpURL(entry)) }
+            Button(L10n.t("Copy Path")) { copyToPasteboard(remotePath(entry)) }
+            Button(L10n.t("Copy sftp:// Link")) { copyToPasteboard(sftpURL(entry)) }
             Divider()
-            Button("Delete", role: .destructive) { deleteTargets([entry]) }
+            Button(L10n.t("Delete"), role: .destructive) { deleteTargets([entry]) }
         }
     }
 
     @ViewBuilder
     private func clipboardMenuItems(_ targets: [SFTPEntry]) -> some View {
-        Button(targets.count == 1 ? "Copy" : "Copy \(targets.count) Items") {
+        Button(targets.count == 1 ? L10n.t("Copy") : L10n.t("Copy %d Items", targets.count)) {
             vm.copySFTPItems(targets, from: model.connection, directory: model.path,
                              operation: .copy)
         }
-        Button(targets.count == 1 ? "Cut" : "Cut \(targets.count) Items") {
+        Button(targets.count == 1 ? L10n.t("Cut") : L10n.t("Cut %d Items", targets.count)) {
             vm.copySFTPItems(targets, from: model.connection, directory: model.path,
                              operation: .cut)
         }
-        Button(targets.count == 1 ? "Duplicate" : "Duplicate \(targets.count) Items") {
+        Button(targets.count == 1 ? L10n.t("Duplicate") : L10n.t("Duplicate %d Items", targets.count)) {
             vm.duplicateSFTPItems(targets, on: model.connection, directory: model.path)
         }
         if let clip = vm.sftpClipboard, !clip.isEmpty {
@@ -965,9 +965,9 @@ struct SFTPBrowserView: View {
         let searching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
         return EmptyStateView(
             systemImage: searching ? "magnifyingglass" : "tray",
-            title: searching ? "No matches" : "This folder is empty",
-            subtitle: searching ? "Nothing here matches “\(searchText)”."
-                                : "Drop files or folders here to upload",
+            title: searching ? L10n.t("No matches") : L10n.t("This folder is empty"),
+            subtitle: searching ? L10n.t("Nothing here matches “%@”.", searchText)
+                                : L10n.t("Drop files or folders here to upload"),
             symbolSize: 30, symbolStyle: .tertiary)
     }
 
@@ -976,7 +976,7 @@ struct SFTPBrowserView: View {
             Theme.accent.opacity(0.08)
             VStack(spacing: 10) {
                 Image(systemName: "arrow.up.doc").font(.system(size: 30))
-                Text("Upload to \(model.displayPath)").font(.system(size: 13, weight: .semibold))
+                Text(L10n.t("Upload to %@", model.displayPath)).font(.system(size: 13, weight: .semibold))
             }
             .foregroundStyle(Theme.accent)
         }
@@ -993,13 +993,13 @@ struct SFTPBrowserView: View {
     private func transferStrip(_ transfers: [SFTPTransfer]) -> some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Transfers").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+                Text(L10n.t("Transfers")).font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if transfers.contains(where: { !$0.isActive }) {
-                    Button("Clear") { vm.clearFinishedSFTPTransfers() }
+                    Button(L10n.t("Clear")) { vm.clearFinishedSFTPTransfers() }
                         .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
-                        .accessibilityLabel("Clear finished transfers")
+                        .accessibilityLabel(L10n.t("Clear finished transfers"))
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 5)
@@ -1023,15 +1023,15 @@ struct SFTPBrowserView: View {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
                 .a11yDecorative()
             Text(message).font(.system(size: 12)).lineLimit(2)
-                .accessibilityLabel("Error. \(message)")
+                .accessibilityLabel(L10n.t("Error. %@", message))
             Spacer()
             Button { model.error = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
-                .a11yButton("Dismiss error")
+                .a11yButton(L10n.t("Dismiss error"))
         }
         .padding(.horizontal, 14).padding(.vertical, 7)
         .background(Theme.orange.opacity(0.12))
-        .onAppear { A11yAnnouncer.announce("Error. \(message)") }
+        .onAppear { A11yAnnouncer.announce(L10n.t("Error. %@", message)) }
     }
 
     private func handleUploadDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -1045,7 +1045,7 @@ struct SFTPBrowserView: View {
     private func handleUploadDrop(_ providers: [NSItemProvider], into folder: SFTPEntry) -> Bool {
         // `folder.name` is untrusted server listing data: refuse separators and traversal.
         guard SFTPBrowserPaths.isSafeChildName(folder.name) else {
-            vm.toastNow("Can’t upload into “\(folder.name)”")
+            vm.toastNow(L10n.t("Can’t upload into “%@”", folder.name))
             return false
         }
         let connection = model.connection
@@ -1053,7 +1053,7 @@ struct SFTPBrowserView: View {
         return collectDroppedURLs(providers, fileURLsOnly: true) { urls in
             if !urls.isEmpty {
                 vm.startUpload(items: urls, toRemoteDir: remoteDir, on: connection)
-                vm.toastNow("Uploading to “\(folder.name)”")
+                vm.toastNow(L10n.t("Uploading to “%@”", folder.name))
             }
         }
     }
@@ -1061,8 +1061,8 @@ struct SFTPBrowserView: View {
     private func chooseUploadItems() {
         let urls = FilePicker.openItems(
             canChooseFiles: true, canChooseDirectories: true,
-            prompt: "Upload",
-            message: "Choose files or folders to upload to \(model.displayPath)")
+            prompt: L10n.t("Upload"),
+            message: L10n.t("Choose files or folders to upload to %@", model.displayPath))
         if !urls.isEmpty {
             vm.startUpload(items: urls, toRemoteDir: model.path, on: model.connection)
         }
@@ -1070,8 +1070,8 @@ struct SFTPBrowserView: View {
 
     private func chooseDownloadFolder(for entry: SFTPEntry) {
         if let dir = FilePicker.chooseDirectory(
-            prompt: "Download Here",
-            message: "Choose where to save “\(entry.name)”") {
+            prompt: L10n.t("Download Here"),
+            message: L10n.t("Choose where to save “%@”", entry.name)) {
             vm.startDownload(entry, from: model.connection, remoteDir: model.path, toLocalDir: dir)
         }
     }

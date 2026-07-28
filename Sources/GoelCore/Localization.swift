@@ -26,6 +26,45 @@ public enum L10n {
         return key
     }
 
+    /// Ambient language, mirroring `ThemePalette.current`. Views deep in the tree have no
+    /// `AppViewModel` to ask, and a `Text` initializer cannot await one.
+    public static var currentLanguage: String {
+        get {
+            languageLock.lock()
+            defer { languageLock.unlock() }
+            return storedLanguage
+        }
+        set {
+            languageLock.lock()
+            defer { languageLock.unlock() }
+            storedLanguage = newValue
+        }
+    }
+
+    /// Looks `key` up in the ambient language. `key` is the English text, so an absent
+    /// entry renders as English rather than as a placeholder.
+    public static func t(_ key: String) -> String {
+        string(key, language: currentLanguage)
+    }
+
+    /// For keys carrying `printf` placeholders, so a translation can reorder them with `%1$@`.
+    public static func t(_ key: String, _ arguments: CVarArg...) -> String {
+        String(format: string(key, language: currentLanguage), arguments: arguments)
+    }
+
+    /// Lowercases a translated fragment being dropped into the middle of a sentence — "Cancel
+    /// download", not "Cancel Download". German capitalizes every noun, so doing this
+    /// unconditionally would produce "Warten auf konvertierung"; there it is left alone.
+    public static func midSentence(_ value: String) -> String {
+        languagesCapitalizingNouns.contains(languageCode(for: currentLanguage))
+            ? value : value.lowercased()
+    }
+
+    private static let languagesCapitalizingNouns: Set<String> = ["de"]
+
+    private static let languageLock = NSLock()
+    private static var storedLanguage = "English"
+
     private static func lprojBundle(_ code: String) -> Bundle? {
         guard let path = ResourceBundles.core?.path(forResource: code, ofType: "lproj") else { return nil }
         return Bundle(path: path)

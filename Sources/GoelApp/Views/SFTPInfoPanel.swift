@@ -38,7 +38,7 @@ struct SFTPInfoPanel: View {
             } else {
                 ProgressView().controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityLabel("Loading information")
+                    .accessibilityLabel(L10n.t("Loading information"))
             }
         }
         .frame(width: 340, height: 460)
@@ -66,7 +66,7 @@ struct SFTPInfoPanel: View {
             Spacer()
             Button(action: onClose) { Image(systemName: "xmark") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
-                .accessibilityLabel("Close info")
+                .accessibilityLabel(L10n.t("Close info"))
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
     }
@@ -77,22 +77,23 @@ struct SFTPInfoPanel: View {
     }
 
     private var kindLabel: String {
-        if entry.isSymlink { return entry.isDirectory ? "Alias to folder" : "Alias" }
-        return entry.isDirectory ? "Folder" : "File"
+        if entry.isSymlink { return entry.isDirectory ? L10n.t("Alias to folder") : L10n.t("Alias") }
+        return entry.isDirectory ? L10n.t("Folder") : L10n.t("File")
     }
 
     @ViewBuilder
     private func facts(_ info: SFTPEntryInfo) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            row("Where", SFTPBrowserPaths.parent(of: info.path))
-            row("Size", sizeText(info))
+            row(L10n.t("Where"), SFTPBrowserPaths.parent(of: info.path))
+            row(L10n.t("Size"), sizeText(info))
             if let modified = info.attributes.modified {
-                row("Modified", modified.formatted(date: .abbreviated, time: .shortened))
+                row(L10n.t("Modified"), modified.formatted(date: .abbreviated, time: .shortened))
             }
             if let target = info.linkTarget, !target.isEmpty {
-                row("Points to", target)
+                row(L10n.t("Points to"), target)
             }
-            row("Owner", "uid \(info.attributes.ownerID) · gid \(info.attributes.groupID)")
+            row(L10n.t("Owner"), L10n.t("uid %1$@ · gid %2$@",
+                                      String(info.attributes.ownerID), String(info.attributes.groupID)))
         }
     }
 
@@ -100,7 +101,7 @@ struct SFTPInfoPanel: View {
     private func sizeText(_ info: SFTPEntryInfo) -> String {
         guard info.attributes.isDirectory else { return info.attributes.size.byteString }
         if let folderSize { return folderSize.byteString }
-        return isSizing ? "Calculating…" : "—"
+        return isSizing ? L10n.t("Calculating…") : "—"
     }
 
     private func row(_ label: String, _ value: String) -> some View {
@@ -114,14 +115,14 @@ struct SFTPInfoPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label): \(value)")
+        .accessibilityLabel(L10n.t("%1$@: %2$@", label, value))
     }
 
     @ViewBuilder
     private func permissions(_ info: SFTPEntryInfo) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Permissions").font(.system(size: 11, weight: .semibold))
+                Text(L10n.t("Permissions")).font(.system(size: 11, weight: .semibold))
                 Spacer()
                 Text(SFTPPermissions.string(for: mode))
                     .font(.system(size: 11, design: .monospaced))
@@ -131,9 +132,9 @@ struct SFTPInfoPanel: View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
                     Text("").frame(width: 50)
-                    Text("Read").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text("Write").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text("Execute").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(L10n.t("Read")).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(L10n.t("Write")).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(L10n.t("Execute")).font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 permissionRow("Owner", read: 0o400, write: 0o200, execute: 0o100)
                 permissionRow("Group", read: 0o040, write: 0o020, execute: 0o010)
@@ -141,20 +142,20 @@ struct SFTPInfoPanel: View {
             }
 
             HStack(spacing: 8) {
-                Text("Octal").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L10n.t("Octal")).font(.system(size: 11)).foregroundStyle(.secondary)
                 TextField("0644", text: $octalText)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11, design: .monospaced))
                     .frame(width: 68)
                     .onSubmit(applyOctal)
-                    .accessibilityLabel("Permissions in octal")
+                    .accessibilityLabel(L10n.t("Permissions in octal"))
                 Spacer()
-                Button("Apply") { onApplyPermissions(mode) }
+                Button(L10n.t("Apply")) { onApplyPermissions(mode) }
                     .disabled(mode == info.attributes.mode)
             }
             // Typed octal is adopted only on submit, so a half-typed "6" can't briefly strip every permission bit off the checkboxes.
             if SFTPPermissions.parse(octal: octalText) == nil && !octalText.isEmpty {
-                Text("Enter three or four digits, 0–7.")
+                Text(L10n.t("Enter three or four digits, 0–7."))
                     .font(.system(size: 10)).foregroundStyle(Theme.red)
             }
         }
@@ -167,7 +168,7 @@ struct SFTPInfoPanel: View {
 
     private func permissionRow(_ label: String, read: UInt32, write: UInt32, execute: UInt32) -> some View {
         GridRow {
-            Text(label).font(.system(size: 11)).frame(width: 50, alignment: .leading)
+            Text(L10n.t(label)).font(.system(size: 11)).frame(width: 50, alignment: .leading)
             permissionBox(label, "read", read)
             permissionBox(label, "write", write)
             permissionBox(label, "execute", execute)
@@ -182,6 +183,6 @@ struct SFTPInfoPanel: View {
                 octalText = String(format: "%04o", mode)
             }))
         .labelsHidden()
-        .accessibilityLabel("\(who) can \(what)")
+        .accessibilityLabel(L10n.t("%1$@ can %2$@", L10n.t(who), L10n.t(what)))
     }
 }

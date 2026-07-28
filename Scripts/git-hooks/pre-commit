@@ -19,10 +19,55 @@ fi
 ROOT=$(git rev-parse --show-toplevel) || exit 1
 cd "$ROOT" || exit 1
 
-# Only gate commits that can actually change behaviour. A docs/asset-only commit
-# shouldn't pay for a full test run.
-if ! git diff --cached --name-only --diff-filter=ACMR \
-     | grep -qE '\.(swift|c|h|cpp|hpp)$|^Package\.swift$|^Package\.resolved$'; then
+# Only gate commits that can actually change behaviour, and only on the side that
+# changed. A docs/asset-only commit shouldn't pay for a full test run; a
+# portal-only commit shouldn't pay for a Swift one, or escape unchecked.
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+SWIFT_STAGED=0
+PORTAL_STAGED=0
+grep -qE '\.(swift|c|h|cpp|hpp)$|^Package\.swift$|^Package\.resolved$' <<<"$STAGED" && SWIFT_STAGED=1
+grep -qE '^portal/' <<<"$STAGED" && PORTAL_STAGED=1
+
+if [ "$SWIFT_STAGED" = "0" ] && [ "$PORTAL_STAGED" = "0" ]; then
+    echo "pre-commit: no Swift/C or portal sources staged — skipping build and tests."
+    exit 0
+fi
+
+LOG=$(mktemp -t goel-precommit)
+trap 'rm -f "$LOG"' EXIT
+
+# The portal's own gates. PortalBundle.swift is committed so `swift build` works
+# with no Node installed, so a missing toolchain warns instead of blocking —
+# CI rebuilds and diffs the bundle regardless. `npm run build` is deliberately
+# not run here: it rewrites a tracked file in the middle of a commit.
+if [ "$PORTAL_STAGED" = "1" ]; then
+    if ! command -v npm >/dev/null 2>&1; then
+        echo "pre-commit: note — portal files staged but 'npm' is not on PATH; CI will check them."
+    elif [ ! -d "$ROOT/portal/node_modules" ]; then
+        echo "pre-commit: note — portal/node_modules is missing; run 'npm --prefix portal ci' to gate locally."
+    else
+        echo "pre-commit: typechecking and testing the portal…"
+        if ! npm --prefix "$ROOT/portal" run typecheck >"$LOG" 2>&1; then
+            echo "pre-commit: PORTAL TYPECHECK FAILED — commit blocked."
+            echo
+            tail -20 "$LOG"
+            echo
+            echo "  reproduce with: npm --prefix portal run typecheck"
+            exit 1
+        fi
+        if ! npm --prefix "$ROOT/portal" test >"$LOG" 2>&1; then
+            echo "pre-commit: PORTAL TESTS FAILED — commit blocked."
+            echo
+            tail -20 "$LOG"
+            echo
+            echo "  reproduce with: npm --prefix portal test"
+            exit 1
+        fi
+        echo "pre-commit: portal OK."
+    fi
+fi
+
+if [ "$SWIFT_STAGED" = "0" ]; then
     echo "pre-commit: no Swift/C sources staged — skipping build and tests."
     exit 0
 fi
@@ -56,9 +101,6 @@ if command -v xcrun >/dev/null 2>&1; then
         unset SDKROOT   # no answer beats git's wrong answer
     fi
 fi
-
-LOG=$(mktemp -t goel-precommit)
-trap 'rm -f "$LOG"' EXIT
 
 # The hook tests the working tree, which is what you are about to commit only if
 # nothing is left unstaged. Warn rather than block: stashing here risks losing

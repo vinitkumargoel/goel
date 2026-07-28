@@ -4,38 +4,44 @@ import GoelCore
 
 enum A11y {
 
-    private static let byteUnitWords = ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes"]
+    /// Computed, not `static let`: a cached array would keep the language it was first built in.
+    private static var byteUnitWords: [String] {
+        [L10n.t("bytes"), L10n.t("kilobytes"), L10n.t("megabytes"),
+         L10n.t("gigabytes"), L10n.t("terabytes")]
+    }
 
     static func bytes(_ value: Int64?) -> String {
-        guard let value, value > 0 else { return "unknown size" }
+        guard let value, value > 0 else { return L10n.t("unknown size") }
+        let words = byteUnitWords
         let amount = Double(value)
-        let exp = min(Int(log(amount) / log(1024)), byteUnitWords.count - 1)
+        let exp = min(Int(log(amount) / log(1024)), words.count - 1)
         let scaled = amount / pow(1024, Double(exp))
         let number = exp == 0 ? String(format: "%.0f", scaled) : String(format: "%.1f", scaled)
-        return "\(number) \(byteUnitWords[exp])"
+        return L10n.t("%1$@ %2$@", number, words[exp])
     }
 
     static func speed(_ bytesPerSecond: Double) -> String {
-        guard bytesPerSecond > 0 else { return "idle" }
-        return bytes(Int64(bytesPerSecond)) + " per second"
+        guard bytesPerSecond > 0 else { return L10n.t("idle") }
+        return L10n.t("%@ per second", bytes(Int64(bytesPerSecond)))
     }
 
     static func percent(_ fraction: Double) -> String {
-        "\(Int((max(0, min(1, fraction)) * 100).rounded())) percent"
+        L10n.t("%d percent", Int((max(0, min(1, fraction)) * 100).rounded()))
     }
 
     static func eta(_ seconds: TimeInterval?) -> String? {
         guard let seconds, seconds > 0 else { return nil }
         if seconds >= 3600 {
-            let hours = seconds / 3600
-            return "about \(String(format: "%.1f", hours)) hours remaining"
+            return L10n.t("about %.1f hours remaining", seconds / 3600)
         }
         if seconds >= 60 {
             let minutes = Int((seconds / 60).rounded())
-            return "about \(minutes) minute\(minutes == 1 ? "" : "s") remaining"
+            return minutes == 1 ? L10n.t("about %d minute remaining", minutes)
+                                : L10n.t("about %d minutes remaining", minutes)
         }
         let secs = Int(seconds.rounded())
-        return "about \(secs) second\(secs == 1 ? "" : "s") remaining"
+        return secs == 1 ? L10n.t("about %d second remaining", secs)
+                         : L10n.t("about %d seconds remaining", secs)
     }
 
     static func sentence(_ parts: String?...) -> String {
@@ -48,7 +54,7 @@ extension DownloadTask {
     var accessibilityKindName: String {
         switch kind {
         case .torrent: return "BitTorrent"
-        case .hls: return "HLS stream"
+        case .hls: return L10n.t("HLS stream")
         case .http: return "HTTP"
         case .ftp: return "FTP"
         case .sftp: return "SFTP"
@@ -57,14 +63,14 @@ extension DownloadTask {
 
     var accessibilityStatusName: String {
         switch status {
-        case .queued: return "Queued"
-        case .requestingMetadata: return "Requesting information"
-        case .downloading: return "Downloading"
-        case .verifying: return "Verifying"
-        case .paused: return "Paused"
-        case .seeding: return "Seeding"
-        case .completed: return "Completed"
-        case .failed(let error): return "Failed, \(error.message)"
+        case .queued: return L10n.t("Queued")
+        case .requestingMetadata: return L10n.t("Requesting information")
+        case .downloading: return L10n.t("Downloading")
+        case .verifying: return L10n.t("Verifying")
+        case .paused: return L10n.t("Paused")
+        case .seeding: return L10n.t("Seeding")
+        case .completed: return L10n.t("Completed")
+        case .failed(let error): return L10n.t("Failed, %@", error.message)
         }
     }
 
@@ -72,7 +78,7 @@ extension DownloadTask {
     var accessibilityProgressValue: String {
         A11y.sentence(
             A11y.percent(fractionCompleted),
-            "\(A11y.bytes(bytesDownloaded)) of \(A11y.bytes(totalBytes))",
+            L10n.t("%1$@ of %2$@", A11y.bytes(bytesDownloaded), A11y.bytes(totalBytes)),
             A11y.eta(estimatedTimeRemaining))
     }
 
@@ -88,10 +94,10 @@ extension DownloadTask {
 
     var accessibilityStateActionName: String {
         switch status {
-        case .completed: return "Show in Finder"
-        case .failed: return "Retry"
-        case .paused, .queued: return "Resume"
-        default: return "Pause"
+        case .completed: return L10n.t("Show in Finder")
+        case .failed: return L10n.t("Retry")
+        case .paused, .queued: return L10n.t("Resume")
+        default: return L10n.t("Pause")
         }
     }
 }
@@ -114,11 +120,11 @@ enum A11yAnnouncer {
 extension SidebarFilter {
     var accessibilityName: String {
         switch self {
-        case .all: return "All files"
-        case .active: return "Active"
-        case .paused: return "Paused"
-        case .completed: return "Completed"
-        case .seeding: return "Seeding"
+        case .all: return L10n.t("All files")
+        case .active: return L10n.t("Active")
+        case .paused: return L10n.t("Paused")
+        case .completed: return L10n.t("Completed")
+        case .seeding: return L10n.t("Seeding")
         case .type(let fileType): return fileType.accessibilityName
         }
     }
@@ -127,28 +133,28 @@ extension SidebarFilter {
 extension FileType {
     var accessibilityName: String {
         switch self {
-        case .iso: return "Disc images"
-        case .video: return "Video"
-        case .archive: return "Archives"
-        case .app: return "Apps"
-        case .magnet: return "Magnet links"
-        case .doc: return "Documents"
+        case .iso: return L10n.t("Disc images")
+        case .video: return L10n.t("Video")
+        case .archive: return L10n.t("Archives")
+        case .app: return L10n.t("Apps")
+        case .magnet: return L10n.t("Magnet links")
+        case .doc: return L10n.t("Documents")
         }
     }
 }
 
 extension SortKey {
     var accessibilityName: String {
-        self == .index ? "Row number" : rawValue
+        self == .index ? L10n.t("Row number") : L10n.t(rawValue)
     }
 }
 
 extension ServerReachability {
     var accessibilityName: String {
         switch self {
-        case .unknown: return "Checking"
-        case .online: return "Online"
-        case .offline: return "Offline"
+        case .unknown: return L10n.t("Checking")
+        case .online: return L10n.t("Online")
+        case .offline: return L10n.t("Offline")
         }
     }
 }

@@ -128,7 +128,7 @@ struct ManagedPolicyNotice: View {
 
     var body: some View {
         if keys.contains(where: policy.isLocked) {
-            Label("Some settings here are managed by your organisation and can’t be changed.",
+            Label(L10n.t("Some settings here are managed by your organisation and can’t be changed."),
                   systemImage: "lock.fill")
                 .scaledFont(size: 11)
                 .foregroundStyle(.secondary)

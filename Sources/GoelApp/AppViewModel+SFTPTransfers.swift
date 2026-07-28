@@ -44,7 +44,8 @@ extension AppViewModel {
         let safeName = PathSafety.sanitizedName(entry.name)
         // `downloadToFile` truncate-creates, so an existing local file dies silently; without a listing, refuse rather than guess.
         guard let listed = try? FileManager.default.contentsOfDirectory(atPath: localDir.path) else {
-            toastNow("Couldn’t read “\(localDir.lastPathComponent)”, so “\(entry.name)” wasn’t downloaded.")
+            toastNow(L10n.t("Couldn’t read “%1$@”, so “%2$@” wasn’t downloaded.",
+                            localDir.lastPathComponent, entry.name))
             return
         }
         var existingNames = Set(listed)
@@ -56,7 +57,7 @@ extension AppViewModel {
         let localName = SFTPBrowserPaths.uniqueName(safeName, existing: existingNames)
         let destination = localDir.appendingPathComponent(localName)
         guard SFTPBrowserModel.isContained(destination, in: localDir) else {
-            toastNow("Refusing to write “\(entry.name)” outside the chosen folder."); return
+            toastNow(L10n.t("Refusing to write “%@” outside the chosen folder.", entry.name)); return
         }
         let remoteSource = SFTPBrowserPaths.join(remoteDir, entry.name)
         let cancel = CancelFlag()
@@ -81,9 +82,9 @@ extension AppViewModel {
         guard t.isActive else { cancelSFTPTransfer(id); return }
         let verb = t.cancelNoun
         requestConfirm(
-            title: "Cancel this \(verb)?",
-            message: "“\(t.name)” will stop transferring and be removed from the list.",
-            confirmTitle: "Stop Transfer",
+            title: L10n.t("Cancel this %@?", L10n.t(verb)),
+            message: L10n.t("“%@” will stop transferring and be removed from the list.", t.name),
+            confirmTitle: L10n.t("Stop Transfer"),
             destructive: true
         ) { [weak self] in self?.cancelSFTPTransfer(id) }
     }
@@ -97,14 +98,14 @@ extension AppViewModel {
         sftpFolderBytes[id] = nil
         sftpRemoteCopyPlans[id] = nil
         sftpTransfers.removeAll { $0.id == id }
-        toastNow("Transfer cancelled")
+        toastNow(L10n.t("Transfer cancelled"))
     }
 
     /// Not a free replay: the destination has moved on and `downloadToFile` truncate-creates, so the first attempt's checks run again.
     func retrySFTPTransfer(_ id: UUID) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }), !sftpTransfers[i].isActive else { return }
         let t = sftpTransfers[i]
-        guard let connection = server(t.connectionID) else { toastNow("That server no longer exists."); return }
+        guard let connection = server(t.connectionID) else { toastNow(L10n.t("That server no longer exists.")); return }
         // Resolve before flipping the row to .running: a refused Keychain read must leave the row failed, not "running".
         guard let client = sftpClientReportingFailure(for: connection) else { return }
         // Marked running *before* the preflight, so this row reserves its destination against a transfer started meanwhile.
@@ -114,7 +115,7 @@ extension AppViewModel {
         let task = Task { [weak self] in
             guard let self else { return }
             guard let localURL = t.localURL else {
-                self.settleTransfer(id, .failed("This transfer can’t be retried."))
+                self.settleTransfer(id, .failed(L10n.t("This transfer can’t be retried.")))
                 return
             }
             switch t.direction {
@@ -150,13 +151,15 @@ extension AppViewModel {
             listing = .names(taken)
         }
         guard let name = SFTPOverwritePlan.retryName(current.lastPathComponent, against: listing) else {
-            settleTransfer(id, .failed("Couldn’t read “\(directory.lastPathComponent)” — nothing was downloaded."))
+            settleTransfer(id, .failed(L10n.t("Couldn’t read “%@” — nothing was downloaded.",
+                                              directory.lastPathComponent)))
             return nil
         }
         guard name != current.lastPathComponent else { return current }
         let destination = directory.appendingPathComponent(name)
         guard SFTPBrowserModel.isContained(destination, in: directory) else {
-            settleTransfer(id, .failed("Refusing to write “\(name)” outside the chosen folder."))
+            settleTransfer(id, .failed(L10n.t("Refusing to write “%@” outside the chosen folder.",
+                                              name)))
             return nil
         }
         if let i = sftpTransfers.firstIndex(where: { $0.id == id }) {
@@ -169,20 +172,24 @@ extension AppViewModel {
     private func retriedUploadIsStillAuthorised(id: UUID, client: SFTPClient,
                                                 remoteTarget: String, isDir: Bool) async -> Bool {
         let parent = SFTPBrowserPaths.parent(of: remoteTarget)
-        let place = parent == "." ? "Home" : parent
+        let place = parent == "." ? L10n.t("Home") : parent
         let entries: [SFTPEntry]
         do {
             entries = try await client.list(parent)
         } catch let e as SFTPError {
-            settleTransfer(id, .failed("Couldn’t check what’s already in \(place) — nothing was uploaded. \(e.message)"))
+            settleTransfer(id, .failed(
+                L10n.t("Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@",
+                       place, e.message)))
             return false
         } catch {
-            settleTransfer(id, .failed("Couldn’t check what’s already in \(place) — nothing was uploaded."))
+            settleTransfer(id, .failed(
+                L10n.t("Couldn’t check what’s already in %@ — nothing was uploaded.", place)))
             return false
         }
         let name = (remoteTarget as NSString).lastPathComponent
         if !isDir, entries.contains(where: { $0.name == name && $0.isDirectory }) {
-            settleTransfer(id, .failed("“\(name)” is a folder on the server now — nothing was uploaded."))
+            settleTransfer(id, .failed(
+                L10n.t("“%@” is a folder on the server now — nothing was uploaded.", name)))
             return false
         }
         return true
@@ -193,7 +200,7 @@ extension AppViewModel {
         let dropped = Set(sftpTransfers.lazy.filter { !$0.isActive }.map(\.id))
         sftpTransfers.removeAll { !$0.isActive }
         for id in dropped { sftpRemoteCopyPlans[id] = nil }
-        if sftpTransfers.count != before { toastNow("Cleared finished transfers") }
+        if sftpTransfers.count != before { toastNow(L10n.t("Cleared finished transfers")) }
     }
 
     func sftpTransfers(for connectionID: UUID) -> [SFTPTransfer] {
@@ -206,7 +213,7 @@ extension AppViewModel {
         for url in items {
             guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]),
                   let isDirectory = values.isDirectory else {
-                toastNow("Couldn’t read “\(url.lastPathComponent)” — nothing was uploaded.")
+                toastNow(L10n.t("Couldn’t read “%@” — nothing was uploaded.", url.lastPathComponent))
                 return
             }
             isDirectories.append(isDirectory)
@@ -228,8 +235,8 @@ extension AppViewModel {
         guard case .names(let existing) = listing,
               let split = SFTPOverwritePlan.split(names: items.map(\.lastPathComponent),
                                                   against: listing) else {
-            let place = remoteDir == "." ? "Home" : remoteDir
-            toastNow("Couldn’t check what’s already in \(place) — nothing was uploaded."
+            let place = remoteDir == "." ? L10n.t("Home") : remoteDir
+            toastNow(L10n.t("Couldn’t check what’s already in %@ — nothing was uploaded.", place)
                      + (listingDetail.map { " \($0)" } ?? ""))
             return
         }
@@ -305,12 +312,18 @@ extension AppViewModel {
         let scan = await Task.detached { FolderScan(scanning: root) }.value
         // A failed or partial walk would otherwise settle as a finished upload of an empty tree — failure reported as success.
         guard !scan.enumerationFailed else {
-            throw SFTPError(kind: .io, message: "Couldn’t read “\(root.lastPathComponent)” — nothing was uploaded.")
+            throw SFTPError(kind: .io,
+                            message: L10n.t("Couldn’t read “%@” — nothing was uploaded.", root.lastPathComponent))
         }
         if let first = scan.unreadable.first {
             let others = scan.unreadable.count - 1
             throw SFTPError(kind: .io,
-                            message: "Couldn’t read “\(first)”\(others > 0 ? " and \(others) more item\(others == 1 ? "" : "s")" : "") inside “\(root.lastPathComponent)” — nothing was uploaded.")
+                            message: L10n.t("Couldn’t read “%1$@”%2$@ inside “%3$@” — nothing was uploaded.",
+                                            first,
+                                            others == 0 ? ""
+                                                : others == 1 ? L10n.t(" and %d more item", others)
+                                                              : L10n.t(" and %d more items", others),
+                                            root.lastPathComponent))
         }
         setTransferTotal(id, scan.total)
         sftpFolderBytes[id] = [:]
@@ -318,7 +331,7 @@ extension AppViewModel {
         // Shallowest → deepest so every file's parent exists; `makeDirectory` still raises denied/quota/name-taken, which a blanket `try?` swallowed.
         try await SFTPRelay.makeDirectory(remoteRoot, on: client)
         for rel in scan.dirs.sorted(by: { $0.count < $1.count }) {
-            if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
+            if cancel.isCancelled { throw SFTPError(kind: .aborted, message: L10n.t("Cancelled")) }
             try await SFTPRelay.makeDirectory(rel.reduce(remoteRoot, SFTPBrowserPaths.join),
                                               on: client)
         }
@@ -343,7 +356,7 @@ extension AppViewModel {
                     // Read the capture into an immutable local: reading a capture-list var inside a @Sendable closure is an error in Swift 6.
                     let model = self
                     while let index = await cursor.next(limit: files.count) {
-                        if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
+                        if cancel.isCancelled { throw SFTPError(kind: .aborted, message: L10n.t("Cancelled")) }
                         let file = files[index]
                         let remoteFile = file.rel.reduce(remoteRoot, SFTPBrowserPaths.join)
                         let coalescer = ProgressCoalescer()
@@ -418,7 +431,7 @@ extension AppViewModel {
         // Directories first, shallowest first, so every file has a parent.
         try FileManager.default.createDirectory(at: localRoot, withIntermediateDirectories: true)
         for url in layout.directories {
-            if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
+            if cancel.isCancelled { throw SFTPError(kind: .aborted, message: L10n.t("Cancelled")) }
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         }
 
@@ -439,7 +452,7 @@ extension AppViewModel {
                 group.addTask { [weak self] in
                     let model = self
                     while let index = await cursor.next(limit: files.count) {
-                        if cancel.isCancelled { throw SFTPError(kind: .aborted, message: "Cancelled") }
+                        if cancel.isCancelled { throw SFTPError(kind: .aborted, message: L10n.t("Cancelled")) }
                         let file = files[index]
                         let local = layout.files[index]
                         let remote = file.relative.reduce(remoteRoot, SFTPBrowserPaths.join)
@@ -476,11 +489,13 @@ extension AppViewModel {
         func place(_ relative: [String], isDirectory: Bool) throws -> URL {
             let parentPath = Array(relative.dropLast())
             guard let name = relative.last, let parent = resolved[parentPath] else {
-                throw SFTPError(kind: .io, message: "Couldn’t work out where to save “\(relative.joined(separator: "/"))”.")
+                throw SFTPError(kind: .io,
+                                message: L10n.t("Couldn’t work out where to save “%@”.",
+                                                relative.joined(separator: "/")))
             }
             guard SFTPBrowserPaths.isSafeChildName(name) else {
                 throw SFTPError(kind: .io,
-                                message: "The server sent an item named “\(name)”, which Goel won’t write to disk.")
+                                message: L10n.t("The server sent an item named “%@”, which Goel won’t write to disk.", name))
             }
             let key = parent.standardizedFileURL.path
             var taken = claimed[key] ?? []
@@ -491,7 +506,7 @@ extension AppViewModel {
             let url = parent.appendingPathComponent(unique)
             // Belt and braces on top of the per-component checks: the final path must still resolve inside the folder the user chose.
             guard PathSafety.isContained(url.path, within: root.path) else {
-                throw SFTPError(kind: .io, message: "Refusing to write outside the download folder.")
+                throw SFTPError(kind: .io, message: L10n.t("Refusing to write outside the download folder."))
             }
             if isDirectory { resolved[relative] = url }
             return url

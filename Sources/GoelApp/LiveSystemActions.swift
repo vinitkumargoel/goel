@@ -9,10 +9,10 @@ struct LiveSystemActions: SystemActions {
             let title: String
             let body: String
             switch notification {
-            case .added(let name):       title = "Download added";          body = name
-            case .completed(let name):   title = "Download complete";       body = name
-            case .failed(let name):      title = "Download failed";         body = name
-            case .scanFlagged(let name): title = "Antivirus flagged a file"; body = name
+            case .added(let name):       title = L10n.t("Download added");   body = name
+            case .completed(let name):   title = L10n.t("Download complete"); body = name
+            case .failed(let name):      title = L10n.t("Download failed");   body = name
+            case .scanFlagged(let name): title = L10n.t("Antivirus flagged a file"); body = name
             }
             NotificationService.notify(title: title, body: body, sound: sound)
         }
@@ -30,8 +30,8 @@ struct LiveSystemActions: SystemActions {
                 try pmset.run()
             } catch {
                 NotificationService.notify(
-                    title: "Couldn’t put this Mac to sleep",
-                    body: "Downloads finished, but the sleep command didn’t run.",
+                    title: L10n.t("Couldn’t put this Mac to sleep"),
+                    body: L10n.t("Downloads finished, but the sleep command didn’t run."),
                     sound: false
                 )
             }
@@ -40,8 +40,8 @@ struct LiveSystemActions: SystemActions {
             let source = "tell application \"System Events\" to shut down"
             guard let script = NSAppleScript(source: source) else {
                 NotificationService.notify(
-                    title: "Couldn’t shut this Mac down",
-                    body: "Downloads finished, but the shutdown command couldn’t be prepared.",
+                    title: L10n.t("Couldn’t shut this Mac down"),
+                    body: L10n.t("Downloads finished, but the shutdown command couldn’t be prepared."),
                     sound: false
                 )
                 return
@@ -50,10 +50,10 @@ struct LiveSystemActions: SystemActions {
             script.executeAndReturnError(&failure)
             if failure != nil {
                 NotificationService.notify(
-                    title: "Couldn’t shut this Mac down",
-                    body: "Downloads finished, but macOS blocked the request. "
+                    title: L10n.t("Couldn’t shut this Mac down"),
+                    body: L10n.t("Downloads finished, but macOS blocked the request. "
                         + "Allow Goel° to control System Events in System Settings "
-                        + "→ Privacy & Security → Automation.",
+                        + "→ Privacy & Security → Automation."),
                     sound: false
                 )
             }

@@ -26,16 +26,16 @@ enum UpdateChecker {
         }
         guard let data = await NetworkGuard.fetch(url: url, proxy: proxy,
                                                   userAgent: userAgent) else {
-            return .failed("Couldn’t reach the update feed.")
+            return .failed(L10n.t("Couldn’t reach the update feed."))
         }
         guard let release = Self.decodeRelease(data) else {
-            return .failed("The update feed didn’t contain a release.")
+            return .failed(L10n.t("The update feed didn’t contain a release."))
         }
         let latest = release.version.hasPrefix("v")
             ? String(release.version.dropFirst()) : release.version
         // Keep these cases apart: folded together, a newer release with a bad link reads as "Up to date".
         guard let candidate = components(latest) else {
-            return .failed("The update feed gave a version this app can’t read.")
+            return .failed(L10n.t("The update feed gave a version this app can’t read."))
         }
         guard let running = components(currentVersion),
               isNewer(candidate, than: running) else {
@@ -44,7 +44,8 @@ enum UpdateChecker {
         // Opened with NSWorkspace: never accept a scheme that could launch something local (file:).
         guard let page = URL(string: release.page),
               page.scheme?.lowercased() == "https" else {
-            return .failed("Version \(latest) is available, but the update feed gave an unusable link.")
+            return .failed(L10n.t("Version %@ is available, but the update feed gave an unusable link.",
+                                  latest))
         }
         return .available(version: latest, url: page)
     }

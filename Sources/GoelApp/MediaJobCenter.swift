@@ -18,15 +18,15 @@ final class MediaJobCenter: ObservableObject {
 
             var activeTitle: String {
                 switch self {
-                case .convert(let ext): return "Converting to \(ext.uppercased())"
-                case .extractAudio(let format): return "Extracting \(format.displayName)"
+                case .convert(let ext): return L10n.t("Converting to %@", ext.uppercased())
+                case .extractAudio(let format): return L10n.t("Extracting %@", format.displayName)
                 }
             }
 
             var finishedTitle: String {
                 switch self {
-                case .convert(let ext): return "Converted to \(ext.uppercased())"
-                case .extractAudio(let format): return "Extracted \(format.displayName)"
+                case .convert(let ext): return L10n.t("Converted to %@", ext.uppercased())
+                case .extractAudio(let format): return L10n.t("Extracted %@", format.displayName)
                 }
             }
         }
@@ -126,12 +126,12 @@ final class MediaJobCenter: ObservableObject {
         var message: String {
             switch self {
             case .duplicate:
-                return "That conversion is already running."
+                return L10n.t("That conversion is already running.")
             case .unavailable(let reason):
                 return reason
             case .notEnoughSpace(let needed, let available):
-                return "Not enough disk space — this needs about \(needed.byteString) "
-                     + "and there is \(available.byteString) free."
+                return L10n.t("Not enough disk space — this needs about %1$@ and there is %2$@ free.",
+                              needed.byteString, available.byteString)
             }
         }
     }
@@ -146,7 +146,7 @@ final class MediaJobCenter: ObservableObject {
             return .duplicate
         }
         guard FileManager.default.isReadableFile(atPath: input.path) else {
-            return .unavailable("The source file is missing.")
+            return .unavailable(L10n.t("The source file is missing."))
         }
         jobs.append(job)
         startTicker()

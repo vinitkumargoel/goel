@@ -17,7 +17,7 @@ struct MediaJobDock: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
             if overflow > 0 {
-                Text("+\(overflow) more waiting")
+                Text(L10n.t("+%d more waiting", overflow))
                     .scaledFont(size: 10.5)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
@@ -105,8 +105,10 @@ private struct MediaJobCard: View {
     }
 
     private var closeHelp: String {
-        if job.isStopStuck() { return "Stop waiting for \(job.kind.activeTitle.lowercased())" }
-        return job.state.isLive ? "Cancel this conversion" : "Dismiss"
+        if job.isStopStuck() {
+            return L10n.t("Stop waiting for %@", L10n.midSentence(job.kind.activeTitle))
+        }
+        return job.state.isLive ? L10n.t("Cancel this conversion") : L10n.t("Dismiss")
     }
 
     @ViewBuilder
@@ -147,9 +149,9 @@ private struct MediaJobCard: View {
         switch job.state {
         case .finished(let url, _):
             HStack(spacing: 12) {
-                Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                Button(L10n.t("Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                     .buttonStyle(.link)
-                Button("Open") { NSWorkspace.shared.open(url) }
+                Button(L10n.t("Open")) { NSWorkspace.shared.open(url) }
                     .buttonStyle(.link)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -157,11 +159,11 @@ private struct MediaJobCard: View {
             .scaledFont(size: 11)
         case .failed:
             HStack(spacing: 12) {
-                Button(showsDetail ? "Hide details" : "Show details") {
+                Button(showsDetail ? L10n.t("Hide details") : L10n.t("Show details")) {
                     showsDetail.toggle()
                 }
                 .buttonStyle(.link)
-                Button("Copy details") {
+                Button(L10n.t("Copy details")) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(job.log, forType: .string)
                 }
@@ -172,14 +174,14 @@ private struct MediaJobCard: View {
             .scaledFont(size: 11)
         case .running where job.isStalled():
             HStack(spacing: 12) {
-                Button("Cancel this job") { center.cancel(job.id) }
+                Button(L10n.t("Cancel this job")) { center.cancel(job.id) }
                     .buttonStyle(.link)
                 Spacer(minLength: 0)
             }
             .scaledFont(size: 11)
         case .cancelling where job.isStopStuck():
             HStack(spacing: 12) {
-                Button("Stop waiting") { center.forceDismiss(job.id) }
+                Button(L10n.t("Stop waiting")) { center.forceDismiss(job.id) }
                     .buttonStyle(.link)
                 Spacer(minLength: 0)
             }
@@ -192,48 +194,50 @@ private struct MediaJobCard: View {
     private var title: String {
         switch job.state {
         case .cancelling:
-            return job.isStopStuck() ? "\(job.kind.activeTitle) — won’t stop"
+            return job.isStopStuck() ? L10n.t("%@ — won’t stop", job.kind.activeTitle)
                                      : job.kind.activeTitle
         case .queued, .running:
-            return job.isStalled() ? "\(job.kind.activeTitle) — not progressing"
+            return job.isStalled() ? L10n.t("%@ — not progressing", job.kind.activeTitle)
                                    : job.kind.activeTitle
         case .finished:  return job.kind.finishedTitle
-        case .failed:    return "Couldn’t finish \(job.kind.activeTitle.lowercased())"
-        case .cancelled: return "Cancelled"
+        case .failed:    return L10n.t("Couldn’t finish %@",
+                                       L10n.midSentence(job.kind.activeTitle))
+        case .cancelled: return L10n.t("Cancelled")
         }
     }
 
     private var subtitle: String {
         switch job.state {
         case .queued:
-            return "Waiting — \(job.sourceName)"
+            return L10n.t("Waiting — %@", job.sourceName)
         case .cancelling:
-            guard job.isStopStuck() else { return "Stopping…" }
+            guard job.isStopStuck() else { return L10n.t("Stopping…") }
             let waiting = MediaJobCenter.Job.durationText(from: job.cancelRequestedAt ?? job.startedAt,
                                                           to: Date())
-            return "ffmpeg hasn’t exited after \(waiting) · the file may be on a stalled disk"
+            return L10n.t("ffmpeg hasn’t exited after %@ · the file may be on a stalled disk", waiting)
         case .cancelled:
-            return job.removedPartial ? "Partial file removed" : "Nothing was written"
+            return job.removedPartial ? L10n.t("Partial file removed") : L10n.t("Nothing was written")
         case .failed(let message):
             return message
         case .finished(let url, let usedStreamCopy):
-            let how = usedStreamCopy ? "copied, no re-encode" : "re-encoded"
+            let how = usedStreamCopy ? L10n.t("copied, no re-encode") : L10n.t("re-encoded")
             let took = MediaJobCenter.Job.durationText(from: job.startedAt, to: job.finishedAt)
             return "\(url.lastPathComponent) · \(how) · \(took)"
         case .running:
             if job.isStalled() {
                 let since = MediaJobCenter.Job.durationText(from: job.lastAdvance, to: Date())
-                return "no progress for \(since) · ffmpeg may be stuck"
+                return L10n.t("no progress for %@ · ffmpeg may be stuck", since)
             }
             var pieces: [String] = []
             if let fraction = job.fraction {
                 pieces.append("\(Int((fraction * 100).rounded()))%")
             } else {
-                pieces.append("length unknown")
-                pieces.append(MediaJobCenter.Job.durationText(from: job.startedAt, to: Date()) + " elapsed")
+                pieces.append(L10n.t("length unknown"))
+                pieces.append(L10n.t("%@ elapsed",
+                                     MediaJobCenter.Job.durationText(from: job.startedAt, to: Date())))
             }
             if job.bytesWritten > 0 { pieces.append(job.bytesWritten.byteString) }
-            if let eta = job.eta { pieces.append("~\(DownloadTask.etaString(eta)) left") }
+            if let eta = job.eta { pieces.append(L10n.t("~%@ left", DownloadTask.etaString(eta))) }
             if let speed = job.speed { pieces.append(String(format: "%.1f×", speed)) }
             return pieces.joined(separator: " · ")
         }
@@ -241,17 +245,17 @@ private struct MediaJobCard: View {
 
     private var spokenStatus: String {
         switch job.state {
-        case .queued:     return "Waiting to start"
+        case .queued:     return L10n.t("Waiting to start")
         case .cancelling:
-            return job.isStopStuck() ? "Still stopping. ffmpeg has not exited." : "Stopping"
+            return job.isStopStuck() ? L10n.t("Still stopping. ffmpeg has not exited.") : L10n.t("Stopping")
         case .cancelled:
-            return job.removedPartial ? "Cancelled, partial file removed"
-                                      : "Cancelled before anything was written"
-        case .failed(let message): return "Failed. \(message)"
-        case .finished(let url, _): return "Finished. Saved \(url.lastPathComponent)"
+            return job.removedPartial ? L10n.t("Cancelled, partial file removed")
+                                      : L10n.t("Cancelled before anything was written")
+        case .failed(let message): return L10n.t("Failed. %@", message)
+        case .finished(let url, _): return L10n.t("Finished. Saved %@", url.lastPathComponent)
         case .running:
-            if job.isStalled() { return "Not progressing. ffmpeg may be stuck." }
-            guard let fraction = job.fraction else { return "In progress, length unknown" }
+            if job.isStalled() { return L10n.t("Not progressing. ffmpeg may be stuck.") }
+            guard let fraction = job.fraction else { return L10n.t("In progress, length unknown") }
             return A11y.sentence(A11y.percent(fraction), A11y.eta(job.eta))
         }
     }

@@ -1,4 +1,5 @@
 import type { ComponentType, SVGProps } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   ActiveIcon,
   CompletedIcon,
@@ -17,12 +18,15 @@ export type FilterCounts = Record<Filter, number>
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>
 
-const FILTERS: ReadonlyArray<{ key: Filter; label: string; icon: Icon }> = [
-  { key: 'active', label: 'Active', icon: ActiveIcon },
-  { key: 'paused', label: 'Paused', icon: PausedIcon },
-  { key: 'completed', label: 'Completed', icon: CompletedIcon },
-  { key: 'seeding', label: 'Seeding', icon: SeedingIcon },
-  { key: 'failed', label: 'Failed', icon: FailedIcon },
+type StatusKey = 'status.active' | 'status.paused' | 'status.completed' | 'status.seeding' | 'status.failed'
+
+/** `labelKey` rather than `label`: the module is evaluated before i18n has a language. */
+const FILTERS: ReadonlyArray<{ key: Filter; labelKey: StatusKey; icon: Icon }> = [
+  { key: 'active', labelKey: 'status.active', icon: ActiveIcon },
+  { key: 'paused', labelKey: 'status.paused', icon: PausedIcon },
+  { key: 'completed', labelKey: 'status.completed', icon: CompletedIcon },
+  { key: 'seeding', labelKey: 'status.seeding', icon: SeedingIcon },
+  { key: 'failed', labelKey: 'status.failed', icon: FailedIcon },
 ]
 
 interface SidebarProps {
@@ -44,6 +48,8 @@ export function Sidebar({
   onSelectView,
   onClose,
 }: SidebarProps) {
+  const { t } = useTranslation()
+
   const libraryItem = (key: Filter, label: string, Icon: Icon) => (
     <div
       key={key}
@@ -60,26 +66,26 @@ export function Sidebar({
     <>
       <div className={`sb-backdrop${open ? ' show' : ''}`} onClick={onClose} />
       <div className={`sidebar${open ? ' open' : ''}`}>
-        <div className="s-lbl">Library</div>
-        {libraryItem('all', 'All downloads', ListIcon)}
+        <div className="s-lbl">{t('sidebar.library')}</div>
+        {libraryItem('all', t('sidebar.allDownloads'), ListIcon)}
 
-        <div className="s-lbl">Status</div>
-        {FILTERS.map((f) => libraryItem(f.key, f.label, f.icon))}
+        <div className="s-lbl">{t('sidebar.status')}</div>
+        {FILTERS.map((f) => libraryItem(f.key, t(f.labelKey), f.icon))}
 
-        <div className="s-lbl">Tools</div>
+        <div className="s-lbl">{t('sidebar.tools')}</div>
         <div
           className={`s-item${view === 'history' ? ' active' : ''}`}
           onClick={() => onSelectView('history')}
         >
           <HistoryIcon />
-          <span className="l">History</span>
+          <span className="l">{t('common.history')}</span>
         </div>
         <div
           className={`s-item${view === 'settings' ? ' active' : ''}`}
           onClick={() => onSelectView('settings')}
         >
           <SettingsIcon />
-          <span className="l">Settings</span>
+          <span className="l">{t('common.settings')}</span>
         </div>
       </div>
     </>

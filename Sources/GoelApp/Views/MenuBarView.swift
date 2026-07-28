@@ -38,7 +38,7 @@ struct MenuBarView: View {
                             Divider()
                         }
                         if !activeTransfers.isEmpty {
-                            sectionLabel("SFTP Transfers")
+                            sectionLabel(L10n.t("SFTP Transfers"))
                             ForEach(activeTransfers) { t in
                                 MenuBarSFTPTransferRow(
                                     transfer: t,
@@ -51,7 +51,7 @@ struct MenuBarView: View {
                             }
                         }
                         if vm.mediaLiveCount > 0 {
-                            sectionLabel("Conversions")
+                            sectionLabel(L10n.t("Conversions"))
                             MenuBarMediaSection(center: vm.mediaJobs)
                         }
                     }
@@ -95,9 +95,9 @@ struct MenuBarView: View {
     private var header: some View {
         let count = listedTasks.count + activeTransfers.count + vm.mediaLiveCount
         return HStack(spacing: 12) {
-            Text(count == 0 ? "Downloads" : "Downloads · \(count)")
+            Text(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads") + " · \(count)")
                 .scaledFont(size: 13, weight: .semibold)
-                .accessibilityLabel(count == 0 ? "Downloads" : "Downloads, \(count) in progress")
+                .accessibilityLabel(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads, %d in progress", count))
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             speedStat(symbol: "arrow.down", value: vm.displayedCombinedSpeed.down, color: Theme.green)
@@ -112,8 +112,8 @@ struct MenuBarView: View {
     }
 
     private var emptyState: some View {
-        EmptyStateView(systemImage: "arrow.down.circle", title: "No active downloads",
-                       subtitle: "Add a URL or magnet link to get started.",
+        EmptyStateView(systemImage: "arrow.down.circle", title: L10n.t("No active downloads"),
+                       subtitle: L10n.t("Add a URL or magnet link to get started."),
                        symbolSize: 26, symbolStyle: .tertiary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 26)
@@ -124,7 +124,7 @@ struct MenuBarView: View {
             Button(action: addDownload) {
                 HStack(spacing: 7) {
                     Image(systemName: "plus").font(.system(size: 12, weight: .bold))
-                    Text("Add download").scaledFont(size: 13, weight: .semibold)
+                    Text(L10n.t("Add download")).scaledFont(size: 13, weight: .semibold)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
@@ -133,29 +133,29 @@ struct MenuBarView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .a11yButton("Add download", hint: "Opens the main window's add sheet.")
+            .a11yButton(L10n.t("Add download"), hint: L10n.t("Opens the main window's add sheet."))
 
             HStack(spacing: 0) {
                 Button(action: pauseOrResumeAll) {
-                    Label(activeTasks.isEmpty ? "Start all" : "Pause all",
+                    Label(activeTasks.isEmpty ? L10n.t("Start all") : L10n.t("Pause all"),
                           systemImage: activeTasks.isEmpty ? "play.fill" : "pause.fill")
                         .scaledFont(size: 11.5)
                         .foregroundStyle(.secondary)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .a11yButton(activeTasks.isEmpty ? "Start all downloads" : "Pause all downloads")
+                .a11yButton(activeTasks.isEmpty ? L10n.t("Start all downloads") : L10n.t("Pause all downloads"))
                 Spacer(minLength: 0)
                 Button(action: openApp) {
                     HStack(spacing: 4) {
-                        Text("Open Goel°").scaledFont(size: 11.5)
+                        Text(L10n.t("Open Goel°")).scaledFont(size: 11.5)
                         Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
                     }
                     .foregroundStyle(.secondary)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .a11yButton("Open Goel main window")
+                .a11yButton(L10n.t("Open Goel main window"))
             }
         }
         .padding(.horizontal, 14)
@@ -249,18 +249,18 @@ private struct MenuBarSFTPTransferRow: View {
         SFTPTransferRow(
             transfer: transfer,
             density: .full,
-            serverLabel: vm.server(transfer.connectionID)?.label ?? "Server",
+            serverLabel: vm.server(transfer.connectionID)?.label ?? L10n.t("Server"),
             onCancel: { confirmingCancel = true },
             onRetry: { vm.retrySFTPTransfer(transfer.id) },
             onShowRemoteFolder: onShowRemoteFolder)
         .confirmationDialog(
-            "Cancel this \(transfer.cancelNoun)?",
+            L10n.t("Cancel this %@?", L10n.t(transfer.cancelNoun)),
             isPresented: $confirmingCancel, titleVisibility: .visible
         ) {
-            Button("Stop Transfer", role: .destructive) { vm.cancelSFTPTransfer(transfer.id) }
-            Button("Keep Going", role: .cancel) {}
+            Button(L10n.t("Stop Transfer"), role: .destructive) { vm.cancelSFTPTransfer(transfer.id) }
+            Button(L10n.t("Keep Going"), role: .cancel) {}
         } message: {
-            Text("“\(transfer.name)” will stop transferring and be removed from the list.")
+            Text(L10n.t("“%@” will stop transferring and be removed from the list.", transfer.name))
         }
     }
 }
@@ -304,7 +304,7 @@ private struct MenuBarMediaSection: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .disabled(job.state == .cancelling && !job.isStopStuck())
-                .accessibilityLabel("Cancel \(job.kind.activeTitle)")
+                .accessibilityLabel(L10n.t("Cancel %@", L10n.midSentence(job.kind.activeTitle)))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -329,11 +329,11 @@ struct MenuBarSpeedLabel: View {
             if sample.down > 0 || sample.up > 0 {
                 Image(nsImage: MenuBarSpeedLabel.speedImage(down: sample.down, up: sample.up))
                     .accessibilityLabel(
-                        "Goel downloads. Downloading at \(A11y.speed(sample.down)), "
-                        + "uploading at \(A11y.speed(sample.up)).")
+                        L10n.t("Goel downloads. Downloading at %1$@, uploading at %2$@.",
+                               A11y.speed(sample.down), A11y.speed(sample.up)))
             } else {
                 Image(systemName: "arrow.down.circle")
-                    .accessibilityLabel("Goel downloads. Idle.")
+                    .accessibilityLabel(L10n.t("Goel downloads. Idle."))
             }
         }
 

@@ -28,14 +28,20 @@ public enum ResourceBundles {
                 if let bundle = Bundle(url: candidate) { return bundle }
             }
         }
-        // Must not be silent: keys are the English text, so a dropped bundle reads as "not localized yet".
-        FileHandle.standardError.write(Data("""
+        // Must not be silent: keys are the English text, so a dropped bundle reads as "not
+        // localized yet" rather than as a failure, in every language at once. stderr alone goes
+        // nowhere for a double-clicked app, so this is also a fault — Console.app and diagnostic
+        // reports are where anyone would actually find it.
+        let detail = """
             Goel°: resource bundle \(name).{\(bundleExtensions.joined(separator: ","))} \
             was not found in any of:
             \(roots.map { "  " + $0.path }.joined(separator: "\n"))
             Continuing without it — translations and bundled resources are unavailable.
 
-            """.utf8))
+            """
+        FileHandle.standardError.write(Data(detail.utf8))
+        GoelLog.app.fault("Resource bundle missing; translations unavailable",
+                          .detail(detail))
         return nil
     }
 

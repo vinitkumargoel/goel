@@ -53,10 +53,10 @@ struct SettingsView: View {
             List(Pane.allCases, selection: $selection) { pane in
                 Label {
                     HStack {
-                        Text(pane.rawValue)
+                        Text(L10n.t(pane.rawValue))
                         if pane.comingSoon {
                             Spacer()
-                            Text("soon")
+                            Text(L10n.t("soon"))
                                 .scaledFont(size: 9)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
@@ -107,9 +107,9 @@ struct SettingsView: View {
                 Button(confirmTitle, role: alert.isDestructive ? .destructive : nil) {
                     alert.onConfirm?()
                 }
-                Button("Cancel", role: .cancel) { }
+                Button(L10n.t("Cancel"), role: .cancel) { }
             } else {
-                Button("OK", role: .cancel) { }
+                Button(L10n.t("OK"), role: .cancel) { }
             }
         } message: { alert in
             Text(alert.message)
@@ -190,102 +190,104 @@ struct SettingsView: View {
     ]
 
     private var generalPane: some View {
-        PaneScaffold(title: "General", subtitle: "Appearance, startup, and where files land.") {
+        PaneScaffold(title: L10n.t("General"), subtitle: L10n.t("Appearance, startup, and where files land.")) {
             ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.generalManagedKeys)
 
-            SetRow(name: "Theme", desc: "Pick a look: Frost (light/dark), Dracula, or Nord.") {
+            SetRow(name: L10n.t("Theme"), desc: L10n.t("Pick a look: Frost (light/dark), Dracula, or Nord.")) {
                 Picker("", selection: $vm.theme) {
-                    ForEach(AppTheme.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(AppTheme.allCases) { Text(L10n.t($0.rawValue)).tag($0) }
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .frame(width: 200)
-                .accessibilityLabel("Theme")
+                .accessibilityLabel(L10n.t("Theme"))
             }
             // Only languages that ship a strings table: anything else silently resolves to English.
-            SetRow(name: "Language", desc: "English and Deutsch ship translations today.") {
+            SetRow(name: L10n.t("Language"),
+                   desc: L10n.t("%@ ship translations today.",
+                                L10n.supportedLanguages.map(\.name).joined(separator: ", "))) {
                 Dropdown(selection: binding(\.language),
                          items: L10n.supportedLanguages.map { .option($0.name, $0.name) },
                          width: 150)
             }
-            SetRow(name: "Launch at login", desc: "Start Goel° when you log in.") {
+            SetRow(name: L10n.t("Launch at login"), desc: L10n.t("Start Goel° when you log in.")) {
                 SettingSwitch(isOn: binding(\.launchAtLogin))
             }
-            SetRow(name: "Launch minimized", desc: "Open to the menu bar instead of a window.") {
+            SetRow(name: L10n.t("Launch minimized"), desc: L10n.t("Open to the menu bar instead of a window.")) {
                 SettingSwitch(isOn: binding(\.launchMinimized))
             }
-            SetRow(name: "Show in menu bar",
-                   desc: "Add a menu-bar item with live ↓/↑ speed and quick controls.") {
+            SetRow(name: L10n.t("Show in menu bar"),
+                   desc: L10n.t("Add a menu-bar item with live ↓/↑ speed and quick controls.")) {
                 SettingSwitch(isOn: binding(\.menuBarExtraEnabled))
             }
-            SetRow(name: "Default download folder",
-                   desc: "Choose automatically, by type, by source URL, or fixed.") {
+            SetRow(name: L10n.t("Default download folder"),
+                   desc: L10n.t("Choose automatically, by type, by source URL, or fixed.")) {
                 Dropdown(selection: binding(\.defaultFolderRule), items: [
-                    .option("automatic", "Automatic"),
-                    .option("byType", "By file type"),
-                    .option("bySource", "By source URL"),
-                    .option("fixed", "Fixed folder…"),
+                    .option("automatic", L10n.t("Automatic")),
+                    .option("byType", L10n.t("By file type")),
+                    .option("bySource", L10n.t("By source URL")),
+                    .option("fixed", L10n.t("Fixed folder…")),
                 ], width: 150)
                 .managed(.defaultFolderRule, vm.managedPolicy)
             }
             if vm.settings.defaultFolderRule == "fixed" {
-                SetRow(name: "Fixed folder", desc: vm.settings.defaultSaveDirectory) {
-                    Button("Choose…") { chooseDefaultFolder() }
-                        .accessibilityLabel("Choose fixed download folder")
+                SetRow(name: L10n.t("Fixed folder"), desc: vm.settings.defaultSaveDirectory) {
+                    Button(L10n.t("Choose…")) { chooseDefaultFolder() }
+                        .accessibilityLabel(L10n.t("Choose fixed download folder"))
                         .managed(.defaultSaveDirectory, vm.managedPolicy)
                 }
             }
-            SetRow(name: "When a file exists",
-                   desc: "Replace it, or keep both by appending “(1)”.") {
+            SetRow(name: L10n.t("When a file exists"),
+                   desc: L10n.t("Replace it, or keep both by appending “(1)”.")) {
                 Picker("", selection: binding(\.existingFileReaction)) {
-                    Text("Rename").tag("rename")
-                    Text("Overwrite").tag("overwrite")
+                    Text(L10n.t("Rename")).tag("rename")
+                    Text(L10n.t("Overwrite")).tag("overwrite")
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 200)
-                .accessibilityLabel("When a file exists")
+                .accessibilityLabel(L10n.t("When a file exists"))
             }
-            SetRow(name: "Clipboard capture",
-                   desc: "Offer to download http(s)/magnet links you copy.") {
+            SetRow(name: L10n.t("Clipboard capture"),
+                   desc: L10n.t("Offer to download http(s)/magnet links you copy.")) {
                 SettingSwitch(isOn: binding(\.clipboardMonitorEnabled))
             }
-            SetRow(name: "Max video quality",
-                   desc: "Preferred rendition when grabbing an HLS (.m3u8) stream.") {
+            SetRow(name: L10n.t("Max video quality"),
+                   desc: L10n.t("Preferred rendition when grabbing an HLS (.m3u8) stream.")) {
                 Dropdown(selection: binding(\.hlsMaxHeight), items: [
-                    .option(0, "Best available"),
+                    .option(0, L10n.t("Best available")),
                     .option(1080, "1080p"),
                     .option(720, "720p"),
                     .option(480, "480p"),
                     .option(360, "360p"),
                 ], width: 150)
             }
-            SectionHeader("Media tools")
-            SetRow(name: "Download subtitles",
-                   desc: "Fetch subtitles alongside yt-dlp video downloads (requires yt-dlp).") {
+            SectionHeader(L10n.t("Media tools"))
+            SetRow(name: L10n.t("Download subtitles"),
+                   desc: L10n.t("Fetch subtitles alongside yt-dlp video downloads (requires yt-dlp).")) {
                 SettingSwitch(isOn: binding(\.subtitleDownloadEnabled))
             }
             if vm.settings.subtitleDownloadEnabled {
-                SetRow(name: "Subtitle languages",
-                       desc: "Comma-separated codes, e.g. “en, es”.") {
+                SetRow(name: L10n.t("Subtitle languages"),
+                       desc: L10n.t("Comma-separated codes, e.g. “en, es”.")) {
                     SettingText(text: binding(\.subtitleLanguages), width: 140)
                 }
-                SetRow(name: "Include auto-captions",
-                       desc: "Fall back to machine-generated captions when no human subtitles exist.") {
+                SetRow(name: L10n.t("Include auto-captions"),
+                       desc: L10n.t("Fall back to machine-generated captions when no human subtitles exist.")) {
                     SettingSwitch(isOn: binding(\.subtitleIncludeAutoGenerated))
                 }
             }
-            SetRow(name: "ffmpeg path",
-                   desc: "Optional. Leave empty to use the copy included with Goel°. Enables Convert / Extract-audio on finished media.") {
+            SetRow(name: L10n.t("ffmpeg path"),
+                   desc: L10n.t("Optional. Leave empty to use the copy included with Goel°. Enables Convert / Extract-audio on finished media.")) {
                 SettingText(text: binding(\.ffmpegPath), width: 200)
             }
             Text(vm.ffmpegResolutionSummary)
                 .scaledFont(size: 10)
                 .foregroundStyle(vm.ffmpegUnavailableReason == nil ? Color.secondary : Theme.orange)
                 .fixedSize(horizontal: false, vertical: true)
-            SetRow(name: "Conversions at once",
-                   desc: "ffmpeg already uses every core for one job, so running more at "
-                       + "the same time makes each one slower without finishing the batch sooner.") {
+            SetRow(name: L10n.t("Conversions at once"),
+                   desc: L10n.t("ffmpeg already uses every core for one job, so running more at "
+                       + "the same time makes each one slower without finishing the batch sooner.")) {
                 Dropdown(selection: binding(\.mediaConcurrency), items: [
                     .option(1, "1"),
                     .option(2, "2"),
@@ -307,71 +309,71 @@ struct SettingsView: View {
     ]
 
     private var networkPane: some View {
-        PaneScaffold(title: "Network", subtitle: "Proxy, timeouts, retries, and authentication.") {
+        PaneScaffold(title: L10n.t("Network"), subtitle: L10n.t("Proxy, timeouts, retries, and authentication.")) {
             ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.networkManagedKeys)
 
-            SectionHeader("Proxy")
-            SetRow(name: "Proxy", desc: "Route traffic through a proxy server. Multi-path aggregation is disabled while a system or manual proxy is set.") {
+            SectionHeader(L10n.t("Proxy"))
+            SetRow(name: L10n.t("Proxy"), desc: L10n.t("Route traffic through a proxy server. Multi-path aggregation is disabled while a system or manual proxy is set.")) {
                 Dropdown(selection: binding(\.proxyMode), items: [
-                    .option("none", "None"),
-                    .option("system", "System"),
-                    .option("manual", "Manual"),
+                    .option("none", L10n.t("None")),
+                    .option("system", L10n.t("System")),
+                    .option("manual", L10n.t("Manual")),
                 ], width: 150)
                 .managed(.proxyMode, vm.managedPolicy)
             }
             if vm.settings.proxyMode == "manual" {
-                SetRow(name: "Proxy type", desc: "HTTP or SOCKS5 (applies to HTTP/HTTPS downloads).") {
+                SetRow(name: L10n.t("Proxy type"), desc: L10n.t("HTTP or SOCKS5 (applies to HTTP/HTTPS downloads).")) {
                     Dropdown(selection: binding(\.proxyType), items: [
                         .option("http", "HTTP"),
                         .option("socks5", "SOCKS5"),
                     ], width: 150)
                     .managed(.proxyType, vm.managedPolicy)
                 }
-                SetRow(name: "Proxy host", desc: "Hostname or IP of the proxy server.") {
+                SetRow(name: L10n.t("Proxy host"), desc: L10n.t("Hostname or IP of the proxy server.")) {
                     SettingText(text: binding(\.proxyHost), width: 160)
                         .managed(.proxyHost, vm.managedPolicy)
                 }
-                SetRow(name: "Proxy port", desc: "Port the proxy listens on.") {
+                SetRow(name: L10n.t("Proxy port"), desc: L10n.t("Port the proxy listens on.")) {
                     SettingInt(value: binding(\.proxyPort))
                         .managed(.proxyPort, vm.managedPolicy)
                 }
             }
-            SetRow(name: "Connection timeout", desc: "Seconds before a stalled connection drops.") {
+            SetRow(name: L10n.t("Connection timeout"), desc: L10n.t("Seconds before a stalled connection drops.")) {
                 SettingDouble(value: binding(\.connectionTimeout))
             }
-            SetRow(name: "Retry count", desc: "Attempts before marking a download failed.") {
+            SetRow(name: L10n.t("Retry count"), desc: L10n.t("Attempts before marking a download failed.")) {
                 SettingInt(value: binding(\.retryCount))
             }
-            SetRow(name: "Retry interval", desc: "Seconds to wait between retries.") {
+            SetRow(name: L10n.t("Retry interval"), desc: L10n.t("Seconds to wait between retries.")) {
                 SettingDouble(value: binding(\.retryInterval))
             }
-            SetRow(name: "Auto-retry failed downloads",
-                   desc: "Automatically re-queue a failed download and try again, with an exponential backoff between attempts.") {
+            SetRow(name: L10n.t("Auto-retry failed downloads"),
+                   desc: L10n.t("Automatically re-queue a failed download and try again, with an exponential backoff between attempts.")) {
                 SettingSwitch(isOn: binding(\.autoRetryEnabled))
             }
             if vm.settings.autoRetryEnabled {
-                SetRow(name: "Auto-retry attempts",
-                       desc: "How many times to retry before leaving it failed for a manual retry.") {
+                SetRow(name: L10n.t("Auto-retry attempts"),
+                       desc: L10n.t("How many times to retry before leaving it failed for a manual retry.")) {
                     SettingInt(value: binding(\.autoRetryMaxAttempts))
                 }
             }
-            SetRow(name: "Custom user-agent", desc: "Sent with HTTP requests.") {
+            SetRow(name: L10n.t("Custom user-agent"), desc: L10n.t("Sent with HTTP requests.")) {
                 SettingText(text: binding(\.userAgent), width: 160)
             }
-            SetRow(name: "Cookie / auth handling", desc: "Reuse cookies for protected downloads.") {
+            SetRow(name: L10n.t("Cookie / auth handling"), desc: L10n.t("Reuse cookies for protected downloads.")) {
                 SettingSwitch(isOn: binding(\.cookieAuthEnabled))
             }
-            SetRow(name: "Re-download when remote changes",
-                   desc: "Periodically re-check finished HTTP downloads and fetch again if the server's file changed.") {
+            SetRow(name: L10n.t("Re-download when remote changes"),
+                   desc: L10n.t("Periodically re-check finished HTTP downloads and fetch again if the server's file changed.")) {
                 SettingSwitch(isOn: binding(\.autoRedownloadOnRemoteChange))
             }
-            SectionHeader("Network awareness")
-            SetRow(name: "Pause on expensive networks",
-                   desc: "Hold downloads while on a personal hotspot; resume automatically after.") {
+            SectionHeader(L10n.t("Network awareness"))
+            SetRow(name: L10n.t("Pause on expensive networks"),
+                   desc: L10n.t("Hold downloads while on a personal hotspot; resume automatically after.")) {
                 SettingSwitch(isOn: binding(\.pauseOnExpensiveNetwork))
             }
-            SetRow(name: "Pause in Low Data Mode",
-                   desc: "Hold downloads while the connection is constrained.") {
+            SetRow(name: L10n.t("Pause in Low Data Mode"),
+                   desc: L10n.t("Hold downloads while the connection is constrained.")) {
                 SettingSwitch(isOn: binding(\.pauseOnConstrainedNetwork))
             }
             CredentialsSection()
@@ -383,8 +385,8 @@ struct SettingsView: View {
     ]
 
     private var trafficPane: some View {
-        PaneScaffold(title: "Traffic Limits",
-                     subtitle: "Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile.") {
+        PaneScaffold(title: L10n.t("Traffic Limits"),
+                     subtitle: L10n.t("Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile.")) {
             ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.trafficManagedKeys)
 
             HStack(spacing: 10) {
@@ -395,36 +397,36 @@ struct SettingsView: View {
             .padding(.bottom, 8)
 
             let active = vm.settings.selectedProfile
-            SectionHeader("Editing: \(active.name) profile")
+            SectionHeader(L10n.t("Editing: %@ profile", active.name))
             // Deliberately not `.managed(…)`: a forced ceiling is a clamp, not an assignment.
-            SetRow(name: "Max download speed", desc: "0 = unlimited.") {
+            SetRow(name: L10n.t("Max download speed"), desc: L10n.t("0 = unlimited.")) {
                 HStack(spacing: 4) {
                     SettingDouble(value: megabytesBinding(\.maxDownloadBytesPerSec), width: 70)
-                    Text("MB/s").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(L10n.t("MB/s")).font(.system(size: 13)).foregroundStyle(.secondary)
                 }
             }
-            SetRow(name: "Max upload speed", desc: "") {
+            SetRow(name: L10n.t("Max upload speed"), desc: "") {
                 HStack(spacing: 4) {
                     SettingDouble(value: megabytesBinding(\.maxUploadBytesPerSec), width: 70)
-                    Text("MB/s").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(L10n.t("MB/s")).font(.system(size: 13)).foregroundStyle(.secondary)
                 }
             }
-            SetRow(name: "Max connections (global)", desc: "") {
+            SetRow(name: L10n.t("Max connections (global)"), desc: "") {
                 SettingInt(value: profileBinding(\.maxConnections))
             }
-            SetRow(name: "Max connections per server", desc: "") {
+            SetRow(name: L10n.t("Max connections per server"), desc: "") {
                 SettingInt(value: profileBinding(\.maxConnectionsPerServer))
             }
-            SetRow(name: "Max simultaneous downloads", desc: "") {
+            SetRow(name: L10n.t("Max simultaneous downloads"), desc: "") {
                 SettingInt(value: profileBinding(\.maxSimultaneousDownloads))
             }
-            SetRow(name: "Stop seeding at ratio", desc: "") {
+            SetRow(name: L10n.t("Stop seeding at ratio"), desc: "") {
                 SettingDouble(value: profileBinding(\.seedRatioLimit))
             }
-            SetRow(name: "Max metadata-resolution downloads", desc: "Concurrent “requesting info” magnets.") {
+            SetRow(name: L10n.t("Max metadata-resolution downloads"), desc: L10n.t("Concurrent “requesting info” magnets.")) {
                 SettingInt(value: profileBinding(\.maxMetadataResolutions))
             }
-            SetRow(name: "Additional connections to optimize speed", desc: "") {
+            SetRow(name: L10n.t("Additional connections to optimize speed"), desc: "") {
                 SettingSwitch(isOn: profileBinding(\.enableExtraConnections))
             }
         }
@@ -441,7 +443,7 @@ struct SettingsView: View {
                     Circle().fill(dot).frame(width: 8, height: 8)
                     Text(profile.name).font(.system(size: 13, weight: .semibold))
                 }
-                Text("↓ \(profile.isDownloadUnlimited ? "Unlimited" : profile.maxDownloadBytesPerSec.byteString + "/s")\n↑ \(profile.maxUploadBytesPerSec <= 0 ? "Unlimited" : profile.maxUploadBytesPerSec.byteString + "/s")\n\(profile.maxConnections) conns · \(profile.maxSimultaneousDownloads) active\nseed to \(String(format: "%.1f", profile.seedRatioLimit))×")
+                Text("↓ \(profile.isDownloadUnlimited ? L10n.t("Unlimited") : profile.maxDownloadBytesPerSec.byteString + "/s")\n↑ \(profile.maxUploadBytesPerSec <= 0 ? L10n.t("Unlimited") : profile.maxUploadBytesPerSec.byteString + "/s")\n\(L10n.t("%1$@ conns · %2$@ active", String(profile.maxConnections), String(profile.maxSimultaneousDownloads)))\n\(L10n.t("seed to %@×", String(format: "%.1f", profile.seedRatioLimit)))")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
@@ -463,54 +465,54 @@ struct SettingsView: View {
     }
 
     private var bittorrentPane: some View {
-        PaneScaffold(title: "BitTorrent", subtitle: "Protocol, privacy, and watch-folder behavior.") {
-            SetRow(name: "Default torrent client", desc: "Own magnet: links and .torrent files.") {
+        PaneScaffold(title: L10n.t("BitTorrent"), subtitle: L10n.t("Protocol, privacy, and watch-folder behavior.")) {
+            SetRow(name: L10n.t("Default torrent client"), desc: L10n.t("Own magnet: links and .torrent files.")) {
                 SettingSwitch(isOn: binding(\.btMakeDefaultClient))
             }
-            SetRow(name: "Auto-delete .torrent when done", desc: "Remove the source file after completion.") {
+            SetRow(name: L10n.t("Auto-delete .torrent when done"), desc: L10n.t("Remove the source file after completion.")) {
                 SettingSwitch(isOn: binding(\.btAutoDeleteTorrent))
             }
-            SetRow(name: "Watch folder for .torrent files", desc: "Auto-add new torrents that appear in a folder.") {
+            SetRow(name: L10n.t("Watch folder for .torrent files"), desc: L10n.t("Auto-add new torrents that appear in a folder.")) {
                 SettingSwitch(isOn: binding(\.btWatchFolderEnabled))
             }
             // The watch is armed by `btWatchFolderPath`, not the switch above, and this chooser is its only writer.
             if vm.settings.btWatchFolderEnabled {
-                SetRow(name: "Watched folder",
+                SetRow(name: L10n.t("Watched folder"),
                        desc: vm.settings.btWatchFolderPath.isEmpty
-                           ? "No folder chosen — nothing is being watched."
+                           ? L10n.t("No folder chosen — nothing is being watched.")
                            : vm.settings.btWatchFolderPath) {
-                    Button("Choose…") {
+                    Button(L10n.t("Choose…")) {
                         if let url = FilePicker.chooseDirectory() {
                             vm.update { $0.btWatchFolderPath = url.path }
                         }
                     }
-                    .accessibilityLabel("Choose watched torrent folder")
+                    .accessibilityLabel(L10n.t("Choose watched torrent folder"))
                 }
-                SetRow(name: "Start watched torrents without confirmation", desc: "") {
+                SetRow(name: L10n.t("Start watched torrents without confirmation"), desc: "") {
                     SettingSwitch(isOn: binding(\.btWatchStartWithoutConfirmation))
                 }
             }
-            SetRow(name: "Encryption mode", desc: "Protocol encryption for peer connections.") {
+            SetRow(name: L10n.t("Encryption mode"), desc: L10n.t("Protocol encryption for peer connections.")) {
                 Dropdown(selection: binding(\.btEncryptionMode), items: [
-                    .option("prefer", "Prefer"),
-                    .option("require", "Require"),
-                    .option("disable", "Disable"),
+                    .option("prefer", L10n.t("Prefer")),
+                    .option("require", L10n.t("Require")),
+                    .option("disable", L10n.t("Disable")),
                 ], width: 140)
             }
-            SetRow(name: "Enable DHT", desc: "Find peers without a tracker.") {
+            SetRow(name: L10n.t("Enable DHT"), desc: L10n.t("Find peers without a tracker.")) {
                 SettingSwitch(isOn: binding(\.btEnableDHT))
             }
-            SetRow(name: "Enable PeX", desc: "Exchange peers with other clients.") {
+            SetRow(name: L10n.t("Enable PeX"), desc: L10n.t("Exchange peers with other clients.")) {
                 SettingSwitch(isOn: binding(\.btEnablePeX))
             }
-            SetRow(name: "Enable Local Peer Discovery", desc: "Find peers on the local network.") {
+            SetRow(name: L10n.t("Enable Local Peer Discovery"), desc: L10n.t("Find peers on the local network.")) {
                 SettingSwitch(isOn: binding(\.btEnableLPD))
             }
-            SetRow(name: "Enable µTP", desc: "BitTorrent over UDP for better congestion control.") {
+            SetRow(name: L10n.t("Enable µTP"), desc: L10n.t("BitTorrent over UDP for better congestion control.")) {
                 SettingSwitch(isOn: binding(\.btEnableUTP))
             }
             if let gap = swarmProxyGap {
-                Label(gap.rawValue, systemImage: "exclamationmark.shield.fill")
+                Label(L10n.t(gap.rawValue), systemImage: "exclamationmark.shield.fill")
                     .scaledFont(size: 11)
                     .foregroundStyle(Theme.orange)
                     .fixedSize(horizontal: false, vertical: true)
@@ -531,18 +533,18 @@ struct SettingsView: View {
     ]
 
     private var advancedPane: some View {
-        PaneScaffold(title: "Advanced", subtitle: "Notifications, power management, and backup.") {
-            SectionHeader("Notifications")
-            SetRow(name: "On download added", desc: "") { SettingSwitch(isOn: binding(\.notifyOnAdded)) }
-            SetRow(name: "On download completed", desc: "") { SettingSwitch(isOn: binding(\.notifyOnCompleted)) }
-            SetRow(name: "On download failed", desc: "") { SettingSwitch(isOn: binding(\.notifyOnFailed)) }
-            SetRow(name: "Only when app is inactive", desc: "") { SettingSwitch(isOn: binding(\.notifyOnlyWhenInactive)) }
-            SetRow(name: "Play sound", desc: "") { SettingSwitch(isOn: binding(\.notificationSound)) }
-            SectionHeader("Power management")
-            SetRow(name: "Prevent sleep during active downloads", desc: "") { SettingSwitch(isOn: binding(\.preventSleepWhileDownloading)) }
-            SetRow(name: "Allow sleep if downloads can resume later", desc: "") { SettingSwitch(isOn: binding(\.allowSleepIfResumable)) }
-            SetRow(name: "Allow sleep while seeding", desc: "") { SettingSwitch(isOn: binding(\.allowSleepWhileSeeding)) }
-            SetRow(name: "Pause downloads below battery threshold", desc: "") {
+        PaneScaffold(title: L10n.t("Advanced"), subtitle: L10n.t("Notifications, power management, and backup.")) {
+            SectionHeader(L10n.t("Notifications"))
+            SetRow(name: L10n.t("On download added"), desc: "") { SettingSwitch(isOn: binding(\.notifyOnAdded)) }
+            SetRow(name: L10n.t("On download completed"), desc: "") { SettingSwitch(isOn: binding(\.notifyOnCompleted)) }
+            SetRow(name: L10n.t("On download failed"), desc: "") { SettingSwitch(isOn: binding(\.notifyOnFailed)) }
+            SetRow(name: L10n.t("Only when app is inactive"), desc: "") { SettingSwitch(isOn: binding(\.notifyOnlyWhenInactive)) }
+            SetRow(name: L10n.t("Play sound"), desc: "") { SettingSwitch(isOn: binding(\.notificationSound)) }
+            SectionHeader(L10n.t("Power management"))
+            SetRow(name: L10n.t("Prevent sleep during active downloads"), desc: "") { SettingSwitch(isOn: binding(\.preventSleepWhileDownloading)) }
+            SetRow(name: L10n.t("Allow sleep if downloads can resume later"), desc: "") { SettingSwitch(isOn: binding(\.allowSleepIfResumable)) }
+            SetRow(name: L10n.t("Allow sleep while seeding"), desc: "") { SettingSwitch(isOn: binding(\.allowSleepWhileSeeding)) }
+            SetRow(name: L10n.t("Pause downloads below battery threshold"), desc: "") {
                 HStack(spacing: 4) {
                     // The getter must report 0 while off: showing the stored value made re-typing it a dropped no-op.
                     SettingInt(value: Binding(
@@ -557,55 +559,55 @@ struct SettingsView: View {
                             }
                         }
                     ), width: 48)
-                    Text("%").font(.system(size: 13))
+                    Text(L10n.t("%")).font(.system(size: 13))
                 }
             }
-            SetRow(name: "Don't seed on battery", desc: "") { SettingSwitch(isOn: binding(\.dontSeedOnBattery)) }
-            SectionHeader("Post-download actions")
-            SetRow(name: "Auto-extract archives", desc: "Unpack finished .zip downloads next to the file.") {
+            SetRow(name: L10n.t("Don't seed on battery"), desc: "") { SettingSwitch(isOn: binding(\.dontSeedOnBattery)) }
+            SectionHeader(L10n.t("Post-download actions"))
+            SetRow(name: L10n.t("Auto-extract archives"), desc: L10n.t("Unpack finished .zip downloads next to the file.")) {
                 SettingSwitch(isOn: binding(\.postDownloadExtractArchives))
             }
-            SetRow(name: "Run a script on completion",
-                   desc: "An executable script; %path% in the arguments becomes the finished file.") {
+            SetRow(name: L10n.t("Run a script on completion"),
+                   desc: L10n.t("An executable script; %path% in the arguments becomes the finished file.")) {
                 SettingSwitch(isOn: binding(\.postDownloadScriptEnabled))
             }
             if vm.settings.postDownloadScriptEnabled {
-                SetRow(name: "Script path", desc: "Must be executable (not “bash script.sh”).") {
+                SetRow(name: L10n.t("Script path"), desc: L10n.t("Must be executable (not “bash script.sh”).")) {
                     SettingText(text: binding(\.postDownloadScriptPath), width: 200)
                 }
-                SetRow(name: "Arguments", desc: "") {
+                SetRow(name: L10n.t("Arguments"), desc: "") {
                     SettingText(text: binding(\.postDownloadScriptArgs), width: 140)
                 }
             }
-            SectionHeader("Backup")
-            SetRow(name: "Periodically back up the download list", desc: "") { SettingSwitch(isOn: binding(\.backupEnabled)) }
-            SetRow(name: "Backup interval", desc: "") {
+            SectionHeader(L10n.t("Backup"))
+            SetRow(name: L10n.t("Periodically back up the download list"), desc: "") { SettingSwitch(isOn: binding(\.backupEnabled)) }
+            SetRow(name: L10n.t("Backup interval"), desc: "") {
                 Dropdown(selection: binding(\.backupIntervalHours), items: [
-                    .option(1, "Hourly"),
-                    .option(24, "Daily"),
-                    .option(168, "Weekly"),
+                    .option(1, L10n.t("Hourly")),
+                    .option(24, L10n.t("Daily")),
+                    .option(168, L10n.t("Weekly")),
                 ], width: 140)
             }
-            SetRow(name: "Keep", desc: "Older backups are pruned automatically.") {
+            SetRow(name: L10n.t("Keep"), desc: L10n.t("Older backups are pruned automatically.")) {
                 Dropdown(selection: binding(\.backupKeepCount), items: [
-                    .option(5, "5 backups"),
-                    .option(20, "20 backups"),
-                    .option(50, "50 backups"),
+                    .option(5, L10n.t("5 backups")),
+                    .option(20, L10n.t("20 backups")),
+                    .option(50, L10n.t("50 backups")),
                 ], width: 140)
             }
-            SectionHeader("Updates")
+            SectionHeader(L10n.t("Updates"))
             ManagedPolicyNotice(policy: vm.managedPolicy, keys: Self.updatesManagedKeys)
-            SetRow(name: "Check for updates automatically", desc: "Once at launch.") {
+            SetRow(name: L10n.t("Check for updates automatically"), desc: L10n.t("Once at launch.")) {
                 SettingSwitch(isOn: binding(\.autoCheckUpdates))
                     .managed(.autoCheckUpdates, vm.managedPolicy)
             }
-            SetRow(name: "Release feed URL",
-                   desc: "A GitHub releases API URL (or compatible JSON feed).") {
+            SetRow(name: L10n.t("Release feed URL"),
+                   desc: L10n.t("A GitHub releases API URL (or compatible JSON feed).")) {
                 SettingText(text: binding(\.updateFeedURL), width: 220)
                     .managed(.updateFeedURL, vm.managedPolicy)
             }
             SetRow(name: "", desc: "") {
-                Button("Check Now") { vm.checkForUpdates() }
+                Button(L10n.t("Check Now")) { vm.checkForUpdates() }
             }
             diagnosticsSection
         }
@@ -614,16 +616,17 @@ struct SettingsView: View {
     /// No telemetry: assembled in memory on demand, handed straight to the user, never sent or stored.
     @ViewBuilder
     private var diagnosticsSection: some View {
-        SectionHeader("Diagnostics")
-        SetRow(name: "Support report",
-               desc: "Versions, engine states, task counts, and a redacted settings dump — "
-                   + "no URLs, file names, paths, or credentials. Nothing is ever sent automatically.") {
+        SectionHeader(L10n.t("Diagnostics"))
+        SetRow(name: L10n.t("Support report"),
+               desc: L10n.t("Versions, engine states, task counts, and a redacted settings dump — "
+                   + "no URLs, file names, paths, or credentials. Nothing is ever sent automatically.")) {
             HStack(spacing: 8) {
-                Button("Copy") { copyDiagnostics() }
-                Button("Export…") { exportDiagnostics() }
+                Button(L10n.t("Copy")) { copyDiagnostics() }
+                Button(L10n.t("Export…")) { exportDiagnostics() }
             }
         }
-        Text("Withheld from every report: \(DiagnosticsRedaction.withheldSettingsKeys.sorted().joined(separator: ", ")).")
+        Text(L10n.t("Withheld from every report: %@.",
+                    DiagnosticsRedaction.withheldSettingsKeys.sorted().joined(separator: ", ")))
             .scaledFont(size: 10)
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
@@ -637,33 +640,33 @@ struct SettingsView: View {
 
     private func copyDiagnostics() {
         vm.copyToPasteboard(makeDiagnostics().plainText)
-        vm.toastNow("Diagnostics copied — paste it into your bug report")
+        vm.toastNow(L10n.t("Diagnostics copied — paste it into your bug report"))
     }
 
     private func exportDiagnostics() {
         guard let url = FilePicker.save(name: "Goel-diagnostics.json", type: .json) else { return }
         do {
             try makeDiagnostics().jsonData().write(to: url, options: .atomic)
-            vm.toastNow("Diagnostics saved")
+            vm.toastNow(L10n.t("Diagnostics saved"))
         } catch {
-            vm.settingsMessage("Export Failed",
-                               "Couldn’t write the diagnostics report to that location.")
+            vm.settingsMessage(L10n.t("Export Failed"),
+                               L10n.t("Couldn’t write the diagnostics report to that location."))
         }
     }
 
     private var antivirusPane: some View {
-        PaneScaffold(title: "Antivirus", subtitle: "Run an external scanner on finished files. Optional, low priority on macOS.") {
-            SetRow(name: "Scan finished files", desc: "") { SettingSwitch(isOn: binding(\.antivirusEnabled)) }
-            SetRow(name: "Scanner", desc: "") {
+        PaneScaffold(title: L10n.t("Antivirus"), subtitle: L10n.t("Run an external scanner on finished files. Optional, low priority on macOS.")) {
+            SetRow(name: L10n.t("Scan finished files"), desc: "") { SettingSwitch(isOn: binding(\.antivirusEnabled)) }
+            SetRow(name: L10n.t("Scanner"), desc: "") {
                 Dropdown(selection: binding(\.antivirusScanner), items: [
-                    .option("", "Configure manually…"),
+                    .option("", L10n.t("Configure manually…")),
                     .option("ClamAV", "ClamAV"),
                 ], width: 170)
             }
-            SetRow(name: "Executable path", desc: "") {
+            SetRow(name: L10n.t("Executable path"), desc: "") {
                 SettingText(text: binding(\.antivirusExecutablePath), width: 180)
             }
-            SetRow(name: "Argument template", desc: "%path% is replaced with the file.") {
+            SetRow(name: L10n.t("Argument template"), desc: L10n.t("%path% is replaced with the file.")) {
                 SettingText(text: binding(\.antivirusArgumentTemplate), width: 120)
             }
         }

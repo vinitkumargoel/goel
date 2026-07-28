@@ -18,13 +18,13 @@ struct DownloadsEmptyState: View {
                     .font(.system(size: 38))
                     .foregroundStyle(.quaternary)
                     .a11yDecorative()
-                Text("Nothing downloading yet")
+                Text(L10n.t("Nothing downloading yet"))
                     .scaledFont(size: 14)
                     .foregroundStyle(.secondary)
                     .accessibilityAddTraits(.isHeader)
                 Text(clipboardLink == nil
-                     ? "Add a link and it will show up here."
-                     : "There's a link on your clipboard — start with that one.")
+                     ? L10n.t("Add a link and it will show up here.")
+                     : L10n.t("There's a link on your clipboard — start with that one."))
                     .scaledFont(size: 12)
                     .foregroundStyle(.tertiary)
             }
@@ -32,24 +32,24 @@ struct DownloadsEmptyState: View {
             HStack(alignment: .top, spacing: 12) {
                 EmptyStateAction(
                     symbol: "doc.on.clipboard",
-                    title: "Paste a link",
-                    detail: clipboardLink.map(Self.shorten) ?? "URL, magnet, or .m3u8 stream",
+                    title: L10n.t("Paste a link"),
+                    detail: clipboardLink.map(Self.shorten) ?? L10n.t("URL, magnet, or .m3u8 stream"),
                     isPrimary: clipboardLink != nil,
                     action: pasteLink)
 
                 EmptyStateAction(
                     symbol: "arrow.down.to.line",
-                    title: "Drop a file",
-                    detail: "Drag a .torrent or a link onto this window",
+                    title: L10n.t("Drop a file"),
+                    detail: L10n.t("Drag a .torrent or a link onto this window"),
                     isPrimary: false,
-                    a11yLabel: "Show or hide the Drop Basket",
-                    a11yHint: "Opens a small floating window that accepts dragged links and torrent files. Activating again closes it.",
+                    a11yLabel: L10n.t("Show or hide the Drop Basket"),
+                    a11yHint: L10n.t("Opens a small floating window that accepts dragged links and torrent files. Activating again closes it."),
                     action: { DropBasketController.shared.toggle() })
 
                 EmptyStateAction(
                     symbol: "link.badge.plus",
-                    title: "Open Link Grabber",
-                    detail: "List every file linked from a page",
+                    title: L10n.t("Open Link Grabber"),
+                    detail: L10n.t("List every file linked from a page"),
                     isPrimary: false,
                     action: { vm.isLinkGrabberPresented = true })
             }
@@ -69,14 +69,14 @@ struct DownloadsEmptyState: View {
     private var hints: some View {
         VStack(spacing: 5) {
             HStack(spacing: 14) {
-                EmptyStateHint(symbol: "safari", text: "Browser extension") {
+                EmptyStateHint(symbol: "safari", text: L10n.t("Browser extension")) {
                     showSettings(.browser)
                 }
-                EmptyStateHint(symbol: "command", text: "Press ⌘K for everything") {
+                EmptyStateHint(symbol: "command", text: L10n.t("Press ⌘K for everything")) {
                     CommandPaletteBus.toggle()
                 }
                 EmptyStateHint(symbol: "display",
-                               text: vm.settings.remoteAccessEnabled ? "Remote portal" : "Add from your phone") {
+                               text: vm.settings.remoteAccessEnabled ? L10n.t("Remote portal") : L10n.t("Add from your phone")) {
                     showSettings(.remote)
                 }
             }
@@ -175,7 +175,7 @@ private struct EmptyStateHint: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .a11yGroup(label: text.replacingOccurrences(of: "⌘K", with: "Command K"))
+        .a11yGroup(label: text.replacingOccurrences(of: "⌘K", with: L10n.t("Command K")))
         .accessibilityAddTraits(.isButton)
     }
 }

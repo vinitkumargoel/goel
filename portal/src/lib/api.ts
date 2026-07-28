@@ -1,3 +1,4 @@
+import i18n from '../i18n'
 import type {
   AddRequest,
   AddResult,
@@ -53,23 +54,25 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
   try {
     response = await fetch(path, init)
   } catch {
-    throw new ApiError('network', 'Could not reach the server')
+    throw new ApiError('network', i18n.t('api.unreachable'))
   }
 
   if (response.status === 401) {
     // `/`, not `/login`: only the server knows whether this portal challenges or is open.
     location.href = '/'
-    throw new ApiError('auth', 'Not signed in', 401)
+    throw new ApiError('auth', i18n.t('api.notSignedIn'), 401)
   }
 
+  // The server's own `text/plain` body wins when present; these keys are the fallback wording.
   if (response.status === 403) {
-    const message = (await errorText(response)) || 'Change blocked'
+    const message = (await errorText(response)) || i18n.t('api.changeBlocked')
     onRefused(message)
     throw new ApiError('refused', message, 403)
   }
 
   if (!response.ok) {
-    const message = (await errorText(response)) || `Request failed (${response.status})`
+    const message =
+      (await errorText(response)) || i18n.t('api.requestFailed', { status: response.status })
     throw new ApiError('http', message, response.status)
   }
 

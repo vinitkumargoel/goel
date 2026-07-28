@@ -40,10 +40,10 @@ struct AggregationSettingsPane: View {
                     .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                     .a11yDecorative()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Aggregation")
+                    Text(L10n.t("Aggregation"))
                         .font(.system(size: 16, weight: .semibold))
                         .accessibilityAddTraits(.isHeader)
-                    Text("Multi-path HTTP downloads across network adapters")
+                    Text(L10n.t("Multi-path HTTP downloads across network adapters"))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -60,7 +60,7 @@ struct AggregationSettingsPane: View {
                 .frame(width: 10, height: 10)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 4) {
-                Text(active ? "Multi-path ready" : (enabled ? "Multi-path idle" : "Multi-path off"))
+                Text(active ? L10n.t("Multi-path ready") : (enabled ? L10n.t("Multi-path idle") : L10n.t("Multi-path off")))
                     .font(.system(size: 13, weight: .semibold))
                 Text(statusDetail())
                     .font(.system(size: 11.5))
@@ -72,7 +72,7 @@ struct AggregationSettingsPane: View {
                 Button {
                     vm.refreshAggregationState()
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    Label(L10n.t("Refresh"), systemImage: "arrow.clockwise")
                         .font(.system(size: 11, weight: .medium))
                 }
                 .buttonStyle(.borderless)
@@ -91,23 +91,24 @@ struct AggregationSettingsPane: View {
 
     private func statusDetail() -> String {
         if !enabled {
-            return "Turn on multi-path below, then select at least two adapters with independent internet paths."
+            return L10n.t("Turn on multi-path below, then select at least two adapters with independent internet paths.")
         }
         if let reason = inactiveReason {
-            return reason.rawValue
+            return L10n.t(reason.rawValue)
         }
         if usableCount < 2 {
-            return "Need at least two eligible adapters. Enable expensive networks if using a phone hotspot."
+            return L10n.t("Need at least two eligible adapters. Enable expensive networks if using a phone hotspot.")
         }
-        return "\(usableCount) adapters will share ranged HTTP segments · \(vm.settings.aggregationStreamsPerAdapter) stream(s) each."
+        return L10n.t("%1$@ adapters will share ranged HTTP segments · %2$@ stream(s) each.",
+                      String(usableCount), String(vm.settings.aggregationStreamsPerAdapter))
     }
 
     private var masterToggleCard: some View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Enable multi-path downloads")
+                Text(L10n.t("Enable multi-path downloads"))
                     .font(.system(size: 13.5, weight: .medium))
-                Text("Split large HTTP downloads across selected adapters using byte ranges. Default off.")
+                Text(L10n.t("Split large HTTP downloads across selected adapters using byte ranges. Default off."))
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -129,7 +130,7 @@ struct AggregationSettingsPane: View {
     private var adaptersSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("ADAPTERS")
+                Text(L10n.t("ADAPTERS"))
                     .font(.system(size: 10.5, weight: .bold))
                     .foregroundStyle(.tertiary)
                 Spacer()
@@ -148,7 +149,7 @@ struct AggregationSettingsPane: View {
                 }
             }
 
-            Text("Leave none selected to use every eligible adapter. Two NICs on the same home router usually will not double speed.")
+            Text(L10n.t("Leave none selected to use every eligible adapter. Two NICs on the same home router usually will not double speed."))
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -157,8 +158,8 @@ struct AggregationSettingsPane: View {
 
     private var selectionCaption: String {
         let ids = vm.settings.aggregationAdapterIds
-        if ids.isEmpty { return "Using all eligible" }
-        return "\(ids.count) selected"
+        if ids.isEmpty { return L10n.t("Using all eligible") }
+        return L10n.t("%d selected", ids.count)
     }
 
     private var emptyAdapters: some View {
@@ -168,14 +169,14 @@ struct AggregationSettingsPane: View {
                 .foregroundStyle(.secondary)
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 3) {
-                Text("No adapters found")
+                Text(L10n.t("No adapters found"))
                     .font(.system(size: 13, weight: .medium))
-                Text("Connect Wi‑Fi, Ethernet, or a phone hotspot, then refresh.")
+                Text(L10n.t("Connect Wi‑Fi, Ethernet, or a phone hotspot, then refresh."))
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Refresh") { vm.refreshAggregationState() }
+            Button(L10n.t("Refresh")) { vm.refreshAggregationState() }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
         }
@@ -190,21 +191,21 @@ struct AggregationSettingsPane: View {
 
     private var optionsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("OPTIONS")
+            Text(L10n.t("OPTIONS"))
                 .font(.system(size: 10.5, weight: .bold))
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 4)
 
-            SetRow(name: "Include expensive networks",
-                   desc: "Allow cellular and personal hotspot (uses mobile data).") {
+            SetRow(name: L10n.t("Include expensive networks"),
+                   desc: L10n.t("Allow cellular and personal hotspot (uses mobile data).")) {
                 SettingSwitch(isOn: setting(vm, \.aggregationIncludeExpensive))
             }
-            SetRow(name: "Allow paths outside VPN",
-                   desc: "Dangerous: physical NICs may bypass an active VPN tunnel.") {
+            SetRow(name: L10n.t("Allow paths outside VPN"),
+                   desc: L10n.t("Dangerous: physical NICs may bypass an active VPN tunnel.")) {
                 SettingSwitch(isOn: setting(vm, \.aggregationAllowOutsideVPN))
             }
-            SetRow(name: "Streams per adapter",
-                   desc: "Parallel range connections targeted on each adapter (1–8).") {
+            SetRow(name: L10n.t("Streams per adapter"),
+                   desc: L10n.t("Parallel range connections targeted on each adapter (1–8).")) {
                 HStack(spacing: 8) {
                     Stepper("", value: Binding(
                         get: { min(8, max(1, vm.settings.aggregationStreamsPerAdapter)) },
@@ -213,7 +214,7 @@ struct AggregationSettingsPane: View {
                         }
                     ), in: 1...8)
                     .labelsHidden()
-                    .accessibilityLabel("Streams per adapter")
+                    .accessibilityLabel(L10n.t("Streams per adapter"))
                     .accessibilityValue("\(vm.settings.aggregationStreamsPerAdapter)")
                     Text("\(vm.settings.aggregationStreamsPerAdapter)")
                         .scaledFont(size: 13, weight: .medium, monospacedDigit: true)
@@ -221,8 +222,8 @@ struct AggregationSettingsPane: View {
                         .a11yDecorative()
                 }
             }
-            SetRow(name: "Check path diversity",
-                   desc: "Warn when adapters appear to share one public IP (same WAN).") {
+            SetRow(name: L10n.t("Check path diversity"),
+                   desc: L10n.t("Warn when adapters appear to share one public IP (same WAN).")) {
                 SettingSwitch(isOn: setting(vm, \.aggregationPathDiversityProbe))
             }
         }
@@ -230,17 +231,17 @@ struct AggregationSettingsPane: View {
 
     private var tipsFooter: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("HOW IT WORKS")
+            Text(L10n.t("HOW IT WORKS"))
                 .font(.system(size: 10.5, weight: .bold))
                 .foregroundStyle(.tertiary)
             tipRow(icon: "arrow.triangle.branch",
-                   text: "Ranged HTTP segments bind to different adapters (not OS link aggregation).")
+                   text: L10n.t("Ranged HTTP segments bind to different adapters (not OS link aggregation)."))
             tipRow(icon: "wifi.exclamationmark",
-                   text: "Best with independent uplinks (e.g. home fiber + phone hotspot).")
+                   text: L10n.t("Best with independent uplinks (e.g. home fiber + phone hotspot)."))
             tipRow(icon: "list.bullet.rectangle",
-                   text: "While downloading, open the Connections tab to see which adapter each segment uses.")
+                   text: L10n.t("While downloading, open the Connections tab to see which adapter each segment uses."))
             tipRow(icon: "lock.shield",
-                   text: "Multi-path is blocked with a system/manual proxy, or when a VPN is up (unless allowed).")
+                   text: L10n.t("Multi-path is blocked with a system/manual proxy, or when a VPN is up (unless allowed)."))
         }
         .padding(.top, 8)
     }
@@ -313,7 +314,7 @@ private struct AdapterRow: View {
                 Spacer(minLength: 8)
 
                 if adapter.isExpensive {
-                    Text("EXPENSIVE")
+                    Text(L10n.t("EXPENSIVE"))
                         .font(.system(size: 9, weight: .bold))
                         .tracking(0.4)
                         .padding(.horizontal, 7)
@@ -342,16 +343,16 @@ private struct AdapterRow: View {
         .buttonStyle(.plain)
         .disabled(disabled)
         .help(disabled
-              ? "Enable “Include expensive networks” to use this adapter"
-              : "Click to include or exclude from multi-path")
+              ? L10n.t("Enable “Include expensive networks” to use this adapter")
+              : L10n.t("Click to include or exclude from multi-path"))
         .a11yGroup(
-            label: A11y.sentence("Network adapter",
+            label: A11y.sentence(L10n.t("Network adapter"),
                                  adapter.displayName.isEmpty ? adapter.bsdName : adapter.displayName,
-                                 adapter.isExpensive ? "expensive" : nil),
-            value: A11y.sentence(participating ? "Included" : "Not included", subtitle),
+                                 adapter.isExpensive ? L10n.t("expensive") : nil),
+            value: A11y.sentence(participating ? L10n.t("Included") : L10n.t("Not included"), subtitle),
             hint: disabled
-                ? "Turn on Include expensive networks to use this adapter."
-                : "Activate to include or exclude it from multi-path downloads.")
+                ? L10n.t("Turn on Include expensive networks to use this adapter.")
+                : L10n.t("Activate to include or exclude it from multi-path downloads."))
         .accessibilityAddTraits(participating ? [.isButton, .isSelected] : .isButton)
     }
 
@@ -367,11 +368,11 @@ private struct AdapterRow: View {
 
     private var subtitle: String {
         var parts: [String] = []
-        parts.append(adapter.type.capitalized)
+        parts.append(L10n.t(adapter.type.capitalized))
         if let v4 = adapter.ipv4 { parts.append(v4) }
         else if let v6 = adapter.ipv6 { parts.append(v6) }
-        parts.append(adapter.isUp ? "Up" : "Down")
-        if disabled { parts.append("blocked") }
+        parts.append(adapter.isUp ? L10n.t("Up") : L10n.t("Down"))
+        if disabled { parts.append(L10n.t("blocked")) }
         return parts.joined(separator: " · ")
     }
 }

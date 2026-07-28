@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { fmtEta, fmtSize, fmtSpeed, pct } from '../lib/format'
 import { kindLabel } from '../lib/taskKind'
 import type { FilePriority, TaskDetail } from '../lib/types'
@@ -24,10 +25,11 @@ function KV({ k, children }: { k: string; children: ReactNode }) {
 }
 
 function CopyableValue({ value, onCopy }: { value: string; onCopy: (text: string) => void }) {
+  const { t } = useTranslation()
   return (
     <>
       <span className="ell">{value}</span>
-      <button className="cbtn" onClick={() => onCopy(value)} aria-label="Copy">
+      <button className="cbtn" onClick={() => onCopy(value)} aria-label={t('common.copy')}>
         <CopyIcon />
       </button>
     </>
@@ -48,10 +50,11 @@ interface PaneProps {
 }
 
 export function GeneralPane({ detail, onCopy }: PaneProps) {
-  const t = detail.row
-  const percent = pct(t.progress)
-  const eta = fmtEta(t.etaSeconds)
-  const isTorrent = t.kind === 'torrent'
+  const { t } = useTranslation()
+  const row = detail.row
+  const percent = pct(row.progress)
+  const eta = fmtEta(row.etaSeconds)
+  const isTorrent = row.kind === 'torrent'
 
   return (
     <>
@@ -59,13 +62,14 @@ export function GeneralPane({ detail, onCopy }: PaneProps) {
         <div className="dptop">
           <span className="dpct">{percent.toFixed(0)}%</span>
           <span className="dpsz">
-            {fmtSize(t.doneBytes)} / {fmtSize(t.totalBytes)}
+            {fmtSize(row.doneBytes)} / {fmtSize(row.totalBytes)}
           </span>
         </div>
-        <Bar fraction={t.progress} />
+        <Bar fraction={row.progress} />
       </div>
 
-      {t.statusToken === 'failed' && t.error && (
+      {/* `row.error` is the daemon's own message — passed through, not localized here. */}
+      {row.statusToken === 'failed' && row.error && (
         <div
           style={{
             background: 'var(--red-soft)',
@@ -77,29 +81,29 @@ export function GeneralPane({ detail, onCopy }: PaneProps) {
             lineHeight: 1.45,
           }}
         >
-          ⚠ {t.error}
+          ⚠ {row.error}
         </div>
       )}
 
-      <KV k="Save path">
+      <KV k={t('detail.general.savePath')}>
         <CopyableValue value={detail.savePath} onCopy={onCopy} />
       </KV>
-      <KV k="Downloaded">{fmtSize(t.doneBytes)}</KV>
+      <KV k={t('detail.general.downloaded')}>{fmtSize(row.doneBytes)}</KV>
       {isTorrent && (
         <>
-          <KV k="Uploaded">{fmtSize(t.upBytes)}</KV>
-          <KV k="Share ratio">{t.ratio.toFixed(2)}</KV>
+          <KV k={t('detail.general.uploaded')}>{fmtSize(row.upBytes)}</KV>
+          <KV k={t('detail.general.shareRatio')}>{row.ratio.toFixed(2)}</KV>
         </>
       )}
-      {eta && <KV k="ETA">{eta}</KV>}
-      <KV k="Speed">
+      {eta && <KV k={t('detail.general.eta')}>{eta}</KV>}
+      <KV k={t('detail.general.speed')}>
         {/* Non-breaking spaces: JSX collapses literal whitespace, merging the two rates. */}
-        ↓ {fmtSpeed(t.downSpeed)}
-        {isTorrent && <>{'  '}↑ {fmtSpeed(t.upSpeed)}</>}
+        ↓ {fmtSpeed(row.downSpeed)}
+        {isTorrent && <>{'  '}↑ {fmtSpeed(row.upSpeed)}</>}
       </KV>
-      <KV k="Protocol">{kindLabel(t.kind)}</KV>
-      <KV k="Source">
-        <CopyableValue value={t.source} onCopy={onCopy} />
+      <KV k={t('detail.general.protocol')}>{kindLabel(row.kind)}</KV>
+      <KV k={t('detail.general.source')}>
+        <CopyableValue value={row.source} onCopy={onCopy} />
       </KV>
     </>
   )
@@ -108,22 +112,25 @@ export function GeneralPane({ detail, onCopy }: PaneProps) {
 const MONO = { fontFamily: 'ui-monospace, monospace', fontSize: 11 } as const
 
 export function DetailsPane({ detail }: { detail: TaskDetail }) {
-  const t = detail.row
+  const { t } = useTranslation()
+  const row = detail.row
 
-  if (t.kind === 'torrent') {
+  if (row.kind === 'torrent') {
     return (
       <>
-        <KV k="Info hash">
+        <KV k={t('detail.details.infoHash')}>
           <span className="ell" style={{ ...MONO, maxWidth: 150 }}>
             {detail.infoHash ?? '—'}
           </span>
         </KV>
-        <KV k="Seeds">{t.seeds ?? '—'}</KV>
-        <KV k="Peers">{t.conns}</KV>
-        <KV k="Sequential">{detail.sequential ? 'On' : 'Off'}</KV>
+        <KV k={t('detail.details.seeds')}>{row.seeds ?? '—'}</KV>
+        <KV k={t('detail.details.peers')}>{row.conns}</KV>
+        <KV k={t('detail.details.sequential')}>
+          {detail.sequential ? t('common.on') : t('common.off')}
+        </KV>
         {detail.trackers.length > 0 && (
           <>
-            <div className="slbl">Trackers</div>
+            <div className="slbl">{t('detail.details.trackers')}</div>
             {detail.trackers.map((tr) => (
               <div className="kv" key={tr.url}>
                 <span
@@ -132,6 +139,7 @@ export function DetailsPane({ detail }: { detail: TaskDetail }) {
                 >
                   {tr.host || tr.url}
                 </span>
+                {/* Tracker status text comes from the tracker itself. */}
                 <span className="v">{tr.status}</span>
               </div>
             ))}
@@ -143,21 +151,22 @@ export function DetailsPane({ detail }: { detail: TaskDetail }) {
 
   return (
     <>
-      <KV k="Server">{detail.server ?? '—'}</KV>
-      <KV k="MIME">{detail.mimeType ?? '—'}</KV>
-      <KV k="Connections">{t.conns}</KV>
-      <KV k="Segments">{t.conns}</KV>
+      <KV k={t('detail.details.server')}>{detail.server ?? '—'}</KV>
+      <KV k={t('detail.details.mime')}>{detail.mimeType ?? '—'}</KV>
+      <KV k={t('detail.details.connections')}>{row.conns}</KV>
+      <KV k={t('detail.details.segments')}>{row.conns}</KV>
     </>
   )
 }
 
 export function ProgressPane({ detail }: { detail: TaskDetail }) {
-  const t = detail.row
+  const { t } = useTranslation()
+  const row = detail.row
 
-  if (t.kind === 'torrent' && detail.pieces.length > 0) {
+  if (row.kind === 'torrent' && detail.pieces.length > 0) {
     return (
       <>
-        <div className="slbl">Piece map · {detail.pieces.length} buckets</div>
+        <div className="slbl">{t('detail.progress.pieceMap', { count: detail.pieces.length })}</div>
         <div className="pieces">
           {detail.pieces.map((v, i) => (
             // Index keys are correct here: a fixed-length positional array, never reordered.
@@ -171,7 +180,9 @@ export function ProgressPane({ detail }: { detail: TaskDetail }) {
   if (detail.connections.length > 0) {
     return (
       <>
-        <div className="slbl">{detail.connections.length} segments</div>
+        <div className="slbl">
+          {t('detail.progress.segments', { count: detail.connections.length })}
+        </div>
         {detail.connections.map((c) => (
           <div key={c.id} style={{ marginBottom: 9 }}>
             <div
@@ -197,11 +208,11 @@ export function ProgressPane({ detail }: { detail: TaskDetail }) {
     <>
       <div className="dpw">
         <div className="dptop">
-          <span className="dpct">{pct(t.progress).toFixed(0)}%</span>
+          <span className="dpct">{pct(row.progress).toFixed(0)}%</span>
         </div>
-        <Bar fraction={t.progress} />
+        <Bar fraction={row.progress} />
       </div>
-      <p className="fhint">Live piece/segment data appears here while the transfer runs.</p>
+      <p className="fhint">{t('detail.progress.hint')}</p>
     </>
   )
 }
@@ -214,7 +225,8 @@ interface FilesPaneProps {
 }
 
 export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: FilesPaneProps) {
-  const t = detail.row
+  const { t } = useTranslation()
+  const row = detail.row
 
   if (detail.files.length === 0) {
     return (
@@ -224,15 +236,15 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
             <CheckIcon />
           </div>
           <div className="finfo">
-            <div className="fname">{t.name}</div>
+            <div className="fname">{row.name}</div>
             <div className="fbar">
-              <i style={{ width: `${pct(t.progress)}%` }} />
+              <i style={{ width: `${pct(row.progress)}%` }} />
             </div>
           </div>
-          <span className="fsz">{fmtSize(t.totalBytes)}</span>
+          <span className="fsz">{fmtSize(row.totalBytes)}</span>
         </div>
         <p className="fhint" style={{ marginTop: 12 }}>
-          Single-file download.
+          {t('detail.files.singleFile')}
         </p>
       </>
     )
@@ -263,7 +275,7 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
               onClick={canWrite ? () => onCyclePriority(f.id, f.priority) : undefined}
               style={canWrite ? undefined : { cursor: 'default' }}
             >
-              {f.priority}
+              {t(`task.priority.${f.priority}`)}
             </span>
           </div>
         )
@@ -273,21 +285,22 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
 }
 
 export function PeersPane({ detail }: { detail: TaskDetail }) {
-  const t = detail.row
+  const { t } = useTranslation()
+  const row = detail.row
   const rows = detail.connections
 
-  if (t.kind === 'torrent') {
+  if (row.kind === 'torrent') {
     return (
       <>
         <div className="slbl">
-          {t.seeds ?? 0} seeds · {t.conns} peers
+          {t('detail.peers.summary', { seeds: row.seeds ?? 0, peers: row.conns })}
         </div>
         <div className="crow h">
-          <span>Peer</span>
+          <span>{t('detail.peers.colPeer')}</span>
           <span className="cd">↓</span>
           <span className="cu">↑</span>
         </div>
-        {rows.length === 0 && <p className="fhint">No connected peers right now.</p>}
+        {rows.length === 0 && <p className="fhint">{t('detail.peers.none')}</p>}
         {rows.map((c) => (
           <div className="crow" key={c.id}>
             <span className="cip">{c.label}</span>
@@ -301,11 +314,11 @@ export function PeersPane({ detail }: { detail: TaskDetail }) {
 
   return (
     <>
-      <div className="slbl">{t.conns} connections</div>
+      <div className="slbl">{t('detail.peers.connections', { count: row.conns })}</div>
       <div className="crow h">
-        <span>Segment</span>
+        <span>{t('detail.peers.colSegment')}</span>
         <span className="cd">↓</span>
-        <span className="cu">range</span>
+        <span className="cu">{t('detail.peers.colRange')}</span>
       </div>
       {rows.map((c) => (
         <div className="crow" key={c.id}>
@@ -316,7 +329,7 @@ export function PeersPane({ detail }: { detail: TaskDetail }) {
           </span>
         </div>
       ))}
-      {rows.length === 0 && <p className="fhint">Segment data appears while downloading.</p>}
+      {rows.length === 0 && <p className="fhint">{t('detail.peers.segmentHint')}</p>}
     </>
   )
 }

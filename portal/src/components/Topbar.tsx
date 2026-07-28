@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { BOOT } from '../lib/boot'
 import { fmtRate } from '../lib/format'
 import {
@@ -38,19 +39,21 @@ export function Topbar({
   onUserMenu,
   canWrite,
 }: TopbarProps) {
+  const { t } = useTranslation()
   const initial = (BOOT.username[0] ?? 'A').toUpperCase()
 
   return (
     <div className="topbar">
-      <button className="hamburger" onClick={onToggleSidebar} aria-label="Menu">
+      <button className="hamburger" onClick={onToggleSidebar} aria-label={t('topbar.menu')}>
         <MenuIcon />
       </button>
 
+      {/* "Goel°" is the product name, not copy — it stays out of the catalogue. */}
       <div className="brand">
         <span className="mk">
           <Logo />
         </span>
-        Goel° <span className="sub">WEB</span>
+        Goel° <span className="sub">{t('topbar.web')}</span>
       </div>
 
       <div className="search">
@@ -58,8 +61,8 @@ export function Topbar({
         <input
           value={search}
           onChange={(e) => onSearch(e.target.value)}
-          placeholder="Search downloads"
-          aria-label="Search downloads"
+          placeholder={t('topbar.searchDownloads')}
+          aria-label={t('topbar.searchDownloads')}
         />
       </div>
 
@@ -80,7 +83,7 @@ export function Topbar({
       {canWrite && (
         <button className="add-btn" onClick={onAdd}>
           <PlusIcon />
-          <span className="lbl">Add</span>
+          <span className="lbl">{t('common.add')}</span>
         </button>
       )}
 
@@ -88,7 +91,7 @@ export function Topbar({
         className={`ico${panelOpen ? ' active' : ''}`}
         style={showPanelToggle ? undefined : { display: 'none' }}
         onClick={onTogglePanel}
-        title="Detail panel"
+        title={t('topbar.detailPanel')}
         aria-pressed={panelOpen}
       >
         <PanelIcon />
