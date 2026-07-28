@@ -432,7 +432,7 @@ export function App() {
               setAddOpen(false)
               setFilter('all')
               selectView('library')
-              toast(added > 1 ? t('toast.addedMany', { count: added }) : t('toast.added'))
+              toast(t('toast.added', { count: added }))
               if (refused > 0) toast(t('toast.refused', { count: refused }), 'warn')
               void refresh()
             }}

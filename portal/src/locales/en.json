@@ -93,8 +93,8 @@
     "removedWithData": "Removed with data",
     "readded": "Re-added to queue",
     "entryRemoved": "Entry removed",
-    "added": "Added to queue",
-    "addedMany": "Added {{count}} downloads",
+    "added_one": "Added to queue",
+    "added_other": "Added {{count}} downloads",
     "refused_one": "{{count}} refused — internal network address",
     "refused_other": "{{count}} refused — internal network address"
   },
