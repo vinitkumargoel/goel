@@ -148,7 +148,11 @@ targets += [
             // The WebExtension is loaded unpacked, so it must be copied verbatim, not processed.
             .copy("BrowserExtension"),
             .process("Resources"),
-        ]
+        ],
+        // SwiftUI's VideoPlayer lives in the _AVKit_SwiftUI overlay, which autolinks
+        // but leaves AVKit itself out; without it AVPlayerView is absent at runtime
+        // and the player traps on superclass metadata lookup.
+        linkerSettings: [.linkedFramework("AVKit")]
     ),
     .testTarget(name: "GoelAppTests", dependencies: ["GoelApp"]),
 ]
