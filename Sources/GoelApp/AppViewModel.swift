@@ -868,7 +868,17 @@ final class AppViewModel: ObservableObject {
     }
 
     func playInApp(_ task: DownloadTask) {
-        playerItem = PlayerItem(url: URL(fileURLWithPath: task.primaryFilePath), title: task.name)
+        let url = URL(fileURLWithPath: task.primaryFilePath)
+        // The menu hides this action for containers AVFoundation cannot open, so reaching the
+        // fallback means a non-menu caller: hand the file on rather than open a player that
+        // would show nothing.
+        guard InAppPlayback.canPlay(url) else {
+            let ext = url.pathExtension.uppercased()
+            toastNow(L10n.t("The built-in player can’t open %@ — opening your default player", ext))
+            openFile(task)
+            return
+        }
+        playerItem = PlayerItem(url: url, title: task.name)
     }
 
     func revealInFinder(_ task: DownloadTask) {

@@ -853,6 +853,7 @@
 "Open Safari Extensions" = "Open Safari Extensions";
 "Open folder" = "Open folder";
 "Open in Browser" = "Open in Browser";
+"Open in Default Player" = "Open in Default Player";
 "Open in Player" = "Open in Player";
 "Open in Terminal" = "Open in Terminal";
 "Open it here, or from another device on your LAN." = "Open it here, or from another device on your LAN.";
@@ -1250,6 +1251,7 @@
 "That page is too large to scan." = "That page is too large to scan.";
 "That playlist doesn’t list any downloadable items." = "That playlist doesn’t list any downloadable items.";
 "That server no longer exists." = "That server no longer exists.";
+"The built-in player can’t open %@ — opening your default player" = "The built-in player can’t open %@ — opening your default player";
 "The bundled extension folder is only available in the packaged app, not a dev build." = "The bundled extension folder is only available in the packaged app, not a dev build.";
 "The bundled extension is only in the packaged app, not a dev build" = "The bundled extension is only in the packaged app, not a dev build";
 "The extension, the helper, the bookmarklet, the URL scheme" = "The extension, the helper, the bookmarklet, the URL scheme";
@@ -1285,6 +1287,7 @@
 "These already exist in %@. Choose what to do with each." = "These already exist in %@. Choose what to do with each.";
 "Third-Party Notices" = "Third-Party Notices";
 "This deletes the saved connection and its Keychain password. Files on the server are not touched." = "This deletes the saved connection and its Keychain password. Files on the server are not touched.";
+"This file’s video or audio track uses a codec macOS can’t decode." = "This file’s video or audio track uses a codec macOS can’t decode.";
 "This folder is empty" = "This folder is empty";
 "This permanently deletes the file from disk and can’t be undone." = "This permanently deletes the file from disk and can’t be undone.";
 "This permanently removes the file from the server." = "This permanently removes the file from the server.";

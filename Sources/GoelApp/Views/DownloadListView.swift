@@ -267,7 +267,8 @@ struct DownloadRow: View {
         if task.status == .completed || playableWhileDownloading {
             Button(L10n.t("Open in Player")) { vm.openFile(task) }
         }
-        if task.isMediaFile, task.status.hasData {
+        if task.isMediaFile, task.status.hasData,
+           InAppPlayback.canPlay(URL(fileURLWithPath: task.primaryFilePath)) {
             Button(L10n.t("Play in Goel°")) { vm.playInApp(task) }
         }
         if task.status.hasData {
