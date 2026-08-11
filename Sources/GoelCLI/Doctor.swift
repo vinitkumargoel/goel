@@ -207,6 +207,29 @@ extension GoelCLI {
               Shell.run("id", ["-u", Layout.serviceUser]).ok else {
             return .warn("\(path) exists, but there is no \(Layout.serviceUser) user to check against")
         }
+        // Unprivileged callers can't runuser/sudo into the service user — the probe
+        // below would fail on PERMISSION TO TEST and misreport "not writable".
+        // Ownership answers accurately for every normal install; ACL-heavy setups
+        // get the authoritative probe from `sudo goel doctor`.
+        if geteuid() != 0 {
+            let uidOut = Shell.run("id", ["-u", Layout.serviceUser])
+            let gidOut = Shell.run("id", ["-g", Layout.serviceUser])
+            guard let uid = UInt32(uidOut.out.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  let gid = UInt32(gidOut.out.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                return .warn("\(path) exists; couldn't resolve \(Layout.serviceUser)'s uid to check it")
+            }
+            var info = stat()
+            guard stat(path, &info) == 0 else {
+                return .warn("\(path) exists but can't be inspected from this account")
+            }
+            let writable = (info.st_uid == uid && (info.st_mode & mode_t(S_IWUSR)) != 0)
+                || (info.st_gid == gid && (info.st_mode & mode_t(S_IWGRP)) != 0)
+                || (info.st_mode & mode_t(S_IWOTH)) != 0
+            return writable
+                ? .pass("\(path) — writable by \(Layout.serviceUser)")
+                : .fail("\(path) is NOT writable by \(Layout.serviceUser), so every download will "
+                        + "fail. Fix: sudo chown -R \(Layout.serviceUser): \(path)")
+        }
         let probe = path + "/.goel-write-probe"
         var attempt = Shell.run("runuser", ["-u", Layout.serviceUser, "--", "touch", probe])
         if attempt.status == 127 {
@@ -246,13 +269,23 @@ extension GoelCLI {
                 $0.contains(":\(effective.port) ")
             }
             if !matching.isEmpty {
-                guard matching.contains(where: { $0.contains("GoelDaemon") }) else {
-                    return .fail("held by another process — change it with `sudo goel config set port <n>`")
-                }
                 let boundLAN = matching.contains {
                     $0.contains("0.0.0.0:\(effective.port)") || $0.contains("*:\(effective.port)")
                 }
-                return .pass("listening on \(boundLAN ? "0.0.0.0" : "127.0.0.1")")
+                if matching.contains(where: { $0.contains("GoelDaemon") }) {
+                    return .pass("listening on \(boundLAN ? "0.0.0.0" : "127.0.0.1")")
+                }
+                // Unprivileged `ss` names only the caller's own processes; the daemon's
+                // socket carries no attribution at all. A visible OTHER owner is a real
+                // conflict — an unattributed socket while our unit is active is ours.
+                if matching.contains(where: { $0.contains("users:(") }) {
+                    return .fail("held by another process — change it with `sudo goel config set port <n>`")
+                }
+                if Service.isActive {
+                    return .pass("listening on \(boundLAN ? "0.0.0.0" : "127.0.0.1")")
+                }
+                return .warn("something is listening on \(effective.port) and the goel service "
+                             + "is not running — `sudo goel doctor` can name the process")
             }
             // Must stay inside the loop: it catches a daemon that exits while we wait.
             guard Service.isActive else {
