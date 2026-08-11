@@ -422,7 +422,11 @@ final class MidflightUpgradeBehaviourTests: XCTestCase {
         let transfer = SegmentedTransfer(plan: plan)
         let (runner, ticks) = start(transfer)
 
-        await waitUntil("10 MiB of the oversized stream to be flushed") {
+        // 160 throttled chunks must reach the disk before this returns — CI's macOS
+        // runners take many times the local wall-clock for that, so this wait gets a
+        // real budget. Polling exits the moment the size is reached; a fast machine
+        // never feels the difference.
+        await waitUntil("10 MiB of the oversized stream to be flushed", timeout: 30) {
             self.fileSize(plan.destination) >= Int64(10 * self.MiB)
         }
         // `set` also clears the recorded headers, so the probe observed below is unambiguously a post-flip one.
