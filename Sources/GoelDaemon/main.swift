@@ -34,7 +34,7 @@ let fileConfig: [String: String] = {
     // this user or root, and must not be world-writable.
     var info = stat()
     if stat(path, &info) == 0,
-       (info.st_uid != 0 && info.st_uid != geteuid()) || (info.st_mode & S_IWOTH) != 0 {
+       (info.st_uid != 0 && info.st_uid != geteuid()) || (info.st_mode & mode_t(S_IWOTH)) != 0 {
         stderrLine("GoelDaemon: WARNING — ignoring \(path): owned by uid \(info.st_uid), "
                    + "mode \(String(info.st_mode & 0o777, radix: 8)); a config file must be "
                    + "owned by the daemon user or root and not world-writable. "

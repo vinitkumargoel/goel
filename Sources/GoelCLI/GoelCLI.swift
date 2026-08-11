@@ -403,7 +403,7 @@ struct GoelCLI {
                 }
                 var info = stat()
                 if stat(probe, &info) == 0,
-                   info.st_uid != 0 || (info.st_mode & S_IWOTH) != 0 {
+                   info.st_uid != 0 || (info.st_mode & mode_t(S_IWOTH)) != 0 {
                     throw CLIError.message("""
                         refusing to write \(path) as root — \(probe) is not root-owned
                         (or is world-writable), so another user could control it.
