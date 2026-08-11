@@ -41,10 +41,14 @@ final class FakeRemoteBackend: RemoteBackend, @unchecked Sendable {
         added.append(source)
         addedNetworks.append(nil)
     }
+    private(set) var addedIDs: [UUID] = []
     func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
-                   startPaused: Bool, network selection: NetworkSelection?) async {
+                   startPaused: Bool, network selection: NetworkSelection?) async -> UUID? {
         added.append(source)
         addedNetworks.append(selection)
+        let id = UUID()
+        addedIDs.append(id)
+        return id
     }
     func networkState() async -> RemoteNetworkState { network }
     func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async {
@@ -175,6 +179,20 @@ final class RemoteRouterTests: XCTestCase {
 
     private func post(_ path: String, _ body: String) -> RemoteRequest {
         request("POST \(path)?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n\r\n\(body)")
+    }
+
+    /// The CLI follows a download by the IDs this reply carries — they must match what was queued.
+    func testAddRepliesWithTheQueuedTaskIDs() async {
+        let backend = FakeRemoteBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let out = str(await router.handle(post(
+            "/api/add", "{\"url\":\"https://e/x.bin\\nhttps://e/y.bin\"}")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
+        for id in backend.addedIDs {
+            XCTAssertTrue(out.contains(id.uuidString), "reply must carry \(id)")
+        }
+        XCTAssertEqual(backend.addedIDs.count, 2)
+        XCTAssertTrue(out.contains("\"added\":2"))
     }
 
     func testAddCarriesTheNetworkSelection() async {

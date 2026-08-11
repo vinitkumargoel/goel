@@ -119,22 +119,22 @@ var products: [Product] = [
 ]
 
 // GoelCLI stays dependency-free so `goel doctor` still works when the daemon won't start.
+// GoelDaemon builds everywhere: on macOS it is the headless alternative to the app,
+// so the CLI + web portal work on a Mac without a GUI session.
 targets += [
     .executableTarget(name: "GoelCLI"),
+    .executableTarget(name: "GoelDaemon", dependencies: ["GoelCore"]),
     .testTarget(name: "GoelCoreTests", dependencies: ["GoelCore"]),
     .testTarget(name: "GoelCLITests", dependencies: ["GoelCLI"]),
 ]
 products += [
     .executable(name: "goel", targets: ["GoelCLI"]),
+    .executable(name: "GoelDaemon", targets: ["GoelDaemon"]),
 ]
 
 #if os(Linux)
 targets += [
     .target(name: "CryptoBridge", linkerSettings: [.linkedLibrary("crypto")]),
-    .executableTarget(name: "GoelDaemon", dependencies: ["GoelCore"]),
-]
-products += [
-    .executable(name: "GoelDaemon", targets: ["GoelDaemon"]),
 ]
 #else
 targets += [

@@ -152,13 +152,15 @@ public struct RemoteRouter: Sendable {
             guard !allowed.isEmpty else {
                 return Self.forbidden("That address is on this machine or an internal network range — refused.")
             }
+            var ids: [String] = []
             for source in allowed {
-                await backend.remoteAdd(source: source,
-                                        saveDirectory: (folder?.isEmpty == false) ? folder : nil,
-                                        priority: priority, startPaused: paused,
-                                        network: network)
+                let id = await backend.remoteAdd(source: source,
+                                                 saveDirectory: (folder?.isEmpty == false) ? folder : nil,
+                                                 priority: priority, startPaused: paused,
+                                                 network: network)
+                if let id { ids.append(id.uuidString) }
             }
-            return Self.json(CountRow(added: allowed.count, refused: refused))
+            return Self.json(AddedRow(added: allowed.count, refused: refused, ids: ids))
 
         case ("GET", "/api/folders"):
             guard let listing = await backend.folderListing(request.query["path"]) else {
@@ -378,9 +380,13 @@ public struct RemoteRouter: Sendable {
         var path: String
     }
 
-    private struct CountRow: Encodable {
+    private struct AddedRow: Encodable {
         var added: Int
         var refused: Int
+        /// One entry per accepted source, in request order — a deduplicated source
+        /// yields the already-queued task's ID, so the list can be shorter than `added`
+        /// only when a backend cannot report IDs at all.
+        var ids: [String]
     }
     private struct ConfigRow: Encodable {
         var username: String
@@ -662,8 +668,11 @@ public protocol RemoteBackend: AnyObject, Sendable {
 
     func networkState() async -> RemoteNetworkState
     func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async
+    /// Returns the queued task's ID (or the existing task's, when the source deduplicates)
+    /// so `/api/add` can hand callers something they can poll. nil = backend cannot say.
+    @discardableResult
     func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
-                   startPaused: Bool, network: NetworkSelection?) async
+                   startPaused: Bool, network: NetworkSelection?) async -> UUID?
 
     /// Reach is bounded by the server uid, not by a root of ours.
     func folderListing(_ path: String?) async -> RemoteFolderListing?
@@ -676,10 +685,12 @@ public extension RemoteBackend {
     func createFolder(named name: String, in parent: String?) async -> String? { nil }
     func networkState() async -> RemoteNetworkState { RemoteNetworkState() }
     func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async {}
+    @discardableResult
     func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
-                   startPaused: Bool, network: NetworkSelection?) async {
+                   startPaused: Bool, network: NetworkSelection?) async -> UUID? {
         await remoteAdd(source: source, saveDirectory: saveDirectory,
                         priority: priority, startPaused: startPaused)
+        return nil
     }
 }
 
@@ -767,11 +778,12 @@ extension DownloadManager: RemoteBackend {
                 priority: priority, startPaused: startPaused)
     }
 
+    @discardableResult
     public func remoteAdd(source: DownloadSource, saveDirectory: String?,
                           priority: FilePriority, startPaused: Bool,
-                          network: NetworkSelection?) async {
-        _ = add(source: source, saveDirectory: remoteSaveDirectory(saveDirectory),
-                priority: priority, startPaused: startPaused, network: network)
+                          network: NetworkSelection?) async -> UUID? {
+        add(source: source, saveDirectory: remoteSaveDirectory(saveDirectory),
+            priority: priority, startPaused: startPaused, network: network).id
     }
 
     public func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool {

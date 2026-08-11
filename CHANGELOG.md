@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`goel <url>` downloads and waits — the CLI is now a curl replacement.** Give `goel` a
+  URL (http/https, ftp/ftps, sftp, magnet, `.torrent`, `.m3u8`) with no subcommand and it
+  queues the download on the daemon, follows it with a live progress line, and exits when
+  the file is on disk, printing the saved path. Ctrl-C detaches rather than cancels — the
+  download continues server-side. `--detach` queues asynchronously (as `goel add` always
+  has; it gains `--wait` for the opposite), `--timeout N` bounds the wait, and the exit
+  codes are a documented contract: 0 saved, 1 error, 2 usage, 3 refused/failed, 4 timeout,
+  130 detached. Full reference: **docs/cli.md**.
+- **`--json` on `goel add`, `goel list`, `goel status`, and wait mode** — stable
+  machine-readable output on stdout (diagnostics stay on stderr), so scripts and AI agents
+  can drive the whole queue without scraping tables. Wait mode always emits an array of
+  final task details, one per URL, including `savePath`.
+- **`POST /api/add` now returns `ids`** — one task UUID per accepted source, in request
+  order (a deduplicated source returns the existing task's ID). This is what lets a client
+  queue a download and then follow it; documented in docs/remote-api.md.
+- **The CLI and daemon now run anywhere, not just on the Linux install.** `GoelDaemon`
+  builds and runs on macOS; both it and `goel` resolve configuration from `$GOEL_CONFIG`,
+  then `/etc/goel/config`, then `~/.config/goel/config`, with `GOEL_PORT`/`GOEL_TOKEN`
+  environment variables overriding the file (`GOEL_TOKEN` alone is enough — no file
+  needed). `goel config set` creates the user-level file (0600) without root; `goel
+  doctor` skips the Linux-installer checks on a portable install instead of failing them;
+  `goel web` opens the portal in the browser.
+
+### Fixed
+
+- **First writes under `/private/…` on macOS were misread as path-traversal attempts.**
+  `resolvingSymlinksInPath` strips the `/private` prefix from a path that exists but not
+  from one about to be created, so the containment guard compared a stripped directory
+  against an unstripped file path and refused the download. The guard now retries with the
+  prefix stripped from the nonexistent side only — which cannot admit a real escape, since
+  such a path still begins with the configured save directory.
+- **Servers that transparently gzip responses broke downloads.** URLSession negotiates
+  compression by default, making `Content-Length` (compressed) disagree with the bytes
+  written (decompressed) — sizes, segment ranges, and the completeness check all went
+  wrong ("wrote 3808 of 1701 bytes"). Every engine request now sends
+  `Accept-Encoding: identity`: a downloader stores payload bytes verbatim.
+- **`goel add` refused wholesale (SSRF guard, unwritable folder, read-only mode) now
+  reports the portal's actual reason** instead of a generic 403 guess, and exits 3 — the
+  documented "download did not happen" code — rather than 1.
+- **`goel config get` now honours environment overrides** (`GOEL_PORT=9999 goel config
+  get port` prints `9999`), matching the precedence every other command — and `config
+  list`'s own `(from $ENV)` marker — already applied. Scripts introspecting the
+  effective value no longer get an answer that contradicts what `goel add` connects to.
+- **The same URL given twice in one `goel add --wait` no longer reports twice.** The
+  portal deduplicates the download but echoes the same task ID once per source; the
+  report now collapses to one `Saved` line / one JSON entry per actual task.
+- **Re-adding a source now makes the download happen again when the payload isn't on
+  disk.** Adding a URL that had previously *failed* retries it (previously it silently
+  returned the dead row, and `goel <url> --wait` exited 3 without a single new byte
+  attempted). Adding a URL whose completed file was since *deleted* drops the stale row
+  and downloads afresh — closing the window where deleting a file and immediately
+  re-requesting it (an agent's download-consume-delete loop) returned `Saved` for a
+  file that wasn't there. A completed task whose file still exists stays idempotent:
+  same row, `Saved` immediately.
+
+### Security
+
+- **Server-chosen text is stripped of terminal escapes before printing.** Filenames come
+  from `Content-Disposition`, magnet `dn=`, and torrent metadata — a hostile server could
+  embed ANSI/OSC sequences and retitle the window or poison the clipboard when `goel`
+  prints the name. Control characters are now removed from names, error strings, and
+  paths in all human-readable output (JSON output already escaped them).
+- **`goel web` no longer passes the tokened URL as a process argument** to
+  `open`/`xdg-open`, where any local user could read it with `ps` and exec-audit tooling
+  would record it. The browser now opens a private redirect file (mode 0600) instead.
+- **Config files reached via the environment are no longer trusted blindly.** The daemon
+  ignores (loudly) a config file that is neither owned by its own user nor root, or that
+  is world-writable; and `goel config set`/`token rotate` running as root refuse to write
+  to a non-system path whose directory another user controls. Both close the
+  `sudo -E`-style hole where an attacker-controlled `$GOEL_CONFIG`/`$XDG_CONFIG_HOME`
+  could feed a privileged process a token, password, or LAN exposure it chose.
+
+---
+
 ## [1.0.4] — 2026-07-27
 
 **This release also carries `1.0.3` and `1.0.2` below, neither of which was ever published.**

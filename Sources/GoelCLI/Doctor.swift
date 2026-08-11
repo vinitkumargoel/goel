@@ -15,43 +15,63 @@ extension GoelCLI {
         var checks: [Check] = []
         let manager = FileManager.default
 
-        for path in [Layout.daemonBinary, Layout.runScript, Layout.cliLink, Layout.configFile] {
-            checks.append(Check(
-                name: path,
-                result: manager.fileExists(atPath: path)
-                    ? .pass("present")
-                    : .fail("missing — reinstall: curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh")))
-        }
-
-        if Shell.which("ldd") != nil {
-            var unresolved: [String] = []
-            for binary in [Layout.daemonBinary, Layout.installRoot + "/bin/goel"]
-                    where manager.fileExists(atPath: binary) {
-                unresolved += Shell.run("ldd", [binary]).out
-                    .split(separator: "\n")
-                    .filter { $0.contains("not found") }
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
+        // The install-layout and library checks are the *installer's* contract — a portable
+        // install (macOS, or GoelDaemon run by hand) has no /opt/goel to hold to account.
+        #if os(Linux)
+        if Layout.systemInstallPresent {
+            for path in [Layout.daemonBinary, Layout.runScript, Layout.cliLink, Layout.configFile] {
+                checks.append(Check(
+                    name: path,
+                    result: manager.fileExists(atPath: path)
+                        ? .pass("present")
+                        : .fail("missing — reinstall: curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh")))
             }
-            unresolved = Array(Set(unresolved)).sorted()
-            checks.append(Check(
-                name: "shared libraries",
-                result: unresolved.isEmpty
-                    ? .pass("all resolved")
-                    : .fail("""
-                        unresolved:
-                        \(unresolved.map { "        " + $0 }.joined(separator: "\n"))
-                        \(missingLibraryAdvice)
-                        """)))
-        }
 
-        guard let config = try? ConfigFile() else {
+            if Shell.which("ldd") != nil {
+                var unresolved: [String] = []
+                for binary in [Layout.daemonBinary, Layout.installRoot + "/bin/goel"]
+                        where manager.fileExists(atPath: binary) {
+                    unresolved += Shell.run("ldd", [binary]).out
+                        .split(separator: "\n")
+                        .filter { $0.contains("not found") }
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                }
+                unresolved = Array(Set(unresolved)).sorted()
+                checks.append(Check(
+                    name: "shared libraries",
+                    result: unresolved.isEmpty
+                        ? .pass("all resolved")
+                        : .fail("""
+                            unresolved:
+                            \(unresolved.map { "        " + $0 }.joined(separator: "\n"))
+                            \(missingLibraryAdvice)
+                            """)))
+            }
+        }
+        #endif
+
+        let configPath = Layout.resolveConfigPath()
+        checks.append(Check(
+            name: "config",
+            result: manager.fileExists(atPath: configPath)
+                ? .pass(configPath)
+                : ProcessInfo.processInfo.environment["GOEL_TOKEN"]?.isEmpty == false
+                    ? .pass("none — GOEL_TOKEN comes from the environment")
+                    : .warn("no config yet at \(configPath) — `goel config set token <token>` creates it")))
+
+        // Preserve the real reason: "config unreadable, use sudo" and "not installed"
+        // point at opposite remedies, and doctor exists to name the right one.
+        let effective: Effective
+        do {
+            effective = try Effective.load()
+        } catch {
             report(checks)
-            throw CLIError.notInstalled(missing: Layout.configFile)
+            throw error
         }
-        let effective = Effective(config)
+        let config = try? ConfigFile()
 
-        // The config file holds the portal password in plaintext; only root needs to read it.
-        if let attributes = try? manager.attributesOfItem(atPath: Layout.configFile),
+        // The config file holds the portal password in plaintext; nobody else needs to read it.
+        if let attributes = try? manager.attributesOfItem(atPath: configPath),
            let mode = attributes[.posixPermissions] as? NSNumber {
             let permissions = mode.uint16Value & 0o777
             checks.append(Check(
@@ -59,7 +79,7 @@ extension GoelCLI {
                 result: permissions & 0o077 == 0
                     ? .pass(String(format: "%04o", permissions))
                     : .warn(String(format: "%04o — holds the portal password in plaintext; ", permissions)
-                            + "tighten with: sudo chmod 600 \(Layout.configFile)")))
+                            + "tighten with: chmod 600 \(configPath)")))
         }
 
         if Service.systemdAvailable {
@@ -77,7 +97,10 @@ extension GoelCLI {
                 name: "writable-paths drop-in",
                 result: dropIn(effective)))
         } else {
-            checks.append(Check(name: "service", result: .warn("no systemd — not managed as a service")))
+            checks.append(Check(
+                name: "service",
+                result: .warn("no systemd — run `GoelDaemon` yourself; "
+                              + "the portal check below says whether one is up")))
         }
 
         for (label, path) in [("downloads", effective.saveDir),
@@ -85,13 +108,16 @@ extension GoelCLI {
             checks.append(Check(name: label, result: writability(path)))
         }
 
+        #if os(Linux)
         checks.append(Check(name: "port \(effective.port)", result: portCheck(effective)))
+        #endif
 
         checks.append(Check(name: "ffmpeg", result: ffmpeg()))
 
         // The daemon silently refuses a passwordless LAN bind and falls back to loopback.
         if effective.allowLAN {
-            let hasPassword = (config.value(forEnv: "GOEL_PASSWORD")?.isEmpty == false)
+            let hasPassword = (config?.value(forEnv: "GOEL_PASSWORD")?.isEmpty == false)
+                || (ProcessInfo.processInfo.environment["GOEL_PASSWORD"]?.isEmpty == false)
             checks.append(Check(
                 name: "LAN exposure",
                 result: !effective.requireAuth
@@ -104,13 +130,23 @@ extension GoelCLI {
                                 + "only. `sudo goel config set password <password>`")))
         }
 
-        if Service.isActive {
-            do {
-                let rows = try API(port: effective.port, token: try effective.token()).tasks()
-                checks.append(Check(name: "portal API", result: .pass("responding, \(rows.count) task(s)")))
-            } catch let error as CLIError {
-                checks.append(Check(name: "portal API", result: .fail(error.text)))
-            }
+        // Probe regardless of how (or whether) the daemon is service-managed: a portable
+        // GoelDaemon is exactly as real as a systemd one. Severity policy: unreachable is
+        // a FAILURE only when systemd claims the service is up (something is lying);
+        // otherwise it's a warning — doctor judges the install, and "the daemon isn't
+        // started" is a state, not a defect. Liveness gating belongs to `goel status
+        // --json`, which exits non-zero when the portal is unreachable.
+        do {
+            let rows = try API(port: effective.port, token: try effective.token()).tasks()
+            checks.append(Check(name: "portal API", result: .pass("responding, \(rows.count) task(s)")))
+        } catch let error as CLIError {
+            checks.append(Check(
+                name: "portal API",
+                result: Service.isActive
+                    ? .fail(error.text)
+                    : .warn("not responding — "
+                            + (Service.systemdAvailable ? "`goel start` to start the service"
+                                                        : "start GoelDaemon, then re-run doctor"))))
         }
 
         report(checks)
@@ -150,9 +186,19 @@ extension GoelCLI {
         return .pass(Layout.dropInFile)
     }
 
-    /// Tests the *service user*, not root — `isWritableFile` under sudo answers the wrong question.
+    /// System install: tests the *service user*, not root — `isWritableFile` under sudo
+    /// answers the wrong question. Portable install: the daemon runs as this user, so a
+    /// plain current-user probe is the honest check.
     static func writability(_ path: String) -> Check.Result {
         let manager = FileManager.default
+        guard Layout.systemInstallPresent, Service.systemdAvailable else {
+            guard manager.fileExists(atPath: path) else {
+                return .warn("\(path) does not exist yet — the daemon creates it on start")
+            }
+            return manager.isWritableFile(atPath: path)
+                ? .pass("\(path) — writable")
+                : .fail("\(path) is not writable by this user, so every download will fail there.")
+        }
         guard manager.fileExists(atPath: path) else {
             return .fail("\(path) does not exist — sudo mkdir -p \(path) && "
                          + "sudo chown \(Layout.serviceUser): \(path)")
@@ -178,9 +224,14 @@ extension GoelCLI {
     }
 
     static func ffmpeg() -> Check.Result {
+        #if os(macOS)
+        let advice = "brew install ffmpeg"
+        #else
+        let advice = "sudo apt install ffmpeg"
+        #endif
         guard let path = Shell.which("ffmpeg"), !path.isEmpty else {
             return .warn("not installed — HLS (.m3u8) downloads will fail. "
-                         + "Everything else works. Fix: sudo apt install ffmpeg")
+                         + "Everything else works. Fix: \(advice)")
         }
         return .pass("\(path)")
     }
@@ -331,10 +382,35 @@ extension GoelCLI {
 
     static func printHelp() {
         Out.line("""
-        \(Out.bold("goel")) — manage the Goel° download daemon on this machine.
+        \(Out.bold("goel")) — download anything, from the terminal, through the Goel° engine.
 
-        \(Out.bold("Service"))
-          goel status                  service state, portal URL, queue summary
+        \(Out.bold("Download")) — curl-parity: give goel a URL and it blocks until the file is on disk.
+          goel <url>…                  download and wait; prints the saved path when done
+              --detach, -D             just queue it and return (same as `goel add`)
+              --timeout SECONDS, -t    give up waiting after this long (download continues)
+              --folder DIR, -d         save somewhere other than the default
+              --priority skip|low|normal|high, -p
+              --paused                 add without starting (implies no waiting)
+              --net SPEC, -n           auto | single:<iface> | aggregate | aggregate:<a>,<b>
+              --json                   machine-readable result (final task details)
+          Ctrl-C detaches — the download itself keeps going on the daemon.
+          Sources: http(s), ftp(s), sftp, magnet links, .torrent and .m3u8 URLs.
+
+        \(Out.bold("Queue"))
+          goel add <url>…              queue downloads and return (add --wait/-w to block)
+          goel list [--all] [--json]   every download in one command (--all includes finished)
+          goel status [--json]         service state, portal URL, queue summary
+          goel pause <id|all>          pause one download, or everything
+          goel resume <id|all>         resume one download, or everything
+          goel retry <id>              retry a failed download
+          goel rm <id> [--data]        remove; --data deletes the files too
+          goel adapters                network interfaces and the aggregation policy
+
+        \(Out.bold("Web portal")) — the same queue in the browser.
+          goel url                     portal URL including the API token
+          goel web                     print it and open the browser
+
+        \(Out.bold("Service")) (Linux/systemd installs)
           goel start | stop | restart  control the service
           goel enable | disable        start at boot, or not
           goel logs [-f] [-n N]        journal for the service
@@ -345,21 +421,7 @@ extension GoelCLI {
           goel config set <key> <val>  change one value, then restart if running
           goel config unset <key>      revert to the daemon's default
           goel config sync             rewrite the unit's writable paths from config
-          goel url                     portal URL including the API token
           goel token [show|rotate]     the API token
-
-        \(Out.bold("Queue"))
-          goel add <url>…              queue downloads
-              --folder DIR             save somewhere other than the default
-              --priority skip|low|normal|high
-              --paused                 add without starting
-              --net SPEC               auto | single:<iface> | aggregate | aggregate:<a>,<b>
-          goel adapters                network interfaces and the aggregation policy
-          goel list [--all]            the queue (--all includes finished)
-          goel pause <id|all>          pause one download, or everything
-          goel resume <id|all>         resume one download, or everything
-          goel retry <id>              retry a failed download
-          goel rm <id> [--data]        remove; --data deletes the files too
 
         \(Out.bold("Maintenance"))
           goel doctor                  check the install and say how to fix what is wrong
@@ -370,9 +432,13 @@ extension GoelCLI {
         \(settings.map { "  \($0.key.padding(toLength: 22, withPad: " ", startingAt: 0))\($0.summary)" }
             .joined(separator: "\n"))
 
-        Most commands need root, because the config file and the API token are
-        readable only by root. Full documentation:
-        https://github.com/vinitkumargoel/goel/blob/main/docs/linux.md
+        \(Out.bold("Exit codes"))  0 ok · 1 error · 2 usage · 3 refused or failed · 4 wait timeout ·
+        130 detached (Ctrl-C).  GOEL_PORT / GOEL_TOKEN / GOEL_CONFIG in the environment
+        override the config file, so agents can point goel at any local daemon.
+
+        System installs keep the config and token root-only, hence sudo there; a
+        portable install (`~/.config/goel/config`) needs none. Full reference:
+        https://github.com/vinitkumargoel/goel/blob/main/docs/cli.md
         """)
     }
 }

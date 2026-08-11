@@ -80,7 +80,7 @@ extension DownloadManager {
         return !fm.fileExists(atPath: savePath)
     }
 
-    private func dropTaskLocally(_ id: DownloadTask.ID) {
+    func dropTaskLocally(_ id: DownloadTask.ID) {
         clearLocalState(id, removeFromList: true)
         persistRemoval(id)
     }

@@ -123,6 +123,7 @@ but must pick their own name, icon and bundle identifier.
 - **Browser integration** — a WebExtension bundled inside the app and **side-loaded**, not installed from a store. A toolbar toggle hands over every download the browser starts; right-click → **Download with Goel°** sends one link, optionally carrying your login cookies so files behind a sign-in actually download. Chromium-family browsers (Chrome, Edge, Brave, Chromium, Vivaldi, Arc) take it via Developer mode → **Load unpacked** and keep it. Firefox (128+) only accepts it as a **temporary add-on**, so it has to be re-loaded after every Firefox restart. Safari's copy ships as an app extension inside the bundle and is switched on in Safari's own settings — but Safari can do neither capture mode nor signed-in downloads, because it has no `downloads` API and its sandbox has no channel that may carry a cookie. Step-by-step per browser: **[docs/browser-extension.md](docs/browser-extension.md)**.
 - **macOS native** — menu-bar extra, Dock progress, Services menu, URL scheme, AppleScript, and notifications.
 - **Automation** — a watched folder for `.torrent` files, scheduled download windows, power/network awareness (pause below a battery percentage; pause on an expensive or constrained network), and post-download actions (extract, script, antivirus scan).
+- **A real CLI** — `goel <url>` downloads and blocks until the file is on disk, curl-style, through the full engine (segmented HTTP, torrents, HLS). `goel list` is the whole queue in one command; `--json` everywhere and a fixed exit-code contract make it drivable by scripts and AI agents. **[docs/cli.md](docs/cli.md)**.
 - **Remote control** — an optional token-authenticated local HTTP server to manage downloads from another device.
 - **Checksums & history** — MD5/SHA verification plus searchable, re-downloadable history with CSV export.
 - **Self-contained** — every native library is bundled; no Homebrew or dependencies for end users.
@@ -178,11 +179,13 @@ That installs the daemon as a systemd service, creates an unprivileged `goel` us
 portal password and prints it once, and puts the **`goel`** command on your PATH:
 
 ```bash
+sudo goel <url>           # download it — blocks until saved, like curl
 sudo goel status          # is it running, and where
-sudo goel add <url>       # queue a download
+sudo goel add <url>       # queue a download asynchronously
+sudo goel list            # every download, in one command
 sudo goel config set port 9090
 sudo goel doctor          # check the whole install
-sudo goel help            # everything else
+sudo goel help            # everything else — full reference in docs/cli.md
 ```
 
 Prebuilt for **x86_64** and **aarch64**; needs systemd and glibc. The Swift runtime, libtorrent
@@ -268,6 +271,7 @@ library updater by design.
 ## Documentation
 
 - **[docs/getting-started.md](docs/getting-started.md)** — install, first download, the basics.
+- **[docs/cli.md](docs/cli.md)** — the `goel` command: curl-parity downloads, JSON output, exit codes, agent recipes.
 - **[docs/browser-extension.md](docs/browser-extension.md)** — installing Goel° Capture in Chrome, Edge, Brave, Firefox and Safari.
 - **[docs/faq.md](docs/faq.md)** — the questions that actually get asked.
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** — when something goes wrong.

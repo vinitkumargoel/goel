@@ -144,7 +144,7 @@ struct ConfigFile {
     private(set) var lines: [String]
     let path: String
 
-    init(path: String = Layout.configFile) throws {
+    init(path: String = Layout.resolveConfigPath()) throws {
         self.path = path
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
             if FileManager.default.fileExists(atPath: path) { throw CLIError.needsRoot }
@@ -154,6 +154,13 @@ struct ConfigFile {
         var parts = text.components(separatedBy: "\n")
         if parts.last == "" { parts.removeLast() }
         self.lines = parts
+    }
+
+    /// A config that does not exist yet: `save()` will create it. Used by `config set`
+    /// on a fresh portable install, and by env-only operation (GOEL_TOKEN set, no file).
+    init(creatingAt path: String) {
+        self.path = path
+        self.lines = []
     }
 
     /// nil means absent; `""` is a distinct value — systemd reads `KEY=` as set-but-empty.
@@ -256,26 +263,45 @@ struct Effective {
     var username: String
     var tokenFromConfig: String?
 
-    init(_ config: ConfigFile) {
-        func bool(_ env: String, _ fallback: Bool) -> Bool {
-            guard let raw = config.value(forEnv: env)?.lowercased(), !raw.isEmpty else {
-                return fallback
+    init(_ config: ConfigFile,
+         environment: [String: String] = ProcessInfo.processInfo.environment) {
+        // The process environment outranks the file, mirroring how the daemon itself reads
+        // these keys — so `GOEL_PORT=9090 goel list` talks to the right portal.
+        func raw(_ env: String) -> String? {
+            if let fromEnv = environment[env], !fromEnv.isEmpty {
+                return fromEnv
             }
-            return ["1", "true", "yes", "on"].contains(raw)
+            return config.value(forEnv: env).flatMap { $0.isEmpty ? nil : $0 }
         }
-        port = config.value(forEnv: "GOEL_PORT").flatMap(Int.init) ?? Layout.defaultPort
+        func bool(_ env: String, _ fallback: Bool) -> Bool {
+            guard let value = raw(env)?.lowercased() else { return fallback }
+            return ["1", "true", "yes", "on"].contains(value)
+        }
+        port = raw("GOEL_PORT").flatMap(Int.init) ?? Layout.defaultPort
         // Fall back to the DAEMON's paths, not a fresh install's, or unset keys point at unwritten files.
-        databasePath = config.value(forEnv: "GOEL_DB").flatMap { $0.isEmpty ? nil : $0 }
+        databasePath = raw("GOEL_DB")
             ?? Self.daemonHome + "/.local/share/goel-downloader/queue.sqlite"
-        saveDir = config.value(forEnv: "GOEL_SAVE_DIR").flatMap { $0.isEmpty ? nil : $0 }
-            ?? Self.daemonHome + "/Downloads"
-        watchDir = config.value(forEnv: "GOEL_WATCH_DIR").flatMap { $0.isEmpty ? nil : $0 }
+        saveDir = raw("GOEL_SAVE_DIR") ?? Self.daemonHome + "/Downloads"
+        watchDir = raw("GOEL_WATCH_DIR")
         // Must stay identical to the daemon's defaults in Sources/GoelDaemon/main.swift.
         allowLAN = bool("GOEL_ALLOW_LAN", false)
         requireAuth = bool("GOEL_REQUIRE_AUTH", true)
-        username = config.value(forEnv: "GOEL_USERNAME").flatMap { $0.isEmpty ? nil : $0 }
-            ?? "admin"
-        tokenFromConfig = config.value(forEnv: "GOEL_TOKEN").flatMap { $0.isEmpty ? nil : $0 }
+        username = raw("GOEL_USERNAME") ?? "admin"
+        tokenFromConfig = raw("GOEL_TOKEN")
+    }
+
+    /// Loads config the way every queue command needs it: file if present, else pure
+    /// environment — an agent with GOEL_TOKEN (and maybe GOEL_PORT) exported needs no file.
+    static func load() throws -> Effective {
+        do {
+            return Effective(try ConfigFile())
+        } catch let error as CLIError {
+            guard case .notInstalled = error,
+                  ProcessInfo.processInfo.environment["GOEL_TOKEN"]?.isEmpty == false else {
+                throw error
+            }
+            return Effective(ConfigFile(creatingAt: Layout.resolveConfigPath()))
+        }
     }
 
     static let daemonHome: String = {
@@ -283,6 +309,8 @@ struct Effective {
             let home = String(cString: directory)
             if !home.isEmpty { return home }
         }
+        // No `goel` service user means a portable install: the daemon runs as this user.
+        if !Layout.systemInstallPresent { return NSHomeDirectory() }
         return Layout.stateDir
     }()
 
@@ -290,10 +318,21 @@ struct Effective {
         if let configured = tokenFromConfig { return configured }
         let path = Layout.tokenFile(databasePath: databasePath)
         guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else {
-            if geteuid() != 0 { throw CLIError.needsRoot }
+            // Three distinct situations, three distinct remedies: file exists but this
+            // user can't read it (permissions), file genuinely absent (daemon never
+            // started), and a system path we can't even see into (use sudo).
+            if FileManager.default.fileExists(atPath: path) {
+                if geteuid() != 0, !path.hasPrefix(NSHomeDirectory()) { throw CLIError.needsRoot }
+                throw CLIError.message("""
+                    \(path) exists but couldn’t be read — check its ownership and permissions \
+                    (the daemon writes it 0600 as the user it runs as).
+                    """)
+            }
+            if geteuid() != 0, !path.hasPrefix(NSHomeDirectory()) { throw CLIError.needsRoot }
             throw CLIError.message("""
                 no API token yet — \(path) does not exist.
-                The daemon writes it on first successful start; try `goel start` and `goel status`.
+                The daemon writes it on first successful start; try `goel start` \
+                (or run GoelDaemon), then `goel status`.
                 """)
         }
         let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)

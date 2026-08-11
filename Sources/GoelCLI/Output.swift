@@ -6,11 +6,15 @@ enum CLIError: Error {
     case noSystemd
     case notInstalled(missing: String)
     case portalUnreachable(port: Int, reason: String)
+    /// HTTP 403 — the portal explained why; `goel add` maps this to the download-failed exit.
+    case forbidden(String)
     case usage(String)
 
     var text: String {
         switch self {
         case .message(let m):
+            return m
+        case .forbidden(let m):
             return m
         case .needsRoot:
             return """
@@ -19,24 +23,45 @@ enum CLIError: Error {
                 """
         case .noSystemd:
             return """
-                no systemd on this machine, so there is no service to manage.
-                Run the daemon directly instead: \(Layout.runScript)
+                no systemd on this machine, so there is no managed service.
+                Run the daemon yourself instead — `GoelDaemon` in the foreground picks up
+                the same configuration (docs/cli.md → “Running without systemd”).
                 """
         case .notInstalled(let missing):
             return """
                 \(missing) is missing — Goel° does not look installed on this machine.
-                Install it with:
+                Linux (service install):
                     curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh
+                Portable (macOS, or no root): start `GoelDaemon`, then point goel at it with
+                `goel config set port <port>` / `goel config set token <token>` — or export
+                GOEL_PORT and GOEL_TOKEN. Details: docs/cli.md.
                 """
         case .portalUnreachable(let port, let reason):
             return """
                 can’t reach the portal on 127.0.0.1:\(port) — \(reason)
-                The service may be stopped or still starting. Check `goel status`, then `goel logs`.
+                The daemon may be stopped or still starting. Check `goel status`, then `goel logs`.
                 """
         case .usage(let m):
             return m
         }
     }
+}
+
+/// The CLI's exit-code contract — documented in docs/cli.md and `goel help`, so
+/// agents can branch on them. Codes must never be renumbered, only added to.
+enum ExitCode {
+    static let ok: Int32 = 0
+    /// Runtime trouble: portal unreachable, HTTP error, bad reply.
+    static let error: Int32 = 1
+    /// The command line itself was wrong.
+    static let usage: Int32 = 2
+    /// The download did not (fully) happen: a source was refused, nothing was added,
+    /// or a waited task failed — even when sibling downloads in the same run saved.
+    static let downloadFailed: Int32 = 3
+    /// --timeout expired while a waited download was still running; it continues server-side.
+    static let timedOut: Int32 = 4
+    /// Ctrl-C during a wait — the download itself keeps going. 128 + SIGINT, as shells report it.
+    static let detached: Int32 = 130
 }
 
 enum Out {
@@ -57,6 +82,23 @@ enum Out {
     static func dim(_ t: String) -> String { paint(t, "2") }
 
     static func line(_ text: String = "") { print(text) }
+
+    /// Remote-controlled text (filenames, error strings, paths built from them) passes
+    /// through here before it reaches the terminal. A hostile server can put raw ANSI/OSC
+    /// escapes in a Content-Disposition name or magnet dn=; unfiltered, those can retitle
+    /// the window, poison the clipboard, or fake a prompt. C0 controls, DEL, and C1
+    /// controls are dropped; printable text (any script) passes through untouched.
+    static func safe(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.filter {
+            $0.value >= 0x20 && !(0x7F...0x9F).contains($0.value)
+        }))
+    }
+
+    /// Machine output: raw bytes plus one trailing newline, nothing painted.
+    static func data(_ body: Data) {
+        FileHandle.standardOutput.write(body)
+        FileHandle.standardOutput.write(Data("\n".utf8))
+    }
 
     static func error(_ text: String) {
         FileHandle.standardError.write(Data(("goel: " + text + "\n").utf8))

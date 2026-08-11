@@ -296,6 +296,9 @@ actor HLSEngine: HLSConfigurable {
                                  range: HLSByteRange? = nil) -> URLRequest {
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        // Identity, as in HTTPEngine.makeRequest: media segments are stored byte-for-byte,
+        // and a ranged fetch into a transparently-gunzipped stream would splice wrong bytes.
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         for (name, value) in task.outboundHeaders(for: url) {
             request.setValue(value, forHTTPHeaderField: name)
         }

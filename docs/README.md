@@ -8,7 +8,8 @@ one queue — and runs headless on Linux.
 | Document | What it covers |
 |---|---|
 | [getting-started.md](getting-started.md) | Install, first download, protocols, credentials, remote access, headless Linux |
-| [linux.md](linux.md) | The one-line installer, the `goel` command, every configuration key, writable paths under `ProtectSystem=strict`, upgrading, running without systemd, building from source |
+| [cli.md](cli.md) | The `goel` command end to end — `goel <url>` curl-parity downloads, every flag, the exit-code contract, `--json` shapes, environment variables, agent recipes, running the daemon anywhere |
+| [linux.md](linux.md) | The one-line installer, the systemd service, every configuration key, writable paths under `ProtectSystem=strict`, upgrading, running without systemd, building from source |
 | [browser-extension.md](browser-extension.md) | Installing Goel° Capture in Chrome, Edge, Brave, Firefox and Safari; capture mode, signed-in downloads, per-browser limits |
 | [faq.md](faq.md) | Licensing, privacy and network behaviour, downloads, the web portal, platforms |
 | [troubleshooting.md](troubleshooting.md) | Install and launch problems, failing downloads, SFTP/Keychain, portal errors |

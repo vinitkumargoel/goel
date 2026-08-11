@@ -75,8 +75,9 @@ downloads, and only replaces `/opt/goel`. Your password is not regenerated and n
 
 ```sh
 sudo goel status          # is it running, and where
-sudo goel add <url>       # queue something
-sudo goel list            # watch it
+sudo goel <url>           # download something — blocks until it is on disk
+sudo goel add <url>       # or queue it and get the prompt back
+sudo goel list            # everything, in one command
 sudo goel doctor          # check the whole install
 ```
 
@@ -108,13 +109,17 @@ warns when the portal is exposed without one.
 ## The `goel` command
 
 ```
+Download       goel <url>… — download and wait, curl-style (Ctrl-C detaches)
 Service        status · start · stop · restart · enable · disable · logs [-f]
-Configuration  config · config get/set/unset/sync · url · token [show|rotate]
+Configuration  config · config get/set/unset/sync · url · web · token [show|rotate]
 Queue          add · list · pause · resume · retry · rm · adapters
 Maintenance    doctor · uninstall [--purge] · version · help
 ```
 
-`goel help` is the authoritative list. A few worth knowing about:
+**[cli.md](cli.md) is the command's own reference** — every flag, the exit-code
+contract, `--json` output for scripts and agents, and running against a daemon that
+isn't the systemd one. `goel help` is the authoritative in-terminal list. A few worth
+knowing about here:
 
 **`goel doctor`** is the first thing to run when something is wrong. It checks the binaries and
 their shared libraries, the config file's permissions, the service state and whether it is

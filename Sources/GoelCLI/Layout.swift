@@ -31,4 +31,29 @@ enum Layout {
     static let defaultDatabase = "/var/lib/goel/queue.sqlite"
     static let defaultSaveDir = "/var/lib/goel/downloads"
     static let defaultPort = 8080
+
+    /// True when this box carries the system (installer) layout rather than a portable one.
+    static var systemInstallPresent: Bool {
+        FileManager.default.fileExists(atPath: configFile)
+    }
+
+    /// User-level config for a portable install — macOS, or any box without the system install.
+    /// Same KEY=value format as the system file; `goel config set` writes here without root.
+    static var userConfigFile: String {
+        let base = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
+            .flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory() + "/.config"
+        return base + "/goel/config"
+    }
+
+    /// $GOEL_CONFIG wins, then the system install, then the user file. The user file is
+    /// the *fallback target* even when absent, so `goel config set` can create it.
+    static func resolveConfigPath(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String {
+        if let override = environment["GOEL_CONFIG"], !override.isEmpty {
+            return override
+        }
+        if FileManager.default.fileExists(atPath: configFile) { return configFile }
+        return userConfigFile
+    }
 }

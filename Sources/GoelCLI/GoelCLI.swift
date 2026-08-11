@@ -12,10 +12,11 @@ struct GoelCLI {
             try dispatch(arguments)
         } catch let error as CLIError {
             Out.error(error.text)
-            exit(1)
+            if case .usage = error { exit(ExitCode.usage) }
+            exit(ExitCode.error)
         } catch {
             Out.error("\(error)")
-            exit(1)
+            exit(ExitCode.error)
         }
     }
 
@@ -26,20 +27,27 @@ struct GoelCLI {
         }
         let rest = Array(arguments.dropFirst())
 
+        // curl-parity: `goel <url>` needs no subcommand — it downloads the thing and waits.
+        if looksLikeSource(command) {
+            try add(arguments, waitByDefault: true)
+            return
+        }
+
         switch command {
         case "help", "--help", "-h":       printHelp()
         case "version", "--version", "-v": printVersion()
 
-        case "status":                     try status()
+        case "status":                     try status(rest)
         case "start", "stop", "restart":   try controlService(command)
         case "enable", "disable":          try enablement(command)
         case "logs":                       try logs(rest)
 
         case "config":                     try config(rest)
         case "url":                        try printURL()
+        case "web":                        try openWeb()
         case "token":                      try token(rest)
 
-        case "add":                        try add(rest)
+        case "add":                        try add(rest, waitByDefault: false)
         case "adapters":                   try adapters()
         case "list", "ls":                 try list(rest)
         case "pause", "resume":            try pauseResume(command, rest)
@@ -50,13 +58,19 @@ struct GoelCLI {
         case "uninstall":                  try uninstall(rest)
 
         default:
-            throw CLIError.usage("unknown command “\(command)”. Run `goel help`.")
+            throw CLIError.usage("""
+                unknown command “\(command)”. Run `goel help` — or, to download something, \
+                give a full URL (https://, ftp://, ftps://, sftp://, magnet:).
+                """)
         }
     }
 
-    static func status() throws {
-        let config = try ConfigFile()
-        let effective = Effective(config)
+    static func status(_ arguments: [String]) throws {
+        let effective = try Effective.load()
+        if arguments.contains("--json") {
+            try statusJSON(effective)
+            return
+        }
 
         Out.line(Out.bold("Service"))
         if Service.systemdAvailable {
@@ -92,7 +106,7 @@ struct GoelCLI {
         Out.line()
         Out.line(Out.bold("Paths"))
         Out.pairs([
-            ("config", Layout.configFile),
+            ("config", Layout.resolveConfigPath()),
             ("database", effective.databasePath),
             ("downloads", effective.saveDir),
         ])
@@ -118,7 +132,99 @@ struct GoelCLI {
         }
     }
 
+    /// One self-describing object per run; `reachable` says whether the queue numbers are live.
+    static func statusJSON(_ effective: Effective) throws {
+        var service: [String: Any] = ["systemd": Service.systemdAvailable]
+        if Service.systemdAvailable {
+            service["state"] = Service.activeState
+            service["enabledAtBoot"] = Service.isEnabled
+        }
+        var portal: [String: Any] = [
+            "url": "http://127.0.0.1:\(effective.port)/",
+            "port": effective.port,
+            "lan": effective.allowLAN,
+            "authRequired": effective.requireAuth,
+            "username": effective.username,
+        ]
+        var queue: [String: Any] = [:]
+        var reachable = false
+        do {
+            let rows = try API(port: effective.port, token: try effective.token()).tasks()
+            let active = rows.filter { $0.statusToken == "downloading" }
+            reachable = true
+            portal["reachable"] = true
+            queue["tasks"] = rows.count
+            queue["downloading"] = active.count
+            queue["downSpeed"] = active.reduce(0) { $0 + $1.downSpeed }
+        } catch let error as CLIError {
+            portal["reachable"] = false
+            portal["error"] = error.text
+        }
+        let body: [String: Any] = [
+            "service": service,
+            "portal": portal,
+            "queue": queue,
+            "paths": [
+                "config": Layout.resolveConfigPath(),
+                "database": effective.databasePath,
+                "downloads": effective.saveDir,
+            ],
+        ]
+        Out.data(try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]))
+        // Machine callers gate on $?: an unreachable portal must not read as success.
+        // (Human `goel status` stays informational — it paints the problem instead.)
+        if !reachable { exit(ExitCode.error) }
+    }
+
+    /// `goel url` prints the link; `goel web` also opens it where a browser exists.
+    static func openWeb() throws {
+        let effective = try Effective.load()
+        let token = try effective.token()
+        let link = "http://127.0.0.1:\(effective.port)/?token=\(token)"
+        Out.line(link)
+        Out.note("This link contains your API token — treat it as a password.")
+        #if os(macOS)
+        let wantsBrowser = true
+        #else
+        let wantsBrowser = ProcessInfo.processInfo.environment["DISPLAY"] != nil
+            || ProcessInfo.processInfo.environment["WAYLAND_DISPLAY"] != nil
+        #endif
+        guard wantsBrowser, let launcher = writePortalLauncher(link: link) else { return }
+        #if os(macOS)
+        _ = Shell.run("/usr/bin/open", [launcher])
+        #else
+        _ = Shell.run("xdg-open", [launcher])
+        #endif
+    }
+
+    /// The token must never ride in the opener's argv: `ps` shows argv to every local
+    /// user, and exec-auditing tools record it durably. The browser gets a private
+    /// redirect file instead (dir 0700, file 0600) — the same trick jupyter uses.
+    static func writePortalLauncher(
+        link: String,
+        directory: String = (Layout.userConfigFile as NSString).deletingLastPathComponent
+    ) -> String? {
+        let manager = FileManager.default
+        if !manager.fileExists(atPath: directory) {
+            try? manager.createDirectory(atPath: directory, withIntermediateDirectories: true,
+                                         attributes: [.posixPermissions: 0o700])
+        }
+        let file = directory + "/open-portal.html"
+        let html = """
+            <!doctype html><title>Goel\u{00B0}</title>\
+            <meta http-equiv="refresh" content="0; url=\(link)">\
+            <a href="\(link)">Open the Goel\u{00B0} portal</a>
+            """
+        guard manager.createFile(atPath: file, contents: Data(html.utf8),
+                                 attributes: [.posixPermissions: 0o600]) else {
+            Out.note("couldn’t write \(file) — open the printed link yourself.")
+            return nil
+        }
+        return file
+    }
+
     static func controlService(_ verb: String) throws {
+        guard Service.systemdAvailable else { throw CLIError.noSystemd }
         try requireRoot()
         try Service.control(verb)
         // `systemctl start` returns as soon as the unit is spawned, before it binds or dies.
@@ -126,7 +232,7 @@ struct GoelCLI {
             waitForState(seconds: 5)
             let state = Service.activeState
             if state == "active" {
-                let effective = Effective(try ConfigFile())
+                let effective = try Effective.load()
                 Out.line(Out.green("Service \(verb)ed") + " — portal on http://127.0.0.1:\(effective.port)/")
             } else {
                 throw CLIError.message("""
@@ -140,6 +246,7 @@ struct GoelCLI {
     }
 
     static func enablement(_ verb: String) throws {
+        guard Service.systemdAvailable else { throw CLIError.noSystemd }
         try requireRoot()
         try Service.control(verb)
         Out.line(Out.green(verb == "enable" ? "Will start at boot" : "Will not start at boot"))
@@ -173,13 +280,21 @@ struct GoelCLI {
 
         switch action {
         case "list", "show":
-            let config = try ConfigFile()
-            Out.line(Out.bold("Configuration") + Out.dim(" — \(Layout.configFile)"))
+            let path = Layout.resolveConfigPath()
+            // Only a genuinely-absent file falls back to empty; an unreadable one must
+            // say "needs root", never render every setting as "(default)".
+            let config = try loadConfigOrEmpty(path)
+            Out.line(Out.bold("Configuration") + Out.dim(" — \(path)"))
             Out.pairs(settings.map { setting in
                 let raw = config.value(forEnv: setting.env)
+                let overridden = ProcessInfo.processInfo
+                    .environment[setting.env]?.isEmpty == false
                 let shown: String
                 if setting.secret {
-                    shown = (raw?.isEmpty == false) ? Out.dim("(set)") : Out.dim("(unset)")
+                    let present = (raw?.isEmpty == false) || overridden
+                    shown = Out.dim(present ? "(set)" : "(unset)")
+                } else if overridden {
+                    shown = Out.amber("(from $\(setting.env))")
                 } else if let raw, !raw.isEmpty {
                     shown = raw
                 } else {
@@ -194,13 +309,21 @@ struct GoelCLI {
         case "get":
             guard let key = rest.first else { throw CLIError.usage("`goel config get <key>`") }
             guard let setting = setting(named: key) else { throw unknownKey(key) }
-            let config = try ConfigFile()
             if setting.secret, setting.key != "token" {
                 throw CLIError.message("""
                     \(setting.key) is a secret and is not printed back.
                     Set a new one with `goel config set \(setting.key) <value>`.
                     """)
             }
+            // The same precedence every command applies: environment beats the file.
+            // Scripts use `config get` to learn the value goel actually operates with —
+            // answering from the file alone would contradict `status`, `add`, and list's
+            // own "(from $ENV)" marker.
+            if let fromEnv = ProcessInfo.processInfo.environment[setting.env], !fromEnv.isEmpty {
+                Out.line(fromEnv)
+                return
+            }
+            let config = try loadConfigOrEmpty(Layout.resolveConfigPath())
             guard let value = config.value(forEnv: setting.env), !value.isEmpty else {
                 Out.line("(default)")
                 return
@@ -208,7 +331,6 @@ struct GoelCLI {
             Out.line(value)
 
         case "set":
-            try requireRoot()
             guard rest.count >= 2 else { throw CLIError.usage("`goel config set <key> <value>`") }
             let key = rest[0]
             let value = rest.dropFirst().joined(separator: " ")
@@ -216,7 +338,7 @@ struct GoelCLI {
             if let complaint = setting.validate(value) {
                 throw CLIError.message("\(setting.key): \(complaint)")
             }
-            var config = try ConfigFile()
+            var config = try loadConfigForWriting()
             config.set(env: setting.env, to: value)
             try config.save()
             if ["save-dir", "db", "watch-dir"].contains(setting.key) {
@@ -226,10 +348,9 @@ struct GoelCLI {
             try restartIfRunning(reason: "for \(setting.key) to take effect")
 
         case "unset":
-            try requireRoot()
             guard let key = rest.first else { throw CLIError.usage("`goel config unset <key>`") }
             guard let setting = setting(named: key) else { throw unknownKey(key) }
-            var config = try ConfigFile()
+            var config = try loadConfigForWriting()
             config.unset(env: setting.env)
             try config.save()
             // Unsetting moves the path to the daemon's default; a stale drop-in leaves it unwritable.
@@ -241,6 +362,11 @@ struct GoelCLI {
 
         case "sync":
             // The installer must call this, not write the drop-in itself: a mismatch starts cleanly, then every write fails.
+            guard Service.systemdAvailable else {
+                Out.line(Out.dim("No systemd here — nothing to synchronise. "
+                                 + "The daemon creates its own paths on start."))
+                return
+            }
             try requireRoot()
             try syncPaths(Effective(try ConfigFile()))
             Out.line(Out.green("Writable paths synchronised") + Out.dim(" — \(Layout.dropInFile)"))
@@ -250,7 +376,80 @@ struct GoelCLI {
         }
     }
 
+    /// Absent config reads as empty; unreadable config stays an error (needsRoot).
+    static func loadConfigOrEmpty(_ path: String) throws -> ConfigFile {
+        do {
+            return try ConfigFile(path: path)
+        } catch CLIError.notInstalled {
+            return ConfigFile(creatingAt: path)
+        }
+    }
+
+    /// Root is the *system* config's contract; a user-level file just needs its directory.
+    static func loadConfigForWriting() throws -> ConfigFile {
+        let path = Layout.resolveConfigPath()
+        let manager = FileManager.default
+        if path == Layout.configFile {
+            try requireRoot()
+        } else {
+            // A non-system path was steered by the environment ($GOEL_CONFIG, $XDG_CONFIG_HOME,
+            // $HOME) — variables that can cross a sudo boundary. Root writing secrets to a
+            // location another user controls is the classic `sudo -E` plant/symlink attack,
+            // so root only writes here when the nearest existing ancestor is root's own.
+            if geteuid() == 0 {
+                var probe = path
+                while !manager.fileExists(atPath: probe), probe != "/" {
+                    probe = (probe as NSString).deletingLastPathComponent
+                }
+                var info = stat()
+                if stat(probe, &info) == 0,
+                   info.st_uid != 0 || (info.st_mode & S_IWOTH) != 0 {
+                    throw CLIError.message("""
+                        refusing to write \(path) as root — \(probe) is not root-owned
+                        (or is world-writable), so another user could control it.
+                        Run without sudo, or unset GOEL_CONFIG/XDG_CONFIG_HOME,
+                        or use the system config \(Layout.configFile).
+                        """)
+                }
+            }
+            let directory = (path as NSString).deletingLastPathComponent
+            if !manager.fileExists(atPath: directory) {
+                do {
+                    // 0700 from the start — this file can carry the portal password.
+                    try manager.createDirectory(atPath: directory, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+                } catch {
+                    throw CLIError.message("couldn’t create \(directory): \(error.localizedDescription)")
+                }
+            }
+            if manager.fileExists(atPath: path), !manager.isWritableFile(atPath: path) {
+                throw CLIError.needsRoot
+            }
+        }
+        if manager.fileExists(atPath: path) {
+            return try ConfigFile(path: path)
+        }
+        return ConfigFile(creatingAt: path)
+    }
+
     static func syncPaths(_ effective: Effective) throws {
+        guard Service.systemdAvailable else {
+            // Portable mode: no unit to teach, no service user to own anything —
+            // just make sure the places the daemon will write exist. Loudly: a config
+            // change that "succeeds" onto an uncreatable path fails later and opaquely.
+            let manager = FileManager.default
+            var paths = [(effective.databasePath as NSString).deletingLastPathComponent,
+                         effective.saveDir]
+            if let watchDir = effective.watchDir { paths.append(watchDir) }
+            for path in paths where !manager.fileExists(atPath: path) {
+                do {
+                    try manager.createDirectory(atPath: path, withIntermediateDirectories: true)
+                } catch {
+                    throw CLIError.message("couldn’t create \(path): \(error.localizedDescription)")
+                }
+            }
+            return
+        }
         try Service.writePathsDropIn(effective)
         // The database path is a FILE: creating a directory there leaves SQLite unable to open it.
         try ensureDirectory((effective.databasePath as NSString).deletingLastPathComponent,
@@ -290,7 +489,7 @@ struct GoelCLI {
     }
 
     static func printURL() throws {
-        let effective = Effective(try ConfigFile())
+        let effective = try Effective.load()
         let token = try effective.token()
         // This URL embeds an API token — a password in a URL.
         let host = effective.allowLAN ? (primaryIPv4() ?? "127.0.0.1") : "127.0.0.1"
@@ -303,11 +502,10 @@ struct GoelCLI {
         let action = arguments.first ?? "show"
         switch action {
         case "show":
-            let effective = Effective(try ConfigFile())
+            let effective = try Effective.load()
             Out.line(try effective.token())
         case "rotate":
-            try requireRoot()
-            var config = try ConfigFile()
+            var config = try loadConfigForWriting()
             let fresh = randomHex(bytes: 24)
             config.set(env: "GOEL_TOKEN", to: fresh)
             try config.save()
@@ -322,16 +520,25 @@ struct GoelCLI {
     }
 
     static func api() throws -> (API, Effective) {
-        let effective = Effective(try ConfigFile())
+        let effective = try Effective.load()
         return (API(port: effective.port, token: try effective.token()), effective)
     }
 
-    static func add(_ arguments: [String]) throws {
+    struct AddOptions {
         var urls: [String] = []
         var folder: String?
         var priority: String?
         var paused = false
         var network: String?
+        var wait = false
+        var waitExplicit = false
+        var json = false
+        var timeoutSeconds: Int?
+    }
+
+    static func parseAddArguments(_ arguments: [String], waitByDefault: Bool) throws -> AddOptions {
+        var options = AddOptions()
+        options.wait = waitByDefault
         var index = 0
         while index < arguments.count {
             let argument = arguments[index]
@@ -339,52 +546,131 @@ struct GoelCLI {
             case "--folder", "-d":
                 index += 1
                 guard index < arguments.count else { throw CLIError.usage("--folder needs a path") }
-                folder = arguments[index]
+                options.folder = arguments[index]
             case "--priority", "-p":
                 index += 1
                 guard index < arguments.count else { throw CLIError.usage("--priority needs a value") }
-                priority = arguments[index].lowercased()
-                guard ["skip", "low", "normal", "high"].contains(priority!) else {
+                let priority = arguments[index].lowercased()
+                guard ["skip", "low", "normal", "high"].contains(priority) else {
                     throw CLIError.usage("--priority must be skip, low, normal or high")
                 }
+                options.priority = priority
             case "--paused":
-                paused = true
+                options.paused = true
             case "--net", "-n":
                 index += 1
                 guard index < arguments.count else {
                     throw CLIError.usage("--net needs auto, single:<iface>, aggregate, or aggregate:<a>,<b>")
                 }
-                network = arguments[index]
-                guard Validators.networkSpec(network!) == nil else {
+                let network = arguments[index]
+                guard Validators.networkSpec(network) == nil else {
                     throw CLIError.usage("--net must be auto, single:<iface>, aggregate, "
                                          + "or aggregate:<a>,<b> — see `goel adapters`")
                 }
+                options.network = network
+            case "--wait", "-w":
+                options.wait = true
+                options.waitExplicit = true
+            case "--detach", "-D":
+                options.wait = false
+            case "--json":
+                options.json = true
+            case "--timeout", "-t":
+                index += 1
+                guard index < arguments.count, let seconds = Int(arguments[index]), seconds > 0 else {
+                    throw CLIError.usage("--timeout needs a positive number of seconds")
+                }
+                options.timeoutSeconds = seconds
             default:
                 if argument.hasPrefix("-") {
                     throw CLIError.usage("unexpected option “\(argument)” — see `goel help`")
                 }
-                urls.append(argument)
+                options.urls.append(argument)
             }
             index += 1
         }
-        guard !urls.isEmpty else {
+        if options.paused {
+            guard !options.waitExplicit else {
+                throw CLIError.usage("--wait and --paused don’t combine — a paused download never finishes")
+            }
+            options.wait = false   // `goel <url> --paused` means “queue it, held”.
+        }
+        if options.timeoutSeconds != nil && !options.wait {
+            throw CLIError.usage("--timeout only makes sense while waiting — drop it, or add --wait")
+        }
+        return options
+    }
+
+    static func add(_ arguments: [String], waitByDefault: Bool) throws {
+        let options = try parseAddArguments(arguments, waitByDefault: waitByDefault)
+        guard !options.urls.isEmpty else {
             throw CLIError.usage("`goel add <url> [<url>…] [--folder DIR] [--priority high] "
-                                 + "[--paused] [--net single:eth0]`")
+                                 + "[--paused] [--net single:eth0] [--wait] [--json]`")
         }
         let (client, _) = try api()
-        let result = try client.add(urls: urls, folder: folder, priority: priority,
-                                    paused: paused, network: network)
-        if result.added > 0 {
-            Out.line(Out.green("Added \(result.added)") + (result.added == 1 ? " download" : " downloads"))
+        let (result, rawReply): (API.AddResult, Data)
+        do {
+            (result, rawReply) = try client.add(urls: options.urls, folder: options.folder,
+                                                priority: options.priority, paused: options.paused,
+                                                network: options.network)
+        } catch let error as CLIError {
+            // A wholesale 403 (every source refused, bad folder, read-only) is a failed
+            // download to the caller, not CLI trouble — exit 3, as the contract says.
+            guard case .forbidden(let reason) = error else { throw error }
+            if options.json, let body = try? JSONSerialization.data(withJSONObject: ["error": reason]) {
+                Out.data(body)   // exit 3 always carries a JSON document in --json mode
+            }
+            Out.error(reason)
+            exit(ExitCode.downloadFailed)
         }
-        // `refused` is the portal's internal-address (SSRF) guard, not an error — but it must stay visible.
-        if result.refused > 0 {
-            Out.line(Out.amber("Refused \(result.refused)") +
-                     " — not a supported download URL, or it resolves to a loopback/metadata address.")
+        let ids = result.ids ?? []
+        // JSON mode keeps stdout pure JSON: any outcome that stops short of following
+        // answers with the portal's own reply; commentary goes to stderr.
+        if options.json {
+            if !options.wait || result.added == 0 {
+                Out.data(rawReply)
+                exit(result.added > 0 && result.refused == 0 ? ExitCode.ok
+                                                             : ExitCode.downloadFailed)
+            }
+            if ids.isEmpty {
+                Out.data(rawReply)
+                Out.error("the daemon didn’t report task IDs (older daemon?) — "
+                          + "queued, but goel cannot wait here. `goel list` to watch it.")
+                exit(ExitCode.error)
+            }
+            // stdout stays the detail array; the refusal still has to reach the caller.
+            if result.refused > 0 {
+                Out.error("refused \(result.refused) of \(options.urls.count) — not a supported "
+                          + "download URL, or it resolves to a loopback/metadata address. Exit will be 3.")
+            }
+        } else {
+            if !options.wait && result.added > 0 {
+                Out.line(Out.green("Added \(result.added)")
+                         + (result.added == 1 ? " download" : " downloads"))
+            }
+            // `refused` is the portal's internal-address (SSRF) guard, not an error — but it must stay visible.
+            if result.refused > 0 {
+                Out.line(Out.amber("Refused \(result.refused)") +
+                         " — not a supported download URL, or it resolves to a loopback/metadata address.")
+            }
+            if result.added == 0 {
+                if result.refused == 0 {
+                    Out.line(Out.amber("Nothing was added — no argument parsed as a download source."))
+                }
+                exit(ExitCode.downloadFailed)
+            }
+            if !options.wait {
+                exit(result.refused > 0 ? ExitCode.downloadFailed : ExitCode.ok)
+            }
+            if ids.isEmpty {
+                // A daemon from before the `ids` field: queued fine, but there is nothing to follow.
+                Out.line(Out.amber("The daemon didn’t report task IDs (older daemon?) — can’t wait here."))
+                Out.line(Out.dim("The download is queued; `goel list` to watch it."))
+                exit(ExitCode.error)
+            }
         }
-        if result.added == 0 && result.refused == 0 {
-            Out.line(Out.amber("Nothing was added — no argument parsed as a download source."))
-        }
+        try follow(ids: ids, client: client, json: options.json,
+                   timeout: options.timeoutSeconds, anyRefused: result.refused > 0)
     }
 
     static func adapters() throws {
@@ -428,6 +714,19 @@ struct GoelCLI {
     static func list(_ arguments: [String]) throws {
         let showAll = arguments.contains("--all") || arguments.contains("-a")
         let (client, _) = try api()
+        if arguments.contains("--json") {
+            let raw = try client.tasksRaw()
+            if showAll {
+                Out.data(raw)   // verbatim: everything the portal reports, no narrowing
+                return
+            }
+            guard let parsed = try? JSONSerialization.jsonObject(with: raw) as? [[String: Any]] else {
+                throw CLIError.message("couldn’t read the portal's reply as a task list")
+            }
+            let active = parsed.filter { ($0["statusToken"] as? String) != "completed" }
+            Out.data(try JSONSerialization.data(withJSONObject: active, options: [.sortedKeys]))
+            return
+        }
         let everything = try client.tasks()
         let rows = showAll ? everything : everything.filter { $0.statusToken != "completed" }
         let hidden = everything.count - rows.count
@@ -440,7 +739,7 @@ struct GoelCLI {
             rows: rows.map { row in
                 [
                     String(row.id.prefix(8)),
-                    row.name,
+                    Out.safe(row.name),
                     row.kind,
                     row.error == nil ? row.status : Out.red(row.status),
                     Out.percent(row.progress),
@@ -454,7 +753,7 @@ struct GoelCLI {
         Out.line()
         for row in rows {
             guard let reason = row.error, !reason.isEmpty else { continue }
-            Out.line(Out.red("\(row.id.prefix(8)) failed") + " — \(reason)")
+            Out.line(Out.red("\(row.id.prefix(8)) failed") + " — \(Out.safe(reason))")
         }
         if hidden > 0 {
             Out.line(Out.dim("\(hidden) finished download\(hidden == 1 ? "" : "s") not shown — `goel list --all` includes them."))
@@ -568,11 +867,20 @@ struct GoelCLI {
     }
 
     static func primaryIPv4() -> String? {
+        #if os(macOS)
+        for interface in ["en0", "en1"] {
+            let result = Shell.run("/usr/sbin/ipconfig", ["getifaddr", interface])
+            let address = result.out.trimmingCharacters(in: .whitespacesAndNewlines)
+            if result.ok, !address.isEmpty { return address }
+        }
+        return nil
+        #else
         let result = Shell.run("hostname", ["-I"])
         guard result.ok else { return nil }
         return result.out.split(separator: " ")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty && !$0.hasPrefix("127.") && $0.contains(".") }
+        #endif
     }
 
     static func printVersion() {

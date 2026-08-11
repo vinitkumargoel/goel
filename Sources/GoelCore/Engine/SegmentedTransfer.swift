@@ -833,6 +833,10 @@ final class SegmentedTransfer: Sendable {
     static func makeRequest(_ url: URL, settings: RequestSettings) -> URLRequest {
         var req = URLRequest(url: url)
         req.setValue(settings.userAgent, forHTTPHeaderField: "User-Agent")
+        // Identity, or transparent gzip makes Content-Length disagree with the bytes we
+        // write — see the same header in HTTPEngine.makeRequest. Ranged segments double
+        // down on it: offsets into a compressed stream do not address payload bytes.
+        req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         for (name, value) in settings.extraHeaders {
             req.setValue(value, forHTTPHeaderField: name)
         }

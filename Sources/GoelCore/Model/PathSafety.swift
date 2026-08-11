@@ -61,6 +61,18 @@ public enum PathSafety {
         }
         let dir = normalize(directory)
         let full = normalize(path)
-        return full == dir || full.hasPrefix(dir + "/")
+        if full == dir || full.hasPrefix(dir + "/") { return true }
+        #if os(macOS)
+        // `resolvingSymlinksInPath` drops a leading "/private" only when the path exists,
+        // so an existing directory loses it while the not-yet-created file inside it keeps
+        // it — and every first write into /private/… is misread as an escape. Retry with
+        // the prefix stripped from the nonexistent side only: such a path still begins
+        // with the configured directory string, so this cannot admit a real traversal.
+        if full.hasPrefix("/private/"), !FileManager.default.fileExists(atPath: full) {
+            let stripped = String(full.dropFirst("/private".count))
+            return stripped == dir || stripped.hasPrefix(dir + "/")
+        }
+        #endif
+        return false
     }
 }

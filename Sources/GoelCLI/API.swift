@@ -27,20 +27,47 @@ struct API {
     struct AddResult: Decodable {
         let added: Int
         let refused: Int
+        /// Task IDs for the accepted sources; nil when the daemon predates the field.
+        let ids: [String]?
     }
 
     func tasks() throws -> [TaskRow] {
         try decode([TaskRow].self, from: get("/api/tasks"))
     }
 
+    /// The portal's reply verbatim — `--json` passes this through untouched, so the
+    /// CLI never narrows what the API reports.
+    func tasksRaw() throws -> Data {
+        try get("/api/tasks")
+    }
+
+    struct TaskDetailLite: Decodable {
+        struct Row: Decodable {
+            let name: String
+            let statusToken: String
+            let error: String?
+        }
+        let row: Row
+        let savePath: String
+    }
+
+    func taskDetailRaw(id: String) throws -> Data {
+        try get("/api/task?id=\(id)")
+    }
+
+    func taskDetail(id: String) throws -> TaskDetailLite {
+        try decode(TaskDetailLite.self, from: taskDetailRaw(id: id))
+    }
+
     func add(urls: [String], folder: String?, priority: String?, paused: Bool,
-             network: String? = nil) throws -> AddResult {
+             network: String? = nil) throws -> (AddResult, Data) {
         var body: [String: Any] = ["url": urls.joined(separator: "\n"), "paused": paused]
         if let folder, !folder.isEmpty { body["folder"] = folder }
         if let priority, !priority.isEmpty { body["priority"] = priority }
         if let network, !network.isEmpty { body["network"] = network }
         let data = try JSONSerialization.data(withJSONObject: body)
-        return try decode(AddResult.self, from: post("/api/add", body: data))
+        let reply = try post("/api/add", body: data)
+        return (try decode(AddResult.self, from: reply), reply)
     }
 
     struct NetworkState: Decodable {
@@ -126,10 +153,13 @@ struct API {
                 needs a restart after either changes.
                 """)
         case 403:
-            throw CLIError.message("""
-                the portal refused this (403). Either read-only mode is on, or the
-                folder you asked for is outside the downloads root.
-                """)
+            // The portal states its reason in the body — SSRF refusal, read-only mode,
+            // unwritable folder. Pass it through rather than guessing.
+            let reason = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            throw CLIError.forbidden(reason.isEmpty
+                ? "the portal refused this (403) — read-only mode, or a folder outside the allowed root."
+                : reason)
         default:
             let detail = String(data: data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

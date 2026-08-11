@@ -208,11 +208,18 @@ The only route with a JSON request body.
   case: the download runs on the default route and the reason is logged, rather than
   failing over a cable someone unplugged. HTTP(S) only; other protocols ignore it.
 
-Response is a pair of counts, not `{"ok":true}`. `refused` is always present:
+Response is counts plus the queued task IDs, not `{"ok":true}`. All three fields are
+always present:
 
 ```json
-{ "added": 2, "refused": 0 }
+{ "added": 2, "refused": 0, "ids": ["6B0877A8-…", "14A11F85-…"] }
 ```
+
+- `ids` carries one task UUID per **accepted** source, in request order — poll
+  `GET /api/task?id=<uuid>` with them to follow a download you just queued (this is how
+  `goel <url>` waits for completion). A source that deduplicated against an
+  already-queued task returns *that* task's ID, so the ID is always pollable.
+- Clients must tolerate the field being absent (a pre-1.1 daemon).
 
 > **Save folders are bounded by the server user, not by a root.** A `folder` this
 > user cannot write to fails the whole request with `403 Forbidden` and adds nothing — it is

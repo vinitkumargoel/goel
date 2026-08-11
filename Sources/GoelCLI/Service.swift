@@ -44,7 +44,13 @@ enum Shell {
         if executable.hasPrefix("/") {
             return FileManager.default.isExecutableFile(atPath: executable) ? executable : nil
         }
-        for directory in ["/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin"] {
+        #if os(macOS)
+        let directories = ["/usr/bin", "/bin", "/usr/sbin", "/sbin",
+                           "/usr/local/bin", "/opt/homebrew/bin"]
+        #else
+        let directories = ["/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin"]
+        #endif
+        for directory in directories {
             let candidate = directory + "/" + executable
             if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
         }

@@ -34,6 +34,20 @@ final class SecurityHardeningTests: XCTestCase {
                        "prefix match must be on a path boundary, not a string prefix")
     }
 
+    #if os(macOS)
+    /// `resolvingSymlinksInPath` strips "/private" from a path that exists but not from one
+    /// that is about to be created — the first write into /private/tmp must not read as escape.
+    func testIsContainedAcceptsANewFileUnderPrivate() throws {
+        let dir = "/private/tmp/goel-containment-test-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        XCTAssertTrue(PathSafety.isContained(dir + "/new-download.bin", within: dir),
+                      "a not-yet-created file inside its own save directory is contained")
+        XCTAssertFalse(PathSafety.isContained("/private/etc/cron.d/x", within: dir))
+        XCTAssertFalse(PathSafety.isContained(dir + "/../escape.bin", within: dir))
+    }
+    #endif
+
     func testPrimaryFilePathRejectsEscapingTorrentEntry() {
         let dir = NSTemporaryDirectory()
         let files = [

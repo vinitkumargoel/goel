@@ -122,6 +122,8 @@ export interface NetworkState {
 export interface AddResult {
   added: number
   refused: number
+  /** Task UUIDs for the accepted sources, in request order. */
+  ids: string[]
 }
 
 export interface AddRequest {

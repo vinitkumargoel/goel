@@ -291,7 +291,24 @@ public actor DownloadManager {
     ) -> DownloadTask {
         if let existingID = dedupIndex[source.dedupKey],
            let i = index(of: existingID) {
-            return tasks[i]
+            let existing = tasks[i]
+            // "Add" means "make sure I end up with the payload". A live task — or a
+            // finished one whose file is still on disk — already promises that, so the
+            // duplicate maps onto it. A FAILED task does not: re-adding the source is
+            // the caller retrying, so retry it. And a completed task whose file has
+            // been deleted is a row the reconcile sweep will drop within seconds —
+            // a caller who deletes and immediately re-adds must not win that race and
+            // be handed a "Saved" that points at nothing.
+            if case .failed = existing.status {
+                reactivateFailed(at: i)
+                return tasks[i]
+            }
+            if existing.status == .completed,
+               Self.completedPayloadIsMissing(existing, fileManager: FileManager.default) {
+                dropTaskLocally(existingID)   // falls through to a fresh task
+            } else {
+                return existing
+            }
         }
         let holdPaused = startPaused || scheduledAt != nil
         let directory = saveDirectory ?? defaultDirectory(for: source)
@@ -428,6 +445,12 @@ public actor DownloadManager {
 
     public func retry(_ id: DownloadTask.ID) async {
         guard let i = index(of: id), case .failed = tasks[i].status else { return }
+        reactivateFailed(at: i)
+    }
+
+    /// Shared by `retry` and by `add` when a duplicate source lands on a failed task.
+    func reactivateFailed(at i: Int) {
+        let id = tasks[i].id
         autoRetryTasks[id]?.cancel()
         autoRetryTasks[id] = nil
         tasks[i].status = .queued

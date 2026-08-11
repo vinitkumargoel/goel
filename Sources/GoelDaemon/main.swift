@@ -4,15 +4,79 @@ import GoelCore
 import Glibc
 #endif
 
+func stderrLine(_ s: String) { FileHandle.standardError.write(Data((s + "\n").utf8)) }
+
+/// The config file the `goel` CLI writes, read the way systemd's EnvironmentFile reads it:
+/// KEY=value lines, `#` comments, last assignment wins, one layer of matching quotes stripped.
+/// Under systemd this is redundant (EnvironmentFile already injected it) and the process
+/// environment wins either way; on a portable install it is what makes `goel config set` stick.
+let fileConfig: [String: String] = {
+    let explicit = ProcessInfo.processInfo.environment["GOEL_CONFIG"]
+    let candidates: [String]
+    if let explicit, !explicit.isEmpty {
+        candidates = [explicit]
+    } else {
+        let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
+            .flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory() + "/.config"
+        candidates = ["/etc/goel/config", xdg + "/goel/config"]
+    }
+    guard let path = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+        // No file anywhere is a normal fresh install — unless the operator NAMED one.
+        if let explicit, !explicit.isEmpty {
+            stderrLine("GoelDaemon: WARNING — GOEL_CONFIG=\(explicit) does not exist; "
+                       + "running on environment variables and defaults only")
+        }
+        return [:]
+    }
+    // The path may have been steered by the environment (GOEL_CONFIG, XDG_CONFIG_HOME).
+    // A daemon — especially one running privileged — must not take its token, password,
+    // or LAN exposure from a file some other user controls: the file has to belong to
+    // this user or root, and must not be world-writable.
+    var info = stat()
+    if stat(path, &info) == 0,
+       (info.st_uid != 0 && info.st_uid != geteuid()) || (info.st_mode & S_IWOTH) != 0 {
+        stderrLine("GoelDaemon: WARNING — ignoring \(path): owned by uid \(info.st_uid), "
+                   + "mode \(String(info.st_mode & 0o777, radix: 8)); a config file must be "
+                   + "owned by the daemon user or root and not world-writable. "
+                   + "Running on environment variables and defaults only")
+        return [:]
+    }
+    guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
+        // A file that exists but cannot be read is an operator problem, never a silent default.
+        stderrLine("GoelDaemon: WARNING — \(path) exists but could not be read "
+                   + "(permissions? encoding?); running on environment variables and defaults only")
+        return [:]
+    }
+    var values: [String: String] = [:]
+    for line in text.components(separatedBy: "\n") {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("#"),
+              let eq = trimmed.firstIndex(of: "=") else { continue }
+        let key = String(trimmed[trimmed.startIndex..<eq]).trimmingCharacters(in: .whitespaces)
+        var value = String(trimmed[trimmed.index(after: eq)...])
+        if value.count >= 2,
+           (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
+           (value.hasPrefix("'") && value.hasSuffix("'")) {
+            value = String(value.dropFirst().dropLast())
+        }
+        if !key.isEmpty { values[key] = value }
+    }
+    stderrLine("GoelDaemon: configuration from \(path) (environment overrides it)")
+    return values
+}()
+
+func rawSetting(_ key: String) -> String? {
+    if let v = ProcessInfo.processInfo.environment[key], !v.isEmpty { return v }
+    if let v = fileConfig[key], !v.isEmpty { return v }
+    return nil
+}
 func env(_ key: String, _ fallback: String) -> String {
-    let v = ProcessInfo.processInfo.environment[key]
-    return (v?.isEmpty == false) ? v! : fallback
+    rawSetting(key) ?? fallback
 }
 func envBool(_ key: String, _ fallback: Bool) -> Bool {
-    guard let v = ProcessInfo.processInfo.environment[key]?.lowercased() else { return fallback }
+    guard let v = rawSetting(key)?.lowercased() else { return fallback }
     return ["1", "true", "yes", "on"].contains(v)
 }
-func stderrLine(_ s: String) { FileHandle.standardError.write(Data((s + "\n").utf8)) }
 
 let home = FileManager.default.homeDirectoryForCurrentUser
 let dbPath = env("GOEL_DB", home.appendingPathComponent(".local/share/goel-downloader/queue.sqlite").path)
@@ -25,15 +89,20 @@ guard let port = Int(portRaw), (1...65535).contains(port) else {
 let allowLAN = envBool("GOEL_ALLOW_LAN", false)
 let requireAuth = envBool("GOEL_REQUIRE_AUTH", true)
 let username = env("GOEL_USERNAME", "admin")
-let password = ProcessInfo.processInfo.environment["GOEL_PASSWORD"] ?? ""
-let tokenEnv = ProcessInfo.processInfo.environment["GOEL_TOKEN"] ?? ""
+let password = rawSetting("GOEL_PASSWORD") ?? ""
+let tokenEnv = rawSetting("GOEL_TOKEN") ?? ""
 let saveDir = env("GOEL_SAVE_DIR", home.appendingPathComponent("Downloads").path)
 // Unset GOEL_WATCH_DIR keeps whatever is persisted, so a restart with a trimmed unit file doesn't silently switch the feature off.
 let watchDir = env("GOEL_WATCH_DIR", "")
 let watchAutoStart = envBool("GOEL_WATCH_AUTOSTART", false)
 
-let aggregationEnv = ProcessInfo.processInfo.environment["GOEL_AGGREGATION"]
-let aggregationAdaptersEnv = ProcessInfo.processInfo.environment["GOEL_AGGREGATION_ADAPTERS"]
+/// Present-vs-absent matters for these two (an empty adapter list means "every eligible
+/// interface"), so they bypass the empty-collapsing helpers.
+func presentSetting(_ key: String) -> String? {
+    ProcessInfo.processInfo.environment[key] ?? fileConfig[key]
+}
+let aggregationEnv = presentSetting("GOEL_AGGREGATION")
+let aggregationAdaptersEnv = presentSetting("GOEL_AGGREGATION_ADAPTERS")
 let aggregationStreamsRaw = env("GOEL_AGGREGATION_STREAMS", "")
 if !aggregationStreamsRaw.isEmpty,
    Int(aggregationStreamsRaw).map({ !(1...8).contains($0) }) ?? true {
