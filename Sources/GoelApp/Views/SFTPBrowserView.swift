@@ -30,6 +30,7 @@ struct SFTPBrowserView: View {
     @State private var infoEntry: SFTPEntry?
     @State private var entryInfo: SFTPEntryInfo?
     @State private var infoFolderSize: Int64?
+    @State private var infoSizeError: String?
     @State private var infoSizeTask: Task<Void, Never>?
     @State private var infoSizeCancel: CancelFlag?
     @State private var typeSelectBuffer = ""
@@ -106,6 +107,7 @@ struct SFTPBrowserView: View {
                 SFTPInfoPanel(entry: entry, info: entryInfo,
                               folderSize: infoFolderSize,
                               isSizing: infoSizeTask != nil,
+                              sizeError: infoSizeError,
                               onApplyPermissions: { mode in applyPermissions(entry, mode) },
                               onClose: { closeInfo() })
             }
@@ -510,11 +512,15 @@ struct SFTPBrowserView: View {
         let cancel = CancelFlag()
         infoSizeCancel = cancel
         infoSizeTask = Task {
-            let size = await model.recursiveSize(of: entry,
-                                                 shouldContinue: { !cancel.isCancelled })
+            let result = await model.recursiveSize(of: entry,
+                                                   shouldContinue: { !cancel.isCancelled })
             // A cancelled walk must not write its partial answer into a closed panel.
             guard !cancel.isCancelled else { return }
-            infoFolderSize = size
+            switch result {
+            case .success(let size): infoFolderSize = size
+            case .failure(let e): infoSizeError = e.message
+            case nil: break
+            }
             infoSizeTask = nil
         }
     }
@@ -525,6 +531,7 @@ struct SFTPBrowserView: View {
         infoSizeTask = nil
         infoSizeCancel = nil
         infoFolderSize = nil
+        infoSizeError = nil
         entryInfo = nil
         infoEntry = nil
     }

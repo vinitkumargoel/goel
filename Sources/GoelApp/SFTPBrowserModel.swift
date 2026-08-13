@@ -35,6 +35,7 @@ struct SFTPTransfer: Identifiable {
     private var meter = SpeedMeter()
 
     private var firstByteAt: Date?
+    private var lastByteAt: Date?
 
     init(connectionID: UUID, name: String, direction: Direction, isDirectory: Bool,
          localURL: URL?, remotePath: String, total: Int64 = 0) {
@@ -63,10 +64,13 @@ struct SFTPTransfer: Identifiable {
 
     var displaySpeed: Double { sampledSpeed ?? liveSpeed(at: Date()) }
 
-    /// The meter's sliding window re-read at `now` — so it decays during a stall.
-    /// The cumulative fallback covers the window's first half-second dead zone.
+    /// The meter's sliding window re-read at `now` — so it decays during a stall —
+    /// and hard-zeroed after 5 s of silence, because the window average alone only
+    /// shrinks asymptotically and would show a trickle forever. The cumulative
+    /// fallback covers the window's first half-second dead zone.
     func liveSpeed(at now: Date) -> Double {
         guard isActive else { return 0 }
+        if let lastByteAt, now.timeIntervalSince(lastByteAt) > 5 { return 0 }
         let windowed = meter.reading(at: now).down
         if windowed > 0 { return windowed }
         guard bytes > 0, let firstByteAt else { return 0 }
@@ -83,6 +87,7 @@ struct SFTPTransfer: Identifiable {
 
     mutating func record(bytes newBytes: Int64, now: Date = Date()) {
         if firstByteAt == nil, newBytes > 0 { firstByteAt = now }
+        if newBytes > 0 { lastByteAt = now }
         // The first byte is the proof the transfer got a connection and left the queue.
         if state == .waiting, newBytes > 0 { state = .running }
         bytes = newBytes
@@ -96,6 +101,7 @@ struct SFTPTransfer: Identifiable {
         sampledSpeed = nil
         meter = SpeedMeter()
         firstByteAt = nil
+        lastByteAt = nil
     }
 }
 
@@ -447,11 +453,18 @@ final class SFTPBrowserModel: ObservableObject {
         return try? await client.onBackground().freeSpace(path)
     }
 
-    func recursiveSize(of entry: SFTPEntry, shouldContinue: @escaping @Sendable () -> Bool) async -> Int64? {
+    func recursiveSize(of entry: SFTPEntry,
+                       shouldContinue: @escaping @Sendable () -> Bool) async -> Result<Int64, SFTPError>? {
         guard let client, entry.isDirectory, SFTPBrowserPaths.isSafeChildName(entry.name) else { return nil }
-        return try? await SFTPRelay.treeSize(client.onBackground(),
-                                             path: Self.join(path, entry.name),
-                                             shouldContinue: shouldContinue)
+        do {
+            return .success(try await SFTPRelay.treeSize(client.onBackground(),
+                                                         path: Self.join(path, entry.name),
+                                                         shouldContinue: shouldContinue))
+        } catch let e as SFTPError {
+            return .failure(e)
+        } catch {
+            return .failure(SFTPError(kind: .io, message: error.localizedDescription))
+        }
     }
 
     /// The provider closure must capture only `client` and paths, never the main-actor model.

@@ -14,6 +14,8 @@ struct SFTPInfoPanel: View {
     let info: SFTPEntryInfo?
     let folderSize: Int64?
     let isSizing: Bool
+    /// Why the folder walk produced no size — a blank "—" hides real failures.
+    var sizeError: String? = nil
     let onApplyPermissions: (UInt32) -> Void
     let onClose: () -> Void
 
@@ -101,7 +103,8 @@ struct SFTPInfoPanel: View {
     private func sizeText(_ info: SFTPEntryInfo) -> String {
         guard info.attributes.isDirectory else { return info.attributes.size.byteString }
         if let folderSize { return folderSize.byteString }
-        return isSizing ? L10n.t("Calculating…") : "—"
+        if isSizing { return L10n.t("Calculating…") }
+        return sizeError ?? "—"
     }
 
     private func row(_ label: String, _ value: String) -> some View {

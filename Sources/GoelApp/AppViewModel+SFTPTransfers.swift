@@ -326,19 +326,32 @@ extension AppViewModel {
                 setTransferTotal(id, total)
                 // Only bytes the server confirms holding can be skipped; anything else re-sends from zero.
                 var resumeFrom: Int64 = 0
-                if resuming, let existing = try? await client.attributes(remoteTarget, followSymlink: true),
-                   existing.exists, !existing.isDirectory, existing.size <= total {
-                    resumeFrom = existing.size
-                    setTransferBytes(id, resumeFrom)
+                if resuming {
+                    // Stat twice before giving up: a transient failure here silently re-sends
+                    // (and truncates) the whole file from zero.
+                    var existing = try? await client.attributes(remoteTarget, followSymlink: true)
+                    if existing == nil {
+                        existing = try? await client.attributes(remoteTarget, followSymlink: true)
+                    }
+                    if let existing, existing.exists, !existing.isDirectory, existing.size <= total {
+                        resumeFrom = existing.size
+                        setTransferBytes(id, resumeFrom)
+                    }
                 }
-                let coalescer = ProgressCoalescer()
-                try await client.upload(localURL: localURL, remote: remoteTarget,
-                                        resumeFrom: resumeFrom, maxBytesPerSecond: cap,
-                                        shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
-                    guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
-                    // Bound inside this callback, not the Task: the capture list makes `self` a var and older toolchains reject reading one from concurrent code.
-                    guard let self else { return }
-                    Task { @MainActor in self.setTransferBytes(id, sofar) }
+                if resuming, total > 0, resumeFrom == total {
+                    // The server already holds every byte — settle finished without
+                    // reopening handles, like the folder path's equal-size skip.
+                    setTransferBytes(id, total)
+                } else {
+                    let coalescer = ProgressCoalescer()
+                    try await client.upload(localURL: localURL, remote: remoteTarget,
+                                            resumeFrom: resumeFrom, maxBytesPerSecond: cap,
+                                            shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
+                        guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
+                        // Bound inside this callback, not the Task: the capture list makes `self` a var and older toolchains reject reading one from concurrent code.
+                        guard let self else { return }
+                        Task { @MainActor in self.setTransferBytes(id, sofar) }
+                    }
                 }
             }
             settleTransfer(id, .finished)
@@ -464,29 +477,40 @@ extension AppViewModel {
                 // A partial smaller than the remote file continues from where it stopped;
                 // a larger or shrunk remote starts over from zero.
                 var resumeFrom: Int64 = 0
+                var alreadyComplete = false
                 if resuming {
                     let localSize = Self.fileSize(destination)
                     if localSize > 0 {
                         // A failed size check must fail the transfer (which keeps the
                         // partial), not guess "no resume" — that guess truncates the
-                        // partial and silently starts over from zero.
-                        guard let remoteSize = try? await client.size(remoteSource) else {
+                        // partial and silently starts over from zero. Checked twice
+                        // so one transient hiccup doesn't fail an otherwise-good retry.
+                        var sized = try? await client.size(remoteSource)
+                        if sized == nil { sized = try? await client.size(remoteSource) }
+                        guard let remoteSize = sized else {
                             throw SFTPError(kind: .io,
                                             message: L10n.t("Could not check how much of the file the server has — the partial download was kept. Try again."))
                         }
-                        if localSize <= remoteSize {
+                        if localSize == remoteSize {
+                            // Every byte is already on disk — settle finished without
+                            // truncating or reopening anything.
+                            alreadyComplete = true
+                            setTransferProgress(id, bytes: localSize, total: remoteSize)
+                        } else if localSize < remoteSize {
                             resumeFrom = localSize
                             setTransferBytes(id, resumeFrom)
                         }
                     }
                 }
-                let coalescer = ProgressCoalescer()
-                try await client.downloadToFile(remote: remoteSource, localURL: destination,
-                                                resumeFrom: resumeFrom, maxBytesPerSecond: cap,
-                                                shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
-                    guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
-                    guard let self else { return }
-                    Task { @MainActor in self.setTransferProgress(id, bytes: sofar, total: total) }
+                if !alreadyComplete {
+                    let coalescer = ProgressCoalescer()
+                    try await client.downloadToFile(remote: remoteSource, localURL: destination,
+                                                    resumeFrom: resumeFrom, maxBytesPerSecond: cap,
+                                                    shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
+                        guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
+                        guard let self else { return }
+                        Task { @MainActor in self.setTransferProgress(id, bytes: sofar, total: total) }
+                    }
                 }
             }
             succeeded = true
