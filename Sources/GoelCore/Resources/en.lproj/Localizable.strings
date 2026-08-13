@@ -339,6 +339,7 @@
 "Copy tracker URL" = "Copy tracker URL";
 "Copy web portal link" = "Copy web portal link";
 "Copying" = "Copying";
+"Could not check how much of the file the server has — the partial download was kept. Try again." = "Could not check how much of the file the server has — the partial download was kept. Try again.";
 "Could not reach the server" = "Could not reach the server";
 "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app." = "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app.";
 "Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@" = "Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@";
@@ -901,6 +902,7 @@
 "Pause in Low Data Mode" = "Pause in Low Data Mode";
 "Pause on expensive networks" = "Pause on expensive networks";
 "Pause the download before renaming" = "Pause the download before renaming";
+"Pause transfer of %@" = "Pause transfer of %@";
 "Paused" = "Paused";
 "Paused all downloads" = "Paused all downloads";
 "Paused · %d%%" = "Paused · %d%%";
@@ -1043,6 +1045,7 @@
 "Resume" = "Resume";
 "Resume %@" = "Resume %@";
 "Resume everything paused or queued" = "Resume everything paused or queued";
+"Resume transfer of %@" = "Resume transfer of %@";
 "Resumed all downloads" = "Resumed all downloads";
 "Retry" = "Retry";
 "Retry %@" = "Retry %@";
@@ -1389,6 +1392,7 @@
 "Waiting for metadata…" = "Waiting for metadata…";
 "Waiting to start" = "Waiting to start";
 "Waiting — %@" = "Waiting — %@";
+"Waiting…" = "Waiting…";
 "Warn when adapters appear to share one public IP (same WAN)." = "Warn when adapters appear to share one public IP (same WAN).";
 "Warning" = "Warning";
 "Warning. %@" = "Warning. %@";

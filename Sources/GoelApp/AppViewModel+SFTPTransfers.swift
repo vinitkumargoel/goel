@@ -25,6 +25,9 @@ extension AppViewModel {
                 continue
             case .overwrite:
                 plan.append(PlannedUpload(url: item.url, isDirectory: item.isDirectory, name: item.name))
+            case .resume:
+                plan.append(PlannedUpload(url: item.url, isDirectory: item.isDirectory, name: item.name,
+                                          resuming: true))
             case .rename:
                 let unique = SFTPBrowserPaths.uniqueName(item.name, existing: taken)
                 taken.insert(unique)
@@ -49,9 +52,9 @@ extension AppViewModel {
             return
         }
         var existingNames = Set(listed)
-        // Queued downloads haven't created their files yet and every dotfile sanitizes to "download", so reserve names already heading here.
+        // Queued downloads haven't created their files yet and every dotfile sanitizes to "download", so reserve names already heading here — paused rows still own theirs.
         existingNames.formUnion(sftpTransfers.lazy
-            .filter { $0.direction == .download && $0.isActive
+            .filter { $0.direction == .download && $0.occupiesDestination
                 && $0.localURL?.deletingLastPathComponent().standardizedFileURL == localDir.standardizedFileURL }
             .compactMap { $0.localURL?.lastPathComponent })
         let localName = SFTPBrowserPaths.uniqueName(safeName, existing: existingNames)
@@ -79,7 +82,8 @@ extension AppViewModel {
 
     func requestCancelSFTPTransfer(_ id: UUID) {
         guard let t = sftpTransfers.first(where: { $0.id == id }) else { return }
-        guard t.isActive else { cancelSFTPTransfer(id); return }
+        // A paused transfer still owns real progress; cancelling it deserves the same confirmation.
+        guard t.isActive || t.isPaused else { cancelSFTPTransfer(id); return }
         let verb = t.cancelNoun
         requestConfirm(
             title: L10n.t("Cancel this %@?", L10n.t(verb)),
@@ -94,6 +98,13 @@ extension AppViewModel {
             entry.cancel.cancel()
             entry.task.cancel()
         }
+        // A paused download's partial lives on for resume; cancelling abandons it, so
+        // clean it up here — the run task that normally does this is long gone.
+        if let t = sftpTransfers.first(where: { $0.id == id }), t.isPaused,
+           t.direction == .download, let partial = t.localURL {
+            try? FileManager.default.removeItem(at: partial)
+        }
+        sftpPauseIntents.remove(id)
         sftpTransferTasks[id] = nil
         sftpFolderBytes[id] = nil
         sftpRemoteCopyPlans[id] = nil
@@ -101,15 +112,32 @@ extension AppViewModel {
         toastNow(L10n.t("Transfer cancelled"))
     }
 
-    /// Not a free replay: the destination has moved on and `downloadToFile` truncate-creates, so the first attempt's checks run again.
+    /// The abort travels through the same cancel flag; `sftpPauseIntents` tells the
+    /// settle path to park the row as `.paused` with its partial file intact.
+    func pauseSFTPTransfer(_ id: UUID) {
+        guard let t = sftpTransfers.first(where: { $0.id == id }), t.canPause,
+              let entry = sftpTransferTasks[id] else { return }
+        sftpPauseIntents.insert(id)
+        entry.cancel.cancel()
+        entry.task.cancel()
+    }
+
+    func resumeSFTPTransfer(_ id: UUID) {
+        guard let t = sftpTransfers.first(where: { $0.id == id }), t.canResume else { return }
+        retrySFTPTransfer(id)
+    }
+
+    /// Relaunches a paused, failed, or cancelled transfer. Not a free replay: the destination
+    /// has moved on, so the first attempt's checks run again — but bytes that verifiably
+    /// landed (remote size for uploads, local partial for downloads) are never re-sent.
     func retrySFTPTransfer(_ id: UUID) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }), !sftpTransfers[i].isActive else { return }
         let t = sftpTransfers[i]
         guard let connection = server(t.connectionID) else { toastNow(L10n.t("That server no longer exists.")); return }
-        // Resolve before flipping the row to .running: a refused Keychain read must leave the row failed, not "running".
+        // Resolve before flipping the row live: a refused Keychain read must leave the row failed, not "running".
         guard let client = sftpClientReportingFailure(for: connection) else { return }
-        // Marked running *before* the preflight, so this row reserves its destination against a transfer started meanwhile.
-        sftpTransfers[i].state = .running
+        // Marked waiting *before* the preflight, so this row reserves its destination against a transfer started meanwhile.
+        sftpTransfers[i].state = .waiting
         sftpTransfers[i].resetProgress()
         let cancel = CancelFlag()
         let task = Task { [weak self] in
@@ -124,13 +152,15 @@ extension AppViewModel {
                                                                 remoteTarget: t.remotePath,
                                                                 isDir: t.isDirectory) else { return }
                 await self.runUpload(id: id, client: client, localURL: localURL,
-                                     isDir: t.isDirectory, remoteTarget: t.remotePath, cancel: cancel)
+                                     isDir: t.isDirectory, remoteTarget: t.remotePath, cancel: cancel,
+                                     resuming: true)
             case .download:
                 guard let destination = self.retriedDownloadDestination(id: id, current: localURL)
                 else { return }
                 await self.runDownload(id: id, client: client,
                                        remoteSource: t.remotePath, destination: destination,
-                                       cancel: cancel, isDirectory: t.isDirectory)
+                                       cancel: cancel, isDirectory: t.isDirectory,
+                                       resuming: destination == localURL)
             case .remoteCopy:
                 await self.runRemoteCopy(id: id, cancel: cancel)
             }
@@ -143,9 +173,12 @@ extension AppViewModel {
         var listing = DirectoryListing.unavailable
         if let listed = try? FileManager.default.contentsOfDirectory(atPath: directory.path) {
             var taken = Set(listed)
+            // The file at the row's own path is its kept partial — the very thing resume
+            // continues from. Counting it as "taken" would rename away and restart at zero.
+            taken.remove(current.lastPathComponent)
             // Every *other* download here has reserved its name; this row is excluded so it may keep the name it holds.
             taken.formUnion(sftpTransfers.lazy
-                .filter { $0.id != id && $0.direction == .download && $0.isActive
+                .filter { $0.id != id && $0.direction == .download && $0.occupiesDestination
                     && $0.localURL?.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL }
                 .compactMap { $0.localURL?.lastPathComponent })
             listing = .names(taken)
@@ -197,8 +230,9 @@ extension AppViewModel {
 
     func clearFinishedSFTPTransfers() {
         let before = sftpTransfers.count
-        let dropped = Set(sftpTransfers.lazy.filter { !$0.isActive }.map(\.id))
-        sftpTransfers.removeAll { !$0.isActive }
+        // Paused rows are not finished — clearing one would strand its partial file.
+        let dropped = Set(sftpTransfers.lazy.filter { !$0.occupiesDestination }.map(\.id))
+        sftpTransfers.removeAll { dropped.contains($0.id) }
         for id in dropped { sftpRemoteCopyPlans[id] = nil }
         if sftpTransfers.count != before { toastNow(L10n.t("Cleared finished transfers")) }
     }
@@ -265,11 +299,12 @@ extension AppViewModel {
                                         isDirectory: item.isDirectory, localURL: item.url, remotePath: remoteTarget)
             sftpTransfers.append(transfer)
             let id = transfer.id
-            let url = item.url, isDir = item.isDirectory
+            let url = item.url, isDir = item.isDirectory, resuming = item.resuming
             let task = Task { [weak self] in
                 guard let self else { return }
                 await self.runUpload(id: id, client: client, localURL: url,
-                                     isDir: isDir, remoteTarget: remoteTarget, cancel: cancel)
+                                     isDir: isDir, remoteTarget: remoteTarget, cancel: cancel,
+                                     resuming: resuming)
             }
             sftpTransferTasks[id] = (task, cancel)
         }
@@ -277,18 +312,28 @@ extension AppViewModel {
 
     /// Takes an already-resolved `client`: the Keychain can prompt on every read, so a 20-file drop would raise 20 prompts.
     private func runUpload(id: UUID, client baseClient: SFTPClient, localURL: URL, isDir: Bool,
-                           remoteTarget: String, cancel: CancelFlag) async {
+                           remoteTarget: String, cancel: CancelFlag, resuming: Bool = false) async {
         let cap = settings.effectiveProfile.maxUploadBytesPerSec
         // One connection for the whole job, so a 500-file folder pays one handshake; released on every exit path below.
         let client = baseClient.forTransfer(id)
         do {
             if isDir {
                 try await uploadFolder(id: id, client: client, root: localURL,
-                                       remoteRoot: remoteTarget, cap: cap, cancel: cancel)
+                                       remoteRoot: remoteTarget, cap: cap, cancel: cancel,
+                                       resuming: resuming)
             } else {
-                setTransferTotal(id, Self.fileSize(localURL))
+                let total = Self.fileSize(localURL)
+                setTransferTotal(id, total)
+                // Only bytes the server confirms holding can be skipped; anything else re-sends from zero.
+                var resumeFrom: Int64 = 0
+                if resuming, let existing = try? await client.attributes(remoteTarget, followSymlink: true),
+                   existing.exists, !existing.isDirectory, existing.size <= total {
+                    resumeFrom = existing.size
+                    setTransferBytes(id, resumeFrom)
+                }
                 let coalescer = ProgressCoalescer()
-                try await client.upload(localURL: localURL, remote: remoteTarget, maxBytesPerSecond: cap,
+                try await client.upload(localURL: localURL, remote: remoteTarget,
+                                        resumeFrom: resumeFrom, maxBytesPerSecond: cap,
                                         shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
                     guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
                     // Bound inside this callback, not the Task: the capture list makes `self` a var and older toolchains reject reading one from concurrent code.
@@ -305,10 +350,13 @@ extension AppViewModel {
         bumpMutation()
     }
 
-    private static let maxParallelUploads = 4
+    /// 3, not 4: one stream already saturates a home link since the sliding-window shim,
+    /// and the slimmer footprint leaves pool slots free for transfers started alongside.
+    private static let maxParallelUploads = 3
 
     private func uploadFolder(id: UUID, client: SFTPClient, root: URL,
-                              remoteRoot: String, cap: Int64, cancel: CancelFlag) async throws {
+                              remoteRoot: String, cap: Int64, cancel: CancelFlag,
+                              resuming: Bool = false) async throws {
         let scan = await Task.detached { FolderScan(scanning: root) }.value
         // A failed or partial walk would otherwise settle as a finished upload of an empty tree — failure reported as success.
         guard !scan.enumerationFailed else {
@@ -359,8 +407,22 @@ extension AppViewModel {
                         if cancel.isCancelled { throw SFTPError(kind: .aborted, message: L10n.t("Cancelled")) }
                         let file = files[index]
                         let remoteFile = file.rel.reduce(remoteRoot, SFTPBrowserPaths.join)
+                        // On resume, bytes the server already holds are skipped — a whole
+                        // file when sizes match, a tail when the server holds a prefix.
+                        var resumeFrom: Int64 = 0
+                        if resuming, let existing = try? await stream.attributes(remoteFile, followSymlink: true),
+                           existing.exists, !existing.isDirectory, existing.size <= file.size {
+                            if existing.size == file.size, file.size > 0 {
+                                if let model {
+                                    await MainActor.run { model.setFolderFileBytes(id, index: index, bytes: file.size) }
+                                }
+                                continue
+                            }
+                            resumeFrom = existing.size
+                        }
                         let coalescer = ProgressCoalescer()
                         try await stream.upload(localURL: file.url, remote: remoteFile,
+                                                resumeFrom: resumeFrom,
                                                 maxBytesPerSecond: perStreamCap,
                                                 shouldContinue: { !cancel.isCancelled }) { sofar, total in
                             guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
@@ -388,19 +450,39 @@ extension AppViewModel {
     }
 
     private func runDownload(id: UUID, client baseClient: SFTPClient, remoteSource: String,
-                             destination: URL, cancel: CancelFlag, isDirectory: Bool = false) async {
+                             destination: URL, cancel: CancelFlag, isDirectory: Bool = false,
+                             resuming: Bool = false) async {
         let cap = settings.effectiveProfile.maxDownloadBytesPerSec
         let client = baseClient.forTransfer(id)
-        // `downloadToFile` truncate-creates up front, so any non-success outcome leaves a partial file to clean up — not just cancel.
         var succeeded = false
         do {
             if isDirectory {
                 try await downloadFolder(id: id, client: client, remoteRoot: remoteSource,
-                                         localRoot: destination, cap: cap, cancel: cancel)
+                                         localRoot: destination, cap: cap, cancel: cancel,
+                                         resuming: resuming)
             } else {
+                // A partial smaller than the remote file continues from where it stopped;
+                // a larger or shrunk remote starts over from zero.
+                var resumeFrom: Int64 = 0
+                if resuming {
+                    let localSize = Self.fileSize(destination)
+                    if localSize > 0 {
+                        // A failed size check must fail the transfer (which keeps the
+                        // partial), not guess "no resume" — that guess truncates the
+                        // partial and silently starts over from zero.
+                        guard let remoteSize = try? await client.size(remoteSource) else {
+                            throw SFTPError(kind: .io,
+                                            message: L10n.t("Could not check how much of the file the server has — the partial download was kept. Try again."))
+                        }
+                        if localSize <= remoteSize {
+                            resumeFrom = localSize
+                            setTransferBytes(id, resumeFrom)
+                        }
+                    }
+                }
                 let coalescer = ProgressCoalescer()
                 try await client.downloadToFile(remote: remoteSource, localURL: destination,
-                                                maxBytesPerSecond: cap,
+                                                resumeFrom: resumeFrom, maxBytesPerSecond: cap,
                                                 shouldContinue: { !cancel.isCancelled }) { [weak self] sofar, total in
                     guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
                     guard let self else { return }
@@ -413,11 +495,22 @@ extension AppViewModel {
             settleTransfer(id, error: error)
         }
         await client.finishTransfer(id)
-        if !succeeded { try? FileManager.default.removeItem(at: destination) }
+        // Keep the partial for paused and failed rows — that's what resume continues from.
+        // A missing row means the user cancelled: discard, as the old always-delete did.
+        if !succeeded {
+            let rowState = sftpTransfers.first(where: { $0.id == id })?.state
+            let keep: Bool
+            switch rowState {
+            case .paused, .failed: keep = true
+            default: keep = false
+            }
+            if !keep { try? FileManager.default.removeItem(at: destination) }
+        }
     }
 
     private func downloadFolder(id: UUID, client: SFTPClient, remoteRoot: String,
-                                localRoot: URL, cap: Int64, cancel: CancelFlag) async throws {
+                                localRoot: URL, cap: Int64, cancel: CancelFlag,
+                                resuming: Bool = false) async throws {
         let plan = try await SFTPRelay.walk(client.onBackground(), root: remoteRoot,
                                             shouldContinue: { !cancel.isCancelled })
         // A walk that skipped an entry would silently download a partial tree and then report it as complete.
@@ -456,8 +549,23 @@ extension AppViewModel {
                         let file = files[index]
                         let local = layout.files[index]
                         let remote = file.relative.reduce(remoteRoot, SFTPBrowserPaths.join)
+                        // On resume, a local file matching the remote size is done; a smaller
+                        // one continues from its end. Layout pairing is deterministic, so the
+                        // partial on disk belongs to this remote file.
+                        var resumeFrom: Int64 = 0
+                        if resuming {
+                            let localSize = Self.fileSize(local)
+                            if localSize == file.size, file.size > 0 {
+                                if let model {
+                                    await MainActor.run { model.setFolderFileBytes(id, index: index, bytes: file.size) }
+                                }
+                                continue
+                            }
+                            if localSize > 0, localSize < file.size { resumeFrom = localSize }
+                        }
                         let coalescer = ProgressCoalescer()
                         try await stream.downloadToFile(remote: remote, localURL: local,
+                                                        resumeFrom: resumeFrom,
                                                         maxBytesPerSecond: perStreamCap,
                                                         shouldContinue: { !cancel.isCancelled }) { sofar, total in
                             guard coalescer.shouldEmit(isFinal: total > 0 && sofar >= total) else { return }
@@ -548,6 +656,7 @@ extension AppViewModel {
     func settleTransfer(_ id: UUID, _ state: SFTPTransfer.State) {
         sftpTransferTasks[id] = nil
         sftpFolderBytes[id] = nil
+        sftpPauseIntents.remove(id)
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
         // Snapping to the total is honest only because the shim fails a transfer that ended short.
         if state == .finished { sftpTransfers[i].bytes = max(sftpTransfers[i].bytes, sftpTransfers[i].total) }
@@ -557,7 +666,10 @@ extension AppViewModel {
 
     func settleTransfer(_ id: UUID, error: Error) {
         if let e = error as? SFTPError {
-            settleTransfer(id, e.kind == .aborted ? .cancelled : .failed(e.message))
+            // The same abort signal serves both gestures; the recorded intent says which one it was.
+            settleTransfer(id, e.kind == .aborted
+                           ? (sftpPauseIntents.contains(id) ? .paused : .cancelled)
+                           : .failed(e.message))
         } else {
             settleTransfer(id, .failed(error.localizedDescription))
         }
@@ -565,7 +677,8 @@ extension AppViewModel {
 
     func bumpMutation() { sftpMutationTick &+= 1 }
 
-    private static func fileSize(_ url: URL) -> Int64 {
+    /// `nonisolated`: folder streams consult sizes off the main actor when resuming.
+    nonisolated static func fileSize(_ url: URL) -> Int64 {
         Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
     }
 }
@@ -574,6 +687,7 @@ private struct PlannedUpload {
     let url: URL
     let isDirectory: Bool
     let name: String
+    var resuming: Bool = false
 }
 
 struct SFTPUploadConflictRequest: Identifiable {
@@ -593,6 +707,11 @@ struct SFTPUploadConflictRequest: Identifiable {
 
     enum Policy: String, CaseIterable, Identifiable {
         case overwrite = "Overwrite"
+        /// Continue an interrupted upload of the same item: bytes the server already
+        /// holds are kept (whole matching files inside a folder are skipped), and only
+        /// the missing tail is sent. Falls back to a full overwrite when the remote
+        /// copy can't be a prefix of the local one.
+        case resume = "Resume"
         case rename = "Rename"
         case skip = "Skip"
         var id: String { rawValue }

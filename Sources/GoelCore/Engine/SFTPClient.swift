@@ -173,20 +173,33 @@ public struct SFTPClient: Sendable {
     }
 
     public func downloadToFile(remote: String, localURL: URL,
+                               resumeFrom: Int64 = 0,
                                maxBytesPerSecond: Int64 = 0,
                                shouldContinue: (@Sendable () -> Bool)? = nil,
                                progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
-        FileManager.default.createFile(atPath: localURL.path, contents: nil)
+        // A resume must keep the partial file; a fresh download must truncate it.
+        if resumeFrom <= 0 {
+            FileManager.default.createFile(atPath: localURL.path, contents: nil)
+        }
         guard let handle = try? FileHandle(forWritingTo: localURL) else {
             throw SFTPError(kind: .io, message: "Could not open the local file for writing")
+        }
+        if resumeFrom > 0 {
+            // Trim anything past the resume point: bytes beyond it were never verified.
+            guard (try? handle.truncate(atOffset: UInt64(resumeFrom))) != nil,
+                  (try? handle.seek(toOffset: UInt64(resumeFrom))) != nil else {
+                try? handle.close()
+                throw SFTPError(kind: .io, message: "Could not reopen the partial file to resume it")
+            }
         }
         let ctx = TransferContext(
             onWrite: { buf in (try? handle.write(contentsOf: buf)) != nil },
             onProgress: { total, sofar in progress(sofar, total); return shouldContinue?() ?? true },
             onRead: nil)
         defer { try? handle.close() }
+        let resume = max(0, resumeFrom)
         let result = try await runTransfer(ctx) { session, box in
-            gsb_download(session, remote, 0, maxBytesPerSecond, sftpWriteThunk, sftpProgressThunk, box)
+            gsb_download(session, remote, resume, maxBytesPerSecond, sftpWriteThunk, sftpProgressThunk, box)
         }
         // The shim counts bytes handed to the write callback, not bytes that reached disk: without this check a short write settles as a finished transfer.
         let written = (try? FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
@@ -197,6 +210,7 @@ public struct SFTPClient: Sendable {
     }
 
     public func upload(localURL: URL, remote: String,
+                       resumeFrom: Int64 = 0,
                        maxBytesPerSecond: Int64 = 0,
                        shouldContinue: (@Sendable () -> Bool)? = nil,
                        progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
@@ -206,8 +220,16 @@ public struct SFTPClient: Sendable {
         // `total == 0` means "size unknown" to the shim and disables its whole-file assertion, so a truncated upload would report success — refuse rather than guess.
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: localURL.path),
               let total = attributes[.size] as? Int64 else {
+            try? handle.close()
             throw SFTPError(kind: .io,
                             message: "Could not read the size of “\(localURL.lastPathComponent)”, so Goel can’t tell whether the whole file was sent.")
+        }
+        // The shim writes from the resume offset onward; the local reads must start there too.
+        if resumeFrom > 0 {
+            guard resumeFrom <= total, (try? handle.seek(toOffset: UInt64(resumeFrom))) != nil else {
+                try? handle.close()
+                throw SFTPError(kind: .io, message: "Could not reopen the local file to resume the upload")
+            }
         }
         // A throwing local read must not fold into the `return 0` that means clean EOF: the C loop would truncate-write and report success, so return -1 instead.
         let readError = ReadErrorBox()
@@ -225,9 +247,10 @@ public struct SFTPClient: Sendable {
                 }
             })
         defer { try? handle.close() }
+        let resume = max(0, resumeFrom)
         do {
             _ = try await runTransfer(ctx) { session, box in
-                gsb_upload(session, remote, total, maxBytesPerSecond, sftpReadThunk, sftpProgressThunk, box)
+                gsb_upload(session, remote, total, resume, maxBytesPerSecond, sftpReadThunk, sftpProgressThunk, box)
             }
         } catch let e as SFTPError where e.kind == .aborted {
             if let underlying = readError.value {
@@ -249,7 +272,7 @@ public struct SFTPClient: Sendable {
             onProgress: { total, sofar in progress(sofar, total); return shouldContinue?() ?? true },
             onRead: read)
         _ = try await runTransfer(ctx) { session, box in
-            gsb_upload(session, remote, total, maxBytesPerSecond, sftpReadThunk, sftpProgressThunk, box)
+            gsb_upload(session, remote, total, 0, maxBytesPerSecond, sftpReadThunk, sftpProgressThunk, box)
         }
     }
 

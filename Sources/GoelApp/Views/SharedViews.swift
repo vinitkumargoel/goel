@@ -83,6 +83,8 @@ struct SFTPTransferRow: View {
     var serverLabel: String? = nil
     var onCancel: (() -> Void)?
     var onRetry: (() -> Void)?
+    var onPause: (() -> Void)?
+    var onResume: (() -> Void)?
     var onShowRemoteFolder: (() -> Void)?
 
     var body: some View {
@@ -111,7 +113,7 @@ struct SFTPTransferRow: View {
                 Spacer(minLength: density == .full ? 8 : 6)
                 trailingControls
             }
-            if density == .full, transfer.isActive {
+            if density == .full, transfer.isActive || transfer.isPaused {
                 HStack(spacing: 10) {
                     ProgressView(value: transfer.fraction).frame(maxWidth: 160)
                     Text(transfer.sizeLabel)
@@ -172,6 +174,13 @@ struct SFTPTransferRow: View {
                 A11y.percent(transfer.fraction),
                 L10n.t("%1$@ of %2$@", A11y.bytes(transfer.bytes), A11y.bytes(transfer.total)),
                 transfer.displaySpeed > 0 ? A11y.speed(transfer.displaySpeed) : nil)
+        case .waiting:
+            return L10n.t("Waiting to start")
+        case .paused:
+            return A11y.sentence(
+                L10n.t("Paused"),
+                A11y.percent(transfer.fraction),
+                L10n.t("%1$@ of %2$@", A11y.bytes(transfer.bytes), A11y.bytes(transfer.total)))
         case .finished:
             return A11y.sentence(L10n.t("Finished"), transfer.total > 0 ? A11y.bytes(transfer.total) : nil)
         case .cancelled:
@@ -197,6 +206,42 @@ struct SFTPTransferRow: View {
             } else {
                 Text(transfer.progressLabel)
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+            }
+            if let onPause, transfer.canPause {
+                Button(action: onPause) {
+                    Image(systemName: "pause.circle.fill").font(.system(size: 12))
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help(L10n.t("Pause"))
+                .a11yButton(L10n.t("Pause transfer of %@", transfer.name))
+            }
+            if let onCancel {
+                Button(action: onCancel) {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help(L10n.t("Cancel"))
+                .a11yButton(L10n.t("Cancel transfer of %@", transfer.name))
+            }
+        case .waiting:
+            Text(L10n.t("Waiting…"))
+                .scaledFont(size: 11).foregroundStyle(.secondary)
+            if let onCancel {
+                Button(action: onCancel) {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help(L10n.t("Cancel"))
+                .a11yButton(L10n.t("Cancel transfer of %@", transfer.name))
+            }
+        case .paused:
+            if density == .full {
+                Text(L10n.t("Paused") + " · " + transfer.progressLabel)
+                    .scaledFont(size: 11).monospacedDigit().foregroundStyle(Theme.orange)
+            }
+            if let onResume {
+                Button(action: onResume) {
+                    Image(systemName: "play.circle.fill").font(.system(size: 12))
+                }
+                .buttonStyle(.plain).foregroundStyle(Theme.accent).help(L10n.t("Resume"))
+                .a11yButton(L10n.t("Resume transfer of %@", transfer.name))
             }
             if let onCancel {
                 Button(action: onCancel) {

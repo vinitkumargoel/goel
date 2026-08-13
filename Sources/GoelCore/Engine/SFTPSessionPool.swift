@@ -45,8 +45,12 @@ public actor SFTPSessionPool {
     /// A relay reserves both halves before opening either, so two concurrent relays can't each take one and deadlock.
     private var reserved: [ServerKey: Int] = [:]
 
-    /// 6 = 1 interactive + 1 background + 4 folder-transfer streams, staying under OpenSSH's default `MaxSessions` of 10.
-    public init(maxPerServer: Int = 6) {
+    /// 8 = 1 interactive + 1 background + a folder transfer's 4 (root + 3 streams), plus two
+    /// spare so a second transfer starts instead of sitting invisibly behind a folder job.
+    /// Each channel is its own TCP connection, so sshd's `MaxSessions` (channels per
+    /// connection) never bites; only `MaxStartups` (concurrent *unauthenticated* opens)
+    /// could, and 8 established connections stay clear of it.
+    public init(maxPerServer: Int = 8) {
         self.maxPerServer = max(2, maxPerServer)
     }
 

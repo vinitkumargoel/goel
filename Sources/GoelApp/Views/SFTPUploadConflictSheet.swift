@@ -20,7 +20,7 @@ struct SFTPUploadConflictSheet: View {
             Divider()
             footer
         }
-        .frame(width: 480)
+        .frame(width: 560)
         .frame(minHeight: 260, maxHeight: 560)
         .onAppear {
             for item in request.colliding where decisions[item.id] == nil {
@@ -82,7 +82,7 @@ struct SFTPUploadConflictSheet: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
-                        .frame(width: 210)
+                        .frame(width: 280)
                         .accessibilityLabel(L10n.t("What to do with %@", item.name))
                     }
                     .padding(.horizontal, 16).padding(.vertical, 7)

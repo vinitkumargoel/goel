@@ -139,6 +139,9 @@ final class AppViewModel: ObservableObject {
 
     var sftpTransferTasks: [UUID: (task: Task<Void, Never>, cancel: CancelFlag)] = [:]
 
+    /// IDs whose abort is a pause, not a cancel: the settle path keeps the row and its partial file.
+    var sftpPauseIntents: Set<UUID> = []
+
     /// Per-file, not a running total: concurrent uploads complete out of order.
     var sftpFolderBytes: [UUID: [Int: Int64]] = [:]
 

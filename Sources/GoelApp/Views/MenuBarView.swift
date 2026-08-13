@@ -20,7 +20,8 @@ struct MenuBarView: View {
     private static let maxListedRows = 8
 
     private var activeTransfers: [SFTPTransfer] {
-        vm.sftpTransfers.filter { $0.isActive }
+        // Paused rows stay listed: the menu bar is where a resume is most reachable.
+        vm.sftpTransfers.filter { $0.occupiesDestination }
     }
 
     var body: some View {
@@ -252,6 +253,8 @@ private struct MenuBarSFTPTransferRow: View {
             serverLabel: vm.server(transfer.connectionID)?.label ?? L10n.t("Server"),
             onCancel: { confirmingCancel = true },
             onRetry: { vm.retrySFTPTransfer(transfer.id) },
+            onPause: { vm.pauseSFTPTransfer(transfer.id) },
+            onResume: { vm.resumeSFTPTransfer(transfer.id) },
             onShowRemoteFolder: onShowRemoteFolder)
         .confirmationDialog(
             L10n.t("Cancel this %@?", L10n.t(transfer.cancelNoun)),

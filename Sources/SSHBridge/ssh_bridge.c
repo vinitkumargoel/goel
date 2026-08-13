@@ -14,10 +14,24 @@
 #include <sys/select.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <pthread.h>
 
-// libssh2 ≥1.11 keeps this much in flight; 256 KiB also fits the 1 MiB transfer-thread stack.
+// Per-call read size: libssh2 ≥1.11 issues read-ahead requests covering the whole
+// buffer, so this is the download's effective in-flight window — 1 MiB rides out
+// tens of ms of RTT without making abort/progress ticks sluggish on slow links.
+#define GSB_DL_BUF_SIZE (1024 * 1024)
+
+// Slice size for pulling upload bytes from the caller.
 #define GSB_XFER_BUF_SIZE (256 * 1024)
+
+// Upload sliding window: bytes handed to libssh2 but not yet acknowledged. The
+// throughput ceiling is window / RTT — 4 MiB clears 40 ms links at >100 MB/s.
+#define GSB_UP_WINDOW_SIZE (4 * 1024 * 1024)
+
+// A non-blocking upload never trips the session's 60 s blocking timeout, so it
+// needs its own watchdog: no byte accepted for this long means the link is dead.
+#define GSB_UP_STALL_SECONDS 75
 
 // Bound for paths built from server-supplied names — the join must never overflow it.
 #define GSB_PATH_MAX 4096
@@ -139,6 +153,12 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
         sock = -1;
     }
     freeaddrinfo(res);
+    if (sock >= 0) {
+        // SFTP interleaves small requests with bulk data; Nagle + delayed ACK
+        // turns that mix into idle round trips. Best-effort — failure is fine.
+        int one = 1;
+        setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    }
     if (sock < 0) {
         // strerror_r, not strerror: sessions run per-thread and strerror's buffer is static.
         char reason[96] = {0};
@@ -467,8 +487,8 @@ GSBResult gsb_download(GSBSession *s, const char *remote,
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    // Heap, not stack: 256 KiB is a large share of the 1 MiB thread stack.
-    char *buf = (char *)malloc(GSB_XFER_BUF_SIZE);
+    // Heap, not stack: 1 MiB dwarfs the 1 MiB transfer-thread stack.
+    char *buf = (char *)malloc(GSB_DL_BUF_SIZE);
     if (!buf) {
         gsb_set(&r, GSB_ERR_IO, "Out of memory starting the download");
         libssh2_sftp_close(h);
@@ -478,7 +498,7 @@ GSBResult gsb_download(GSBSession *s, const char *remote,
     long long sofar = resume_from;
     long long window = 0;
     for (;;) {
-        ssize_t got = libssh2_sftp_read(h, buf, GSB_XFER_BUF_SIZE);
+        ssize_t got = libssh2_sftp_read(h, buf, GSB_DL_BUF_SIZE);
         if (got == 0) break;
         if (got < 0) { gsb_set_detailed(&r, s->session, GSB_ERR_IO, "Read error"); break; }
 
@@ -507,69 +527,167 @@ GSBResult gsb_download(GSBSession *s, const char *remote,
     return r;
 }
 
+// Wait for the socket to be usable in whichever direction libssh2 is blocked on.
+static void gsb_wait_socket(int sock, LIBSSH2_SESSION *session, int timeout_ms) {
+    fd_set rfd, wfd;
+    FD_ZERO(&rfd);
+    FD_ZERO(&wfd);
+    int dir = libssh2_session_block_directions(session);
+    // INBOUND wins when both directions are reported: during a window stall the
+    // socket is nearly always writable, so waiting on write returns instantly
+    // and the wait degenerates into a busy-spin. Progress can only come from
+    // the server's ACK arriving — a read.
+    if (dir & LIBSSH2_SESSION_BLOCK_INBOUND) {
+        FD_SET(sock, &rfd);
+    } else if (dir & LIBSSH2_SESSION_BLOCK_OUTBOUND) {
+        FD_SET(sock, &wfd);
+    } else {
+        FD_SET(sock, &rfd);
+        FD_SET(sock, &wfd);
+    }
+    struct timeval tv = { timeout_ms / 1000, (timeout_ms % 1000) * 1000 };
+    select(sock + 1, &rfd, &wfd, NULL, &tv);
+}
+
+// Non-blocking with a sliding window: blocking sftp_write stalls for a server ACK
+// every ~30 KB packet — one round trip each — which caps uploads near 30 KB/RTT
+// (2 MB/s on a 15 ms link). Keeping GSB_UP_WINDOW_SIZE in flight and harvesting
+// ACKs opportunistically lifts the ceiling to window/RTT, past any home link.
 GSBResult gsb_upload(GSBSession *s, const char *remote, long long total,
-                     long long max_bps,
+                     long long resume_from, long long max_bps,
                      gsb_read_cb read_cb, gsb_progress_cb progress_cb,
                      void *userdata) {
     GSBResult r = { GSB_OK, 0, {0}, {0} };
     if (!gsb_usable(s, &r)) return r;
+    if (resume_from < 0) resume_from = 0;
+    // The Swift caller already bounds this, but a desynchronized write offset
+    // corrupts silently — reject it here too rather than trust every caller.
+    if (total > 0 && resume_from > total) {
+        gsb_set(&r, GSB_ERR_IO, "Resume offset is beyond the file's size");
+        return r;
+    }
 
-    LIBSSH2_SFTP_HANDLE *h = libssh2_sftp_open(s->sftp, remote,
-        LIBSSH2_FXF_WRITE | LIBSSH2_FXF_CREAT | LIBSSH2_FXF_TRUNC,
+    // TRUNC only on a fresh upload: a resume must keep the bytes already there.
+    unsigned long flags = LIBSSH2_FXF_WRITE | LIBSSH2_FXF_CREAT;
+    if (resume_from == 0) flags |= LIBSSH2_FXF_TRUNC;
+    LIBSSH2_SFTP_HANDLE *h = libssh2_sftp_open(s->sftp, remote, flags,
         LIBSSH2_SFTP_S_IRUSR | LIBSSH2_SFTP_S_IWUSR |
         LIBSSH2_SFTP_S_IRGRP | LIBSSH2_SFTP_S_IROTH);
     if (!h) {
         gsb_set_detailed(&r, s->session, GSB_ERR_OPEN, "Could not create remote file");
         return r;
     }
+    if (resume_from > 0) libssh2_sftp_seek64(h, (libssh2_uint64_t)resume_from);
 
-    struct timespec start;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
-    char *buf = (char *)malloc(GSB_XFER_BUF_SIZE);
+    char *buf = (char *)malloc(GSB_UP_WINDOW_SIZE);
     if (!buf) {
         gsb_set(&r, GSB_ERR_IO, "Out of memory starting the upload");
         libssh2_sftp_close(h);
         return r;
     }
 
-    long long sofar = 0;
-    for (;;) {
-        long got = read_cb ? read_cb(buf, (long)GSB_XFER_BUF_SIZE, userdata) : 0;
-        if (got == 0) break;
-        if (got < 0) { gsb_set(&r, GSB_ERR_ABORTED, "Aborted"); break; }
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    struct timespec last_accept = start;
 
-        // sftp_write can accept a partial buffer; the loop is not optional.
-        char *p = buf;
-        long remaining = got;
-        int failed = 0;
-        while (remaining > 0) {
-            ssize_t wrote = libssh2_sftp_write(h, p, (size_t)remaining);
-            if (wrote < 0) {
-                gsb_set_detailed(&r, s->session, GSB_ERR_IO, "Remote write failed");
-                failed = 1; break;
-            }
-            p += wrote;
-            remaining -= wrote;
+    libssh2_session_set_blocking(s->session, 0);
+
+    size_t filled = 0;     // valid bytes in buf
+    size_t consumed = 0;   // bytes libssh2 has accepted from buf
+    long long sofar = 0;   // accepted this run (excludes resume_from)
+    int eof = 0;
+
+    for (;;) {
+        // Compact lazily: sliding ~4 MiB down after every ~30 KB accept would
+        // move ~140 bytes of memory per byte uploaded. Waiting until half the
+        // window is reclaimable keeps at least half a window queued while
+        // amortizing the copy cost to ~1x.
+        if (consumed == filled) {
+            consumed = 0;
+            filled = 0;
+        } else if (consumed >= GSB_UP_WINDOW_SIZE / 2) {
+            memmove(buf, buf + consumed, filled - consumed);
+            filled -= consumed;
+            consumed = 0;
         }
-        if (failed) break;
-        sofar += got;
-        if (progress_cb && progress_cb(userdata, total, sofar) != 0) {
+        while (!eof && filled < GSB_UP_WINDOW_SIZE) {
+            size_t cap = GSB_UP_WINDOW_SIZE - filled;
+            if (cap > GSB_XFER_BUF_SIZE) cap = GSB_XFER_BUF_SIZE;
+            long got = read_cb ? read_cb(buf + filled, (long)cap, userdata) : 0;
+            if (got == 0) { eof = 1; break; }
+            if (got < 0) { gsb_set(&r, GSB_ERR_ABORTED, "Aborted"); goto drain; }
+            filled += (size_t)got;
+        }
+        if (filled == 0) break;   // EOF and everything accepted
+
+        ssize_t rc = libssh2_sftp_write(h, buf + consumed, filled - consumed);
+        if (rc == LIBSSH2_ERROR_EAGAIN || rc == 0) {
+            // Aborts must not wait on a dead peer: check before and after the wait.
+            if (progress_cb && progress_cb(userdata, total, resume_from + sofar) != 0) {
+                gsb_set(&r, GSB_ERR_ABORTED, "Aborted");
+                goto drain;
+            }
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            if (now.tv_sec - last_accept.tv_sec >= GSB_UP_STALL_SECONDS) {
+                gsb_set(&r, GSB_ERR_IO,
+                        "The upload stalled — the server stopped accepting data.");
+                goto drain;
+            }
+            gsb_wait_socket(s->sock, s->session, 200);
+            continue;
+        }
+        if (rc < 0) {
+            gsb_set_detailed(&r, s->session, GSB_ERR_IO, "Remote write failed");
+            goto drain;
+        }
+        consumed += (size_t)rc;
+        sofar += rc;
+        clock_gettime(CLOCK_MONOTONIC, &last_accept);
+        if (progress_cb && progress_cb(userdata, total, resume_from + sofar) != 0) {
             gsb_set(&r, GSB_ERR_ABORTED, "Aborted");
-            break;
+            goto drain;
         }
         gsb_throttle(max_bps, sofar, &start);
     }
+
+drain:
     free(buf);
-
-    // read_cb returning 0 means "no more bytes", which is "sent" only if the count matches.
-    if (r.code == GSB_OK && total > 0 && sofar < total) {
-        char m[160];
-        snprintf(m, sizeof(m), "Upload ended early — sent %lld of %lld bytes", sofar, total);
-        gsb_set(&r, GSB_ERR_IO, m);
+    // The blocking close drains the write-ahead pipeline: a server-side failure on
+    // any still-unacknowledged packet surfaces here, not as a silent short file.
+    libssh2_session_set_blocking(s->session, 1);
+    // An aborted or failed run must not spend the full 60 s timeout flushing to a
+    // dead peer — its session is torn down right afterwards anyway.
+    if (r.code != GSB_OK) libssh2_session_set_timeout(s->session, 5000);
+    if (libssh2_sftp_close(h) != 0 && r.code == GSB_OK) {
+        gsb_set_detailed(&r, s->session, GSB_ERR_IO, "Remote write failed while finishing");
     }
+    if (r.code != GSB_OK) libssh2_session_set_timeout(s->session, 60000);
 
-    libssh2_sftp_close(h);
+    // Accepted-byte counts are promises, not facts — the file's real size is the
+    // proof the whole upload landed (also catches a read_cb that ran short). A
+    // server that REFUSES stat (upload-only drops answer with an SFTP status)
+    // falls back to the byte count; a connection that DIES during stat must
+    // not, or a broken pipeline masquerades as success.
+    if (r.code == GSB_OK && total > 0) {
+        long long confirmed = resume_from + sofar;
+        LIBSSH2_SFTP_ATTRIBUTES attrs;
+        if (libssh2_sftp_stat(s->sftp, remote, &attrs) == 0) {
+            if (attrs.flags & LIBSSH2_SFTP_ATTR_SIZE) {
+                confirmed = (long long)attrs.filesize;
+            }
+        } else if (libssh2_session_last_errno(s->session) != LIBSSH2_ERROR_SFTP_PROTOCOL) {
+            gsb_set_detailed(&r, s->session, GSB_ERR_IO,
+                             "Uploaded, but the final size could not be confirmed");
+        }
+        if (r.code == GSB_OK && confirmed != total) {
+            char m[160];
+            snprintf(m, sizeof(m),
+                     "Upload ended early — the server holds %lld of %lld bytes",
+                     confirmed, total);
+            gsb_set(&r, GSB_ERR_IO, m);
+        }
+    }
     return r;
 }
 

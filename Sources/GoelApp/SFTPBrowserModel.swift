@@ -8,7 +8,10 @@ struct SFTPTransfer: Identifiable {
         case upload, download
         case remoteCopy
     }
-    enum State: Equatable { case running, finished, failed(String), cancelled }
+    /// `.waiting` is a transfer admitted to the list but with no bytes moved yet —
+    /// usually queued behind the per-server connection cap. `.paused` keeps its
+    /// partial file on disk so a resume can pick up from the byte it stopped at.
+    enum State: Equatable { case waiting, running, paused, finished, failed(String), cancelled }
 
     let id = UUID()
     let connectionID: UUID
@@ -24,7 +27,9 @@ struct SFTPTransfer: Identifiable {
     var bytes: Int64 = 0
     var total: Int64 = 0
     var speed: Double = 0
-    var state: State = .running
+    /// Born waiting: the first recorded byte flips it to `.running`, so a row queued
+    /// behind the per-server connection cap says so instead of faking activity.
+    var state: State = .waiting
 
     /// Direction-agnostic: an upload's bytes also ride the meter's `down` channel.
     private var meter = SpeedMeter()
@@ -43,7 +48,13 @@ struct SFTPTransfer: Identifiable {
     }
 
     var fraction: Double { total > 0 ? min(1, Double(bytes) / Double(total)) : 0 }
-    var isActive: Bool { state == .running }
+    var isActive: Bool { state == .running || state == .waiting }
+    var isPaused: Bool { state == .paused }
+    /// Rows that still own their destination file/name: in flight, or paused with a partial on disk.
+    var occupiesDestination: Bool { isActive || isPaused }
+    /// Pause is offered only where a byte offset can be resumed; a remote copy restarts instead.
+    var canPause: Bool { state == .running && direction != .remoteCopy }
+    var canResume: Bool { state == .paused }
 
     var displaySpeed: Double {
         if speed > 0 { return speed }
@@ -61,6 +72,8 @@ struct SFTPTransfer: Identifiable {
 
     mutating func record(bytes newBytes: Int64, now: Date = Date()) {
         if firstByteAt == nil, newBytes > 0 { firstByteAt = now }
+        // The first byte is the proof the transfer got a connection and left the queue.
+        if state == .waiting, newBytes > 0 { state = .running }
         bytes = newBytes
         meter.record(down: newBytes, at: now)
         speed = meter.reading(at: now).down
@@ -81,6 +94,8 @@ extension SFTPTransfer {
         case .finished: return Theme.green
         case .cancelled: return .secondary
         case .running: return Theme.accent
+        case .waiting: return .secondary
+        case .paused: return Theme.orange
         }
     }
 

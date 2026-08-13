@@ -996,7 +996,7 @@ struct SFTPBrowserView: View {
                 Text(L10n.t("Transfers")).font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                if transfers.contains(where: { !$0.isActive }) {
+                if transfers.contains(where: { !$0.occupiesDestination }) {
                     Button(L10n.t("Clear")) { vm.clearFinishedSFTPTransfers() }
                         .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
                         .accessibilityLabel(L10n.t("Clear finished transfers"))
@@ -1009,6 +1009,8 @@ struct SFTPBrowserView: View {
                         transfer: t, density: .full,
                         onCancel: { vm.requestCancelSFTPTransfer(t.id) },
                         onRetry: { vm.retrySFTPTransfer(t.id) },
+                        onPause: { vm.pauseSFTPTransfer(t.id) },
+                        onResume: { vm.resumeSFTPTransfer(t.id) },
                         onShowRemoteFolder: { vm.revealSFTPTransfer(t) })
                 }
             }

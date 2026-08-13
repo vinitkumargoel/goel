@@ -93,8 +93,10 @@ GSBResult gsb_download(GSBSession *s, const char *remote,
                        gsb_write_cb write_cb, gsb_progress_cb progress_cb,
                        void *userdata);
 
+// `resume_from` > 0 appends after that offset instead of truncating; the read
+// callback must already be positioned there. Progress reports absolute offsets.
 GSBResult gsb_upload(GSBSession *s, const char *remote, long long total,
-                     long long max_bps,
+                     long long resume_from, long long max_bps,
                      gsb_read_cb read_cb, gsb_progress_cb progress_cb,
                      void *userdata);
 

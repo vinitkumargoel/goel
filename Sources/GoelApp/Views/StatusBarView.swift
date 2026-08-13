@@ -65,6 +65,8 @@ struct StatusBarView: View {
                             serverLabel: vm.server(t.connectionID)?.label ?? L10n.t("Server"),
                             onCancel: { vm.requestCancelSFTPTransfer(t.id) },
                             onRetry: { vm.retrySFTPTransfer(t.id) },
+                            onPause: { vm.pauseSFTPTransfer(t.id) },
+                            onResume: { vm.resumeSFTPTransfer(t.id) },
                             onShowRemoteFolder: {
                                 showTransfers = false
                                 vm.revealSFTPTransfer(t)
