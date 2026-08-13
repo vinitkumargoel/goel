@@ -84,13 +84,62 @@ final class SSRFRemediationTests: XCTestCase {
         XCTAssertFalse(allowed, "a name resolving to loopback must be refused")
     }
 
-    /// Unresolvable names pass deliberately: under SOCKS5 the app never resolves, so refusing would break every proxied add.
-    func testUnresolvableNameIsNotTreatedAsHostile() async {
+    /// A name the screen cannot resolve is exactly the case the screen exists for, so it is refused.
+    /// The SOCKS5 case that used to justify fail-open is handled by `resolvedByProxy` below, not by
+    /// letting every unscreenable name through.
+    func testUnresolvableNameIsRefused() async {
         let target = url("https://\(UUID().uuidString).invalid/file.bin")
         XCTAssertNil(NetworkGuard.resolvedLiterals(of: target.host ?? ""),
                      ".invalid must not resolve")
         let allowed = await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(target)
-        XCTAssertTrue(allowed, "an unresolvable name must not be refused as internal")
+        XCTAssertFalse(allowed, "a name that cannot be screened must not be allowed through")
+    }
+
+    /// The proxy is the trust boundary under SOCKS5 — it, not this host, resolves the name, so an
+    /// intranet host or a `.onion` that only it can reach must still be addable.
+    func testProxiedTargetIsAllowedThroughTheProxyAwarePath() async {
+        let target = url("https://\(UUID().uuidString).invalid/file.bin")
+        XCTAssertNil(NetworkGuard.resolvedLiterals(of: target.host ?? ""),
+                     ".invalid must not resolve")
+        let proxied = await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(
+            target, resolvedByProxy: true)
+        XCTAssertTrue(proxied, "a name only the proxy can resolve must not be refused for that")
+
+        // Skipping the lookup is not skipping the guard: a spelled-out internal address still loses.
+        for internalTarget in ["http://127.0.0.1:8899/api/tasks",
+                               "http://169.254.169.254/latest/meta-data/"] {
+            let allowed = await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(
+                url(internalTarget), resolvedByProxy: true)
+            XCTAssertFalse(allowed, "\(internalTarget) must be refused with or without a proxy")
+        }
+    }
+
+    /// Only a manual SOCKS5 proxy resolves remotely; an HTTP proxy or the system setting must not
+    /// buy a free pass out of the screen.
+    func testOnlyAManualSOCKS5ProxyCountsAsRemoteDNS() {
+        XCTAssertTrue(NetworkGuard.usesRemoteDNS(
+            .init(mode: "manual", type: "socks5", host: "10.0.0.9", port: 1080)))
+        XCTAssertFalse(NetworkGuard.usesRemoteDNS(
+            .init(mode: "manual", type: "http", host: "10.0.0.9", port: 8080)))
+        XCTAssertFalse(NetworkGuard.usesRemoteDNS(
+            .init(mode: "manual", type: "socks5", host: "", port: 1080)))
+        XCTAssertFalse(NetworkGuard.usesRemoteDNS(
+            .init(mode: "manual", type: "socks5", host: "10.0.0.9", port: 0)))
+        XCTAssertFalse(NetworkGuard.usesRemoteDNS(.init()))
+    }
+
+    /// The screen must be stubbable, or every test that names a host also tests the machine's resolver.
+    func testTheResolverSeamDecidesTheVerdictAndRestores() async {
+        NetworkGuard.hostResolver = { _ in ["127.0.0.1"] }
+        defer { NetworkGuard.useSystemHostResolver() }
+        var allowed = await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(
+            url("https://mirror.example.com/x.bin"))
+        XCTAssertFalse(allowed, "the seam's answer, not the name, must decide")
+
+        NetworkGuard.hostResolver = { _ in ["203.0.113.10"] }
+        allowed = await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(
+            url("https://mirror.example.com/x.bin"))
+        XCTAssertTrue(allowed)
     }
 
     func testResolvingScreenStillRefusesLiterals() async {

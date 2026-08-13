@@ -45,6 +45,11 @@ public actor SFTPSessionPool {
     /// A relay reserves both halves before opening either, so two concurrent relays can't each take one and deadlock.
     private var reserved: [ServerKey: Int] = [:]
 
+    /// Transfer channels that opened against a reservation. Each borrowed one unit out of `reserved` — counting
+    /// the channel *and* its reservation charged the caller twice — and hands it back when the channel closes,
+    /// because the caller's `release` still has to land on something.
+    private var borrowed: Set<ChannelKey> = []
+
     /// 8 = 1 interactive + 1 background + a folder transfer's 4 (root + 3 streams), plus two
     /// spare so a second transfer starts instead of sitting invisibly behind a folder job.
     /// Each channel is its own TCP connection, so sshd's `MaxSessions` (channels per
@@ -61,14 +66,16 @@ public actor SFTPSessionPool {
         let key = ChannelKey(server: server, role: role)
         if let existing = channels[key] {
             if existing.matches(target: target, expected: expected) { return existing }
-            existing.shutdown()
-            channels.removeValue(forKey: key)
+            closeChannel(key)
             wakeWaiters(server)
         }
 
         // A transfer inside an explicit reservation already holds its slot; anything else claims one here and waits.
-        let claimsOwnSlot: Bool
-        if case .transfer = role { claimsOwnSlot = (reserved[server] ?? 0) == 0 } else { claimsOwnSlot = false }
+        var claimsOwnSlot = false
+        var borrowsReservation = false
+        if case .transfer = role {
+            if (reserved[server] ?? 0) > 0 { borrowsReservation = true } else { claimsOwnSlot = true }
+        }
         if claimsOwnSlot { await awaitSlot(server, count: 1) }
 
         // `awaitSlot` suspends, so another task may have created this channel meanwhile — re-check rather than orphan the winner.
@@ -81,6 +88,12 @@ public actor SFTPSessionPool {
         channels[key] = created
         // The channel now holds the slot itself, so the reservation is spent — nothing was freed, so no waiter is woken.
         if claimsOwnSlot { consumeReserved(server, count: 1) }
+        // Likewise for a borrowed unit: the channel is the slot now, and leaving the unit in `reserved` too
+        // billed one connection as two — three same-server copies then queued invisibly behind a cap of 8.
+        if borrowsReservation {
+            consumeReserved(server, count: 1)
+            borrowed.insert(key)
+        }
         return created
     }
 
@@ -92,24 +105,29 @@ public actor SFTPSessionPool {
 
     func release(_ target: SFTPTarget, count: Int) {
         guard count > 0 else { return }
-        releaseReserved(ServerKey(target), count: count)
+        let server = ServerKey(target)
+        // Releasing before closing the channels leaves fewer units in `reserved` than were reserved; those
+        // channels keep their slots outright, or closing them later would hand back units nobody owns.
+        var shortfall = count - (reserved[server] ?? 0)
+        while shortfall > 0, let key = borrowed.first(where: { $0.server == server }) {
+            borrowed.remove(key)
+            shortfall -= 1
+        }
+        releaseReserved(server, count: count)
     }
 
     func releaseTransfer(_ id: UUID, target: SFTPTarget) {
         let server = ServerKey(target)
         let key = ChannelKey(server: server, role: .transfer(id))
         // Only a job that actually opened a channel frees a slot; waking a waiter otherwise admits a connection past the cap.
-        guard let channel = channels.removeValue(forKey: key) else { return }
-        channel.shutdown()
+        guard channels[key] != nil else { return }
+        closeChannel(key)
         wakeWaiters(server)
     }
 
     public func disconnectAll(matching target: SFTPTarget) {
         let server = ServerKey(target)
-        for (key, channel) in channels where key.server == server {
-            channel.shutdown()
-            channels.removeValue(forKey: key)
-        }
+        for key in channels.keys.filter({ $0.server == server }) { closeChannel(key) }
         wakeWaiters(server)
     }
 
@@ -117,9 +135,18 @@ public actor SFTPSessionPool {
         for channel in channels.values { channel.shutdown() }
         channels.removeAll()
         reserved.removeAll()
+        borrowed.removeAll()
         // Abandoning a waiter's continuation would hang its task forever; resuming without slots is safe mid-teardown.
         for queue in waiters.values { for w in queue { w.continuation.resume() } }
         waiters.removeAll()
+    }
+
+    /// Hands a borrowed unit back to `reserved` before the channel goes: its owner still has a `release` to make,
+    /// so freeing the slot outright would let a waiter in past the cap. Callers wake waiters themselves.
+    private func closeChannel(_ key: ChannelKey) {
+        guard let channel = channels.removeValue(forKey: key) else { return }
+        channel.shutdown()
+        if borrowed.remove(key) != nil { reserved[key.server, default: 0] += 1 }
     }
 
     /// Counts slots promised but not yet opened, or the same slot could be handed out twice.

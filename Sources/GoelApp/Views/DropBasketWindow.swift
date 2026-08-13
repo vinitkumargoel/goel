@@ -79,10 +79,16 @@ private struct DropBasketView: View {
                     guard let url else { return }
                     Task { @MainActor in
                         // A drop is an explicit user action — queue directly.
-                        if var payload = ExternalAdd.payload(from: url) {
-                            payload.needsConfirmation = false
-                            ExternalAdd.post(payload)
+                        guard var payload = ExternalAdd.payload(from: url) else {
+                            // The basket already highlighted as if it took this; say why it didn't.
+                            AppViewModel.shared?.toastNow(
+                                L10n.t("The drop basket takes links and .torrent files — “%@” is neither",
+                                       url.lastPathComponent),
+                                isError: true)
+                            return
                         }
+                        payload.needsConfirmation = false
+                        ExternalAdd.post(payload)
                     }
                 }
             } else if provider.canLoadObject(ofClass: NSString.self) {

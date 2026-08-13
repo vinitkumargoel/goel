@@ -9,7 +9,8 @@ struct GoelDownloaderApp: App {
     @StateObject private var viewModel = AppViewModel()
 
     var body: some Scene {
-        WindowGroup {
+        // Needs an id so the menu bar can reopen it with `openWindow` after the last window closes.
+        WindowGroup(id: MainWindowID.value) {
             RootView()
                 .environmentObject(viewModel)
                 .frame(minWidth: 1040, minHeight: 620)
@@ -93,24 +94,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Not a duplicate of the check above: that covers window close, this covers ⌘Q, the Dock menu and log-out.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard ActiveWorkGate.shared.hasActiveWork else { return .terminateNow }
-        let converting = MainActor.assumeIsolated { AppViewModel.shared?.mediaJobs.hasLiveWork } ?? false
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = converting ? L10n.t("Work is still in progress.")
-                                       : L10n.t("Downloads are still running.")
-        alert.informativeText = converting
-            ? L10n.t("Quitting now stops it. Unfinished downloads are kept and can be resumed next "
-            + "launch; a conversion in progress is cancelled and its partial file removed.")
-            : L10n.t("Quitting now stops them. Unfinished downloads are kept and can be resumed next launch.")
-        alert.addButton(withTitle: L10n.t("Quit"))
-        alert.addButton(withTitle: L10n.t("Cancel"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
-        guard converting else { return .terminateNow }
-        // `.terminateLater`: ffmpeg cleanup runs on exit and needs us alive — terminating at once orphans the child and leaves the partial file.
+        var cancelConversions = false
+        if ActiveWorkGate.shared.hasActiveWork {
+            let converting = MainActor.assumeIsolated { AppViewModel.shared?.mediaJobs.hasLiveWork } ?? false
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = converting ? L10n.t("Work is still in progress.")
+                                           : L10n.t("Downloads are still running.")
+            alert.informativeText = converting
+                ? L10n.t("Quitting now stops it. Unfinished downloads are kept and can be resumed next "
+                + "launch; a conversion in progress is cancelled and its partial file removed.")
+                : L10n.t("Quitting now stops them. Unfinished downloads are kept and can be resumed next launch.")
+            alert.addButton(withTitle: L10n.t("Quit"))
+            alert.addButton(withTitle: L10n.t("Cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+            cancelConversions = converting
+        }
+        // `.terminateLater` on every path, idle included: database writes are queued on a background
+        // drain, so terminating at once loses them — and ffmpeg cleanup runs on exit and needs us
+        // alive, or the child is orphaned and its partial file left behind.
         Task { @MainActor in
-            AppViewModel.shared?.mediaJobs.cancelAll()
-            await AppViewModel.shared?.mediaJobs.waitForShutdown()
+            if cancelConversions {
+                AppViewModel.shared?.mediaJobs.cancelAll()
+                await AppViewModel.shared?.mediaJobs.waitForShutdown()
+            }
+            await AppViewModel.shared?.shutdownCore()
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

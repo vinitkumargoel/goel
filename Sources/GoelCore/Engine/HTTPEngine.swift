@@ -126,7 +126,7 @@ actor HTTPEngine: HTTPConfigurable {
         // Wait for the unwind before deleting, so a segment writer can't flush bytes to a path we just unlinked.
         await job?.value
         if deleteData, let task, task.isSavePathContained {
-            try? FileManager.default.removeItem(atPath: task.savePath)
+            RemoteTransferPrep.removeSavedFile(hub: hub, id: id, task: task)
         }
         hub.finishAll(id)
         streamedResume[id] = nil

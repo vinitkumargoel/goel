@@ -539,6 +539,9 @@ extension AppViewModel {
                                             shouldContinue: { !cancel.isCancelled })
         // A walk that skipped an entry would silently download a partial tree and then report it as complete.
         try SFTPRelay.requireComplete(plan)
+        // Same reason for links: the bridge can read one but the download path can't reproduce it,
+        // so the folder would arrive missing entries and still be marked finished.
+        try SFTPRelay.requireNoLinks(plan, root: remoteRoot)
         setTransferTotal(id, plan.files.reduce(0) { $0 + $1.size })
         sftpFolderBytes[id] = [:]
 

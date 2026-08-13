@@ -137,11 +137,13 @@ public struct RemoteRouter: Sendable {
                 .compactMap { DownloadSource.parse(String($0).trimmingCharacters(in: .whitespaces)) }
             guard !sources.isEmpty else { return Self.badRequest() }
             // SSRF guard, by resolved address not spelling: no steering this host at loopback/metadata.
+            let proxyResolves = await backend.remoteAddResolvesThroughProxy()
             var refused = 0
             var allowed: [DownloadSource] = []
             for source in sources {
                 guard let url = source.fetchTargetURL else { allowed.append(source); continue }
-                if await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(url) {
+                if await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(
+                    url, resolvedByProxy: proxyResolves) {
                     allowed.append(source)
                     continue
                 }
@@ -666,6 +668,11 @@ public protocol RemoteBackend: AnyObject, Sendable {
     /// The default implementation returns `true` — a conformer that forgets this allows every folder.
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool
 
+    /// Whether an added name will be resolved by a SOCKS5 proxy rather than by this host, which decides
+    /// whether the router's local-resolution screen means anything. Defaults to `false` — a backend that
+    /// cannot answer stays fail-closed rather than claiming a proxy it has not got.
+    func remoteAddResolvesThroughProxy() async -> Bool
+
     func networkState() async -> RemoteNetworkState
     func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async
     /// Returns the queued task's ID (or the existing task's, when the source deduplicates)
@@ -681,6 +688,7 @@ public protocol RemoteBackend: AnyObject, Sendable {
 
 public extension RemoteBackend {
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { true }
+    func remoteAddResolvesThroughProxy() async -> Bool { false }
     func folderListing(_ path: String?) async -> RemoteFolderListing? { nil }
     func createFolder(named name: String, in parent: String?) async -> String? { nil }
     func networkState() async -> RemoteNetworkState { RemoteNetworkState() }
@@ -790,6 +798,10 @@ extension DownloadManager: RemoteBackend {
         await Task.detached(priority: .userInitiated) {
             SaveFolderBrowser.canSave(into: folder)
         }.value
+    }
+
+    public func remoteAddResolvesThroughProxy() async -> Bool {
+        NetworkGuard.usesRemoteDNS(Self.proxySpec(from: settings))
     }
 
     // These must hop off the actor: stat-ing a network-mounted folder would stall every download.

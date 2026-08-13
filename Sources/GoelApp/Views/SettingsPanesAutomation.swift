@@ -530,7 +530,11 @@ struct CredentialsSection: View {
                         confirmTitle: L10n.t("Remove"),
                         destructive: true
                     ) {
-                        store.removeCredential(host: entry.host)
+                        guard store.removeCredential(host: entry.host) else {
+                            vm.toastNow(L10n.t("Your Keychain refused to remove the login for %@ — unlock it, allow the prompt, and try again", entry.host),
+                                        isError: true)
+                            return
+                        }
                         refresh()
                         vm.toastNow(L10n.t("Login removed"))
                     }
@@ -560,7 +564,12 @@ struct CredentialsSection: View {
             Button(L10n.t("Add Login")) {
                 let host = newHost.trimmingCharacters(in: .whitespaces).lowercased()
                 guard !host.isEmpty, !newUser.isEmpty else { return }
-                store.setCredential(username: newUser, password: newPassword, host: host)
+                // Fields stay filled on failure: retrying is the only recovery, and retyping a password isn't one.
+                guard store.setCredential(username: newUser, password: newPassword, host: host) else {
+                    vm.toastNow(L10n.t("Your Keychain refused to save the login for %@ — unlock it, allow the prompt, and try again", host),
+                                isError: true)
+                    return
+                }
                 newHost = ""; newUser = ""; newPassword = ""
                 refresh()
             }

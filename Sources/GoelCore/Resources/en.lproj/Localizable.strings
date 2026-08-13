@@ -343,10 +343,12 @@
 "Could not check how much of the file the server has — the partial download was kept. Try again." = "Could not check how much of the file the server has — the partial download was kept. Try again.";
 "Could not reach the server" = "Could not reach the server";
 "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app." = "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app.";
+"Couldn’t change permissions for “%@”" = "Couldn’t change permissions for “%@”";
 "Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@" = "Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@";
 "Couldn’t check what’s already in %@ — nothing was uploaded." = "Couldn’t check what’s already in %@ — nothing was uploaded.";
 "Couldn’t clear the saved host key for %@" = "Couldn’t clear the saved host key for %@";
 "Couldn’t connect: %@" = "Couldn’t connect: %@";
+"Couldn’t create the folder “%@”" = "Couldn’t create the folder “%@”";
 "Couldn’t delete “%@”" = "Couldn’t delete “%@”";
 "Couldn’t finish %@" = "Couldn’t finish %@";
 "Couldn’t launch ffmpeg: %@" = "Couldn’t launch ffmpeg: %@";
@@ -355,6 +357,8 @@
 "Couldn’t load quality options. %@" = "Couldn’t load quality options. %@";
 "Couldn’t load the metalink file" = "Couldn’t load the metalink file";
 "Couldn’t locate Application Support" = "Couldn’t locate Application Support";
+"Couldn’t move “%1$@” to “%2$@”" = "Couldn’t move “%1$@” to “%2$@”";
+"Couldn’t move “%@” to the parent folder" = "Couldn’t move “%@” to the parent folder";
 "Couldn’t open the database — downloads won’t survive relaunch." = "Couldn’t open the database — downloads won’t survive relaunch.";
 "Couldn’t preview “%@”" = "Couldn’t preview “%@”";
 "Couldn’t put this Mac to sleep" = "Couldn’t put this Mac to sleep";
@@ -366,7 +370,9 @@
 "Couldn’t read “%1$@”, so “%2$@” wasn’t downloaded." = "Couldn’t read “%1$@”, so “%2$@” wasn’t downloaded.";
 "Couldn’t read “%@” — nothing was downloaded." = "Couldn’t read “%@” — nothing was downloaded.";
 "Couldn’t read “%@” — nothing was uploaded." = "Couldn’t read “%@” — nothing was uploaded.";
+"Couldn’t rename “%@”" = "Couldn’t rename “%@”";
 "Couldn’t rename: %@" = "Couldn’t rename: %@";
+"Couldn’t save your servers to disk: %@" = "Couldn’t save your servers to disk: %@";
 "Couldn’t shut this Mac down" = "Couldn’t shut this Mac down";
 "Couldn’t start yt-dlp." = "Couldn’t start yt-dlp.";
 "Couldn’t work out where to save “%@”." = "Couldn’t work out where to save “%@”.";
@@ -697,6 +703,7 @@
 "Labelled “%@”" = "Labelled “%@”";
 "Language" = "Language";
 "Last 14 days" = "Last 14 days";
+"Launch at Login" = "Launch at Login";
 "Launch at login" = "Launch at login";
 "Launch minimized" = "Launch minimized";
 "Learn more" = "Learn more";
@@ -1017,7 +1024,9 @@
 "Remove “%@” from history" = "Remove “%@” from history";
 "Remove “%@”?" = "Remove “%@”?";
 "Removed from list" = "Removed from list";
+"Removed from the list, but the file is still on disk" = "Removed from the list, but the file is still on disk";
 "Removed with data" = "Removed with data";
+"Removed “%@” from the list, but its file is still on disk" = "Removed “%@” from the list, but its file is still on disk";
 "Rename" = "Rename";
 "Rename %d Selected…" = "Rename %d Selected…";
 "Rename %d downloads" = "Rename %d downloads";
@@ -1263,6 +1272,7 @@
 "The built-in player can’t open %@ — opening your default player" = "The built-in player can’t open %@ — opening your default player";
 "The bundled extension folder is only available in the packaged app, not a dev build." = "The bundled extension folder is only available in the packaged app, not a dev build.";
 "The bundled extension is only in the packaged app, not a dev build" = "The bundled extension is only in the packaged app, not a dev build";
+"The drop basket takes links and .torrent files — “%@” is neither" = "The drop basket takes links and .torrent files — “%@” is neither";
 "The extension, the helper, the bookmarklet, the URL scheme" = "The extension, the helper, the bookmarklet, the URL scheme";
 "The ffmpeg path in Settings (“%@”) isn’t a full path. Enter the complete location, e.g. /opt/homebrew/bin/ffmpeg, or clear the field to use the copy included with Goel°." = "The ffmpeg path in Settings (“%@”) isn’t a full path. Enter the complete location, e.g. /opt/homebrew/bin/ffmpeg, or clear the field to use the copy included with Goel°.";
 "The ffmpeg path in Settings (“%@”) isn’t a program Goel° can run. Clear the field to use the copy included with Goel°." = "The ffmpeg path in Settings (“%@”) isn’t a program Goel° can run. Clear the field to use the copy included with Goel°.";
@@ -1452,6 +1462,9 @@
 "You do not need to buy anything if" = "You do not need to buy anything if";
 "You need a commercial licence if" = "You need a commercial licence if";
 "You need a warranty, an indemnity, support, or a signed agreement to file." = "You need a warranty, an indemnity, support, or a signed agreement to file.";
+"Your Keychain refused to remove the login for %@ — unlock it, allow the prompt, and try again" = "Your Keychain refused to remove the login for %@ — unlock it, allow the prompt, and try again";
+"Your Keychain refused to save the login for %@ — unlock it, allow the prompt, and try again" = "Your Keychain refused to save the login for %@ — unlock it, allow the prompt, and try again";
+"Your saved servers couldn’t be read, so nothing was changed — the other servers are still there." = "Your saved servers couldn’t be read, so nothing was changed — the other servers are still there.";
 "You’re running %@. Open the release page to download the update?" = "You’re running %@. Open the release page to download the update?";
 "about %.1f hours remaining" = "about %.1f hours remaining";
 "about %d minute remaining" = "about %d minute remaining";
@@ -1486,6 +1499,9 @@
 "last 60s" = "last 60s";
 "leave blank if the key has none" = "leave blank if the key has none";
 "length unknown" = "length unknown";
+"macOS couldn’t open “%@” — no app is set to handle this kind of file" = "macOS couldn’t open “%@” — no app is set to handle this kind of file";
+"macOS wouldn’t register Goel° as a login item, so the setting has been turned back off. Login items can only be registered by an app in your Applications folder, and macOS rate-limits repeated attempts — move Goel° there, then try again." = "macOS wouldn’t register Goel° as a login item, so the setting has been turned back off. Login items can only be registered by an app in your Applications folder, and macOS rate-limits repeated attempts — move Goel° there, then try again.";
+"macOS wouldn’t remove Goel° from your login items, so the setting has been turned back on. Try again in a moment, or remove it in System Settings ▸ General ▸ Login Items." = "macOS wouldn’t remove Goel° from your login items, so the setting has been turned back on. Try again in a moment, or remove it in System Settings ▸ General ▸ Login Items.";
 "megabytes" = "megabytes";
 "modified %@" = "modified %@";
 "no progress for %@ · ffmpeg may be stuck" = "no progress for %@ · ffmpeg may be stuck";
@@ -1521,6 +1537,7 @@
 "“%@” is a folder on the server now — nothing was uploaded." = "“%@” is a folder on the server now — nothing was uploaded.";
 "“%@” is still transferring. It will stop and be removed from the list." = "“%@” is still transferring. It will stop and be removed from the list.";
 "“%@” is too large to drag out of the browser." = "“%@” is too large to drag out of the browser.";
+"“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk" = "“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk";
 "“%@” will stop transferring and be removed from the list." = "“%@” will stop transferring and be removed from the list.";
 "•••••• (unchanged)" = "•••••• (unchanged)";
 "✓ Sequential Download" = "✓ Sequential Download";

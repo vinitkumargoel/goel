@@ -346,9 +346,12 @@ struct SFTPConnectionEditor: View {
 
     private func save() {
         let isNew = existing == nil
-        let outcome = vm.saveServer(draftConnection(),
-                                    password: password.isEmpty ? nil : password,
-                                    keyPassphrase: keyPassphraseEdited ? keyPassphrase : nil)
+        let result = vm.saveServer(draftConnection(),
+                                   password: password.isEmpty ? nil : password,
+                                   keyPassphrase: keyPassphraseEdited ? keyPassphrase : nil)
+        // The profile never reached disk; the view model already said why, so don't
+        // follow it with Keychain copy that implies the server was saved.
+        guard case .saved(let outcome) = result else { return }
         guard outcome.didStore else {
             testResult = .failure(
                 outcome.isRetryable

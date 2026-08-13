@@ -43,7 +43,7 @@ actor SFTPEngine: DownloadEngine {
         tasks[id] = nil
         await job?.value
         if deleteData, let task, task.isSavePathContained {
-            try? FileManager.default.removeItem(atPath: task.savePath)
+            RemoteTransferPrep.removeSavedFile(hub: hub, id: id, task: task)
         }
         hub.finishAll(id)
     }

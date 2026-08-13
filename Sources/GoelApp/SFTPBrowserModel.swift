@@ -318,6 +318,14 @@ final class SFTPBrowserModel: ObservableObject {
         locationStore.setPath(newPath, for: connection.id)
     }
 
+    /// Refreshes, then re-asserts the message: `list()` clears `error`, so a
+    /// failure recorded before any refresh shows nothing at all.
+    private func fail(_ message: String) async -> Bool {
+        await refresh()
+        error = message
+        return false
+    }
+
     @discardableResult
     func makeDirectory(named name: String) async -> Bool {
         guard let client, !name.isEmpty else { return false }
@@ -325,7 +333,7 @@ final class SFTPBrowserModel: ObservableObject {
             try await client.mkdir(Self.join(path, name))
             await refresh()
             return true
-        } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
+        } catch let e as SFTPError { return await fail(e.message) } catch { return await fail(error.localizedDescription) }
     }
 
     @discardableResult
@@ -403,7 +411,7 @@ final class SFTPBrowserModel: ObservableObject {
             try await client.rename(Self.join(path, entry.name), to: Self.join(path, trimmed))
             await refresh()
             return true
-        } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
+        } catch let e as SFTPError { return await fail(e.message) } catch { return await fail(error.localizedDescription) }
     }
 
     @discardableResult
@@ -416,7 +424,7 @@ final class SFTPBrowserModel: ObservableObject {
             try await client.rename(source, to: dest)
             await refresh()
             return true
-        } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
+        } catch let e as SFTPError { return await fail(e.message) } catch { return await fail(error.localizedDescription) }
     }
 
     func info(for entry: SFTPEntry) async -> SFTPEntryInfo? {
@@ -445,7 +453,7 @@ final class SFTPBrowserModel: ObservableObject {
             try await client.setPermissions(Self.join(path, entry.name), mode)
             await refresh()
             return true
-        } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
+        } catch let e as SFTPError { return await fail(e.message) } catch { return await fail(error.localizedDescription) }
     }
 
     func volumeSpace() async -> SFTPVolumeSpace? {

@@ -92,6 +92,7 @@ public enum SFTPRelay {
                                 onFileProgress: @escaping @Sendable (String, Int64) -> Void = { _, _ in }) async throws {
         let plan = try await walk(source, root: sourceRoot, shouldContinue: shouldContinue)
         try requireComplete(plan)
+        try requireNoLinks(plan, root: sourceRoot)
 
         try await makeDirectory(destinationRoot, on: destination)
         for relative in plan.directories {
@@ -221,6 +222,15 @@ public enum SFTPRelay {
         let others = plan.skipped.count - 1
         throw SFTPError(kind: .io,
                         message: "The server listed an item named “\(first)”\(others > 0 ? " and \(others) more" : "") that Goel can’t handle safely, so nothing was \(action).")
+    }
+
+    /// The bridge can read a symlink but not create one, so a copy would drop it and a move would then
+    /// delete the original — refuse the whole tree instead of reporting success over a missing link.
+    public static func requireNoLinks(_ plan: TreePlan, root: String) throws {
+        guard let first = plan.links.first else { return }
+        let others = plan.links.count - 1
+        throw SFTPError(kind: .io,
+                        message: "“\(root)” contains a link at “\(first.reduce(root, SFTPBrowserPaths.join))”\(others > 0 ? " and \(others) more" : "") that Goel can’t recreate, so nothing was transferred.")
     }
 
     public static func resolvedName(_ name: String, in directory: String,

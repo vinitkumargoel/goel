@@ -179,7 +179,14 @@ extension AppViewModel {
             // Delete the source only after every byte landed, and report a failure here as "copied but not deleted" — otherwise a re-run duplicates.
             if plan.isMove {
                 do {
-                    try await reader.remove(plan.sourcePath, isDirectory: plan.entry.isDirectory)
+                    // rmdir refuses a non-empty directory, so a folder has to be emptied first —
+                    // the plain remove here made every non-empty folder move fail its cleanup.
+                    if plan.entry.isDirectory && !plan.entry.isSymlink {
+                        try await SFTPRelay.removeTree(reader, path: plan.sourcePath,
+                                                       shouldContinue: { !cancel.isCancelled })
+                    } else {
+                        try await reader.remove(plan.sourcePath, isDirectory: false)
+                    }
                 } catch {
                     let detail = (error as? SFTPError)?.message ?? error.localizedDescription
                     settleTransfer(id, .failed(

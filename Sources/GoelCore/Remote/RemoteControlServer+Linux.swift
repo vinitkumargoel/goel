@@ -312,6 +312,16 @@ public actor RemoteControlServer {
         }
         guard start <= end else { return await reject("416 Range Not Satisfiable", "Bad range") }
 
+        // Seek before the headers commit to a range: a failed seek must be an error, never the head of
+        // the file served under a Content-Range that says otherwise.
+        do {
+            try handle.seek(toOffset: UInt64(start))
+        } catch {
+            GoelLog.remote.error("Stream seek failed; refusing to serve the file from the wrong offset",
+                                 .path(plan.path), .bytes(start, label: "offset"))
+            return await reject("500 Internal Server Error", "Could not read the requested range")
+        }
+
         var head = "HTTP/1.1 \(status)\r\n"
         head += "Content-Type: \(Self.mimeType(forPath: plan.path))\r\n"
         head += "Content-Length: \(end - start + 1)\r\n"
@@ -326,7 +336,6 @@ public actor RemoteControlServer {
         guard await sink.send(Data(head.utf8)) else { sink.close(); return }
 
         var cursor = start
-        try? handle.seek(toOffset: UInt64(start))
         while cursor <= end, generation == myGeneration {
             let want = Int(min(Int64(512 * 1024), end - cursor + 1))
             guard let chunk = try? handle.read(upToCount: want), !chunk.isEmpty else { break }

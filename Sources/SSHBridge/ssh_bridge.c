@@ -459,6 +459,9 @@ GSBResult gsb_size(GSBSession *s, const char *remote) {
         gsb_set_detailed(&r, s->session, GSB_ERR_STAT, "Could not stat remote file");
     } else if (attrs.flags & LIBSSH2_SFTP_ATTR_SIZE) {
         r.value = (long long)attrs.filesize;
+    } else {
+        // OK with 0 would read as "empty file", and a resume then truncates a larger local partial.
+        gsb_set(&r, GSB_ERR_STAT, "The server did not report a size for this file");
     }
     return r;
 }

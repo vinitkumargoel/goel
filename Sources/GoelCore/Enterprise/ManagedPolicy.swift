@@ -240,10 +240,17 @@ public struct ManagedPolicy: Sendable, Equatable {
     }
 }
 
-/// A policy file's only authority is its permissions, so readers must refuse group/world-writable ones.
-private func isWritableByOthers(_ path: String) -> Bool {
+/// A policy file's only authority is its permissions, so readers must refuse group/world-writable ones —
+/// and a present file whose permissions will not read counts as writable, never as trusted.
+/// Internal rather than private so the fail-closed branches can be pinned directly: both callers
+/// collapse "refused" and "absent" into the same nil, which hides the distinction from a test.
+func isWritableByOthers(_ path: String) -> Bool {
+    // An absent file is not untrusted, it is simply absent: the caller's own read reports that.
+    guard FileManager.default.fileExists(atPath: path) else { return false }
+    // Reachable only when the stat above and this one disagree — a stale network mount, or a
+    // delete racing the read. Defensive, but the wrong default here trusts an unverified file.
     guard let mode = (try? FileManager.default.attributesOfItem(atPath: path))?[.posixPermissions],
-          let bits = (mode as? NSNumber)?.uint16Value else { return false }
+          let bits = (mode as? NSNumber)?.uint16Value else { return true }
     return bits & 0o022 != 0
 }
 

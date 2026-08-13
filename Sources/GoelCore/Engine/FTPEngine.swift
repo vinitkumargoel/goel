@@ -53,7 +53,7 @@ actor FTPEngine: DownloadEngine {
         // Wait out the curl thread, or a re-added download at this path gets the old bytes.
         await job?.value
         if deleteData, let task, task.isSavePathContained {
-            try? FileManager.default.removeItem(atPath: task.savePath)
+            RemoteTransferPrep.removeSavedFile(hub: hub, id: id, task: task)
         }
         hub.finishAll(id)
     }

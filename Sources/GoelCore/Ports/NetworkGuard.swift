@@ -51,6 +51,36 @@ public enum NetworkGuard {
         #endif
     }
 
+    /// SOCKS5 hands the hostname to the proxy, so nothing this machine resolves describes the real target.
+    public static func usesRemoteDNS(_ spec: ProxySpec) -> Bool {
+        spec.mode == "manual" && spec.type == "socks5" && !spec.host.isEmpty && spec.port > 0
+    }
+
+    public typealias HostResolver = @Sendable (String) -> [String]?
+
+    /// Seam so a screen can be exercised without a live resolver deciding the verdict for it.
+    public static var hostResolver: HostResolver {
+        get { resolverBox.get() }
+        set { resolverBox.set(newValue) }
+    }
+
+    /// A stub left behind by one test would silently unscreen every later one, so restoring is explicit.
+    public static func useSystemHostResolver() {
+        resolverBox.set(systemHostResolver)
+    }
+
+    private static let systemHostResolver: HostResolver = { resolvedLiterals(of: $0) }
+    private static let resolverBox = ResolverBox(systemHostResolver)
+
+    /// Reached from actors and from `@MainActor`; the lock is what makes the shared seam safe there.
+    private final class ResolverBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var resolver: HostResolver
+        init(_ resolver: @escaping HostResolver) { self.resolver = resolver }
+        func get() -> HostResolver { lock.lock(); defer { lock.unlock() }; return resolver }
+        func set(_ new: @escaping HostResolver) { lock.lock(); resolver = new; lock.unlock() }
+    }
+
     /// Refuses link-local (169.254/16, fe80::/10) — cloud metadata is the classic SSRF pivot.
     public static func isAllowedAutoTarget(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(),
@@ -67,14 +97,27 @@ public enum NetworkGuard {
         return !isLinkLocal(host) && !isLoopbackOrUnspecified(host)
     }
 
-    /// Screens every resolved address too — spelling alone misses `localtest.me`.
-    public static func isAllowedRemoteAddTargetResolvingNames(_ url: URL) async -> Bool {
+    /// Screens every resolved address too — spelling alone misses `localtest.me`. Fails closed on an unresolvable name.
+    /// Callers pass `resolvedByProxy` from their own proxy state rather than have this read settings,
+    /// so which screen ran stays visible at the call site instead of depending on hidden config.
+    public static func isAllowedRemoteAddTargetResolvingNames(
+        _ url: URL, resolvedByProxy: Bool = false) async -> Bool {
         guard isAllowedRemoteAddTarget(url), let host = url.host else { return false }
         // A literal needs no resolution — it was already classified above, not waved through.
         guard addressClass(ofLiteral: host) == nil else { return true }
+        // Skipped deliberately: under SOCKS5 the proxy is the trust boundary and the resolver, so a local
+        // answer screens a different host — and refusing would refuse every intranet name and .onion.
+        guard !resolvedByProxy else { return true }
         // getaddrinfo blocks, so it must run off the cooperative pool.
-        let addresses = await Task.detached { NetworkGuard.resolvedLiterals(of: host) }.value
-        guard let addresses else { return true }
+        let resolve = hostResolver
+        let addresses = await Task.detached { resolve(host) }.value
+        // No addresses means the screen could not run, not that the name is safe: a lookup that fails
+        // here can still answer 127.0.0.1 for the real fetch, so refuse instead of waving it through.
+        guard let addresses else {
+            GoelLog.remote.error("Refusing a target whose name could not be resolved for screening",
+                                 .host(host))
+            return false
+        }
         return !addresses.contains { (addressClass(ofLiteral: $0) ?? .other) != .other }
     }
 

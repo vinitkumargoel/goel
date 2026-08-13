@@ -69,6 +69,10 @@ public actor DownloadManager {
 
     var stats = TransferStats()
 
+    /// Set when the saved totals couldn't be read: writing the zeroed defaults back would
+    /// replace a lifetime of them with this session's.
+    var statsLoadFailed = false
+
     var lastStatsFlush = Date.distantPast
 
     typealias StatsMark = StatsAccumulator.Mark
@@ -167,14 +171,17 @@ public actor DownloadManager {
             // Adopt even on nil: this is the only call that configures `auditLog` and applies forced policy.
             adoptStoredSettings(saved ?? storedSettings)
         } catch {
-            notePersistenceError(error)
+            notePersistenceError(error, stage: .loading)
             adoptStoredSettings(storedSettings)
         }
 
         do {
             if let savedStats = try store.loadStats() { stats = savedStats }
         } catch {
-            notePersistenceError(error)
+            // Nothing may persist `stats` now: the next progress event would UPSERT these zeros
+            // over the stored row and the real lifetime totals would be gone for good.
+            statsLoadFailed = true
+            notePersistenceError(error, stage: .loading)
         }
 
         let loaded: [DownloadTask]

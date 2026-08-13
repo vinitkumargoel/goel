@@ -33,6 +33,16 @@ private final class FolderRefusingBackend: RemoteBackend, @unchecked Sendable {
 
 final class PortalRemediationTests: XCTestCase {
 
+    override func setUp() {
+        super.setUp()
+        NetworkGuard.hostResolver = PlaceholderHosts.resolver
+    }
+
+    override func tearDown() {
+        NetworkGuard.useSystemHostResolver()
+        super.tearDown()
+    }
+
     private func str(_ d: Data) -> String { String(decoding: d, as: UTF8.self) }
 
     private func request(_ raw: String) -> RemoteRequest {

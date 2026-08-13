@@ -1,5 +1,21 @@
 import Foundation
 
+/// Why a change never reached `sftp-connections.json`. A *missing* file is not in here — that is
+/// legitimately an empty list; an unreadable one is, because rewriting it would replace every
+/// other saved server with the single profile being edited.
+public enum SFTPStoreError: Error, Sendable, Equatable {
+    case unreadable
+    case writeFailed(String)
+}
+
+/// The file and the Keychain fail independently, and ``CredentialWrite`` only ever described the
+/// Keychain — a caller that tells the user "saved" has to see both halves.
+public enum SFTPSaveOutcome: Sendable, Equatable {
+    case saved(CredentialWrite)
+    /// Nothing was touched: neither the file nor the Keychain.
+    case notSaved(SFTPStoreError)
+}
+
 public final class SFTPConnectionStore: @unchecked Sendable {
 
     public static let shared = SFTPConnectionStore()
@@ -24,30 +40,100 @@ public final class SFTPConnectionStore: @unchecked Sendable {
 
     public func load() -> [SFTPConnection] {
         lock.lock(); defer { lock.unlock() }
-        guard let data = try? Data(contentsOf: fileURL),
-              let list = try? JSONDecoder().decode([SFTPConnection].self, from: data) else {
-            return []
-        }
+        guard case .ok(let list) = readState() else { return [] }
         return list
     }
 
-    /// nil `password` keeps the stored secret; "" clears it. Same rule for `keyPassphrase`.
-    @discardableResult
-    public func save(_ connection: SFTPConnection, password: String?,
-                     keyPassphrase: String? = nil) -> CredentialWrite {
-        lock.lock()
-        var list = (try? JSONDecoder().decode([SFTPConnection].self,
-                                              from: (try? Data(contentsOf: fileURL)) ?? Data())) ?? []
+    private enum FileState {
+        case ok([SFTPConnection])
+        case missing
+        case unreadable
+    }
+
+    /// "Not there yet" is an empty list; "there but undecodable" is not — the read-modify-write
+    /// that follows would otherwise hand back a file holding only the profile being edited.
+    private func readState() -> FileState {
+        let url = fileURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
+        guard let data = try? Data(contentsOf: url),
+              let list = try? JSONDecoder().decode([SFTPConnection].self, from: data) else {
+            GoelLog.persistence.error("SFTP connections file unreadable — leaving it untouched",
+                                      .path(url.path))
+            return .unreadable
+        }
+        return .ok(list)
+    }
+
+    private func writeFile(_ list: [SFTPConnection]) -> SFTPStoreError? {
+        do {
+            try JSONEncoder().encode(list).write(to: fileURL, options: .atomic)
+            return nil
+        } catch {
+            GoelLog.persistence.error("Failed to write SFTP connections",
+                                      .detail(String(describing: error)))
+            return .writeFailed(error.localizedDescription)
+        }
+    }
+
+    /// Returns the entry this one replaced, or the failure that means nothing was written.
+    private func upsert(_ connection: SFTPConnection) -> Result<SFTPConnection?, SFTPStoreError> {
+        lock.lock(); defer { lock.unlock() }
+        var list: [SFTPConnection]
+        switch readState() {
+        case .ok(let saved): list = saved
+        case .missing: list = []
+        case .unreadable: return .failure(.unreadable)
+        }
         let previous = list.first { $0.id == connection.id }
         if let idx = list.firstIndex(where: { $0.id == connection.id }) {
             list[idx] = connection
         } else {
             list.append(connection)
         }
-        if let data = try? JSONEncoder().encode(list) {
-            try? data.write(to: fileURL, options: .atomic)
+        if let failure = writeFile(list) { return .failure(failure) }
+        return .success(previous)
+    }
+
+    /// Returns the entry that left the file, or the failure that means it is still in it.
+    private func delete(_ id: UUID) -> Result<SFTPConnection?, SFTPStoreError> {
+        lock.lock(); defer { lock.unlock() }
+        var list: [SFTPConnection]
+        switch readState() {
+        case .ok(let saved): list = saved
+        case .missing: return .success(nil)
+        case .unreadable: return .failure(.unreadable)
         }
-        lock.unlock()
+        guard let gone = list.first(where: { $0.id == id }) else { return .success(nil) }
+        list.removeAll { $0.id == id }
+        if let failure = writeFile(list) { return .failure(failure) }
+        return .success(gone)
+    }
+
+    /// The Keychain-only view of ``saveOutcome(_:password:keyPassphrase:)``: it cannot say whether
+    /// the profile itself landed, so a caller that reports "saved" must use that one instead.
+    @discardableResult
+    public func save(_ connection: SFTPConnection, password: String?,
+                     keyPassphrase: String? = nil) -> CredentialWrite {
+        guard case .saved(let write) = saveOutcome(connection, password: password,
+                                                   keyPassphrase: keyPassphrase) else {
+            // No Keychain call was made at all — only `didStore == false` is expressible here.
+            return .failed(status: 0)
+        }
+        return write
+    }
+
+    /// nil `password` keeps the stored secret; "" clears it. Same rule for `keyPassphrase`.
+    public func saveOutcome(_ connection: SFTPConnection, password: String?,
+                            keyPassphrase: String? = nil) -> SFTPSaveOutcome {
+        let previous: SFTPConnection?
+        switch upsert(connection) {
+        case .success(let replaced):
+            previous = replaced
+        // Stop before the Keychain too: migrating a secret for a profile that never landed
+        // strands it under a key nothing reads.
+        case .failure(let error):
+            return .notSaved(error)
+        }
 
         // `credentialKey` is built from mutable fields, so an edit moves it — migrate or orphan the secret.
         let keyChanged = previous.map { $0.credentialKey != connection.credentialKey } ?? false
@@ -104,24 +190,25 @@ public final class SFTPConnectionStore: @unchecked Sendable {
                     oldKey: keyChanged ? previous?.keyPassphraseKey : nil)
         }
 
-        if let deniedStatus { return .denied(status: deniedStatus) }
-        if let failedStatus { return .failed(status: failedStatus) }
-        return .stored
+        if let deniedStatus { return .saved(.denied(status: deniedStatus)) }
+        if let failedStatus { return .saved(.failed(status: failedStatus)) }
+        return .saved(.stored)
     }
 
-    public func remove(_ id: UUID) {
-        lock.lock()
-        var list = (try? JSONDecoder().decode([SFTPConnection].self,
-                                              from: (try? Data(contentsOf: fileURL)) ?? Data())) ?? []
-        let gone = list.first { $0.id == id }
-        list.removeAll { $0.id == id }
-        if let data = try? JSONEncoder().encode(list) {
-            try? data.write(to: fileURL, options: .atomic)
-        }
-        lock.unlock()
-        if let gone {
-            keychain.removeCredential(host: gone.credentialKey)
-            keychain.removeCredential(host: gone.keyPassphraseKey)
+    /// Returns the failure that means the server is still saved, or nil.
+    @discardableResult
+    public func remove(_ id: UUID) -> SFTPStoreError? {
+        switch delete(id) {
+        case .success(let gone):
+            // Only once the file has lost it: wiping the secret while the profile is still
+            // listed leaves a server nobody can connect to.
+            if let gone {
+                keychain.removeCredential(host: gone.credentialKey)
+                keychain.removeCredential(host: gone.keyPassphraseKey)
+            }
+            return nil
+        case .failure(let error):
+            return error
         }
     }
 

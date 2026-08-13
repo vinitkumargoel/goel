@@ -89,7 +89,28 @@ final class FakeRemoteBackend: RemoteBackend, @unchecked Sendable {
     func clearHistory() async { clearedHistory = true }
 }
 
+/// The router tests use unregistered placeholder hostnames. They are about JSON, routing and counting,
+/// so their verdicts must not become a property of whatever the machine's resolver answers today.
+enum PlaceholderHosts {
+    /// TEST-NET-3: public enough to pass the screen, never routable enough to be reached.
+    static let literal = "203.0.113.10"
+    static let known: Set<String> = ["e", "nas"]
+    static let resolver: NetworkGuard.HostResolver = { host in
+        known.contains(host.lowercased()) ? [literal] : nil
+    }
+}
+
 final class RemoteRouterTests: XCTestCase {
+
+    override func setUp() {
+        super.setUp()
+        NetworkGuard.hostResolver = PlaceholderHosts.resolver
+    }
+
+    override func tearDown() {
+        NetworkGuard.useSystemHostResolver()
+        super.tearDown()
+    }
 
     private func str(_ d: Data) -> String { String(decoding: d, as: UTF8.self) }
 

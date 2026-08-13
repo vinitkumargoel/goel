@@ -126,6 +126,10 @@ try? FileManager.default.createDirectory(atPath: saveDir, withIntermediateDirect
 final class Retainer: @unchecked Sendable {
     var manager: DownloadManager?
     var remote: RemoteAccess?
+    /// A released signal source stops delivering, so these outlive the statement that made them.
+    var shutdownSources: [DispatchSourceSignal] = []
+    /// SIGINT then SIGTERM (systemd sends both on a slow stop) must not start two drains.
+    var stopping = false
 }
 let retainer = Retainer()
 
@@ -187,12 +191,20 @@ Task {
             #if canImport(Glibc)
             let prevMask = umask(0o077)
             #endif
-            try? settings.remoteToken.write(toFile: tokenFile, atomically: true, encoding: .utf8)
+            // Only claim it landed if it did: operators chase "no API token yet" for hours while
+            // the journal insists the file is right there.
+            do {
+                try settings.remoteToken.write(toFile: tokenFile, atomically: true, encoding: .utf8)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenFile)
+                stderrLine("GoelDaemon: API token written to \(tokenFile) (mode 0600)")
+            } catch {
+                stderrLine("GoelDaemon: WARNING — could not write the API token to \(tokenFile): "
+                           + "\(error). The portal is running with a token no one can read; "
+                           + "fix the path's permissions or set GOEL_TOKEN.")
+            }
             #if canImport(Glibc)
             umask(prevMask)
             #endif
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenFile)
-            stderrLine("GoelDaemon: API token written to \(tokenFile) (mode 0600)")
         }
         if allowLAN && !bound.exposedLAN {
             stderrLine("GoelDaemon: NOTE — LAN access was requested but refused (no password set); bound 127.0.0.1 only. Set GOEL_PASSWORD to expose it.")
@@ -203,7 +215,25 @@ Task {
     }
 }
 
-signal(SIGINT) { _ in exit(0) }
-signal(SIGTERM) { _ in exit(0) }
+// Exiting straight from a C handler drops every database write still queued on the persistence
+// pipeline, and a handler may only call async-signal-safe functions — so the drain runs on a
+// Dispatch source instead. SIG_IGN keeps the default disposition from killing us before it fires.
+signal(SIGINT, SIG_IGN)
+signal(SIGTERM, SIG_IGN)
+
+retainer.shutdownSources = [SIGINT, SIGTERM].map { number -> DispatchSourceSignal in
+    let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+    source.setEventHandler {
+        guard !retainer.stopping else { return }
+        retainer.stopping = true
+        stderrLine("GoelDaemon: shutting down — flushing queued database writes")
+        Task {
+            await retainer.manager?.shutdown()
+            exit(0)
+        }
+    }
+    source.resume()
+    return source
+}
 
 dispatchMain()

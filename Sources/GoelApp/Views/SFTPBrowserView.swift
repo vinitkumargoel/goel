@@ -118,7 +118,14 @@ struct SFTPBrowserView: View {
             Button(L10n.t("Create")) {
                 let name = newFolderName
                 newFolderName = ""
-                Task { if await model.makeDirectory(named: name) { vm.toastNow(L10n.t("Folder created")) } }
+                Task {
+                    if await model.makeDirectory(named: name) {
+                        vm.toastNow(L10n.t("Folder created"))
+                    } else if !name.isEmpty {
+                        vm.toastNow(model.error ?? L10n.t("Couldn’t create the folder “%@”", name),
+                                    isError: true)
+                    }
+                }
             }
         }
         .alert(L10n.t("Delete “%@”?", pendingDelete?.name ?? ""),
@@ -151,7 +158,15 @@ struct SFTPBrowserView: View {
             Button(L10n.t("Rename")) {
                 if let entry = renaming {
                     let newName = renameText
-                    Task { if await model.rename(entry, to: newName) { vm.toastNow(L10n.t("Renamed")) } }
+                    Task {
+                        if await model.rename(entry, to: newName) {
+                            vm.toastNow(L10n.t("Renamed"))
+                        } else if newName.trimmingCharacters(in: .whitespacesAndNewlines) != entry.name {
+                            // Confirming the prefilled name unchanged is a no-op, not a failure.
+                            vm.toastNow(model.error ?? L10n.t("Couldn’t rename “%@”", entry.name),
+                                        isError: true)
+                        }
+                    }
                 }
                 renaming = nil
             }
@@ -541,6 +556,9 @@ struct SFTPBrowserView: View {
             if await model.setPermissions(entry, mode: mode) {
                 vm.toastNow(L10n.t("Permissions updated"))
                 entryInfo = await model.info(for: entry)
+            } else {
+                vm.toastNow(model.error ?? L10n.t("Couldn’t change permissions for “%@”", entry.name),
+                            isError: true)
             }
         }
     }
@@ -640,6 +658,9 @@ struct SFTPBrowserView: View {
                     Task {
                         if await model.move(entry, toDirectory: SFTPBrowserModel.parent(of: model.path)) {
                             vm.toastNow(L10n.t("Moved “%@”", entry.name))
+                        } else {
+                            vm.toastNow(model.error ?? L10n.t("Couldn’t move “%@” to the parent folder", entry.name),
+                                        isError: true)
                         }
                     }
                 }
@@ -657,6 +678,10 @@ struct SFTPBrowserView: View {
                         Task {
                             if await model.move(entry, toDirectory: SFTPBrowserModel.join(model.path, folder.name)) {
                                 vm.toastNow(L10n.t("Moved to “%@”", folder.name))
+                            } else {
+                                vm.toastNow(model.error ?? L10n.t("Couldn’t move “%1$@” to “%2$@”",
+                                                                 entry.name, folder.name),
+                                            isError: true)
                             }
                         }
                     }

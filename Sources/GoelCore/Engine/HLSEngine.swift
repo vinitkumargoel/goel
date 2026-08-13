@@ -63,7 +63,7 @@ actor HLSEngine: HLSConfigurable {
         await job?.value
         try? FileManager.default.removeItem(at: Self.workDir(for: id))
         if deleteData, let task, task.isSavePathContained {
-            try? FileManager.default.removeItem(atPath: task.savePath)
+            RemoteTransferPrep.removeSavedFile(hub: hub, id: id, task: task)
         }
         hub.finishAll(id)
     }

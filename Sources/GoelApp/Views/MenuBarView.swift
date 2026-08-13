@@ -2,8 +2,15 @@ import SwiftUI
 import AppKit
 import GoelCore
 
+/// The main `WindowGroup`'s scene id. `openWindow` is the only way to build a window once the last
+/// one is closed, and it can only address a group that declares an id.
+enum MainWindowID {
+    static let value = "main"
+}
+
 struct MenuBarView: View {
     @EnvironmentObject private var vm: AppViewModel
+    @Environment(\.openWindow) private var openWindow
 
     @State private var measuredListHeight: CGFloat = 0
 
@@ -178,8 +185,13 @@ struct MenuBarView: View {
     private func activateMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         let settingsID = NSUserInterfaceItemIdentifier("com_apple_SwiftUI_Settings_window")
-        let window = NSApp.windows.first { $0.canBecomeMain && $0.identifier != settingsID }
-        window?.makeKeyAndOrderFront(nil)
+        if let window = NSApp.windows.first(where: { $0.canBecomeMain && $0.identifier != settingsID }) {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            // The app keeps running in the menu bar after the last window closes, so there is
+            // often nothing to raise — only SwiftUI can build a replacement.
+            openWindow(id: MainWindowID.value)
+        }
     }
 }
 

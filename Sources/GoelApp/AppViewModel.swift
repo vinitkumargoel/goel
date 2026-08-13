@@ -653,13 +653,15 @@ final class AppViewModel: ObservableObject {
             DownloadSource.parse($0.locator)?.isBrowserCaptureSafe == true
         }
         guard !captures.isEmpty else { return }
+        let proxyResolves = NetworkGuard.usesRemoteDNS(Self.proxySpec(from: settings))
         // One add per capture: batching would flatten distinct cookie scopes into one and leak them.
         for capture in captures {
             guard let source = DownloadSource.parse(capture.locator) else { continue }
             Task {
                 // Re-screen against RESOLVED addresses: `localtest.me` is loopback hidden behind DNS.
                 if let target = source.fetchTargetURL,
-                   await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(target) == false { return }
+                   await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(
+                       target, resolvedByProxy: proxyResolves) == false { return }
                 let task = await manager.add(source: source, priority: .normal,
                                              cookieHeader: capture.cookieHeader,
                                              cookieSource: capture.cookieHeader == nil ? CookieSource.none : .browser,
@@ -676,19 +678,35 @@ final class AppViewModel: ObservableObject {
         DownloadSource.parse(line)
     }
 
+    /// Whatever the write pipeline still has buffered dies with the process, and the
+    /// `willTerminate` observer fires *after* the drain — so the speed history is flushed
+    /// here, where the terminate reply is still being held back, not from that observer.
+    func shutdownCore() async {
+        persistSpeedHistory()
+        await manager.shutdown()
+    }
+
     func pause(_ id: DownloadTask.ID) { Task { await manager.pause(id) } }
     func resume(_ id: DownloadTask.ID) { Task { await manager.resume(id) } }
     func remove(_ id: DownloadTask.ID, deleteData: Bool) {
         let name = tasks.first { $0.id == id }?.name
         // Must run BEFORE the snapshot drops the task, or selection lands on the raw-first row.
         let nextPrimary = visibleNeighbor(after: id)
-        Task { await manager.remove(id, deleteData: deleteData) }
+        let savePath = tasks.first { $0.id == id }?.savePath
         selection.remove(id)
         if primarySelection == id { primarySelection = nextPrimary }
-        if deleteData {
-            toastNow(name.map { L10n.t("Deleted files for “%@”", $0) } ?? L10n.t("Removed with data"))
-        } else {
-            toastNow(L10n.t("Removed from list"))
+        Task {
+            await manager.remove(id, deleteData: deleteData)
+            guard deleteData else { return toastNow(L10n.t("Removed from list")) }
+            // Claiming the delete before it happened is how a file the engine could not remove
+            // still produced a "Deleted files" toast.
+            if let savePath, FileManager.default.fileExists(atPath: savePath) {
+                toastNow(name.map { L10n.t("Removed “%@” from the list, but its file is still on disk", $0) }
+                            ?? L10n.t("Removed from the list, but the file is still on disk"),
+                         isError: true)
+            } else {
+                toastNow(name.map { L10n.t("Deleted files for “%@”", $0) } ?? L10n.t("Removed with data"))
+            }
         }
     }
     func retry(_ id: DownloadTask.ID) {
@@ -792,7 +810,9 @@ final class AppViewModel: ObservableObject {
             settings = await manager.apply(mutate)
             refreshAggregationState()
         }
-        if launchChanged { LoginItemService.setEnabled(copy.launchAtLogin) }
+        if launchChanged, !LoginItemService.setEnabled(copy.launchAtLogin) {
+            revertLaunchAtLogin(afterFailedEnable: copy.launchAtLogin)
+        }
         if notificationsNewlyWanted { NotificationService.requestAuthorization() }
         applyRemoteAccess()
         networkAdapters = AdapterDirectory.enumerate()
@@ -800,6 +820,21 @@ final class AppViewModel: ObservableObject {
             settings: settings,
             vpnDefaultRoute: AdapterDirectory.hasActiveVPNInterface(),
             adapters: networkAdapters)
+    }
+
+    /// Written straight to the settings instead of through `update`: that would call
+    /// `LoginItemService` a second time and two failures could ping-pong. The Settings scene shows
+    /// alerts, not the main window's toasts.
+    private func revertLaunchAtLogin(afterFailedEnable enabled: Bool) {
+        let reverted = !enabled
+        settings.launchAtLogin = reverted
+        // Queued after `update`'s own apply, so this is the write that survives.
+        Task { settings = await manager.apply { $0.launchAtLogin = reverted } }
+        settingsMessage(
+            L10n.t("Launch at Login"),
+            enabled
+            ? L10n.t("macOS wouldn’t register Goel° as a login item, so the setting has been turned back off. Login items can only be registered by an app in your Applications folder, and macOS rate-limits repeated attempts — move Goel° there, then try again.")
+            : L10n.t("macOS wouldn’t remove Goel° from your login items, so the setting has been turned back on. Try again in a moment, or remove it in System Settings ▸ General ▸ Login Items."))
     }
 
     func toggleAggregationAdapter(_ bsdName: String) {
@@ -869,11 +904,30 @@ final class AppViewModel: ObservableObject {
     }
 
     func openFile(_ task: DownloadTask) {
-        NSWorkspace.shared.open(URL(fileURLWithPath: task.primaryFilePath))
+        let url = URL(fileURLWithPath: task.primaryFilePath)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            reportMissingFile(task)
+            return
+        }
+        // A refusal here is not "nothing happened": no installed app claims this file.
+        if !NSWorkspace.shared.open(url) {
+            toastNow(L10n.t("macOS couldn’t open “%@” — no app is set to handle this kind of file",
+                            task.name), isError: true)
+        }
+    }
+
+    /// Every file action fails the same way — the file moved, was deleted, or its disk went away.
+    private func reportMissingFile(_ task: DownloadTask) {
+        toastNow(L10n.t("“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk",
+                        task.name), isError: true)
     }
 
     func playInApp(_ task: DownloadTask) {
         let url = URL(fileURLWithPath: task.primaryFilePath)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            reportMissingFile(task)
+            return
+        }
         // The menu hides this action for containers AVFoundation cannot open, so reaching the
         // fallback means a non-menu caller: hand the file on rather than open a player that
         // would show nothing.
@@ -888,6 +942,11 @@ final class AppViewModel: ObservableObject {
 
     func revealInFinder(_ task: DownloadTask) {
         let url = URL(fileURLWithPath: task.savePath)
+        // Finder silently ignores a selection that no longer exists, so claiming success would be a lie.
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            reportMissingFile(task)
+            return
+        }
         #if canImport(AppKit)
         NSWorkspace.shared.activateFileViewerSelecting([url])
         #endif

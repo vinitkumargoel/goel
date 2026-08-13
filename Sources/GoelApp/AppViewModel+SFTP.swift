@@ -28,15 +28,32 @@ extension AppViewModel {
 
     @discardableResult
     func saveServer(_ connection: SFTPConnection, password: String?,
-                    keyPassphrase: String? = nil) -> CredentialWrite {
+                    keyPassphrase: String? = nil) -> SFTPSaveOutcome {
         // Renaming a host or user strands a pooled connection under the OLD key that nothing else reaches.
         let previous = server(connection.id)
-        let outcome = SFTPConnectionStore.shared.save(connection, password: password,
-                                                      keyPassphrase: keyPassphrase)
+        let outcome = SFTPConnectionStore.shared.saveOutcome(connection, password: password,
+                                                             keyPassphrase: keyPassphrase)
+        if case .notSaved(let failure) = outcome {
+            // The file is untouched, so the list in memory is still the truth — reloading from an
+            // unreadable file would blank the sidebar on top of the failure.
+            reportStoreFailure(failure)
+            return outcome
+        }
         reloadServers()
         // Pooled connections captured the old credentials, so without this they reconnect with them until restart.
         dropPooledConnections(for: connection, and: previous)
         return outcome
+    }
+
+    /// One wording for both halves: what failed is the file of saved servers, not the server.
+    private func reportStoreFailure(_ error: SFTPStoreError) {
+        switch error {
+        case .unreadable:
+            toastNow(L10n.t("Your saved servers couldn’t be read, so nothing was changed — "
+                + "the other servers are still there."), isError: true)
+        case .writeFailed(let detail):
+            toastNow(L10n.t("Couldn’t save your servers to disk: %@", detail), isError: true)
+        }
     }
 
     private func dropPooledConnections(for connection: SFTPConnection,
@@ -56,12 +73,17 @@ extension AppViewModel {
     }
 
     func removeServer(_ id: SFTPConnection.ID) {
+        // Tear nothing down until the file really lost it: a server that survives on disk would
+        // come back on the next load with its session dropped and its saved path forgotten.
+        if let failure = SFTPConnectionStore.shared.remove(id) {
+            reportStoreFailure(failure)
+            return
+        }
         if selectedServer == id { selectedServer = nil }
         if sftpBrowserNavigation?.connectionID == id { sftpBrowserNavigation = nil }
-        // Read before the store forgets it, or the removed server keeps a live authenticated connection.
+        // Read before `reloadServers` forgets it, or the removed server keeps a live authenticated connection.
         if let going = server(id) { dropPooledConnections(for: going, and: nil) }
         SFTPBrowserLocationStore.shared.removePath(for: id)
-        SFTPConnectionStore.shared.remove(id)
         reloadServers()
         toastNow(L10n.t("Server removed"))
     }
