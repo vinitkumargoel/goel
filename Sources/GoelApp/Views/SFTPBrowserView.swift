@@ -37,6 +37,14 @@ struct SFTPBrowserView: View {
     private static let typeSelectWindow: TimeInterval = 1.0
     @State private var volumeSpace: SFTPVolumeSpace?
 
+    /// Row frames live in a plain box, not `@State` values: they change on every
+    /// scroll tick and only the marquee drag ever reads them.
+    private final class EntryFrames { var frames: [SFTPEntry.ID: CGRect] = [:] }
+    @State private var entryFrames = EntryFrames()
+    @State private var marqueeRect: CGRect?
+    @State private var marqueeBase: Set<SFTPEntry.ID>?
+    private static let listSpace = "sftp.entryList"
+
     init(connection: SFTPConnection, client: SFTPClient?) {
         self.connection = connection
         self.client = client
@@ -49,6 +57,10 @@ struct SFTPBrowserView: View {
             Divider()
             if let error = model.error {
                 errorBanner(error)
+                Divider()
+            }
+            if let note = model.deleteProgress {
+                deleteProgressBanner(note)
                 Divider()
             }
             searchBar
@@ -113,13 +125,20 @@ struct SFTPBrowserView: View {
             Button(L10n.t("Cancel"), role: .cancel) { pendingDelete = nil }
             Button(L10n.t("Delete"), role: .destructive) {
                 if let entry = pendingDelete {
-                    Task { if await model.delete(entry) { vm.toastNow(L10n.t("Deleted “%@”", entry.name)) } }
+                    Task {
+                        if await model.delete(entry) {
+                            vm.toastNow(L10n.t("Deleted “%@”", entry.name))
+                        } else {
+                            vm.toastNow(model.error ?? L10n.t("Couldn’t delete “%@”", entry.name),
+                                        isError: true)
+                        }
+                    }
                 }
                 pendingDelete = nil
             }
         } message: {
             Text(pendingDelete?.isDirectory == true
-                 ? L10n.t("The folder must be empty.")
+                 ? L10n.t("The folder and everything inside it will be permanently removed from the server.")
                  : L10n.t("This permanently removes the file from the server."))
         }
         .alert(L10n.t("Rename “%@”", renaming?.name ?? ""),
@@ -539,18 +558,20 @@ struct SFTPBrowserView: View {
         guard entries.count > 1 else { pendingDelete = entries.first; return }
         vm.requestConfirm(
             title: L10n.t("Delete %d items?", entries.count),
-            message: L10n.t("This permanently removes them from the server."),
+            message: L10n.t("This permanently removes them from the server. Folders are removed with everything inside them."),
             confirmTitle: L10n.t("Delete"), destructive: true
         ) {
             Task {
                 // Count them: an unreported refusal mid-batch reads as a clean sweep.
-                var deleted = 0
-                for e in entries where await model.delete(e) { deleted += 1 }
+                let result = await model.deleteMany(entries)
                 selection.removeAll()
-                if deleted == entries.count {
-                    vm.toastNow(L10n.t("Deleted %d items", deleted))
+                if let failure = result.failure {
+                    vm.toastNow(result.deleted > 0
+                        ? L10n.t("Deleted %1$d of %2$d items — %3$@", result.deleted, entries.count, failure)
+                        : failure,
+                        isError: true)
                 } else {
-                    vm.toastNow(L10n.t("Deleted %1$d of %2$d items — the rest couldn’t be removed.", deleted, entries.count))
+                    vm.toastNow(L10n.t("Deleted %d items", result.deleted))
                 }
             }
         }
@@ -672,8 +693,21 @@ struct SFTPBrowserView: View {
 
     private var entryList: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                if isGrid { gridBody } else { listBody }
+            GeometryReader { geo in
+                ScrollView {
+                    Group {
+                        if isGrid { gridBody } else { listBody }
+                    }
+                    // Stretch to at least the viewport so the area below a short
+                    // listing still starts a marquee / clears the selection.
+                    .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .topLeading)
+                    .background(marqueeCatcher)
+                    .overlay(alignment: .topLeading) { marqueeOverlay }
+                    .coordinateSpace(name: Self.listSpace)
+                    .onPreferenceChange(EntryFramePreference.self) { [box = entryFrames] value in
+                        box.frames = value
+                    }
+                }
             }
             .overlay { if visibleEntries.isEmpty && !model.isLoading { emptyState } }
             .overlay { if dropTargeted && folderDropTarget == nil { dropHint } }
@@ -685,6 +719,50 @@ struct SFTPBrowserView: View {
             .focusEffectDisabled()
             .focused($listFocused)
             .onKeyPress { press in handleKey(press, proxy: proxy) }
+        }
+    }
+
+    /// Sits behind the rows: only clicks and drags on empty space reach it, so a
+    /// drag on a row keeps its file-drag meaning while empty space draws a marquee.
+    private var marqueeCatcher: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture { selection.removeAll() }
+            .gesture(marqueeGesture)
+    }
+
+    private var marqueeGesture: some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.listSpace))
+            .onChanged { value in
+                if marqueeBase == nil {
+                    // Shift or command extends the existing selection, Finder-style.
+                    let mods = NSEvent.modifierFlags
+                    marqueeBase = mods.contains(.shift) || mods.contains(.command) ? selection : []
+                    listFocused = true
+                }
+                let rect = CGRect(x: min(value.startLocation.x, value.location.x),
+                                  y: min(value.startLocation.y, value.location.y),
+                                  width: abs(value.location.x - value.startLocation.x),
+                                  height: abs(value.location.y - value.startLocation.y))
+                marqueeRect = rect
+                let hit = entryFrames.frames.filter { $0.value.intersects(rect) }.map(\.key)
+                let next = (marqueeBase ?? []).union(hit)
+                if next != selection { selection = next }
+            }
+            .onEnded { _ in
+                marqueeRect = nil
+                marqueeBase = nil
+            }
+    }
+
+    @ViewBuilder private var marqueeOverlay: some View {
+        if let rect = marqueeRect {
+            Rectangle()
+                .fill(Theme.accent.opacity(0.12))
+                .overlay(Rectangle().strokeBorder(Theme.accent.opacity(0.55), lineWidth: 1))
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+                .allowsHitTesting(false)
         }
     }
 
@@ -815,6 +893,10 @@ struct SFTPBrowserView: View {
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { primaryAction(entry) }
         .contentShape(Rectangle())
+        .background(GeometryReader { g in
+            Color.clear.preference(key: EntryFramePreference.self,
+                                   value: [entry.id: g.frame(in: .named(Self.listSpace))])
+        })
         .onHover { inside in updateHover(entry.id, inside: inside) }
         .onTapGesture(count: 2) { primaryAction(entry) }
         .onTapGesture { handleClick(entry) }
@@ -864,6 +946,10 @@ struct SFTPBrowserView: View {
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { primaryAction(entry) }
         .contentShape(Rectangle())
+        .background(GeometryReader { g in
+            Color.clear.preference(key: EntryFramePreference.self,
+                                   value: [entry.id: g.frame(in: .named(Self.listSpace))])
+        })
         .onHover { inside in updateHover(entry.id, inside: inside) }
         .onTapGesture(count: 2) { primaryAction(entry) }
         .onTapGesture { handleClick(entry) }
@@ -1036,6 +1122,21 @@ struct SFTPBrowserView: View {
         .onAppear { A11yAnnouncer.announce(L10n.t("Error. %@", message)) }
     }
 
+    private func deleteProgressBanner(_ note: String) -> some View {
+        HStack(spacing: 9) {
+            ProgressView().controlSize(.small)
+            Text(note).font(.system(size: 12)).monospacedDigit().lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            Button(L10n.t("Cancel")) { model.cancelDelete() }
+                .font(.system(size: 11))
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .a11yButton(L10n.t("Cancel delete"))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 7)
+        .background(Theme.accent.opacity(0.08))
+    }
+
     private func handleUploadDrop(_ providers: [NSItemProvider]) -> Bool {
         let connection = model.connection
         let remoteDir = model.path
@@ -1083,5 +1184,15 @@ private extension View {
     @ViewBuilder
     func ifLet<T, Content: View>(_ value: T?, transform: (Self, T) -> Content) -> some View {
         if let value { transform(self, value) } else { self }
+    }
+}
+
+/// Visible rows report their frames (in the list's coordinate space) so the
+/// marquee drag can hit-test the selection rectangle against them.
+private struct EntryFramePreference: PreferenceKey {
+    static let defaultValue: [SFTPEntry.ID: CGRect] = [:]
+    static func reduce(value: inout [SFTPEntry.ID: CGRect],
+                       nextValue: () -> [SFTPEntry.ID: CGRect]) {
+        value.merge(nextValue()) { $1 }
     }
 }

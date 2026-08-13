@@ -120,7 +120,8 @@ struct SettingsView: View {
     private var settingsToast: some View {
         if let toast = vm.toast {
             HStack(spacing: 9) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.green)
+                Image(systemName: vm.toastIsError ? "xmark.octagon.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(vm.toastIsError ? Theme.red : Theme.green)
                     .a11yDecorative()
                 Text(toast).scaledFont(size: 12.5)
             }

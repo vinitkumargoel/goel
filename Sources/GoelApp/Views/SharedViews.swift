@@ -198,6 +198,10 @@ struct SFTPTransferRow: View {
                 Text(transfer.speedLabel)
                     .font(.system(size: 11, weight: .semibold)).monospacedDigit()
                     .foregroundStyle(transfer.directionTint)
+                if let eta = transfer.etaLabel {
+                    Text(eta)
+                        .font(.system(size: 11)).monospacedDigit().foregroundStyle(.tertiary)
+                }
             }
             if density == .full {
                 Text(transfer.progressLabel)

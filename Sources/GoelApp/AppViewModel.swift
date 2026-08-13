@@ -200,6 +200,8 @@ final class AppViewModel: ObservableObject {
     }
 
     @Published var toast: String?
+    /// Styles the current toast as a failure (red mark, longer dwell).
+    @Published var toastIsError = false
 
     @Published var confirmRequest: ConfirmRequest?
 
@@ -446,10 +448,10 @@ final class AppViewModel: ObservableObject {
     var totalUploadSpeed: Double { tasks.reduce(0) { $0 + $1.uploadSpeed } }
 
     var sftpUploadSpeed: Double {
-        sftpTransfers.reduce(0) { $0 + ($1.isActive && $1.direction == .upload ? $1.speed : 0) }
+        sftpTransfers.reduce(0) { $0 + ($1.isActive && $1.direction == .upload ? $1.displaySpeed : 0) }
     }
     var sftpDownloadSpeed: Double {
-        sftpTransfers.reduce(0) { $0 + ($1.isActive && $1.direction == .download ? $1.speed : 0) }
+        sftpTransfers.reduce(0) { $0 + ($1.isActive && $1.direction == .download ? $1.displaySpeed : 0) }
     }
 
     var combinedDownloadSpeed: Double { totalDownloadSpeed + sftpDownloadSpeed }
@@ -958,6 +960,18 @@ final class AppViewModel: ObservableObject {
         taskSpeedHistory = taskSpeedHistory.filter { known.contains($0.key) }
         nextTaskSpeed = nextTaskSpeed.filter { known.contains($0.key) }
         if nextTaskSpeed != displayedTaskSpeed { displayedTaskSpeed = nextTaskSpeed }
+        // SFTP rows read their speed here too, at the same cadence as download rows.
+        let now = Date()
+        var nextTransfers = sftpTransfers
+        var sftpChanged = false
+        for index in nextTransfers.indices {
+            let next = nextTransfers[index].isActive ? nextTransfers[index].liveSpeed(at: now) : 0
+            if nextTransfers[index].sampledSpeed != next {
+                nextTransfers[index].sampledSpeed = next
+                sftpChanged = true
+            }
+        }
+        if sftpChanged { sftpTransfers = nextTransfers }
         if recordHistory {
             globalSpeedHistory.append(sample)
             if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }
@@ -1463,12 +1477,14 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    func toastNow(_ message: String) {
+    func toastNow(_ message: String, isError: Bool = false) {
         toastGeneration &+= 1
         let generation = toastGeneration
         toast = message
+        toastIsError = isError
         Task {
-            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            // Failures linger longer: a missed error is worse than a missed confirmation.
+            try? await Task.sleep(nanoseconds: isError ? 5_000_000_000 : 2_400_000_000)
             if toastGeneration == generation { toast = nil }
         }
     }

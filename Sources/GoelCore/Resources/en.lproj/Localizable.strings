@@ -224,6 +224,7 @@
 "Cancel" = "Cancel";
 "Cancel %@" = "Cancel %@";
 "Cancel Scheduled Start" = "Cancel Scheduled Start";
+"Cancel delete" = "Cancel delete";
 "Cancel this %@?" = "Cancel this %@?";
 "Cancel this conversion" = "Cancel this conversion";
 "Cancel this job" = "Cancel this job";
@@ -346,6 +347,7 @@
 "Couldn’t check what’s already in %@ — nothing was uploaded." = "Couldn’t check what’s already in %@ — nothing was uploaded.";
 "Couldn’t clear the saved host key for %@" = "Couldn’t clear the saved host key for %@";
 "Couldn’t connect: %@" = "Couldn’t connect: %@";
+"Couldn’t delete “%@”" = "Couldn’t delete “%@”";
 "Couldn’t finish %@" = "Couldn’t finish %@";
 "Couldn’t launch ffmpeg: %@" = "Couldn’t launch ffmpeg: %@";
 "Couldn’t launch yt-dlp: %@" = "Couldn’t launch yt-dlp: %@";
@@ -394,12 +396,16 @@
 "Delete %d Items" = "Delete %d Items";
 "Delete %d items?" = "Delete %d items?";
 "Delete Files" = "Delete Files";
+"Delete cancelled." = "Delete cancelled.";
 "Delete downloaded files for “%@”?" = "Delete downloaded files for “%@”?";
 "Delete “%@”?" = "Delete “%@”?";
-"Deleted %1$d of %2$d items — the rest couldn’t be removed." = "Deleted %1$d of %2$d items — the rest couldn’t be removed.";
+"Deleted %1$d of %2$d items — %3$@" = "Deleted %1$d of %2$d items — %3$@";
 "Deleted %d items" = "Deleted %d items";
 "Deleted files for “%@”" = "Deleted files for “%@”";
 "Deleted “%@”" = "Deleted “%@”";
+"Deleting “%1$@” (%2$d of %3$d)…" = "Deleting “%1$@” (%2$d of %3$d)…";
+"Deleting “%1$@” — %2$d of %3$d items…" = "Deleting “%1$@” — %2$d of %3$d items…";
+"Deleting “%@”…" = "Deleting “%@”…";
 "Deselect All" = "Deselect All";
 "Detail panel" = "Detail panel";
 "Detail section" = "Detail section";
@@ -1262,7 +1268,7 @@
 "The ffmpeg path in Settings (“%@”) isn’t a program Goel° can run. Clear the field to use the copy included with Goel°." = "The ffmpeg path in Settings (“%@”) isn’t a program Goel° can run. Clear the field to use the copy included with Goel°.";
 "The ffmpeg path in Settings points at “%@”, which is a script interpreter rather than ffmpeg. Goel° won’t run it. Clear the field to use the copy included with Goel°." = "The ffmpeg path in Settings points at “%@”, which is a script interpreter rather than ffmpeg. Goel° won’t run it. Clear the field to use the copy included with Goel°.";
 "The first delay after the limit is hit; it doubles from there." = "The first delay after the limit is hit; it doubles from there.";
-"The folder must be empty." = "The folder must be empty.";
+"The folder and everything inside it will be permanently removed from the server." = "The folder and everything inside it will be permanently removed from the server.";
 "The key this server is presenting does NOT match the one Goel pinned, so connections are being refused.\n\nIf you rekeyed this server yourself, use “Forget Host Key” and confirm the new key on the next connection. If you did not, do not connect — something is answering in this server’s place." = "The key this server is presenting does NOT match the one Goel pinned, so connections are being refused.\n\nIf you rekeyed this server yourself, use “Forget Host Key” and confirm the new key on the next connection. If you did not, do not connect — something is answering in this server’s place.";
 "The legal entity named on your licence." = "The legal entity named on your licence.";
 "The live file is rotated once it passes this size." = "The live file is rotated once it passes this size.";
@@ -1294,7 +1300,7 @@
 "This folder is empty" = "This folder is empty";
 "This permanently deletes the file from disk and can’t be undone." = "This permanently deletes the file from disk and can’t be undone.";
 "This permanently removes the file from the server." = "This permanently removes the file from the server.";
-"This permanently removes them from the server." = "This permanently removes them from the server.";
+"This permanently removes them from the server. Folders are removed with everything inside them." = "This permanently removes them from the server. Folders are removed with everything inside them.";
 "This protocol does not support aggregation yet" = "This protocol does not support aggregation yet";
 "This removes every archived entry. Files on disk are not touched." = "This removes every archived entry. Files on disk are not touched.";
 "This server is misconfigured." = "This server is misconfigured.";
@@ -1511,6 +1517,7 @@
 "yt-dlp isn’t available, so Goel° can’t resolve that page." = "yt-dlp isn’t available, so Goel° can’t resolve that page.";
 "~%@ left" = "~%@ left";
 "“%@” already exists here." = "“%@” already exists here.";
+"“%@” has a name Goel can’t handle safely." = "“%@” has a name Goel can’t handle safely.";
 "“%@” is a folder on the server now — nothing was uploaded." = "“%@” is a folder on the server now — nothing was uploaded.";
 "“%@” is still transferring. It will stop and be removed from the list." = "“%@” is still transferring. It will stop and be removed from the list.";
 "“%@” is too large to drag out of the browser." = "“%@” is too large to drag out of the browser.";

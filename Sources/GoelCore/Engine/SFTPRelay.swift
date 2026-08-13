@@ -118,6 +118,32 @@ public enum SFTPRelay {
             .files.reduce(0) { $0 + $1.size }
     }
 
+    /// SFTP's rmdir refuses non-empty directories, so the tree is emptied first:
+    /// files and symlinks, then directories deepest-first, then the root itself.
+    /// `onProgress` reports (removed, planned) counts.
+    public static func removeTree(_ client: SFTPClient, path root: String,
+                                  shouldContinue: @escaping @Sendable () -> Bool = { true },
+                                  onProgress: @escaping @Sendable (Int, Int) -> Void = { _, _ in }) async throws {
+        let plan = try await walk(client, root: root, shouldContinue: shouldContinue)
+        try requireComplete(plan, action: "deleted")
+        let planned = plan.files.count + plan.links.count + plan.directories.count + 1
+        var removed = 0
+
+        func remove(_ relative: [String], isDirectory: Bool) async throws {
+            guard shouldContinue() else { throw SFTPError(kind: .aborted, message: "Cancelled") }
+            try await client.remove(relative.reduce(root, SFTPBrowserPaths.join),
+                                    isDirectory: isDirectory)
+            removed += 1
+            onProgress(removed, planned)
+        }
+
+        for file in plan.files { try await remove(file.relative, isDirectory: false) }
+        // A symlink is unlinked like a file even when it points at a directory.
+        for link in plan.links { try await remove(link, isDirectory: false) }
+        for dir in plan.directories.reversed() { try await remove(dir, isDirectory: true) }
+        try await remove([], isDirectory: true)
+    }
+
     public struct FileEntry: Sendable {
         public let relative: [String]
         public let size: Int64
@@ -126,6 +152,8 @@ public enum SFTPRelay {
     public struct TreePlan: Sendable {
         public let directories: [[String]]   // shallowest first
         public let files: [FileEntry]
+        /// Symlinks that resolve to directories: never descended, never copied — but a delete must unlink them.
+        public let links: [[String]]
         /// Names refused for carrying path structure — surfaced, never dropped, or a partial copy reports success.
         public let skipped: [String]
     }
@@ -151,6 +179,7 @@ public enum SFTPRelay {
                             shouldContinue: @escaping @Sendable () -> Bool) async throws -> TreePlan {
         var directories: [[String]] = []
         var files: [FileEntry] = []
+        var links: [[String]] = []
         var skipped: [String] = []
         var queue: [[String]] = [[]]
         var seen = 0
@@ -179,17 +208,19 @@ public enum SFTPRelay {
                     queue.append(child)
                 } else if !entry.isDirectory {
                     files.append(FileEntry(relative: child, size: entry.size))
+                } else {
+                    links.append(child)
                 }
             }
         }
-        return TreePlan(directories: directories, files: files, skipped: skipped)
+        return TreePlan(directories: directories, files: files, links: links, skipped: skipped)
     }
 
-    public static func requireComplete(_ plan: TreePlan) throws {
+    public static func requireComplete(_ plan: TreePlan, action: String = "transferred") throws {
         guard let first = plan.skipped.first else { return }
         let others = plan.skipped.count - 1
         throw SFTPError(kind: .io,
-                        message: "The server listed an item named “\(first)”\(others > 0 ? " and \(others) more" : "") that Goel can’t handle safely, so nothing was transferred.")
+                        message: "The server listed an item named “\(first)”\(others > 0 ? " and \(others) more" : "") that Goel can’t handle safely, so nothing was \(action).")
     }
 
     public static func resolvedName(_ name: String, in directory: String,

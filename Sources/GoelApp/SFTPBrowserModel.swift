@@ -56,10 +56,21 @@ struct SFTPTransfer: Identifiable {
     var canPause: Bool { state == .running && direction != .remoteCopy }
     var canResume: Bool { state == .paused }
 
-    var displaySpeed: Double {
-        if speed > 0 { return speed }
-        guard isActive, bytes > 0, let firstByteAt else { return 0 }
-        let elapsed = Date().timeIntervalSince(firstByteAt)
+    /// Written by the app-wide 500 ms sampler, exactly like a download task's
+    /// displayed speed: rows stop flickering at the raw progress rate, and a
+    /// stalled transfer decays to zero instead of freezing at its last reading.
+    var sampledSpeed: Double?
+
+    var displaySpeed: Double { sampledSpeed ?? liveSpeed(at: Date()) }
+
+    /// The meter's sliding window re-read at `now` — so it decays during a stall.
+    /// The cumulative fallback covers the window's first half-second dead zone.
+    func liveSpeed(at now: Date) -> Double {
+        guard isActive else { return 0 }
+        let windowed = meter.reading(at: now).down
+        if windowed > 0 { return windowed }
+        guard bytes > 0, let firstByteAt else { return 0 }
+        let elapsed = now.timeIntervalSince(firstByteAt)
         guard elapsed >= 0.2 else { return 0 }
         return Double(bytes) / elapsed
     }
@@ -82,6 +93,7 @@ struct SFTPTransfer: Identifiable {
     mutating func resetProgress() {
         bytes = 0
         speed = 0
+        sampledSpeed = nil
         meter = SpeedMeter()
         firstByteAt = nil
     }
@@ -177,6 +189,9 @@ final class SFTPBrowserModel: ObservableObject {
     @Published private(set) var entries: [SFTPEntry] = []
     @Published private(set) var isLoading = false
     @Published var error: String?
+    /// Non-nil while a (possibly recursive) delete runs; rendered as a busy banner.
+    @Published private(set) var deleteProgress: String?
+    private var deleteCancel: CancelFlag?
 
     @Published private(set) var backStack: [String] = []
     @Published private(set) var forwardStack: [String] = []
@@ -309,10 +324,63 @@ final class SFTPBrowserModel: ObservableObject {
 
     @discardableResult
     func delete(_ entry: SFTPEntry) async -> Bool {
+        let result = await deleteMany([entry])
+        return result.deleted == 1 && result.failure == nil
+    }
+
+    /// Deletes every item (folders recursively), refreshes ONCE at the end, and
+    /// re-asserts the first failure AFTER that refresh — `list()` clears `error`,
+    /// so setting it earlier left a failed delete showing nothing at all.
+    func deleteMany(_ items: [SFTPEntry]) async -> (deleted: Int, failure: String?) {
+        guard client != nil else { return (0, error) }
+        let flag = CancelFlag()
+        deleteCancel = flag
+        var deleted = 0
+        var failure: String?
+        for (index, entry) in items.enumerated() {
+            if flag.isCancelled { failure = failure ?? L10n.t("Delete cancelled."); break }
+            deleteProgress = items.count > 1
+                ? L10n.t("Deleting “%1$@” (%2$d of %3$d)…", entry.name, index + 1, items.count)
+                : L10n.t("Deleting “%@”…", entry.name)
+            if await deleteOne(entry, flag: flag) { deleted += 1 }
+            else { failure = failure ?? error }
+        }
+        deleteProgress = nil
+        deleteCancel = nil
+        await refresh()
+        if let failure { error = failure }
+        return (deleted, failure)
+    }
+
+    func cancelDelete() { deleteCancel?.cancel() }
+
+    private func deleteOne(_ entry: SFTPEntry, flag: CancelFlag) async -> Bool {
         guard let client else { return false }
+        // Server-supplied name joined onto the browsed path: ".." or "a/b" would walk out of the tree.
+        guard SFTPBrowserPaths.isSafeChildName(entry.name) else {
+            error = L10n.t("“%@” has a name Goel can’t handle safely.", entry.name)
+            return false
+        }
+        let full = Self.join(path, entry.name)
         do {
-            try await client.remove(Self.join(path, entry.name), isDirectory: entry.isDirectory)
-            await refresh()
+            if entry.isDirectory && !entry.isSymlink {
+                // rmdir refuses non-empty directories: the tree is emptied bottom-up first.
+                let name = entry.name
+                try await SFTPRelay.removeTree(client.onBackground(), path: full,
+                                               shouldContinue: { !flag.isCancelled },
+                                               onProgress: { [weak self] done, planned in
+                    // Every unlink is one round trip; a per-item hop to the main actor is not.
+                    guard done.isMultiple(of: 20) || done == planned else { return }
+                    Task { @MainActor in
+                        guard let self, self.deleteProgress != nil else { return }
+                        self.deleteProgress = L10n.t("Deleting “%1$@” — %2$d of %3$d items…",
+                                                     name, done, planned)
+                    }
+                })
+            } else {
+                // Files, and symlinks even when they point at directories, are unlinked.
+                try await client.remove(full, isDirectory: false)
+            }
             return true
         } catch let e as SFTPError { error = e.message; return false } catch { self.error = error.localizedDescription; return false }
     }

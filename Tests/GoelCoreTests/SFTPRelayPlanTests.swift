@@ -4,7 +4,7 @@ import XCTest
 final class SFTPRelayPlanTests: XCTestCase {
 
     private func plan(skipped: [String]) -> SFTPRelay.TreePlan {
-        SFTPRelay.TreePlan(directories: [], files: [], skipped: skipped)
+        SFTPRelay.TreePlan(directories: [], files: [], links: [], skipped: skipped)
     }
 
     func testACompletePlanPasses() {
