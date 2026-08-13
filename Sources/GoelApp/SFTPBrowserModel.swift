@@ -37,6 +37,16 @@ struct SFTPTransfer: Identifiable {
     private var firstByteAt: Date?
     private var lastByteAt: Date?
 
+    /// Set when the row settles, so a finished transfer's elapsed time stops climbing.
+    var endedAt: Date?
+
+    /// Bytes the far end already held when this run began. Excluded from the average,
+    /// because counting a resumed prefix as moved reads as a fake multi-GB/s burst.
+    private(set) var resumedFrom: Int64 = 0
+
+    /// Highest reading the app-wide 500 ms sampler saw during this run.
+    var peakSpeed: Double = 0
+
     init(connectionID: UUID, name: String, direction: Direction, isDirectory: Bool,
          localURL: URL?, remotePath: String, total: Int64 = 0) {
         self.connectionID = connectionID
@@ -85,6 +95,40 @@ struct SFTPTransfer: Identifiable {
         return Double(total - bytes) / rate
     }
 
+    /// The first moved byte, not the moment the row was admitted: a transfer queued
+    /// behind the connection cap would otherwise report the wait as transfer time.
+    var startedAt: Date? { firstByteAt }
+
+    /// Wall clock since the first byte; frozen at ``endedAt`` once the row settles.
+    func elapsed(at now: Date) -> TimeInterval? {
+        guard let firstByteAt else { return nil }
+        return max(0, (endedAt ?? now).timeIntervalSince(firstByteAt))
+    }
+
+    /// Throughput across the whole run. Sub-second elapsed is reported as unknown
+    /// rather than dividing a chunk by a rounding error.
+    func averageSpeed(at now: Date) -> Double {
+        guard let elapsed = elapsed(at: now), elapsed >= 0.5 else { return 0 }
+        let moved = bytes - resumedFrom
+        guard moved > 0 else { return 0 }
+        return Double(moved) / elapsed
+    }
+
+    /// Recorded before the resumed offset is played into ``record(bytes:now:)``, so the
+    /// average and the "skipped" figure both discount bytes this run never sent.
+    mutating func noteResume(from offset: Int64) {
+        resumedFrom = max(0, offset)
+    }
+
+    /// A folder discovers what it can skip one file at a time, so its offset accumulates
+    /// instead of being known up front the way a single file's is. Without this, a resumed
+    /// folder counts every skipped file as moved and reports the same fake burst
+    /// ``noteResume(from:)`` exists to prevent.
+    mutating func addResumed(_ skipped: Int64) {
+        guard skipped > 0 else { return }
+        resumedFrom += skipped
+    }
+
     mutating func record(bytes newBytes: Int64, now: Date = Date()) {
         if firstByteAt == nil, newBytes > 0 { firstByteAt = now }
         if newBytes > 0 { lastByteAt = now }
@@ -102,6 +146,11 @@ struct SFTPTransfer: Identifiable {
         meter = SpeedMeter()
         firstByteAt = nil
         lastByteAt = nil
+        // A retry is a fresh run: carrying the old clock over would date the new
+        // attempt to the failed one and average its bytes over both.
+        endedAt = nil
+        resumedFrom = 0
+        peakSpeed = 0
     }
 }
 
@@ -174,6 +223,26 @@ extension SFTPTransfer {
     var speedLabel: String { displaySpeed > 0 ? displaySpeed.speedString : "" }
 
     var etaLabel: String? { etaSeconds.map { DownloadTask.etaString($0) } }
+
+    /// One word for the inspector's status pill; `.running` borrows the direction verb.
+    var stateLabel: String {
+        switch state {
+        case .waiting:   return L10n.t("Waiting")
+        case .running:   return L10n.t(activityLabel)
+        case .paused:    return L10n.t("Paused")
+        case .finished:  return L10n.t("Finished")
+        case .cancelled: return L10n.t("Cancelled")
+        case .failed:    return L10n.t("Failed")
+        }
+    }
+
+    var failureMessage: String? {
+        if case .failed(let message) = state { return message }
+        return nil
+    }
+
+    /// Only meaningful against a known total — a folder's total lands after the walk.
+    var remainingBytes: Int64? { total > bytes ? total - bytes : nil }
 }
 
 /// Crosses threads: the main-thread drag cancellation handler vs. the libssh2 progress callback.

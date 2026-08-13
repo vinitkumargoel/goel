@@ -1109,33 +1109,8 @@ struct SFTPBrowserView: View {
     }
 
     private func transferStrip(_ transfers: [SFTPTransfer]) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(L10n.t("Transfers")).font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                if transfers.contains(where: { !$0.occupiesDestination }) {
-                    Button(L10n.t("Clear")) { vm.clearFinishedSFTPTransfers() }
-                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.accent)
-                        .accessibilityLabel(L10n.t("Clear finished transfers"))
-                }
-            }
-            .padding(.horizontal, 14).padding(.vertical, 5)
-            ScrollView {
-                ForEach(transfers) { t in
-                    SFTPTransferRow(
-                        transfer: t, density: .full,
-                        onCancel: { vm.requestCancelSFTPTransfer(t.id) },
-                        onRetry: { vm.retrySFTPTransfer(t.id) },
-                        onPause: { vm.pauseSFTPTransfer(t.id) },
-                        onResume: { vm.resumeSFTPTransfer(t.id) },
-                        onShowRemoteFolder: { vm.revealSFTPTransfer(t) })
-                }
-            }
-        }
-        .padding(.bottom, 6)
-        .background(.regularMaterial)
-        .frame(maxHeight: 180)
+        SFTPTransferPanel(transfers: transfers, connection: model.connection,
+                          volumeSpace: volumeSpace)
     }
 
     private func errorBanner(_ message: String) -> some View {

@@ -157,6 +157,11 @@ final class AppViewModel: ObservableObject {
 
     private(set) var taskSpeedHistory: [DownloadTask.ID: [SpeedSample]] = [:]
 
+    /// One ring per SFTP transfer, filled by the same sampler on the same cadence as
+    /// ``taskSpeedHistory``, so the transfer inspector's graph and a download's graph
+    /// share a time base. Single channel: a transfer only moves bytes one way.
+    @Published private(set) var sftpSpeedHistory: [UUID: [Double]] = [:]
+
     @Published private(set) var displayedTaskSpeed: [DownloadTask.ID: SpeedSample] = [:]
 
     func displaySpeed(for task: DownloadTask) -> SpeedSample {
@@ -1029,15 +1034,36 @@ final class AppViewModel: ObservableObject {
                 nextTransfers[index].sampledSpeed = next
                 sftpChanged = true
             }
+            if next > nextTransfers[index].peakSpeed {
+                nextTransfers[index].peakSpeed = next
+                sftpChanged = true
+            }
         }
         if sftpChanged { sftpTransfers = nextTransfers }
         if recordHistory {
+            recordSFTPSpeedHistory(nextTransfers)
             globalSpeedHistory.append(sample)
             if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }
         }
         if speedSampleTick.isMultiple(of: Self.speedPersistEveryTicks) {
             persistSpeedHistory()
         }
+    }
+
+    /// Only rows that still own a transfer extend their ring: a finished row must keep
+    /// the shape it ended on instead of decaying into a flat line while it sits in the list.
+    /// Rings for rows that left the list are dropped, or a long session leaks one per transfer.
+    private func recordSFTPSpeedHistory(_ transfers: [SFTPTransfer]) {
+        var history = sftpSpeedHistory
+        for transfer in transfers where transfer.occupiesDestination {
+            var ring = history[transfer.id] ?? []
+            ring.append(transfer.sampledSpeed ?? 0)
+            if ring.count > Self.speedHistoryCap { ring.removeFirst() }
+            history[transfer.id] = ring
+        }
+        let known = Set(transfers.map(\.id))
+        history = history.filter { known.contains($0.key) }
+        if history != sftpSpeedHistory { sftpSpeedHistory = history }
     }
 
     private func persistSpeedHistory() {

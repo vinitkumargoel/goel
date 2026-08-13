@@ -335,6 +335,9 @@ extension AppViewModel {
                     }
                     if let existing, existing.exists, !existing.isDirectory, existing.size <= total {
                         resumeFrom = existing.size
+                        // Noted before the offset is played in, so the row's average and
+                        // its "already on the server" figure both discount these bytes.
+                        setTransferResumeOffset(id, resumeFrom)
                         setTransferBytes(id, resumeFrom)
                     }
                 }
@@ -365,7 +368,8 @@ extension AppViewModel {
 
     /// 3, not 4: one stream already saturates a home link since the sliding-window shim,
     /// and the slimmer footprint leaves pool slots free for transfers started alongside.
-    private static let maxParallelUploads = 3
+    /// Also read by the transfer inspector, which reports a folder's stream count.
+    static let maxParallelUploads = 3
 
     private func uploadFolder(id: UUID, client: SFTPClient, root: URL,
                               remoteRoot: String, cap: Int64, cancel: CancelFlag,
@@ -427,11 +431,22 @@ extension AppViewModel {
                            existing.exists, !existing.isDirectory, existing.size <= file.size {
                             if existing.size == file.size, file.size > 0 {
                                 if let model {
-                                    await MainActor.run { model.setFolderFileBytes(id, index: index, bytes: file.size) }
+                                    await MainActor.run {
+                                        model.setFolderFileBytes(id, index: index, bytes: file.size)
+                                        // Counted as progress above, so it must also be
+                                        // counted as skipped or the average inflates.
+                                        model.addTransferResumed(id, file.size)
+                                    }
                                 }
                                 continue
                             }
                             resumeFrom = existing.size
+                            // Immutable copy: reading a captured var inside a @Sendable
+                            // closure is an error in the Swift 6 language mode.
+                            let skipped = resumeFrom
+                            if skipped > 0, let model {
+                                await MainActor.run { model.addTransferResumed(id, skipped) }
+                            }
                         }
                         let coalescer = ProgressCoalescer()
                         try await stream.upload(localURL: file.url, remote: remoteFile,
@@ -495,9 +510,11 @@ extension AppViewModel {
                             // Every byte is already on disk — settle finished without
                             // truncating or reopening anything.
                             alreadyComplete = true
+                            setTransferResumeOffset(id, localSize)
                             setTransferProgress(id, bytes: localSize, total: remoteSize)
                         } else if localSize < remoteSize {
                             resumeFrom = localSize
+                            setTransferResumeOffset(id, resumeFrom)
                             setTransferBytes(id, resumeFrom)
                         }
                     }
@@ -584,11 +601,21 @@ extension AppViewModel {
                             let localSize = Self.fileSize(local)
                             if localSize == file.size, file.size > 0 {
                                 if let model {
-                                    await MainActor.run { model.setFolderFileBytes(id, index: index, bytes: file.size) }
+                                    await MainActor.run {
+                                        model.setFolderFileBytes(id, index: index, bytes: file.size)
+                                        // Counted as progress above, so it must also be
+                                        // counted as skipped or the average inflates.
+                                        model.addTransferResumed(id, file.size)
+                                    }
                                 }
                                 continue
                             }
-                            if localSize > 0, localSize < file.size { resumeFrom = localSize }
+                            if localSize > 0, localSize < file.size {
+                                resumeFrom = localSize
+                                if let model {
+                                    await MainActor.run { model.addTransferResumed(id, localSize) }
+                                }
+                            }
                         }
                         let coalescer = ProgressCoalescer()
                         try await stream.downloadToFile(remote: remote, localURL: local,
@@ -669,6 +696,18 @@ extension AppViewModel {
         sftpTransfers[i].record(bytes: sftpTransfers[i].bytes + bytes - previous)
     }
 
+    func setTransferResumeOffset(_ id: UUID, _ offset: Int64) {
+        guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
+        sftpTransfers[i].noteResume(from: offset)
+    }
+
+    /// Folder streams call this per skipped file or skipped tail, so the aggregate offset
+    /// builds up as the walk discovers what the far end already holds.
+    func addTransferResumed(_ id: UUID, _ skipped: Int64) {
+        guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
+        sftpTransfers[i].addResumed(skipped)
+    }
+
     func setTransferTotal(_ id: UUID, _ total: Int64) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }) else { return }
         sftpTransfers[i].total = total
@@ -689,6 +728,8 @@ extension AppViewModel {
         if state == .finished { sftpTransfers[i].bytes = max(sftpTransfers[i].bytes, sftpTransfers[i].total) }
         sftpTransfers[i].speed = 0
         sftpTransfers[i].state = state
+        // Stops the inspector's elapsed clock; a resume clears it again via `resetProgress`.
+        sftpTransfers[i].endedAt = Date()
     }
 
     func settleTransfer(_ id: UUID, error: Error) {
