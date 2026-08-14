@@ -63,7 +63,9 @@ struct GoelDownloaderApp: App {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+/// `NSMenuItemValidation` is declared, not just implemented: a plain `validateMenuItem` on an
+/// NSObject subclass is invisible to the Objective-C runtime, so AppKit would never call it.
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var appearanceObservation: NSKeyValueObservation?
     private let servicesProvider = GoelServicesProvider()
     private let memoryRelief = MemoryReliefService()
