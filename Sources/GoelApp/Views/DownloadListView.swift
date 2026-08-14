@@ -8,6 +8,10 @@ struct DownloadListView: View {
 
     @State private var quickLookItem: URL?
 
+    /// Without a default, the window opens with the toolbar's search field as first responder, so
+    /// ⌘A and the arrow keys went to an empty text field until the user clicked a row.
+    @FocusState private var listFocused: Bool
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -49,6 +53,11 @@ struct DownloadListView: View {
         .quickLookPreview($quickLookItem)
         .focusable()
         .focusEffectDisabled()
+        .focused($listFocused)
+        .defaultFocus($listFocused, true)
+        // `defaultFocus` alone is not enough: the queue is restored from disk asynchronously, so
+        // this view mounts after the window's first-appearance focus pass has already run.
+        .task { listFocused = true }
         .onKeyPress { press in handleKey(press) }
         .accessibilityLabel(L10n.t("Download queue"))
         .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, shift with an arrow to extend the selection, command A to select all, space to preview, return to open."))
