@@ -327,6 +327,7 @@
 "Copy" = "Copy";
 "Copy %@" = "Copy %@";
 "Copy %d Items" = "Copy %d Items";
+"Copy %d Source Links" = "Copy %d Source Links";
 "Copy Bookmarklet" = "Copy Bookmarklet";
 "Copy Example" = "Copy Example";
 "Copy Fingerprint" = "Copy Fingerprint";
@@ -413,10 +414,12 @@
 "Delete %d items?" = "Delete %d items?";
 "Delete Files" = "Delete Files";
 "Delete cancelled." = "Delete cancelled.";
+"Delete downloaded files for %d items?" = "Delete downloaded files for %d items?";
 "Delete downloaded files for “%@”?" = "Delete downloaded files for “%@”?";
 "Delete “%@”?" = "Delete “%@”?";
 "Deleted %1$d of %2$d items — %3$@" = "Deleted %1$d of %2$d items — %3$@";
 "Deleted %d items" = "Deleted %d items";
+"Deleted files for %d downloads" = "Deleted files for %d downloads";
 "Deleted files for “%@”" = "Deleted files for “%@”";
 "Deleted “%@”" = "Deleted “%@”";
 "Deleting “%1$@” (%2$d of %3$d)…" = "Deleting “%1$@” (%2$d of %3$d)…";
@@ -927,6 +930,7 @@
 "Path to an SSH private key, e.g. ~/.ssh/id_ed25519" = "Path to an SSH private key, e.g. ~/.ssh/id_ed25519";
 "Pause" = "Pause";
 "Pause %@" = "Pause %@";
+"Pause %d Selected" = "Pause %d Selected";
 "Pause All" = "Pause All";
 "Pause All Downloads" = "Pause All Downloads";
 "Pause all" = "Pause all";
@@ -1032,6 +1036,8 @@
 "Remote folder %@" = "Remote folder %@";
 "Remote portal" = "Remote portal";
 "Remove" = "Remove";
+"Remove %d from List" = "Remove %d from List";
+"Remove %d with Data" = "Remove %d with Data";
 "Remove entry" = "Remove entry";
 "Remove feed" = "Remove feed";
 "Remove feed %@" = "Remove feed %@";
@@ -1044,6 +1050,8 @@
 "Remove with data" = "Remove with data";
 "Remove “%@” from history" = "Remove “%@” from history";
 "Remove “%@”?" = "Remove “%@”?";
+"Removed %1$d downloads, but %2$d of their files are still on disk" = "Removed %1$d downloads, but %2$d of their files are still on disk";
+"Removed %d downloads from the list" = "Removed %d downloads from the list";
 "Removed from list" = "Removed from list";
 "Removed from the list, but the file is still on disk" = "Removed from the list, but the file is still on disk";
 "Removed with data" = "Removed with data";
@@ -1080,12 +1088,14 @@
 "Resumable" = "Resumable";
 "Resume" = "Resume";
 "Resume %@" = "Resume %@";
+"Resume %d Selected" = "Resume %d Selected";
 "Resume everything paused or queued" = "Resume everything paused or queued";
 "Resume transfer of %@" = "Resume transfer of %@";
 "Resumed" = "Resumed";
 "Resumed all downloads" = "Resumed all downloads";
 "Retry" = "Retry";
 "Retry %@" = "Retry %@";
+"Retry %d Selected" = "Retry %d Selected";
 "Retry count" = "Retry count";
 "Retry interval" = "Retry interval";
 "Retry loading quality options" = "Retry loading quality options";
@@ -1146,6 +1156,7 @@
 "Segments" = "Segments";
 "Select" = "Select";
 "Select All" = "Select All";
+"Select Completed" = "Select Completed";
 "Select None" = "Select None";
 "Select a download to see its details, progress, and live throughput." = "Select a download to see its details, progress, and live throughput.";
 "Select a download to see its progress, live speed, and details." = "Select a download to see its progress, live speed, and details.";
@@ -1337,6 +1348,7 @@
 "This file’s video or audio track uses a codec macOS can’t decode." = "This file’s video or audio track uses a codec macOS can’t decode.";
 "This folder is empty" = "This folder is empty";
 "This permanently deletes the file from disk and can’t be undone." = "This permanently deletes the file from disk and can’t be undone.";
+"This permanently deletes the files from disk and can’t be undone." = "This permanently deletes the files from disk and can’t be undone.";
 "This permanently removes the file from the server." = "This permanently removes the file from the server.";
 "This permanently removes them from the server. Folders are removed with everything inside them." = "This permanently removes them from the server. Folders are removed with everything inside them.";
 "This protocol does not support aggregation yet" = "This protocol does not support aggregation yet";
@@ -1418,7 +1430,7 @@
 "Upload…" = "Upload…";
 "Use Folder" = "Use Folder";
 "Use only after a legitimate server rekey. Goel will ask you to confirm the new key." = "Use only after a legitimate server rekey. Goel will ask you to confirm the new key.";
-"Use the up and down arrow keys to move through downloads, space to preview, return to open." = "Use the up and down arrow keys to move through downloads, space to preview, return to open.";
+"Use the up and down arrow keys to move through downloads, shift with an arrow to extend the selection, command A to select all, space to preview, return to open." = "Use the up and down arrow keys to move through downloads, shift with an arrow to extend the selection, command A to select all, space to preview, return to open.";
 "Use the up and down arrow keys to move through results, return to run." = "Use the up and down arrow keys to move through results, return to run.";
 "Use “#” for a running number. The original extension is kept if you omit one." = "Use “#” for a running number. The original extension is kept if you omit one.";
 "User: %@" = "User: %@";

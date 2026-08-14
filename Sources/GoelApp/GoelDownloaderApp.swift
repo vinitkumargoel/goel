@@ -128,6 +128,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         memoryRelief.reclaimAsync()
     }
 
+    /// Standard Edit ▸ Select All (⌘A). Answering it here, at the end of the responder chain,
+    /// keeps the menu item enabled for the download queue while a focused text field — which sits
+    /// ahead of the delegate in that chain — still gets ⌘A for its own text.
+    @objc func selectAll(_ sender: Any?) {
+        MainActor.assumeIsolated { AppViewModel.shared?.selectAll() }
+    }
+
+    /// Only this delegate's own actions reach here, so everything else validates untouched.
+    /// An empty queue greys Select All out rather than offering a command with nothing to select.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard item.action == #selector(selectAll(_:)) else { return true }
+        return MainActor.assumeIsolated { AppViewModel.shared?.visibleTasks.isEmpty == false }
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         Task { @MainActor in
             for url in urls {
@@ -174,6 +188,14 @@ struct GoelCommands: Commands {
             Divider()
             Button(L10n.t("Export Backup (JSON)…")) { exportBackup() }
             Button(L10n.t("Import Backup (JSON)…")) { importBackup() }
+        }
+        // Sits with the standard Select All (⌘A), which the app delegate answers for the queue.
+        CommandGroup(after: .pasteboard) {
+            Button(L10n.t("Deselect All")) { viewModel.selectNone() }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(viewModel.selection.isEmpty)
+            Button(L10n.t("Select Completed")) { viewModel.selectCompleted() }
+                .disabled(viewModel.visibleTasks.allSatisfy { $0.status != .completed })
         }
         CommandMenu(L10n.t("Downloads")) {
             Button(L10n.t("Start All")) { viewModel.resumeAll() }

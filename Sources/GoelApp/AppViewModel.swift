@@ -86,6 +86,11 @@ final class AppViewModel: ObservableObject {
 
     @Published var primarySelection: DownloadTask.ID?
 
+    /// Where a ⇧-click or ⇧-arrow measures its run from. Separate from `primarySelection`, which
+    /// tracks the last row touched and drives the detail panel: a shift-extend has to move one
+    /// without moving the other.
+    @Published var selectionAnchor: DownloadTask.ID?
+
     @Published var filter: SidebarFilter = .all { didSet { recomputeVisible() } }
     @Published var search: String = "" { didSet { recomputeVisible() } }
     @Published var sortKey: SortKey = .status { didSet { recomputeVisible() } }
@@ -417,6 +422,7 @@ final class AppViewModel: ObservableObject {
                             self.hasAutoSelected = true
                             self.primarySelection = first
                             self.selection = [first]
+                            self.selectionAnchor = first
                         }
                     }
                     self.pump(snapshot)
@@ -700,6 +706,7 @@ final class AppViewModel: ObservableObject {
         let savePath = tasks.first { $0.id == id }?.savePath
         selection.remove(id)
         if primarySelection == id { primarySelection = nextPrimary }
+        if selectionAnchor == id { selectionAnchor = nextPrimary }
         Task {
             await manager.remove(id, deleteData: deleteData)
             guard deleteData else { return toastNow(L10n.t("Removed from list")) }
@@ -714,6 +721,43 @@ final class AppViewModel: ObservableObject {
             }
         }
     }
+
+    /// Batch sibling of `remove`. It lives here, and drains the removals itself, so the whole
+    /// batch reports once: routed through `remove` each task would post its own toast into the
+    /// single toast slot, where one task's late success would overwrite another's failure.
+    func removeSelected(deleteData: Bool) {
+        let targets = selectedTasks
+        guard targets.count > 1 else {
+            if let only = targets.first { remove(only.id, deleteData: deleteData) }
+            return
+        }
+        let ids = targets.map(\.id)
+        let doomed = Set(ids)
+        let paths = targets.map(\.savePath)
+        // Must run BEFORE the snapshot drops them, same as the single-task path.
+        let nextPrimary = visibleTasks.first { !doomed.contains($0.id) }?.id
+        selection.subtract(doomed)
+        if let primary = primarySelection, doomed.contains(primary) { primarySelection = nextPrimary }
+        if let anchor = selectionAnchor, doomed.contains(anchor) { selectionAnchor = nextPrimary }
+        Task {
+            for id in ids { await manager.remove(id, deleteData: deleteData) }
+            guard deleteData else {
+                return toastNow(L10n.t("Removed %d downloads from the list", ids.count))
+            }
+            // Off the main actor: select-all-then-delete is one `stat` per row, and this runs
+            // on the actor that also draws the window.
+            let stranded = await Task.detached {
+                paths.filter { FileManager.default.fileExists(atPath: $0) }.count
+            }.value
+            guard stranded == 0 else {
+                return toastNow(L10n.t("Removed %1$d downloads, but %2$d of their files are still on disk",
+                                       ids.count, stranded),
+                                isError: true)
+            }
+            toastNow(L10n.t("Deleted files for %d downloads", ids.count))
+        }
+    }
+
     func retry(_ id: DownloadTask.ID) {
         // Failed tasks need this path: resume() ignores anything not paused.
         Task { await manager.retry(id) }

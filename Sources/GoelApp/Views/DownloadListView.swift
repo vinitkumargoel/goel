@@ -49,29 +49,44 @@ struct DownloadListView: View {
         .quickLookPreview($quickLookItem)
         .focusable()
         .focusEffectDisabled()
-        .onKeyPress(.space) {
+        .onKeyPress { press in handleKey(press) }
+        .accessibilityLabel(L10n.t("Download queue"))
+        .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, shift with an arrow to extend the selection, command A to select all, space to preview, return to open."))
+    }
+
+    private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        let extending = press.modifiers.contains(.shift)
+        switch press.key {
+        case .upArrow, .downArrow:
+            guard !press.modifiers.contains(.command) else { return .ignored }
+            return moved(vm.moveSelection(by: press.key == .downArrow ? 1 : -1, extending: extending))
+        case .home, .end:
+            return moved(vm.selectEdge(last: press.key == .end, extending: extending))
+        case .space:
             guard let task = vm.selectedTask, task.status.hasData else { return .ignored }
             quickLookItem = URL(fileURLWithPath: task.savePath)
             return .handled
-        }
-        .onKeyPress(.downArrow) { moveSelection(by: 1) }
-        .onKeyPress(.upArrow) { moveSelection(by: -1) }
-        .onKeyPress(.return) {
+        case .return:
             guard let task = vm.selectedTask else { return .ignored }
             if task.status == .completed { vm.openFile(task) } else { vm.revealInFinder(task) }
             return .handled
+        case .escape:
+            guard !vm.selection.isEmpty else { return .ignored }
+            vm.selectNone()
+            return .handled
+        default:
+            // The Edit menu owns ⌘A; this is the fallback for when the list, not a text field,
+            // holds focus and no menu item claimed the key first. The character is compared
+            // case-insensitively because ⇧⌘A arrives as "A".
+            guard press.modifiers.contains(.command),
+                  press.key.character.lowercased() == "a" else { return .ignored }
+            if extending { vm.selectNone() } else { vm.selectAll() }
+            return .handled
         }
-        .accessibilityLabel(L10n.t("Download queue"))
-        .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, space to preview, return to open."))
     }
 
-    private func moveSelection(by offset: Int) -> KeyPress.Result {
-        let tasks = vm.visibleTasks
-        guard !tasks.isEmpty else { return .ignored }
-        let current = vm.selectedTask.flatMap { sel in tasks.firstIndex { $0.id == sel.id } }
-        let next = current.map { min(max(0, $0 + offset), tasks.count - 1) }
-                   ?? (offset > 0 ? 0 : tasks.count - 1)
-        vm.selectOnly(tasks[next].id)
+    private func moved(_ didMove: Bool) -> KeyPress.Result {
+        guard didMove else { return .ignored }
         if !vm.detailPanelVisible { vm.detailPanelVisible = true }
         return .handled
     }
@@ -214,7 +229,11 @@ struct DownloadRow: View {
         .accessibilityAction(named: Text(L10n.t("Remove from list"))) { vm.remove(task.id, deleteData: false) }
         .contentShape(Rectangle())
         .onTapGesture {
-            if NSEvent.modifierFlags.contains(.command) {
+            let mods = NSEvent.modifierFlags
+            if mods.contains(.shift) {
+                // ⇧⌘ adds the run to what is already selected; plain ⇧ replaces it.
+                vm.extendSelection(through: task.id, additive: mods.contains(.command))
+            } else if mods.contains(.command) {
                 vm.toggleSelection(task.id)
             } else {
                 vm.selectOnly(task.id)
@@ -257,6 +276,48 @@ struct DownloadRow: View {
 
     @ViewBuilder
     private var contextMenu: some View {
+        if vm.actsOnSelection(task.id) { selectionMenu } else { singleRowMenu }
+    }
+
+    /// Right-clicking inside a multi-row selection commands the selection, not the row under the
+    /// pointer. Only the commands that mean something in bulk appear; per-row ones (tags, note,
+    /// Quick Look, per-task limits) stay on the single-row menu.
+    @ViewBuilder
+    private var selectionMenu: some View {
+        let targets = vm.selectedTasks
+        let count = targets.count
+        if targets.contains(where: { $0.status == .paused || $0.status == .queued }) {
+            Button(L10n.t("Resume %d Selected", count)) { vm.resumeSelected() }
+        }
+        if targets.contains(where: { $0.status.isActive }) {
+            Button(L10n.t("Pause %d Selected", count)) { vm.pauseSelected() }
+        }
+        if targets.contains(where: { if case .failed = $0.status { return true } else { return false } }) {
+            Button(L10n.t("Retry %d Selected", count)) { vm.retrySelected() }
+        }
+        Divider()
+        Button(L10n.t("Copy %d Source Links", count)) {
+            vm.copyToPasteboard(targets.map(\.sourceLocator).joined(separator: "\n"))
+        }
+        if targets.allSatisfy({ $0.kind != .torrent && !$0.status.isActive }) {
+            Button(L10n.t("Rename %d Selected…", count)) { vm.promptForBatchRename(tasks: targets) }
+        }
+        Divider()
+        Button(L10n.t("Remove %d from List", count), role: .destructive) {
+            vm.removeSelected(deleteData: false)
+        }
+        Button(L10n.t("Remove %d with Data", count), role: .destructive) {
+            vm.requestConfirm(
+                title: L10n.t("Delete downloaded files for %d items?", count),
+                message: L10n.t("This permanently deletes the files from disk and can’t be undone."),
+                confirmTitle: L10n.t("Delete Files"),
+                destructive: true
+            ) { vm.removeSelected(deleteData: true) }
+        }
+    }
+
+    @ViewBuilder
+    private var singleRowMenu: some View {
         if task.status == .paused || task.status == .queued {
             Button(L10n.t("Resume")) { vm.resume(task.id) }
         } else if task.status.isActive {
@@ -330,13 +391,7 @@ struct DownloadRow: View {
         }
         Divider()
         if task.kind != .torrent, !task.status.isActive {
-            if vm.selection.count > 1, vm.selection.contains(task.id) {
-                Button(L10n.t("Rename %d Selected…", vm.selection.count)) {
-                    vm.promptForBatchRename(tasks: vm.tasks.filter { vm.selection.contains($0.id) })
-                }
-            } else {
-                Button(L10n.t("Rename…")) { vm.promptForRename(task: task) }
-            }
+            Button(L10n.t("Rename…")) { vm.promptForRename(task: task) }
         }
         Button(task.allTags.isEmpty ? L10n.t("Add Tags…") : L10n.t("Edit Tags…")) { vm.promptForTags(task: task) }
         Button(task.note == nil ? L10n.t("Add Note…") : L10n.t("Edit Note…")) { vm.promptForNote(task: task) }

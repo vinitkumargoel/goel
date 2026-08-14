@@ -33,6 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   needed). `goel config set` creates the user-level file (0600) without root; `goel
   doctor` skips the Linux-installer checks on a portable install instead of failing them;
   `goel web` opens the portal in the browser.
+- **The download queue now selects the way every other Mac list does.** ⇧-click selects the
+  run from the last-clicked row to the clicked one (and shrinks it again — the anchor stays
+  where it was), ⇧⌘-click adds that run to the current selection, ⌘-click still toggles a
+  single row, ⌘A selects everything the list is showing, ⇧⌘A deselects, escape clears, and
+  ⇧ with ↑/↓ (or home/end) extends the selection from the keyboard. Select All and Deselect
+  All are in the Edit menu; ⌘A inside the search field still selects its text.
+- **Right-clicking inside a multi-row selection commands the whole selection.** The menu
+  switches to selection-wide items with counts — Resume/Pause/Retry *n* Selected, Copy *n*
+  Source Links, Rename *n* Selected…, Remove *n* from List, Remove *n* with Data (one
+  confirmation for the batch) — instead of quietly acting on the single row under the
+  pointer. Per-row items (tags, note, Quick Look, per-task limits) stay on the single-row
+  menu.
 
 ### Fixed
 
