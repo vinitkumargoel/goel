@@ -558,6 +558,7 @@
 "Downloading %d items to Downloads" = "Downloading %d items to Downloads";
 "Downloading “%@” again" = "Downloading “%@” again";
 "Downloading “%@” to Downloads" = "Downloading “%@” to Downloads";
+"Downloads can’t be saved in that folder, so “%@” wasn’t moved" = "Downloads can’t be saved in that folder, so “%@” wasn’t moved";
 "Downloads" = "Downloads";
 "Downloads are still running." = "Downloads are still running.";
 "Downloads finished — Goel° will quit" = "Downloads finished — Goel° will quit";

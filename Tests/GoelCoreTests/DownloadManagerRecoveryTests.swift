@@ -15,14 +15,16 @@ final class DownloadManagerRecoveryTests: XCTestCase {
         try? FileManager.default.removeItem(atPath: saveDir)
     }
 
-    private func makeManager(_ http: FakeEngine) -> DownloadManager {
+    private func makeManager(_ http: FakeEngine,
+                             credentials: any CredentialManaging = FakeCredentialStore()) -> DownloadManager {
         DownloadManager(
             httpEngine: http,
             torrentEngine: FakeEngine(kind: .torrent),
             settings: AppSettings(profiles: TrafficProfile.defaults,
                                   selectedProfileName: TrafficProfile.high.name,
                                   speedLimitEnabled: false,
-                                  defaultSaveDirectory: saveDir))
+                                  defaultSaveDirectory: saveDir),
+            credentials: credentials)
     }
 
     @discardableResult
@@ -105,7 +107,72 @@ final class DownloadManagerRecoveryTests: XCTestCase {
         XCTAssertEqual(result, .duplicate(name: other.name))
     }
 
+    func testARefusedReplaceLeavesTheHostsSavedLoginAlone() async {
+        let http = FakeEngine(kind: .http)
+        let logins = FakeCredentialStore()
+        _ = logins.setCredential(username: "me", password: "saved", host: "example.test")
+        _ = logins.setCredential(username: "me", password: "other-saved", host: "other.test")
+        let manager = makeManager(http, credentials: logins)
+        let task = await failedTask(manager, http)
+        _ = await manager.add(source: .url(URL(string: "https://other.test/x.bin")!), startPaused: true)
+
+        let same = await manager.replaceSource(task.id, with: "https://me:typo@example.test/file.bin")
+        XCTAssertEqual(same, .sameLink)
+        XCTAssertEqual(logins.credential(forHost: "example.test")?.password, "saved")
+        let duplicate = await manager.replaceSource(task.id, with: "https://me:typo@other.test/x.bin")
+        guard case .duplicate = duplicate else { return XCTFail("expected duplicate, got \(duplicate)") }
+        XCTAssertEqual(logins.credential(forHost: "other.test")?.password, "other-saved")
+
+        let replaced = await manager.replaceSource(task.id, with: "https://me:fresh@example.test/new.bin")
+        XCTAssertEqual(replaced, .replaced(keepsPartial: false))
+        XCTAssertEqual(logins.credential(forHost: "example.test")?.password, "fresh",
+                       "an accepted replace is the user's word and does update the login")
+    }
+
     // MARK: - relocate
+
+    func testARowBeingRelocatedIsNotStartedUntilTheMoveSettles() async {
+        let http = FakeEngine(kind: .http)
+        let manager = makeManager(http)
+        let task = await manager.add(source: .url(URL(string: "https://example.test/held.bin")!),
+                                     saveDirectory: saveDir, startPaused: true)
+        await manager.holdForRelocation(task.id)
+        await manager.resume(task.id)
+        let startedEarly = await waitUntil(timeout: 0.2) { http.added.contains(task.id) || http.resumed.contains(task.id) }
+        XCTAssertFalse(startedEarly, "a start mid-copy would rewrite the partial being copied")
+
+        await manager.releaseRelocationHold(task.id)
+        let started = await waitUntil { http.added.contains(task.id) || http.resumed.contains(task.id) }
+        XCTAssertTrue(started)
+    }
+
+    func testRelocationReleasesItsSchedulingHold() async throws {
+        let http = FakeEngine(kind: .http)
+        let manager = makeManager(http)
+        let task = await manager.add(source: .url(URL(string: "https://example.test/q.bin")!),
+                                     saveDirectory: saveDir, startPaused: true)
+        let target = (saveDir as NSString).appendingPathComponent("queued-target")
+        let result = await manager.relocate(task.id, to: target)
+        XCTAssertEqual(result, .moved)
+        let busy = await manager.relocating.isEmpty
+        XCTAssertTrue(busy, "the hold is released whatever the outcome")
+    }
+
+    func testRelocatingRefusesRelativeAndProtectedFolders() async throws {
+        let http = FakeEngine(kind: .http)
+        let manager = makeManager(http)
+        let task = await failedTask(manager, http)
+        let relative = await manager.relocate(task.id, to: "relative/folder")
+        XCTAssertEqual(relative, .unusableFolder)
+        let system = await manager.relocate(task.id, to: "/System/Library/Goel")
+        XCTAssertEqual(system, .unusableFolder)
+        let file = (saveDir as NSString).appendingPathComponent("a-file")
+        try Data("x".utf8).write(to: URL(fileURLWithPath: file))
+        let notAFolder = await manager.relocate(task.id, to: file)
+        XCTAssertEqual(notAFolder, .unusableFolder)
+        let dir = await manager.task(task.id)?.saveDirectory
+        XCTAssertEqual(dir, saveDir)
+    }
 
     func testRelocatingAFailedDownloadMovesItsPartialAndRetries() async throws {
         let http = FakeEngine(kind: .http)
@@ -176,5 +243,14 @@ final class DownloadManagerRecoveryTests: XCTestCase {
         XCTAssertFalse(parked)
         let scheduled = await manager.task(task.id)?.scheduledAt
         XCTAssertNil(scheduled)
+    }
+}
+
+extension DownloadManager {
+    func holdForRelocation(_ id: DownloadTask.ID) { relocating.insert(id) }
+
+    func releaseRelocationHold(_ id: DownloadTask.ID) {
+        relocating.remove(id)
+        schedule()
     }
 }

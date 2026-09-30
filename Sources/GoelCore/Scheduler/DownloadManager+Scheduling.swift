@@ -6,7 +6,7 @@ extension DownloadManager {
     func schedule() {
         let profile = settings.selectedProfile
         let promoted = SchedulingPolicy.promotions(
-            tasks: tasks,
+            tasks: relocating.isEmpty ? tasks : tasks.filter { !relocating.contains($0.id) },
             runningSlots: runningSlots,
             maxSimultaneousDownloads: profile.maxSimultaneousDownloads,
             maxMetadataResolutions: profile.maxMetadataResolutions,

@@ -29,7 +29,9 @@ extension DownloadManager {
         guard !current.status.isActive, !runningSlots.contains(id) else { return .busy }
         guard current.kind == .http else { return .unsupportedKind }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let source = adoptInlineCredentials(trimmed, replaceExisting: true),
+        // Validated before any login in the link is saved: a refused replace must not overwrite the
+        // host's stored credential.
+        guard let source = DownloadSource.parseWithCredentials(trimmed)?.source,
               case .url(let url) = source,
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
               url.host?.isEmpty == false else { return .invalidLink }
@@ -37,7 +39,8 @@ extension DownloadManager {
         if let other = dedupIndex[source.dedupKey], other != id, let j = index(of: other) {
             return .duplicate(name: tasks[j].name)
         }
-        // Re-resolve: `adoptInlineCredentials` may have touched the keychain, but nothing awaited.
+        // Committed now, with nothing awaited since the checks; it yields the same credential-free source.
+        adoptInlineCredentials(trimmed, replaceExisting: true)
         guard let i = index(of: id) else { return .notFound }
         let keepsPartial = tasks[i].bytesDownloaded > 0 || tasks[i].resumeData != nil
         tasks[i].source = source
@@ -66,6 +69,8 @@ extension DownloadManager {
         case unsupportedKind
         case conflict
         case changedDuringMove
+        /// Not an absolute path, or a folder downloads may not be saved into (see ``SaveFolderBrowser``).
+        case unusableFolder
         case failed(String)
     }
 
@@ -75,11 +80,16 @@ extension DownloadManager {
     /// never blocks the manager: across volumes the partial is COPIED off the actor while the
     /// original stays authoritative, and the switch is committed only if the task is still stopped
     /// and unchanged — otherwise the copy is thrown away and nothing changes.
+    ///
+    /// For the copy's duration the row is held out of scheduling: a queued row that started would truncate
+    /// or extend the partial being copied, and could stop again with the same byte count.
     public func relocate(_ id: DownloadTask.ID, to directory: String) async -> Relocation {
         guard let snapshot = task(id) else { return .notFound }
         guard snapshot.status != .completed else { return .finished }
-        guard !snapshot.status.isActive, !runningSlots.contains(id) else { return .busy }
+        guard !snapshot.status.isActive, !runningSlots.contains(id), !relocating.contains(id) else { return .busy }
         let target = (directory as NSString).standardizingPath
+        // `standardizingPath` would anchor a relative path to the process's cwd, which is nobody's choice.
+        guard (target as NSString).isAbsolutePath else { return .unusableFolder }
         guard target != (snapshot.saveDirectory as NSString).standardizingPath else { return .sameFolder }
         let partials = Self.partialFiles(of: snapshot)
         if snapshot.kind != .http, !partials.isEmpty || snapshot.bytesDownloaded > 0 {
@@ -91,23 +101,36 @@ extension DownloadManager {
         let fm = FileManager.default
         if moves.contains(where: { fm.fileExists(atPath: $0.to) }) { return .conflict }
 
-        let copied: Result<Void, Error> = await Task.detached(priority: .userInitiated) {
+        relocating.insert(id)
+        defer {
+            relocating.remove(id)
+            // A queued row held back during the copy may start now, from wherever it ended up.
+            schedule()
+        }
+        let defaultFolder = settings.defaultSaveDirectory
+        let copied: Result<Bool, Error> = await Task.detached(priority: .userInitiated) {
+            guard Self.canRelocate(into: target, defaultFolder: defaultFolder) else { return .success(false) }
             do {
                 try FileManager.default.createDirectory(atPath: target, withIntermediateDirectories: true)
                 for move in moves { try FileManager.default.copyItem(atPath: move.from, toPath: move.to) }
-                return .success(())
+                return .success(true)
             } catch {
                 for move in moves { try? FileManager.default.removeItem(atPath: move.to) }
                 return .failure(error)
             }
         }.value
-        if case .failure(let error) = copied { return .failed(error.localizedDescription) }
+        switch copied {
+        case .failure(let error): return .failed(error.localizedDescription)
+        case .success(false): return .unusableFolder
+        case .success(true): break
+        }
 
         // Commit only if nothing touched the task while the copy ran.
         guard let i = index(of: id),
               !tasks[i].status.isActive, !runningSlots.contains(id),
               tasks[i].saveDirectory == snapshot.saveDirectory,
               tasks[i].bytesDownloaded == snapshot.bytesDownloaded,
+              tasks[i].resumeData == snapshot.resumeData,
               tasks[i].name == snapshot.name else {
             for move in moves { try? fm.removeItem(atPath: move.to) }
             return .changedDuringMove
@@ -127,6 +150,17 @@ extension DownloadManager {
             await refreshEngineCopy(id)
         }
         return .moved
+    }
+
+    /// The same bar a remote add's save folder must clear. A folder that does not exist yet is judged by
+    /// where it would be made; relocation creates it.
+    static func canRelocate(into target: String, defaultFolder: String) -> Bool {
+        guard !SaveFolderBrowser.isProtected(target, home: NSHomeDirectory(), defaultFolder: defaultFolder) else {
+            return false
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: target, isDirectory: &isDirectory) else { return true }
+        return isDirectory.boolValue && SaveFolderBrowser.canSave(into: target, defaultFolder: defaultFolder)
     }
 
     /// The on-disk scratch a stopped, unfinished download owns: the `.goelpart`, or — for a

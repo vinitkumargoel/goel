@@ -108,6 +108,7 @@ extension AppViewModel {
             return L10n.t("“%@” has already written data and can’t change folder", name)
         case .conflict: return L10n.t("A file named “%@” is already in that folder", name)
         case .changedDuringMove: return L10n.t("“%@” changed while moving; nothing was moved", name)
+        case .unusableFolder: return L10n.t("Downloads can’t be saved in that folder, so “%@” wasn’t moved", name)
         case .notFound: return L10n.t("The download is no longer in the list.")
         case .failed(let reason): return L10n.t("Couldn’t move “%1$@”: %2$@", name, reason)
         }

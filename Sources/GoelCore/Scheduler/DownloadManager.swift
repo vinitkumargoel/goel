@@ -116,6 +116,9 @@ public actor DownloadManager {
     /// Spooled .torrent sources of removed rows that an Undo can still bring back, per ``RemovalHold``.
     var spoolHolds: [UUID: [DownloadSource]] = [:]
 
+    /// Rows whose partial is being copied to another folder: held out of scheduling until the move settles.
+    var relocating: Set<UUID> = []
+
     /// Set once ``restore()`` has loaded the saved queue: until then no spool file can be called orphaned.
     var restoredQueue = false
 
