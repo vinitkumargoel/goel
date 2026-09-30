@@ -372,11 +372,7 @@ struct SFTPBrowserView: View {
                     .scaledFont(size: Theme.TextSize.caption, weight: .medium, monospacedDigit: true)
                     .foregroundStyle(.tertiary)
                     .accessibilityLabel(L10n.t("%d matches", visibleEntries.count))
-                Button { searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
-                }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help(L10n.t("Clear filter"))
-                .a11yButton(L10n.t("Clear filter"))
+                IconButton(symbol: "xmark", help: L10n.t("Clear filter"), size: 9.5) { searchText = "" }
             }
         }
         .padding(.horizontal, 9).padding(.vertical, 5)
@@ -916,10 +912,10 @@ struct SFTPBrowserView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(entry.isDirectory ? "—" : entry.size.byteString)
                 .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
-                .foregroundStyle(entry.isDirectory ? .tertiary : .secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 72, alignment: .trailing)
             Text(entry.modified.map { $0.formatted(.dateTime.year().month().day()) } ?? "—")
-                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
                 .frame(width: 92, alignment: .trailing)
         }
         .padding(.horizontal, 14)
@@ -961,7 +957,7 @@ struct SFTPBrowserView: View {
                 .scaledFont(size: Theme.TextSize.body).lineLimit(2).multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
             Text(entry.isDirectory ? L10n.t("Folder") : entry.size.byteString)
-                .scaledFont(size: Theme.TextSize.caption, monospacedDigit: true).foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.caption, monospacedDigit: true).foregroundStyle(.secondary)
         }
         .padding(.vertical, 14).padding(.horizontal, 8)
         .frame(maxWidth: .infinity, minHeight: 118)
@@ -1146,9 +1142,7 @@ struct SFTPBrowserView: View {
                 .buttonStyle(.link)
                 .scaledFont(size: Theme.TextSize.meta)
                 .accessibilityLabel(L10n.t("Copy error message"))
-            Button { model.error = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-                .a11yButton(L10n.t("Dismiss error"))
+            IconButton(symbol: "xmark", help: L10n.t("Dismiss error"), size: 10) { model.error = nil }
         }
         .padding(.horizontal, 14).padding(.vertical, 7)
         .background(Theme.orange.opacity(0.12))

@@ -307,16 +307,27 @@ struct FileTypeIcon: View {
 }
 
 struct KindBadge: View {
-    let task: DownloadTask
+    let kind: DownloadKind
+    var size: CGFloat = 9.5
+
+    init(kind: DownloadKind, size: CGFloat = 9.5) {
+        self.kind = kind
+        self.size = size
+    }
+
+    init(task: DownloadTask) {
+        self.init(kind: task.kind)
+    }
+
     var body: some View {
-        Text(task.kindBadge)
-            .scaledFont(size: 9.5, weight: .bold)
+        Text(kind.badgeLabel)
+            .scaledFont(size: size, weight: .bold)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .background(task.kindBadgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.chip))
-            .foregroundStyle(task.kindBadgeColor)
+            .background(kind.badgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.chip))
+            .foregroundStyle(kind.badgeColor)
             // 12% tint keeps text contrast at 3.83–7.95:1; 20% dropped it to 2.94:1 (SC 1.4.3).
-            .accessibilityLabel(L10n.t(task.accessibilityKindName))
+            .accessibilityLabel(kind.accessibilityName)
     }
 }
 
@@ -391,6 +402,21 @@ struct StateButton: View {
         case .failed: vm.retry(task.id)
         case .paused, .queued: vm.resume(task.id)
         default: vm.pause(task.id)
+        }
+    }
+}
+
+/// "Pasted from clipboard" beside a field the sheet filled in by itself, with a button to clear it.
+struct PastedFromClipboardNote: View {
+    var clearHelp: String = L10n.t("Clear the pasted text")
+    let onClear: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Label(L10n.t("Pasted from clipboard"), systemImage: "doc.on.clipboard")
+                .scaledFont(size: Theme.TextSize.meta)
+                .foregroundStyle(.secondary)
+            IconButton(symbol: "xmark", help: clearHelp, size: 9, action: onClear)
         }
     }
 }

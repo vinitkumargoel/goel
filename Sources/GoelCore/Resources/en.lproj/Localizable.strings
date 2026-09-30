@@ -77,6 +77,7 @@
 "%d milliseconds" = "%d milliseconds";
 "%d option" = "%d option";
 "%d options" = "%d options";
+"%d panes match" = "%d panes match";
 "%d parallel segments" = "%d parallel segments";
 "%d peers" = "%d peers";
 "%d percent" = "%d percent";
@@ -89,6 +90,7 @@
 "%path% is replaced with the file." = "%path% is replaced with the file.";
 "+%d more waiting" = "+%d more waiting";
 "0 = unlimited." = "0 = unlimited.";
+"1 pane matches" = "1 pane matches";
 "1. Install the messaging helper" = "1. Install the messaging helper";
 "1. Load the extension" = "1. Load the extension";
 "1. Open Safari’s extensions" = "1. Open Safari’s extensions";
@@ -165,7 +167,7 @@
 "Alias to folder" = "Alias to folder";
 "All %d are already in your list" = "All %d are already in your list";
 "All (%d)" = "All (%d)";
-"All files" = "All files";
+"All downloads" = "All downloads";
 "Allow access from the network" = "Allow access from the network";
 "Allow cellular and personal hotspot (uses mobile data)." = "Allow cellular and personal hotspot (uses mobile data).";
 "Allow paths outside VPN" = "Allow paths outside VPN";
@@ -306,6 +308,7 @@
 "Command K" = "Command K";
 "Command Palette…" = "Command Palette…";
 "Command palette · ⌘K" = "Command palette · ⌘K";
+"Command palette, Command K" = "Command palette, Command K";
 "Commercial Terms" = "Commercial Terms";
 "Completed" = "Completed";
 "Concurrent “requesting info” magnets." = "Concurrent “requesting info” magnets.";
@@ -892,6 +895,7 @@
 "No downloadable links found on that page." = "No downloadable links found on that page.";
 "No downloads found in the metalink" = "No downloads found in the metalink";
 "No downloads match" = "No downloads match";
+"No downloads match “%@”" = "No downloads match “%@”";
 "No feature gating — paying unlocks nothing, because nothing is locked." = "No feature gating — paying unlocks nothing, because nothing is locked.";
 "No feeds yet — add one below." = "No feeds yet — add one below.";
 "No folder chosen — nothing is being watched." = "No folder chosen — nothing is being watched.";
@@ -905,6 +909,7 @@
 "No results" = "No results";
 "No samples yet" = "No samples yet";
 "No selection" = "No selection";
+"No settings match" = "No settings match";
 "No settings match “%@”." = "No settings match “%@”.";
 "No speed limit" = "No speed limit";
 "No subfolders" = "No subfolders";
@@ -992,7 +997,6 @@
 "Opens this folder in the SFTP browser." = "Opens this folder in the SFTP browser.";
 "Optional. Leave empty to use the copy included with Goel°. Enables Convert / Extract-audio on finished media." = "Optional. Leave empty to use the copy included with Goel°. Enables Convert / Extract-audio on finished media.";
 "Options" = "Options";
-"Or continue anyway — the name and size fill in as it starts." = "Or continue anyway — the name and size fill in as it starts.";
 "Or let Goel° sort them" = "Or let Goel° sort them";
 "Other" = "Other";
 "Outside the window active downloads pause and queued ones wait." = "Outside the window active downloads pause and queued ones wait.";
@@ -1536,6 +1540,7 @@
 "Trust a proxy’s identity header" = "Trust a proxy’s identity header";
 "Trusted proxies" = "Trusted proxies";
 "Try a different filter or search term." = "Try a different filter or search term.";
+"Try a different word, or clear the search to see every pane." = "Try a different word, or clear the search to see every pane.";
 "Try again" = "Try again";
 "Try to connect with these settings" = "Try to connect with these settings";
 "Try “rss”, “mirror”, “watch folder”, or “cookies”." = "Try “rss”, “mirror”, “watch folder”, or “cookies”.";
@@ -1674,6 +1679,7 @@
 "checksum, cookies" = "checksum, cookies";
 "checksum, mirrors, cookies" = "checksum, mirrors, cookies";
 "complete" = "complete";
+"cookies" = "cookies";
 "copied, no re-encode" = "copied, no re-encode";
 "copy" = "copy";
 "descending" = "descending";

@@ -52,8 +52,16 @@ final class AddSheetInputTests: XCTestCase {
         XCTAssertEqual(
             AddSheetInput.resolveFailureMessage(
                 host: "cdn.example.org",
-                reason: "Couldn’t reach the server — it may still work when you start."),
+                reason: "Couldn’t reach the server — it may still work when you start.",
+                isGenericUnreachable: true),
             "Couldn’t reach cdn.example.org. It may still work when you start.")
+    }
+
+    func testResolveFailureKeepsASpecificReasonThatHappensToMentionReach() {
+        // Only the structured flag rephrases; the words themselves don't.
+        XCTAssertEqual(
+            AddSheetInput.resolveFailureMessage(host: "cdn.example.org", reason: "Couldn’t reach port 8443."),
+            "Couldn’t get details from cdn.example.org. Couldn’t reach port 8443.")
     }
 
     func testResolveFailureWithoutAHostIsJustTheReason() {
@@ -147,5 +155,66 @@ final class SettingsSearchTests: XCTestCase {
         XCTAssertTrue(SettingsSearch.matches("Proxy host", query: "host"))
         XCTAssertFalse(SettingsSearch.matches("Proxy host", query: "host port"))
         XCTAssertFalse(SettingsSearch.matches("Proxy host", query: "   "))
+    }
+
+    func testHighlightingNeedsTwoCharacters() {
+        XCTAssertFalse(SettingsSearch.highlights("Proxy host", query: "h"))
+        XCTAssertFalse(SettingsSearch.highlights("Proxy host", query: " h "))
+        XCTAssertTrue(SettingsSearch.highlights("Proxy host", query: "ho"))
+        XCTAssertFalse(SettingsSearch.highlights("", query: "ho"))
+    }
+
+    func testTheIndexIsFoldedOnceAndMatchesLikeTheOldScan() {
+        let index = SettingsSearch.Index(localize: { $0 })
+        XCTAssertEqual(index.panes(matching: "PROXY PORT"), [.network])
+        XCTAssertEqual(index.panes(matching: "µtp"), [.bittorrent])
+        XCTAssertEqual(index.panes(matching: "ÉNCRYPTION"), [.bittorrent], "diacritics in the query fold away")
+        XCTAssertEqual(index.panes(matching: ""), SettingsView.Pane.Group.allCases.flatMap(\.panes))
+        for entry in index.entries {
+            XCTAssertEqual(entry.keys, entry.keys.map(SettingsSearch.fold), "keys are stored folded")
+            XCTAssertEqual(entry.keys.count, Set(entry.keys).count, "no duplicate keys")
+        }
+    }
+
+    func testEveryWordMustSitInOneKeywordNotAcrossThePane() {
+        // "Enable DHT" and "Encryption mode" are both in BitTorrent, but no one keyword has both words.
+        XCTAssertEqual(search("dht encryption"), [])
+    }
+
+    func testTheCachedIndexIsReusedPerLanguage() {
+        let first = SettingsSearch.index(for: "English")
+        let again = SettingsSearch.index(for: "English")
+        XCTAssertEqual(first.entries.map(\.pane), again.entries.map(\.pane))
+        XCTAssertEqual(SettingsSearch.panes(matching: "proxy host"), [.network])
+    }
+
+    func testResultAnnouncements() {
+        XCTAssertEqual(SettingsSearch.resultAnnouncement(count: 0), "No settings match")
+        XCTAssertEqual(SettingsSearch.resultAnnouncement(count: 1), "1 pane matches")
+        XCTAssertEqual(SettingsSearch.resultAnnouncement(count: 3), "3 panes match")
+    }
+
+    /// Scrapes every `SetRow(name: L10n.t("…"))` title out of the settings pane sources: a row added
+    /// without a keyword would be invisible to search.
+    func testEverySetRowTitleIsInTheSearchIndex() throws {
+        let views = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/GoelApp/Views")
+        let files = try FileManager.default.contentsOfDirectory(at: views, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "swift" }
+        let pattern = try NSRegularExpression(pattern: #"SetRow\(\s*name:\s*L10n\.t\("((?:[^"\\]|\\.)*)""#)
+        let indexed = Set(SettingsView.Pane.allCases.flatMap(\.searchKeywords))
+        var titles: [String] = []
+        for file in files {
+            let source = try String(contentsOf: file, encoding: .utf8)
+            let range = NSRange(source.startIndex..., in: source)
+            for match in pattern.matches(in: source, range: range) {
+                guard let title = Range(match.range(at: 1), in: source) else { continue }
+                titles.append(String(source[title]).replacingOccurrences(of: #"\""#, with: "\""))
+            }
+        }
+        XCTAssertGreaterThan(titles.count, 50, "the scrape found the settings rows")
+        let missing = Set(titles).subtracting(indexed).sorted()
+        XCTAssertEqual(missing, [], "SetRow titles missing from SettingsView.Pane.searchKeywords")
     }
 }

@@ -40,13 +40,15 @@ struct DownloadListView: View {
                                 task: task,
                                 displayIndex: index + 1,
                                 isSelected: isSelected,
-                                listFocused: focused,
+                                // Only a selected row draws focus, so the rest stay equal when focus moves.
+                                listFocused: focused && isSelected,
                                 speed: telemetry.displaySpeed(for: task),
                                 selectionSummary: isSelected ? selectionSummary : nil,
                                 context: context,
                                 columns: columns,
                                 vm: vm
                             ))
+                            .equatable()
                             .id(task.id)
                             Divider()
                         }
@@ -183,7 +185,10 @@ struct DownloadListView: View {
 
     private var emptyState: some View {
         let narrowed = vm.filter != .all || !vm.search.isEmpty
-        return EmptyStateView(systemImage: "tray", title: L10n.t("No downloads match"),
+        let term = vm.search.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Echo the search, as the portal does; a filter alone has no words to echo.
+        let title = term.isEmpty ? L10n.t("No downloads match") : L10n.t("No downloads match “%@”", term)
+        return EmptyStateView(systemImage: "tray", title: title,
                               subtitle: L10n.t("Try a different filter or search term."),
                               actionTitle: narrowed ? L10n.t("Clear search and filter") : nil,
                               action: narrowed ? { vm.search = ""; vm.filter = .all } : nil)
@@ -260,7 +265,7 @@ struct DownloadRow: View, Equatable {
             count = targets.count
             canResume = targets.contains { $0.status == .paused || $0.status == .queued }
             canPause = targets.contains { $0.status.isActive }
-            canRetry = targets.contains { if case .failed = $0.status { return true } else { return false } }
+            canRetry = targets.contains { $0.status.isFailed }
             canRename = targets.allSatisfy { $0.kind != .torrent && !$0.status.isActive }
         }
     }
@@ -570,10 +575,7 @@ struct DownloadRow: View, Equatable {
         }
     }
 
-    private var isFailed: Bool {
-        if case .failed = task.status { return true }
-        return false
-    }
+    private var isFailed: Bool { task.status.isFailed }
 
     private var playableWhileDownloading: Bool {
         task.kind == .torrent
@@ -663,9 +665,11 @@ struct DownloadColumns: Equatable {
 
 /// Owns the hover state so ``DownloadRow`` stays a pure value: only the hovered row's
 /// equality changes when the pointer moves.
-private struct HoverTrackingRow: View {
+private struct HoverTrackingRow: View, Equatable {
     let row: DownloadRow
     @State private var hovered = false
+
+    static func == (lhs: HoverTrackingRow, rhs: HoverTrackingRow) -> Bool { lhs.row == rhs.row }
 
     var body: some View {
         var shown = row

@@ -6,6 +6,7 @@ import GoelCore
 struct AddDownloadSheet: View {
     @EnvironmentObject private var vm: AppViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Phase: Equatable {
         case input
@@ -119,7 +120,10 @@ struct AddDownloadSheet: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                         if let pastedText, pastedText == text {
-                            pastedNote
+                            PastedFromClipboardNote {
+                                text = ""
+                                self.pastedText = nil
+                            }
                         }
                     }
                     TextEditor(text: $text)
@@ -160,24 +164,6 @@ struct AddDownloadSheet: View {
                     .help(L10n.t("Continue (⌘↩)"))
             }
             .padding(14)
-        }
-    }
-
-    private var pastedNote: some View {
-        HStack(spacing: 4) {
-            Label(L10n.t("Pasted from clipboard"), systemImage: "doc.on.clipboard")
-                .scaledFont(size: Theme.TextSize.meta)
-                .foregroundStyle(.secondary)
-            Button {
-                text = ""
-                pastedText = nil
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help(L10n.t("Clear the pasted text"))
-            .a11yButton(L10n.t("Clear the pasted text"))
         }
     }
 
@@ -222,6 +208,17 @@ struct AddDownloadSheet: View {
         dismiss()
     }
 
+    /// Back from the confirm step: a yt-dlp resolve still running would otherwise flip the phase
+    /// or commit the download after the user left.
+    private func goBack() {
+        resolveTask?.cancel()
+        resolveTask = nil
+        isResolvingMedia = false
+        deselectedFileIDs = []
+        ytDlpError = nil
+        phase = .input
+    }
+
     /// Leaves room for the sheet's header and footer, the window title and the menu bar.
     private var confirmBodyMaxHeight: CGFloat {
         CappedScrollView<EmptyView>.screenCap(reserving: 220, upTo: 560)
@@ -241,7 +238,7 @@ struct AddDownloadSheet: View {
 
             Divider()
             HStack {
-                Button(L10n.t("Back")) { deselectedFileIDs = []; ytDlpError = nil; phase = .input }
+                Button(L10n.t("Back")) { goBack() }
                 Spacer()
                 Button(L10n.t("Cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -263,13 +260,14 @@ struct AddDownloadSheet: View {
         guard resolvedPageURL == nil, let note = preview.note else { return nil }
         switch preview.kind {
         case .http, .ftp, .sftp:
-            return AddSheetInput.resolveFailureMessage(host: previewHost(preview), reason: note)
+            return AddSheetInput.resolveFailureMessage(host: previewHost(preview), reason: note,
+                                                       isGenericUnreachable: preview.noteIsGenericUnreachable)
         case .torrent, .hls:
             return nil
         }
     }
 
-    private func resolveFailureBlock(_ message: String) -> some View {
+    private func resolveFailureBlock(_ message: String, preview: DownloadPreview) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .scaledFont(size: Theme.TextSize.meta)
@@ -282,17 +280,17 @@ struct AddDownloadSheet: View {
                     if let line = firstParseableLine() { resolveSingle(line, keepFields: true) }
                 }
                 .controlSize(.small)
-                Text(L10n.t("Or continue anyway — the name and size fill in as it starts."))
-                    .scaledFont(size: Theme.TextSize.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Button(L10n.t("Continue anyway")) { start(preview) }
+                    .controlSize(.small)
+                    .disabled(isResolvingMedia || allFilesDeselected(preview))
+                    .help(L10n.t("Continue anyway adds it straight to the queue — the name and size fill in as it starts."))
             }
         }
     }
 
     private func confirmBody(_ preview: DownloadPreview) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            metadataSummary(preview)
+            AddSheetMetadataSummary(preview: preview, sizeText: sizeText(preview))
 
             if let duplicate = vm.existingDuplicate(of: preview.source) {
                 Label(L10n.t("Already in your list (%@) — starting it again won’t add a second copy.",
@@ -317,7 +315,7 @@ struct AddDownloadSheet: View {
             }
 
             if let failure = unreachableMessage(preview) {
-                resolveFailureBlock(failure)
+                resolveFailureBlock(failure, preview: preview)
             } else if let note = preview.note {
                 Label(note, systemImage: "info.circle.fill")
                     .scaledFont(size: Theme.TextSize.meta)
@@ -355,7 +353,7 @@ struct AddDownloadSheet: View {
             }
 
             if preview.kind == .http, YtDlpResolver.isAvailable {
-                ytDlpRow(preview)
+                AddSheetYtDlpRow(isResolving: isResolvingMedia) { resolveWithYtDlp(preview) }
                 if let ytDlpError {
                     Label(ytDlpError, systemImage: "exclamationmark.triangle.fill")
                         .scaledFont(size: Theme.TextSize.meta)
@@ -400,14 +398,19 @@ struct AddDownloadSheet: View {
                     .foregroundStyle(.secondary)
             }
             .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.12)) { showAdvanced.toggle() } }
+            // macOS's DisclosureGroup toggles only from its chevron; this makes the label a target too.
+            .onTapGesture {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) { showAdvanced.toggle() }
+            }
         }
     }
 
     private func advancedSummary(_ preview: DownloadPreview) -> String {
+        // Only what ``advancedOptions(_:)`` shows: mirrors for HTTP alone, no checksum for a torrent.
         switch preview.kind {
         case .http: return L10n.t("checksum, mirrors, cookies")
-        default: return L10n.t("checksum, cookies")
+        case .torrent: return L10n.t("cookies")
+        case .hls, .ftp, .sftp: return L10n.t("checksum, cookies")
         }
     }
 
@@ -468,36 +471,6 @@ struct AddDownloadSheet: View {
             && deselectedFileIDs.isSuperset(of: Set(preview.files.map(\.id)))
     }
 
-    private func metadataSummary(_ preview: DownloadPreview) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: preview.kind.symbolName)
-                .font(.system(size: 20))
-                .foregroundStyle(.secondary)
-                .frame(width: 34, height: 34)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-                .a11yDecorative()
-            VStack(alignment: .leading, spacing: 4) {
-                Text(preview.suggestedName)
-                    .scaledFont(size: Theme.TextSize.title, weight: .semibold)
-                    .lineLimit(2)
-                    .textSelection(.enabled)
-                    .accessibilityAddTraits(.isHeader)
-                HStack(spacing: 8) {
-                    AddSheetKindBadge(kind: preview.kind)
-                    Text(sizeText(preview))
-                        .scaledFont(size: Theme.TextSize.body)
-                        .foregroundStyle(.secondary)
-                    if !preview.files.isEmpty {
-                        Text("· " + (preview.files.count == 1 ? L10n.t("%d file", preview.files.count) : L10n.t("%d files", preview.files.count)))
-                            .scaledFont(size: Theme.TextSize.body)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            Spacer()
-        }
-    }
-
     private var dropZone: some View {
         VStack(spacing: 7) {
             Image(systemName: "arrow.down.to.line")
@@ -523,31 +496,17 @@ struct AddDownloadSheet: View {
         .animation(.easeInOut(duration: 0.08), value: isDropTargeted)
     }
 
-    private func ytDlpRow(_ preview: DownloadPreview) -> some View {
-        HStack(spacing: 8) {
-            if isResolvingMedia {
-                ProgressView().controlSize(.small)
-                    .accessibilityLabel(L10n.t("Resolving media formats"))
-                Text(L10n.t("Asking yt-dlp…"))
-                    .scaledFont(size: Theme.TextSize.meta)
-                    .foregroundStyle(.secondary)
-            } else {
-                Button(L10n.t("Resolve Media with yt-dlp")) { resolveWithYtDlp(preview) }
-                Text(L10n.t("For video-site pages: download the stream, not the page."))
-                    .scaledFont(size: Theme.TextSize.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-    }
-
     private func resolveWithYtDlp(_ preview: DownloadPreview) {
         guard case .url(let pageURL) = preview.source else { return }
         ytDlpError = nil
+        resolveTask?.cancel()
         isResolvingMedia = true
         resolveTask = Task { @MainActor in
-            defer { isResolvingMedia = false }
-            switch await YtDlpResolver.resolveMedia(pageURL, formatSelector: chosenFormat?.id) {
+            // A cancelled resolve leaves the flag to whoever cancelled it (Back, or a newer resolve).
+            defer { if !Task.isCancelled { isResolvingMedia = false } }
+            let outcome = await YtDlpResolver.resolveMedia(pageURL, formatSelector: chosenFormat?.id)
+            if Task.isCancelled { return }
+            switch outcome {
             case .resolved(let resolved):
                 guard let mediaPreview = YtDlpResolver.preview(for: resolved) else {
                     inputError = nil
@@ -651,9 +610,10 @@ struct AddDownloadSheet: View {
     private func resolveThenCommit(_ preview: DownloadPreview, formatSelector: String) {
         guard case .url(let pageURL) = preview.source else { return commit(preview) }
         ytDlpError = nil
+        resolveTask?.cancel()
         isResolvingMedia = true
         resolveTask = Task { @MainActor in
-            defer { isResolvingMedia = false }
+            defer { if !Task.isCancelled { isResolvingMedia = false } }
             let outcome = await YtDlpResolver.resolveMedia(pageURL, formatSelector: formatSelector)
             if Task.isCancelled { return }
             // The reason (quarantined binary, timeout, the page's own error) is the useful part.
@@ -667,6 +627,7 @@ struct AddDownloadSheet: View {
                 return
             }
 
+            guard !Task.isCancelled else { return }
             resolvedPageURL = pageURL
             commit(mediaPreview)
         }

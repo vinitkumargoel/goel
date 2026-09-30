@@ -117,6 +117,11 @@ public enum DownloadStatus: Codable, Sendable, Equatable, Hashable {
         }
     }
 
+    public var isFailed: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+
     public var hasData: Bool {
         switch self {
         case .completed, .seeding: return true

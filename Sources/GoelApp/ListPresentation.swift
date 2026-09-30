@@ -34,7 +34,7 @@ enum ListPresentation {
     static func matches(_ task: DownloadTask, filter: SidebarFilter) -> Bool {
         switch filter {
         case .type(let t): return task.fileType == t
-        case .failed: return isFailed(task.status)
+        case .failed: return task.status.isFailed
         default: return TaskListQuery.matches(task, filter: mapFilter(filter))
         }
     }
@@ -65,10 +65,6 @@ enum ListPresentation {
         }
     }
 
-    private static func isFailed(_ status: DownloadStatus) -> Bool {
-        if case .failed = status { return true }
-        return false
-    }
 
     private static func mapSort(_ key: SortKey) -> TaskListQuery.SortKey {
         switch key {

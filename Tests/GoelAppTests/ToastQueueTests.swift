@@ -164,4 +164,37 @@ final class ToastQueueTests: XCTestCase {
         queue.release()
         XCTAssertEqual(queue.current?.message, "one")
     }
+
+    func testAnUndoThatJumpsAHeldToastStillExpires() async throws {
+        let queue = ToastQueue(autoAdvance: true, announce: { _ in }, timeScale: 0.02,
+                               isVoiceOverRunning: { false })
+        queue.show("one")
+        queue.hold()
+        queue.show("Removed “a”", action: Toast.Action(title: "Undo") {})
+        XCTAssertEqual(queue.current?.message, "Removed “a”")
+        // The Undo's 8 s dwell is 160 ms here; the hold on the replaced capsule must not carry over.
+        try await wait(0.4)
+        XCTAssertNil(queue.current, "the new toast expires although the old one was held")
+    }
+
+    func testActionAndErrorToastsStayWhileVoiceOverRuns() async throws {
+        let queue = ToastQueue(autoAdvance: true, announce: { _ in }, timeScale: 0.02,
+                               isVoiceOverRunning: { true })
+        queue.show("boom", isError: true)
+        try await wait(0.3)
+        XCTAssertEqual(queue.current?.message, "boom")
+        queue.show("Removed “a”", action: Toast.Action(title: "Undo") {})
+        try await wait(0.3)
+        XCTAssertEqual(queue.current?.message, "Removed “a”")
+        queue.advance()
+        XCTAssertEqual(queue.current?.message, "boom", "the displaced error waits at the front")
+    }
+
+    func testPlainToastsStillExpireWhileVoiceOverRuns() async throws {
+        let queue = ToastQueue(autoAdvance: true, announce: { _ in }, timeScale: 0.02,
+                               isVoiceOverRunning: { true })
+        queue.show("Copied")
+        try await wait(0.2)
+        XCTAssertNil(queue.current)
+    }
 }

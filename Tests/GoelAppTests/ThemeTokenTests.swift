@@ -73,4 +73,42 @@ final class ThemeTokenTests: XCTestCase {
         XCTAssertGreaterThan(Theme.hairlineAlpha(high), Theme.hairlineAlpha(normal))
         XCTAssertGreaterThan(Theme.rowAltAlpha(high), Theme.rowAltAlpha(normal))
     }
+
+    // MARK: File tile cache
+
+    func testTheTileCacheMatchesAFreshComputationForEveryTypeAndTheme() {
+        for theme in AppTheme.allCases {
+            for type in FileType.allCases {
+                let pair = type.fillToken(in: theme)
+                let cached = FileTileCache.tile(for: type, theme: theme).stops
+                let light = IconFill.stops(for: pair.light), dark = IconFill.stops(for: pair.dark)
+                XCTAssertTrue(cached.light == light, "\(type) light in \(theme.rawValue)")
+                XCTAssertTrue(cached.dark == dark, "\(type) dark in \(theme.rawValue)")
+                XCTAssertEqual(FileTileCache.tile(for: type, theme: theme).gradient.count, 2)
+            }
+        }
+    }
+
+    func testTheTileCacheComputesEachPairOnce() {
+        _ = FileTileCache.tile(for: .archive, theme: .nord)
+        let before = FileTileCache.computeCount
+        for _ in 0..<50 {
+            _ = FileTileCache.tile(for: .archive, theme: .nord)
+        }
+        XCTAssertEqual(FileTileCache.computeCount, before, "repeat lookups hit the cache")
+    }
+
+    func testTheTileCacheKeysOnTheTheme() {
+        // Frost Light's and Dracula's orange differ, so the iso tile must too.
+        XCTAssertFalse(FileTileCache.tile(for: .iso, theme: .frostLight).stops
+                       == FileTileCache.tile(for: .iso, theme: .dracula).stops)
+    }
+
+    func testTheDarkFastPathAgreesWithTheFullResolve() {
+        for name in AppearanceVariant.candidates {
+            let appearance = try! XCTUnwrap(NSAppearance(named: name))
+            XCTAssertEqual(AppearanceVariant.isDark(appearance), AppearanceVariant.resolve(appearance).isDark,
+                           name.rawValue)
+        }
+    }
 }

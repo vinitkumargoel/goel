@@ -77,8 +77,41 @@ struct AppearanceVariant: Equatable {
         let matched = AppearanceVariant(appearance.bestMatch(from: candidates) ?? appearance.name)
         return AppearanceVariant(
             isDark: matched.isDark,
-            isHighContrast: matched.isHighContrast
-                || NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast)
+            isHighContrast: matched.isHighContrast || IncreaseContrast.isEnabled)
+    }
+
+    /// The fast path for colours that differ only between light and dark: no contrast flag needed.
+    static func isDark(_ appearance: NSAppearance) -> Bool {
+        AppearanceVariant(appearance.bestMatch(from: candidates) ?? appearance.name).isDark
+    }
+}
+
+/// System Settings ▸ Accessibility ▸ Increase contrast, read once and re-read only when the
+/// display options change: every dynamic colour resolution used to ask NSWorkspace afresh.
+enum IncreaseContrast {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cached: Bool?
+    private static let observer: NSObjectProtocol = NSWorkspace.shared.notificationCenter.addObserver(
+        forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+        object: nil, queue: nil
+    ) { _ in
+        IncreaseContrast.invalidate()
+    }
+
+    static var isEnabled: Bool {
+        _ = observer
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached { return cached }
+        let value = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        cached = value
+        return value
+    }
+
+    static func invalidate() {
+        lock.lock()
+        cached = nil
+        lock.unlock()
     }
 }
 
@@ -171,7 +204,7 @@ extension Color {
     /// even in dark mode.
     static func adaptive(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
-            NSColor(hex: AppearanceVariant.resolve(appearance).isDark ? dark : light)
+            NSColor(hex: AppearanceVariant.isDark(appearance) ? dark : light)
         })
     }
 
@@ -223,18 +256,56 @@ enum FileType: String, CaseIterable, Hashable {
     }
 
     /// Follows the active theme; the fixed system-colour gradients ignored Dracula and Nord.
-    var gradient: [Color] {
-        let pair = fillToken(in: ThemePalette.current)
-        let light = IconFill.stops(for: pair.light), dark = IconFill.stops(for: pair.dark)
-        return [Color.adaptive(light: light.top, dark: dark.top),
-                Color.adaptive(light: light.bottom, dark: dark.bottom)]
-    }
+    var gradient: [Color] { FileTileCache.tile(for: self, theme: ThemePalette.current).gradient }
 
     /// Never hard-code white here: on the old archive blue it measured 1.72:1.
-    var ink: Color {
-        let pair = fillToken(in: ThemePalette.current)
-        return Color.adaptive(light: IconFill.stops(for: pair.light).ink,
-                              dark: IconFill.stops(for: pair.dark).ink)
+    var ink: Color { FileTileCache.tile(for: self, theme: ThemePalette.current).ink }
+}
+
+/// The file-type tile colours per (type, theme). The WCAG nudging loop used to run in every
+/// icon's body; the inputs are fixed per theme, so each pair is worked out once.
+enum FileTileCache {
+    struct Stops: Equatable {
+        let light: (top: UInt32, bottom: UInt32, ink: UInt32)
+        let dark: (top: UInt32, bottom: UInt32, ink: UInt32)
+
+        init(for type: FileType, theme: AppTheme) {
+            let pair = type.fillToken(in: theme)
+            light = IconFill.stops(for: pair.light)
+            dark = IconFill.stops(for: pair.dark)
+        }
+
+        static func == (a: Stops, b: Stops) -> Bool {
+            a.light == b.light && a.dark == b.dark
+        }
+    }
+
+    struct Tile {
+        let stops: Stops
+        let gradient: [Color]
+        let ink: Color
+    }
+
+    private struct Key: Hashable { let type: FileType; let theme: AppTheme }
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var tiles: [Key: Tile] = [:]
+    /// How many tiles have been worked out; tests read it to prove the cache is hit.
+    nonisolated(unsafe) private(set) static var computeCount = 0
+
+    static func tile(for type: FileType, theme: AppTheme) -> Tile {
+        let key = Key(type: type, theme: theme)
+        lock.lock()
+        defer { lock.unlock() }
+        if let tile = tiles[key] { return tile }
+        let stops = Stops(for: type, theme: theme)
+        let tile = Tile(stops: stops,
+                        gradient: [Color.adaptive(light: stops.light.top, dark: stops.dark.top),
+                                   Color.adaptive(light: stops.light.bottom, dark: stops.dark.bottom)],
+                        ink: Color.adaptive(light: stops.light.ink, dark: stops.dark.ink))
+        tiles[key] = tile
+        computeCount += 1
+        return tile
     }
 }
 

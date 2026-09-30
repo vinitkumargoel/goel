@@ -124,25 +124,62 @@ struct AddSheetMirrorsField: View {
     }
 }
 
-/// The protocol pill beside the previewed name.
-struct AddSheetKindBadge: View {
-    let kind: DownloadKind
+/// The confirm step's heading: kind icon, name, protocol badge, size and file count.
+struct AddSheetMetadataSummary: View {
+    let preview: DownloadPreview
+    let sizeText: String
 
     var body: some View {
-        let (label, color): (String, Color) = {
-            switch kind {
-            case .http: return ("HTTP", Theme.accent)
-            case .torrent: return ("BT", Theme.green)
-            case .hls: return ("HLS", Theme.orange)
-            case .ftp: return ("FTP", Theme.teal)
-            case .sftp: return ("SFTP", Theme.indigo)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: preview.kind.symbolName)
+                .font(.system(size: 20))
+                .foregroundStyle(.secondary)
+                .frame(width: 34, height: 34)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                .a11yDecorative()
+            VStack(alignment: .leading, spacing: 4) {
+                Text(preview.suggestedName)
+                    .scaledFont(size: Theme.TextSize.title, weight: .semibold)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: 8) {
+                    KindBadge(kind: preview.kind, size: Theme.TextSize.caption)
+                    Text(sizeText)
+                        .scaledFont(size: Theme.TextSize.body)
+                        .foregroundStyle(.secondary)
+                    if !preview.files.isEmpty {
+                        Text("· " + (preview.files.count == 1 ? L10n.t("%d file", preview.files.count) : L10n.t("%d files", preview.files.count)))
+                            .scaledFont(size: Theme.TextSize.body)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
-        }()
-        Text(label)
-            .scaledFont(size: Theme.TextSize.caption, weight: .bold)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15), in: Capsule())
-            .foregroundStyle(color)
+            Spacer()
+        }
+    }
+}
+
+/// "Resolve Media with yt-dlp", or its progress while yt-dlp runs.
+struct AddSheetYtDlpRow: View {
+    let isResolving: Bool
+    let onResolve: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if isResolving {
+                ProgressView().controlSize(.small)
+                    .accessibilityLabel(L10n.t("Resolving media formats"))
+                Text(L10n.t("Asking yt-dlp…"))
+                    .scaledFont(size: Theme.TextSize.meta)
+                    .foregroundStyle(.secondary)
+            } else {
+                Button(L10n.t("Resolve Media with yt-dlp"), action: onResolve)
+                Text(L10n.t("For video-site pages: download the stream, not the page."))
+                    .scaledFont(size: Theme.TextSize.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
     }
 }

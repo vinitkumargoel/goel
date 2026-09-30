@@ -46,31 +46,40 @@ struct SettingsView: View {
 
     @State private var selection: Pane = .general
     @State private var searchText = ""
+    /// What VoiceOver last heard about the results, so an unchanged result set isn't re-announced per keystroke.
+    @State private var announcedResults: [Pane]?
 
     @ObservedObject private var route = SettingsRoute.shared
 
     private var matchingPanes: [Pane] { SettingsSearch.panes(matching: searchText) }
 
     var body: some View {
+        let matches = matchingPanes
         HStack(spacing: 0) {
-            sidebar
+            sidebar(matches)
                 .frame(width: 184)
 
             Divider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    paneContent
+            if matches.isEmpty {
+                // The pane from before the search must not stay on screen as if it matched.
+                noMatchContent
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        paneContent
+                    }
+                    .padding(22)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(22)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .environment(\.settingsSearchQuery, searchText)
             }
-            .environment(\.settingsSearchQuery, searchText)
         }
         // Follow the filter: a pane the search hides must not stay on screen as if it matched.
-        .onChange(of: searchText) { _, _ in
+        .onChange(of: searchText) { _, query in
             let panes = matchingPanes
             if let first = panes.first, !panes.contains(selection) { selection = first }
+            announceResults(panes, for: query)
         }
         // Clear the request once consumed, or asking for the same pane twice never fires onChange again.
         .onChange(of: route.requestedPane) { _, requested in
@@ -104,7 +113,38 @@ struct SettingsView: View {
     }
 
 
-    private var sidebar: some View {
+    private var noMatchContent: some View {
+        VStack(spacing: Theme.Space.s) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 28))
+                .foregroundStyle(.secondary)
+                .a11yDecorative()
+            Text(L10n.t("No settings match"))
+                .scaledFont(size: Theme.TextSize.title, weight: .semibold)
+                .accessibilityAddTraits(.isHeader)
+            Text(L10n.t("Try a different word, or clear the search to see every pane."))
+                .scaledFont(size: Theme.TextSize.meta)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button(L10n.t("Clear search")) { searchText = "" }
+                .controlSize(.small)
+                .padding(.top, 4)
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func announceResults(_ panes: [Pane], for query: String) {
+        guard SettingsSearch.isActive(query) else {
+            announcedResults = nil
+            return
+        }
+        guard panes != announcedResults else { return }
+        announcedResults = panes
+        A11yAnnouncer.announce(SettingsSearch.resultAnnouncement(count: panes.count))
+    }
+
+    private func sidebar(_ matches: [Pane]) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
@@ -130,7 +170,6 @@ struct SettingsView: View {
             .padding(.top, 10)
             .padding(.bottom, 4)
 
-            let matches = matchingPanes
             if matches.isEmpty {
                 Text(L10n.t("No settings match “%@”.", searchText.trimmingCharacters(in: .whitespaces)))
                     .scaledFont(size: Theme.TextSize.meta)

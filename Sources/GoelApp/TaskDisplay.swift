@@ -2,6 +2,29 @@ import Foundation
 import SwiftUI
 import GoelCore
 
+/// One label and one colour per protocol, wherever a kind badge is drawn.
+extension DownloadKind {
+    var badgeLabel: String {
+        switch self {
+        case .torrent: return "BT"
+        case .hls: return "HLS"
+        case .http: return "HTTP"
+        case .ftp: return "FTP"
+        case .sftp: return "SFTP"
+        }
+    }
+
+    var badgeColor: Color {
+        switch self {
+        case .torrent: return Theme.purple
+        case .hls: return Theme.orange
+        case .http: return Theme.teal
+        case .ftp: return Theme.green
+        case .sftp: return Theme.indigo
+        }
+    }
+}
+
 extension DownloadTask {
 
     var fileType: FileType {
@@ -22,25 +45,9 @@ extension DownloadTask {
                 "opus", "wma"].contains(ext)
     }
 
-    var kindBadge: String {
-        switch kind {
-        case .torrent: return "BT"
-        case .hls: return "HLS"
-        case .http: return "HTTP"
-        case .ftp: return "FTP"
-        case .sftp: return "SFTP"
-        }
-    }
+    var kindBadge: String { kind.badgeLabel }
 
-    var kindBadgeColor: Color {
-        switch kind {
-        case .torrent: return Theme.purple
-        case .hls: return Theme.orange
-        case .http: return Theme.teal
-        case .ftp: return Theme.green
-        case .sftp: return Theme.indigo
-        }
-    }
+    var kindBadgeColor: Color { kind.badgeColor }
 
     /// Finished, but the file is no longer where the row says (moved, deleted, disk gone).
     var isFileMissing: Bool { status == .completed && fileMissing == true }

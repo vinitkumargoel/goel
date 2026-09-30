@@ -4,6 +4,7 @@ import GoelCore
 struct DetailBottomPanel: View {
     @EnvironmentObject private var vm: AppViewModel
     @EnvironmentObject private var telemetry: TelemetryStore
+    @State private var showsTelemetry = true
 
     var body: some View {
         Group {
@@ -18,24 +19,29 @@ struct DetailBottomPanel: View {
     }
 
     /// Below about 900 pt the telemetry zone goes first, so the tabs keep room for their labels.
+    /// One HStack whose middle zone comes and goes: the summary and detail zones keep their
+    /// identity (and the detail tab's scroll position) across the threshold.
     private func content(for task: DownloadTask) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 0) {
-                summaryZone(for: task).frame(width: 280)
+        HStack(spacing: 0) {
+            summaryZone(for: task).frame(width: Self.summaryWidth)
+            Divider()
+            if showsTelemetry {
+                telemetryZone(for: task).frame(width: Self.telemetryWidth)
                 Divider()
-                telemetryZone(for: task).frame(width: 250)
-                Divider()
-                detailZone(for: task).frame(minWidth: Self.detailMinWidth, maxWidth: .infinity)
             }
-            HStack(spacing: 0) {
-                summaryZone(for: task).frame(width: 280)
-                Divider()
-                detailZone(for: task).frame(maxWidth: .infinity)
-            }
+            detailZone(for: task).frame(minWidth: showsTelemetry ? Self.detailMinWidth : nil, maxWidth: .infinity)
         }
+        .onGeometryChange(for: Bool.self) { Self.fitsTelemetry(width: $0.size.width) } action: { showsTelemetry = $0 }
     }
 
+    private static let summaryWidth: CGFloat = 280
+    private static let telemetryWidth: CGFloat = 250
     private static let detailMinWidth: CGFloat = 370
+
+    /// Whether all three zones and their two dividers fit side by side.
+    static func fitsTelemetry(width: CGFloat) -> Bool {
+        width >= summaryWidth + telemetryWidth + detailMinWidth + 2
+    }
 
     private func downSamples(for task: DownloadTask, cap: Int = 60) -> [Double] {
         let pts = telemetry.taskHistory(task.id).map(\.down)

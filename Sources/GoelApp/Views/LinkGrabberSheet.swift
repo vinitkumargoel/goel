@@ -36,14 +36,9 @@ struct LinkGrabberSheet: View {
                         .disabled(isFetching || pageText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 if pastedFromClipboard {
-                    HStack(spacing: 6) {
-                        Label(L10n.t("Pasted from clipboard"), systemImage: "doc.on.clipboard")
-                            .scaledFont(size: Theme.TextSize.caption)
-                            .foregroundStyle(.secondary)
-                        IconButton(symbol: "xmark", help: L10n.t("Clear pasted link"), size: 9) {
-                            pageText = ""
-                            pastedFromClipboard = false
-                        }
+                    PastedFromClipboardNote(clearHelp: L10n.t("Clear pasted link")) {
+                        pageText = ""
+                        pastedFromClipboard = false
                     }
                 }
                 if let fetchError {

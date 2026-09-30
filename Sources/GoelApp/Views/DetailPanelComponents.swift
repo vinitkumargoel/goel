@@ -132,7 +132,7 @@ struct DetailActionButtons: View {
             button(L10n.t("Pause"), "pause.fill", spoken: L10n.t("Pause %@", task.name), prominent: true) { vm.pause(task.id) }
         } else if task.status == .paused || task.status == .queued {
             button(L10n.t("Resume"), "play.fill", spoken: L10n.t("Resume %@", task.name), prominent: true) { vm.resume(task.id) }
-        } else if case .failed = task.status {
+        } else if task.status.isFailed {
             button(L10n.t("Retry"), "arrow.clockwise", spoken: L10n.t("Retry %@", task.name), prominent: true) { vm.retry(task.id) }
         }
     }

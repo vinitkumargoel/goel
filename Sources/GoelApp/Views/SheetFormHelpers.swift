@@ -27,12 +27,13 @@ enum AddSheetInput {
             || hasCapturedCookies
     }
 
-    /// The sentence shown when the preview request came back without details.
-    static func resolveFailureMessage(host: String?, reason: String) -> String {
+    /// The sentence shown when the preview request came back without details. `isGenericUnreachable`
+    /// marks the engine's own "couldn't reach the server" note, which is rephrased around the host.
+    static func resolveFailureMessage(host: String?, reason: String, isGenericUnreachable: Bool = false) -> String {
         let reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let host, !host.isEmpty else { return reason }
         // The engine's generic note already opens with this; don't say it twice.
-        if reason.hasPrefix("Couldn’t reach") || reason.isEmpty {
+        if isGenericUnreachable || reason.isEmpty {
             return L10n.t("Couldn’t reach %@.", host)
                 + (reason.isEmpty ? "" : " " + L10n.t("It may still work when you start."))
         }

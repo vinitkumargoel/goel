@@ -49,10 +49,10 @@ enum A11y {
     }
 }
 
-extension DownloadTask {
+extension DownloadKind {
 
-    var accessibilityKindName: String {
-        switch kind {
+    var accessibilityName: String {
+        switch self {
         case .torrent: return "BitTorrent"
         case .hls: return L10n.t("HLS stream")
         case .http: return "HTTP"
@@ -60,6 +60,11 @@ extension DownloadTask {
         case .sftp: return "SFTP"
         }
     }
+}
+
+extension DownloadTask {
+
+    var accessibilityKindName: String { kind.accessibilityName }
 
     var accessibilityStatusName: String {
         switch status {
@@ -121,7 +126,7 @@ enum A11yAnnouncer {
 extension SidebarFilter {
     var accessibilityName: String {
         switch self {
-        case .all: return L10n.t("All files")
+        case .all: return L10n.t("All downloads")
         case .active: return L10n.t("Active")
         case .paused: return L10n.t("Paused")
         case .completed: return L10n.t("Completed")

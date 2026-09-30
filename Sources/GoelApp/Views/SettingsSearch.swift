@@ -101,7 +101,7 @@ extension SettingsView.Pane {
                     "API token", "Open portal", "Hardening", "Serve over HTTPS", "Identity (.p12) path",
                     "Extra host names", "Failed sign-ins before backoff", "Backoff (seconds)",
                     "Single sign-on (advanced)", "Trust a proxy’s identity header", "Header name",
-                    "Trusted proxies", "Scan from your phone"]
+                    "Trusted proxies", "Scan from your phone", "Web access is not running"]
         case .audit:
             return ["Keep an audit log", "Folder", "Rotate at (MB)", "Rotated files to keep",
                     "Keep for (days)", "Reveal in Finder"]
@@ -113,30 +113,100 @@ extension SettingsView.Pane {
 }
 
 /// Filters the Settings sidebar against a static keyword index. Matching is case- and
-/// diacritic-insensitive, and every word of the query must appear (in any order).
+/// diacritic-insensitive, and every word of the query must appear (in any order) in one keyword.
 enum SettingsSearch {
+
+    /// Fewer characters than this don't highlight rows: one letter lights up half the pane.
+    static let minimumHighlightLength = 2
 
     static func isActive(_ query: String) -> Bool {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    static func fold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
+    /// The query's words, folded once so each keyword costs only a substring check.
+    static func tokens(_ query: String) -> [String] {
+        query.split(whereSeparator: \.isWhitespace).map { fold(String($0)) }
+    }
+
     static func matches(_ text: String, query: String) -> Bool {
-        let tokens = query.split(whereSeparator: \.isWhitespace)
-        guard !tokens.isEmpty else { return false }
-        return tokens.allSatisfy { text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        matches(folded: fold(text), tokens: tokens(query))
+    }
+
+    static func matches(folded text: String, tokens: [String]) -> Bool {
+        !tokens.isEmpty && tokens.allSatisfy { text.contains($0) }
+    }
+
+    /// Whether a `SetRow` titled `name` lights up for this query.
+    static func highlights(_ name: String, query: String) -> Bool {
+        guard !name.isEmpty,
+              query.trimmingCharacters(in: .whitespacesAndNewlines).count >= minimumHighlightLength
+        else { return false }
+        return matches(name, query: query)
+    }
+
+    /// What VoiceOver hears when the results change.
+    static func resultAnnouncement(count: Int) -> String {
+        switch count {
+        case 0: return L10n.t("No settings match")
+        case 1: return L10n.t("1 pane matches")
+        default: return L10n.t("%d panes match", count)
+        }
     }
 
     /// A pane matches when its name or any keyword does, in English or in the UI language.
     /// An empty query matches everything, in sidebar order.
-    static func panes(matching query: String,
-                      localize: (String) -> String = { L10n.t($0) }) -> [SettingsView.Pane] {
-        let ordered = SettingsView.Pane.Group.allCases.flatMap(\.panes)
-        guard isActive(query) else { return ordered }
-        return ordered.filter { pane in
-            ([pane.rawValue] + pane.searchKeywords).contains { key in
-                matches(key, query: query) || matches(localize(key), query: query)
+    static func panes(matching query: String) -> [SettingsView.Pane] {
+        index(for: L10n.currentLanguage).panes(matching: query)
+    }
+
+    /// Builds a throwaway index with `localize`; for tests and one-off lookups.
+    static func panes(matching query: String, localize: (String) -> String) -> [SettingsView.Pane] {
+        Index(localize: localize).panes(matching: query)
+    }
+
+    /// Every pane's keywords, folded, in English and in one UI language.
+    struct Index {
+        let entries: [(pane: SettingsView.Pane, keys: [String])]
+
+        init(localize: (String) -> String) {
+            entries = SettingsView.Pane.Group.allCases.flatMap(\.panes).map { pane in
+                let english = [pane.rawValue] + pane.searchKeywords
+                var keys: [String] = []
+                var seen = Set<String>()
+                for key in english {
+                    for folded in [SettingsSearch.fold(key), SettingsSearch.fold(localize(key))]
+                    where seen.insert(folded).inserted {
+                        keys.append(folded)
+                    }
+                }
+                return (pane, keys)
             }
         }
+
+        func panes(matching query: String) -> [SettingsView.Pane] {
+            guard SettingsSearch.isActive(query) else { return entries.map(\.pane) }
+            let tokens = SettingsSearch.tokens(query)
+            return entries
+                .filter { entry in entry.keys.contains { SettingsSearch.matches(folded: $0, tokens: tokens) } }
+                .map(\.pane)
+        }
+    }
+
+    private static let cacheLock = NSLock()
+    private static var cached: (language: String, index: Index)?
+
+    /// Built once per UI language: switching language rebuilds it, typing never does.
+    static func index(for language: String) -> Index {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if let cached, cached.language == language { return cached.index }
+        let index = Index { L10n.string($0, language: language) }
+        cached = (language, index)
+        return index
     }
 }
 

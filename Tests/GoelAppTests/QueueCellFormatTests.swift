@@ -102,6 +102,29 @@ final class QueueCellFormatTests: XCTestCase {
         XCTAssertEqual(attention.total, 4)
     }
 
+    func testNeedsAttentionTopNMatchesAFullSort() {
+        var generator = SystemRandomNumberGenerator()
+        for round in 0..<40 {
+            let count = Int.random(in: 0...30, using: &generator)
+            let tasks = (0..<count).map { n in
+                task("t\(n)",
+                     status: Bool.random(using: &generator) ? .failed(oops) : .downloading,
+                     // A narrow range forces ties, which must keep list order like a stable sort.
+                     added: TimeInterval(Int.random(in: 0...8, using: &generator)))
+            }
+            for limit in [0, 1, 3, 5] {
+                let failed = tasks.filter { $0.status.isFailed }
+                let expected = failed.enumerated()
+                    .sorted { $0.element.addedAt != $1.element.addedAt
+                        ? $0.element.addedAt > $1.element.addedAt : $0.offset < $1.offset }
+                    .prefix(limit).map(\.element.name)
+                let attention = MenuBarAttention(tasks: tasks, limit: limit)
+                XCTAssertEqual(attention.shown.map(\.name), Array(expected), "round \(round), limit \(limit)")
+                XCTAssertEqual(attention.total, failed.count)
+            }
+        }
+    }
+
     func testNoFailuresMeansNoSection() {
         let attention = MenuBarAttention(tasks: [task("a", status: .queued, added: 1)])
         XCTAssertTrue(attention.shown.isEmpty)
@@ -130,6 +153,21 @@ final class QueueCellFormatTests: XCTestCase {
         XCTAssertEqual(DetailPanelHeight.clamped(900), 480)
         XCTAssertEqual(DetailPanelHeight.clamped(333), 333)
         XCTAssertEqual(DetailPanelHeight.clamped(.nan), DetailPanelHeight.standard)
+    }
+
+    func testTheBottomPanelYieldsToTheListInAShortWindow() {
+        // A tall column leaves the preference alone.
+        XCTAssertEqual(DetailPanelHeight.fitted(480, available: 900), 480)
+        // A 620 pt window leaves about 540 pt for the column: the list keeps its 220.
+        XCTAssertEqual(DetailPanelHeight.fitted(480, available: 540), 320)
+        XCTAssertEqual(DetailPanelHeight.fitted(300, available: 540), 300)
+        // Out-of-range preferences are clamped first.
+        XCTAssertEqual(DetailPanelHeight.fitted(9000, available: 2000), 480)
+        // Never below the floor, even with almost no room.
+        XCTAssertEqual(DetailPanelHeight.fitted(480, available: 250), DetailPanelHeight.floor)
+        // Before the column is measured, the preference stands.
+        XCTAssertEqual(DetailPanelHeight.fitted(400, available: 0), 400)
+        XCTAssertEqual(DetailPanelHeight.fitted(400, available: .infinity), 400)
     }
 
     func testColumnsScaleWithTextSizeAndStatusGetsTheRoom() {

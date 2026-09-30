@@ -444,7 +444,8 @@ public actor DownloadManager {
             let note = engine.capabilities.contains(.resolvesMetadata) ? Self.unresolvedNote(for: kind) : nil
             return DownloadPreview(
                 source: source, suggestedName: fallbackName, totalBytes: nil,
-                isEstimatedSize: kind == .hls, kind: kind, note: note)
+                isEstimatedSize: kind == .hls, kind: kind, note: note,
+                noteIsGenericUnreachable: note != nil && Self.isUnreachableNoteKind(kind))
         }
 
         let name = meta.name.isEmpty ? fallbackName : meta.name
@@ -452,7 +453,16 @@ public actor DownloadManager {
             source: source, suggestedName: name, totalBytes: meta.totalBytes,
             isEstimatedSize: meta.isEstimatedSize, files: meta.files, kind: kind,
             note: meta.reachable ? nil : (meta.failureNote ?? Self.unresolvedNote(for: kind)),
-            suggestedChecksum: meta.suggestedChecksum)
+            suggestedChecksum: meta.suggestedChecksum,
+            noteIsGenericUnreachable: !meta.reachable && meta.failureNote == nil && Self.isUnreachableNoteKind(kind))
+    }
+
+    /// The kinds whose ``unresolvedNote(for:)`` is the generic unreachable-server line.
+    private static func isUnreachableNoteKind(_ kind: DownloadKind) -> Bool {
+        switch kind {
+        case .http, .ftp, .sftp: return true
+        case .torrent, .hls: return false
+        }
     }
 
     private static func unresolvedNote(for kind: DownloadKind) -> String? {

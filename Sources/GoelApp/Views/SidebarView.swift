@@ -11,7 +11,7 @@ struct SidebarView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
                 group(L10n.t("Library")) {
-                    item(L10n.t("All files"), "tray.full", .all)
+                    item(L10n.t("All downloads"), "tray.full", .all)
                 }
                 group(L10n.t("Status")) {
                     item(L10n.t("Active"), "arrow.down.circle", .active)

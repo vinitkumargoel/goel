@@ -9,8 +9,10 @@ struct RootView: View {
 
     /// The bottom detail panel's height, dragged by its top edge.
     @AppStorage("detailBottomPanelHeight") private var bottomPanelHeight: Double = DetailPanelHeight.standard
-    /// The height when the current drag began; nil between drags.
-    @State private var dragStartHeight: Double?
+    /// The height drawn mid-drag, persisted only when the drag ends.
+    @State private var liveBottomPanelHeight: Double?
+    /// The list column's height, so the panel can't squeeze the list out of a short window.
+    @State private var listColumnHeight: Double = 0
 
     @State private var isDropTargeted = false
 
@@ -61,14 +63,17 @@ struct RootView: View {
                         DownloadListView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         if showDetail && vm.detailPanelPosition == .bottom {
-                            bottomPanelHandle
+                            DetailPanelResizeHandle(storedHeight: $bottomPanelHeight,
+                                                    liveHeight: $liveBottomPanelHeight,
+                                                    displayedHeight: displayedBottomPanelHeight)
                             DetailBottomPanel()
-                                .frame(height: DetailPanelHeight.clamped(bottomPanelHeight))
+                                .frame(height: displayedBottomPanelHeight)
                                 .transition(panelTransition(.bottom))
                         }
                     }
                 }
                 .frame(minWidth: 420, maxWidth: .infinity)
+                .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { listColumnHeight = $0 }
                 if showDetail && vm.selectedServer == nil && vm.detailPanelPosition == .right {
                     Divider()
                     DetailPanelView()
@@ -156,35 +161,8 @@ struct RootView: View {
         reduceMotion ? nil : .easeInOut(duration: 0.14)
     }
 
-    /// The divider above the bottom panel doubles as its resize grip.
-    private var bottomPanelHandle: some View {
-        Divider()
-            .overlay {
-                Color.clear
-                    .frame(height: 9)
-                    .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
-                    }
-                    .gesture(
-                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                            .onChanged { value in
-                                let start = dragStartHeight ?? DetailPanelHeight.clamped(bottomPanelHeight)
-                                dragStartHeight = start
-                                // Dragging up makes the panel taller.
-                                bottomPanelHeight = DetailPanelHeight.clamped(start - value.translation.height)
-                            }
-                            .onEnded { _ in dragStartHeight = nil }
-                    )
-                    .accessibilityElement()
-                    .accessibilityLabel(L10n.t("Detail panel height"))
-                    .accessibilityValue(L10n.t("%d points", Int(DetailPanelHeight.clamped(bottomPanelHeight))))
-                    .accessibilityAdjustableAction { direction in
-                        let step = direction == .increment ? DetailPanelHeight.step : -DetailPanelHeight.step
-                        bottomPanelHeight = DetailPanelHeight.clamped(bottomPanelHeight + step)
-                    }
-                    .help(L10n.t("Drag to resize the detail panel"))
-            }
+    private var displayedBottomPanelHeight: Double {
+        DetailPanelHeight.fitted(liveBottomPanelHeight ?? bottomPanelHeight, available: listColumnHeight)
     }
 
     /// Hit-testing stays disabled here, or this overlay swallows the drag before `.onDrop` sees it.
@@ -284,19 +262,6 @@ struct RootView: View {
                             (recovery.path as NSString).lastPathComponent, recovery.reason),
             confirmTitle: L10n.t("Move Aside")
         ) { vm.moveBrokenDatabaseAside() }
-    }
-}
-
-/// Where the bottom detail panel's height may go, in points.
-enum DetailPanelHeight {
-    static let standard: Double = 300
-    static let range: ClosedRange<Double> = 220...480
-    /// One VoiceOver increment.
-    static let step: Double = 20
-
-    static func clamped(_ height: Double) -> Double {
-        guard height.isFinite else { return standard }
-        return min(max(height, range.lowerBound), range.upperBound)
     }
 }
 

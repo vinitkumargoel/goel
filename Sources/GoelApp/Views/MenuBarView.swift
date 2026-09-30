@@ -108,7 +108,7 @@ struct MenuBarView: View {
         HStack {
             Text(text.uppercased())
                 .scaledFont(size: 10, weight: .bold)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
             Spacer()
         }
         .padding(.horizontal, 14)
@@ -344,12 +344,22 @@ struct MenuBarAttention {
     let shown: [DownloadTask]
     let total: Int
 
+    /// One pass over the queue, keeping only the newest `limit` failures in a small sorted buffer:
+    /// the menu redraws often and a full sort of every failure was wasted on three rows.
     init(tasks: [DownloadTask], limit: Int = Self.limit) {
-        let failed = tasks.filter {
-            if case .failed = $0.status { return true } else { return false }
+        var count = 0
+        var newest: [DownloadTask] = []
+        newest.reserveCapacity(limit + 1)
+        for task in tasks where task.status.isFailed {
+            count += 1
+            guard limit > 0 else { continue }
+            if newest.count == limit, let last = newest.last, task.addedAt <= last.addedAt { continue }
+            let slot = newest.firstIndex { task.addedAt > $0.addedAt } ?? newest.endIndex
+            newest.insert(task, at: slot)
+            if newest.count > limit { newest.removeLast() }
         }
-        total = failed.count
-        shown = Array(failed.sorted { $0.addedAt > $1.addedAt }.prefix(limit))
+        total = count
+        shown = newest
     }
 }
 

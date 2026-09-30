@@ -138,7 +138,6 @@ private struct PaletteKeycap: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(L10n.t("Command palette · ⌘K"))
-        .a11yButton(L10n.t("Command palette · ⌘K")
-            .replacingOccurrences(of: "⌘K", with: L10n.t("Command K")))
+        .a11yButton(L10n.t("Command palette, Command K"))
     }
 }

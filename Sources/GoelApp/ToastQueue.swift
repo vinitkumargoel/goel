@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 /// One transient message at the bottom of the window, optionally with a button (Undo, Retry).
 struct Toast: Identifiable, Equatable {
@@ -53,13 +54,18 @@ final class ToastQueue: ObservableObject {
     /// Here, not in the overlay: the main window and Settings both draw one, and VoiceOver
     /// heard every toast twice.
     private let announce: @MainActor (String) -> Void
+    /// While VoiceOver runs, a toast with a button or an error stays until dismissed or replaced:
+    /// reaching it by keyboard takes longer than any dwell.
+    private let isVoiceOverRunning: @MainActor () -> Bool
 
     init(autoAdvance: Bool = true,
          announce: @escaping @MainActor (String) -> Void = { A11yAnnouncer.announce($0) },
-         timeScale: Double = 1) {
+         timeScale: Double = 1,
+         isVoiceOverRunning: @escaping @MainActor () -> Bool = { NSWorkspace.shared.isVoiceOverEnabled }) {
         self.autoAdvance = autoAdvance
         self.announce = announce
         self.timeScale = timeScale
+        self.isVoiceOverRunning = isVoiceOverRunning
     }
 
     /// Returns the toast's id so its poster can retire it (⌘Z retires an Undo toast); nil when deduplicated.
@@ -139,6 +145,10 @@ final class ToastQueue: ObservableObject {
 
     private func present(_ toast: Toast) {
         generation &+= 1
+        // The held capsule is replaced by a new view that re-reports hover and focus itself; a
+        // hold carried over would leave the newcomer with no expiry at all.
+        isHeld = false
+        heldRemaining = nil
         current = toast
         announce(toast.message)
         let dwell = pending.isEmpty || toast.action != nil || toast.isError ? toast.dwell : Self.busyDwell
@@ -150,6 +160,10 @@ final class ToastQueue: ObservableObject {
         guard !isHeld else {
             // A toast that arrives under the pointer starts its full time once the pointer leaves.
             heldRemaining = seconds
+            return
+        }
+        if toast.action != nil || toast.isError, isVoiceOverRunning() {
+            expiresAt = nil
             return
         }
         expiresAt = Date().addingTimeInterval(scaled)

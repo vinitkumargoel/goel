@@ -36,7 +36,7 @@ struct SetRow<Control: View>: View {
     @Environment(\.settingsSearchQuery) private var searchQuery
 
     private var isSearchHit: Bool {
-        !name.isEmpty && SettingsSearch.matches(name, query: searchQuery)
+        SettingsSearch.highlights(name, query: searchQuery)
     }
 
     var body: some View {
@@ -55,9 +55,14 @@ struct SetRow<Control: View>: View {
         }
         .environment(\.settingRowName, name)
         .padding(.vertical, 10)
-        .padding(.horizontal, isSearchHit ? Theme.Space.s : 0)
-        .background(isSearchHit ? Theme.accent.opacity(0.12) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: Theme.Radius.control))
+        // Drawn outside the row's frame, so lighting up never shifts the row's content.
+        .background {
+            if isSearchHit {
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                    .fill(Theme.accent.opacity(0.12))
+                    .padding(.horizontal, -Theme.Space.s)
+            }
+        }
         Divider()
     }
 }

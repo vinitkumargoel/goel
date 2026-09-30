@@ -121,7 +121,7 @@ extension AppViewModel {
 
     func retrySelected() {
         for task in selectedTasks {
-            if case .failed = task.status { retry(task.id) }
+            if task.status.isFailed { retry(task.id) }
         }
     }
 
