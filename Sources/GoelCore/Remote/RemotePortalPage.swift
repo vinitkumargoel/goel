@@ -22,7 +22,7 @@ extension RemoteRouter {
     }
 
     /// `login.js` is served as a static asset outside the Vite bundle, so it cannot import the
-    /// portal's translations. Its three failure messages ride along as `data-` attributes
+    /// portal's translations. Its failure and busy messages ride along as `data-` attributes
     /// instead — escaped like any other value, since a translation may contain `"` or `<`.
     static func loginPage(theme: String, error: String?) -> String {
         let themeAttr = AppThemeToken.sanitize(theme)
@@ -30,6 +30,7 @@ extension RemoteRouter {
         let failed = htmlEscape(L10n.t("Sign-in failed"))
         let credentials = htmlEscape(L10n.t("Wrong username or password"))
         let offline = htmlEscape(L10n.t("Could not reach the server"))
+        let busy = htmlEscape(L10n.t("Signing in…"))
         return #"""
         <!doctype html><html lang="\#(L10n.languageCode(for: L10n.currentLanguage))" data-theme="\#(themeAttr)"><head>
         <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -39,7 +40,7 @@ extension RemoteRouter {
         </head><body>
         <form class="card" id="f" autocomplete="on"
               data-msg-failed="\#(failed)" data-msg-credentials="\#(credentials)"
-              data-msg-offline="\#(offline)">
+              data-msg-offline="\#(offline)" data-msg-busy="\#(busy)">
           <div class="brand"><span class="mk">\#(logoSVG)</span><h1>Goel° Web</h1><div class="sub">\#(htmlEscape(L10n.t("Sign in to control your downloads")))</div></div>
           \#(errHTML)
           <div class="fld"><label for="u">\#(htmlEscape(L10n.t("Username")))</label><input id="u" name="username" autocomplete="username" required autofocus></div>
