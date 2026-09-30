@@ -61,11 +61,12 @@
   // ──────────────────────────────────────────────────────────────────────────────
 
   // ──────────────────────────────────────────────────────────────────────────────
-  // OPTIONAL — rate-limit the enquiry form per client IP.
+  // REQUIRED BEFORE GOING LIVE — rate-limit the enquiry form per client IP.
   //
   // enquiry.js uses a Workers rate-limiting binding named ENQUIRY_LIMITER when one
   // exists and answers 429 once a client exceeds it; without the binding the form
-  // still works, just unthrottled. It is left out of this file on purpose: a binding
+  // still works but is UNTHROTTLED — anyone can flood the webhook channel. Do not
+  // publish the form without it. It is left out of this file only because a binding
   // the account has not enabled would fail `wrangler deploy`. To turn it on, check
   // that rate limiting is available on the account, then add this top-level key
   // (namespace_id is any integer unique to this account's limiters):

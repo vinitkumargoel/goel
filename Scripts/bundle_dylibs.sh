@@ -75,7 +75,10 @@ rewrite_refs() {
 rewrite_refs "$EXE"
 for f in "$FRAMEWORKS"/*.dylib; do [ -e "$f" ] && rewrite_refs "$f"; done
 
-if otool -l "$EXE" | grep -A2 LC_RPATH | grep -q "@executable_path/../Frameworks"; then
+# Captured first: under pipefail, `grep -q` exiting early SIGPIPEs otool and a present rpath
+# reads as missing — then -add_rpath fails on the duplicate.
+rpath_commands=$(otool -l "$EXE" | grep -A2 LC_RPATH || true)
+if grep -q "@executable_path/../Frameworks" <<<"$rpath_commands"; then
   :
 else
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$EXE"

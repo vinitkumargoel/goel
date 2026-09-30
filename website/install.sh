@@ -15,7 +15,7 @@ CLI_LINK="/usr/local/bin/goel"
 
 # A checksum from the same release proves nothing against whoever can replace release assets; a
 # signature under a key that lives only here does. Empty until releases are signed — then paste the
-# `RWS…` public key. GOEL_MINISIGN_PUBKEY (env) overrides it and makes verification mandatory.
+# `RWS…` public key. GOEL_MINISIGN_PUBKEY (env) overrides it. Either one makes verification mandatory.
 EMBEDDED_MINISIGN_PUBKEY=""
 
 DEPENDENCY_ALTERNATIVES="
@@ -223,29 +223,33 @@ fetch_tarball() {
     fi
 }
 
-# Optional until releases are signed: with no key configured, or no .minisig published, the
-# checksum below is still the gate. Once a signature exists, a mismatch is always fatal.
+# No key configured (none embedded yet, no GOEL_MINISIGN_PUBKEY): the checksum below is the gate.
+# Once a key IS configured, a missing .minisig or missing minisign is fatal — whoever can swap the
+# tarball can also make the signature fetch 404. GOEL_INSECURE=1 (environment only) downgrades
+# those two to a warning; a signature that fails to verify is always fatal.
 verify_signature() {
     sig_url="$1.minisig"
     pubkey="${GOEL_MINISIGN_PUBKEY:-$EMBEDDED_MINISIGN_PUBKEY}"
     [ -n "$pubkey" ] || return 0
     step "Verifying signature"
     if ! curl -fsSL "$sig_url" -o "$TARBALL.minisig" 2>/dev/null; then
-        if [ -n "${GOEL_MINISIGN_PUBKEY:-}" ]; then
-            die "GOEL_MINISIGN_PUBKEY is set but v${VERSION} publishes no signature
-       ($sig_url could not be fetched). Refusing: you asked for a signed install."
+        if [ "${GOEL_INSECURE:-}" = "1" ]; then
+            warn "no .minisig for v${VERSION}, and GOEL_INSECURE=1 — skipping the signature check."
+            return 0
         fi
-        warn "no .minisig published for v${VERSION}; falling back to the checksum."
-        return 0
+        die "a signing key is configured but v${VERSION} publishes no signature
+       ($sig_url could not be fetched). Refusing to install an unsigned build.
+       To install anyway, knowing the risk:
+           curl -fsSL https://goel.vinitk.dev/install.sh | sudo GOEL_INSECURE=1 sh"
     fi
     if ! command -v minisign >/dev/null 2>&1; then
-        if [ -n "${GOEL_MINISIGN_PUBKEY:-}" ]; then
-            die "GOEL_MINISIGN_PUBKEY is set but 'minisign' is not installed.
-       Install it (apt install minisign) and re-run."
+        if [ "${GOEL_INSECURE:-}" = "1" ]; then
+            warn "'minisign' is not installed, and GOEL_INSECURE=1 — skipping the signature check."
+            return 0
         fi
-        warn "a signature is published but 'minisign' is not installed; falling back to"
-        warn "the checksum. Install minisign for a stronger check."
-        return 0
+        die "this release is signed but 'minisign' is not installed, so the signature
+       cannot be checked. Install it (apt install minisign / dnf install minisign)
+       and re-run."
     fi
     # -P takes the key inline, so nothing from the release decides which key is trusted.
     if ! minisign -Vm "$TARBALL" -x "$TARBALL.minisig" -P "$pubkey" >/dev/null 2>&1; then

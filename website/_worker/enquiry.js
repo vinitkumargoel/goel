@@ -146,11 +146,15 @@ async function readCapped(request, limit) {
 
 /**
  * Webhook targets render markup: `<!channel>`, `<@U123>`, `<url|text>` (Slack) and
- * `@everyone` (Discord) would ping or phish whoever reads the channel.
+ * `@everyone` (Discord) would ping or phish whoever reads the channel. A Markdown
+ * `[Invoice](https://evil)` or `![x](url)` shows only its label, so it is unfolded
+ * to `Invoice (https://evil)` — the reader sees where a link really goes.
  */
 export function sanitizeField(raw) {
   return String(raw ?? "")
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F‪-‮⁦-⁩]/g, "")
+    .replace(/!?\[([^\]]*)\]\(\s*([^)\s]*)[^)]*\)/g, (_, label, url) =>
+      url ? `${label} (${url})` : label)
     .replace(/[<>]/g, "")
     .replace(/@(everyone|here|channel)/gi, "@​$1")
     .trim()

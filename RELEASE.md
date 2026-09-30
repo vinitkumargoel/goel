@@ -499,7 +499,23 @@ Known gaps in the release machinery, in rough priority order:
    appcast and `gh release create` (sections 8-12) stay manual until the skeleton
    has been proven on a real tag. `SUPublicEDKey` should then become a hard
    failure when empty rather than something `GOEL_NO_UPDATER=1` can waive.
-2. **Lock the Linux dependency graph (BUILD-6).** swift-nio and swift-crypto are
+
+   **`release` environment rules — set all of these before adding any secret:**
+   - *Required reviewers*: at least one maintainer other than whoever pushes the tag,
+     with "Prevent self-review" on. Every run then waits for a human approval.
+   - *Deployment branches and tags*: "Selected branches and tags" with a single tag
+     rule `v*` — no branch rules, so a branch or fork workflow can never reach it.
+   - Repository *Settings → Tags → Rulesets*: restrict creating/updating `v*` tags to
+     maintainers, or the tag rule above protects nothing.
+   - Keep the workflow's `permissions: contents: read` and the checkout's
+     `persist-credentials: false`; nothing in the job pushes, so it needs no write token.
+2. **Rate-limit the website enquiry form before it goes live.** `wrangler deploy` of
+   the marketing site ships `POST /api/enquiry` unthrottled unless the account has the
+   `ENQUIRY_LIMITER` Workers rate-limiting binding; the form then lets anyone flood the
+   `ENQUIRY_WEBHOOK_URL` channel. The binding needs an account setting, so it cannot be
+   committed blind — follow the *REQUIRED BEFORE GOING LIVE* block in `wrangler.jsonc`
+   and check that the sixth quick POST from one address answers `429`.
+3. **Lock the Linux dependency graph (BUILD-6).** swift-nio and swift-crypto are
    declared only under `#if os(Linux)`, so the committed `Package.resolved`
    (written on macOS) does not pin them and every Linux build resolves them
    afresh. Generate `Package.resolved` **on Linux** (e.g.
@@ -508,13 +524,13 @@ Known gaps in the release machinery, in rough priority order:
    `swift package resolve` followed by `git diff --exit-code Package.resolved` on
    both platforms. Alternatively declare the dependencies unconditionally and
    restrict them per target with `.when(platforms: [.linux])`.
-3. **Stop freezing the distro libtorrent in the Linux tarball (BUILD-8).** The
+4. **Stop freezing the distro libtorrent in the Linux tarball (BUILD-8).** The
    tarball vendors whatever `libtorrent-rasterbar`, Boost and OpenSSL Ubuntu
    shipped on the day CI ran, so an apt security fix reaches users only with the
    next Goel° release. At minimum record the vendored library versions in
    `VERSION` and have `goel doctor` print them; better, build them from pinned
    source as `build-deps.sh` does on macOS, or add a scheduled job that diffs
    `apt-cache policy` against the recorded versions and opens an issue.
-4. **Drop `unsafeFlags` (BUILD-4).** See CONTRIBUTING.md, *Future work*: the
+5. **Drop `unsafeFlags` (BUILD-4).** See CONTRIBUTING.md, *Future work*: the
    `GoelCore` library product cannot be consumed as a remote package while the
    native targets use `unsafeFlags`.
