@@ -6,8 +6,10 @@ import XCTest
 final class RemoteTransferFailureTests: XCTestCase {
 
     private var dir: URL!
+    private var restoreTrash: (() -> Void)?
 
     override func setUpWithError() throws {
+        restoreTrash = TestTrash.install()
         dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("goel-remote-fail-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -15,6 +17,7 @@ final class RemoteTransferFailureTests: XCTestCase {
 
     override func tearDownWithError() throws {
         if let dir { try? FileManager.default.removeItem(at: dir) }
+        restoreTrash?()
     }
 
     private func events(of hub: EventHub, id: UUID, during body: () async -> Void) async -> [EngineEvent] {

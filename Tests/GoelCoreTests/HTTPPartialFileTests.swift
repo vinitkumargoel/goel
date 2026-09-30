@@ -6,15 +6,18 @@ import XCTest
 final class HTTPPartialFileTests: XCTestCase {
 
     private var tempDir: URL!
+    private var restoreTrash: (() -> Void)?
 
     override func setUp() {
         super.setUp()
+        restoreTrash = TestTrash.install()
         tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
     }
 
     override func tearDown() {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
+        restoreTrash?()
         super.tearDown()
     }
 

@@ -2,15 +2,32 @@ import Foundation
 
 public enum L10n {
 
-    /// Only `en` and `de` ship real tables; anything added here silently resolves to English.
+    /// The languages offered to users. A language joins only once its table covers at least 95% of
+    /// the base strings — CI runs `Scripts/extract-l10n-keys.py --coverage-supported` against this
+    /// list — because a mostly-English UI labelled "Deutsch" is worse than an honest English one.
     public static let supportedLanguages: [(name: String, code: String)] = [
+        ("English", "en"),
+    ]
+
+    /// Every language that ships a table in Resources/, offered or not. German (`de`) is here but
+    /// not in ``supportedLanguages`` until its coverage reaches the bar; see
+    /// `python3 Scripts/extract-l10n-keys.py --coverage de`.
+    static let translatedLanguages: [(name: String, code: String)] = [
         ("English", "en"),
         ("Deutsch", "de"),
     ]
 
+    /// A stored choice of a language that is not (or no longer) offered — someone who picked
+    /// "Deutsch" before it was withdrawn — resolves to English rather than a half-translated UI.
     public static func languageCode(for language: String) -> String {
+        let code = tableCode(for: language)
+        return supportedLanguages.contains { $0.code == code } ? code : "en"
+    }
+
+    /// The table a language name or code would use, ignoring whether it is offered.
+    static func tableCode(for language: String) -> String {
         let lower = language.lowercased()
-        for entry in supportedLanguages where entry.name.lowercased() == lower || entry.code == lower {
+        for entry in translatedLanguages where entry.name.lowercased() == lower || entry.code == lower {
             return entry.code
         }
         switch lower {
@@ -71,7 +88,7 @@ public enum L10n {
     }
 
     /// The sentinel default is what distinguishes "missing" from a translation equal to the key.
-    private static func lookup(_ key: String, code: String) -> String? {
+    static func lookup(_ key: String, code: String) -> String? {
         guard let bundle = lprojBundle(code) else { return nil }
         let sentinel = "\u{1}__missing__\u{1}"
         let value = bundle.localizedString(forKey: key, value: sentinel, table: nil)

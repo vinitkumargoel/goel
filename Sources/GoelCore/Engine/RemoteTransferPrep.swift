@@ -135,11 +135,19 @@ enum RemoteTransferPrep {
         }
     }
 
+    #if os(macOS)
+    /// Seam for tests: every engine's "delete file" goes through here, and a test run must never
+    /// fill the user's real ~/.Trash. Production never reassigns it.
+    nonisolated(unsafe) static var trashItem: (URL) throws -> Void = { url in
+        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+    }
+    #endif
+
     /// The Trash keeps a mis-click recoverable; a volume without one (or Linux) falls back to unlinking.
     static func trashOrDelete(_ url: URL) throws {
         #if os(macOS)
         do {
-            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            try trashItem(url)
             return
         } catch where FileManager.default.fileExists(atPath: url.path) {
             // No Trash on this volume: delete below.

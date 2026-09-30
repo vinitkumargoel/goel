@@ -58,17 +58,21 @@ public enum PathSafety {
     }
 
     /// Never clobbers an existing file; the loop is bounded so a pathological directory can't spin.
+    /// A name whose `.goelpart` sibling exists is taken too: another download is still writing it,
+    /// and sharing that partial would interleave two transfers' bytes.
     public static func uniqueName(base: String, in directory: String) -> String {
         let fm = FileManager.default
-        let path = (directory as NSString).appendingPathComponent(base)
-        guard fm.fileExists(atPath: path) else { return base }
+        func isTaken(_ name: String) -> Bool {
+            let path = (directory as NSString).appendingPathComponent(name)
+            return fm.fileExists(atPath: path) || fm.fileExists(atPath: PartialFile.path(for: path))
+        }
+        guard isTaken(base) else { return base }
         let ns = base as NSString
         let ext = ns.pathExtension
         let stem = ns.deletingPathExtension
         for n in 1...9_999 {
             let candidate = ext.isEmpty ? "\(stem) (\(n))" : "\(stem) (\(n)).\(ext)"
-            let candidatePath = (directory as NSString).appendingPathComponent(candidate)
-            if !fm.fileExists(atPath: candidatePath) { return candidate }
+            if !isTaken(candidate) { return candidate }
         }
         return base
     }

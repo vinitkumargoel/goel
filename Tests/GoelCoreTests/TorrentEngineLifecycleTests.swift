@@ -82,6 +82,24 @@ final class TorrentEngineLifecycleTests: XCTestCase {
         XCTAssertFalse(sawFailure, "a removed task reports nothing")
     }
 
+    func testTorrentFetchFailureCarriesTheHTTPStatus() async throws {
+        let engine = TorrentEngine(profile: .low, config: .init(enableDHT: false, enableLSD: false),
+                                   fetchTorrent: { _, _ in throw NetworkGuard.FetchError.httpStatus(404) })
+        let task = remoteTask()
+        let events = engine.events(for: task.id)   // subscribed before add, so nothing is missed
+        let failure = Task { () -> String? in
+            for await event in events {
+                if case .failed(let error) = event { return "\(error)" }
+            }
+            return nil
+        }
+        await engine.add(task)
+        let message = await failure.value
+        XCTAssertNotNil(message)
+        XCTAssertTrue(message?.contains("404") == true,
+                      "the user must see why the .torrent could not be fetched, got: \(message ?? "nil")")
+    }
+
     func testPauseDuringTorrentFetchKeepsTheTorrentPaused() async throws {
         let gate = FetchGate()
         let engine = engine(gate: gate, torrent: singleFileTorrent(payload: Data(repeating: 2, count: 16_384)))

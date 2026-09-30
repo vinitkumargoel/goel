@@ -1565,7 +1565,16 @@ final class ChunkStreamer: NSObject, URLSessionDataDelegate, @unchecked Sendable
                     newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) {
         // Redirects must strip per-task secrets and refuse loopback/link-local — else SSRF.
-        completionHandler(RedirectSanitizer.followed(request, originalURL: task.originalRequest?.url))
+        // The spelling screen alone passes a public name that resolves internally
+        // (`127.0.0.1.nip.io`), so the hop's name is resolved before it is followed.
+        let original = task.originalRequest?.url
+        guard let next = RedirectSanitizer.followed(request, originalURL: original),
+              let url = next.url else {
+            completionHandler(nil)
+            return
+        }
+        RedirectSanitizer.resolveThenFollow(next, url: url, originalURL: original,
+                                            completionHandler: completionHandler)
     }
 }
 

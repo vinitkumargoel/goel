@@ -3,10 +3,18 @@ import XCTest
 
 final class LocalizationTests: XCTestCase {
 
-    func testGermanTranslationsResolve() {
-        XCTAssertEqual(L10n.string("Resume", language: "Deutsch"), "Fortsetzen")
-        XCTAssertEqual(L10n.string("Paused", language: "Deutsch"), "Pausiert")
-        XCTAssertEqual(L10n.string("Settings", language: "Deutsch"), "Einstellungen")
+    /// The German table still ships and resolves; it is just not offered yet (L10N-1).
+    func testGermanTableResolves() {
+        XCTAssertEqual(L10n.lookup("Resume", code: "de"), "Fortsetzen")
+        XCTAssertEqual(L10n.lookup("Paused", code: "de"), "Pausiert")
+        XCTAssertEqual(L10n.lookup("Settings", code: "de"), "Einstellungen")
+    }
+
+    /// Someone who chose "Deutsch" before it was withdrawn gets English, not a 1%-German UI.
+    func testALanguageBelowTheCoverageBarFallsBackToEnglish() {
+        XCTAssertFalse(L10n.supportedLanguages.contains { $0.code == "de" })
+        XCTAssertEqual(L10n.string("Resume", language: "Deutsch"), "Resume")
+        XCTAssertEqual(L10n.string("Resume", language: "de"), "Resume")
     }
 
     func testEnglishIsIdentity() {
@@ -24,10 +32,15 @@ final class LocalizationTests: XCTestCase {
     }
 
     func testLanguageCodeMapping() {
-        XCTAssertEqual(L10n.languageCode(for: "Deutsch"), "de")
-        XCTAssertEqual(L10n.languageCode(for: "german"), "de")
+        XCTAssertEqual(L10n.tableCode(for: "Deutsch"), "de")
+        XCTAssertEqual(L10n.tableCode(for: "german"), "de")
         XCTAssertEqual(L10n.languageCode(for: "English"), "en")
         XCTAssertEqual(L10n.languageCode(for: "whatever"), "en")
+        // Only offered languages map to their own table.
+        XCTAssertEqual(L10n.languageCode(for: "Deutsch"), "en")
+        for entry in L10n.supportedLanguages {
+            XCTAssertEqual(L10n.languageCode(for: entry.name), entry.code)
+        }
     }
 
     func testBaseTableShipsInTheResourceBundle() throws {
@@ -89,7 +102,7 @@ final class LocalizationTests: XCTestCase {
         let base = try baseTable()
         let core = try XCTUnwrap(ResourceBundles.core)
         var orphans: [String] = []
-        for code in L10n.supportedLanguages.map(\.code) where code != "en" {
+        for code in L10n.translatedLanguages.map(\.code) where code != "en" {
             guard let lproj = core.path(forResource: code, ofType: "lproj") else { continue }
             let data = try Data(contentsOf: URL(fileURLWithPath: lproj + "/Localizable.strings"))
             let table = try XCTUnwrap(PropertyListSerialization

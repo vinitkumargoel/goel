@@ -103,11 +103,13 @@ final class AppShellRemediationTests: XCTestCase {
         s.language = "हिन्दी"
         XCTAssertEqual(s.validated().language, "English")
 
+        // German is withdrawn until its table reaches the coverage bar (L10N-1): a stored
+        // choice falls back to English instead of a mostly-English "Deutsch".
         s.language = "German"
-        XCTAssertEqual(s.validated().language, "Deutsch")
+        XCTAssertEqual(s.validated().language, "English")
 
         s.language = "Deutsch"
-        XCTAssertEqual(s.validated().language, "Deutsch")
+        XCTAssertEqual(s.validated().language, "English")
 
         for entry in L10n.supportedLanguages {
             var t = AppSettings()

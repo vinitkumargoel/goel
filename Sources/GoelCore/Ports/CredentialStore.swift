@@ -191,7 +191,7 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
     }
 
     public func allCredentials() -> [HostCredential] {
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrLabel as String: label,
             kSecReturnAttributes as String: true,

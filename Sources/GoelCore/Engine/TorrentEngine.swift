@@ -23,7 +23,8 @@ actor TorrentEngine: TorrentControlling {
         }
     }
 
-    typealias TorrentFetcher = @Sendable (URL, NetworkGuard.ProxySpec) async -> Data?
+    /// Throws ``NetworkGuard/FetchError`` so the user sees why (404, TLS, refused target), not just "failed".
+    typealias TorrentFetcher = @Sendable (URL, NetworkGuard.ProxySpec) async throws -> Data
 
     private var session: UnsafeMutableRawPointer?
     private var handles: [UUID: UnsafeMutableRawPointer] = [:]
@@ -47,7 +48,7 @@ actor TorrentEngine: TorrentControlling {
         self.config = config
         // Must stay on NetworkGuard: proxy honoured, redirects bounded, cross-host headers stripped, link-local refused.
         self.fetchTorrent = fetchTorrent ?? { url, proxy in
-            await NetworkGuard.fetch(url: url, proxy: proxy, userAgent: "GoelDownloader")
+            try await NetworkGuard.fetchChecked(url: url, proxy: proxy, userAgent: "GoelDownloader")
         }
     }
 
@@ -406,8 +407,15 @@ actor TorrentEngine: TorrentControlling {
     }
 
     private func downloadTorrentFile(_ url: URL) async throws -> String {
-        guard let data = await fetchTorrent(url, httpProxy) else {
-            throw DownloadError.network("Could not fetch the .torrent file")
+        let data: Data
+        do {
+            data = try await fetchTorrent(url, httpProxy)
+        } catch let reason as NetworkGuard.FetchError {
+            throw DownloadError.network("Could not fetch the .torrent file: \(reason.description)")
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw DownloadError.network("Could not fetch the .torrent file: \(error.localizedDescription)")
         }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("GoelDownloader/torrents", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

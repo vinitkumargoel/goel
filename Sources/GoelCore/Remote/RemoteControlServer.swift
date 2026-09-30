@@ -310,7 +310,7 @@ public actor RemoteControlServer {
                                       security: security) else {
             _ = await send(connection, RemoteAuthService.misdirected())
             connection.cancel()
-            await connectionClosed(connection)
+            connectionClosed(connection)
             return
         }
         switch (request.method, request.path) {
@@ -324,7 +324,7 @@ public actor RemoteControlServer {
                 connection.cancel()
             })
         }
-        await connectionClosed(connection)
+        connectionClosed(connection)
     }
 
     private func send(_ connection: NWConnection, _ data: Data) async -> Bool {

@@ -78,7 +78,7 @@ extension HTTPEngine {
         let fm = FileManager.default
         #if os(macOS)
         do {
-            try fm.trashItem(at: url, resultingItemURL: nil)
+            try RemoteTransferPrep.trashItem(url)   // one seam, so tests never touch ~/.Trash
             return
         } catch {
             // Volumes without a Trash (network shares, some externals) still have to honour "delete".

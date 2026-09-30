@@ -45,6 +45,19 @@ final class FilenameResolutionTests: XCTestCase {
         XCTAssertEqual(PathSafety.uniqueName(base: "a.mp4", in: dir.path), "a (2).mp4")
     }
 
+    func testUniqueNameTreatsAnInProgressPartialAsTaken() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Another download is still writing `b.zip` — only its partial is on disk.
+        try Data().write(to: dir.appendingPathComponent("b.zip" + PartialFile.suffix))
+        XCTAssertEqual(PathSafety.uniqueName(base: "b.zip", in: dir.path), "b (1).zip")
+
+        try Data().write(to: dir.appendingPathComponent("b (1).zip" + PartialFile.suffix))
+        XCTAssertEqual(PathSafety.uniqueName(base: "b.zip", in: dir.path), "b (2).zip")
+    }
+
     func testContentDispositionPlainFilename() {
         XCTAssertEqual(
             HTTPEngine.filename(fromContentDisposition: "attachment; filename=\"My Video.mp4\""),
