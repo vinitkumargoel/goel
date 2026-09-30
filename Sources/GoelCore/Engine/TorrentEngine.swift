@@ -41,6 +41,11 @@ actor TorrentEngine: TorrentControlling {
     private var pauseRequested: Set<UUID> = []
     private var removedDuringAdd: [UUID: Bool] = [:]
     private var savesInFlight = 0
+    /// Terminal. Everything that would touch (or recreate) the session checks it: after quit's teardown a
+    /// late add must not spin up a fresh session, and during it pause/remove must not free handles
+    /// the bulk save is still using.
+    private var isShutDown = false
+    private var activeProbes = 0
 
     init(profile: TrafficProfile, config: SessionConfig = SessionConfig(),
          fetchTorrent: TorrentFetcher? = nil) {
@@ -60,6 +65,7 @@ actor TorrentEngine: TorrentControlling {
     nonisolated func canHandle(_ source: DownloadSource) -> Bool { source.kind == .torrent }
 
     func add(_ task: DownloadTask) async {
+        guard !isShutDown else { return }
         let id = task.id
         tasks[id] = task
         nextAddGeneration &+= 1
@@ -69,13 +75,15 @@ actor TorrentEngine: TorrentControlling {
         let outcome: Result<UnsafeMutableRawPointer, Error>
         do { outcome = .success(try await makeHandle(for: task)) } catch { outcome = .failure(error) }
 
-        guard addGeneration[id] == generation else {
-            // Removed or superseded while suspended: the handle must not outlive its row.
+        guard addGeneration[id] == generation, !isShutDown else {
+            // Removed, superseded or shut down while suspended: the handle must not outlive its row.
             guard case .success(let handle) = outcome else { return }
-            if tasks[id] == nil, let session {
-                gt_remove(session, handle, removedDuringAdd.removeValue(forKey: id) == true ? 1 : 0)
+            if !isShutDown, tasks[id] == nil, session != nil {
+                removeHandle(handle, deletingData: removedDuringAdd.removeValue(forKey: id) == true,
+                             task: task)
             } else {
-                gt_handle_free(handle)   // same torrent as the newer add's handle; only the wrapper is ours
+                // Same torrent as the newer add's handle, or a session being torn down: only the wrapper is ours.
+                gt_handle_free(handle)
             }
             return
         }
@@ -104,6 +112,7 @@ actor TorrentEngine: TorrentControlling {
     }
 
     func pause(_ id: UUID) async {
+        guard !isShutDown else { return }   // quit already paused everything and owns the handles
         pollers[id]?.cancel(); pollers[id] = nil
         if let handle = handles[id] {
             gt_pause(handle)
@@ -114,6 +123,7 @@ actor TorrentEngine: TorrentControlling {
     }
 
     func resume(_ id: UUID) async {
+        guard !isShutDown else { return }
         pauseRequested.remove(id)
         guard let handle = handles[id] else {
             // An add still fetching its .torrent will start the torrent itself.
@@ -126,11 +136,14 @@ actor TorrentEngine: TorrentControlling {
     }
 
     func remove(_ id: UUID, deleteData: Bool) async {
+        // The bulk save at quit holds copies of every handle; freeing one under it is a use-after-free.
+        guard !isShutDown else { return }
         pollers[id]?.cancel(); pollers[id] = nil
         if addGeneration.removeValue(forKey: id) != nil { removedDuringAdd[id] = deleteData }
         pauseRequested.remove(id)
-        if let session, let handle = handles[id] {
-            gt_remove(session, handle, deleteData ? 1 : 0)   // frees the handle wrapper
+        let task = tasks[id]
+        if session != nil, let handle = handles[id] {
+            removeHandle(handle, deletingData: deleteData, task: task)
         } else if let handle = handles[id] {
             gt_handle_free(handle)
         }
@@ -138,6 +151,41 @@ actor TorrentEngine: TorrentControlling {
         tasks[id] = nil
         discardResumeData(id)
         hub.finishAll(id)
+    }
+
+    /// Frees the wrapper. "Delete data" goes to the Trash like every other engine's: libtorrent's own
+    /// delete-files is permanent, so the torrent leaves the session WITHOUT it and its top-level
+    /// entries under the save folder are trashed here.
+    private func removeHandle(_ handle: UnsafeMutableRawPointer, deletingData: Bool, task: DownloadTask?) {
+        let doomed = deletingData ? topLevelPayload(handle, saveDirectory: task?.saveDirectory) : []
+        if let session { gt_remove(session, handle, 0) } else { gt_handle_free(handle) }
+        guard let task else { return }
+        for url in doomed where FileManager.default.fileExists(atPath: url.path) {
+            do {
+                try RemoteTransferPrep.trashOrDelete(url)
+            } catch {
+                hub.fail(task.id, DownloadError.unknown(
+                    "Removed “\(task.name)” from the list, but its files are still on disk: \(error.localizedDescription)"))
+                return
+            }
+        }
+    }
+
+    /// First path component of every file, resolved under the save folder and kept only if contained there:
+    /// a hostile torrent's `../` must never steer the Trash at something outside it.
+    private func topLevelPayload(_ handle: UnsafeMutableRawPointer, saveDirectory: String?) -> [URL] {
+        guard let saveDirectory else { return [] }
+        var roots: [String] = []
+        for file in readFiles(handle) {
+            guard let first = file.path.split(separator: "/").first.map(String.init),
+                  !first.isEmpty, first != ".", first != "..", !roots.contains(first) else { continue }
+            roots.append(first)
+        }
+        return roots.compactMap { root in
+            let path = (saveDirectory as NSString).appendingPathComponent(root)
+            guard PathSafety.isContained(path, within: saveDirectory) else { return nil }
+            return URL(fileURLWithPath: path)
+        }
     }
 
     /// Engine-owned state survives: the one-shot skip list is already consumed at metadata time.
@@ -154,11 +202,15 @@ actor TorrentEngine: TorrentControlling {
 
     /// Quit: without a final blob the next launch re-checks everything, and trackers never hear "stopped".
     func shutdown() async {
+        guard !isShutDown else { return }
+        // First, before any suspension: from here pause/remove/add/resume are no-ops and no save starts.
+        isShutDown = true
         for poller in pollers.values { poller.cancel() }
         pollers.removeAll()
         addGeneration.removeAll()
-        // A single save still running holds the session pointer.
-        while savesInFlight > 0 { try? await Task.sleep(nanoseconds: 20_000_000) }
+        // A single save still running holds the session pointer. In-flight adds need no wait: they re-read
+        // the session after their fetch and see `isShutDown` before any C call.
+        await waitForSaves()
         guard let session else { return }
 
         var ids: [UUID] = []
@@ -166,8 +218,9 @@ actor TorrentEngine: TorrentControlling {
         var paths: [String] = []
         for (id, handle) in handles {
             gt_pause(handle)
-            guard let url = resumeFileURL(id) else { continue }
-            ids.append(id); raw.append(handle); paths.append(url.path)
+            // A copy per handle: the blocking thread must never share a wrapper the actor could free.
+            guard let url = resumeFileURL(id), let copy = gt_handle_copy(handle) else { continue }
+            ids.append(id); raw.append(copy); paths.append(url.path)
         }
         let unsafe = UnsafeTransfer((session, raw))
         let targets = paths
@@ -182,6 +235,7 @@ actor TorrentEngine: TorrentControlling {
                 }
             }
         }
+        raw.forEach { gt_handle_free($0) }
         if Int(saved) < ids.count {
             GoelLog.engineTorrent.notice("some fast-resume data wasn't saved at quit",
                                          .count(Int(saved), label: "saved"),
@@ -189,10 +243,17 @@ actor TorrentEngine: TorrentControlling {
         }
         for handle in handles.values { gt_handle_free(handle) }
         handles.removeAll()
+        // Re-check right before destroy: nothing may still hold the session on another thread.
+        await waitForSaves()
         self.session = nil
         // The session destructor waits for tracker "stopped" announces; keep that off the pool too.
         let doomed = UnsafeTransfer(session)
         await Self.offPool("goel.torrent-teardown") { gt_session_destroy(doomed.value) }
+    }
+
+    /// Saves hold the session on another thread; probes hold a handle in it across their polling sleeps.
+    private func waitForSaves() async {
+        while savesInFlight > 0 || activeProbes > 0 { try? await Task.sleep(nanoseconds: 20_000_000) }
     }
 
     func applyLimits(_ profile: TrafficProfile) async {
@@ -301,13 +362,16 @@ actor TorrentEngine: TorrentControlling {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let probe = DownloadTask(source: source, name: "", saveDirectory: scratch.path)
         let handle = try await makeHandle(for: probe, metadataOnly: true)
+        // Counted so quit's teardown waits for this handle to leave the session before destroying it.
+        activeProbes += 1
+        defer { activeProbes -= 1 }
         defer {
             if let session { gt_remove(session, handle, 0) } else { gt_handle_free(handle) }
             try? FileManager.default.removeItem(at: scratch)
         }
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if Task.isCancelled { return nil }
+            if Task.isCancelled || isShutDown { return nil }
             var status = GTStatus()
             if gt_get_status(handle, &status) == 1 {
                 // Say why: a nil here reads as "no peers answered in time".
@@ -336,6 +400,7 @@ actor TorrentEngine: TorrentControlling {
     }
 
     private func ensureSession() -> UnsafeMutableRawPointer? {
+        guard !isShutDown else { return nil }   // never resurrect a session quit already tore down
         if let session { return session }
         let created = gt_session_create(config.enableDHT ? 1 : 0,
                                         config.enableLSD ? 1 : 0,
@@ -358,8 +423,9 @@ actor TorrentEngine: TorrentControlling {
         for task: DownloadTask,
         metadataOnly: Bool = false
     ) async throws -> UnsafeMutableRawPointer {
-        guard let session = ensureSession() else {
-            throw DownloadError.unknown("Could not start the BitTorrent session")
+        guard let initial = ensureSession() else {
+            throw DownloadError.unknown(isShutDown ? "BitTorrent is shutting down"
+                                                   : "Could not start the BitTorrent session")
         }
         try FileManager.default.createDirectory(atPath: task.saveDirectory, withIntermediateDirectories: true)
 
@@ -370,12 +436,13 @@ actor TorrentEngine: TorrentControlling {
         let handle: UnsafeMutableRawPointer?
 
         // Real adds only: a preview must not inherit live state from the resume blob.
-        if !metadataOnly, let restored = restoreFromResumeData(task, session: session, mode: mode) {
+        if !metadataOnly, let restored = restoreFromResumeData(task, session: initial, mode: mode) {
             return restored
         }
 
         switch task.source {
         case .magnet(let magnet):
+            let session = initial
             handle = magnet.withCString { m in
                 saveDir.withCString { sp in
                     errBuf.withUnsafeMutableBufferPointer { eb in
@@ -388,6 +455,10 @@ actor TorrentEngine: TorrentControlling {
             let localPath = isRemote ? try await downloadTorrentFile(url) : url.path
             // `gt_add_torrent_file` parses synchronously, so the temp copy is dead on every exit path.
             defer { if isRemote { try? FileManager.default.removeItem(atPath: localPath) } }
+            // Re-read after the fetch: quit may have destroyed the session captured before it.
+            guard !isShutDown, let session = self.session else {
+                throw DownloadError.unknown("BitTorrent is shutting down")
+            }
             handle = localPath.withCString { fp in
                 saveDir.withCString { sp in
                     errBuf.withUnsafeMutableBufferPointer { eb in
@@ -459,7 +530,8 @@ actor TorrentEngine: TorrentControlling {
     /// Off the cooperative pool: the C call blocks up to its timeout. A handle copy, since the actor re-enters
     /// meanwhile and `remove` frees the original.
     private func saveResumeData(_ id: UUID) async {
-        guard let session, let handle = handles[id], let url = resumeFileURL(id),
+        // Quit's bulk save covers every handle; a late single save would race its teardown.
+        guard !isShutDown, let session, let handle = handles[id], let url = resumeFileURL(id),
               let copy = gt_handle_copy(handle) else { return }
         savesInFlight += 1
         defer { savesInFlight -= 1 }
@@ -567,8 +639,7 @@ actor TorrentEngine: TorrentControlling {
             switch phase {
             case .error:
                 let message = Self.cString(status.error)
-                let de = DownloadError.network(message.isEmpty ? "Torrent error" : message)
-                hub.fail(id, de)
+                hub.fail(id, Self.failure(message: message, saveDirectory: tasks[id]?.saveDirectory))
                 pollers[id] = nil
                 return
             case .metadata:
@@ -740,6 +811,16 @@ actor TorrentEngine: TorrentControlling {
         case 7: return .high
         default: return .normal
         }
+    }
+
+    /// libtorrent reports ENOSPC as text; a full disk must read as one, or auto-retry keeps hammering it.
+    static func failure(message: String, saveDirectory: String?) -> DownloadError {
+        let lowered = message.lowercased()
+        if lowered.contains("no space left") || lowered.contains("disk quota exceeded") {
+            let folder = URL(fileURLWithPath: saveDirectory ?? NSTemporaryDirectory())
+            return SegmentedTransfer.diskFull(at: folder.appendingPathComponent("payload"), needed: 0)
+        }
+        return .network(message.isEmpty ? "Torrent error" : message)
     }
 
     /// A task `0` means "seed indefinitely"; a profile `0` means no limit; nil = never stop.

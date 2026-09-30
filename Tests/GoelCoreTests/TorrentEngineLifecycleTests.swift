@@ -195,6 +195,90 @@ final class TorrentEngineLifecycleTests: XCTestCase {
         XCTAssertFalse(live, "the session is torn down, not left for deinit")
     }
 
+    // MARK: integration#1 — "remove with data" goes to the Trash
+
+    #if os(macOS)
+    func testRemoveWithDataTrashesThePayloadInsteadOfDeletingIt() async throws {
+        let saveDir = tempDir.appendingPathComponent("save", isDirectory: true)
+        try FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
+        let payload = Data(repeating: 6, count: 16_384)
+        try payload.write(to: saveDir.appendingPathComponent("goel.bin"))
+        let fixture = tempDir.appendingPathComponent("local.torrent")
+        try singleFileTorrent(payload: payload).write(to: fixture)
+
+        // A fake Trash: records what was sent there and keeps it, so "trashed" is distinguishable from "deleted".
+        let fakeTrash = tempDir.appendingPathComponent("Trash", isDirectory: true)
+        try FileManager.default.createDirectory(at: fakeTrash, withIntermediateDirectories: true)
+        let original = RemoteTransferPrep.trashItem
+        RemoteTransferPrep.trashItem = { url in
+            try FileManager.default.moveItem(at: url, to: fakeTrash.appendingPathComponent(url.lastPathComponent))
+        }
+        defer { RemoteTransferPrep.trashItem = original }
+
+        let engine = TorrentEngine(profile: .low, config: .init(enableDHT: false, enableLSD: false))
+        let task = DownloadTask(source: .torrentFile(fixture), name: "goel.bin", saveDirectory: saveDir.path)
+        await engine.add(task)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        await engine.remove(task.id, deleteData: true)
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: saveDir.appendingPathComponent("goel.bin").path))
+        XCTAssertEqual(try Data(contentsOf: fakeTrash.appendingPathComponent("goel.bin")), payload,
+                       "the payload must be recoverable from the Trash, not unlinked by libtorrent")
+    }
+    #endif
+
+    // MARK: concurrency#3 / engines#3 — shutdown is terminal
+
+    func testNothingRecreatesTheSessionAfterShutdown() async throws {
+        let fixture = tempDir.appendingPathComponent("local.torrent")
+        try singleFileTorrent(payload: Data(repeating: 7, count: 16_384)).write(to: fixture)
+        let engine = TorrentEngine(profile: .low, config: .init(enableDHT: false, enableLSD: false))
+        let task = DownloadTask(source: .torrentFile(fixture), name: "goel.bin",
+                                saveDirectory: tempDir.appendingPathComponent("save").path)
+        await engine.add(task)
+        await engine.shutdown()
+
+        await engine.add(DownloadTask(source: .torrentFile(fixture), name: "late.bin",
+                                      saveDirectory: tempDir.appendingPathComponent("save").path))
+        await engine.resume(task.id)
+        let meta = await engine.resolveMetadata(for: .torrentFile(fixture), in: tempDir.path)
+        let live = await engine.hasSession
+        let handles = await engine.handleCount
+        XCTAssertFalse(live, "a late add/resume/probe must not spin up a fresh session after quit")
+        XCTAssertEqual(handles, 0)
+        XCTAssertEqual(meta?.reachable, false)
+    }
+
+    func testAddWhoseFetchOutlivesShutdownTouchesNoSession() async throws {
+        let gate = FetchGate()
+        let engine = engine(gate: gate, torrent: singleFileTorrent(payload: Data(repeating: 8, count: 16_384)))
+        // A session must exist for the race: create it with a local add first.
+        let fixture = tempDir.appendingPathComponent("local.torrent")
+        try singleFileTorrent(payload: Data(repeating: 9, count: 16_384)).write(to: fixture)
+        await engine.add(DownloadTask(source: .torrentFile(fixture), name: "goel.bin",
+                                      saveDirectory: tempDir.appendingPathComponent("save").path))
+
+        let adding = Task { await engine.add(self.remoteTask()) }
+        try await waitUntilEntered(gate)
+        await engine.shutdown()          // destroys the session the add captured before its fetch
+        await gate.open()
+        await adding.value               // must re-read the session, find none, and bail
+        let live = await engine.hasSession
+        let handles = await engine.handleCount
+        XCTAssertFalse(live)
+        XCTAssertEqual(handles, 0)
+    }
+
+    func testDiskFullTextMapsToDiskFull() {
+        guard case .diskFull = TorrentEngine.failure(message: "file_open: No space left on device",
+                                                     saveDirectory: tempDir.path) else {
+            return XCTFail("ENOSPC text must surface as diskFull")
+        }
+        XCTAssertEqual(TorrentEngine.failure(message: "tracker error", saveDirectory: nil),
+                       .network("tracker error"))
+    }
+
     /// No announce list, deliberately: nothing in these tests may talk to a tracker.
     private func singleFileTorrent(payload: Data, name: String = "goel.bin") -> Data {
         var info = Data("d6:lengthi\(payload.count)e".utf8)
