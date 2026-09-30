@@ -163,6 +163,9 @@ export function LibraryView({
       case 'End':
         return moveTo(order.length - 1)
       case ' ':
+        // Plain Space is the global pause/resume shortcut (see lib/shortcuts), so it must reach
+        // the document unhandled; ⌘/Ctrl+Space adds or drops this row, like ⌘/Ctrl-click.
+        if (!(e.metaKey || e.ctrlKey)) return
         e.preventDefault()
         onSelection({ type: 'toggle', id: current })
         return

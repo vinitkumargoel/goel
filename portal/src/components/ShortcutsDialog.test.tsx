@@ -12,7 +12,11 @@ describe('ShortcutsDialog', () => {
     expect(screen.getByRole('heading', { name: en.shortcuts.navigation })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: en.shortcuts.actions })).toBeInTheDocument()
     expect(screen.getByText(en.shortcuts.toggle)).toBeInTheDocument()
-    expect(screen.getByText('Space').tagName).toBe('KBD')
+    // Space alone pauses/resumes; with ⌘/Ctrl it adds or drops the focused row.
+    expect(screen.getByText(en.shortcuts.toggleSelect)).toBeInTheDocument()
+    const spaces = screen.getAllByText('Space')
+    expect(spaces).toHaveLength(2)
+    for (const kbd of spaces) expect(kbd.tagName).toBe('KBD')
     expect(screen.getByRole('button', { name: en.common.close })).toHaveFocus()
   })
 

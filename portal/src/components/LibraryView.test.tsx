@@ -5,6 +5,7 @@ import { renderWithI18n } from '../test/renderWithI18n'
 import en from '../locales/en.json'
 import { UNSORTED, type SortState } from '../lib/sort'
 import type { TaskRow } from '../lib/types'
+import { useAppKeys, type AppKeyDeps } from '../hooks/useAppKeys'
 import { LibraryView } from './LibraryView'
 
 function task(over: Partial<TaskRow> = {}): TaskRow {
@@ -370,6 +371,68 @@ describe('LibraryView — phone cards', () => {
     unmount()
     renderLibrary({ tasks: [task()], canWrite: false, readOnly: true })
     expect(screen.queryByRole('button', { name: en.topbar.addDownload })).toBeNull()
+  })
+})
+
+describe('LibraryView — with the app keys', () => {
+  const ROWS = [task({ id: 'a', name: 'a.iso' }), task({ id: 'b', name: 'b.iso', statusToken: 'paused' })]
+
+  /** The row list plus the document-level shortcuts, wired as App wires them. */
+  function Keyed({ runBulk, onSelection }: { runBulk: AppKeyDeps['runBulk']; onSelection: AppKeyDeps['select'] }) {
+    useAppKeys({
+      enabled: true,
+      onEscape: vi.fn(),
+      view: 'library',
+      visible: ROWS,
+      lead: 'a',
+      selectedVisible: [ROWS[0]!],
+      canWrite: true,
+      select: onSelection,
+      openDetail: vi.fn(),
+      runBulk,
+      removeMany: vi.fn(),
+      openAdd: vi.fn(),
+      focusSearch: vi.fn(),
+      openHelp: vi.fn(),
+      rowElement: () => undefined,
+    })
+    return (
+      <LibraryView
+        tasks={ROWS}
+        total={ROWS.length}
+        loaded
+        search=""
+        selectedIds={new Set(['a'])}
+        lead="a"
+        sort={UNSORTED}
+        canWrite
+        readOnly={false}
+        onSelection={onSelection}
+        onOpen={vi.fn()}
+        onSort={vi.fn()}
+        onAction={vi.fn()}
+        onMenu={vi.fn()}
+        onClearSearch={vi.fn()}
+        onAdd={vi.fn()}
+      />
+    )
+  }
+
+  it('pauses the selection on Space from a focused row, and toggles the row on Ctrl+Space', async () => {
+    const runBulk = vi.fn(async () => {})
+    const onSelection = vi.fn()
+    renderWithI18n(<Keyed runBulk={runBulk} onSelection={onSelection} />)
+    const row = screen.getAllByRole('option')[0]!
+    expect(row).toHaveAttribute('aria-keyshortcuts', expect.stringContaining('Space'))
+    row.focus()
+
+    await userEvent.keyboard(' ')
+    expect(runBulk).toHaveBeenCalledWith('pause', ['a'])
+    expect(onSelection).not.toHaveBeenCalledWith({ type: 'toggle', id: 'a' })
+
+    await userEvent.keyboard('{Control>} {/Control}')
+    expect(onSelection).toHaveBeenCalledWith({ type: 'toggle', id: 'a' })
+    expect(runBulk).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -446,6 +446,7 @@
     "prev": "Previous download",
     "open": "Open details",
     "selectAll": "Select all",
+    "toggleSelect": "Add or remove the focused download from the selection",
     "help": "Show this help",
     "close": "Close dialog or menu",
     "add": "Add download",

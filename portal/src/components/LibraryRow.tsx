@@ -69,6 +69,7 @@ export const LibraryRow = memo(function LibraryRow({
       role="option"
       data-id={task.id}
       aria-selected={selected}
+      aria-keyshortcuts="Space Enter Control+Space Meta+Space"
       aria-describedby={describedBy}
       aria-label={t('library.rowLabel', {
         name: task.name,

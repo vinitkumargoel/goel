@@ -6,6 +6,7 @@ type ShortcutLabel =
   | 'shortcuts.prev'
   | 'shortcuts.open'
   | 'shortcuts.selectAll'
+  | 'shortcuts.toggleSelect'
   | 'shortcuts.close'
   | 'shortcuts.help'
   | 'shortcuts.add'
@@ -25,6 +26,7 @@ export const SHORTCUT_DOCS: { navigation: readonly ShortcutDoc[]; actions: reado
     { keys: ['K'], labelKey: 'shortcuts.prev' },
     { keys: ['Enter'], labelKey: 'shortcuts.open' },
     { keys: ['⌘/Ctrl', 'A'], labelKey: 'shortcuts.selectAll' },
+    { keys: ['⌘/Ctrl', 'Space'], labelKey: 'shortcuts.toggleSelect' },
     { keys: ['Esc'], labelKey: 'shortcuts.close' },
     { keys: ['?'], labelKey: 'shortcuts.help' },
   ],
