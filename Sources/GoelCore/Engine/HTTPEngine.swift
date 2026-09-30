@@ -29,6 +29,8 @@ actor HTTPEngine: HTTPConfigurable {
     private var unwinding: [UUID: Task<Void, Never>] = [:]
 
     private var streamedResume: [UUID: Data] = [:]
+    /// Bumped by pause/remove; a resume parked on an unwind bails if it moved meanwhile.
+    private var generations: [UUID: Int] = [:]
 
     /// 64 KB meant ~1,600 writes plus ledger hops per second at 100 MB/s.
     static let flushSize = 512 * 1024
@@ -99,11 +101,14 @@ actor HTTPEngine: HTTPConfigurable {
     }
 
     func pause(_ id: DownloadTask.ID) async {
+        // Bumped even with no job: a pause landing while resume() waits out an unwind must still win.
+        bumpGeneration(id)
         guard let job = jobs[id] else { return }
         job.cancel()
         jobs[id] = nil
         unwinding[id] = job
         // The cursor is ~1s stale, which is safe: resume re-validates ETag / Last-Modified before reusing a range.
+        // The unwinding job still publishes a final barrier'd cursor, so this one is only a floor.
         if let data = streamedResume[id] {
             tasks[id]?.resumeData = data
             emit(id, .resumeDataUpdated(data))
@@ -116,34 +121,51 @@ actor HTTPEngine: HTTPConfigurable {
 
     func resume(_ id: DownloadTask.ID) async {
         guard tasks[id] != nil, jobs[id] == nil else { return }
+        let generation = generations[id, default: 0]
+        // Loop: every await re-enters the actor, so the slot may hold a newer unwinding job by then.
+        while let previous = unwinding[id] {
+            if !(await Self.awaitUnwind(previous)) {
+                GoelLog.engineHTTP.notice("Paused transfer was slow to stop; resuming anyway")
+            }
+            // A pause or remove while we waited supersedes this resume.
+            guard generations[id, default: 0] == generation else { return }
+            // Clear only OUR entry: a newer one must be waited out too, never wiped.
+            if unwinding[id] == previous { unwinding[id] = nil }
+        }
         // Keyed lookup after the await: a concurrent resume may have started the job while we waited.
-        if let previous = unwinding[id] { await Self.awaitUnwind(previous) }
-        unwinding[id] = nil
         guard tasks[id] != nil, jobs[id] == nil else { return }
         emit(id, .statusChanged(.downloading))
         jobs[id] = Task { await self.run(id) }
     }
 
-    /// Bounded: an unwind wedged in a transport must delay a resume, never swallow it.
-    static func awaitUnwind(_ job: Task<Void, Never>, timeout: TimeInterval = 10) async {
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await job.value }
-            group.addTask { try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)) }
-            await group.next()
-            group.cancelAll()
-        }
+    private func bumpGeneration(_ id: DownloadTask.ID) {
+        generations[id, default: 0] &+= 1
+    }
+
+    func hasLiveJob(_ id: DownloadTask.ID) -> Bool { jobs[id] != nil }
+
+    /// Test seam: a paused task whose previous job is still unwinding, without staging a wedged transport.
+    func installUnwinding(_ task: DownloadTask, job: Task<Void, Never>) {
+        tasks[task.id] = task
+        tasks[task.id]?.status = .paused
+        unwinding[task.id] = job
+    }
+
+    /// Bounded: an unwind wedged in a transport must delay a resume, never swallow it. True = it finished.
+    @discardableResult
+    static func awaitUnwind(_ job: Task<Void, Never>, timeout: TimeInterval = 10) async -> Bool {
+        await UnwindDeadline.wait(for: job, seconds: timeout)
     }
 
     /// The manager's copy is authoritative for user edits (name, limits, headers, cookies); the engine keeps
     /// only what it owns live — status, and a streamed cursor newer than the one the manager last persisted.
+    /// A restart is the manager's to make explicit (remove + re-add): inferring one from "no cursor, no bytes"
+    /// threw a live cursor away on a pause+resume inside the first second.
     func refresh(_ task: DownloadTask) async {
         guard let current = tasks[task.id] else { return }
         var fresh = task
         fresh.status = current.status
-        // A manager copy with no cursor AND no bytes is a deliberate restart; anything else may just lag the stream.
-        if fresh.resumeData == nil && fresh.bytesDownloaded == 0 {
-            streamedResume[task.id] = nil
-        } else if let streamed = streamedResume[task.id] {
+        if let streamed = streamedResume[task.id] {
             fresh.resumeData = streamed
         }
         // A rename while paused moves the final path; the in-progress bytes live in the partial beside it.
@@ -152,13 +174,20 @@ actor HTTPEngine: HTTPConfigurable {
             let newPart = PartialFile.path(for: fresh.savePath)
             let fm = FileManager.default
             if fm.fileExists(atPath: oldPart), !fm.fileExists(atPath: newPart) {
-                try? fm.moveItem(atPath: oldPart, toPath: newPart)
+                do {
+                    try fm.moveItem(atPath: oldPart, toPath: newPart)
+                } catch {
+                    // The next run restarts under the new name — recoverable, but never silent.
+                    GoelLog.engineHTTP.notice("Couldn't move the partial download after a rename",
+                                              .detail(error.localizedDescription), .path(oldPart))
+                }
             }
         }
         tasks[task.id] = fresh
     }
 
     func remove(_ id: DownloadTask.ID, deleteData: Bool) async {
+        bumpGeneration(id)
         let job = jobs[id]
         let task = tasks[id]
         job?.cancel()
@@ -318,13 +347,15 @@ actor HTTPEngine: HTTPConfigurable {
 
             // Rename ONLY on a run that wrote nothing: on resume `uniqueName` steps over the partial and restarts.
             let isFirstAttempt = task.resumeData == nil && task.bytesDownloaded == 0
-            if isFirstAttempt,
-               let better = Self.refinedName(current: task.name,
-                                             suggestedName: probe.suggestedName,
-                                             contentType: probe.contentType) {
-                let unique = nameAvoidingActivePartials(
-                    DownloadManager.resolveName(better, in: task.saveDirectory, policy: fileConflictPolicy),
-                    for: id, in: task.saveDirectory)
+            if isFirstAttempt {
+                // Every first attempt, not just a refined one: two same-named queued tasks share one .goelpart.
+                let refined = Self.refinedName(current: task.name,
+                                               suggestedName: probe.suggestedName,
+                                               contentType: probe.contentType)
+                let base = refined.map {
+                    DownloadManager.resolveName($0, in: task.saveDirectory, policy: fileConflictPolicy)
+                } ?? task.name
+                let unique = nameAvoidingActivePartials(base, for: id, in: task.saveDirectory)
                 if unique != task.name {
                     tasks[id]?.name = unique
                     emit(id, .nameResolved(unique))
@@ -354,7 +385,7 @@ actor HTTPEngine: HTTPConfigurable {
 
             // Basic auth only ever rides over TLS — it would be cleartext otherwise.
             let authorization = url.scheme?.lowercased() == "https"
-                ? url.host.flatMap { credentials.basicAuthorization(forHost: $0) }
+                ? url.host.flatMap { credentials.basicAuthorization(forHost: $0.lowercased()) }
                 : nil
             let settings = RequestSettings(
                 userAgent: networkConfig.userAgent,
@@ -448,7 +479,8 @@ actor HTTPEngine: HTTPConfigurable {
                 outcome = try await planned.run()
                 await consumer.value
             } catch {
-                consumer.cancel()
+                // Drain, don't cancel: the stream's last element is the final cursor a pause must keep.
+                // It ends by itself — the transfer finishes its stream on every exit.
                 await consumer.value
                 throw error
             }
@@ -463,7 +495,14 @@ actor HTTPEngine: HTTPConfigurable {
                 guard matched else { throw DownloadError.checksumMismatch }
             }
             // Only a verified file may take the final name; until here any existing copy there is untouched.
-            try Self.finalizePartial(partURL, to: fileURL)
+            let placed = try Self.finalizePartial(partURL, to: fileURL,
+                                                  overwrite: fileConflictPolicy == "overwrite")
+            if placed != fileURL {
+                // A file appeared at the final path mid-transfer; "rename" must not clobber it.
+                let name = placed.lastPathComponent
+                tasks[id]?.name = name
+                emit(id, .nameResolved(name))
+            }
 
             // Streamed ticks are throttled, so force a final 100% emit here or the UI stops short.
             tasks[id]?.bytesDownloaded = outcome.bytesWritten
@@ -519,6 +558,15 @@ actor HTTPEngine: HTTPConfigurable {
 
     private func applyProgress(_ id: UUID, _ update: TransferProgress) {
         guard tasks[id] != nil else { return }
+        // A paused job drains after pause(): its cursor counts, its speed ticks would light up a paused row.
+        guard jobs[id] != nil, !update.isFinalCursor else {
+            if let data = update.resumeData {
+                tasks[id]?.resumeData = data
+                streamedResume[id] = data
+                emit(id, .resumeDataUpdated(data))
+            }
+            return
+        }
         tasks[id]?.bytesDownloaded = update.bytesDownloaded
         tasks[id]?.downloadSpeed = update.downloadSpeed
         tasks[id]?.connectionCount = update.connectionCount

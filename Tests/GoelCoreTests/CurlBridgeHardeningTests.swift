@@ -228,4 +228,111 @@ final class CurlBridgeHardeningTests: XCTestCase {
         ctx.abort()
         await fulfillment(of: [done], timeout: 2)
     }
+
+    // MARK: engines#5 — 206 without Content-Range
+
+    private func partialWithoutRange(_ body: Data, declaredLength: Int? = nil) -> Data {
+        var out = Data(("HTTP/1.1 206 Partial Content\r\nContent-Length: \(declaredLength ?? body.count)\r\n"
+                        + "ETag: \"e1\"\r\nConnection: close\r\n\r\n").utf8)
+        out.append(body)
+        return out
+    }
+
+    func testPartialWithoutContentRangeIsTakenAsTheRequestedSpan() async throws {
+        let payload = ScriptedURLProtocol.payload(4096)
+        let port = try serveOnce(recorder: Recorder()) { _ in
+            self.partialWithoutRange(payload.subdata(in: 1000..<2000))
+        }
+        let (url, handle) = try tempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let response = await BoundHTTPClient.downloadRange(
+            request(port, start: 1000, end: 1999, total: 4096), file: handle, fileOffset: 0, limiter: nil)
+        try handle.close()
+        XCTAssertEqual(response.curlCode, 0)
+        XCTAssertFalse(response.hasContentRange)
+        XCTAssertFalse(response.rangeTotalMismatch, "no header means no total to contradict")
+        XCTAssertEqual(response.bytesWritten, 1000)
+        XCTAssertEqual(try Data(contentsOf: url), payload.subdata(in: 1000..<2000))
+    }
+
+    func testPartialWithoutContentRangeOfAnotherLengthIsRefused() async throws {
+        let payload = ScriptedURLProtocol.payload(4096)
+        let port = try serveOnce(recorder: Recorder()) { _ in
+            self.partialWithoutRange(payload.subdata(in: 0..<500))
+        }
+        let (url, handle) = try tempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let response = await BoundHTTPClient.downloadRange(
+            request(port, start: 1000, end: 1999, total: 4096), file: handle, fileOffset: 0, limiter: nil)
+        try handle.close()
+        XCTAssertTrue(response.rangeMismatch)
+        XCTAssertEqual(try Data(contentsOf: url).count, 0)
+    }
+
+    // MARK: security#3 — every redirect hop is screened
+
+    private func redirect(to location: String) -> Data {
+        Data("HTTP/1.1 302 Found\r\nLocation: \(location)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8)
+    }
+
+    private final class HopLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var hops: [URL] = []
+        func add(_ url: URL) { lock.lock(); hops.append(url); lock.unlock() }
+        var all: [URL] { lock.lock(); defer { lock.unlock() }; return hops }
+    }
+
+    func testRefusedHopIsNeverFetched() async throws {
+        let port = try serveOnce(recorder: Recorder()) { _ in
+            self.redirect(to: "http://metadata.internal.test/latest/")
+        }
+        let (url, handle) = try tempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let log = HopLog()
+        let response = await BoundHTTPClient.downloadRange(
+            request(port, start: 0, end: 9, total: 10), file: handle, fileOffset: 0, limiter: nil,
+            hopScreen: { hop, _ in log.add(hop); return false })
+        try handle.close()
+        XCTAssertTrue(response.redirectRefused)
+        XCTAssertEqual(response.bytesWritten, 0)
+        XCTAssertEqual(log.all.map(\.host), ["metadata.internal.test"])
+    }
+
+    func testAllowedHopIsFollowed() async throws {
+        let payload = ScriptedURLProtocol.payload(10)
+        let target = try serveOnce(recorder: Recorder()) { _ in
+            self.partial(payload, start: 0, end: 9, total: 10)
+        }
+        let origin = try serveOnce(recorder: Recorder()) { _ in
+            self.redirect(to: "http://127.0.0.1:\(target)/moved.bin")
+        }
+        let (url, handle) = try tempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let log = HopLog()
+        let response = await BoundHTTPClient.downloadRange(
+            request(origin, start: 0, end: 9, total: 10), file: handle, fileOffset: 0, limiter: nil,
+            hopScreen: { hop, from in
+                log.add(hop)
+                return from.port == Int(origin)   // screened against the ORIGINAL request
+            })
+        try handle.close()
+        XCTAssertFalse(response.redirectRefused)
+        XCTAssertEqual(response.curlCode, 0)
+        XCTAssertEqual(try Data(contentsOf: url), payload)
+        XCTAssertEqual(log.all.map(\.port), [Int(target)])
+    }
+
+    func testDefaultScreenRefusesAHopThatResolvesToLoopback() async throws {
+        NetworkGuard.hostResolver = { $0 == "sneaky.example" ? ["127.0.0.1"] : nil }
+        defer { NetworkGuard.useSystemHostResolver() }
+        let port = try serveOnce(recorder: Recorder()) { _ in
+            self.redirect(to: "http://sneaky.example:9/f.bin")
+        }
+        let (url, handle) = try tempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let response = await BoundHTTPClient.downloadRange(
+            request(port, start: 0, end: 9, total: 10), file: handle, fileOffset: 0, limiter: nil)
+        try handle.close()
+        XCTAssertTrue(response.redirectRefused, "a public-looking name resolving to 127.0.0.1 is refused")
+    }
 }

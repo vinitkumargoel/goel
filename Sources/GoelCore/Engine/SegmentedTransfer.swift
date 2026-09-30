@@ -130,6 +130,30 @@ final class SegmentedTransfer: Sendable {
             }
         }
 
+        do {
+            try await runSegments(ranges: ranges, initialBytes: initialBytes, ledger: ledger,
+                                  limiter: limiter, session: session, governor: governor, pool: pool,
+                                  adapterPool: adapterPool, adapterGovernors: adapterGovernors,
+                                  upgraded: upgraded)
+        } catch {
+            // Every writer has returned, so the ledger is exact: publish it or a pause re-fetches up to 5 s.
+            await ledger.publishFinalCursor()
+            throw error
+        }
+
+        let bytesWritten = await ledger.totalBytes()
+        // Assert the whole file is accounted for, so a silent gap can't be emitted as `.completed`.
+        guard bytesWritten == total else {
+            throw DownloadError.network("Incomplete download: wrote \(bytesWritten) of \(total) bytes")
+        }
+        let resumeData = await ledger.currentResumeData()
+        return TransferOutcome(bytesWritten: bytesWritten, resumeData: resumeData, usedSegments: ranges.count)
+    }
+
+    private func runSegments(ranges: [Range64], initialBytes: [Int: Int64], ledger: Ledger,
+                             limiter: RateLimiter?, session: URLSession, governor: ConnectionGovernor,
+                             pool: MirrorPool, adapterPool: AdapterPool?,
+                             adapterGovernors: AdapterGovernors?, upgraded: Bool) async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
             for (i, range) in ranges.enumerated() {
                 let already = initialBytes[i] ?? 0
@@ -153,14 +177,6 @@ final class SegmentedTransfer: Sendable {
             }
             try await group.waitForAll()
         }
-
-        let bytesWritten = await ledger.totalBytes()
-        // Assert the whole file is accounted for, so a silent gap can't be emitted as `.completed`.
-        guard bytesWritten == total else {
-            throw DownloadError.network("Incomplete download: wrote \(bytesWritten) of \(total) bytes")
-        }
-        let resumeData = await ledger.currentResumeData()
-        return TransferOutcome(bytesWritten: bytesWritten, resumeData: resumeData, usedSegments: ranges.count)
     }
 
     /// Runs OFF any actor: on one, every segment would serialize through an executor, one hop per byte.
@@ -175,6 +191,8 @@ final class SegmentedTransfer: Sendable {
         var written: Int64 = 0
         var attempt = 0
         var progressMark: Int64 = 0
+        // Set once a node answers our If-Range with the same bytes under its own ETag (load-balanced origins).
+        var ifRangeDistrusted = false
         // Lets the cancel handler abort the URLSession task, not just the Swift one — else it keeps draining.
         let streamerBox = StreamerBox()
         do {
@@ -188,7 +206,7 @@ final class SegmentedTransfer: Sendable {
                     let url = await pool.url(segment: index, attempt: attempt)
                     let isMirror = url != plan.url
                     // A mirror's validators are its own; only the primary can be held to the probed entity.
-                    let ifRange = isMirror ? nil : Self.strongETag(plan.etag)
+                    let ifRange = (isMirror || ifRangeDistrusted) ? nil : Self.strongETag(plan.etag)
 
                     // Each `acquire()` must be balanced by exactly one `release()` on every exit path.
                     try await governor.acquire()
@@ -234,8 +252,15 @@ final class SegmentedTransfer: Sendable {
                         // A ranged GET answered non-206 (a full 200 body) is unusable for a segment.
                         streamer.cancelTask()
                         await governor.release()
-                        // With If-Range, a 200 is the server saying the entity changed.
+                        // With If-Range, a 200 is the server saying the entity changed — unless the full body
+                        // is the probed size and Last-Modified: then only this node's ETag differs. Retry ranged
+                        // without If-Range; the 206 is still held to size and Last-Modified below.
                         if ifRange != nil, http.statusCode == 200 {
+                            if Self.sameEntityDespiteETag(plan: plan, contentLength: http.expectedContentLength,
+                                                          lastModified: http.value(forHTTPHeaderField: "Last-Modified")) {
+                                ifRangeDistrusted = true
+                                continue
+                            }
                             if attempt >= settings.maxAttempts { throw DownloadError.remoteFileChanged }
                             try await backoff(attempt: attempt, response: http, retryInterval: settings.retryInterval)
                             continue
@@ -253,8 +278,9 @@ final class SegmentedTransfer: Sendable {
                     let sizeChanged = plan.totalBytes.map { expected in
                         Self.contentRangeTotal(http).map { $0 != expected } ?? false
                     } ?? false
-                    let entityChanged = !isMirror && !Self.sameEntity(
-                        probed: plan.etag, served: http.value(forHTTPHeaderField: "ETag"))
+                    let entityChanged = !isMirror && Self.entityDiffers(
+                        plan: plan, servedETag: http.value(forHTTPHeaderField: "ETag"),
+                        servedLastModified: http.value(forHTTPHeaderField: "Last-Modified"))
                     if sizeChanged || entityChanged {
                         streamer.cancelTask()
                         if isMirror { await pool.demote(url) }
@@ -264,7 +290,9 @@ final class SegmentedTransfer: Sendable {
                         continue
                     }
                     // A 206 that starts elsewhere would land at the wrong offset; one that overshoots is clamped below.
-                    guard let served = Self.contentRange(http), served.start == segStart else {
+                    guard let served = Self.contentRange(http)
+                            ?? Self.impliedRange(http, start: segStart, end: end),
+                          served.start == segStart else {
                         streamer.cancelTask()
                         if isMirror { await pool.demote(url) }
                         await governor.release()
@@ -324,6 +352,7 @@ final class SegmentedTransfer: Sendable {
         var written: Int64 = 0
         var attempt = 0
         var progressMark: Int64 = 0
+        var ifRangeDistrusted = false
         do {
             try await withTaskCancellationHandler {
                 while start + written <= end {
@@ -361,7 +390,7 @@ final class SegmentedTransfer: Sendable {
                         extraHeaders: reqSettings.extraHeaders,
                         connectTimeout: plan.connectTimeout,
                         expectedTotal: plan.totalBytes,
-                        ifRange: isMirror ? nil : Self.strongETag(plan.etag)
+                        ifRange: (isMirror || ifRangeDistrusted) ? nil : Self.strongETag(plan.etag)
                     )
 
                     // curl's write callback can't await; `onBytes` fires post-write, so tally == on disk.
@@ -388,6 +417,12 @@ final class SegmentedTransfer: Sendable {
                         await adapterGovernors.release(adapter.bsdName)
                         await governor.release()
                         throw failure
+                    }
+                    // A policy refusal, not a flaky link: retrying just asks the same server again.
+                    if response.redirectRefused {
+                        await adapterGovernors.release(adapter.bsdName)
+                        await governor.release()
+                        throw Self.redirectRefusal
                     }
 
                     if response.rangeMismatch {
@@ -423,7 +458,14 @@ final class SegmentedTransfer: Sendable {
                         if isMirror { await pool.demote(url) }
                         await adapterGovernors.release(adapter.bsdName)
                         await governor.release()
-                        // With If-Range, a 200 is the server saying the entity changed.
+                        // With If-Range, a 200 is the server saying the entity changed — unless the full
+                        // body is the probed size and Last-Modified (a node with its own ETag).
+                        if boundReq.ifRange != nil,
+                           Self.sameEntityDespiteETag(plan: plan, contentLength: response.contentLength,
+                                                      lastModified: response.lastModified) {
+                            ifRangeDistrusted = true
+                            continue
+                        }
                         let changed = boundReq.ifRange != nil
                         if (upgraded || isMirror || changed), attempt < settings.maxAttempts {
                             try await backoff(attempt: attempt, response: nil, retryInterval: settings.retryInterval)
@@ -482,8 +524,9 @@ final class SegmentedTransfer: Sendable {
                         break
                     }
 
-                    // Multi-path requires a matching Content-Range total (Swift-side belt).
-                    if let expected = plan.totalBytes {
+                    // Multi-path requires a matching Content-Range total (Swift-side belt); a 206 with no
+                    // Content-Range at all was already held to our one requested span by CurlBridge.
+                    if let expected = plan.totalBytes, response.hasContentRange {
                         guard let got = response.contentRangeTotal, got == expected else {
                             if isMirror { await pool.demote(url) }
                             await adapters.demote(adapter)
@@ -495,7 +538,8 @@ final class SegmentedTransfer: Sendable {
                         }
                     }
                     // Weak ETags get no If-Range, so a same-size swap is only visible here — after the write.
-                    if !isMirror, !Self.sameEntity(probed: plan.etag, served: response.etag) {
+                    if !isMirror, Self.entityDiffers(plan: plan, servedETag: response.etag,
+                                                     servedLastModified: response.lastModified) {
                         await adapterGovernors.release(adapter.bsdName)
                         await governor.release()
                         throw DownloadError.remoteFileChanged
@@ -623,6 +667,10 @@ final class SegmentedTransfer: Sendable {
             if let failure = response.writeFailure {
                 try? handle.close()
                 throw failure
+            }
+            if response.redirectRefused {
+                try? handle.close()
+                throw Self.redirectRefusal
             }
 
             if response.aborted {
@@ -1008,6 +1056,9 @@ final class SegmentedTransfer: Sendable {
             .split(separator: "/").last.flatMap { Int64($0) }
     }
 
+    static let redirectRefusal = DownloadError.network(
+        "The server redirected to an internal network address, which Goel° refuses to follow")
+
     static func isRetryableStatus(_ status: Int) -> Bool {
         status == 429 || status == 500 || status == 502 || status == 503 || status == 504
     }
@@ -1071,15 +1122,19 @@ final class SegmentedTransfer: Sendable {
         }
         let handle = try FileHandle(forWritingTo: url)
         defer { try? handle.close() }
-        try handle.truncate(atOffset: UInt64(size))
+        // Reserve BEFORE extending: F_PREALLOCATE grows from the physical end, and once `truncate` has moved
+        // the logical EOF out those blocks would sit past it instead of backing the file's own range.
         try reserveBlocks(handle.fileDescriptor, size: size, url: url)
+        try handle.truncate(atOffset: UInt64(size))
     }
 
     /// `truncate` is sparse on APFS and reserves nothing, so N downloads all pass a free-space preflight.
-    private static func reserveBlocks(_ fd: Int32, size: Int64, url: URL) throws {
+    /// Covers [0, size) for a file still shorter than `size`; a resumed file already at full length keeps
+    /// whatever holes it has (best-effort — its preflight counted only the missing bytes anyway).
+    static func reserveBlocks(_ fd: Int32, size: Int64, url: URL) throws {
         #if canImport(Darwin)
         var st = stat()
-        guard fstat(fd, &st) == 0 else { return }
+        guard fstat(fd, &st) == 0, Int64(st.st_size) < size else { return }
         let allocated = Int64(st.st_blocks) * 512
         guard size > allocated else { return }
         var store = fstore_t(fst_flags: UInt32(F_ALLOCATECONTIG | F_ALLOCATEALL),
@@ -1135,6 +1190,36 @@ final class SegmentedTransfer: Sendable {
             tag.hasPrefix("W/") ? tag.dropFirst(2) : Substring(tag)
         }
         return opaque(probed) == opaque(served)
+    }
+
+    /// Load-balanced origins tag identical bytes differently per node, so an ETag mismatch alone is not
+    /// proof. A matching Last-Modified on both sides vouches for the entity (size is checked separately);
+    /// with no Last-Modified to compare, the ETag is the only evidence and a mismatch stays a change.
+    static func entityDiffers(plan: TransferPlan, servedETag: String?, servedLastModified: String?) -> Bool {
+        guard !sameEntity(probed: plan.etag, served: servedETag) else { return false }
+        if let probed = plan.lastModified, let served = servedLastModified, probed == served { return false }
+        return true
+    }
+
+    /// An If-Range 200 whose full body is the probed size and Last-Modified is the same file from a node
+    /// with its own ETag — not a changed entity.
+    static func sameEntityDespiteETag(plan: TransferPlan, contentLength: Int64?,
+                                      lastModified: String?) -> Bool {
+        guard let total = plan.totalBytes, let contentLength, contentLength == total,
+              let probed = plan.lastModified, let lastModified else { return false }
+        return probed == lastModified
+    }
+
+    /// RFC 9110 requires Content-Range on a single-range 206, but some servers omit it. We asked for ONE
+    /// range, so the body is taken as that range: an overshoot is clamped and a short body retried by the
+    /// caller. A declared length that isn't the span, or a multipart body, is refused.
+    static func impliedRange(_ http: HTTPURLResponse, start: Int64, end: Int64) -> (start: Int64, end: Int64)? {
+        guard http.statusCode == 206, http.value(forHTTPHeaderField: "Content-Range") == nil,
+              http.value(forHTTPHeaderField: "Content-Type")?.lowercased().hasPrefix("multipart/") != true
+        else { return nil }
+        let length = http.expectedContentLength
+        guard length < 0 || length == end - start + 1 else { return nil }
+        return (start, end)
     }
 
     /// `Content-Range: bytes a-b/total` → (a, b); nil when absent, unsatisfied (`*`) or unparseable.
@@ -1340,7 +1425,25 @@ final class SegmentedTransfer: Sendable {
             lastResumeEmit = now
             // Bytes are credited after write(2) returns, so a barrier HERE covers every byte this cursor claims.
             // Without it the cursor can reach SQLite before the data, and a power cut leaves zero-filled "done" ranges.
-            if let durability, !durability.sync() { return nil }
+            return durableResumeData(meta)
+        }
+
+        /// The cursor as of the last write, barrier'd, flagged so the engine takes only the cursor from it.
+        /// Called once every writer has stopped (pause, remove, failure), so it covers every flushed byte.
+        func publishFinalCursor() {
+            guard let meta, let data = durableResumeData(meta) else { return }
+            continuation.yield(TransferProgress(
+                bytesDownloaded: runningTotal, downloadSpeed: 0, connectionCount: 0,
+                resumeData: data, connections: nil, isFinalCursor: true))
+        }
+
+        /// nil when the barrier fails: publishing then would let the cursor claim bytes not yet on disk.
+        private func durableResumeData(_ meta: CursorMeta) -> Data? {
+            if let durability, !durability.sync() {
+                GoelLog.engineHTTP.notice("Durability barrier failed; resume cursor withheld",
+                                          .detail(String(cString: strerror(errno))))
+                return nil
+            }
             return Self.buildResumeData(meta: meta, segmentBytes: segmentBytes)
         }
 
@@ -1354,7 +1457,13 @@ final class SegmentedTransfer: Sendable {
             let cursor = ResumeCursor(
                 etag: meta.etag, lastModified: meta.lastModified,
                 totalBytes: meta.total, ranges: meta.ranges, completed: completed)
-            return try? JSONEncoder().encode(cursor)
+            do {
+                return try JSONEncoder().encode(cursor)
+            } catch {
+                GoelLog.engineHTTP.error("Couldn't encode the resume cursor",
+                                         .detail(String(describing: error)))
+                return nil
+            }
         }
     }
 }
@@ -1413,6 +1522,8 @@ struct TransferProgress: Sendable {
     var connectionCount: Int
     var resumeData: Data?
     var connections: [TaskConnection]?
+    /// The unwind's last word: carries only the cursor, never a live speed/progress tick.
+    var isFinalCursor: Bool = false
 }
 
 #if os(Linux)
