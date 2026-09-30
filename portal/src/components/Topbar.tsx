@@ -1,7 +1,8 @@
-import type { RefObject } from 'react'
+import { useRef, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BOOT } from '../lib/boot'
 import { fmtSpeed, IDLE_RATE } from '../lib/format'
+import type { SpeedSample } from '../lib/speedHistory'
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -12,12 +13,21 @@ import {
   PlusIcon,
   SearchIcon,
 } from './Icons'
+import { MobileSearch } from './MobileSearch'
+import { Sparkline } from './SpeedChart'
 
 interface TopbarProps {
   search: string
   onSearch: (value: string) => void
+  /** The desktop search field; "/" focuses it. */
+  searchRef?: RefObject<HTMLInputElement | null>
+  /** The ≤680px search bar is open over the topbar. */
+  mobileSearchOpen: boolean
+  onMobileSearch: (open: boolean) => void
   downSpeed: number
   upSpeed: number
+  /** Total rates over the last minute, for the sparkline beside the figures. */
+  speedSamples?: readonly SpeedSample[]
   showPanelToggle: boolean
   panelOpen: boolean
   onTogglePanel: () => void
@@ -34,8 +44,12 @@ interface TopbarProps {
 export function Topbar({
   search,
   onSearch,
+  searchRef,
+  mobileSearchOpen,
+  onMobileSearch,
   downSpeed,
   upSpeed,
+  speedSamples = [],
   showPanelToggle,
   panelOpen,
   onTogglePanel,
@@ -49,6 +63,7 @@ export function Topbar({
 }: TopbarProps) {
   const { t } = useTranslation()
   const initial = (BOOT.username[0] ?? 'A').toUpperCase()
+  const searchToggle = useRef<HTMLButtonElement>(null)
 
   return (
     <div className="topbar">
@@ -73,17 +88,21 @@ export function Topbar({
       <div className="search">
         <SearchIcon />
         <input
+          ref={searchRef}
           type="search"
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder={t('topbar.searchDownloads')}
           aria-label={t('topbar.searchDownloads')}
+          aria-keyshortcuts="/"
+          title={t('shortcuts.hint', { label: t('topbar.searchDownloads'), key: '/' })}
         />
       </div>
 
       <div className="spacer" />
 
       <div className="stats">
+        {speedSamples.length > 1 && <Sparkline samples={speedSamples} label={t('topbar.speedTrend')} />}
         <span className="stat down">
           <ArrowDownIcon />
           <b>{fmtSpeed(downSpeed, IDLE_RATE)}</b>
@@ -94,9 +113,26 @@ export function Topbar({
         </span>
       </div>
 
+      {/* Only shown ≤680px, where the inline field is hidden. */}
+      <button
+        ref={searchToggle}
+        className="ico search-toggle"
+        onClick={() => onMobileSearch(true)}
+        aria-label={t('topbar.openSearch')}
+        aria-keyshortcuts="/"
+        aria-expanded={mobileSearchOpen}
+      >
+        <SearchIcon />
+      </button>
+
       {/* Cosmetic only — the server, not this flag, is what refuses a read-only session's POST. */}
       {canWrite && (
-        <button className="add-btn" onClick={onAdd}>
+        <button
+          className="add-btn"
+          onClick={onAdd}
+          aria-keyshortcuts="N"
+          title={t('shortcuts.hint', { label: t('topbar.addDownload'), key: 'N' })}
+        >
           <PlusIcon />
           <span className="lbl">{t('common.add')}</span>
         </button>
@@ -124,6 +160,15 @@ export function Topbar({
         <span className="uname">{BOOT.username}</span>
         <ChevronDownIcon />
       </button>
+
+      {mobileSearchOpen && (
+        <MobileSearch
+          value={search}
+          onChange={onSearch}
+          onClose={() => onMobileSearch(false)}
+          returnFocusTo={searchToggle}
+        />
+      )}
     </div>
   )
 }

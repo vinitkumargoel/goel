@@ -4,6 +4,7 @@ import { eligibleFor } from '../components/BulkBar'
 import type { MenuEntry, MenuState } from '../components/ContextMenu'
 import {
   FileIcon,
+  KeyboardIcon,
   LinkIcon,
   LogoutIcon,
   PauseIcon,
@@ -61,6 +62,7 @@ export function useMenus(deps: Deps) {
         label: t('menu.removeFromList'),
         icon: <TrashIcon />,
         danger: true,
+        shortcut: 'Del',
         action: () => removeTask(id, false),
       },
       {
@@ -85,6 +87,7 @@ export function useMenus(deps: Deps) {
           key: action,
           label: t(`bulk.${action}`, { count: eligible.length }),
           icon: actionIcon(action),
+          shortcut: action === 'retry' ? undefined : 'Space',
           action: () => void deps.runBulk(action, eligible),
         })
       }
@@ -103,6 +106,7 @@ export function useMenus(deps: Deps) {
           label: t('menu.removeMany', { count: ids.length }),
           icon: <TrashIcon />,
           danger: true,
+          shortcut: 'Del',
           action: () => deps.removeMany(ids),
         },
       )
@@ -119,6 +123,7 @@ export function useMenus(deps: Deps) {
         key: 'act',
         label: t(`common.${action}`),
         icon: actionIcon(action),
+        shortcut: action === 'retry' ? undefined : 'Space',
         action: () => void deps.runAction(id, action),
       })
     }
@@ -173,12 +178,19 @@ export function useMenus(deps: Deps) {
 
   /** The account menu under the topbar's user button. */
   const userMenu = useCallback(
-    (anchor: DOMRect, openSettings: () => void): MenuState => ({
+    (anchor: DOMRect, openSettings: () => void, openShortcuts: () => void): MenuState => ({
       x: anchor.right - 210,
       y: anchor.bottom + 6,
       label: BOOT.username,
       entries: [
         { key: 'set', label: t('common.settings'), icon: <FileIcon />, action: openSettings },
+        {
+          key: 'keys',
+          label: t('shortcuts.menuItem'),
+          icon: <KeyboardIcon />,
+          shortcut: '?',
+          action: openShortcuts,
+        },
         {
           key: 'out',
           label: t('common.signOut'),

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { SpeedSample } from '../lib/speedHistory'
+import { SpeedChart } from './SpeedChart'
 import { fmtEta, fmtSize, fmtSpeed, pct } from '../lib/format'
 import { kindLabel } from '../lib/taskKind'
 import type { FilePriority, TaskDetail } from '../lib/types'
@@ -168,7 +170,22 @@ export function DetailsPane({ detail }: { detail: TaskDetail }) {
   )
 }
 
-export function ProgressPane({ detail }: { detail: TaskDetail }) {
+export function ProgressPane({
+  detail,
+  samples = [],
+}: {
+  detail: TaskDetail
+  samples?: readonly SpeedSample[]
+}) {
+  return (
+    <>
+      <SpeedChart samples={samples} />
+      <ProgressBody detail={detail} />
+    </>
+  )
+}
+
+function ProgressBody({ detail }: { detail: TaskDetail }) {
   const { t } = useTranslation()
   const row = detail.row
 

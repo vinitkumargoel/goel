@@ -40,6 +40,22 @@ describe('sortTasks', () => {
   })
 })
 
+describe('ETA and Added', () => {
+  const timed = (id: string, etaSeconds: number | null, addedAt: number) =>
+    ({ id, etaSeconds, addedAt }) as TaskRow
+  const T = [timed('a', null, 300), timed('b', 90, 100), timed('c', 30, 200), timed('d', 0, 50)]
+
+  it('puts the soonest ETA first and unknown or finished ones last', () => {
+    expect(ids(sortTasks(T, { key: 'eta', dir: 'asc' }))).toEqual(['c', 'b', 'a', 'd'])
+    expect(ids(sortTasks(T, { key: 'eta', dir: 'desc' })).slice(2)).toEqual(['b', 'c'])
+  })
+
+  it('sorts by when a download was added', () => {
+    expect(ids(sortTasks(T, { key: 'added', dir: 'asc' }))).toEqual(['d', 'b', 'c', 'a'])
+    expect(ids(sortTasks(T, { key: 'added', dir: 'desc' }))).toEqual(['a', 'c', 'b', 'd'])
+  })
+})
+
 describe('nextSort', () => {
   it('starts a new column ascending and flips the active one', () => {
     const byName = nextSort(UNSORTED, 'name')

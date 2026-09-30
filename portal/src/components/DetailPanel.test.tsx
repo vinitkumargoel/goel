@@ -1,10 +1,12 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithI18n } from '../test/renderWithI18n'
 import en from '../locales/en.json'
 import type { TaskDetail, TaskRow } from '../lib/types'
+import type { SpeedSample } from '../lib/speedHistory'
 import { DetailPanel } from './DetailPanel'
+import type { DetailTab } from './DetailPanes'
 
 const ROW: TaskRow = {
   id: 't1',
@@ -43,15 +45,36 @@ const DETAIL: TaskDetail = {
   mimeType: null,
 }
 
-function renderPanel(detail: TaskDetail | null) {
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+/** Pretends the viewport is a phone (≤680px). */
+function phoneViewport() {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('max-width: 680px'),
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }))
+}
+
+interface PanelOptions {
+  onClose?: () => void
+  tab?: DetailTab
+  samples?: SpeedSample[]
+}
+
+function renderPanel(detail: TaskDetail | null, { onClose = vi.fn(), tab = 'general', samples }: PanelOptions = {}) {
   return renderWithI18n(
     <DetailPanel
       detail={detail}
       open
-      tab="general"
+      tab={tab}
       canWrite
+      samples={samples}
       onTab={vi.fn()}
-      onClose={vi.fn()}
+      onClose={onClose}
       onAction={vi.fn()}
       onRemove={vi.fn()}
       onMore={vi.fn()}
@@ -157,5 +180,40 @@ describe('DetailPanel', () => {
     const { container } = renderPanel(DETAIL)
     // U+00A0, not a plain space: HTML would collapse the latter and merge the rates.
     expect(container.textContent).toContain('\u00a0\u00a0')
+  })
+
+  it('draws the live speed chart atop the Progress tab', () => {
+    renderPanel(DETAIL, { tab: 'progress', samples: [{ down: 2048, up: 0 }] })
+    expect(screen.getByRole('img', { name: /download peak 2\.0 KB\/s/ })).toBeInTheDocument()
+  })
+
+  it('stays a plain complementary panel on wide screens', () => {
+    renderPanel(DETAIL)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('becomes a modal bottom sheet on phones: focus inside, Escape closes', async () => {
+    phoneViewport()
+    const onClose = vi.fn()
+    renderPanel(DETAIL, { onClose })
+    const sheet = screen.getByRole('dialog', { name: en.detail.label })
+    expect(sheet).toHaveAttribute('aria-modal', 'true')
+    expect(screen.getByRole('button', { name: en.detail.closePanel })).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('dismisses the sheet when its grabber is dragged down far enough', () => {
+    phoneViewport()
+    const onClose = vi.fn()
+    const { container } = renderPanel(DETAIL, { onClose })
+    const grabber = container.querySelector<HTMLElement>('.grabber')!
+    fireEvent.pointerDown(grabber, { clientY: 100, pointerId: 1 })
+    fireEvent.pointerMove(grabber, { clientY: 140, pointerId: 1 })
+    fireEvent.pointerUp(grabber, { clientY: 140, pointerId: 1 })
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.pointerDown(grabber, { clientY: 100, pointerId: 1 })
+    fireEvent.pointerUp(grabber, { clientY: 260, pointerId: 1 })
+    expect(onClose).toHaveBeenCalled()
   })
 })

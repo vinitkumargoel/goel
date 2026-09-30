@@ -19,7 +19,8 @@
     "signOut": "Sign out",
     "stream": "Stream",
     "turnOff": "Turn off",
-    "turnOn": "Turn on"
+    "turnOn": "Turn on",
+    "close": "Close"
   },
 
   "status": {
@@ -49,7 +50,11 @@
     "web": "WEB",
     "searchDownloads": "Search downloads",
     "detailPanel": "Detail panel",
-    "accountMenu": "Account menu for {{username}}"
+    "accountMenu": "Account menu for {{username}}",
+    "openSearch": "Search",
+    "cancelSearch": "Cancel",
+    "addDownload": "Add download",
+    "speedTrend": "Total speed over the last minute"
   },
 
   "sidebar": {
@@ -78,7 +83,19 @@
     "active_other": "{{count}} active",
     "downSpeed": "Download speed",
     "upSpeed": "Upload speed",
-    "readOnly": "Read-only"
+    "readOnly": "Read-only",
+    "allControls": "All downloads",
+    "pauseAll": "Pause all",
+    "resumeAll": "Resume all",
+    "pausedAll": "Paused all downloads",
+    "resumedAll": "Resumed all downloads",
+    "profile": "Profile: {{name}}",
+    "unlimited": "Unlimited",
+    "bandwidthMenu": "Bandwidth limit",
+    "unlimitedToggle": "Unlimited — no caps",
+    "bandwidthSet": "Bandwidth profile: {{name}}",
+    "bandwidthOff": "Bandwidth: unlimited",
+    "all": "All"
   },
 
   "library": {
@@ -105,7 +122,10 @@
     "queueLabel": "Download queue",
     "rowLabel": "{{name}}, {{kind}}, {{status}}, {{percent}}%",
     "progress": "Progress",
-    "moreActions": "More actions for {{name}}"
+    "moreActions": "More actions for {{name}}",
+    "colEta": "ETA",
+    "colAdded": "Added",
+    "actionNamed": "{{action}} {{name}}"
   },
 
   "menu": {
@@ -168,7 +188,9 @@
       "retry_other": "Couldn’t retry {{count}} downloads — {{reason}}",
       "remove_one": "Couldn’t remove {{count}} download — {{reason}}",
       "remove_other": "Couldn’t remove {{count}} downloads — {{reason}}"
-    }
+    },
+    "torrentFailed_one": "{{count}} torrent file refused — {{file}}: {{error}}",
+    "torrentFailed_other": "{{count}} torrent files refused, e.g. {{file}}: {{error}}"
   },
 
   "history": {
@@ -177,7 +199,20 @@
     "empty": "No history yet.",
     "readd": "Re-add",
     "readdNamed": "Re-add {{name}}",
-    "removeNamed": "Remove {{name}} from history"
+    "removeNamed": "Remove {{name}} from history",
+    "search": "Search history",
+    "protocol": "Protocol",
+    "allProtocols": "All protocols",
+    "exportCsv": "Export CSV",
+    "exported_one": "Exported {{count}} entry",
+    "exported_other": "Exported {{count}} entries",
+    "noMatch": "No history matches these filters.",
+    "groups": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "week": "This week",
+      "older": "Older"
+    }
   },
 
   "detail": {
@@ -235,7 +270,8 @@
       "connections_one": "{{count}} connection",
       "connections_other": "{{count}} connections",
       "segmentHint": "Segment data appears while downloading."
-    }
+    },
+    "sheetHandle": "Drag down to close"
   },
 
   "addDialog": {
@@ -259,12 +295,25 @@
     "adding": "Adding…",
     "submit": "Add to queue",
     "pickInterface": "Pick at least one interface",
-    "enterUrl": "Enter a URL or magnet first",
+    "enterUrl": "Enter a URL, magnet or torrent file first",
     "linksDetected_one": "{{count}} link detected",
     "linksDetected_other": "{{count}} links detected",
-    "unsupportedLines_one": "{{count}} line isn’t an http(s), ftp, sftp or magnet link: {{example}}",
-    "unsupportedLines_other": "{{count}} lines aren’t http(s), ftp, sftp or magnet links, e.g. {{example}}",
-    "submitShortcut": "⌘/Ctrl+Enter adds them."
+    "unsupportedLines_one": "{{count}} line isn’t an http(s), ftp(s), sftp or magnet link and will be skipped",
+    "unsupportedLines_other": "{{count}} lines aren’t http(s), ftp(s), sftp or magnet links and will be skipped",
+    "submitShortcut": "⌘/Ctrl+Enter adds them.",
+    "removeLine": "Remove line {{line}}",
+    "dropTorrents": "Drop .torrent files or",
+    "browseFiles": "browse",
+    "torrentFiles": "Torrent files",
+    "removeFile": "Remove {{name}}",
+    "torrentLimits": "Up to {{count}} files, 10 MB each, 25 MB in all.",
+    "rejected": {
+      "notTorrent": "{{name}} isn’t a .torrent file",
+      "tooLarge": "{{name}} is larger than 10 MB",
+      "tooMany": "Only {{max}} torrent files at a time — {{name}} was left out",
+      "duplicate": "{{name}} is already in the list",
+      "totalTooLarge": "{{name}} would take the upload past 25 MB"
+    }
   },
 
   "folderPicker": {
@@ -291,8 +340,9 @@
     "subtitle": "These apply to your browser. Server options (port, sign-in, password) are managed in the desktop app under Settings → Web Access.",
     "theme": {
       "name": "Web theme",
-      "desc": "Independent of the desktop app — this choice is remembered in <bold>this browser</bold> only. The desktop sets the default a new browser starts with.",
-      "toast": "Theme: {{theme}}"
+      "desc": "Independent of the desktop app — this choice is remembered in <bold>this browser</bold> only. Auto follows your device’s light or dark setting.",
+      "toast": "Theme: {{theme}}",
+      "auto": "Auto (match system)"
     },
     "access": {
       "name": "Access",
@@ -326,6 +376,28 @@
       "streamsDesc": "More streams help on high-latency links and hurt against servers that throttle per connection.",
       "applyDesc": "Applies to new downloads; running ones keep the interfaces they started on.",
       "tickAtLeastOne": "Tick at least one interface"
+    },
+    "bandwidth": {
+      "name": "Bandwidth",
+      "desc": "Cap how fast the server downloads and uploads. A blank cap means no limit in that direction.",
+      "enabledName": "Limit bandwidth",
+      "enabledDesc": "Off means every transfer runs unlimited.",
+      "profileName": "Active profile",
+      "capsName": "Profile caps",
+      "down": "↓ Down",
+      "up": "↑ Up",
+      "downLabel": "Download cap for {{name}}",
+      "upLabel": "Upload cap for {{name}}",
+      "unitLabel": "Unit for {{field}}",
+      "unlimitedPlaceholder": "No cap",
+      "unitKB": "KB/s",
+      "unitMB": "MB/s",
+      "noCap": "no cap",
+      "saved": "Bandwidth settings saved",
+      "invalid": "Caps must be zero or more — or blank for no cap",
+      "loading": "Loading bandwidth…",
+      "readError": "Could not read the bandwidth settings.",
+      "managed": "Managed by your organization"
     }
   },
 
@@ -334,10 +406,53 @@
     "notSignedIn": "Not signed in",
     "changeBlocked": "Change blocked",
     "requestFailed": "Request failed ({{status}})",
-    "actionFailed": "That didn’t work — try again"
+    "actionFailed": "That didn’t work — try again",
+    "tooLarge": "Those files are too large to upload together (25 MB at most)"
   },
 
   "format": {
-    "today": "Today {{time}}"
+    "today": "Today {{time}}",
+    "justNow": "just now",
+    "minutesAgo_one": "{{count}}m ago",
+    "minutesAgo_other": "{{count}}m ago",
+    "hoursAgo_one": "{{count}}h ago",
+    "hoursAgo_other": "{{count}}h ago",
+    "daysAgo_one": "{{count}}d ago",
+    "daysAgo_other": "{{count}}d ago"
+  },
+
+  "reconnect": {
+    "lost": "Connection lost — showing data from {{age}} ago",
+    "retrying": "Retrying…",
+    "retryNow": "Retry now",
+    "announce": "Connection lost — the list may be out of date. Retrying."
+  },
+
+  "chart": {
+    "label": "Speed over the last minute: download peak {{down}}, upload peak {{up}}",
+    "peak": "Peak {{rate}}",
+    "ago": "60s ago",
+    "now": "now",
+    "down": "Download",
+    "up": "Upload"
+  },
+
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "navigation": "Navigation",
+    "actions": "Actions",
+    "search": "Focus search",
+    "next": "Next download",
+    "prev": "Previous download",
+    "open": "Open details",
+    "selectAll": "Select all",
+    "help": "Show this help",
+    "close": "Close dialog or menu",
+    "add": "Add download",
+    "toggle": "Pause or resume selected",
+    "remove": "Remove selected",
+    "menuItem": "Keyboard shortcuts",
+    "hint": "{{label}} ({{key}})",
+    "or": "or"
   }
 }

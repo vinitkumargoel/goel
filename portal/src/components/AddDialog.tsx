@@ -1,24 +1,31 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDialogFocus } from '../hooks/useDialogFocus'
+import { submitAdd, type AddSummary } from '../lib/addSubmit'
 import { api, failureMessage } from '../lib/api'
 import { BOOT } from '../lib/boot'
-import { summarizeLinks } from '../lib/links'
-import type { AddRequest, NetworkAdapter, NetworkState } from '../lib/types'
+import { removeLine, summarizeLinks } from '../lib/links'
+import { dragHasFiles, mergeTorrents, type TorrentMerge } from '../lib/torrentFiles'
+import type { NetworkAdapter, NetworkState } from '../lib/types'
 import { FolderPicker, folderLabel } from './FolderPicker'
 import { CloseIcon, LinkIcon } from './Icons'
+import { LinkIssues } from './LinkIssues'
+import { TorrentDropZone } from './TorrentDropZone'
 
 type NetMode = 'auto' | 'split' | 'single'
 
 interface AddDialogProps {
   onClose: () => void
-  onAdded: (added: number, refused: number) => void
+  onAdded: (summary: AddSummary) => void
   onWarn: (message: string) => void
+  /** Torrent files dropped on the window, which opened the dialog. */
+  initialFiles?: readonly File[]
 }
 
-export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
+export function AddDialog({ onClose, onAdded, onWarn, initialFiles = [] }: AddDialogProps) {
   const { t } = useTranslation()
   const [url, setUrl] = useState('')
+  const [torrents, setTorrents] = useState<TorrentMerge>(() => mergeTorrents([], initialFiles))
   const [folder, setFolder] = useState('')
   const [priority, setPriority] = useState<'normal' | 'high' | 'low'>('normal')
   const [paused, setPaused] = useState(false)
@@ -76,10 +83,15 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
     return chosen.length === eligible.length ? 'aggregate' : `aggregate:${chosen.join(',')}`
   }
 
+  const addFiles = (incoming: File[]) => {
+    setTorrents((cur) => mergeTorrents(cur.files, incoming))
+    setError(null)
+  }
+
   async function submit() {
     if (busy) return
     const trimmed = url.trim()
-    if (!trimmed) {
+    if (!trimmed && torrents.files.length === 0) {
       setError(t('addDialog.enterUrl'))
       urlRef.current?.focus()
       return
@@ -87,18 +99,21 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
     const network = networkSpec()
     if (network === null) return
 
-    const body: AddRequest = {
-      url: trimmed,
-      folder: folder.trim(),
-      priority,
-      paused,
-      network,
-    }
-
     setBusy(true)
     try {
-      const result = await api.add(body)
-      onAdded(result.added, result.refused)
+      const summary = await submitAdd({
+        text: trimmed,
+        validLinks: links.valid,
+        files: torrents.files,
+        options: { folder: folder.trim(), priority, paused, network },
+      })
+      // Nothing queued: stay open with the input intact so the user can fix and retry.
+      if (summary.added === 0 && summary.refused === 0 && summary.failures.length > 0) {
+        for (const f of summary.failures) onWarn(f.file ? `${f.file}: ${f.error}` : f.error)
+        setBusy(false)
+        return
+      }
+      onAdded(summary)
     } catch (e) {
       // A 403 was already toasted by `api`; anything else is ours to report. Staying open keeps the typed URL.
       const message = failureMessage(e)
@@ -140,6 +155,16 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
         aria-modal="true"
         aria-labelledby={`${id}-title`}
         onKeyDown={onKeyDown}
+        // A .torrent dropped anywhere on the dialog joins the list, not just on the drop zone.
+        onDragOver={(e) => {
+          if (dragHasFiles(e.dataTransfer)) e.preventDefault()
+        }}
+        onDrop={(e) => {
+          if (!dragHasFiles(e.dataTransfer)) return
+          e.preventDefault()
+          e.stopPropagation()
+          addFiles([...e.dataTransfer.files])
+        }}
       >
         <div className="mhead">
           <div className="mic">
@@ -170,8 +195,21 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
               {error}
             </div>
           ) : (
-            <LinkCount id={countId} valid={links.valid} unsupported={links.unsupported} />
+            <LinkIssues
+              id={countId}
+              valid={links.valid}
+              unsupported={links.unsupported}
+              onRemove={(text) => setUrl((u) => removeLine(u, text))}
+            />
           )}
+          <TorrentDropZone
+            files={torrents.files}
+            rejected={torrents.rejected}
+            onFiles={addFiles}
+            onRemove={(file) =>
+              setTorrents((cur) => ({ files: cur.files.filter((f) => f !== file), rejected: [] }))
+            }
+          />
           <div className="fhint" id={`${id}-hint`}>
             {t('addDialog.urlHint')}{' '}
             <span className="kbd-hint">{t('addDialog.submitShortcut')}</span>
@@ -330,28 +368,5 @@ export function AdapterLine({ adapter }: { adapter: NetworkAdapter }) {
       </span>
       {adapter.expensive && <span className="chip chip-d">{t('adapter.metered')}</span>}
     </span>
-  )
-}
-
-interface LinkCountProps {
-  id: string
-  valid: number
-  unsupported: { text: string }[]
-}
-
-/** Live feedback on a multi-line paste: how many links will queue, and which lines look wrong. */
-function LinkCount({ id, valid, unsupported }: LinkCountProps) {
-  const { t } = useTranslation()
-  const first = unsupported[0]
-  return (
-    <div className="fcount" id={id} aria-live="polite">
-      {(valid > 0 || first) && <span>{t('addDialog.linksDetected', { count: valid })}</span>}
-      {first && (
-        <span className="fwarn">
-          {' · '}
-          {t('addDialog.unsupportedLines', { count: unsupported.length, example: first.text })}
-        </span>
-      )}
-    </div>
   )
 }

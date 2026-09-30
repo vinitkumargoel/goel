@@ -148,6 +148,23 @@ export function MenuIcon(props: IconProps) {
   )
 }
 
+export function KeyboardIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...props}>
+      <rect x="2.5" y="6" width="19" height="12" rx="2" {...stroke} />
+      <path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8" {...stroke} />
+    </svg>
+  )
+}
+
+export function UploadIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...props}>
+      <path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" {...stroke} />
+    </svg>
+  )
+}
+
 export function PlusIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...props}>

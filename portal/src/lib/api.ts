@@ -1,5 +1,8 @@
 import i18n from '../i18n'
+import type { BandwidthState, BandwidthUpdate } from './bandwidth'
 import type {
+  TorrentAddOptions,
+  TorrentAddResult,
   AddRequest,
   AddResult,
   FolderListing,
@@ -62,7 +65,12 @@ export function failureMessage(error: unknown): string | null {
   return i18n.t('api.actionFailed')
 }
 
-async function request(path: string, init?: RequestInit): Promise<Response> {
+interface RequestOptions {
+  /** Hand back a 400 whose body is JSON instead of throwing: an endpoint's structured refusal. */
+  jsonErrors?: boolean
+}
+
+async function request(path: string, init?: RequestInit, opts: RequestOptions = {}): Promise<Response> {
   let response: Response
   try {
     response = await fetch(path, init)
@@ -81,6 +89,18 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
     const message = (await errorText(response)) || i18n.t('api.changeBlocked')
     onRefused(message)
     throw new ApiError('refused', message, 403)
+  }
+
+  if (
+    opts.jsonErrors &&
+    response.status === 400 &&
+    response.headers.get('Content-Type')?.startsWith('application/json')
+  ) {
+    return response
+  }
+
+  if (response.status === 413) {
+    throw new ApiError('http', i18n.t('api.tooLarge'), 413)
   }
 
   if (!response.ok) {
@@ -137,6 +157,29 @@ export const api = {
   add: (body: AddRequest) => postJSON<AddResult>('/api/add', body),
   updateNetwork: (body: NetworkUpdate) => postJSON<NetworkState>('/api/network', body),
   removeHistory: (id: string) => post(`/api/history-remove?id=${encodeURIComponent(id)}`),
+
+  pauseAll: () => post('/api/pause-all'),
+  resumeAll: () => post('/api/resume-all'),
+
+  /** A 404 means a daemon older than the bandwidth feature; callers hide it rather than warn. */
+  bandwidth: () => getJSON<BandwidthState>('/api/bandwidth'),
+  updateBandwidth: (body: BandwidthUpdate) => postJSON<BandwidthState>('/api/bandwidth', body),
+
+  /**
+   * Multipart upload: one `file` part per torrent, plus `dir`, `priority` and `paused` as text
+   * parts with /api/add's meaning. No Content-Type header — the browser writes it, boundary
+   * included. When every file is refused the server answers 400 with the same JSON envelope,
+   * which resolves here (added 0, per-file `errors`) rather than throwing.
+   */
+  addTorrents: async (files: readonly File[], options: TorrentAddOptions = {}): Promise<TorrentAddResult> => {
+    const form = new FormData()
+    for (const file of files) form.append('file', file, file.name)
+    if (options.dir) form.append('dir', options.dir)
+    if (options.priority) form.append('priority', options.priority)
+    if (options.paused) form.append('paused', '1')
+    const r = await request('/api/add-torrent', { method: 'POST', body: form }, { jsonErrors: true })
+    return (await r.json()) as TorrentAddResult
+  },
 
   logout: async (): Promise<void> => {
     try {

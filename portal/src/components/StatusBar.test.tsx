@@ -1,5 +1,6 @@
 import { screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 import en from '../locales/en.json'
 import { renderWithI18n } from '../test/renderWithI18n'
 import { StatusBar } from './StatusBar'
@@ -29,5 +30,48 @@ describe('StatusBar', () => {
     unmount()
     renderWithI18n(<StatusBar {...base} readOnly />)
     expect(screen.getByText(en.statusbar.readOnly)).toBeInTheDocument()
+  })
+
+  it('offers Pause all and Resume all, except to a read-only session', async () => {
+    const onPauseAll = vi.fn()
+    const onResumeAll = vi.fn()
+    const { unmount } = renderWithI18n(
+      <StatusBar {...base} onPauseAll={onPauseAll} onResumeAll={onResumeAll} />,
+    )
+    expect(screen.getByRole('group', { name: en.statusbar.allControls })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: en.statusbar.pauseAll }))
+    await userEvent.click(screen.getByRole('button', { name: en.statusbar.resumeAll }))
+    expect(onPauseAll).toHaveBeenCalledTimes(1)
+    expect(onResumeAll).toHaveBeenCalledTimes(1)
+    unmount()
+    renderWithI18n(<StatusBar {...base} readOnly onPauseAll={onPauseAll} onResumeAll={onResumeAll} />)
+    expect(screen.queryByRole('button', { name: en.statusbar.pauseAll })).toBeNull()
+  })
+
+  it('shows the active profile pill and opens its menu', async () => {
+    const onBandwidthMenu = vi.fn()
+    const bandwidth = { enabled: true, selected: 'Medium', profiles: [] }
+    const { rerender } = renderWithI18n(
+      <StatusBar {...base} bandwidth={bandwidth} onBandwidthMenu={onBandwidthMenu} />,
+    )
+    const pill = screen.getByRole('button', { name: /Profile: Medium/ })
+    expect(pill).toHaveAttribute('aria-haspopup', 'menu')
+    await userEvent.click(pill)
+    expect(onBandwidthMenu).toHaveBeenCalled()
+    rerender(
+      <StatusBar {...base} bandwidth={{ ...bandwidth, enabled: false }} onBandwidthMenu={onBandwidthMenu} />,
+    )
+    expect(screen.getByRole('button', { name: new RegExp(en.statusbar.unlimited) })).toBeInTheDocument()
+  })
+
+  it('shows the pill as plain text when read-only, and hides it without bandwidth', () => {
+    const bandwidth = { enabled: true, selected: 'Low', profiles: [] }
+    const { unmount } = renderWithI18n(
+      <StatusBar {...base} readOnly bandwidth={bandwidth} onBandwidthMenu={vi.fn()} />,
+    )
+    expect(screen.getByText('Profile: Low').closest('button')).toBeNull()
+    unmount()
+    renderWithI18n(<StatusBar {...base} bandwidth={null} onBandwidthMenu={vi.fn()} />)
+    expect(screen.queryByText(/Profile:/)).toBeNull()
   })
 })

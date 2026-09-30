@@ -1,11 +1,14 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useNow } from '../hooks/useNow'
 import { useStableCallback } from '../hooks/useStableCallback'
 import { emptyState } from '../lib/emptyState'
 import type { SelectionAction } from '../lib/selection'
 import { ariaSort, type SortKey, type SortState } from '../lib/sort'
 import type { RowAction } from '../lib/taskKind'
 import type { TaskRow } from '../lib/types'
+import { PlusIcon } from './Icons'
 import { LibraryEmpty } from './LibraryEmpty'
 import { LibraryRow, type RowClick } from './LibraryRow'
 
@@ -63,6 +66,8 @@ export function LibraryView({
   const emptyRef = useRef<HTMLDivElement>(null)
   const [focusId, setFocusId] = useState<string | null>(null)
   const hintId = useId()
+  const phone = useMediaQuery('(max-width: 680px)')
+  const now = useNow(60_000)
 
   const order = useMemo(() => tasks.map((task) => task.id), [tasks])
 
@@ -176,7 +181,7 @@ export function LibraryView({
 
       {/* Plain headers, not role=columnheader: the list is a listbox, not a grid, so the sort
           state lives in each button's name. hide-* must match the cells in LibraryRow AND
-          portal.css's ≤920px grid, or a label loses its column. */}
+          portal.css's ≤1200/≤920px grids, or a label loses its column. */}
       <div className="lhead">
         <SortHeader sortKey="name" sort={sort} onSort={onSort} label={t('library.colName')} />
         <SortHeader
@@ -199,6 +204,20 @@ export function LibraryView({
           onSort={onSort}
           label={t('library.colSpeed')}
           className="r hide-xs"
+        />
+        <SortHeader
+          sortKey="eta"
+          sort={sort}
+          onSort={onSort}
+          label={t('library.colEta')}
+          className="r hide-sm hide-md"
+        />
+        <SortHeader
+          sortKey="added"
+          sort={sort}
+          onSort={onSort}
+          label={t('library.colAdded')}
+          className="hide-lg"
         />
       </div>
 
@@ -229,6 +248,8 @@ export function LibraryView({
               selected={selectedIds.has(task.id)}
               focusable={task.id === tabStop}
               canWrite={canWrite}
+              phone={phone}
+              now={now}
               describedBy={hintId}
               rowRef={rowRef}
               onClick={onRowClick}
@@ -241,6 +262,12 @@ export function LibraryView({
       <span id={hintId} hidden>
         {t('library.actionsHint')}
       </span>
+      {/* The ≤680px floating Add button (CSS hides it wider, where the topbar's Add shows). */}
+      {canWrite && (
+        <button className="fab" onClick={onAdd} aria-label={t('topbar.addDownload')} aria-keyshortcuts="N">
+          <PlusIcon aria-hidden="true" />
+        </button>
+      )}
     </div>
   )
 }

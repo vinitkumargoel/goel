@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import en from '../locales/en.json'
-import { fmtEta, fmtSize, fmtSpeed, fmtWhen, IDLE_RATE } from './format'
+import {
+  fmtAgo,
+  fmtClock,
+  fmtEta,
+  fmtProgressSize,
+  fmtSize,
+  fmtSpeed,
+  fmtWhen,
+  IDLE_RATE,
+} from './format'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -53,5 +62,36 @@ describe('byte and rate formatting is untouched by i18n', () => {
     expect(fmtEta(0)).toBeNull()
     expect(fmtEta(45)).toBe('45s')
     expect(fmtEta(600)).toBe('10m')
+  })
+})
+
+describe('relative and clock times', () => {
+  const now = Date.UTC(2026, 8, 30, 12, 0, 0)
+  const ago = (s: number) => now / 1000 - s
+
+  it('says how long ago, coarsening with age', () => {
+    expect(fmtAgo(ago(20), now)).toBe('just now')
+    expect(fmtAgo(ago(5 * 60), now)).toBe('5m ago')
+    expect(fmtAgo(ago(2 * 3600 + 59), now)).toBe('2h ago')
+    expect(fmtAgo(ago(3 * 86400), now)).toBe('3d ago')
+    expect(fmtAgo(ago(60 * 86400), now)).not.toMatch(/ago/)
+  })
+
+  it('never reads a future time as negative', () => {
+    expect(fmtAgo(now / 1000 + 90, now)).toBe('just now')
+  })
+
+  it('formats elapsed seconds as a clock', () => {
+    expect(fmtClock(14)).toBe('0:14')
+    expect(fmtClock(125.9)).toBe('2:05')
+    expect(fmtClock(3725)).toBe('1:02:05')
+    expect(fmtClock(-3)).toBe('0:00')
+  })
+
+  it('shares the unit in done/total when it can', () => {
+    const GB = 1024 ** 3
+    expect(fmtProgressSize(2.9 * GB, 4.7 * GB)).toBe('2.9/4.7 GB')
+    expect(fmtProgressSize(900 * 1024 ** 2, 4.7 * GB)).toBe('900 MB/4.7 GB')
+    expect(fmtProgressSize(1024, null)).toBe('1.0 KB')
   })
 })

@@ -1,6 +1,6 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithI18n } from '../test/renderWithI18n'
 import en from '../locales/en.json'
 import { UNSORTED, type SortState } from '../lib/sort'
@@ -314,3 +314,62 @@ describe('LibraryView', () => {
     expect(handlers.onSort).toHaveBeenCalledWith('speed')
   })
 })
+
+describe('LibraryView — ETA and Added columns', () => {
+  it('sorts by ETA and Added from their headers', async () => {
+    const { handlers } = renderLibrary({ tasks: [task()] })
+    await userEvent.click(screen.getByRole('button', { name: en.library.colEta }))
+    expect(handlers.onSort).toHaveBeenCalledWith('eta')
+    await userEvent.click(screen.getByRole('button', { name: en.library.colAdded }))
+    expect(handlers.onSort).toHaveBeenCalledWith('added')
+  })
+
+  it('shows the ETA, a dash when unknown, and a relative Added time with the absolute one in its title', () => {
+    const addedAt = Math.floor(Date.now() / 1000) - 2 * 3600
+    const { container } = renderLibrary({
+      tasks: [task({ id: 'a', etaSeconds: 600, addedAt }), task({ id: 'b', etaSeconds: null })],
+    })
+    const etas = [...container.querySelectorAll('.c.eta')].map((el) => el.textContent)
+    expect(etas).toEqual(['10m', '—'])
+    const added = container.querySelector<HTMLElement>('.c.added')!
+    expect(added).toHaveTextContent('2h ago')
+    expect(added.title).not.toBe('')
+  })
+})
+
+describe('LibraryView — phone cards', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function phone() {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width: 680px'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+  }
+
+  it('gives each card an announced pause/resume button and a meta line', async () => {
+    phone()
+    const { handlers, container } = renderLibrary({
+      tasks: [task({ doneBytes: 2.9 * 1024 ** 3, totalBytes: 4.7 * 1024 ** 3, downSpeed: 12 * 1024 ** 2, etaSeconds: 120 })],
+    })
+    const button = screen.getByRole('button', { name: 'Pause ubuntu-24.04.iso' })
+    expect(button).not.toHaveAttribute('aria-hidden')
+    await userEvent.click(button)
+    expect(handlers.onAction).toHaveBeenCalledWith('t1', 'pause')
+    expect(handlers.onOpen).not.toHaveBeenCalled()
+    expect(container.querySelector('.pmeta')).toHaveTextContent('2.9/4.7 GB · 12 MB/s · 2m')
+  })
+
+  it('shows the floating Add button only to a session that can write', () => {
+    const { unmount } = renderLibrary({ tasks: [task()] })
+    expect(screen.getByRole('button', { name: en.topbar.addDownload })).toHaveAttribute('aria-keyshortcuts', 'N')
+    unmount()
+    renderLibrary({ tasks: [task()], canWrite: false, readOnly: true })
+    expect(screen.queryByRole('button', { name: en.topbar.addDownload })).toBeNull()
+  })
+})
+

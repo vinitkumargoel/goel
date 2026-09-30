@@ -6,18 +6,26 @@ import { useTasks } from './useTasks'
 
 class FakeEventSource {
   static last: FakeEventSource | null = null
+  static opened = 0
+  closed = false
   onmessage: ((e: MessageEvent) => void) | null = null
   onerror: (() => void) | null = null
   constructor() {
     FakeEventSource.last = this
+    FakeEventSource.opened++
   }
-  close() {}
+  close() {
+    this.closed = true
+  }
+  fail() {
+    this.onerror?.()
+  }
   emit(rows: TaskRow[]) {
     this.onmessage?.({ data: JSON.stringify(rows) } as MessageEvent)
   }
 }
 
-const row = (id: string, progress = 0): TaskRow => ({ id, progress }) as TaskRow
+const row = (id: string, progress = 0, downSpeed = 0): TaskRow => ({ id, progress, downSpeed }) as TaskRow
 
 function deferred<T>() {
   let resolve!: (v: T) => void
@@ -79,5 +87,51 @@ describe('useTasks', () => {
     act(() => FakeEventSource.last!.emit([row('a')]))
     rerender()
     expect(result.current.refresh).toBe(first)
+  })
+
+  it('stamps each snapshot so staleness can be measured', () => {
+    vi.spyOn(api, 'tasks').mockReturnValue(new Promise(() => {}))
+    const { result } = renderHook(() => useTasks())
+    expect(result.current.lastUpdate).toBeNull()
+    act(() => FakeEventSource.last!.emit([row('a')]))
+    expect(result.current.lastUpdate).toBeTypeOf('number')
+  })
+
+  it('samples rates once a second from the latest rows, per task and in total', () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(api, 'tasks').mockReturnValue(new Promise(() => {}))
+      const { result } = renderHook(() => useTasks())
+      act(() => FakeEventSource.last!.emit([row('a', 0, 100), row('b', 0, 50)]))
+      act(() => vi.advanceTimersByTime(3000))
+      expect(result.current.speeds.perTask.get('a')).toHaveLength(3)
+      expect(result.current.speeds.total.at(-1)).toEqual({ down: 150, up: 0 })
+      act(() => FakeEventSource.last!.emit([row('a', 0, 10)]))
+      act(() => vi.advanceTimersByTime(1000))
+      expect(result.current.speeds.perTask.has('b')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reconnects at once on request instead of waiting out the backoff', () => {
+    vi.useFakeTimers()
+    try {
+      const tasks = vi.spyOn(api, 'tasks').mockReturnValue(new Promise(() => {}))
+      const { result } = renderHook(() => useTasks())
+      const first = FakeEventSource.last!
+      act(() => first.fail())
+      expect(result.current.live).toBe(false)
+      const before = FakeEventSource.opened
+      const fetches = tasks.mock.calls.length
+      act(() => result.current.reconnect())
+      expect(FakeEventSource.opened).toBe(before + 1)
+      expect(tasks.mock.calls.length).toBe(fetches + 1)
+      // The pending backoff was cancelled: no second socket when it would have fired.
+      act(() => vi.advanceTimersByTime(2100))
+      expect(FakeEventSource.opened).toBe(before + 1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

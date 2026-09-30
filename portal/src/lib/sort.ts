@@ -1,6 +1,6 @@
 import type { StatusToken, TaskRow } from './types'
 
-export type SortKey = 'name' | 'size' | 'status' | 'speed'
+export type SortKey = 'name' | 'size' | 'status' | 'speed' | 'eta' | 'added'
 export type SortDir = 'asc' | 'desc'
 
 /** `key: null` keeps the server's order, which is the order tasks were added. */
@@ -36,7 +36,17 @@ function compare(a: TaskRow, b: TaskRow, key: SortKey): number {
       return STATUS_RANK[a.statusToken] - STATUS_RANK[b.statusToken]
     case 'speed':
       return (a.downSpeed || 0) - (b.downSpeed || 0)
+    case 'eta':
+      // Unknown ETAs (idle, finished, no size) sort as longest, so the soonest-done rows lead.
+      return etaValue(a) - etaValue(b)
+    case 'added':
+      return (a.addedAt || 0) - (b.addedAt || 0)
   }
+}
+
+function etaValue(task: TaskRow): number {
+  const eta = task.etaSeconds
+  return eta != null && eta > 0 && isFinite(eta) ? eta : Number.MAX_VALUE
 }
 
 /** Returns a new array; ties keep their incoming order, since `Array.prototype.sort` is stable. */
