@@ -55,7 +55,7 @@ struct DetailBottomPanel: View {
             HStack(spacing: 11) {
                 FileTypeIcon(type: task.fileType, size: 40)
                 VStack(alignment: .leading, spacing: 5) {
-                    DetailTitle(name: task.name)
+                    DetailTitle(name: task.compactDisplayName)
                     HStack(spacing: 7) {
                         KindBadge(task: task)
                         DetailStatusPill(task: task)

@@ -123,4 +123,14 @@ final class AccessibilityLabelTests: XCTestCase {
         XCTAssertFalse(label.contains("remaining"),
                        "a stalled task has no ETA, and must not claim one")
     }
+
+    func testAPendingMagnetRowIsNamedByItsTitleNotItsURI() {
+        let magnet = DownloadTask(source: .magnet("magnet:?xt=urn:btih:5C1A9D3E77AA0011223344556677889900AABBCC"),
+                                  name: "magnet:?xt=urn:btih:5C1A9D3E77AA0011223344556677889900AABBCC",
+                                  saveDirectory: "/tmp", status: .requestingMetadata)
+        for label in [magnet.accessibilityIdentityLabel, magnet.accessibilityRowLabel] {
+            XCTAssertTrue(label.hasPrefix("Fetching metadata · 5c1a9d3e, "), label)
+            XCTAssertFalse(label.contains("magnet:"), label)
+        }
+    }
 }

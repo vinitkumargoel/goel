@@ -69,7 +69,7 @@ struct DetailPanelView: View {
         HStack(spacing: 11) {
             FileTypeIcon(type: task.fileType, size: 38)
             VStack(alignment: .leading, spacing: 3) {
-                DetailTitle(name: task.name)
+                DetailTitle(name: task.compactDisplayName)
                 HStack(spacing: 7) {
                     KindBadge(task: task)
                     DetailStatusPill(task: task)

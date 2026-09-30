@@ -120,20 +120,20 @@ struct DetailActionButtons: View {
         HStack(spacing: 8) {
             primary
             button(L10n.t("Folder"), "folder",
-                   spoken: L10n.t("Show %@ in Finder", task.name)) { vm.revealInFinder(task) }
+                   spoken: L10n.t("Show %@ in Finder", task.compactDisplayName)) { vm.revealInFinder(task) }
             button(L10n.t("Copy"), "doc.on.doc",
-                   spoken: L10n.t("Copy source link for %@", task.name)) { vm.copyToPasteboard(task.sourceLocator) }
+                   spoken: L10n.t("Copy source link for %@", task.compactDisplayName)) { vm.copyToPasteboard(task.sourceLocator) }
             if !fill { Spacer(minLength: 0) }
         }
     }
 
     @ViewBuilder private var primary: some View {
         if task.status.isActive {
-            button(L10n.t("Pause"), "pause.fill", spoken: L10n.t("Pause %@", task.name), prominent: true) { vm.pause(task.id) }
+            button(L10n.t("Pause"), "pause.fill", spoken: L10n.t("Pause %@", task.compactDisplayName), prominent: true) { vm.pause(task.id) }
         } else if task.status == .paused || task.status == .queued {
-            button(L10n.t("Resume"), "play.fill", spoken: L10n.t("Resume %@", task.name), prominent: true) { vm.resume(task.id) }
+            button(L10n.t("Resume"), "play.fill", spoken: L10n.t("Resume %@", task.compactDisplayName), prominent: true) { vm.resume(task.id) }
         } else if task.status.isFailed {
-            button(L10n.t("Retry"), "arrow.clockwise", spoken: L10n.t("Retry %@", task.name), prominent: true) { vm.retry(task.id) }
+            button(L10n.t("Retry"), "arrow.clockwise", spoken: L10n.t("Retry %@", task.compactDisplayName), prominent: true) { vm.retry(task.id) }
         }
     }
 

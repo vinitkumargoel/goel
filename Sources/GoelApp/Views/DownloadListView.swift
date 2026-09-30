@@ -356,9 +356,7 @@ struct DownloadRow: View, Equatable {
         .background(rowBackground)
         // Label is identity only: folding in the ticking percent makes VoiceOver re-speak the row every second.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(A11y.sentence(task.name,
-                                          task.accessibilityKindName,
-                                          task.accessibilityStatusName))
+        .accessibilityLabel(task.accessibilityIdentityLabel)
         .accessibilityValue(accessibilityValue)
         .accessibilityAddTraits(isSelected
                                 ? [.isButton, .isSelected, .updatesFrequently]
@@ -490,7 +488,7 @@ struct DownloadRow: View, Equatable {
             FileTypeIcon(type: task.fileType)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 7) {
-                    Text(task.name)
+                    Text(task.compactDisplayName)
                         .scaledFont(size: Theme.TextSize.body, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -659,7 +657,7 @@ struct DownloadRow: View, Equatable {
         Button(L10n.t("Remove from list"), role: .destructive) { vm.remove(task.id, deleteData: false) }
         Button(L10n.t("Remove and Move File to Trash"), role: .destructive) {
             vm.requestConfirm(
-                title: L10n.t("Move “%@” to the Trash?", task.name),
+                title: L10n.t("Move “%@” to the Trash?", task.compactDisplayName),
                 message: L10n.t("It is removed from the list. You can restore the file from the Trash."),
                 confirmTitle: L10n.t("Move to Trash"),
                 destructive: true

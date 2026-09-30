@@ -87,9 +87,15 @@ extension DownloadTask {
             A11y.eta(estimatedTimeRemaining))
     }
 
+    /// What a list row is called: identity only (see the row's label). A pending magnet is its
+    /// "Fetching metadata" title, never a raw `magnet:?xt=…` URI read out character by character.
+    var accessibilityIdentityLabel: String {
+        A11y.sentence(compactDisplayName, accessibilityKindName, accessibilityStatusName)
+    }
+
     var accessibilityRowLabel: String {
         A11y.sentence(
-            name,
+            compactDisplayName,
             accessibilityKindName,
             accessibilityStatusName,
             A11y.percent(fractionCompleted),
