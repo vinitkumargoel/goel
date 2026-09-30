@@ -126,9 +126,9 @@ struct MediaFormatPicker: View {
                     .font(.system(size: 12))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(quality)
-                        .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
+                        .scaledFont(size: Theme.TextSize.meta, weight: isSelected ? .semibold : .regular)
                     Text(detail)
-                        .font(.system(size: 10))
+                        .scaledFont(size: Theme.TextSize.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -136,7 +136,7 @@ struct MediaFormatPicker: View {
                 Spacer(minLength: 8)
                 if let trailing {
                     Text(trailing)
-                        .font(.system(size: 10, design: .monospaced))
+                        .scaledFont(size: Theme.TextSize.caption, design: .monospaced)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -214,17 +214,29 @@ struct MediaFormatPicker: View {
 
 struct PlaylistChecklistView: View {
 
+    /// The ways out of the checklist when it fills a sheet step. With these the view draws the
+    /// sheet's standard footer in every state, so a slow or failed listing never traps the user.
+    struct SheetActions {
+        var back: () -> Void
+        var singleVideo: () -> Void
+        var cancel: () -> Void
+    }
+
     let playlistURL: URL
 
     var onConfirm: ([PlaylistItem]) -> Void
 
     var preloadedExpansion: PlaylistExpansion?
 
+    var sheetActions: SheetActions?
+
     init(playlistURL: URL,
          preloadedExpansion: PlaylistExpansion? = nil,
+         sheetActions: SheetActions? = nil,
          onConfirm: @escaping ([PlaylistItem]) -> Void) {
         self.playlistURL = playlistURL
         self.preloadedExpansion = preloadedExpansion
+        self.sheetActions = sheetActions
         self.onConfirm = onConfirm
     }
 
@@ -240,6 +252,20 @@ struct PlaylistChecklistView: View {
     @State private var loadTask: Task<Void, Never>?
 
     var body: some View {
+        if let sheetActions {
+            VStack(spacing: 0) {
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+                Divider()
+                sheetFooter(sheetActions)
+            }
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             switch phase {
@@ -343,13 +369,42 @@ struct PlaylistChecklistView: View {
                     .scaledFont(size: 11)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel(L10n.t("%1$@ of %2$@ items selected", String(selected.count), String(expansion.items.count)))
-                Button(L10n.t("Add Selected")) {
-                    onConfirm(expansion.items.filter { selected.contains($0.id) })
+                if sheetActions == nil {
+                    addSelectedButton
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(selected.isEmpty)
             }
         }
+    }
+
+    private var addSelectedButton: some View {
+        Button(L10n.t("Add Selected")) {
+            onConfirm(expansion.items.filter { selected.contains($0.id) })
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(phase != .loaded || selected.isEmpty)
+    }
+
+    private func sheetFooter(_ actions: SheetActions) -> some View {
+        HStack {
+            Button(L10n.t("Back")) {
+                loadTask?.cancel()
+                actions.back()
+            }
+            Button(L10n.t("Download this video only")) {
+                loadTask?.cancel()
+                actions.singleVideo()
+            }
+            .help(L10n.t("Skip the playlist and download just the video this link points to."))
+            Spacer()
+            Button(L10n.t("Cancel")) {
+                loadTask?.cancel()
+                actions.cancel()
+            }
+            .keyboardShortcut(.cancelAction)
+            addSelectedButton
+                .keyboardShortcut(.defaultAction)
+        }
+        .padding(14)
     }
 
     private var allSelected: Bool {

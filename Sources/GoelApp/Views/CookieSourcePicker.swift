@@ -29,7 +29,7 @@ struct CookieSourcePicker: View {
                 header
                 picker
                 Text(source.explanation)
-                    .font(.system(size: 11))
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
                 if source == .manual { pasteField }
                 summary
@@ -44,7 +44,7 @@ struct CookieSourcePicker: View {
                 .foregroundStyle(Theme.accent)
                 .a11yDecorative()
             Text(L10n.t("Sign-in cookies"))
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: Theme.TextSize.meta, weight: .semibold)
                 .foregroundStyle(.secondary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
@@ -69,12 +69,12 @@ struct CookieSourcePicker: View {
         VStack(alignment: .leading, spacing: 4) {
             SecureField("sid=…; csrf=…", text: $pastedCookies)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12, design: .monospaced))
+                .scaledFont(size: Theme.TextSize.body, design: .monospaced)
                 .accessibilityLabel(L10n.t("Cookie header"))
                 .accessibilityHint(L10n.t("Paste the Cookie request header from your browser's developer tools."))
             Text(L10n.t("In your browser: DevTools ▸ Network ▸ the download request ▸ copy the Cookie request header."))
-                .font(.system(size: 10.5))
-                .foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.caption)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -88,7 +88,7 @@ struct CookieSourcePicker: View {
                     .font(.system(size: 10))
                     .foregroundStyle(names.isEmpty ? Theme.orange : Theme.green)
                 Text(summaryText(names: names))
-                    .font(.system(size: 10.5))
+                    .scaledFont(size: Theme.TextSize.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
