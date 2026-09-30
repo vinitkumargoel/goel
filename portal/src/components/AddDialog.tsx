@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import { api } from '../lib/api'
 import { BOOT } from '../lib/boot'
+import { summarizeLinks } from '../lib/links'
 import type { AddRequest, NetworkAdapter, NetworkState } from '../lib/types'
 import { FolderPicker, folderLabel } from './FolderPicker'
 import { CloseIcon, LinkIcon } from './Icons'
@@ -27,7 +29,13 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
   const [busy, setBusy] = useState(false)
   const [picking, setPicking] = useState(false)
   const [home, setHome] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const urlRef = useRef<HTMLTextAreaElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
+  const id = useId()
+  // The folder picker stacks its own modal on top; while it's open, Tab belongs to it.
+  const trapTab = useDialogFocus(modalRef, !picking)
+  const links = summarizeLinks(url)
 
   useEffect(() => {
     urlRef.current?.focus()
@@ -69,9 +77,11 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
   }
 
   async function submit() {
+    if (busy) return
     const trimmed = url.trim()
     if (!trimmed) {
-      onWarn(t('addDialog.enterUrl'))
+      setError(t('addDialog.enterUrl'))
+      urlRef.current?.focus()
       return
     }
     const network = networkSpec()
@@ -95,6 +105,18 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
     }
   }
 
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      void submit()
+      return
+    }
+    trapTab(e)
+  }
+
+  const errorId = `${id}-error`
+  const countId = `${id}-count`
+
   return (
     <>
       {picking && (
@@ -111,33 +133,58 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
           }}
         />
       )}
-      <div className="modal">
+      <div
+        className="modal"
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${id}-title`}
+        onKeyDown={onKeyDown}
+      >
         <div className="mhead">
           <div className="mic">
             <LinkIcon />
           </div>
-          <h3>{t('addDialog.title')}</h3>
+          <h3 id={`${id}-title`}>{t('addDialog.title')}</h3>
         </div>
 
         <div className="mbody">
-          <label className="flabel">{t('addDialog.urlLabel')}</label>
+          <label className="flabel" htmlFor={`${id}-url`}>
+            {t('addDialog.urlLabel')}
+          </label>
           <textarea
+            id={`${id}-url`}
             className="finput"
             ref={urlRef}
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => {
+              setUrl(e.target.value)
+              setError(null)
+            }}
             placeholder={t('addDialog.urlPlaceholder')}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={`${error ? errorId : countId} ${id}-hint`}
           />
-          <div className="fhint">{t('addDialog.urlHint')}</div>
+          {error ? (
+            <div className="ferr" id={errorId} role="alert">
+              {error}
+            </div>
+          ) : (
+            <LinkCount id={countId} valid={links.valid} unsupported={links.unsupported} />
+          )}
+          <div className="fhint" id={`${id}-hint`}>
+            {t('addDialog.urlHint')}{' '}
+            <span className="kbd-hint">{t('addDialog.submitShortcut')}</span>
+          </div>
 
           <div className="twocol">
             <div className="fg">
-              <label className="flabel">
+              <div className="flabel" id={`${id}-folder`}>
                 {t('addDialog.saveTo')}{' '}
                 <span className="chip chip-w">{t('addDialog.serverFolder')}</span>
-              </label>
+              </div>
               {/* Read-only on purpose: a typed absolute path is refused only after the request is composed. */}
-              <div className="finput pkfield">
+              <div className="finput pkfield" role="group" aria-labelledby={`${id}-folder`}>
                 <span className={`pkval${folder ? '' : ' dim'}`} title={folder || undefined}>
                   {folder ? folderLabel(folder, home) : t('addDialog.defaultFolder')}
                 </span>
@@ -157,8 +204,11 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
               </div>
             </div>
             <div className="fg" style={{ flex: '0 0 130px' }}>
-              <label className="flabel">{t('addDialog.priority')}</label>
+              <label className="flabel" htmlFor={`${id}-prio`}>
+                {t('addDialog.priority')}
+              </label>
               <select
+                id={`${id}-prio`}
                 className="finput"
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as 'normal' | 'high' | 'low')}
@@ -172,8 +222,11 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
 
           {showNetworkChoice && net && (
             <div className="fg" style={{ marginTop: 14 }}>
-              <label className="flabel">{t('addDialog.network')}</label>
+              <label className="flabel" htmlFor={`${id}-net`}>
+                {t('addDialog.network')}
+              </label>
               <select
+                id={`${id}-net`}
                 className="finput"
                 value={mode}
                 onChange={(e) => setMode(e.target.value as NetMode)}
@@ -219,6 +272,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
               {mode === 'single' && (
                 <select
                   className="finput"
+                  aria-label={t('addDialog.modeSingle')}
                   style={{ marginTop: 8 }}
                   value={single}
                   onChange={(e) => setSingle(e.target.value)}
@@ -271,10 +325,33 @@ export function AdapterLine({ adapter }: { adapter: NetworkAdapter }) {
   return (
     <span>
       {adapter.label}{' '}
-      <span style={{ color: 'var(--text-faint)' }}>
+      <span style={{ color: 'var(--text-dim)' }}>
         {adapter.ipv4 ?? t('adapter.noAddress')}
       </span>
       {adapter.expensive && <span className="chip chip-d">{t('adapter.metered')}</span>}
     </span>
+  )
+}
+
+interface LinkCountProps {
+  id: string
+  valid: number
+  unsupported: { text: string }[]
+}
+
+/** Live feedback on a multi-line paste: how many links will queue, and which lines look wrong. */
+function LinkCount({ id, valid, unsupported }: LinkCountProps) {
+  const { t } = useTranslation()
+  const first = unsupported[0]
+  return (
+    <div className="fcount" id={id} aria-live="polite">
+      {(valid > 0 || first) && <span>{t('addDialog.linksDetected', { count: valid })}</span>}
+      {first && (
+        <span className="fwarn">
+          {' · '}
+          {t('addDialog.unsupportedLines', { count: unsupported.length, example: first.text })}
+        </span>
+      )}
+    </div>
   )
 }

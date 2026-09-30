@@ -11,6 +11,10 @@ const COUNTS: FilterCounts = {
   completed: 3,
   seeding: 1,
   failed: 0,
+  video: 4,
+  iso: 2,
+  archive: 0,
+  app: 0,
 }
 
 function renderSidebar() {
@@ -55,8 +59,23 @@ describe('Sidebar', () => {
     expect(screen.getByText('3')).toBeInTheDocument()
   })
 
+  it('renders the Type group from the catalogue', () => {
+    renderSidebar()
+    expect(screen.getByText(en.sidebar.type)).toBeInTheDocument()
+    for (const label of Object.values(en.fileType)) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
+  })
+
+  it('makes every item a real button and marks the current filter', () => {
+    renderSidebar()
+    const all = screen.getByRole('button', { name: new RegExp(en.sidebar.allDownloads) })
+    expect(all).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: new RegExp(en.common.history) })).toBeInTheDocument()
+  })
+
   it('leaves no untranslated key path in the rendered output', () => {
     const { container } = renderSidebar()
-    expect(container.textContent).not.toMatch(/\b(sidebar|common|status)\.\w+/)
+    expect(container.textContent).not.toMatch(/\b(sidebar|common|status|fileType)\.\w+/)
   })
 })

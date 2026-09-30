@@ -1,3 +1,4 @@
+import { useId, useRef, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { streamURL } from '../lib/api'
 import { fileType, isActive, kindLabel } from '../lib/taskKind'
@@ -17,6 +18,7 @@ import {
   FileIcon,
   FileTypeIcon,
   LinkIcon,
+  MoreIcon,
   PauseIcon,
   PlayIcon,
   RetryIcon,
@@ -33,6 +35,8 @@ interface DetailPanelProps {
   onClose: () => void
   onAction: (id: string, action: 'pause' | 'resume' | 'retry') => void
   onRemove: (id: string, anchor: { x: number; y: number }) => void
+  /** Opens the same menu a row's right-click or "⋯" opens, anchored under the button. */
+  onMore: (id: string, anchor: { x: number; y: number }) => void
   onCopy: (text: string) => void
   onToggleFile: (fileId: number, wasSkipped: boolean) => void
   onCyclePriority: (fileId: number, current: FilePriority) => void
@@ -47,6 +51,7 @@ export function DetailPanel({
   onClose,
   onAction,
   onRemove,
+  onMore,
   onCopy,
   onToggleFile,
   onCyclePriority,
@@ -54,7 +59,12 @@ export function DetailPanel({
   const { t } = useTranslation()
 
   return (
-    <div className={`detail${open ? '' : ' hidden'}`}>
+    <aside
+      className={`detail${open ? '' : ' hidden'}`}
+      aria-label={t('detail.label')}
+      aria-hidden={open ? undefined : true}
+      inert={!open}
+    >
       {detail ? (
         <Loaded
           detail={detail}
@@ -64,6 +74,7 @@ export function DetailPanel({
           onClose={onClose}
           onAction={onAction}
           onRemove={onRemove}
+          onMore={onMore}
           onCopy={onCopy}
           onToggleFile={onToggleFile}
           onCyclePriority={onCyclePriority}
@@ -75,7 +86,7 @@ export function DetailPanel({
           <p>{t('detail.emptyBody')}</p>
         </div>
       )}
-    </div>
+    </aside>
   )
 }
 
@@ -87,6 +98,7 @@ function Loaded({
   onClose,
   onAction,
   onRemove,
+  onMore,
   onCopy,
   onToggleFile,
   onCyclePriority,
@@ -94,6 +106,26 @@ function Loaded({
   const { t } = useTranslation()
   const row = detail.row
   const type = fileType(row)
+  const idBase = useId()
+  const tabRefs = useRef(new Map<DetailTab, HTMLButtonElement>())
+  const tabId = (name: DetailTab) => `${idBase}-tab-${name}`
+  const panelId = `${idBase}-panel`
+
+  // Tablist keyboard model: arrows move and activate, Home/End jump to the ends.
+  const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const at = DETAIL_TABS.indexOf(tab)
+    const to =
+      e.key === 'ArrowRight' ? at + 1
+      : e.key === 'ArrowLeft' ? at - 1
+      : e.key === 'Home' ? 0
+      : e.key === 'End' ? DETAIL_TABS.length - 1
+      : null
+    if (to === null) return
+    e.preventDefault()
+    const next = DETAIL_TABS[(to + DETAIL_TABS.length) % DETAIL_TABS.length]!
+    onTab(next)
+    tabRefs.current.get(next)?.focus()
+  }
 
   return (
     <div>
@@ -158,28 +190,61 @@ function Loaded({
           {canWrite && (
             <button
               className="mbtn danger"
-              onClick={(e) => onRemove(row.id, { x: e.clientX, y: e.clientY })}
+              aria-haspopup="menu"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect()
+                onRemove(row.id, { x: r.left, y: r.bottom })
+              }}
             >
               <TrashIcon />
               {t('common.remove')}
             </button>
           )}
+
+          <button
+            className="mbtn"
+            aria-haspopup="menu"
+            aria-label={t('detail.moreActions')}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect()
+              onMore(row.id, { x: r.left, y: r.bottom + 4 })
+            }}
+          >
+            <MoreIcon />
+          </button>
         </div>
       </div>
 
       <div className="tabs">
-        {DETAIL_TABS.map((name) => (
-          <div
-            key={name}
-            className={`tab${name === tab ? ' active' : ''}`}
-            onClick={() => onTab(name)}
-          >
-            {t(`detail.tabs.${name}`)}
-          </div>
-        ))}
+        <div
+          className="seg dtabs"
+          role="tablist"
+          aria-label={t('detail.tabsLabel')}
+          onKeyDown={onTabKey}
+        >
+          {DETAIL_TABS.map((name) => (
+            <button
+              key={name}
+              type="button"
+              role="tab"
+              id={tabId(name)}
+              ref={(el) => {
+                if (el) tabRefs.current.set(name, el)
+                else tabRefs.current.delete(name)
+              }}
+              aria-selected={name === tab}
+              aria-controls={panelId}
+              tabIndex={name === tab ? 0 : -1}
+              className={name === tab ? 'on' : undefined}
+              onClick={() => onTab(name)}
+            >
+              {t(`detail.tabs.${name}`)}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="tbody">
+      <div className="tbody" role="tabpanel" id={panelId} aria-labelledby={tabId(tab)} tabIndex={0}>
         <Pane
           tab={tab}
           detail={detail}

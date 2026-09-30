@@ -51,14 +51,18 @@ export function HistoryView({ canWrite, onReadd, onRemoved }: HistoryViewProps) 
 
         <div className="card">
           {state === 'loading' && (
-            <p className="fhint" style={{ padding: 8 }}>
+            <p className="fhint" role="status" style={{ padding: 8 }}>
               {t('common.loading')}
             </p>
           )}
           {state === 'error' && (
-            <p className="fhint" style={{ padding: 14 }}>
-              {t('history.loadError')}
-            </p>
+            <div className="herr" role="alert">
+              <p className="fhint">{t('history.loadError')}</p>
+              <button className="mbtn" onClick={() => void load()}>
+                <RetryIcon />
+                {t('common.retry')}
+              </button>
+            </div>
           )}
           {state === 'ready' && rows.length === 0 && (
             <p className="fhint" style={{ padding: 14 }}>
@@ -78,30 +82,29 @@ export function HistoryView({ canWrite, onReadd, onRemoved }: HistoryViewProps) 
                   </div>
                   <div style={{ minWidth: 0 }}>
                     <div className="ntext">{e.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                    <div className="hsub">
                       {kindLabel(e.kind)} · {fmtWhen(e.completedAt)}
                     </div>
                   </div>
-                  <div className="c r" style={{ color: 'var(--text-dim)' }}>
+                  <div className="c r hide-xs" style={{ color: 'var(--text-dim)' }}>
                     {fmtSize(e.totalBytes)}
                   </div>
-                  <div
-                    className="c r hide-sm"
-                    style={{ color: 'var(--text-faint)', fontSize: 11.5 }}
-                  >
-                    {folder}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div className="c r hide-sm hfolder">{folder}</div>
+                  <div className="hact">
                     {canWrite && (
                       <>
-                        <button className="mbtn" onClick={() => void onReadd(e.source)}>
+                        <button
+                          className="mbtn"
+                          onClick={() => void onReadd(e.source)}
+                          aria-label={t('history.readdNamed', { name: e.name })}
+                        >
                           <RetryIcon />
                           {t('history.readd')}
                         </button>
                         <button
                           className="mbtn danger"
                           onClick={() => void remove(e.id)}
-                          aria-label={t('common.remove')}
+                          aria-label={t('history.removeNamed', { name: e.name })}
                         >
                           <TrashIcon />
                         </button>

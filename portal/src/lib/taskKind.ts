@@ -12,6 +12,19 @@ export function kindLabel(kind: string): string {
   return KIND_LABEL[kind as TaskKind] ?? kind
 }
 
+/** The compact form the Mac app's list uses; the long form stays for detail subtitles. */
+export const KIND_BADGE: Record<TaskKind, string> = {
+  http: 'HTTP',
+  torrent: 'BT',
+  ftp: 'FTP',
+  sftp: 'SFTP',
+  hls: 'HLS',
+}
+
+export function kindBadge(kind: string): string {
+  return KIND_BADGE[kind as TaskKind] ?? kind.toUpperCase()
+}
+
 export type FileType = 'iso' | 'video' | 'archive' | 'app' | 'magnet' | 'doc'
 
 export function fileType(task: Pick<TaskRow, 'name' | 'kind'> & { statusToken: StatusToken | '' }): FileType {

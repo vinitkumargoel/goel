@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AddDialog } from './components/AddDialog'
+import { BulkBar } from './components/BulkBar'
+import { ConfirmDialog, type ConfirmRequest } from './components/ConfirmDialog'
 import { ContextMenu, type MenuEntry, type MenuState } from './components/ContextMenu'
 import { DetailPanel } from './components/DetailPanel'
 import type { DetailTab } from './components/DetailPanes'
@@ -18,20 +20,20 @@ import {
 } from './components/Icons'
 import { LibraryView } from './components/LibraryView'
 import { SettingsView } from './components/SettingsView'
-import {
-  Sidebar,
-  type Filter,
-  type FilterCounts,
-  type View,
-} from './components/Sidebar'
+import { Sidebar, type Filter, type View } from './components/Sidebar'
+import { StatusBar } from './components/StatusBar'
 import { Toasts } from './components/Toasts'
 import { Topbar } from './components/Topbar'
+import { useTaskActions } from './hooks/useTaskActions'
 import { useTasks } from './hooks/useTasks'
 import { useToasts } from './hooks/useToasts'
 import { api, setRefusalHandler, streamURL } from './lib/api'
 import { BOOT } from './lib/boot'
 import { copyText } from './lib/clipboard'
-import { isActive, rowAction, type RowAction } from './lib/taskKind'
+import { countFilters, filterTasks } from './lib/filters'
+import { EMPTY_SELECTION, selectionReducer } from './lib/selection'
+import { nextSort, sortTasks, UNSORTED, type SortKey, type SortState } from './lib/sort'
+import { rowAction } from './lib/taskKind'
 import { applyTheme, initialTheme, type Theme } from './lib/theme'
 import type { FilePriority, TaskDetail } from './lib/types'
 
@@ -43,19 +45,30 @@ export function App() {
   const [view, setView] = useState<View>('library')
   const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [sort, setSort] = useState<SortState>(UNSORTED)
+  const [selection, select] = useReducer(selectionReducer, EMPTY_SELECTION)
   const [detail, setDetail] = useState<TaskDetail | null>(null)
   const [tab, setTab] = useState<DetailTab>('general')
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > PANEL_BREAKPOINT)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
-  const [menu, setMenu] = useState<MenuState | null>(null)
+  const [menu, setMenu] = useState<(MenuState & { owner: 'row' | 'user' }) | null>(null)
+  const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null)
   const [theme, setTheme] = useState<Theme>(initialTheme)
 
-  const { tasks, refresh } = useTasks()
-  const { toasts, toast } = useToasts()
+  const { tasks, live, loaded, refresh } = useTasks()
+  const { toasts, toast, dismiss, pause, resume } = useToasts()
 
   const canWrite = !BOOT.readOnly
+  // The detail panel follows the lead row, and only while it is still selected.
+  const detailId =
+    selection.lead != null && selection.ids.has(selection.lead) ? selection.lead : null
+
+  const { runAction, runBulk, removeTask, removeMany } = useTaskActions({
+    refresh,
+    toast,
+    confirm: setConfirmReq,
+  })
 
   useEffect(() => {
     setRefusalHandler((message) => toast(message, 'warn'))
@@ -64,6 +77,15 @@ export function App() {
   useEffect(() => {
     applyTheme(theme, false)
   }, [theme])
+
+  // Crossing the breakpoint resets the panel to that layout's default; a toggle within one layout sticks.
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const wide = window.matchMedia(`(min-width: ${PANEL_BREAKPOINT + 1}px)`)
+    const onChange = (e: MediaQueryListEvent) => setPanelOpen(e.matches)
+    wide.addEventListener('change', onChange)
+    return () => wide.removeEventListener('change', onChange)
+  }, [])
 
   const copy = useCallback(
     (text: string) => {
@@ -83,58 +105,49 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (selectedId == null) {
+    if (detailId == null) {
       setDetail(null)
       return
     }
-    void loadDetail(selectedId)
-  }, [selectedId, loadDetail])
+    void loadDetail(detailId)
+  }, [detailId, loadDetail])
 
   // Without this the panel's progress bar only moves on the 4s refetch while the list behind it updates live.
   useEffect(() => {
-    if (selectedId == null) return
-    const row = tasks.find((t) => t.id === selectedId)
+    if (detailId == null) return
+    const row = tasks.find((t) => t.id === detailId)
     if (!row) return
-    setDetail((d) => (d && d.row.id === selectedId ? { ...d, row } : d))
-  }, [tasks, selectedId])
+    setDetail((d) => (d && d.row.id === detailId ? { ...d, row } : d))
+  }, [tasks, detailId])
+
+  // A snapshot without a selected row means it was removed elsewhere; drop it from the selection.
+  useEffect(() => {
+    if (loaded) select({ type: 'prune', existing: tasks.map((t) => t.id) })
+  }, [tasks, loaded])
 
   const detailPollRef = useRef<() => void>(() => {})
   detailPollRef.current = () => {
-    if (selectedId == null || view !== 'library' || !panelOpen) return
-    const row = tasks.find((t) => t.id === selectedId)
-    if (!row || row.statusToken !== 'completed') void loadDetail(selectedId)
+    if (detailId == null || view !== 'library' || !panelOpen) return
+    const row = tasks.find((t) => t.id === detailId)
+    if (!row || row.statusToken !== 'completed') void loadDetail(detailId)
   }
   useEffect(() => {
     const timer = setInterval(() => detailPollRef.current(), DETAIL_POLL_MS)
     return () => clearInterval(timer)
   }, [])
 
-  const counts: FilterCounts = useMemo(() => {
-    const c: FilterCounts = { all: tasks.length, active: 0, paused: 0, completed: 0, seeding: 0, failed: 0 }
-    for (const t of tasks) {
-      if (isActive(t.statusToken)) c.active++
-      else if (t.statusToken === 'paused') c.paused++
-      else if (t.statusToken === 'completed') c.completed++
-      else if (t.statusToken === 'seeding') c.seeding++
-      else if (t.statusToken === 'failed') c.failed++
-    }
-    return c
-  }, [tasks])
+  const counts = useMemo(() => countFilters(tasks), [tasks])
 
-  const visible = useMemo(() => {
-    const needle = search.trim().toLowerCase()
-    return tasks.filter((t) => {
-      if (needle && !t.name.toLowerCase().includes(needle)) return false
-      switch (filter) {
-        case 'all':
-          return true
-        case 'active':
-          return isActive(t.statusToken)
-        default:
-          return t.statusToken === filter
-      }
-    })
-  }, [tasks, search, filter])
+  const visible = useMemo(
+    () => sortTasks(filterTasks(tasks, filter, search), sort),
+    [tasks, filter, search, sort],
+  )
+
+  // Bulk actions apply to what the user can see: a row hidden by a filter is never acted on unseen.
+  const selectedVisible = useMemo(
+    () => visible.filter((task) => selection.ids.has(task.id)),
+    [visible, selection.ids],
+  )
 
   const totals = useMemo(
     () =>
@@ -143,42 +156,6 @@ export function App() {
         { down: 0, up: 0 },
       ),
     [tasks],
-  )
-
-  const runAction = useCallback(
-    async (id: string, action: RowAction) => {
-      try {
-        if (action === 'pause') await api.pause(id)
-        else if (action === 'resume') await api.resume(id)
-        else await api.retry(id)
-        toast(
-          { pause: t('toast.paused'), resume: t('toast.resumed'), retry: t('toast.retried') }[
-            action
-          ],
-        )
-        await refresh()
-      } catch {
-        // Already surfaced by the api layer.
-      }
-    },
-    [refresh, toast, t],
-  )
-
-  const removeTask = useCallback(
-    async (id: string, withData: boolean) => {
-      if (withData && !confirm(t('library.confirmRemoveWithData'))) {
-        return
-      }
-      try {
-        await api.remove(id, withData)
-        if (selectedId === id) setSelectedId(null)
-        toast(withData ? t('toast.removedWithData') : t('toast.removed'), 'trash')
-        await refresh()
-      } catch {
-        // Already surfaced by the api layer.
-      }
-    },
-    [refresh, selectedId, toast, t],
   )
 
   const readd = useCallback(
@@ -197,15 +174,15 @@ export function App() {
 
   const setFilePriority = useCallback(
     async (fileId: number, priority: string) => {
-      if (selectedId == null) return
+      if (detailId == null) return
       try {
-        await api.filePriority(selectedId, fileId, priority)
-        await loadDetail(selectedId)
+        await api.filePriority(detailId, fileId, priority)
+        await loadDetail(detailId)
       } catch {
         // Already surfaced by the api layer.
       }
     },
-    [selectedId, loadDetail],
+    [detailId, loadDetail],
   )
 
   const cyclePriority = useCallback(
@@ -224,14 +201,14 @@ export function App() {
         label: t('menu.removeFromList'),
         icon: <TrashIcon />,
         danger: true,
-        action: () => void removeTask(id, false),
+        action: () => removeTask(id, false),
       },
       {
         key: 'rmd',
         label: t('menu.removeWithData'),
         icon: <TrashIcon />,
         danger: true,
-        action: () => void removeTask(id, true),
+        action: () => removeTask(id, true),
       },
     ],
     [removeTask, t],
@@ -241,7 +218,7 @@ export function App() {
     (id: string, x: number, y: number) => {
       const task = tasks.find((t) => t.id === id)
       if (!task) return
-      setSelectedId(id)
+      if (!selection.ids.has(id)) select({ type: 'single', id })
 
       const entries: MenuEntry[] = []
       const action = rowAction(task.statusToken)
@@ -284,9 +261,9 @@ export function App() {
       if (canWrite) {
         entries.push({ separator: true }, ...removeEntries(id))
       }
-      setMenu({ x, y, entries })
+      setMenu({ x, y, entries, label: task.name, owner: 'row' })
     },
-    [tasks, canWrite, copy, runAction, removeEntries, toast, t],
+    [tasks, selection.ids, canWrite, copy, runAction, removeEntries, toast, t],
   )
 
   const openUserMenu = useCallback(
@@ -294,6 +271,8 @@ export function App() {
       setMenu({
         x: anchor.right - 210,
         y: anchor.bottom + 6,
+        owner: 'user',
+        label: BOOT.username,
         entries: [
           {
             key: 'set',
@@ -314,11 +293,23 @@ export function App() {
     [t],
   )
 
+  const visibleIdsRef = useRef<string[]>([])
+  visibleIdsRef.current = view === 'library' ? visible.map((task) => task.id) : []
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      setMenu(null)
-      setAddOpen(false)
+      if (e.key === 'Escape') {
+        setMenu(null)
+        setAddOpen(false)
+        setSidebarOpen(false)
+        return
+      }
+      // ⌘/Ctrl+A with nothing focused selects the list; in a field it still selects text.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a' && document.activeElement === document.body) {
+        if (visibleIdsRef.current.length === 0) return
+        e.preventDefault()
+        select({ type: 'all', order: visibleIdsRef.current })
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -328,6 +319,16 @@ export function App() {
     setView(next)
     setSidebarOpen(false)
   }, [])
+
+  const openDetail = useCallback(
+    (id: string) => {
+      select({ type: 'single', id })
+      if (!panelOpen) setPanelOpen(true)
+    },
+    [panelOpen],
+  )
+
+  const onSort = useCallback((key: SortKey) => setSort((s) => nextSort(s, key)), [])
 
   return (
     <>
@@ -342,6 +343,8 @@ export function App() {
         onAdd={() => setAddOpen(true)}
         onToggleSidebar={() => setSidebarOpen((s) => !s)}
         onUserMenu={openUserMenu}
+        userMenuOpen={menu?.owner === 'user'}
+        sidebarOpen={sidebarOpen}
         canWrite={canWrite}
       />
 
@@ -359,19 +362,35 @@ export function App() {
           onClose={() => setSidebarOpen(false)}
         />
 
-        <div className="content">
+        <main className="content">
+          {view === 'library' && selectedVisible.length > 1 && (
+            <BulkBar
+              selected={selectedVisible}
+              canWrite={canWrite}
+              onAction={(action, ids) => void runBulk(action, ids)}
+              onCopyLinks={(sources) => copy(sources.join('\n'))}
+              onRemove={removeMany}
+              onClear={() => select({ type: 'clear' })}
+            />
+          )}
           {view === 'library' && (
             <LibraryView
               tasks={visible}
-              selectedId={selectedId}
+              total={tasks.length}
+              loaded={loaded}
+              search={search}
+              selectedIds={selection.ids}
+              lead={selection.lead}
+              sort={sort}
               canWrite={canWrite}
               readOnly={BOOT.readOnly}
-              onSelect={(id) => {
-                setSelectedId(id)
-                if (!panelOpen) setPanelOpen(true)
-              }}
+              onSelection={select}
+              onOpen={openDetail}
+              onSort={onSort}
               onAction={(id, a) => void runAction(id, a)}
-              onContextMenu={openRowMenu}
+              onMenu={openRowMenu}
+              onClearSearch={() => setSearch('')}
+              onAdd={() => setAddOpen(true)}
             />
           )}
           {view === 'history' && (
@@ -389,7 +408,7 @@ export function App() {
               onToast={(m) => toast(m)}
             />
           )}
-        </div>
+        </main>
 
         {view === 'library' && (
           <DetailPanel
@@ -400,7 +419,10 @@ export function App() {
             onTab={setTab}
             onClose={() => setPanelOpen(false)}
             onAction={(id, a) => void runAction(id, a)}
-            onRemove={(id, at) => setMenu({ x: at.x - 160, y: at.y + 6, entries: removeEntries(id) })}
+            onRemove={(id, at) =>
+              setMenu({ x: at.x, y: at.y + 4, entries: removeEntries(id), owner: 'row' })
+            }
+            onMore={(id, at) => openRowMenu(id, at.x, at.y)}
             onCopy={copy}
             onToggleFile={(fileId, wasSkipped) =>
               void setFilePriority(fileId, wasSkipped ? 'normal' : 'skip')
@@ -410,13 +432,14 @@ export function App() {
         )}
       </div>
 
-      <div className="statusbar">
-        <span className="sb-dim">{t('statusbar.downloads', { count: tasks.length })}</span>
-        <div className="sp" />
-        <span className="sb-dim">
-          {t('statusbar.signedIn')} · <span>{BOOT.username}</span>
-        </span>
-      </div>
+      <StatusBar
+        live={live}
+        loaded={loaded}
+        active={counts.active}
+        downSpeed={totals.down}
+        upSpeed={totals.up}
+        readOnly={BOOT.readOnly}
+      />
 
       <div
         className={`scrim${addOpen ? ' open' : ''}`}
@@ -440,8 +463,9 @@ export function App() {
         )}
       </div>
 
+      <ConfirmDialog request={confirmReq} onClose={() => setConfirmReq(null)} />
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />
-      <Toasts toasts={toasts} />
+      <Toasts toasts={toasts} onDismiss={dismiss} onPause={pause} onResume={resume} />
     </>
   )
 }

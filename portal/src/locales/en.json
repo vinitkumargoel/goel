@@ -48,20 +48,37 @@
     "menu": "Menu",
     "web": "WEB",
     "searchDownloads": "Search downloads",
-    "detailPanel": "Detail panel"
+    "detailPanel": "Detail panel",
+    "accountMenu": "Account menu for {{username}}"
   },
 
   "sidebar": {
     "library": "Library",
     "allDownloads": "All downloads",
     "status": "Status",
-    "tools": "Tools"
+    "tools": "Tools",
+    "navLabel": "Library and tools",
+    "type": "Type"
+  },
+
+  "fileType": {
+    "video": "Video",
+    "iso": "Disc images",
+    "archive": "Archives",
+    "app": "Apps"
   },
 
   "statusbar": {
     "downloads_one": "{{count}} download",
     "downloads_other": "{{count}} downloads",
-    "signedIn": "Signed in"
+    "live": "Live",
+    "connecting": "Connecting…",
+    "reconnecting": "Reconnecting… data may be stale",
+    "active_one": "{{count}} active",
+    "active_other": "{{count}} active",
+    "downSpeed": "Download speed",
+    "upSpeed": "Upload speed",
+    "readOnly": "Read-only"
   },
 
   "library": {
@@ -71,8 +88,18 @@
     "colStatus": "Status",
     "colSpeed": "↓ Speed",
     "emptyTitle": "Nothing here",
-    "emptyBody": "No downloads match this filter. Tap <bold>{{addLabel}}</bold> to queue a URL, magnet, or torrent.",
-    "confirmRemoveWithData": "Delete the downloaded files from disk too? This permanently removes them and can't be undone."
+    "emptyBody": "Tap <bold>{{addLabel}}</bold> to queue a URL, magnet, or torrent.",
+    "confirmRemoveWithData": "Delete the downloaded files from disk too? This permanently removes them and can't be undone.",
+    "emptyQueueTitle": "No downloads yet",
+    "emptyReadOnlyBody": "Downloads added on the host will appear here.",
+    "emptyFilterBody": "No downloads match this filter.",
+    "noMatchTitle": "No downloads match “{{search}}”",
+    "noMatchBody": "Check the spelling, or clear the search to see every download.",
+    "clearSearch": "Clear search",
+    "queueLabel": "Download queue",
+    "rowLabel": "{{name}}, {{kind}}, {{status}}, {{percent}}%",
+    "progress": "Progress",
+    "moreActions": "More actions for {{name}}"
   },
 
   "menu": {
@@ -80,6 +107,27 @@
     "forceRecheck": "Force recheck",
     "removeFromList": "Remove from list",
     "removeWithData": "Remove with data"
+  },
+
+  "bulk": {
+    "toolbar": "Selection actions",
+    "selected_one": "{{count}} selected",
+    "selected_other": "{{count}} selected",
+    "pause_one": "Pause",
+    "pause_other": "Pause {{count}}",
+    "resume_one": "Resume",
+    "resume_other": "Resume {{count}}",
+    "retry_one": "Retry",
+    "retry_other": "Retry {{count}}",
+    "copyLinks": "Copy links",
+    "clear": "Clear selection"
+  },
+
+  "confirm": {
+    "removeDataTitle": "Remove with data?",
+    "removeManyTitle_one": "Remove {{count}} download?",
+    "removeManyTitle_other": "Remove {{count}} downloads?",
+    "removeManyBody": "They leave the list. Files already on disk stay where they are."
   },
 
   "toast": {
@@ -96,20 +144,26 @@
     "added_one": "Added to queue",
     "added_other": "Added {{count}} downloads",
     "refused_one": "{{count}} refused — internal network address",
-    "refused_other": "{{count}} refused — internal network addresses"
+    "refused_other": "{{count}} refused — internal network addresses",
+    "dismiss": "Dismiss"
   },
 
   "history": {
     "subtitle": "Completed & removed downloads. Re-queue any of them in one click.",
     "loadError": "Could not load history.",
     "empty": "No history yet.",
-    "readd": "Re-add"
+    "readd": "Re-add",
+    "readdNamed": "Re-add {{name}}",
+    "removeNamed": "Remove {{name}} from history"
   },
 
   "detail": {
     "emptyTitle": "No download selected",
     "emptyBody": "Pick a download to see its files, peers, progress and options.",
     "closePanel": "Close panel",
+    "label": "Download details",
+    "moreActions": "More actions",
+    "tabsLabel": "Detail sections",
     "tabs": {
       "general": "General",
       "details": "Details",
@@ -145,7 +199,9 @@
       "hint": "Live piece/segment data appears here while the transfer runs."
     },
     "files": {
-      "singleFile": "Single-file download."
+      "singleFile": "Single-file download.",
+      "download": "Download {{name}}",
+      "priority": "Priority for {{name}}: {{priority}}"
     },
     "peers": {
       "summary": "{{seeds}} seeds · {{peers}} peers",
@@ -180,7 +236,12 @@
     "adding": "Adding…",
     "submit": "Add to queue",
     "pickInterface": "Pick at least one interface",
-    "enterUrl": "Enter a URL or magnet first"
+    "enterUrl": "Enter a URL or magnet first",
+    "linksDetected_one": "{{count}} link detected",
+    "linksDetected_other": "{{count}} links detected",
+    "unsupportedLines_one": "{{count}} line isn’t an http(s), ftp, sftp or magnet link: {{example}}",
+    "unsupportedLines_other": "{{count}} lines aren’t http(s), ftp, sftp or magnet links, e.g. {{example}}",
+    "submitShortcut": "⌘/Ctrl+Enter adds them."
   },
 
   "folderPicker": {

@@ -8,11 +8,14 @@ const POLL_MS = 2500
 interface TasksState {
   tasks: TaskRow[]
   live: boolean
+  /** False until the first snapshot lands, so an empty `tasks` can mean "not known yet". */
+  loaded: boolean
 }
 
 export function useTasks(): TasksState & { refresh: () => Promise<void> } {
   const [tasks, setTasks] = useState<TaskRow[]>([])
   const [live, setLive] = useState(false)
+  const [loaded, setLoaded] = useState(false)
 
   // A ref, not a dep: reading `live` in the effect would rebuild the EventSource on every flip.
   const liveRef = useRef(false)
@@ -22,6 +25,7 @@ export function useTasks(): TasksState & { refresh: () => Promise<void> } {
   refreshRef.current = async () => {
     try {
       setTasks(await api.tasks())
+      setLoaded(true)
     } catch {
       // Expected while the daemon restarts; the next tick retries.
     }
@@ -40,6 +44,7 @@ export function useTasks(): TasksState & { refresh: () => Promise<void> } {
           setLive(true)
           try {
             setTasks(JSON.parse(e.data) as TaskRow[])
+            setLoaded(true)
           } catch {
             // A malformed frame is dropped: the next snapshot is a full replacement.
           }
@@ -77,5 +82,5 @@ export function useTasks(): TasksState & { refresh: () => Promise<void> } {
     }
   }, [])
 
-  return { tasks, live, refresh: () => refreshRef.current() }
+  return { tasks, live, loaded, refresh: () => refreshRef.current() }
 }

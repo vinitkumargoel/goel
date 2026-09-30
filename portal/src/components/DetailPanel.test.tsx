@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithI18n } from '../test/renderWithI18n'
 import en from '../locales/en.json'
@@ -53,6 +54,7 @@ function renderPanel(detail: TaskDetail | null) {
       onClose={vi.fn()}
       onAction={vi.fn()}
       onRemove={vi.fn()}
+      onMore={vi.fn()}
       onCopy={vi.fn()}
       onToggleFile={vi.fn()}
       onCyclePriority={vi.fn()}
@@ -72,6 +74,64 @@ describe('DetailPanel', () => {
     for (const label of Object.values(en.detail.tabs)) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
+  })
+
+  it('exposes the sections as a tablist with the current tab selected', () => {
+    renderPanel(DETAIL)
+    expect(screen.getByRole('tablist', { name: en.detail.tabsLabel })).toBeInTheDocument()
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs).toHaveLength(Object.keys(en.detail.tabs).length)
+    const general = screen.getByRole('tab', { name: en.detail.tabs.general })
+    expect(general).toHaveAttribute('aria-selected', 'true')
+    expect(general).toHaveAttribute('tabindex', '0')
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', general.id)
+  })
+
+  it('moves to the next tab with ArrowRight', async () => {
+    const onTab = vi.fn()
+    renderWithI18n(
+      <DetailPanel
+        detail={DETAIL}
+        open
+        tab="general"
+        canWrite
+        onTab={onTab}
+        onClose={vi.fn()}
+        onAction={vi.fn()}
+        onRemove={vi.fn()}
+        onMore={vi.fn()}
+        onCopy={vi.fn()}
+        onToggleFile={vi.fn()}
+        onCyclePriority={vi.fn()}
+      />,
+    )
+    screen.getByRole('tab', { name: en.detail.tabs.general }).focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(onTab).toHaveBeenCalledWith('details')
+  })
+
+  it('offers a More button that opens the row menu', async () => {
+    const onMore = vi.fn()
+    renderWithI18n(
+      <DetailPanel
+        detail={DETAIL}
+        open
+        tab="general"
+        canWrite
+        onTab={vi.fn()}
+        onClose={vi.fn()}
+        onAction={vi.fn()}
+        onRemove={vi.fn()}
+        onMore={onMore}
+        onCopy={vi.fn()}
+        onToggleFile={vi.fn()}
+        onCyclePriority={vi.fn()}
+      />,
+    )
+    const more = screen.getByRole('button', { name: en.detail.moreActions })
+    expect(more).toHaveAttribute('aria-haspopup', 'menu')
+    await userEvent.click(more)
+    expect(onMore).toHaveBeenCalledWith('t1', expect.objectContaining({ x: expect.any(Number) }))
   })
 
   it('translates the close-panel accessible name', () => {

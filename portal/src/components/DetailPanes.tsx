@@ -36,9 +36,18 @@ function CopyableValue({ value, onCopy }: { value: string; onCopy: (text: string
   )
 }
 
-function Bar({ fraction, height }: { fraction: number; height?: number }) {
+function Bar({ fraction, height, label }: { fraction: number; height?: number; label?: string }) {
+  const { t } = useTranslation()
   return (
-    <div className="dpbar" style={height ? { height } : undefined}>
+    <div
+      className="dpbar"
+      style={height ? { height } : undefined}
+      role="progressbar"
+      aria-label={label ?? t('library.progress')}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(pct(fraction))}
+    >
       <i style={{ width: `${pct(fraction)}%` }} />
     </div>
   )
@@ -197,7 +206,7 @@ export function ProgressPane({ detail }: { detail: TaskDetail }) {
               <span>{c.label}</span>
               <span>{pct(c.progress).toFixed(0)}%</span>
             </div>
-            <Bar fraction={c.progress} height={6} />
+            <Bar fraction={c.progress} height={6} label={c.label} />
           </div>
         ))}
       </>
@@ -232,7 +241,7 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
     return (
       <>
         <div className="frow">
-          <div className="fchk on">
+          <div className="fchk on" aria-hidden="true">
             <CheckIcon />
           </div>
           <div className="finfo">
@@ -256,13 +265,17 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
         const skipped = f.priority === 'skip'
         return (
           <div className="frow" key={f.id}>
-            <div
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={!skipped}
+              aria-label={t('detail.files.download', { name: f.name })}
               className={`fchk${skipped ? '' : ' on'}`}
-              onClick={canWrite ? () => onToggleFile(f.id, skipped) : undefined}
-              style={canWrite ? undefined : { cursor: 'default' }}
+              disabled={!canWrite}
+              onClick={() => onToggleFile(f.id, skipped)}
             >
               <CheckIcon />
-            </div>
+            </button>
             <div className="finfo">
               <div className="fname">{f.name}</div>
               <div className="fbar">
@@ -270,13 +283,18 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
               </div>
             </div>
             <span className="fsz">{fmtSize(f.size)}</span>
-            <span
+            <button
+              type="button"
               className={`fprio${f.priority === 'high' ? ' high' : ''}`}
-              onClick={canWrite ? () => onCyclePriority(f.id, f.priority) : undefined}
-              style={canWrite ? undefined : { cursor: 'default' }}
+              disabled={!canWrite}
+              aria-label={t('detail.files.priority', {
+                name: f.name,
+                priority: t(`task.priority.${f.priority}`),
+              })}
+              onClick={() => onCyclePriority(f.id, f.priority)}
             >
               {t(`task.priority.${f.priority}`)}
-            </span>
+            </button>
           </div>
         )
       })}
@@ -324,7 +342,7 @@ export function PeersPane({ detail }: { detail: TaskDetail }) {
         <div className="crow" key={c.id}>
           <span className="cip">{c.label}</span>
           <span className="cd">{fmtSpeed(c.down)}</span>
-          <span className="cu" style={{ color: 'var(--text-faint)' }}>
+          <span className="cu" style={{ color: 'var(--text-dim)' }}>
             {c.detail}
           </span>
         </div>

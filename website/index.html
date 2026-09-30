@@ -1412,7 +1412,7 @@ function renderDetail() {
   const done = r.size * r.pct / 100;
   document.getElementById("detail").innerHTML = `
     <div class="d-name">${r.name}</div>
-    <div class="d-chips"><span class="proto">${r.proto}</span><span class="cell"><span class="st ${stCls(r)}">${{down:"Downloading",seed:"Seeding",pause:"Paused",done:"Completed",fail:"Failed",meta:"Fetching metadata"}[r.state]}</span></span></div>
+    <div class="d-chips"><span class="proto">${r.proto}</span><span class="cell"><span class="st ${stCls(r)}">${{down:"Downloading",seed:"Seeding",pause:"Paused",done:"Completed",fail:"Failed",meta:"Requesting info…"}[r.state]}</span></span></div>
     <div class="d-tabs"><span class="d-tab on">General</span><span class="d-tab">Details</span><span class="d-tab">Progress</span><span class="d-tab">Files</span><span class="d-tab">Connections</span></div>
     <div class="ring-wrap"><div class="ring">
       <svg width="118" height="118" viewBox="0 0 118 118">
@@ -1575,7 +1575,7 @@ document.querySelectorAll("[data-send]").forEach(btn => btn.addEventListener("cl
 
 /* ---------- Goel° Web portal (live mirror of the queue) ---------- */
 let wSel = 1;
-const W_ST = { down:"Downloading", seed:"Seeding", pause:"Paused", done:"Completed", fail:"Failed", meta:"Fetching metadata" };
+const W_ST = { down:"Downloading", seed:"Seeding", pause:"Paused", done:"Completed", fail:"Failed", meta:"Requesting info…" };
 function portalTotals() {
   const t = document.getElementById("w-tot"); if (!t) return;
   const td = rows.reduce((s,r)=>s+(r.state==="down"?r.d:0),0)*profile;
