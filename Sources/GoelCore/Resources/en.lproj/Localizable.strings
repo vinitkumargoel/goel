@@ -1118,6 +1118,7 @@
 "Removed “%@”" = "Removed “%@”";
 "Removed “%@” from the list" = "Removed “%@” from the list";
 "Removed “%@” from the list, but its file is still on disk." = "Removed “%@” from the list, but its file is still on disk.";
+"Removed “%@” from the list, but its files are still on disk." = "Removed “%@” from the list, but its files are still on disk.";
 "Removed “%@” from the list. Its files weren’t loaded, so they were left on disk." = "Removed “%@” from the list. Its files weren’t loaded, so they were left on disk.";
 "Rename" = "Rename";
 "Rename %d Selected…" = "Rename %d Selected…";
@@ -1401,6 +1402,7 @@
 "The file changed on the server. Retry starts the download from the beginning." = "The file changed on the server. Retry starts the download from the beginning.";
 "The file doesn’t match its published checksum — it may be damaged. Retry to download it again." = "The file doesn’t match its published checksum — it may be damaged. Retry to download it again.";
 "The file is no longer at this address. Check the link on the page you got it from." = "The file is no longer at this address. Check the link on the page you got it from.";
+"The files couldn’t be moved to the Trash." = "The files couldn’t be moved to the Trash.";
 "The first delay after the limit is hit; it doubles from there." = "The first delay after the limit is hit; it doubles from there.";
 "The folder and everything inside it will be permanently removed from the server." = "The folder and everything inside it will be permanently removed from the server.";
 "The folder “%@” no longer exists" = "The folder “%@” no longer exists";

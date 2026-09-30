@@ -40,7 +40,7 @@ extension DownloadManager {
         schedule()
         guard deleteData else { return .nothingToDelete }
         if engineDeletes {
-            return handedToEngine ? .handledByEngine : await reportUnloadedTorrent(latest)
+            return handedToEngine ? await reportLoadedTorrent(latest) : await reportUnloadedTorrent(latest)
         }
         return await removeLeftoverPayload(latest)
     }
@@ -129,6 +129,18 @@ extension DownloadManager {
 
     /// A torrent the engine never loaded (paused at launch) has no handle to delete through, and its folder
     /// is not ours to `rm -r` by name — say so rather than claim it went.
+    /// The torrent engine trashes synchronously inside `remove`, but its failure travels as a `.failed` event to a
+    /// consumer the removal just cancelled. So look: a payload still at `savePath` means the Trash refused it.
+    private func reportLoadedTorrent(_ task: DownloadTask) async -> RemovalOutcome {
+        let path = task.savePath
+        guard Self.isSweepable(task),
+              await Task.detached(priority: .utility, operation: { FileManager().fileExists(atPath: path) }).value
+        else { return .handledByEngine }
+        postNotice(L10n.t("Removed “%@” from the list, but its files are still on disk.", task.name),
+                   taskID: task.id)
+        return .keptOnDisk(reason: L10n.t("The files couldn’t be moved to the Trash."))
+    }
+
     private func reportUnloadedTorrent(_ task: DownloadTask) async -> RemovalOutcome {
         let path = task.savePath
         guard Self.isSweepable(task),

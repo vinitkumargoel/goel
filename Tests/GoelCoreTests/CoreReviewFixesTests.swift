@@ -225,6 +225,21 @@ final class CoreReviewFixesTests: XCTestCase {
         XCTAssertNil(unknown)
     }
 
+    func testALoadedTorrentWhosePayloadSurvivesIsReportedKeptOnDisk() async {
+        let torrent = DeleteFlagEngine(kind: .torrent)
+        let m = manager(torrent: torrent)
+        let dir = makeTempDir()
+        let magnet = await m.add(source: .magnet("magnet:?xt=urn:btih:\(String(repeating: "c", count: 40))"),
+                                 saveDirectory: dir)
+        await waitUntil { torrent.added.contains(magnet.id) }
+        touch(magnet.savePath)
+
+        let outcome = await m.removeAndReport(magnet.id, deleteData: true)
+        guard case .keptOnDisk = outcome else { return XCTFail("expected keptOnDisk, got \(String(describing: outcome))") }
+        let notices = await m.takeNotices()
+        XCTAssertEqual(notices.count, 1)
+    }
+
     // MARK: 2 — reinsert (undo)
 
     func testReinsertBringsRowsBackWithTheirStateAndNeverDuplicates() async throws {

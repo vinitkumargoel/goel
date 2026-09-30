@@ -23,9 +23,10 @@
   validation for its PyInstaller-frozen Python. Those live in YtDlp.entitlements
   and are applied to that one binary only — never add them here.
 
-  Check a signed build with:
-    codesign -d --entitlements - "dist/Goel°.app"
-    codesign -d --entitlements - "dist/Goel°.app/Contents/Resources/yt-dlp"
+  Check a signed build by passing codesign's display flag plus its
+  entitlements flag (value "-") for dist/Goel°.app and for
+  Contents/Resources/yt-dlp; build_app.sh runs that check itself. (A double
+  hyphen is illegal inside an XML comment, and AMFI's parser rejects it.)
 -->
 <plist version="1.0">
 <dict>
