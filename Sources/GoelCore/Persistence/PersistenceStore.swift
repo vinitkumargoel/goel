@@ -22,6 +22,13 @@ public final class PersistenceStore: @unchecked Sendable {
         try Self.migrator.migrate(dbQueue)
     }
 
+    /// The file itself is damaged or isn't SQLite. Only then is moving it aside the cure — never for
+    /// "locked by another copy" or "written by a newer version", where it would bury a good queue.
+    public static func isCorruption(_ error: Error) -> Bool {
+        guard let error = error as? DatabaseError else { return false }
+        return error.resultCode == .SQLITE_CORRUPT || error.resultCode == .SQLITE_NOTADB
+    }
+
     public init() throws {
         self.dbQueue = try DatabaseQueue()
         self.encoder = Self.makeEncoder()

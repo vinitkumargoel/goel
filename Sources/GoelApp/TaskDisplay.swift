@@ -105,6 +105,10 @@ extension DownloadTask {
     /// order and the 12/24-hour clock all follow the locale instead of a fixed English pattern.
     var addedString: String { Self.addedString(for: addedAt) }
 
+    /// The list's 104-pt column: "Yesterday at 11:45 PM" doesn't fit, so today is a time and
+    /// anything older a short date. The detail panel and the tooltip keep the full form.
+    var addedColumnString: String { DisplayFormat.compactDateTime(addedAt, locale: DisplayFormat.appLocale) }
+
     static func addedString(for date: Date, locale: Locale = DisplayFormat.appLocale) -> String {
         DisplayFormat.relativeDateTime(date, locale: locale)
     }

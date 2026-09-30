@@ -67,7 +67,7 @@ struct DownloadListView: View {
         // this view mounts after the window's first-appearance focus pass has already run.
         .task { listFocused = true }
         .onKeyPress { press in handleKey(press) }
-        // Delete removes from the list (undoable); ⌘⌫ in the menu is the one that trashes files.
+        // Delete removes from the list (undoable); ⌘⌫ (see `handleKey`) is the one that trashes files.
         .onDeleteCommand { vm.removeSelected(deleteData: false) }
         .accessibilityLabel(L10n.t("Download queue"))
         .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, shift with an arrow to extend the selection, command A to select all, space to preview, return to open."))
@@ -92,6 +92,11 @@ struct DownloadListView: View {
         case .escape:
             guard !vm.selection.isEmpty else { return .ignored }
             vm.selectNone()
+            return .handled
+        case .delete where press.modifiers.contains(.command):
+            // Here, not as a menu key equivalent: only the focused list may claim ⌘⌫.
+            guard vm.selectedTasks.contains(where: { $0.status.hasData }) else { return .ignored }
+            vm.confirmMoveSelectionToTrash()
             return .handled
         default:
             // The Edit menu owns ⌘A; this is the fallback for when the list, not a text field,
@@ -190,10 +195,15 @@ struct DownloadRow: View, Equatable {
             && lhs.vm === rhs.vm
     }
 
-    /// App-wide values the context menu reads, captured once per list body instead of per row.
+    /// App-wide values the row reads, captured once per list body instead of per row. The theme,
+    /// language and day are ambient (``ThemePalette/current``, `L10n.currentLanguage`, "today"):
+    /// without them here an unchanged row kept its old colours, words or "Today" label.
     struct Context: Equatable {
         var streamLinkPrefix: String?
         var profileSeedRatio: Double
+        var themeID = ThemePalette.current.rawValue
+        var language = L10n.currentLanguage
+        var day = Calendar.current.startOfDay(for: Date())
 
         @MainActor
         init(vm: AppViewModel) {
@@ -257,10 +267,11 @@ struct DownloadRow: View, Equatable {
             .frame(width: 130, alignment: .leading)
             .padding(.horizontal, 6)
 
-            Text(task.addedString)
+            Text(task.addedColumnString)
                 .scaledFont(size: 11.5)
                 .lineLimit(1)
                 .foregroundStyle(.secondary)
+                .help(task.addedString)
                 .frame(width: 104, alignment: .leading)
                 .padding(.horizontal, 6)
 

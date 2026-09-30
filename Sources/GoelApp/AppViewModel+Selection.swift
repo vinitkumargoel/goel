@@ -104,7 +104,7 @@ extension AppViewModel {
         }
     }
 
-    /// ⌘⌫ from the menu: the same confirmation the context menu shows, never a silent delete.
+    /// ⌘⌫ in the list, or the menu item: the same confirmation the context menu shows, never a silent delete.
     func confirmMoveSelectionToTrash() {
         let targets = selectedTasks
         guard let first = targets.first else { return }

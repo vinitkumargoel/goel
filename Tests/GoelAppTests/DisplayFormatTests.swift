@@ -64,6 +64,18 @@ final class DisplayFormatTests: XCTestCase {
         XCTAssertTrue(text.contains("09:05"), text)
     }
 
+    /// The list column is 104 pt: "Yesterday at 11:45 PM" was cut to "Yesterday at 1…".
+    func testTheListColumnIsCompact() {
+        let now = todayAt(hour: 15, minute: 0)
+        let today = todayAt(hour: 14, minute: 3)
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: todayAt(hour: 23, minute: 45))!
+        XCTAssertEqual(DisplayFormat.compactDateTime(today, locale: british, now: now), "14:03")
+        let older = DisplayFormat.compactDateTime(yesterday, locale: english, now: now)
+        XCTAssertFalse(older.contains("Yesterday"))
+        XCTAssertFalse(older.contains("11:45"), "a short date, no time")
+        XCTAssertLessThanOrEqual(older.count, 10, older)
+    }
+
     // MARK: Enum titles
 
     func testSortKeyTitlesAreHumanNotRawValues() {

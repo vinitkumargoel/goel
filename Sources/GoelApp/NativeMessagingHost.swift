@@ -184,6 +184,7 @@ enum BrowserSpool {
     /// Unparseable files are moved to `rejected/` and logged instead of vanishing.
     static func pendingCaptures(in directory: URL = directory, now: Date = Date()) -> [SpooledCapture] {
         let fm = FileManager.default
+        sweepRejected(in: directory, now: now)
         guard let files = try? fm.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.creationDateKey]) else { return [] }
         let ordered = files
@@ -230,19 +231,56 @@ enum BrowserSpool {
         }
     }
 
+    /// Parked files are for a look, not an archive: they go once this old.
+    static let rejectedMaxAge: TimeInterval = 24 * 60 * 60
+
+    /// Parked with its credentials stripped: a refused capture must not keep a live cookie or
+    /// login on disk for as long as nobody looks at `rejected/`.
     static func reject(_ file: URL, in directory: URL = directory, reason: String) {
         let fm = FileManager.default
         let parked = rejectedDirectory(in: directory)
         GoelLog.app.error("Rejected a browser capture", .detail(reason))
+        let kept = redactedForParking((try? Data(contentsOf: file)) ?? Data(), reason: reason)
         do {
             try fm.createDirectory(at: parked, withIntermediateDirectories: true,
                                    attributes: [.posixPermissions: 0o700])
             let target = parked.appendingPathComponent(file.lastPathComponent)
-            try? fm.removeItem(at: target)
-            try fm.moveItem(at: file, to: target)
+            try kept.write(to: target, options: .atomic)
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
         } catch {
-            // Parking failed; deleting beats re-reading a broken file on every drain.
-            acknowledge(file)
+            GoelLog.app.error("Couldn't park a rejected browser capture", .detail(error.localizedDescription))
+        }
+        // The original, with whatever credentials it carried, goes either way.
+        acknowledge(file)
+    }
+
+    /// Unparseable bytes can't be vetted for a cookie, so only their size is kept.
+    static func redactedForParking(_ data: Data, reason: String) -> Data {
+        var object: [String: Any]
+        if let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            object = parsed.filter { !isCredentialField($0.key) }
+        } else {
+            object = ["unparseableBytes": data.count]
+        }
+        object["rejectedReason"] = reason
+        return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
+    }
+
+    static func isCredentialField(_ key: String) -> Bool {
+        let lowered = key.lowercased()
+        return ["cookie", "authorization", "header", "token", "password"].contains { lowered.contains($0) }
+    }
+
+    /// Run at drain time: nothing else ever reads `rejected/`.
+    static func sweepRejected(in directory: URL = directory, now: Date = Date()) {
+        let fm = FileManager.default
+        let parked = rejectedDirectory(in: directory)
+        guard let files = try? fm.contentsOfDirectory(
+            at: parked, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        for file in files {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate) ?? .distantPast
+            if now.timeIntervalSince(modified) > rejectedMaxAge { try? fm.removeItem(at: file) }
         }
     }
 }

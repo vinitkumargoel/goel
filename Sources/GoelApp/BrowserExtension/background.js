@@ -200,6 +200,12 @@ function sendToApp(url, referrer, cookie, caveat) {
       hint('!', RED, 'can’t reach the app. Open Goel° ▸ Settings ▸ Browser and click Install Helper.');
       return;
     }
+    // `queued`: the capture is safely spooled but the app couldn't be woken; it drains on the next
+    // launch. That's a delivered link, not a refused one.
+    if (response && response.ok !== true && response.queued === true) {
+      hint('✓', BLUE, 'queued — it will be added when Goel° next opens.', SUCCESS_MS);
+      return;
+    }
     if (!response || response.ok !== true) {
       // Never echo `response.error` into the tooltip: it is host-controlled text.
       hint('!', RED, 'the app couldn’t accept that link — it isn’t a supported download URL.');

@@ -2,8 +2,9 @@ import Foundation
 import GoelCore
 
 /// `https://user:pass@host/file` — the parser strips the userinfo so it never reaches the task
-/// database, exports or the portal. The secret is moved to the Keychain's per-host logins
-/// instead, which the HTTP engine already sends (over TLS only) as `Authorization: Basic`.
+/// database, exports or the portal. Finding it is done here; saving it to the Keychain's per-host
+/// logins is the manager's (``DownloadManager/adoptInlineCredentials(_:replaceExisting:)``), at
+/// the moment the user commits to the download.
 enum InlineCredentials {
 
     struct Found: Equatable {
@@ -11,20 +12,6 @@ enum InlineCredentials {
         var username: String
         var password: String
         var isTLS: Bool
-    }
-
-    /// Where the link came from decides whether it may replace a login the user already saved.
-    enum Policy {
-        /// Typed, pasted, dropped or accepted by the user: their latest word wins.
-        case replace
-        /// Arrived from a page through the browser extension: never overwrite a saved login.
-        case keepExisting
-    }
-
-    enum Outcome: Equatable {
-        case stored(host: String, isTLS: Bool)
-        case keptExisting(host: String)
-        case failed(host: String)
     }
 
     static func find(in line: String) -> Found? {
@@ -57,23 +44,19 @@ enum InlineCredentials {
                      isTLS: isTLS)
     }
 
-    @discardableResult
-    static func adopt(_ found: Found, into store: any CredentialManaging, policy: Policy) -> Outcome {
-        switch store.lookupCredential(forHost: found.host) {
-        case .found(let user, let password):
-            if user == found.username, password == found.password {
-                return .stored(host: found.host, isTLS: found.isTLS)
-            }
-            if policy == .keepExisting { return .keptExisting(host: found.host) }
-        case .denied, .failed:
-            // An unreadable Keychain entry is not "nothing saved": don't write over what may be there.
-            if policy == .keepExisting { return .keptExisting(host: found.host) }
-        case .notFound:
-            break
-        }
-        return store.storeCredential(username: found.username, password: found.password,
-                                     host: found.host).didStore
-            ? .stored(host: found.host, isTLS: found.isTLS)
-            : .failed(host: found.host)
+    /// The lines that carry a login, for ``DownloadManager/adoptInlineCredentials(_:replaceExisting:)``.
+    static func linesWithLogins(in rawLines: String) -> [String] {
+        rawLines.split(separator: "\n").map(String.init).filter { find(in: $0) != nil }
+    }
+
+    /// Rebuilds `scheme://user:pass@host/…` from a browser capture's decoded `Authorization`, so it goes
+    /// through the same adoption (HTTPS only, never over an existing login) as a typed link.
+    static func line(for url: URL, authorization: String) -> String? {
+        guard let host = url.host?.lowercased(),
+              let found = decode(authorization: authorization, host: host, isTLS: url.scheme?.lowercased() == "https"),
+              var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        comps.user = found.username
+        comps.password = found.password
+        return comps.string
     }
 }

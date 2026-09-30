@@ -38,6 +38,8 @@ struct MenuBarView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            // The window's blocking card is invisible in menu-bar-only mode, yet the countdown still fires.
+            MenuBarCountdownSection(countdown: vm.autoShutdownCountdown)
             if listedTasks.isEmpty && activeTransfers.isEmpty && vm.mediaLiveCount == 0 {
                 emptyState
             } else {
@@ -184,16 +186,38 @@ struct MenuBarView: View {
         if activeTasks.isEmpty { vm.resumeAll() } else { vm.pauseAll() }
     }
 
-    /// The `Settings` window is also `canBecomeMain`, so it must be excluded or it gets raised instead.
     private func activateMainWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        let settingsID = NSUserInterfaceItemIdentifier("com_apple_SwiftUI_Settings_window")
-        if let window = NSApp.windows.first(where: { $0.canBecomeMain && $0.identifier != settingsID }) {
-            window.makeKeyAndOrderFront(nil)
-        } else {
-            // The app keeps running in the menu bar after the last window closes, so there is
-            // often nothing to raise — only SwiftUI can build a replacement.
-            openWindow(id: MainWindowID.value)
+        MainWindowPresenter.register { openWindow(id: MainWindowID.value) }
+        MainWindowPresenter.activate()
+    }
+}
+
+/// The auto quit/sleep/shutdown countdown, with the same Cancel and "do it now" as the window's card.
+private struct MenuBarCountdownSection: View {
+    @ObservedObject var countdown: AutoShutdownCountdown
+
+    var body: some View {
+        if case .counting(let intent, let remaining) = countdown.phase {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(AutoShutdownCountdown.title(for: intent))
+                    .scaledFont(size: 12, weight: .semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(AutoShutdownCountdown.message(remaining: remaining))
+                    .scaledFont(size: 11, monospacedDigit: true)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Button(L10n.t("Cancel"), role: .cancel) { countdown.cancel() }
+                        .keyboardShortcut(.defaultAction)
+                    Button(AutoShutdownCountdown.actionTitle(for: intent)) { countdown.performNow() }
+                }
+                .controlSize(.small)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Theme.orange.opacity(0.12))
+            .accessibilityElement(children: .contain)
+            Divider()
         }
     }
 }
@@ -339,6 +363,8 @@ struct MenuBarSpeedLabel: View {
     var body: some View {
         // `.equatable()` gates the image-allocating redraw to real changes of the 2 Hz read-out.
         SpeedContent(sample: telemetry.displayedCombinedSpeed).equatable()
+            // Always alive while the menu-bar item shows, so a banner click can build a window.
+            .registersMainWindowOpener()
     }
 
     private struct SpeedContent: View, Equatable {

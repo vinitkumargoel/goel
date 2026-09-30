@@ -60,8 +60,12 @@ final class AppViewModel: ObservableObject {
                 L10n.currentLanguage = settings.language
             }
             if settings.autoShutdown != oldValue.autoShutdown { refreshCommandState() }
+            appearance.apply(settings)
         }
     }
+
+    /// What the `App` scenes observe instead of this model.
+    let appearance = AppAppearance()
 
     /// Memoized on purpose — as a computed property this re-sorts on every SwiftUI `body` pass.
     @Published private(set) var visibleTasks: [DownloadTask] = []
@@ -173,16 +177,8 @@ final class AppViewModel: ObservableObject {
     /// Set by the main window so "Remove from List" lands on Edit ▸ Undo.
     weak var undoManager: UndoManager?
 
-    /// Rows removed from the list but not yet from the queue: Undo brings them back untouched
-    /// (same id, resume data and status) until the grace period commits the removal.
-    var pendingRemovals: [UUID: PendingRemoval] = [:]
-    var pendingRemovalIDs: Set<DownloadTask.ID> = []
-
     /// Browser captures being handed to the manager right now; a second drain must skip them.
     var spoolFilesInFlight: Set<URL> = []
-
-    /// Where `https://user:pass@…` logins go (the per-host Keychain logins the engine sends).
-    let credentialStore: any CredentialManaging
 
     /// Labels refresh at this rate; history rings take every other tick to hold their time span.
     private static let speedRefreshNanos: UInt64 = 500_000_000
@@ -293,13 +289,23 @@ final class AppViewModel: ObservableObject {
     private var lastClipboardHandled: String?
 
     private var hasAutoSelected = false
+    private var hasConsumedFirstSnapshot = false
 
     private var reducerState = ReducerState()
 
     /// The one-minute grace before an automatic quit, sleep or shutdown.
-    private(set) lazy var autoShutdownCountdown = AutoShutdownCountdown { [weak self] intent in
-        self?.system.perform(intent)
-    }
+    private(set) lazy var autoShutdownCountdown: AutoShutdownCountdown = {
+        let countdown = AutoShutdownCountdown { [weak self] intent in self?.system.perform(intent) }
+        countdown.onBegin = { intent in
+            NotificationService.notifyAutoShutdown(
+                title: AutoShutdownCountdown.title(for: intent),
+                body: AutoShutdownCountdown.message(remaining: AutoShutdownCountdown.defaultSeconds))
+            // The blocking card lives in the main window: bring one up so it can be seen and cancelled.
+            MainWindowPresenter.activate()
+        }
+        countdown.onEnd = { NotificationService.retractAutoShutdown() }
+        return countdown
+    }()
 
     /// The database couldn't be opened; the banner offers to move it aside.
     @Published var databaseRecovery: DatabaseRecovery?
@@ -318,14 +324,13 @@ final class AppViewModel: ObservableObject {
     /// Weak: scripting must never keep a discarded view model alive.
     static private(set) weak var shared: AppViewModel?
 
-    init(system: SystemActions = LiveSystemActions(),
-         credentialStore: any CredentialManaging = KeychainCredentialStore()) {
+    init(system: SystemActions = LiveSystemActions()) {
         let opened = Self.makeStore()
         self.manager = DownloadManager(store: opened.store)
         self.persistenceWarning = opened.warning
         self.databaseRecovery = opened.recovery
+        self.isStoreEphemeral = opened.isEphemeral
         self.system = system
-        self.credentialStore = credentialStore
         Self.shared = self
     }
 
@@ -333,13 +338,19 @@ final class AppViewModel: ObservableObject {
         var store: PersistenceStore?
         var warning: String?
         var recovery: DatabaseRecovery?
+        /// Nothing added this session survives a relaunch (a temporary store, or none at all).
+        var isEphemeral: Bool { warning != nil }
     }
+
+    /// The queue isn't being saved to disk: its banner can't be dismissed, so running without
+    /// persistence is never silent.
+    let isStoreEphemeral: Bool
 
     private static func makeStore() -> OpenedStore {
         let fm = FileManager.default
         guard let dir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return OpenedStore(store: try? PersistenceStore(),
-                               warning: L10n.t("Using temporary storage — downloads won’t survive relaunch."))
+            GoelLog.persistence.error("No Application Support folder for the download database")
+            return temporaryStore(reason: L10n.t("no Application Support folder"), recovery: nil)
         }
         let appDir = dir.appendingPathComponent("GoelDownloader", isDirectory: true)
         let path = appDir.appendingPathComponent("queue.sqlite").path
@@ -349,20 +360,24 @@ final class AppViewModel: ObservableObject {
         } catch {
             // The reason is what tells "locked by another copy" from "corrupt" from "newer version".
             GoelLog.persistence.error("Couldn't open the download database", .detail(String(describing: error)))
-            let fallback: PersistenceStore?
-            do {
-                fallback = try PersistenceStore()
-            } catch let fallbackError {
-                GoelLog.persistence.error("Couldn't open even a temporary database",
-                                          .detail(String(describing: fallbackError)))
-                fallback = nil
-            }
             let reason = error.localizedDescription
-            let warning = fallback == nil
-                ? L10n.t("Couldn’t open the database (%@) — nothing you add will be saved.", reason)
-                : L10n.t("Couldn’t open the database (%@) — downloads won’t survive relaunch.", reason)
-            return OpenedStore(store: fallback, warning: warning,
-                               recovery: DatabaseRecovery(path: path, reason: reason))
+            // Moving the file aside fixes a damaged database only; for "locked" or "newer version"
+            // it would hide the user's queue behind an empty one.
+            let recovery = PersistenceStore.isCorruption(error) ? DatabaseRecovery(path: path, reason: reason) : nil
+            return temporaryStore(reason: reason, recovery: recovery)
+        }
+    }
+
+    private static func temporaryStore(reason: String, recovery: DatabaseRecovery?) -> OpenedStore {
+        do {
+            return OpenedStore(store: try PersistenceStore(),
+                               warning: L10n.t("Couldn’t open the database (%@) — downloads won’t survive relaunch.", reason),
+                               recovery: recovery)
+        } catch {
+            GoelLog.persistence.error("Couldn't open even a temporary database", .detail(String(describing: error)))
+            return OpenedStore(store: nil,
+                               warning: L10n.t("Couldn’t open the database (%@) — nothing you add will be saved.", reason),
+                               recovery: recovery)
         }
     }
 
@@ -376,7 +391,6 @@ final class AppViewModel: ObservableObject {
         ActiveWorkGate.shared.menuBarVisible = settings.menuBarExtraEnabled
         startConsuming(stream)
         syncMediaJobCenter()
-        installNotificationHandlers()
         loadServersInBackground()
         loadPersistedSpeedHistory(await manager.loadSpeedHistory())
         let monitor = ClipboardMonitor(isEnabled: settings.clipboardMonitorEnabled) { [weak self] text in
@@ -485,8 +499,7 @@ final class AppViewModel: ObservableObject {
 
     private func consume(_ snapshot: [DownloadTask]) {
         // Snapshots arrive only on change, so comparing the whole array first was pure cost.
-        tasks = pendingRemovalIDs.isEmpty
-            ? snapshot : snapshot.filter { !pendingRemovalIDs.contains($0.id) }
+        tasks = snapshot
         recomputeVisible()
         // Exactly once at launch, so "Select none" sticks instead of snapping back.
         if primarySelection == nil && !hasAutoSelected, let first = visibleTasks.first?.id {
@@ -494,6 +507,10 @@ final class AppViewModel: ObservableObject {
             primarySelection = first
             selection = [first]
             selectionAnchor = first
+        }
+        if !hasConsumedFirstSnapshot {
+            hasConsumedFirstSnapshot = true
+            installNotificationHandlers()
         }
         pump(snapshot)
         fileProgress.update(with: tasks) { [weak self] id in
@@ -544,11 +561,9 @@ final class AppViewModel: ObservableObject {
     var combinedDownloadSpeed: Double { totalDownloadSpeed + sftpDownloadSpeed }
     var combinedUploadSpeed: Double { totalUploadSpeed + sftpUploadSpeed }
 
-    var preferredColorScheme: ColorScheme? { theme.colorScheme }
 
     func add(rawLines: String, saveDirectory: String?, priority: FilePriority,
              expectedChecksum: Checksum? = nil) {
-        adoptInlineCredentials(in: rawLines, policy: .replace)
         var sources = InboundAdd.parseSources(from: rawLines)
         let metalinks = sources.filter(Self.isMetalink)
         sources.removeAll(where: Self.isMetalink)
@@ -572,10 +587,11 @@ final class AppViewModel: ObservableObject {
         }
         // Never apply one checksum to every download in a batch.
         let checksum = fresh.count == 1 ? expectedChecksum : nil
-        let reAdded = Set(fresh.map(\.dedupKey))
+        let loginLines = InlineCredentials.linesWithLogins(in: rawLines)
+        let manager = self.manager
         Task {
-            // A row still inside its Undo window would swallow the add as a duplicate.
-            await commitPendingRemovals(matching: reAdded)
+            // Before the adds: the engine looks the login up when the download starts.
+            for line in loginLines { await manager.adoptInlineCredentials(line, replaceExisting: true) }
             for source in fresh {
                 await manager.add(source: source, saveDirectory: saveDirectory,
                                   priority: priority, expectedChecksum: checksum)
@@ -636,7 +652,7 @@ final class AppViewModel: ObservableObject {
                                    : L10n.t("Metalink contents already in your list"))
                 filter = .all
             } catch {
-                toastNow(L10n.t("Couldn’t load the metalink file: %@", String(describing: error)),
+                toastNow(L10n.t("Couldn’t load the metalink file: %@", Self.fetchFailureMessage(error)),
                          isError: true)
             }
         }
@@ -647,8 +663,7 @@ final class AppViewModel: ObservableObject {
     }
 
     func resolveMetadata(for line: String, saveDirectory: String?) async -> DownloadPreview? {
-        // Before the probe: a login-protected file answers 401 to a probe without its login.
-        adoptInlineCredentials(in: line, policy: .replace, announce: false)
+        // No login is saved here: the user may still cancel. ``confirm`` adopts it.
         guard let source = Self.parseSource(line) else { return nil }
         return await manager.resolveMetadata(for: source, saveDirectory: saveDirectory)
     }
@@ -657,7 +672,7 @@ final class AppViewModel: ObservableObject {
                  priority: FilePriority, checksum: Checksum?, startAt: Date? = nil,
                  mirrors: [String]? = nil, deselectedFileIDs: [Int]? = nil,
                  cookieHeader: String? = nil, cookieSource: CookieSource? = nil,
-                 cookieHost: String? = nil) {
+                 cookieHost: String? = nil, inlineLoginLine: String? = nil) {
         guard existingDuplicate(of: preview.source) == nil else {
             toastNow(L10n.t("Already in your list"))
             filter = .all
@@ -670,7 +685,13 @@ final class AppViewModel: ObservableObject {
         // Torrents seed only the name: size/files must come from libtorrent's own handle.
         let seededBytes = preview.kind == .torrent ? nil : preview.totalBytes
         let seededFiles = preview.kind == .torrent ? [] : preview.files
+        // Only the line the user confirmed, and only now: the parsed preview carries no login.
+        let loginLine = inlineLoginLine.flatMap { InlineCredentials.find(in: $0) == nil ? nil : $0 }
         Task {
+            // A plain-http login is refused with a notice from the manager; nil means it wasn't a link.
+            if let loginLine, await manager.adoptInlineCredentials(loginLine, replaceExisting: true) == nil {
+                toastNow(L10n.t("That link isn’t valid."), isError: true)
+            }
             await manager.add(source: source, saveDirectory: saveDirectory,
                               priority: priority, expectedChecksum: checksum,
                               scheduledAt: startAt, mirrors: mirrors,
@@ -764,18 +785,16 @@ final class AppViewModel: ObservableObject {
                     let verdict = await BrowserCaptureScreen.verdict(target, portalPort: portalPort,
                                                                      resolvedByProxy: proxyResolves)
                     if case .refused(let why) = verdict {
-                        GoelLog.app.error("Refused a browser capture", .detail(why))
                         toastNow(L10n.t("Refused a link from the browser — it points at this Mac’s own services or a link-local address"),
                                  isError: true)
-                        BrowserSpool.acknowledge(spooled.file)
+                        BrowserSpool.reject(spooled.file, reason: why)
                         return
                     }
                 }
-                if let authorization = capture.authorization, let host = source.fetchTargetURL?.host,
-                   let found = InlineCredentials.decode(authorization: authorization, host: host.lowercased(),
-                                                        isTLS: source.fetchTargetURL?.scheme?.lowercased() == "https") {
+                if let authorization = capture.authorization, let target = source.fetchTargetURL,
+                   let line = InlineCredentials.line(for: target, authorization: authorization) {
                     // A page can put any userinfo in a link: it may add a login, never replace one.
-                    InlineCredentials.adopt(found, into: credentialStore, policy: .keepExisting)
+                    await manager.adoptInlineCredentials(line, replaceExisting: false)
                 }
                 let task = await manager.add(source: source, priority: .normal,
                                              cookieHeader: capture.cookieHeader,
@@ -799,70 +818,12 @@ final class AppViewModel: ObservableObject {
     /// here, where the terminate reply is still being held back, not from that observer.
     func shutdownCore() async {
         persistSpeedHistory()
-        // Rows still inside their Undo window leave for good now, not resurrect next launch.
-        await commitAllPendingRemovals()
         // Includes the engines' own shutdown (torrent resume data), bounded by the manager's deadline.
         await manager.shutdown()
     }
 
     func pause(_ id: DownloadTask.ID) { Task { await manager.pause(id) } }
     func resume(_ id: DownloadTask.ID) { Task { await manager.resume(id) } }
-    func remove(_ id: DownloadTask.ID, deleteData: Bool) {
-        guard deleteData else { return removeFromList([id]) }
-        let name = tasks.first { $0.id == id }?.name
-        // Must run BEFORE the snapshot drops the task, or selection lands on the raw-first row.
-        let nextPrimary = visibleNeighbor(after: id)
-        let savePath = tasks.first { $0.id == id }?.savePath
-        selection.remove(id)
-        if primarySelection == id { primarySelection = nextPrimary }
-        if selectionAnchor == id { selectionAnchor = nextPrimary }
-        Task {
-            await manager.remove(id, deleteData: true)
-            // Claiming the delete before it happened is how a file the engine could not remove
-            // still produced a "Deleted files" toast.
-            if let savePath, FileManager.default.fileExists(atPath: savePath) {
-                toastNow(name.map { L10n.t("Removed “%@” from the list, but its file is still on disk", $0) }
-                            ?? L10n.t("Removed from the list, but the file is still on disk"),
-                         isError: true)
-            } else {
-                toastNow(name.map { L10n.t("Moved “%@” to the Trash", $0) }
-                            ?? L10n.t("Moved the file to the Trash"))
-            }
-        }
-    }
-
-    /// Batch sibling of `remove`: the whole batch reports once, not one toast per task.
-    func removeSelected(deleteData: Bool) {
-        let targets = selectedTasks
-        guard deleteData else { return removeFromList(targets.map(\.id)) }
-        guard targets.count > 1 else {
-            if let only = targets.first { remove(only.id, deleteData: deleteData) }
-            return
-        }
-        let ids = targets.map(\.id)
-        let doomed = Set(ids)
-        let paths = targets.map(\.savePath)
-        // Must run BEFORE the snapshot drops them, same as the single-task path.
-        let nextPrimary = visibleTasks.first { !doomed.contains($0.id) }?.id
-        selection.subtract(doomed)
-        if let primary = primarySelection, doomed.contains(primary) { primarySelection = nextPrimary }
-        if let anchor = selectionAnchor, doomed.contains(anchor) { selectionAnchor = nextPrimary }
-        Task {
-            for id in ids { await manager.remove(id, deleteData: true) }
-            // Off the main actor: select-all-then-delete is one `stat` per row, and this runs
-            // on the actor that also draws the window.
-            let stranded = await Task.detached {
-                paths.filter { FileManager.default.fileExists(atPath: $0) }.count
-            }.value
-            guard stranded == 0 else {
-                return toastNow(L10n.t("Removed %1$d downloads, but %2$d of their files are still on disk",
-                                       ids.count, stranded),
-                                isError: true)
-            }
-            toastNow(L10n.t("Moved the files of %d downloads to the Trash", ids.count))
-        }
-    }
-
     func retry(_ id: DownloadTask.ID) {
         // Failed tasks need this path: resume() ignores anything not paused.
         Task { await manager.retry(id) }
@@ -870,13 +831,13 @@ final class AppViewModel: ObservableObject {
 
     /// Only claims success when there was something to act on.
     func pauseAll() {
-        guard commandState.snapshot.hasPausable else { return toastNow(L10n.t("Nothing to pause")) }
+        guard commandState.snapshot.hasPausable else { toastNow(L10n.t("Nothing to pause")); return }
         Task { await manager.pauseAll() }
         toastNow(L10n.t("Paused all downloads"))
     }
 
     func resumeAll() {
-        guard commandState.snapshot.hasResumable else { return toastNow(L10n.t("Nothing to resume")) }
+        guard commandState.snapshot.hasResumable else { toastNow(L10n.t("Nothing to resume")); return }
         Task { await manager.resumeAll() }
         toastNow(L10n.t("Resumed all downloads"))
     }
@@ -1501,7 +1462,7 @@ final class AppViewModel: ObservableObject {
                 default: failed += 1
                 }
             }
-            await MainActor.run {
+            _ = await MainActor.run {
                 if failed == 0 {
                     toastNow(renamed == 1 ? L10n.t("Renamed %d download", renamed)
                                           : L10n.t("Renamed %d downloads", renamed))
@@ -1618,7 +1579,7 @@ final class AppViewModel: ObservableObject {
         let manager = self.manager
         Task {
             guard let url = await manager.auditLogDirectory() else {
-                await MainActor.run { self.toastNow(L10n.t("Audit log is off — nothing written yet")) }
+                _ = await MainActor.run { self.toastNow(L10n.t("Audit log is off — nothing written yet")) }
                 return
             }
             _ = await MainActor.run { NSWorkspace.shared.open(url) }
@@ -1706,7 +1667,8 @@ final class AppViewModel: ObservableObject {
     }
 
     /// Queued, never overwriting: see ``ToastQueue``.
-    func toastNow(_ message: String, isError: Bool = false, action: Toast.Action? = nil) {
+    @discardableResult
+    func toastNow(_ message: String, isError: Bool = false, action: Toast.Action? = nil) -> Toast.ID? {
         toasts.show(message, isError: isError, action: action)
     }
 }

@@ -403,7 +403,6 @@
 "Couldn’t read “%@” — nothing was uploaded." = "Couldn’t read “%@” — nothing was uploaded.";
 "Couldn’t rename “%@”" = "Couldn’t rename “%@”";
 "Couldn’t rename: %@" = "Couldn’t rename: %@";
-"Couldn’t save the login for %@ to your Keychain" = "Couldn’t save the login for %@ to your Keychain";
 "Couldn’t save the login for %@ — the server may refuse the download." = "Couldn’t save the login for %@ — the server may refuse the download.";
 "Couldn’t save your servers to disk: %@" = "Couldn’t save your servers to disk: %@";
 "Couldn’t shut this Mac down" = "Couldn’t shut this Mac down";
@@ -830,7 +829,6 @@
 "Move to Trash" = "Move to Trash";
 "Move to Trash…" = "Move to Trash…";
 "Move “%@” to the Trash?" = "Move “%@” to the Trash?";
-"Moved the file to the Trash" = "Moved the file to the Trash";
 "Moved the files of %d downloads to the Trash" = "Moved the files of %d downloads to the Trash";
 "Moved to “%@”" = "Moved to “%@”";
 "Moved “%@”" = "Moved “%@”";
@@ -1068,8 +1066,8 @@
 "Quit" = "Quit";
 "Quit Goel°" = "Quit Goel°";
 "Quit Now" = "Quit Now";
-"Quitting now stops it. Unfinished downloads are kept and can be resumed next launch; a conversion in progress is cancelled and its partial file removed." = "Quitting now stops it. Unfinished downloads are kept and can be resumed next launch; a conversion in progress is cancelled and its partial file removed.";
-"Quitting now stops them. Unfinished downloads are kept and can be resumed next launch." = "Quitting now stops them. Unfinished downloads are kept and can be resumed next launch.";
+"Quitting now stops it. Unfinished downloads are kept and pick up where they left off the next time you open Goel°; a conversion in progress is cancelled and its partial file removed." = "Quitting now stops it. Unfinished downloads are kept and pick up where they left off the next time you open Goel°; a conversion in progress is cancelled and its partial file removed.";
+"Quitting now stops them. They’re kept and pick up where they left off the next time you open Goel°." = "Quitting now stops them. They’re kept and pick up where they left off the next time you open Goel°.";
 "RSS 2.0 or Atom." = "RSS 2.0 or Atom.";
 "RSS Feeds" = "RSS Feeds";
 "Range support" = "Range support";
@@ -1115,11 +1113,10 @@
 "Remove the source file after completion." = "Remove the source file after completion.";
 "Remove “%@” from history" = "Remove “%@” from history";
 "Remove “%@”?" = "Remove “%@”?";
-"Removed %1$d downloads, but %2$d of their files are still on disk" = "Removed %1$d downloads, but %2$d of their files are still on disk";
+"Removed %d downloads" = "Removed %d downloads";
 "Removed %d downloads from the list" = "Removed %d downloads from the list";
-"Removed from the list, but the file is still on disk" = "Removed from the list, but the file is still on disk";
+"Removed “%@”" = "Removed “%@”";
 "Removed “%@” from the list" = "Removed “%@” from the list";
-"Removed “%@” from the list, but its file is still on disk" = "Removed “%@” from the list, but its file is still on disk";
 "Removed “%@” from the list, but its file is still on disk." = "Removed “%@” from the list, but its file is still on disk.";
 "Removed “%@” from the list. Its files weren’t loaded, so they were left on disk." = "Removed “%@” from the list. Its files weren’t loaded, so they were left on disk.";
 "Rename" = "Rename";
@@ -1152,7 +1149,9 @@
 "Resolved by yt-dlp — the stream URL may expire; start the download soon." = "Resolved by yt-dlp — the stream URL may expire; start the download soon.";
 "Resolving media formats" = "Resolving media formats";
 "Restored %d downloads" = "Restored %d downloads";
+"Restored %d downloads to the list — their files are still in the Trash" = "Restored %d downloads to the list — their files are still in the Trash";
 "Restored “%@”" = "Restored “%@”";
+"Restored “%@” to the list — its file is still in the Trash" = "Restored “%@” to the list — its file is still in the Trash";
 "Resumable" = "Resumable";
 "Resume" = "Resume";
 "Resume %@" = "Resume %@";
@@ -1197,7 +1196,6 @@
 "Save path" = "Save path";
 "Save path: %@" = "Save path: %@";
 "Save to" = "Save to";
-"Saved the login for %@, but Goel° only sends logins over HTTPS" = "Saved the login for %@, but Goel° only sends logins over HTTPS";
 "Saved — ignored reserved header: %@" = "Saved — ignored reserved header: %@";
 "Saved — ignored reserved headers: %@" = "Saved — ignored reserved headers: %@";
 "Scan finished files" = "Scan finished files";
@@ -1542,7 +1540,6 @@
 "Username" = "Username";
 "Using Goel° at work?" = "Using Goel° at work?";
 "Using all eligible" = "Using all eligible";
-"Using temporary storage — downloads won’t survive relaunch." = "Using temporary storage — downloads won’t survive relaunch.";
 "VPN policy blocks multi-path" = "VPN policy blocks multi-path";
 "Verify a checksum" = "Verify a checksum";
 "Verifying" = "Verifying";
@@ -1661,6 +1658,7 @@
 "macOS wouldn’t remove Goel° from your login items, so the setting has been turned back on. Try again in a moment, or remove it in System Settings ▸ General ▸ Login Items." = "macOS wouldn’t remove Goel° from your login items, so the setting has been turned back on. Try again in a moment, or remove it in System Settings ▸ General ▸ Login Items.";
 "megabytes" = "megabytes";
 "modified %@" = "modified %@";
+"no Application Support folder" = "no Application Support folder";
 "no progress for %@ · ffmpeg may be stuck" = "no progress for %@ · ffmpeg may be stuck";
 "no sound — merged with an audio track" = "no sound — merged with an audio track";
 "password" = "password";

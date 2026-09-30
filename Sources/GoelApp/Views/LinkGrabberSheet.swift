@@ -180,7 +180,7 @@ struct LinkGrabberSheet: View {
                 links = LinkExtractor.extract(from: html, baseURL: url)
                 if links.isEmpty { fetchError = L10n.t("No downloadable links found on that page.") }
             } catch {
-                fetchError = L10n.t("The page couldn’t be loaded: %@", String(describing: error))
+                fetchError = L10n.t("The page couldn’t be loaded: %@", AppViewModel.fetchFailureMessage(error))
             }
 
         }

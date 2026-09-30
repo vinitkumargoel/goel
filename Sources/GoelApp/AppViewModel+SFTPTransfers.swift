@@ -740,6 +740,7 @@ extension AppViewModel {
         sftpTransfers[i].state = state
         // Stops the inspector's elapsed clock; a resume clears it again via `resetProgress`.
         sftpTransfers[i].endedAt = Date()
+        if state == .finished { quarantineDownload(sftpTransfers[i]) }
     }
 
     func settleTransfer(_ id: UUID, error: Error) {

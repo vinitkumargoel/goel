@@ -643,7 +643,7 @@ struct AddDownloadSheet: View {
                    deselectedFileIDs: skip.isEmpty ? nil : skip,
                    cookieHeader: cookieHeaderToAttach,
                    cookieSource: cookieSource,
-                   cookieHost: previewHost(preview))
+                   cookieHost: previewHost(preview), inlineLoginLine: firstParseableLine())
         fetchSubtitlesIfWanted(for: preview)
         dismiss()
     }

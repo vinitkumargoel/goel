@@ -49,7 +49,55 @@ final class ToastQueueTests: XCTestCase {
         let error = Toast(message: "a", isError: true, action: nil)
         let undo = Toast(message: "a", isError: false, action: Toast.Action(title: "Undo") {})
         XCTAssertLessThan(plain.dwell, error.dwell)
-        XCTAssertGreaterThanOrEqual(undo.dwell, AppViewModel.removalUndoWindow)
+        XCTAssertGreaterThan(undo.dwell, error.dwell)
+    }
+
+    func testAnUndoShowsAtOnceInsteadOfQueueingBehindConfirmations() {
+        let queue = ToastQueue(autoAdvance: false)
+        queue.show("Added to queue")
+        queue.show("Copied")
+        queue.show("Removed “a”", action: Toast.Action(title: "Undo") {})
+        XCTAssertEqual(queue.current?.message, "Removed “a”")
+        XCTAssertFalse(queue.pending.contains { $0.message == "Added to queue" },
+                       "the displaced confirmation is dropped, not replayed after the Undo")
+    }
+
+    func testADisplacedErrorWaitsAtTheFront() {
+        let queue = ToastQueue(autoAdvance: false)
+        queue.show("boom", isError: true)
+        queue.show("Removed “a”", action: Toast.Action(title: "Undo") {})
+        XCTAssertEqual(queue.current?.message, "Removed “a”")
+        XCTAssertEqual(queue.pending.first?.message, "boom")
+    }
+
+    func testTrimmingNeverDropsAnUndoForInfoOrErrors() {
+        let queue = ToastQueue(autoAdvance: false)
+        queue.show("first")
+        queue.show("Removed “a”", action: Toast.Action(title: "Undo") {})
+        queue.show("Removed “b”", action: Toast.Action(title: "Undo") {})
+        for n in 0..<6 { queue.show("err \(n)", isError: true) }
+        XCTAssertEqual(queue.pending.count, ToastQueue.maxPending)
+        XCTAssertTrue(queue.pending.contains { $0.message == "Removed “a”" })
+    }
+
+    func testDismissRetiresTheToastWhereverItIs() {
+        let queue = ToastQueue(autoAdvance: false)
+        let undo = queue.show("Removed “a”", action: Toast.Action(title: "Undo") {})
+        queue.show("later")
+        let waiting = queue.show("even later")
+        queue.dismiss(try! XCTUnwrap(waiting))
+        XCTAssertEqual(queue.pending.map(\.message), ["later"])
+        queue.dismiss(try! XCTUnwrap(undo))
+        XCTAssertEqual(queue.current?.message, "later")
+    }
+
+    func testEachToastIsAnnouncedOnceByTheQueue() {
+        var spoken: [String] = []
+        let queue = ToastQueue(autoAdvance: false, announce: { spoken.append($0) })
+        queue.show("one")
+        queue.show("two")
+        queue.advance()
+        XCTAssertEqual(spoken, ["one", "two"])
     }
 
     func testAutoAdvanceMovesOnByItself() async throws {

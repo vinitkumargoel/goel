@@ -32,30 +32,55 @@ final class ToastQueue: ObservableObject {
     @Published private(set) var current: Toast?
     private(set) var pending: [Toast] = []
 
-    /// A burst beyond this drops its oldest waiting entries; errors are kept over confirmations.
+    /// A burst beyond this drops its oldest waiting entries; errors are kept over confirmations,
+    /// and toasts with a button over both.
     static let maxPending = 4
     /// With others waiting, a plain confirmation yields after this long instead of its full dwell.
     static let busyDwell: TimeInterval = 1.2
 
     private let autoAdvance: Bool
     private var generation = 0
+    /// Here, not in the overlay: the main window and Settings both draw one, and VoiceOver
+    /// heard every toast twice.
+    private let announce: @MainActor (String) -> Void
 
-    init(autoAdvance: Bool = true) {
+    init(autoAdvance: Bool = true, announce: @escaping @MainActor (String) -> Void = { A11yAnnouncer.announce($0) }) {
         self.autoAdvance = autoAdvance
+        self.announce = announce
     }
 
-    func show(_ message: String, isError: Bool = false, action: Toast.Action? = nil) {
+    /// Returns the toast's id so its poster can retire it (⌘Z retires an Undo toast); nil when deduplicated.
+    @discardableResult
+    func show(_ message: String, isError: Bool = false, action: Toast.Action? = nil) -> Toast.ID? {
         // The same words already on screen or queued add nothing but delay.
-        if current?.message == message, current?.isError == isError, action == nil { return }
+        if current?.message == message, current?.isError == isError, action == nil { return nil }
         if pending.contains(where: { $0.message == message && $0.isError == isError && $0.action == nil }),
-           action == nil { return }
+           action == nil { return nil }
         let toast = Toast(message: message, isError: isError, action: action)
-        guard current != nil else { present(toast); return }
+        guard let shown = current else { present(toast); return toast.id }
+        if action != nil {
+            // An Undo belongs next to what it undoes: it jumps the line. What it displaces waits
+            // at the front only if it still matters (an error, or another button).
+            if shown.isError || shown.action != nil { pending.insert(shown, at: 0) }
+            trimPending()
+            present(toast)
+            return toast.id
+        }
         pending.append(toast)
         trimPending()
         // A confirmation that's been up long enough makes way for what's waiting.
         if autoAdvance, let shown = current, shown.action == nil, !shown.isError {
             scheduleExpiry(of: shown, after: Self.busyDwell)
+        }
+        return toast.id
+    }
+
+    /// Retires one toast whether it is on screen or still waiting; unknown ids are ignored.
+    func dismiss(_ id: Toast.ID) {
+        if current?.id == id {
+            advance()
+        } else {
+            pending.removeAll { $0.id == id }
         }
     }
 
@@ -79,6 +104,7 @@ final class ToastQueue: ObservableObject {
     private func present(_ toast: Toast) {
         generation &+= 1
         current = toast
+        announce(toast.message)
         let dwell = pending.isEmpty || toast.action != nil || toast.isError ? toast.dwell : Self.busyDwell
         scheduleExpiry(of: toast, after: dwell)
     }
@@ -93,9 +119,13 @@ final class ToastQueue: ObservableObject {
         }
     }
 
+    /// Oldest confirmation first, then the oldest error; a toast with a button goes last, since
+    /// dropping an Undo loses the only visible way back.
     private func trimPending() {
         while pending.count > Self.maxPending {
             if let index = pending.firstIndex(where: { !$0.isError && $0.action == nil }) {
+                pending.remove(at: index)
+            } else if let index = pending.firstIndex(where: { $0.action == nil }) {
                 pending.remove(at: index)
             } else {
                 pending.removeFirst()

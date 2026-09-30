@@ -6,7 +6,16 @@ import GoelCore
 struct GoelDownloaderApp: App {
 
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var viewModel = AppViewModel()
+    /// Held, never observed: `body` re-ran on every 10 Hz snapshot when this was a `@StateObject`.
+    /// The scenes need only the colour scheme and the menu-bar switch, which ``AppAppearance`` carries.
+    private let viewModel: AppViewModel
+    @ObservedObject private var appearance: AppAppearance
+
+    init() {
+        let model = AppViewModel()
+        viewModel = model
+        appearance = model.appearance
+    }
 
     var body: some Scene {
         // Needs an id so the menu bar can reopen it with `openWindow` after the last window closes.
@@ -16,7 +25,7 @@ struct GoelDownloaderApp: App {
                 .environmentObject(viewModel.telemetry)
                 .environmentObject(viewModel.sftpStore)
                 .frame(minWidth: 1040, minHeight: 620)
-                .preferredColorScheme(viewModel.preferredColorScheme)
+                .preferredColorScheme(appearance.colorScheme)
                 .task {
                     await viewModel.start()
                     Self.registerDefaultTorrentHandlersIfWanted(viewModel.settings.btMakeDefaultClient)
@@ -31,7 +40,7 @@ struct GoelDownloaderApp: App {
                 .environmentObject(viewModel)
                 .environmentObject(viewModel.telemetry)
                 .environmentObject(viewModel.sftpStore)
-                .preferredColorScheme(viewModel.preferredColorScheme)
+                .preferredColorScheme(appearance.colorScheme)
                 .frame(width: 760, height: 560)
         }
 
@@ -40,7 +49,7 @@ struct GoelDownloaderApp: App {
                 .environmentObject(viewModel)
                 .environmentObject(viewModel.telemetry)
                 .environmentObject(viewModel.sftpStore)
-                .preferredColorScheme(viewModel.preferredColorScheme)
+                .preferredColorScheme(appearance.colorScheme)
         } label: {
             MenuBarSpeedLabel(telemetry: viewModel.telemetry)
         }
@@ -49,7 +58,7 @@ struct GoelDownloaderApp: App {
 
     private var menuBarInserted: Binding<Bool> {
         Binding(
-            get: { viewModel.settings.menuBarExtraEnabled },
+            get: { appearance.menuBarExtraEnabled },
             set: { newValue in
                 // SwiftUI writes the current value back on every scene update and `@Published` doesn't dedupe — an unguarded write recurses until the stack overflows.
                 guard newValue != viewModel.settings.menuBarExtraEnabled else { return }
@@ -113,9 +122,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             alert.messageText = converting ? L10n.t("Work is still in progress.")
                                            : L10n.t("Downloads are still running.")
             alert.informativeText = converting
-                ? L10n.t("Quitting now stops it. Unfinished downloads are kept and can be resumed next "
-                + "launch; a conversion in progress is cancelled and its partial file removed.")
-                : L10n.t("Quitting now stops them. Unfinished downloads are kept and can be resumed next launch.")
+                ? L10n.t("Quitting now stops it. Unfinished downloads are kept and pick up where they left off "
+                + "the next time you open Goel°; a conversion in progress is cancelled and its partial file removed.")
+                : L10n.t("Quitting now stops them. They’re kept and pick up where they left off the next time you open Goel°.")
             alert.addButton(withTitle: L10n.t("Quit"))
             alert.addButton(withTitle: L10n.t("Cancel"))
             guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
@@ -176,7 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 }
 
 /// Menu shortcuts are claimed before the focused view sees the key. These let a text field keep
-/// the keys that mean something while typing (⌘⌫ deletes to line start, ⇧⌘V pastes as plain text).
+/// the keys that mean something while typing (⇧⌘V pastes as plain text).
 @MainActor
 enum TextEditingFocus {
     static var isEditingText: Bool {
@@ -235,10 +244,14 @@ struct GoelCommands: Commands {
             Button(L10n.t("Select Completed")) { viewModel.selectCompleted() }
                 .disabled(!s.hasCompletedVisible)
         }
-        CommandGroup(after: .textEditing) {
+        // Replacing, not appending: the standard group already has Edit ▸ Find ▸ Find… ⌘F, and two
+        // items on one key equivalent is a coin toss. The queue's own search is the only find here.
+        CommandGroup(replacing: .textEditing) {
             Button(L10n.t("Find…")) { FocusBus.requestSearchFocus() }
                 .keyboardShortcut("f", modifiers: .command)
         }
+        // Nothing here prints, and File ▸ Print… would otherwise share ⌘P with Pause Selected.
+        CommandGroup(replacing: .printItem) {}
         CommandMenu(L10n.t("Downloads")) {
             Button(L10n.t("Start All")) { viewModel.resumeAll() }
                 .disabled(!s.hasResumable)
@@ -297,11 +310,9 @@ struct GoelCommands: Commands {
         Divider()
         Button(L10n.t("Remove from List")) { viewModel.removeSelected(deleteData: false) }
             .disabled(!s.hasSelection)
-        Button(L10n.t("Move to Trash…")) {
-            guard !TextEditingFocus.forward(#selector(NSResponder.deleteToBeginningOfLine(_:))) else { return }
-            viewModel.confirmMoveSelectionToTrash()
-        }
-            .keyboardShortcut(.delete, modifiers: .command)
+        // No ⌘⌫ key equivalent: a menu claims it before any text field, disabled or not, so it ate
+        // delete-to-line-start everywhere. The list answers ⌘⌫ itself while it has focus.
+        Button(L10n.t("Move to Trash…")) { viewModel.confirmMoveSelectionToTrash() }
             .disabled(!s.selectionHasData)
     }
 
