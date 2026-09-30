@@ -175,6 +175,7 @@ if [ -n "$remaining" ]; then
   exit 1
 fi
 echo "    OK — no build-machine paths remain. Frameworks:"
+# shellcheck disable=SC2012  # display only; names are our own dylibs
 ls -1 "$FRAMEWORKS" | sed 's/^/      /'
 
 # Terminal, not advisory: build_app.sh packages next, so a broken seal would ship.

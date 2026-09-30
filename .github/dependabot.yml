@@ -1,0 +1,35 @@
+# Dependabot keeps the pinned inputs moving. It does NOT see the native pins
+# (OpenSSL, libssh2, libtorrent, Boost in Scripts/macos/build-deps.sh) or the
+# yt-dlp/ffmpeg digests in Scripts/fetch_*.sh: those are bumped by hand, see
+# RELEASE.md "Dependency updates".
+version: 2
+updates:
+  # Package.swift / Package.resolved (GRDB, Sparkle; swift-nio and swift-crypto on Linux).
+  - package-ecosystem: swift
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # The web portal, compiled into Sources/GoelCore/Remote/Generated/PortalBundle.swift.
+  # A bump must be followed by `npm run build` and a commit of the regenerated file;
+  # CI's stale-bundle check fails the PR until it is.
+  - package-ecosystem: npm
+    directory: /portal
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # The Remotion keynote project. Not shipped, but it runs code on maintainers' machines.
+  - package-ecosystem: npm
+    directory: /video
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  # Actions are pinned to commit SHAs in .github/workflows; Dependabot updates the
+  # SHA and the `# vX.Y.Z` comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

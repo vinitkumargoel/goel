@@ -11,6 +11,7 @@ version_key() {
   esac
   local major minor patch
   local IFS=.
+  # shellcheck disable=SC2086  # splitting on IFS=. is the point
   set -- $v
   [ "$#" -ge 1 ] && [ "$#" -le 3 ] || return 1
   major="${1:-}"; minor="${2:-0}"; patch="${3:-0}"
@@ -102,10 +103,10 @@ $(build_versions_of "$f")
 EOF
   if [ -z "$worst" ]; then
     OFFENDERS="$OFFENDERS
-    ${f#$APP/}  (no readable deployment target)"
+    ${f#"$APP"/}  (no readable deployment target)"
   elif exceeds "$LIMIT" "$worst"; then
     OFFENDERS="$OFFENDERS
-    ${f#$APP/}  requires macOS $worst"
+    ${f#"$APP"/}  requires macOS $worst"
   fi
 done <<EOF
 $(find "$APP/Contents" -type f)

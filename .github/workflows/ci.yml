@@ -16,12 +16,21 @@
 #
 # Nothing here is allowed to `|| true` past a missing tool. A step that passes
 # because its checker was absent is worse than no step at all.
+#
+# Every third-party action is pinned to a full commit SHA (the tag it was taken
+# from is in the trailing comment): a tag can be moved to different code after
+# review, a commit cannot. Dependabot (.github/dependabot.yml) proposes bumps.
 
 name: CI
 
 on:
   push:
   pull_request:
+
+# Least privilege: nothing in this workflow writes to the repository. A job that
+# ever needs more must ask for it itself, in its own `permissions:` block.
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -43,9 +52,11 @@ jobs:
     # requirements — a newer SDK to compile, older libraries to link — only hold
     # together if the libraries stop coming from the OS's package manager.
     runs-on: macos-15
+    # ~30 minutes for the native dependencies on a cold cache, plus build and test.
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # MANDATORY. Scripts/build_app.sh derives CFBundleVersion from
           # `git rev-list --count HEAD`; on the default shallow clone that is 1,
@@ -67,7 +78,7 @@ jobs:
       # out each build).
       - name: Cache the vendored native libraries
         id: vendored
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             Vendor/macos/arm64/opt
@@ -94,7 +105,7 @@ jobs:
       #
       # Rebuilding here and diffing is what makes the committed file trustworthy.
       # The codegen is deterministic: same source in, byte-identical Swift out.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -104,6 +115,9 @@ jobs:
         working-directory: portal
         run: |
           npm ci
+          # Only what ships (the bundle compiled into PortalBundle.swift); dev tooling is
+          # not redistributed. High and critical advisories fail the build.
+          npm audit --omit=dev --audit-level=high
           npm test
           npm run build
 
@@ -122,10 +136,40 @@ jobs:
       - name: Fail if the committed base strings table is stale
         run: python3 Scripts/extract-l10n-keys.py --check
 
+      # A language is offered in Settings only once it is (almost) fully translated:
+      # "Deutsch" at 1% coverage gave German users an English UI with a German label.
+      # Fails if any language in L10n.supportedLanguages is below 95%.
+      - name: Offered languages meet the translation-coverage bar
+        run: python3 Scripts/extract-l10n-keys.py --coverage-supported
+
+      # Keyed on the manifest and the lockfile, and on build-deps.sh because the
+      # vendored libraries are linked into the cached products. actions/cache only
+      # saves after a green job, so every object restored here was compiled by a run
+      # that also passed the warnings gate below: an unchanged file cannot hide one.
+      - name: Cache the SwiftPM build directory
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-arm64-${{ hashFiles('Package.resolved', 'Package.swift', 'Scripts/macos/build-deps.sh') }}
+          restore-keys: |
+            spm-${{ runner.os }}-arm64-
+
       - name: Build
         run: |
           set -o pipefail
           swift build 2>&1 | tee build.log
+
+      # Swift 6 language mode is not on yet (see CONTRIBUTING.md), so the compiler's
+      # concurrency diagnostics are warnings. They must not accumulate: any warning
+      # in our own Sources fails the job. Dependencies' warnings are not ours to fix.
+      - name: Fail on Swift compiler warnings in Sources
+        run: |
+          grep -E '/Sources/[^:]+:[0-9]+:[0-9]+: warning:' build.log | sort -u > warnings.log || true
+          if [ -s warnings.log ]; then
+            echo "::error::the build produced Swift compiler warnings in Sources/"
+            cat warnings.log
+            exit 1
+          fi
 
       - name: Fail on deployment-target link warnings
         run: |
@@ -135,8 +179,31 @@ jobs:
             exit 1
           fi
 
-      - name: Test
-        run: swift test
+      # No floor yet: the total is published on every run so it can be watched, and a
+      # floor added once the untested trust-boundary files have tests (CONTRIBUTING.md).
+      - name: Test with code coverage
+        run: swift test --enable-code-coverage
+
+      - name: Coverage summary
+        run: |
+          BIN="$(swift build --show-bin-path)"
+          PROFDATA="$BIN/codecov/default.profdata"
+          XCTEST="$(find "$BIN" -maxdepth 1 -name '*PackageTests.xctest' -print -quit)"
+          [ -f "$PROFDATA" ] || { echo "::error::no coverage profile at $PROFDATA"; exit 1; }
+          [ -n "$XCTEST" ] || { echo "::error::no test bundle in $BIN"; exit 1; }
+          EXE="$XCTEST/Contents/MacOS/$(basename "$XCTEST" .xctest)"
+          xcrun llvm-cov report "$EXE" -instr-profile "$PROFDATA" \
+            -ignore-filename-regex '(\.build|Tests|Generated)/' > coverage.txt
+          cat coverage.txt
+          TOTAL="$(grep '^TOTAL' coverage.txt)"
+          echo "::notice title=Line coverage::$(echo "$TOTAL" | awk '{print $(NF-3)}') of lines in Sources/"
+          {
+            echo "### Code coverage (Sources/, generated code excluded)"
+            echo '```'
+            head -2 coverage.txt
+            echo "$TOTAL"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Runs with no bundle and no signing identity, so it gates every pull
       # request rather than only the ones that build an app.
@@ -169,13 +236,14 @@ jobs:
   linux:
     name: Linux daemon and CLI
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
-      - uses: swift-actions/setup-swift@v2
+      - uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
         with:
           swift-version: "6.1"
 
@@ -197,7 +265,10 @@ jobs:
           # dash, not bash: install.sh is `#!/bin/sh` and Ubuntu's /bin/sh IS dash,
           # so a bashism that bash accepts would only fail on a user's machine.
           dash -n website/install.sh
-          shellcheck website/install.sh Scripts/linux/package_daemon.sh
+          # Every shell script in the repository, not a hand-picked few. Info-level
+          # findings count too; an intentional one carries a `# shellcheck disable=`.
+          shellcheck website/install.sh Scripts/*.sh Scripts/linux/*.sh Scripts/macos/*.sh \
+            Scripts/git-hooks/pre-commit
 
       # GRDB needs SQLITE_ENABLE_SNAPSHOT, which Ubuntu's libsqlite3 declares
       # without defining.
@@ -205,6 +276,14 @@ jobs:
         run: |
           Scripts/linux/build-sqlite.sh
           echo "GOEL_SQLITE_DIR=$PWD/Vendor/linux/sqlite" >> "$GITHUB_ENV"
+
+      - name: Cache the SwiftPM build directory
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-x86_64-swift6.1-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: |
+            spm-${{ runner.os }}-x86_64-swift6.1-
 
       - name: Build and test
         run: |
@@ -237,7 +316,7 @@ jobs:
           tar tzf "$tarball" | grep -q 'lib/libtorrent-rasterbar\.so' \
             || { echo "::error::libtorrent was not vendored — the tarball is not portable"; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: linux-tarball
           path: dist/goel-daemon-*-linux-*.tar.gz*
@@ -251,10 +330,11 @@ jobs:
     name: Install on a newer Ubuntu
     needs: linux
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: linux-tarball
           path: dist
@@ -330,8 +410,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: macos-14
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 

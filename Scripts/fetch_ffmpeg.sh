@@ -96,6 +96,33 @@ verify() {
   echo "    OK — ffmpeg ${version:-?} runs, $licence-configured"
 }
 
+# A local or vendored binary gets code-signed with the Developer ID, so it needs a digest
+# just like a download: FFMPEG_SHA256, or a `<binary>.sha256` file beside it (the first
+# field of `shasum -a 256` output). GOEL_ALLOW_UNVERIFIED_FFMPEG=1 waives that for a
+# throwaway local build only; a release (GOEL_RELEASE=1) never accepts it.
+require_digest() {
+  local source="$1" digest="${FFMPEG_SHA256:-}"
+  if [ -z "$digest" ] && [ -f "$source.sha256" ]; then
+    digest="$(awk 'NR==1 {print $1}' "$source.sha256")"
+  fi
+  if [ -n "$digest" ]; then
+    printf '%s' "$digest"
+    return 0
+  fi
+  if [ "${GOEL_ALLOW_UNVERIFIED_FFMPEG:-0}" = "1" ] && [ "${GOEL_RELEASE:-0}" != "1" ]; then
+    echo "warning: bundling $source WITHOUT a checksum (GOEL_ALLOW_UNVERIFIED_FFMPEG=1)." >&2
+    echo "         This build is not reproducible and must not be shipped." >&2
+    return 0
+  fi
+  echo "error: no SHA-256 digest for $source." >&2
+  echo "       Record it once and pin it — an unverified binary must never be copied" >&2
+  echo "       into a bundle that then gets code-signed:" >&2
+  echo "         shasum -a 256 '$source' > '$source.sha256'" >&2
+  echo "       or pass FFMPEG_SHA256=<hex>. For a throwaway local build only," >&2
+  echo "       GOEL_ALLOW_UNVERIFIED_FFMPEG=1 skips this (never with GOEL_RELEASE=1)." >&2
+  exit 1
+}
+
 # An existing copy is re-verified, not trusted: it may be from another arch or settings.
 if [ -x "$DEST" ] && file "$DEST" | grep -q "Mach-O"; then
   echo "==> ffmpeg already bundled ($DEST) — verifying in place"
@@ -109,15 +136,17 @@ VENDORED="$REPO_ROOT/Vendor/ffmpeg/$ARCH/ffmpeg"
 if [ -n "${FFMPEG_LOCAL:-}" ]; then
   [ -f "$FFMPEG_LOCAL" ] || { echo "error: FFMPEG_LOCAL='$FFMPEG_LOCAL' is not a file" >&2; exit 1; }
   echo "==> Staging ffmpeg from FFMPEG_LOCAL ($FFMPEG_LOCAL)"
+  LOCAL_SHA="$(require_digest "$FFMPEG_LOCAL")"
   cp "$FFMPEG_LOCAL" "$DEST"
   chmod +x "$DEST"
-  verify "${FFMPEG_SHA256:-}"
+  verify "$LOCAL_SHA"
 
 elif [ -f "$VENDORED" ]; then
   echo "==> Staging vendored ffmpeg ($VENDORED)"
+  VENDORED_SHA="$(require_digest "$VENDORED")"
   cp "$VENDORED" "$DEST"
   chmod +x "$DEST"
-  verify "${FFMPEG_SHA256:-}"
+  verify "$VENDORED_SHA"
 
 else
   URL="${FFMPEG_URL:-$PINNED_URL}"
