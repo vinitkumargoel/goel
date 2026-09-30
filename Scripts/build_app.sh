@@ -29,6 +29,40 @@ if [ -n "$BUNDLE_MODULE_USES" ]; then
   exit 1
 fi
 
+# Mirror Package.swift's choice of native-library prefix so it can be checked BEFORE a
+# long build: GOEL_BREW_PREFIX, else a populated Vendor/macos/<arch>, else /opt/homebrew.
+case "$ARCH_ENV" in
+  arm64) VENDOR_ARCH="arm64" ;;
+  *)     VENDOR_ARCH="x86_64" ;;
+esac
+VENDORED_PREFIX="$PWD/Vendor/macos/$VENDOR_ARCH"
+if [ -n "${GOEL_BREW_PREFIX:-}" ]; then
+  NATIVE_PREFIX="$GOEL_BREW_PREFIX"
+elif [ -d "$VENDORED_PREFIX/opt/libtorrent-rasterbar/include" ]; then
+  NATIVE_PREFIX="$VENDORED_PREFIX"
+else
+  NATIVE_PREFIX="/opt/homebrew"
+fi
+echo "==> Native libraries from $NATIVE_PREFIX"
+# Exported so the choice is explicit: SwiftPM caches the evaluated manifest keyed on
+# its source and environment, not on whether Vendor/ appeared since the last build.
+export GOEL_BREW_PREFIX="$NATIVE_PREFIX"
+case "$NATIVE_PREFIX" in
+  /opt/homebrew|/opt/homebrew/|/usr/local|/usr/local/)
+    # Homebrew bottles target the build machine's macOS, not the app's 14.0 floor:
+    # this is how a release that could not launch on older macOS once shipped.
+    if [ "$GOEL_RELEASE" = "1" ]; then
+      echo "error: GOEL_RELEASE=1 but the native libraries would come from $NATIVE_PREFIX." >&2
+      echo "       Build them against the floor with Scripts/macos/build-deps.sh (it fills" >&2
+      echo "       $VENDORED_PREFIX, which Package.swift then picks up), or point" >&2
+      echo "       GOEL_BREW_PREFIX at an equivalent prefix." >&2
+      exit 1
+    fi
+    echo "warning: linking Homebrew's libraries — fine for a local build, NOT shippable." >&2
+    echo "         Run Scripts/macos/build-deps.sh to build floor-targeted copies." >&2
+    ;;
+esac
+
 echo "==> swift build -c $CONFIG --arch $ARCH_ENV (size-optimized)"
 SCRATCH="$(mktemp -d -t goel-build)"
 trap 'rm -rf "$SCRATCH"' EXIT
@@ -312,7 +346,10 @@ minos_gate() {
 minos_gate "$APP"
 
 # Sign INSIDE-OUT: every nested Mach-O before its container, or the signatures invalidate.
+# Two entitlement sets: the app gets the minimal one; only yt-dlp's frozen Python gets
+# JIT / unsigned-memory / disabled library validation (see the comments in each file).
 ENTITLEMENTS="Scripts/Goel.entitlements"
+YTDLP_ENTITLEMENTS="Scripts/YtDlp.entitlements"
 
 # An ad-hoc cdhash changes each rebuild, so TCC drops grants (Local Network then fails as EHOSTUNREACH).
 DISTRIBUTABLE=0
@@ -385,8 +422,8 @@ if [ -n "${CODESIGN_IDENTITY:-}" ]; then
     sign "$SPK"
   fi
 
-  # yt-dlp needs the hardened-runtime entitlements or its embedded Python will not run.
-  [ -e "$APP/Contents/Resources/yt-dlp" ] && sign --entitlements "$ENTITLEMENTS" "$APP/Contents/Resources/yt-dlp"
+  # yt-dlp needs its own hardened-runtime entitlements or its embedded Python will not run.
+  [ -e "$APP/Contents/Resources/yt-dlp" ] && sign --entitlements "$YTDLP_ENTITLEMENTS" "$APP/Contents/Resources/yt-dlp"
 
   [ -e "$APP/Contents/Resources/ffmpeg" ] && sign "$APP/Contents/Resources/ffmpeg"
 
@@ -402,6 +439,14 @@ if [ -n "${CODESIGN_IDENTITY:-}" ]; then
     exit 1
   fi
   echo "    signed & verified."
+
+  # The yt-dlp-only entitlements must never reach the main process.
+  if codesign -d --entitlements - "$APP/Contents/MacOS/$APP_NAME" 2>/dev/null \
+       | grep -qE 'allow-jit|allow-unsigned-executable-memory|disable-library-validation'; then
+    echo "error: $APP_NAME was signed with yt-dlp's JIT / library-validation entitlements." >&2
+    echo "       Those belong in $YTDLP_ENTITLEMENTS and on yt-dlp alone." >&2
+    exit 1
+  fi
 
   # Not redundant: signing replaces Mach-Os, so the deployment-target gate must re-run on the finished bundle.
   minos_gate "$APP"

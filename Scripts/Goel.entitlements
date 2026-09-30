@@ -1,31 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Hardened-runtime entitlements for the notarized, direct-distribution build.
+  Hardened-runtime entitlements for the app bundle and its main executable.
+
+  Keep this set minimal: every key here weakens a protection of the main,
+  unsandboxed process that handles untrusted network input.
 
   The app is intentionally NOT App-Sandboxed (torrenting's listening ports and
-  arbitrary user-folder writes fight the sandbox), so network access needs no
-  entitlement here. What hardened runtime DOES require:
+  arbitrary user-folder writes fight the sandbox), so network client/server
+  access needs no entitlement. Library validation stays ON: build_app.sh signs
+  the vendored dylibs (libtorrent/OpenSSL/libssh2) and Sparkle with the same
+  identity as the app, so they share its Team ID and load without
+  disable-library-validation.
 
-  * disable-library-validation — the app loads its OWN vendored dylibs
-    (libtorrent/OpenSSL/libssh2) and spawns the bundled yt-dlp, which is
-    PyInstaller-frozen and dlopen's its own unsigned Python .so files at runtime.
-    Without this, those loads are rejected under hardened runtime.
-  * allow-jit / allow-unsigned-executable-memory — Python (inside yt-dlp) can
-    require executable memory that isn't code-signed.
+  * automation.apple-events — "shut down / sleep when downloads finish" asks
+    System Events via NSAppleScript (GoelApp/LiveSystemActions.swift). Under the
+    hardened runtime an Apple event is refused without this key, even when the
+    user has approved Goel° in Privacy & Security → Automation. It pairs with
+    NSAppleEventsUsageDescription in Info.plist.
 
-  These are all accepted by Apple's notary service (they are not App-Sandbox keys).
-  If you ship WITHOUT bundling yt-dlp and sign the vendored dylibs with the same
-  Developer ID (build_app.sh does), you can likely drop allow-jit /
-  allow-unsigned-executable-memory and keep only disable-library-validation.
+  The yt-dlp helper needs JIT, unsigned executable memory and disabled library
+  validation for its PyInstaller-frozen Python. Those live in YtDlp.entitlements
+  and are applied to that one binary only — never add them here.
+
+  Check a signed build with:
+    codesign -d --entitlements - "dist/Goel°.app"
+    codesign -d --entitlements - "dist/Goel°.app/Contents/Resources/yt-dlp"
 -->
 <plist version="1.0">
 <dict>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <key>com.apple.security.automation.apple-events</key>
     <true/>
 </dict>
 </plist>

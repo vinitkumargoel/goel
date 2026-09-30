@@ -32,7 +32,34 @@ let linuxCoreLink: [LinkerSetting] = [
 
 #else
 
-let brewPrefix = ProcessInfo.processInfo.environment["GOEL_BREW_PREFIX"] ?? "/opt/homebrew"
+// Where libtorrent/OpenSSL/libssh2/Boost come from, in order of precedence:
+//   1. GOEL_BREW_PREFIX, if set (CI sets it explicitly).
+//   2. Vendor/macos/<arch> next to this manifest, if Scripts/macos/build-deps.sh has
+//      populated it. Those libraries are built against the 14.0 floor, whereas
+//      Homebrew's bottles target the build machine's OS and ship a broken app.
+//   3. /opt/homebrew, as a last resort for a quick local `swift build`. build_app.sh
+//      refuses to produce a release (GOEL_RELEASE=1) linked against it.
+// SwiftPM caches the evaluated manifest keyed on this file and the environment, so after
+// populating Vendor/ for the first time build once with `--manifest-cache none` (or set
+// GOEL_BREW_PREFIX) for the change to be noticed. build_app.sh always exports it.
+#if arch(arm64)
+let vendoredArch = "arm64"
+#else
+let vendoredArch = "x86_64"
+#endif
+let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
+let vendoredPrefix = "\(packageRoot)/Vendor/macos/\(vendoredArch)"
+let brewPrefix: String = {
+    if let explicit = ProcessInfo.processInfo.environment["GOEL_BREW_PREFIX"], !explicit.isEmpty {
+        return explicit
+    }
+    // Probe a header directory, not just the prefix: an interrupted build-deps.sh can
+    // leave the prefix behind without the libraries, and that must not win.
+    if FileManager.default.fileExists(atPath: "\(vendoredPrefix)/opt/libtorrent-rasterbar/include") {
+        return vendoredPrefix
+    }
+    return "/opt/homebrew"
+}()
 
 let torrentCxx: [CXXSetting] = [
     .unsafeFlags([
