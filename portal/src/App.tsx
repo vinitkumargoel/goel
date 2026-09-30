@@ -63,7 +63,7 @@ export function App() {
   const hamburgerRef = useRef<HTMLButtonElement>(null)
   const { searchRef, mobileSearch, setMobileSearch, focusSearch } = useSearchFocus()
 
-  const { tasks, live, loaded, error, lastUpdate, speeds, refresh, reconnect } = useTasks()
+  const { tasks, live, loaded, error, lastUpdate, refresh, reconnect } = useTasks()
   const { toasts, toast, dismiss, pause, resume } = useToasts()
   const warn = useCallback((message: string) => toast(message, 'warn'), [toast])
   const bandwidth = useBandwidth()
@@ -263,7 +263,6 @@ export function App() {
           onMobileSearch={setMobileSearch}
           downSpeed={totals.down}
           upSpeed={totals.up}
-          speedSamples={speeds.total}
           showPanelToggle={view === 'library'}
           panelOpen={panelOpen}
           onTogglePanel={() => setPanelOpen((p) => !p)}
@@ -364,7 +363,6 @@ export function App() {
                 void setFilePriority(fileId, wasSkipped ? 'normal' : 'skip')
               }
               onCyclePriority={cyclePriority}
-              samples={detailId != null ? speeds.perTask.get(detailId) : undefined}
               trapFocus={!modalOpen}
             />
           )}

@@ -1,7 +1,9 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { speedStore } from '../lib/speedStore'
+import type { TaskRow } from '../lib/types'
 import en from '../locales/en.json'
 import { renderWithI18n } from '../test/renderWithI18n'
 import { Topbar } from './Topbar'
@@ -20,10 +22,6 @@ function Harness({ onSearch = vi.fn() }: { onSearch?: (v: string) => void }) {
       onMobileSearch={setOpen}
       downSpeed={0}
       upSpeed={0}
-      speedSamples={[
-        { down: 1, up: 0 },
-        { down: 2, up: 0 },
-      ]}
       showPanelToggle
       panelOpen={false}
       onTogglePanel={vi.fn()}
@@ -37,8 +35,13 @@ function Harness({ onSearch = vi.fn() }: { onSearch?: (v: string) => void }) {
   )
 }
 
+afterEach(() => speedStore.reset())
+
 describe('Topbar', () => {
   it('advertises its shortcuts', () => {
+    // The sparkline reads the app's speed store; two samples are enough to draw it.
+    speedStore.record([{ id: 'a', downSpeed: 1, upSpeed: 0 } as TaskRow])
+    speedStore.record([{ id: 'a', downSpeed: 2, upSpeed: 0 } as TaskRow])
     renderWithI18n(<Harness />)
     expect(screen.getByRole('searchbox', { name: en.topbar.searchDownloads })).toHaveAttribute(
       'aria-keyshortcuts',

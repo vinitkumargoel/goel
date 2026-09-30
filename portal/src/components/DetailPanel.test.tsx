@@ -1,10 +1,11 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithI18n } from '../test/renderWithI18n'
 import en from '../locales/en.json'
 import type { TaskDetail, TaskRow } from '../lib/types'
 import type { SpeedSample } from '../lib/speedHistory'
+import { speedStore } from '../lib/speedStore'
 import { DetailPanel } from './DetailPanel'
 import type { DetailTab } from './DetailPanes'
 
@@ -47,6 +48,7 @@ const DETAIL: TaskDetail = {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  speedStore.reset()
 })
 
 /** Pretends the viewport is a phone (≤680px). */
@@ -65,14 +67,17 @@ interface PanelOptions {
   samples?: SpeedSample[]
 }
 
-function renderPanel(detail: TaskDetail | null, { onClose = vi.fn(), tab = 'general', samples }: PanelOptions = {}) {
+/** `samples` go through the app's speed store, where the Progress chart reads them. */
+function renderPanel(detail: TaskDetail | null, { onClose = vi.fn(), tab = 'general', samples = [] }: PanelOptions = {}) {
+  for (const s of samples) {
+    speedStore.record([{ ...ROW, downSpeed: s.down, upSpeed: s.up }])
+  }
   return renderWithI18n(
     <DetailPanel
       detail={detail}
       open
       tab={tab}
       canWrite
-      samples={samples}
       onTab={vi.fn()}
       onClose={onClose}
       onAction={vi.fn()}
@@ -185,6 +190,13 @@ describe('DetailPanel', () => {
   it('draws the live speed chart atop the Progress tab', () => {
     renderPanel(DETAIL, { tab: 'progress', samples: [{ down: 2048, up: 0 }] })
     expect(screen.getByRole('img', { name: /download peak 2\.0 KB\/s/ })).toBeInTheDocument()
+  })
+
+  it('redraws the chart from the store as samples arrive', () => {
+    renderPanel(DETAIL, { tab: 'progress' })
+    expect(screen.getByRole('img', { name: /download peak 0 B\/s/ })).toBeInTheDocument()
+    act(() => speedStore.record([{ ...ROW, downSpeed: 4096 }]))
+    expect(screen.getByRole('img', { name: /download peak 4\.0 KB\/s/ })).toBeInTheDocument()
   })
 
   it('stays a plain complementary panel on wide screens', () => {

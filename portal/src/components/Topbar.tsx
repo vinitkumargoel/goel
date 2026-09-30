@@ -2,7 +2,7 @@ import { useRef, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BOOT } from '../lib/boot'
 import { fmtSpeed, IDLE_RATE } from '../lib/format'
-import type { SpeedSample } from '../lib/speedHistory'
+import { useSpeedSeries } from '../lib/speedStore'
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -16,6 +16,12 @@ import {
 import { MobileSearch } from './MobileSearch'
 import { Sparkline } from './SpeedChart'
 
+/** The total's last minute. Subscribes on its own, so a sample redraws this and not the topbar. */
+function TotalSparkline({ label }: { label: string }) {
+  const samples = useSpeedSeries('total')
+  return samples.length > 1 ? <Sparkline samples={samples} label={label} /> : null
+}
+
 interface TopbarProps {
   search: string
   onSearch: (value: string) => void
@@ -26,8 +32,6 @@ interface TopbarProps {
   onMobileSearch: (open: boolean) => void
   downSpeed: number
   upSpeed: number
-  /** Total rates over the last minute, for the sparkline beside the figures. */
-  speedSamples?: readonly SpeedSample[]
   showPanelToggle: boolean
   panelOpen: boolean
   onTogglePanel: () => void
@@ -49,7 +53,6 @@ export function Topbar({
   onMobileSearch,
   downSpeed,
   upSpeed,
-  speedSamples = [],
   showPanelToggle,
   panelOpen,
   onTogglePanel,
@@ -102,7 +105,7 @@ export function Topbar({
       <div className="spacer" />
 
       <div className="stats">
-        {speedSamples.length > 1 && <Sparkline samples={speedSamples} label={t('topbar.speedTrend')} />}
+        <TotalSparkline label={t('topbar.speedTrend')} />
         <span className="stat down">
           <ArrowDownIcon />
           <b>{fmtSpeed(downSpeed, IDLE_RATE)}</b>

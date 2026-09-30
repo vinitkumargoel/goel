@@ -5,7 +5,6 @@ import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useSheetDrag } from '../hooks/useSheetDrag'
 import { streamURL } from '../lib/api'
 import { fileType, isActive, kindLabel } from '../lib/taskKind'
-import type { SpeedSample } from '../lib/speedHistory'
 import type { FilePriority, TaskDetail } from '../lib/types'
 import {
   DETAIL_TABS,
@@ -44,8 +43,6 @@ interface DetailPanelProps {
   onCopy: (text: string) => void
   onToggleFile: (fileId: number, wasSkipped: boolean) => void
   onCyclePriority: (fileId: number, current: FilePriority) => void
-  /** The shown download's last minute of rates, for the Progress tab's chart. */
-  samples?: readonly SpeedSample[]
   /** False while a dialog is stacked over the phone sheet: that dialog then owns Tab and Escape. */
   trapFocus?: boolean
 }
@@ -63,7 +60,6 @@ export function DetailPanel({
   onCopy,
   onToggleFile,
   onCyclePriority,
-  samples,
   trapFocus = true,
 }: DetailPanelProps) {
   const { t } = useTranslation()
@@ -108,7 +104,6 @@ export function DetailPanel({
             onCopy={onCopy}
             onToggleFile={onToggleFile}
             onCyclePriority={onCyclePriority}
-            samples={samples}
           />
         ) : (
           <div className="empty" style={{ padding: '40px 26px' }}>
@@ -157,7 +152,6 @@ function Loaded({
   onCopy,
   onToggleFile,
   onCyclePriority,
-  samples,
 }: Omit<DetailPanelProps, 'open' | 'detail'> & { detail: TaskDetail }) {
   const { t } = useTranslation()
   const row = detail.row
@@ -304,7 +298,6 @@ function Loaded({
         <Pane
           tab={tab}
           detail={detail}
-          samples={samples}
           canWrite={canWrite}
           onCopy={onCopy}
           onToggleFile={onToggleFile}
@@ -318,7 +311,6 @@ function Loaded({
 function Pane({
   tab,
   detail,
-  samples,
   canWrite,
   onCopy,
   onToggleFile,
@@ -326,7 +318,6 @@ function Pane({
 }: {
   tab: DetailTab
   detail: TaskDetail
-  samples?: readonly SpeedSample[]
   canWrite: boolean
   onCopy: (text: string) => void
   onToggleFile: (fileId: number, wasSkipped: boolean) => void
@@ -338,7 +329,7 @@ function Pane({
     case 'details':
       return <DetailsPane detail={detail} />
     case 'progress':
-      return <ProgressPane detail={detail} samples={samples} />
+      return <ProgressPane detail={detail} />
     case 'files':
       return (
         <FilesPane

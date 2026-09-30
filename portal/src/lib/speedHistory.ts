@@ -32,24 +32,42 @@ function rate(n: number | null | undefined): number {
   return n != null && isFinite(n) && n > 0 ? n : 0
 }
 
+function isIdle(s: SpeedSample | undefined): boolean {
+  return s == null || (s.down === 0 && s.up === 0)
+}
+
 /**
- * Folds one snapshot frame into the history. Memory stays bounded: each series is capped, and a
- * task missing from the frame (removed) loses its series rather than lingering.
+ * Folds one snapshot frame into the history. Memory stays bounded: each series is capped, a task
+ * missing from the frame (removed) loses its series rather than lingering, and only tasks that are
+ * moving — or still have a non-zero sample to scroll off — keep one, so a large idle queue costs
+ * nothing per tick.
+ *
+ * An idle frame over an already-idle history returns `history` itself: the caller can skip the
+ * write, and nothing subscribed re-renders.
  */
 export function recordFrame(
   history: SpeedHistory,
   rows: readonly TaskRow[],
   cap = HISTORY_LENGTH,
 ): SpeedHistory {
+  const samples = rows.map((row) => ({ down: rate(row.downSpeed), up: rate(row.upSpeed) }))
+  const allIdle = samples.every(isIdle)
+  if (allIdle && history.total.length > 0 && isIdle(history.total.at(-1))) {
+    const present = new Set(rows.map((row) => row.id))
+    if ([...history.perTask.keys()].every((id) => present.has(id))) return history
+  }
+
   const perTask = new Map<string, readonly SpeedSample[]>()
   let down = 0
   let up = 0
-  for (const row of rows) {
-    const sample = { down: rate(row.downSpeed), up: rate(row.upSpeed) }
+  rows.forEach((row, i) => {
+    const sample = samples[i]!
     down += sample.down
     up += sample.up
-    perTask.set(row.id, appendSample(history.perTask.get(row.id) ?? [], sample, cap))
-  }
+    const prev = history.perTask.get(row.id)
+    if (isIdle(sample) && (prev == null || prev.every(isIdle))) return
+    perTask.set(row.id, appendSample(prev ?? [], sample, cap))
+  })
   return { perTask, total: appendSample(history.total, { down, up }, cap) }
 }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { shareTasks } from '../lib/shareTasks'
-import { EMPTY_HISTORY, recordFrame, type SpeedHistory } from '../lib/speedHistory'
+import { speedStore, type SpeedStore } from '../lib/speedStore'
 import type { TaskRow } from '../lib/types'
 
 const RECONNECT_MS = 2000
@@ -24,8 +24,6 @@ interface TasksState {
   error: boolean
   /** When the latest snapshot arrived (ms since epoch), or null before the first. */
   lastUpdate: number | null
-  /** Rates sampled once a second from the latest snapshot, for the speed charts. */
-  speeds: SpeedHistory
 }
 
 interface TasksApi {
@@ -34,13 +32,16 @@ interface TasksApi {
   reconnect: () => void
 }
 
-export function useTasks(): TasksState & TasksApi {
+/**
+ * The queue, live. Rates are sampled once a second into `speeds` (see `lib/speedStore`), not into
+ * state here: the charts subscribe to it themselves, so a tick never re-renders the caller.
+ */
+export function useTasks(speeds: SpeedStore = speedStore): TasksState & TasksApi {
   const [tasks, setTasks] = useState<TaskRow[]>([])
   const [live, setLive] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<number | null>(null)
-  const [speeds, setSpeeds] = useState<SpeedHistory>(EMPTY_HISTORY)
 
   // A ref, not a dep: reading `live` in the effect would rebuild the EventSource on every flip.
   const liveRef = useRef(false)
@@ -133,12 +134,14 @@ export function useTasks(): TasksState & TasksApi {
     }, POLL_MS)
 
     const sampler = setInterval(() => {
+      // Nobody sees a chart in a background tab; the browser throttles the timer there anyway.
+      if (document.visibilityState === 'hidden') return
       const snap = latest.current
       if (!snap) return
       // A live stream only sends changes, so its rows stay current however old; off the stream,
       // rows older than a missed poll or two are stale, and the chart must not draw them as live.
       if (!liveRef.current && Date.now() - snap.at > STALE_SAMPLE_MS) return
-      setSpeeds((h) => recordFrame(h, snap.rows))
+      speeds.record(snap.rows)
     }, SAMPLE_MS)
 
     return () => {
@@ -148,9 +151,9 @@ export function useTasks(): TasksState & TasksApi {
       if (retry) clearTimeout(retry)
       close()
     }
-  }, [apply, refresh])
+  }, [apply, refresh, speeds])
 
   const reconnect = useCallback(() => reconnectRef.current(), [])
 
-  return { tasks, live, loaded, error, lastUpdate, speeds, refresh, reconnect }
+  return { tasks, live, loaded, error, lastUpdate, refresh, reconnect }
 }

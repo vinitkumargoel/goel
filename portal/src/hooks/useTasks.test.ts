@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '../lib/api'
+import { SpeedStore } from '../lib/speedStore'
 import type { TaskRow } from '../lib/types'
 import { useTasks } from './useTasks'
 
@@ -101,14 +102,53 @@ describe('useTasks', () => {
     vi.useFakeTimers()
     try {
       vi.spyOn(api, 'tasks').mockReturnValue(new Promise(() => {}))
-      const { result } = renderHook(() => useTasks())
+      const store = new SpeedStore()
+      renderHook(() => useTasks(store))
       act(() => FakeEventSource.last!.emit([row('a', 0, 100), row('b', 0, 50)]))
       act(() => vi.advanceTimersByTime(3000))
-      expect(result.current.speeds.perTask.get('a')).toHaveLength(3)
-      expect(result.current.speeds.total.at(-1)).toEqual({ down: 150, up: 0 })
+      expect(store.snapshot().perTask.get('a')).toHaveLength(3)
+      expect(store.snapshot().total.at(-1)).toEqual({ down: 150, up: 0 })
       act(() => FakeEventSource.last!.emit([row('a', 0, 10)]))
       act(() => vi.advanceTimersByTime(1000))
-      expect(result.current.speeds.perTask.has('b')).toBe(false)
+      expect(store.snapshot().perTask.has('b')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not re-render its caller on a sample tick', () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(api, 'tasks').mockReturnValue(new Promise(() => {}))
+      const store = new SpeedStore()
+      let renders = 0
+      renderHook(() => {
+        renders++
+        return useTasks(store)
+      })
+      act(() => FakeEventSource.last!.emit([row('a', 0, 100)]))
+      const before = renders
+      act(() => vi.advanceTimersByTime(3000))
+      expect(store.snapshot().total).toHaveLength(3)
+      expect(renders).toBe(before)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('skips samples while the tab is hidden', () => {
+    vi.useFakeTimers()
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    try {
+      vi.spyOn(api, 'tasks').mockReturnValue(new Promise(() => {}))
+      const store = new SpeedStore()
+      renderHook(() => useTasks(store))
+      act(() => FakeEventSource.last!.emit([row('a', 0, 100)]))
+      act(() => vi.advanceTimersByTime(3000))
+      expect(store.snapshot().total).toHaveLength(0)
+      visibility.mockReturnValue('visible')
+      act(() => vi.advanceTimersByTime(1000))
+      expect(store.snapshot().total).toHaveLength(1)
     } finally {
       vi.useRealTimers()
     }

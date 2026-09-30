@@ -57,8 +57,37 @@ describe('recordFrame', () => {
   })
 
   it('treats a missing or negative rate as zero', () => {
-    const h = recordFrame(EMPTY_HISTORY, [{ id: 'a', downSpeed: -5 } as TaskRow])
-    expect(h.perTask.get('a')).toEqual([{ down: 0, up: 0 }])
+    let h = recordFrame(EMPTY_HISTORY, [row('a', 5)])
+    h = recordFrame(h, [{ id: 'a', downSpeed: -5 } as TaskRow])
+    expect(h.perTask.get('a')).toEqual([
+      { down: 5, up: 0 },
+      { down: 0, up: 0 },
+    ])
+    expect(h.total.at(-1)).toEqual({ down: 0, up: 0 })
+  })
+
+  it('keeps no series for a task that has never moved', () => {
+    const h = recordFrame(EMPTY_HISTORY, [row('idle', 0), row('busy', 3)])
+    expect([...h.perTask.keys()]).toEqual(['busy'])
+    expect(h.total).toEqual([{ down: 3, up: 0 }])
+  })
+
+  it('drops a series once its last non-zero sample has scrolled off', () => {
+    let h = recordFrame(EMPTY_HISTORY, [row('a', 1), row('b', 1)], 3)
+    // Three frames scroll the 1 off a three-slot series; the fourth finds it all zeros.
+    for (let i = 0; i < 4; i++) h = recordFrame(h, [row('a', 0), row('b', 1)], 3)
+    expect(h.perTask.get('a')).toBeUndefined()
+    expect(h.perTask.get('b')).toHaveLength(3)
+  })
+
+  it('returns the same history for an idle frame once the total is already at rest', () => {
+    const first = recordFrame(EMPTY_HISTORY, [row('a', 0)])
+    expect(first.total).toEqual([{ down: 0, up: 0 }])
+    expect(recordFrame(first, [row('a', 0), row('b', 0)])).toBe(first)
+    // A removal still has to drop its series, idle or not.
+    const moving = recordFrame(recordFrame(EMPTY_HISTORY, [row('a', 4)]), [row('a', 0)])
+    expect(recordFrame(moving, [])).not.toBe(moving)
+    expect(recordFrame(moving, []).perTask.size).toBe(0)
   })
 
   it('does not mutate the previous history', () => {

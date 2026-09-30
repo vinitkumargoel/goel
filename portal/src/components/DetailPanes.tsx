@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { SpeedSample } from '../lib/speedHistory'
+import { useSpeedSeries } from '../lib/speedStore'
 import { SpeedChart } from './SpeedChart'
 import { fmtEta, fmtSize, fmtSpeed, pct } from '../lib/format'
 import { kindLabel } from '../lib/taskKind'
@@ -170,19 +170,18 @@ export function DetailsPane({ detail }: { detail: TaskDetail }) {
   )
 }
 
-export function ProgressPane({
-  detail,
-  samples = [],
-}: {
-  detail: TaskDetail
-  samples?: readonly SpeedSample[]
-}) {
+export function ProgressPane({ detail }: { detail: TaskDetail }) {
   return (
     <>
-      <SpeedChart samples={samples} />
+      <LiveSpeedChart id={detail.row.id} />
       <ProgressBody detail={detail} />
     </>
   )
+}
+
+/** Subscribes on its own, so a sample redraws the chart and not the panel around it. */
+function LiveSpeedChart({ id }: { id: string }) {
+  return <SpeedChart samples={useSpeedSeries(id)} />
 }
 
 function ProgressBody({ detail }: { detail: TaskDetail }) {
