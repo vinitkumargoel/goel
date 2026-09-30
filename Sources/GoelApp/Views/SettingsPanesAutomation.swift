@@ -185,11 +185,15 @@ struct RemoteAccessPane: View {
     @EnvironmentObject private var vm: AppViewModel
     /// Never bind the plaintext to settings — only the hash computed on "Set" is persisted.
     @State private var newPassword = ""
+    /// Committed on Return / focus loss: `validated()` would eat a half-typed `goel.` or `https:` per keystroke.
+    @State private var hostNamesDraft: String?
+    @FocusState private var hostNamesFocused: Bool
 
     private static let managedKeys: [ManagedPolicy.Key] = [
         .remoteAccessEnabled, .remoteAllowLAN, .remoteRequireAuth, .remoteReadOnly,
         .remoteTLSEnabled, .remoteTLSIdentityPath,
         .remoteTrustedHeaderAuthEnabled, .remoteTrustedHeaderName, .remoteTrustedProxies,
+        .remoteAllowedHostNames,
     ]
 
     var body: some View {
@@ -313,6 +317,19 @@ struct RemoteAccessPane: View {
                             .managed(.remoteTLSIdentityPath, vm.managedPolicy)
                     }
                 }
+                SetRow(name: L10n.t("Extra host names"),
+                       desc: L10n.t("Extra host names (comma-separated), e.g. goel.home, mymac.tailnet.ts.net. The portal answers only to IP addresses, localhost and .local names unless a name is listed here.")) {
+                    TextField("", text: allowedHostNamesBinding)
+                        .textFieldStyle(.roundedBorder).frame(width: 200)
+                        .accessibilityLabel(L10n.t("Extra host names"))
+                        .focused($hostNamesFocused)
+                        .onSubmit(commitHostNames)
+                        .onChange(of: hostNamesFocused) { _, focused in
+                            if !focused { commitHostNames() }
+                        }
+                        .onDisappear(perform: commitHostNames)
+                        .managed(.remoteAllowedHostNames, vm.managedPolicy)
+                }
                 SetRow(name: L10n.t("Failed sign-ins before backoff"),
                        desc: L10n.t("Wrong passwords from one address are slowed exponentially. The delay is per-address, so one attacker can’t lock everybody else out.")) {
                     SettingInt(value: setting(vm, \.remoteLoginMaxAttempts), width: 70)
@@ -361,6 +378,21 @@ struct RemoteAccessPane: View {
                 vm.update { $0.remoteLoginBackoffSeconds = Double(max(0, seconds)) }
             }
         )
+    }
+
+    private var allowedHostNamesBinding: Binding<String> {
+        Binding(
+            get: { hostNamesDraft ?? vm.settings.remoteAllowedHostNames.joined(separator: ", ") },
+            set: { hostNamesDraft = $0 }
+        )
+    }
+
+    /// `validated()` strips schemes, ports and junk, so a pasted URL still lands as a bare name.
+    private func commitHostNames() {
+        guard let raw = hostNamesDraft else { return }
+        hostNamesDraft = nil
+        let parsed = raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        vm.update { $0.remoteAllowedHostNames = parsed }
     }
 
     /// Blank entries must be dropped: a trailing comma would look configured but match nothing.

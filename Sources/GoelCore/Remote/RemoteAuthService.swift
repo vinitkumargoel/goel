@@ -16,7 +16,7 @@ public enum RemoteAuthService {
             body: Data("""
                 This portal does not answer to that host name. Open it by IP address, localhost or \
                 its .local name — or, behind a reverse proxy, list the public name in \
-                GOEL_PORTAL_ALLOWED_HOSTS or the proxy's address in the trusted proxies.
+                Settings → Web Access → Extra host names (or GOEL_PORTAL_ALLOWED_HOSTS).
 
                 """.utf8))
     }
@@ -321,7 +321,18 @@ public struct RemotePortalSecurity: Sendable, Equatable {
                       trustedProxies: settings.remoteTrustedProxies,
                       sharedSecret: TrustedIdentityHeaderPolicy.secretFromEnvironment),
                   tlsEnabled: settings.remoteTLSEnabled,
-                  tlsIdentityPath: settings.remoteTLSIdentityPath)
+                  tlsIdentityPath: settings.remoteTLSIdentityPath,
+                  allowedHosts: Self.allowedHosts(settings: settings,
+                                                  environment: RemoteHostPolicy.allowedHostsFromEnvironment))
+    }
+
+    /// Union, environment first: the daemon's config file and the app's setting both widen, never narrow.
+    static func allowedHosts(settings: AppSettings, environment: [String]) -> [String] {
+        var out = environment
+        for name in AppSettings.normalizedHostNames(settings.remoteAllowedHostNames) where !out.contains(name) {
+            out.append(name)
+        }
+        return out
     }
 
     /// From the environment, deliberately not a setting: that JSON gets backed up and mailed to support.

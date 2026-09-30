@@ -102,6 +102,7 @@ public struct ManagedPolicy: Sendable, Equatable {
         case remoteTrustedHeaderAuthEnabled
         case remoteTrustedHeaderName
         case remoteTrustedProxies
+        case remoteAllowedHostNames
 
         case autoCheckUpdates
         case updateFeedURL
@@ -191,6 +192,9 @@ public struct ManagedPolicy: Sendable, Equatable {
         if let v = bool(.remoteTrustedHeaderAuthEnabled) { out.remoteTrustedHeaderAuthEnabled = v }
         if let v = string(.remoteTrustedHeaderName), !v.isEmpty { out.remoteTrustedHeaderName = v }
         if let v = stringList(.remoteTrustedProxies) { out.remoteTrustedProxies = v }
+        if let v = stringList(.remoteAllowedHostNames) {
+            out.remoteAllowedHostNames = AppSettings.normalizedHostNames(v)
+        }
 
         if let v = bool(.autoCheckUpdates) { out.autoCheckUpdates = v }
         if let v = string(.updateFeedURL) { out.updateFeedURL = v }

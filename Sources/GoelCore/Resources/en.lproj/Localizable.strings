@@ -583,6 +583,8 @@
 "Export Failed" = "Export Failed";
 "Export failed" = "Export failed";
 "Export…" = "Export…";
+"Extra host names" = "Extra host names";
+"Extra host names (comma-separated), e.g. goel.home, mymac.tailnet.ts.net. The portal answers only to IP addresses, localhost and .local names unless a name is listed here." = "Extra host names (comma-separated), e.g. goel.home, mymac.tailnet.ts.net. The portal answers only to IP addresses, localhost and .local names unless a name is listed here.";
 "Extract Audio" = "Extract Audio";
 "Extract Audio…" = "Extract Audio…";
 "Extracted %@" = "Extracted %@";

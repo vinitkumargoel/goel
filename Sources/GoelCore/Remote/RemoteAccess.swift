@@ -46,6 +46,7 @@ public enum RemoteAccessPolicy {
             || previous.remoteTrustedHeaderAuthEnabled != next.remoteTrustedHeaderAuthEnabled
             || previous.remoteTrustedHeaderName != next.remoteTrustedHeaderName
             || previous.remoteTrustedProxies != next.remoteTrustedProxies
+            || previous.remoteAllowedHostNames != next.remoteAllowedHostNames
     }
 }
 

@@ -298,6 +298,8 @@ public enum DiagnosticsRedaction {
         "updateFeedURL",
         // A list of internal IPs/CIDRs is a network location, withheld for the same reason as `proxyHost`: it identifies the employer.
         "remoteTrustedProxies",
+        // Host names identify the network the same way.
+        "remoteAllowedHostNames",
     ]
 
     /// The coverage test diffs this against the type's real encoded keys, so a field added without a privacy class fails the suite instead of leaking.
