@@ -11,14 +11,14 @@ struct AutoShutdownCountdownView: View {
                 Color.black.opacity(0.25).ignoresSafeArea()
                 VStack(spacing: 14) {
                     Image(systemName: intent == .quit ? "power" : (intent == .sleep ? "moon.fill" : "power.circle.fill"))
-                        .font(.system(size: 30))
+                        .scaledFont(size: 30)
                         .foregroundStyle(Theme.orange)
                         .a11yDecorative()
                     Text(AutoShutdownCountdown.title(for: intent))
-                        .scaledFont(size: 14, weight: .semibold)
+                        .scaledFont(size: Theme.TextSize.title, weight: .semibold)
                         .multilineTextAlignment(.center)
                     Text(AutoShutdownCountdown.message(remaining: remaining))
-                        .scaledFont(size: 12, monospacedDigit: true)
+                        .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {
                         // Return cancels (Escape too, below): a stray keypress must never power off.
@@ -30,8 +30,8 @@ struct AutoShutdownCountdownView: View {
                 }
                 .padding(24)
                 .frame(width: 340)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline))
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.sheet))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sheet).stroke(Theme.hairline))
                 .shadow(radius: 18, y: 8)
                 .accessibilityElement(children: .contain)
                 .accessibilityAddTraits(.isModal)

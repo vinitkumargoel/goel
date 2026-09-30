@@ -34,10 +34,10 @@ struct AggregationSettingsPane: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 22, weight: .semibold))
+                    .scaledFont(size: 22, weight: .semibold)
                     .foregroundStyle(Theme.accent)
                     .frame(width: 36, height: 36)
-                    .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                     .a11yDecorative()
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.t("Aggregation"))
@@ -165,7 +165,7 @@ struct AggregationSettingsPane: View {
     private var emptyAdapters: some View {
         HStack(spacing: 12) {
             Image(systemName: "network.slash")
-                .font(.system(size: 20))
+                .scaledFont(size: 20)
                 .foregroundStyle(.secondary)
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 3) {
@@ -217,7 +217,7 @@ struct AggregationSettingsPane: View {
                     .accessibilityLabel(L10n.t("Streams per adapter"))
                     .accessibilityValue("\(vm.settings.aggregationStreamsPerAdapter)")
                     Text("\(vm.settings.aggregationStreamsPerAdapter)")
-                        .scaledFont(size: 13, weight: .medium, monospacedDigit: true)
+                        .scaledFont(size: Theme.TextSize.body, weight: .medium, monospacedDigit: true)
                         .frame(width: 22, alignment: .trailing)
                         .a11yDecorative()
                 }
@@ -249,7 +249,7 @@ struct AggregationSettingsPane: View {
     private func tipRow(icon: String, text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .scaledFont(size: Theme.TextSize.body, weight: .semibold)
                 .foregroundStyle(Theme.accent)
                 .frame(width: 18)
             Text(text)
@@ -288,12 +288,12 @@ private struct AdapterRow: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: typeIcon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: Theme.TextSize.title, weight: .semibold)
                     .foregroundStyle(participating ? Theme.accent : .secondary)
                     .frame(width: 32, height: 32)
                     .background(
                         (participating ? Theme.accent.opacity(0.12) : Color.primary.opacity(0.05)),
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: Theme.Radius.field, style: .continuous)
                     )
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -324,7 +324,7 @@ private struct AdapterRow: View {
                 }
 
                 Image(systemName: participating ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 18))
+                    .scaledFont(size: 18)
                     .foregroundStyle(participating ? Theme.accent : Color.secondary.opacity(0.35))
             }
             .padding(.horizontal, 12)

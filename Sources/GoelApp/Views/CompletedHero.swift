@@ -65,7 +65,7 @@ struct CompletedHero: View {
             .stroke(Theme.hairline))
         .overlay(alignment: .bottomTrailing) {
             Image(systemName: task.isFileMissing ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
-                .font(.system(size: 22, weight: .semibold))
+                .scaledFont(size: 22, weight: .semibold)
                 // The glyph's cut-out shows the window background, so no ink needs picking.
                 .foregroundStyle(task.isFileMissing ? Theme.orange : Theme.green)
                 .background(Circle().fill(.background))

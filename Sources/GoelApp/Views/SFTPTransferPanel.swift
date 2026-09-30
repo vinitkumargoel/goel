@@ -68,11 +68,11 @@ struct SFTPTransferPanel: View {
     private var header: some View {
         HStack(spacing: 10) {
             Text(L10n.t("Transfers"))
-                .scaledFont(size: 11, weight: .bold)
+                .scaledFont(size: Theme.TextSize.caption, weight: .bold)
                 .foregroundStyle(.secondary)
                 .accessibilityAddTraits(.isHeader)
             Text(countSummary)
-                .scaledFont(size: 11, monospacedDigit: true)
+                .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
                 .foregroundStyle(.tertiary)
             Spacer(minLength: 8)
             if aggregateSpeed > 0 {
@@ -80,7 +80,7 @@ struct SFTPTransferPanel: View {
             }
             if transfers.contains(where: { !$0.occupiesDestination }) {
                 Button(L10n.t("Clear")) { vm.clearFinishedSFTPTransfers() }
-                    .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
+                    .buttonStyle(.plain).scaledFont(size: Theme.TextSize.meta).foregroundStyle(Theme.accent)
                     .accessibilityLabel(L10n.t("Clear finished transfers"))
             }
         }
@@ -166,13 +166,13 @@ struct SFTPTransferListRow: View {
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: transfer.iconName(filledWhenFinished: true))
-                .font(.system(size: 13))
+                .scaledFont(size: Theme.TextSize.body)
                 .foregroundStyle(transfer.tint)
                 .frame(width: 16)
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 3) {
                 Text(transfer.name)
-                    .scaledFont(size: 12)
+                    .scaledFont(size: Theme.TextSize.body)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if transfer.isActive || transfer.isPaused {
@@ -182,7 +182,7 @@ struct SFTPTransferListRow: View {
                         .frame(height: 3)
                 } else {
                     Text(secondaryLine)
-                        .scaledFont(size: 10.5)
+                        .scaledFont(size: Theme.TextSize.caption)
                         .foregroundStyle(transfer.failureMessage == nil ? Color.secondary : Theme.red)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -191,7 +191,7 @@ struct SFTPTransferListRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if transfer.total > 0, transfer.isActive || transfer.isPaused {
                 Text(transfer.progressLabel)
-                    .scaledFont(size: 10.5, weight: .semibold, monospacedDigit: true)
+                    .scaledFont(size: Theme.TextSize.caption, weight: .semibold, monospacedDigit: true)
                     .foregroundStyle(.secondary)
             }
         }
@@ -258,16 +258,16 @@ struct SFTPTransferInspector: View {
             progressRing
             VStack(alignment: .leading, spacing: 3) {
                 Text(transfer.name)
-                    .scaledFont(size: 14, weight: .semibold)
+                    .scaledFont(size: Theme.TextSize.title, weight: .semibold)
                     .lineLimit(1).truncationMode(.middle)
                 HStack(spacing: 7) {
                     StatusPill(text: transfer.stateLabel, tint: transfer.tint)
                     if transfer.isDirectory {
                         Text(L10n.t("Folder · up to %d streams", AppViewModel.maxParallelUploads))
-                            .scaledFont(size: 11).foregroundStyle(.secondary)
+                            .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
                     } else if transfer.total > 0 {
                         Text(transfer.total.byteString)
-                            .scaledFont(size: 11, monospacedDigit: true).foregroundStyle(.secondary)
+                            .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -288,7 +288,7 @@ struct SFTPTransferInspector: View {
             // A folder before its walk finishes, and any file the server gave no size for,
             // have no honest percentage — the dash says so instead of showing a stuck 0%.
             Text(transfer.total > 0 ? "\(Int(transfer.fraction * 100))" : "—")
-                .scaledFont(size: 12, weight: .semibold, monospacedDigit: true)
+                .scaledFont(size: Theme.TextSize.body, weight: .semibold, monospacedDigit: true)
         }
         .frame(width: 50, height: 50)
         .a11yDecorative()
@@ -301,11 +301,11 @@ struct SFTPTransferInspector: View {
                 .tint(transfer.tint)
             HStack {
                 Text(transfer.sizeLabel)
-                    .scaledFont(size: 11, monospacedDigit: true).foregroundStyle(.secondary)
+                    .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true).foregroundStyle(.secondary)
                 Spacer()
                 if let remaining = transfer.remainingBytes {
                     Text(L10n.t("%@ left", remaining.byteString))
-                        .scaledFont(size: 11, monospacedDigit: true).foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true).foregroundStyle(.tertiary)
                 }
             }
         }
@@ -317,15 +317,15 @@ struct SFTPTransferInspector: View {
     private func failureNote(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 7) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11)).foregroundStyle(Theme.red)
+                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(Theme.red)
                 .a11yDecorative()
             Text(message)
-                .scaledFont(size: 11).foregroundStyle(Theme.red)
+                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(Theme.red)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(9)
-        .background(Theme.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 7))
+        .background(Theme.red.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.control))
         .padding(.top, 11)
         .accessibilityLabel(L10n.t("Failed, %@", message))
     }
@@ -336,12 +336,12 @@ struct SFTPTransferInspector: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(L10n.t("Throughput"))
-                    .scaledFont(size: 10.5, weight: .bold).foregroundStyle(.tertiary)
+                    .scaledFont(size: Theme.TextSize.caption, weight: .bold).foregroundStyle(.tertiary)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if history.count > 1 {
                     Text(L10n.t("last %ds", history.count))
-                        .scaledFont(size: 10, monospacedDigit: true).foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.micro, monospacedDigit: true).foregroundStyle(.tertiary)
                 }
             }
             HStack(alignment: .top, spacing: 14) {
@@ -358,7 +358,7 @@ struct SFTPTransferInspector: View {
                 .frame(height: 58)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 8).padding(.vertical, 6)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
                 .a11yGroup(
                     label: L10n.t("Throughput graph, last %d seconds", history.count),
                     value: A11y.sentence(A11y.speed(transfer.displaySpeed),
@@ -367,13 +367,13 @@ struct SFTPTransferInspector: View {
         } else {
             // Two samples draw no line; the placeholder keeps the readings from jumping
             // sideways on the second tick.
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.Radius.field)
                 .fill(Color.primary.opacity(0.04))
                 .frame(height: 70)
                 .frame(maxWidth: .infinity)
                 .overlay(
                     Text(transfer.isActive ? L10n.t("Measuring…") : L10n.t("No throughput recorded"))
-                        .scaledFont(size: 11).foregroundStyle(.tertiary))
+                        .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.tertiary))
                 .a11yDecorative()
         }
     }
@@ -399,15 +399,15 @@ struct SFTPTransferInspector: View {
                          tint: Color = .primary, spoken: String? = nil) -> some View {
         HStack(spacing: 6) {
             Text(label)
-                .scaledFont(size: 10, weight: .semibold).foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.micro, weight: .semibold).foregroundStyle(.tertiary)
             Spacer(minLength: 4)
             Text(value)
-                .scaledFont(size: 11.5, weight: .semibold, monospacedDigit: true)
+                .scaledFont(size: Theme.TextSize.meta, weight: .semibold, monospacedDigit: true)
                 .foregroundStyle(tint)
                 .lineLimit(1)
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.control))
         .a11yGroup(label: label, value: spoken ?? value)
     }
 
@@ -424,7 +424,7 @@ struct SFTPTransferInspector: View {
         HStack(alignment: .top, spacing: 10) {
             routeEnd(title: L10n.t("From · %@", sourcePlace), path: sourcePath)
             Image(systemName: "arrow.right")
-                .font(.system(size: 12, weight: .bold))
+                .scaledFont(size: Theme.TextSize.body, weight: .bold)
                 .foregroundStyle(transfer.directionTint)
                 .padding(.top, 13)
                 .a11yDecorative()
@@ -461,9 +461,9 @@ struct SFTPTransferInspector: View {
     private func routeEnd(title: String, path: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .scaledFont(size: 9.5, weight: .bold).foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.micro, weight: .bold).foregroundStyle(.tertiary)
             Text(path)
-                .font(.system(size: 11, design: .monospaced))
+                .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .lineLimit(2).truncationMode(.middle)
                 .textSelection(.enabled)
@@ -498,10 +498,10 @@ struct SFTPTransferInspector: View {
     private func factRow(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(label)
-                .scaledFont(size: 11).foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.tertiary)
                 .frame(width: 58, alignment: .trailing)
             Text(value)
-                .scaledFont(size: 11.5)
+                .scaledFont(size: Theme.TextSize.meta)
                 .lineLimit(1).truncationMode(.middle)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -607,7 +607,7 @@ struct StatusPill: View {
 
     var body: some View {
         Text(text)
-            .scaledFont(size: 10, weight: .bold)
+            .scaledFont(size: Theme.TextSize.micro, weight: .bold)
             .padding(.horizontal, 7).padding(.vertical, 2.5)
             // 12% matches KindBadge, which was measured at 3.83–7.95:1 across the themes.
             .background(tint.opacity(0.12), in: Capsule())

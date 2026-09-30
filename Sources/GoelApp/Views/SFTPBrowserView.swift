@@ -251,7 +251,7 @@ struct SFTPBrowserView: View {
                 ForEach(Array(breadcrumbs.enumerated()), id: \.offset) { idx, crumb in
                     if idx > 0 {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 7, weight: .semibold)).foregroundStyle(.tertiary)
+                            .scaledFont(size: 7, weight: .semibold).foregroundStyle(.tertiary)
                             .a11yDecorative()
                     }
                     let isLast = idx == breadcrumbs.count - 1
@@ -359,7 +359,7 @@ struct SFTPBrowserView: View {
     private var searchBar: some View {
         HStack(spacing: 7) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
                 .a11yDecorative()
             TextField(L10n.t("Filter this folder"), text: $searchText)
                 .textFieldStyle(.plain)
@@ -850,7 +850,7 @@ struct SFTPBrowserView: View {
                 Text(title).scaledFont(size: Theme.TextSize.caption, weight: .semibold)
                 if sortKeyRaw == key {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 7, weight: .bold))
+                        .scaledFont(size: 7, weight: .bold)
                 }
             }
             .foregroundStyle(sortKeyRaw == key ? Color.primary : Color.secondary)
@@ -883,7 +883,7 @@ struct SFTPBrowserView: View {
 
     private func symlinkBadge(_ entry: SFTPEntry) -> some View {
         Image(systemName: "arrow.up.forward")
-            .font(.system(size: 9, weight: .semibold))
+            .scaledFont(size: 9, weight: .semibold)
             .foregroundStyle(.tertiary)
             .help(entry.linkTarget.isEmpty ? L10n.t("Symbolic link")
                                            : L10n.t("Symbolic link to %@", entry.linkTarget))
@@ -950,7 +950,7 @@ struct SFTPBrowserView: View {
         let selected = selection.contains(entry.id)
         return VStack(spacing: 7) {
             Image(systemName: SFTPFileIcon.symbol(for: entry))
-                .font(.system(size: 32))
+                .scaledFont(size: 32)
                 .foregroundStyle(SFTPFileIcon.tint(for: entry))
                 .frame(height: 38)
             Text(entry.name)
@@ -962,14 +962,14 @@ struct SFTPBrowserView: View {
         .padding(.vertical, 14).padding(.horizontal, 8)
         .frame(maxWidth: .infinity, minHeight: 118)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.Radius.card)
                 .fill(dropping ? Theme.accent.opacity(0.16)
                       : selected ? Theme.accent.opacity(0.20)
                       : hovered ? Color.primary.opacity(0.06)
                       : Color(nsColor: .controlBackgroundColor).opacity(0.45))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.Radius.card)
                 .strokeBorder(dropping || selected ? Theme.accent
                               : hovered ? Color.primary.opacity(0.12) : Color.clear,
                               lineWidth: (dropping || selected) ? 2 : 1)
@@ -1094,7 +1094,7 @@ struct SFTPBrowserView: View {
         ZStack {
             Theme.accent.opacity(0.08)
             VStack(spacing: 10) {
-                Image(systemName: "arrow.up.doc").font(.system(size: 30))
+                Image(systemName: "arrow.up.doc").scaledFont(size: 30)
                 Text(L10n.t("Upload to %@", model.displayPath)).scaledFont(size: Theme.TextSize.title, weight: .semibold)
             }
             .foregroundStyle(Theme.accent)

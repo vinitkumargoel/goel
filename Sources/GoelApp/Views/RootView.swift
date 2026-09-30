@@ -173,9 +173,9 @@ struct RootView: View {
                 Color.black.opacity(0.10).ignoresSafeArea()
                 VStack(spacing: 14) {
                     Image(systemName: "arrow.down.to.line")
-                        .font(.system(size: 34, weight: .regular))
+                        .scaledFont(size: 34, weight: .regular)
                     Text(L10n.t("Drop a URL or .torrent file here"))
-                        .scaledFont(size: 15, weight: .semibold)
+                        .scaledFont(size: Theme.TextSize.sheet, weight: .semibold)
                 }
                 .foregroundStyle(Theme.accent)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -214,7 +214,7 @@ struct RootView: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
                 .a11yDecorative()
-            Text(warning).scaledFont(size: 12)
+            Text(warning).scaledFont(size: Theme.TextSize.body)
                 .accessibilityLabel(L10n.t("Warning. %@", warning))
             Spacer()
             if vm.databaseRecovery != nil, warning == vm.persistenceWarning {
@@ -234,9 +234,9 @@ struct RootView: View {
         HStack(spacing: 8) {
             Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
                 .a11yDecorative()
-            Text(L10n.t("Copied link detected")).scaledFont(size: 12, weight: .semibold)
+            Text(L10n.t("Copied link detected")).scaledFont(size: Theme.TextSize.body, weight: .semibold)
             Text(link)
-                .scaledFont(size: 11, design: .monospaced)
+                .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -277,7 +277,7 @@ private struct RestoringPlaceholderList: View {
                     RoundedRectangle(cornerRadius: Theme.Radius.control)
                         .frame(width: 26, height: 26)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(name).scaledFont(size: 12.5, weight: .medium)
+                        Text(name).scaledFont(size: Theme.TextSize.body, weight: .medium)
                         Text("62% · 3m left").scaledFont(size: Theme.TextSize.meta)
                     }
                     Spacer()

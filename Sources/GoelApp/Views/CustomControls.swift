@@ -38,7 +38,7 @@ struct Dropdown<Value: Hashable>: View {
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .scaledFont(size: 9, weight: .semibold)
                     .foregroundStyle(.secondary)
                     .a11yDecorative()
             }
@@ -46,8 +46,8 @@ struct Dropdown<Value: Hashable>: View {
             .padding(.horizontal, 10)
             .frame(height: 26)
             .modifier(WidthOrFill(width: width))
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline))
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.Radius.control))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control).stroke(Theme.hairline))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -96,7 +96,7 @@ private struct DropdownRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .scaledFont(size: Theme.TextSize.micro, weight: .bold)
                     .foregroundStyle(Theme.accent)
                     .opacity(isSelected ? 1 : 0)
                 Text(title)
@@ -182,12 +182,12 @@ private struct ActionMenuRow: View {
         } label: {
             HStack(spacing: 8) {
                 if let leading = item.leadingSymbol {
-                    Image(systemName: leading).font(.system(size: 11)).frame(width: 15)
+                    Image(systemName: leading).scaledFont(size: Theme.TextSize.meta).frame(width: 15)
                 }
                 Text(item.title).scaledFont(size: Theme.TextSize.body)
                 Spacer(minLength: 14)
                 if let trailing = item.trailingSymbol {
-                    Image(systemName: trailing).font(.system(size: 10, weight: .semibold))
+                    Image(systemName: trailing).scaledFont(size: Theme.TextSize.micro, weight: .semibold)
                 }
             }
             .foregroundStyle(item.isDestructive ? Theme.red : Color.primary)
@@ -220,17 +220,17 @@ struct ToolbarMenuLabel: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: systemImage).font(.system(size: 12))
+            Image(systemName: systemImage).scaledFont(size: Theme.TextSize.body)
             Text(title).scaledFont(size: Theme.TextSize.body)
             Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
+                .scaledFont(size: 9, weight: .semibold)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
         .frame(height: 28)
         .background((active || hovering ? Color.primary.opacity(0.09) : Color.primary.opacity(0.05)),
-                    in: RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline))
+                    in: RoundedRectangle(cornerRadius: Theme.Radius.control))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control).stroke(Theme.hairline))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .a11yGroup(label: title,
@@ -252,7 +252,7 @@ struct ConfirmDialogView: View {
 
             VStack(spacing: 14) {
                 Image(systemName: request.isDestructive ? "trash.circle.fill" : "questionmark.circle.fill")
-                    .font(.system(size: 34))
+                    .scaledFont(size: 34)
                     .foregroundStyle(request.isDestructive ? Theme.red : Theme.accent)
                     .a11yDecorative()
 
@@ -297,8 +297,8 @@ struct ConfirmDialogView: View {
             }
             .padding(22)
             .frame(width: 360)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.sheet))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sheet).stroke(Theme.hairline))
             .shadow(radius: 30, y: 12)
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
@@ -324,12 +324,12 @@ private struct DialogButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .scaledFont(size: 13, weight: kind == .normal ? .regular : .semibold)
+                .scaledFont(size: Theme.TextSize.body, weight: kind == .normal ? .regular : .semibold)
                 .foregroundStyle(foreground)
                 .padding(.horizontal, 18)
                 .frame(height: 30)
-                .background(background, in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7)
+                .background(background, in: RoundedRectangle(cornerRadius: Theme.Radius.control))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control)
                     .stroke(isDefault ? Theme.accent : (kind == .normal ? Theme.hairline : .clear),
                             lineWidth: isDefault ? 2 : 1))
                 .contentShape(Rectangle())

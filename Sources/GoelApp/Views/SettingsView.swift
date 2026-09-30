@@ -116,7 +116,7 @@ struct SettingsView: View {
     private var noMatchContent: some View {
         VStack(spacing: Theme.Space.s) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 28))
+                .scaledFont(size: 28)
                 .foregroundStyle(.secondary)
                 .a11yDecorative()
             Text(L10n.t("No settings match"))
@@ -363,7 +363,7 @@ struct SettingsView: View {
                 SettingText(text: binding(\.ffmpegPath), width: 200)
             }
             Text(vm.ffmpegResolutionSummary)
-                .scaledFont(size: 10)
+                .scaledFont(size: Theme.TextSize.micro)
                 .foregroundStyle(vm.ffmpegUnavailableReason == nil ? Color.secondary : Theme.orange)
                 .fixedSize(horizontal: false, vertical: true)
             SetRow(name: L10n.t("Conversions at once"),
@@ -483,13 +483,13 @@ struct SettingsView: View {
             SetRow(name: L10n.t("Max download speed"), desc: L10n.t("0 = unlimited.")) {
                 HStack(spacing: 4) {
                     SettingDouble(value: megabytesBinding(\.maxDownloadBytesPerSec), width: 70)
-                    Text(L10n.t("MB/s")).scaledFont(size: 13).foregroundStyle(.secondary)
+                    Text(L10n.t("MB/s")).scaledFont(size: Theme.TextSize.body).foregroundStyle(.secondary)
                 }
             }
             SetRow(name: L10n.t("Max upload speed"), desc: "") {
                 HStack(spacing: 4) {
                     SettingDouble(value: megabytesBinding(\.maxUploadBytesPerSec), width: 70)
-                    Text(L10n.t("MB/s")).scaledFont(size: 13).foregroundStyle(.secondary)
+                    Text(L10n.t("MB/s")).scaledFont(size: Theme.TextSize.body).foregroundStyle(.secondary)
                 }
             }
             SetRow(name: L10n.t("Max connections (global)"), desc: "") {
@@ -522,21 +522,21 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 6) {
                     Circle().fill(dot).frame(width: 8, height: 8)
-                    Text(profile.name).font(.system(size: 13, weight: .semibold))
+                    Text(profile.name).scaledFont(size: Theme.TextSize.title, weight: .semibold)
                 }
                 Text("↓ \(profile.isDownloadUnlimited ? L10n.t("Unlimited") : profile.maxDownloadBytesPerSec.byteString + "/s")\n↑ \(profile.maxUploadBytesPerSec <= 0 ? L10n.t("Unlimited") : profile.maxUploadBytesPerSec.byteString + "/s")\n\(L10n.t("%1$@ conns · %2$@ active", String(profile.maxConnections), String(profile.maxSimultaneousDownloads)))\n\(L10n.t("seed to %@×", String(format: "%.1f", profile.seedRatioLimit)))")
-                    .font(.system(size: 11))
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.Radius.card)
                     .fill(selected ? Theme.accent.opacity(0.08) : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.Radius.card)
                     .stroke(selected ? Theme.accent : Theme.hairline, lineWidth: 1.5)
             )
             .contentShape(Rectangle())
@@ -594,7 +594,7 @@ struct SettingsView: View {
             }
             if let gap = swarmProxyGap {
                 Label(L10n.t(gap.rawValue), systemImage: "exclamationmark.shield.fill")
-                    .scaledFont(size: 11)
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(Theme.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -640,7 +640,7 @@ struct SettingsView: View {
                             }
                         }
                     ), width: 48)
-                    Text(L10n.t("%")).scaledFont(size: 13)
+                    Text(L10n.t("%")).scaledFont(size: Theme.TextSize.body)
                 }
             }
             SetRow(name: L10n.t("Don't seed on battery"), desc: "") { SettingSwitch(isOn: binding(\.dontSeedOnBattery)) }
@@ -708,7 +708,7 @@ struct SettingsView: View {
         }
         Text(L10n.t("Withheld from every report: %@.",
                     DiagnosticsRedaction.withheldSettingsKeys.sorted().joined(separator: ", ")))
-            .scaledFont(size: 10)
+            .scaledFont(size: Theme.TextSize.micro)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }

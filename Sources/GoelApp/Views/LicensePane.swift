@@ -47,7 +47,7 @@ struct LicensePane: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 11) {
                 Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 20))
+                    .scaledFont(size: 20)
                     .foregroundStyle(Theme.green)
                     .a11yDecorative()
                 VStack(alignment: .leading, spacing: 3) {
@@ -79,8 +79,8 @@ struct LicensePane: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.hairline))
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).stroke(Theme.hairline))
     }
 
     private var atWorkPanel: some View {
@@ -131,8 +131,8 @@ struct LicensePane: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.25)))
+        .background(Theme.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).stroke(Theme.accent.opacity(0.25)))
     }
 
     /// These are product guarantees — the code has to keep matching them.
@@ -141,7 +141,7 @@ struct LicensePane: View {
             ForEach(Self.guarantees, id: \.self) { line in
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Image(systemName: "xmark.circle")
-                        .font(.system(size: 10, weight: .semibold))
+                        .scaledFont(size: Theme.TextSize.micro, weight: .semibold)
                         .foregroundStyle(Theme.green)
                     Text(line)
                         .scaledFont(size: Theme.TextSize.body)

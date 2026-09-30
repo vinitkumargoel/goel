@@ -276,7 +276,7 @@ struct RemoteAccessPane: View {
                        desc: L10n.t("For scripts and the browser extension. People should use the sign-in above.")) {
                     HStack(spacing: 8) {
                         Text(vm.settings.remoteToken)
-                            .font(.system(size: 11, design: .monospaced))
+                            .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .frame(maxWidth: 150)
@@ -563,7 +563,7 @@ struct CredentialsSection: View {
     var body: some View {
         SectionHeader(L10n.t("Site logins"))
         Text(L10n.t("Stored in your Keychain. Sent as HTTP Basic auth when a download matches the host."))
-            .scaledFont(size: 11.5)
+            .scaledFont(size: Theme.TextSize.meta)
             .foregroundStyle(.secondary)
             .padding(.bottom, 4)
 

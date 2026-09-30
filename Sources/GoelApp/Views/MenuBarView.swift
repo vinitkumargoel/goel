@@ -117,7 +117,7 @@ struct MenuBarView: View {
     private func sectionLabel(_ text: String) -> some View {
         HStack {
             Text(text.uppercased())
-                .scaledFont(size: 10, weight: .bold)
+                .scaledFont(size: Theme.TextSize.micro, weight: .bold)
                 .foregroundStyle(.secondary)
             Spacer()
         }
@@ -132,7 +132,7 @@ struct MenuBarView: View {
         let count = listedTasks.count + activeTransfers.count + vm.mediaLiveCount
         return HStack(spacing: 12) {
             Text(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads · %d", count))
-                .scaledFont(size: 13, weight: .semibold)
+                .scaledFont(size: Theme.TextSize.title, weight: .semibold)
                 .accessibilityLabel(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads, %d in progress", count))
                 .accessibilityAddTraits(.isHeader)
             if failures > 0 {
@@ -171,12 +171,12 @@ struct MenuBarView: View {
 
             Button(action: addDownload) {
                 HStack(spacing: 7) {
-                    Image(systemName: "plus").font(.system(size: 12, weight: .bold))
-                    Text(L10n.t("Add download")).scaledFont(size: 13, weight: .semibold)
+                    Image(systemName: "plus").scaledFont(size: Theme.TextSize.body, weight: .bold)
+                    Text(L10n.t("Add download")).scaledFont(size: Theme.TextSize.title, weight: .semibold)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
-                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.field))
                 .foregroundStyle(Theme.onAccent)
                 .contentShape(Rectangle())
             }
@@ -187,7 +187,7 @@ struct MenuBarView: View {
                 Button(action: pauseOrResumeAll) {
                     Label(activeTasks.isEmpty ? L10n.t("Start all") : L10n.t("Pause all"),
                           systemImage: activeTasks.isEmpty ? "play.fill" : "pause.fill")
-                        .scaledFont(size: 11.5)
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(.secondary)
                         .contentShape(Rectangle())
                 }
@@ -196,8 +196,8 @@ struct MenuBarView: View {
                 Spacer(minLength: 0)
                 Button(action: openApp) {
                     HStack(spacing: 4) {
-                        Text(L10n.t("Open Goel°")).scaledFont(size: 11.5)
-                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                        Text(L10n.t("Open Goel°")).scaledFont(size: Theme.TextSize.meta)
+                        Image(systemName: "chevron.right").scaledFont(size: 9, weight: .bold)
                     }
                     .foregroundStyle(.secondary)
                     .contentShape(Rectangle())
@@ -235,10 +235,10 @@ private struct MenuBarCountdownSection: View {
         if case .counting(let intent, let remaining) = countdown.phase {
             VStack(alignment: .leading, spacing: 6) {
                 Text(AutoShutdownCountdown.title(for: intent))
-                    .scaledFont(size: 12, weight: .semibold)
+                    .scaledFont(size: Theme.TextSize.body, weight: .semibold)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(AutoShutdownCountdown.message(remaining: remaining))
-                    .scaledFont(size: 11, monospacedDigit: true)
+                    .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 8) {
                     Button(L10n.t("Cancel"), role: .cancel) { countdown.cancel() }
@@ -275,7 +275,7 @@ private struct MenuBarDownloadRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(task.compactDisplayName)
-                        .scaledFont(size: 12, weight: .medium)
+                        .scaledFont(size: Theme.TextSize.body, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(task.name)
@@ -285,13 +285,13 @@ private struct MenuBarDownloadRow: View {
                 MiniProgressBar(task: task)
                 HStack(spacing: 5) {
                     Text(task.statusDetailText)
-                        .scaledFont(size: 10.5)
+                        .scaledFont(size: Theme.TextSize.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     if let speed = trailingSpeed {
                         Text(speed.text)
-                            .scaledFont(size: 10.5, weight: .semibold, monospacedDigit: true)
+                            .scaledFont(size: Theme.TextSize.caption, weight: .semibold, monospacedDigit: true)
                             .foregroundStyle(speed.color)
                     }
                 }
@@ -327,12 +327,12 @@ private struct MenuBarFailedRow: View {
             FileTypeIcon(type: task.fileType, size: 30)
             VStack(alignment: .leading, spacing: 3) {
                 Text(task.compactDisplayName)
-                    .scaledFont(size: 12, weight: .medium)
+                    .scaledFont(size: Theme.TextSize.body, weight: .medium)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if case .failed(let error) = task.status {
                     Label(error.message, systemImage: "exclamationmark.triangle.fill")
-                        .scaledFont(size: 10.5)
+                        .scaledFont(size: Theme.TextSize.caption)
                         .foregroundStyle(Theme.red)
                         .lineLimit(2)
                         .help(A11y.sentence(error.message, FailureAdvice.hint(for: error)))
@@ -360,14 +360,14 @@ private struct MenuBarFinishedRow: View {
             FileTypeIcon(type: task.fileType, size: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.name)
-                    .scaledFont(size: 12, weight: .medium)
+                    .scaledFont(size: Theme.TextSize.body, weight: .medium)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(task.name)
                 if let completedAt = task.completedAt {
                     // Rendered by SwiftUI so "2 min ago" keeps counting while the popover is open.
                     Text(completedAt, format: .relative(presentation: .named))
-                        .scaledFont(size: 10.5)
+                        .scaledFont(size: Theme.TextSize.caption)
                         .foregroundStyle(.secondary)
                         .environment(\.locale, DisplayFormat.appLocale)
                 }
@@ -405,7 +405,7 @@ private struct MenuBarSpeedControls: View {
                         .frame(width: 13, height: 13)
                     Text(SpeedProfileText.pill(limitEnabled: settings.speedLimitEnabled,
                                                profile: settings.selectedProfile))
-                        .scaledFont(size: 11, weight: .medium, monospacedDigit: true)
+                        .scaledFont(size: Theme.TextSize.caption, weight: .medium, monospacedDigit: true)
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 9)
@@ -531,16 +531,16 @@ private struct MenuBarMediaSection: View {
         ForEach(center.jobs.filter { $0.state.isLive }) { job in
             HStack(spacing: 10) {
                 Image(systemName: "waveform")
-                    .font(.system(size: 12))
+                    .scaledFont(size: Theme.TextSize.body)
                     .foregroundStyle(Theme.accent)
                     .frame(width: 18)
                     .a11yDecorative()
                 VStack(alignment: .leading, spacing: 3) {
                     Text(job.kind.activeTitle)
-                        .scaledFont(size: 12, weight: .medium)
+                        .scaledFont(size: Theme.TextSize.body, weight: .medium)
                         .lineLimit(1)
                     Text(job.sourceName)
-                        .scaledFont(size: 10.5)
+                        .scaledFont(size: Theme.TextSize.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -548,14 +548,14 @@ private struct MenuBarMediaSection: View {
                 Spacer(minLength: 4)
                 if let fraction = job.fraction {
                     Text("\(Int((fraction * 100).rounded()))%")
-                        .scaledFont(size: 11, design: .monospaced)
+                        .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                         .foregroundStyle(.secondary)
                 }
                 Button {
                     center.cancel(job.id)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
+                        .scaledFont(size: Theme.TextSize.body)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

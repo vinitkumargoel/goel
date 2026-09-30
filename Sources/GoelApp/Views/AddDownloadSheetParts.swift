@@ -30,8 +30,8 @@ struct AddSheetFileList: View {
                 }
             }
             .frame(height: min(CGFloat(files.count) * 28 + 4, 170))
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.field).stroke(Theme.hairline))
         }
     }
 
@@ -45,14 +45,14 @@ struct AddSheetFileList: View {
                     else { deselectedFileIDs.remove(file.id) }
                 } label: {
                     Image(systemName: wanted ? "checkmark.square.fill" : "square")
-                        .font(.system(size: 12))
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(wanted ? Theme.accent : Color.secondary)
                 }
                 .buttonStyle(.plain)
                 .a11yButton(wanted ? L10n.t("Skip %@", name) : L10n.t("Download %@", name))
                 .accessibilityValue(wanted ? L10n.t("Included") : L10n.t("Skipped"))
             } else {
-                Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(.tertiary)
+                Image(systemName: "doc").scaledFont(size: Theme.TextSize.meta).foregroundStyle(.tertiary)
                     .a11yDecorative()
             }
             Text(name)
@@ -115,8 +115,8 @@ struct AddSheetMirrorsField: View {
                 .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                 .frame(height: 44)
                 .padding(4)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.field).stroke(Theme.hairline))
             Text(L10n.t("Alternative URLs for the same file — segments spread across them and fail over automatically."))
                 .scaledFont(size: Theme.TextSize.caption)
                 .foregroundStyle(.secondary)
@@ -132,10 +132,10 @@ struct AddSheetMetadataSummary: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: preview.kind.symbolName)
-                .font(.system(size: 20))
+                .scaledFont(size: 20)
                 .foregroundStyle(.secondary)
                 .frame(width: 34, height: 34)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 4) {
                 Text(preview.suggestedName)

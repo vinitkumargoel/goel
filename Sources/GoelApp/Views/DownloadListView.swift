@@ -185,7 +185,7 @@ struct DownloadListView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 28)
-        .scaledFont(size: 11, weight: .semibold)
+        .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
         .foregroundStyle(.secondary)
     }
 
@@ -202,7 +202,7 @@ struct DownloadListView: View {
                     .lineLimit(1)
                 if isSortKey {
                     Image(systemName: vm.sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .scaledFont(size: 8, weight: .bold)
                         .foregroundStyle(Theme.accent)
                 }
                 if alignment != .trailing { Spacer(minLength: 0) }
@@ -327,7 +327,7 @@ struct DownloadRow: View, Equatable {
                 .padding(.horizontal, 6)
 
             Text(task.totalBytes?.byteString ?? "—")
-                .scaledFont(size: 12.5, monospacedDigit: true)
+                .scaledFont(size: Theme.TextSize.body, monospacedDigit: true)
                 .frame(width: columns.size, alignment: .trailing)
                 .padding(.horizontal, 6)
                 .foregroundStyle(.secondary)
@@ -340,7 +340,7 @@ struct DownloadRow: View, Equatable {
                 .padding(.horizontal, 6)
 
             Text(task.addedColumnString)
-                .scaledFont(size: 11.5)
+                .scaledFont(size: Theme.TextSize.meta)
                 .lineLimit(1)
                 .foregroundStyle(.secondary)
                 .help(task.addedString)
@@ -407,7 +407,7 @@ struct DownloadRow: View, Equatable {
     private var statusCell: some View {
         if isFailed {
             Label(L10n.t("Failed"), systemImage: "exclamationmark.triangle.fill")
-                .scaledFont(size: 11.5, weight: .semibold)
+                .scaledFont(size: Theme.TextSize.meta, weight: .semibold)
                 .foregroundStyle(Theme.red)
                 .lineLimit(1)
         } else {
@@ -415,7 +415,7 @@ struct DownloadRow: View, Equatable {
                 Circle().fill(task.statusColor).frame(width: 7, height: 7)
                     .a11yDecorative()
                 Text(task.statusCompactText(queueRank: queueRank))
-                    .scaledFont(size: 11.5)
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 if let progress = task.seedTargetProgress {
@@ -431,7 +431,7 @@ struct DownloadRow: View, Equatable {
     private var indexCell: some View {
         if reorderable && isHovered {
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
@@ -443,7 +443,7 @@ struct DownloadRow: View, Equatable {
                 .a11yDecorative()
         } else {
             Text("\(queueRank ?? displayIndex)")
-                .scaledFont(size: 11.5, monospacedDigit: true)
+                .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
                 .foregroundStyle(.tertiary)
         }
     }
@@ -463,7 +463,7 @@ struct DownloadRow: View, Equatable {
         return VStack(alignment: .trailing, spacing: 1) {
             if let down = text.down {
                 Text(down)
-                    .scaledFont(size: 12.5, weight: .medium, monospacedDigit: true)
+                    .scaledFont(size: Theme.TextSize.body, weight: .medium, monospacedDigit: true)
                     .foregroundStyle(Theme.green)
             }
             if let up = text.up {
@@ -491,7 +491,7 @@ struct DownloadRow: View, Equatable {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 7) {
                     Text(task.name)
-                        .scaledFont(size: 12.5, weight: .medium)
+                        .scaledFont(size: Theme.TextSize.body, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     KindBadge(task: task)
@@ -499,7 +499,7 @@ struct DownloadRow: View, Equatable {
                 if case .failed(let error) = task.status {
                     // A bar that will never move says nothing; the reason does.
                     Label(error.message, systemImage: "exclamationmark.triangle.fill")
-                        .scaledFont(size: 11)
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(Theme.red)
                         .lineLimit(1)
                         .truncationMode(.tail)

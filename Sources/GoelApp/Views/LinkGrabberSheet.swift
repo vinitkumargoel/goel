@@ -26,7 +26,7 @@ struct LinkGrabberSheet: View {
                 HStack(spacing: 8) {
                     TextField(L10n.t("Page URL (https://…)"), text: $pageText)
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
+                        .scaledFont(size: Theme.TextSize.body, design: .monospaced)
                         .onSubmit(fetch)
                         .accessibilityLabel(L10n.t("Page URL"))
                         .onChange(of: pageText) { _, text in
@@ -43,7 +43,7 @@ struct LinkGrabberSheet: View {
                 }
                 if let fetchError {
                     Label(fetchError, systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(Theme.orange)
                         .accessibilityLabel(L10n.t("Error. %@", fetchError))
                 }
@@ -56,7 +56,7 @@ struct LinkGrabberSheet: View {
                         }
                         Spacer()
                         Text(L10n.t("%d selected", selected.count))
-                            .font(.system(size: 11))
+                            .scaledFont(size: Theme.TextSize.meta)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -129,7 +129,7 @@ struct LinkGrabberSheet: View {
     private func chip(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 11, weight: active ? .semibold : .regular))
+                .scaledFont(size: Theme.TextSize.meta, weight: active ? .semibold : .regular)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
                 .background(active ? Theme.accent.opacity(0.18) : Color.primary.opacity(0.05),
@@ -156,13 +156,13 @@ struct LinkGrabberSheet: View {
                         .toggleStyle(.checkbox)
                         .accessibilityLabel(link.displayName)
                         Text(link.displayName)
-                            .font(.system(size: 11.5))
+                            .scaledFont(size: Theme.TextSize.meta)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .help(link.url)
                         Spacer(minLength: 8)
                         Text(link.category.label)
-                            .font(.system(size: 10))
+                            .scaledFont(size: Theme.TextSize.micro)
                             .foregroundStyle(.tertiary)
                     }
                     .padding(.vertical, 4)
@@ -171,8 +171,8 @@ struct LinkGrabberSheet: View {
             }
         }
         .frame(height: 240)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.field).stroke(Theme.hairline))
     }
 
     private func fetch() {

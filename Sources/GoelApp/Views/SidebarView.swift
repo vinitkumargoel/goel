@@ -99,10 +99,10 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 9) {
                 Image(systemName: "lock.rectangle.on.rectangle")
-                    .font(.system(size: 15)).frame(width: 16)
+                    .scaledFont(size: Theme.TextSize.sheet).frame(width: 16)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(server.label).scaledFont(size: 13).lineLimit(1)
+                        Text(server.label).scaledFont(size: Theme.TextSize.body).lineLimit(1)
                         Spacer(minLength: 4)
                         if transferring {
                             ProgressView()
@@ -122,7 +122,7 @@ struct SidebarView: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 7)
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
                     .fill(selected ? Theme.indigo : Color.clear)
             )
             // Ink must derive from the fill, not hard-coded white: `indigo` is light in three themes, measuring 1.93:1.
@@ -228,7 +228,7 @@ struct SidebarView: View {
                     .lineLimit(1).truncationMode(.middle)
                 if let ms = meta?.latencyMS, meta?.reachability == .online {
                     Text("\(ms)ms")
-                        .scaledFont(size: 9.5, weight: .medium, monospacedDigit: true)
+                        .scaledFont(size: Theme.TextSize.micro, weight: .medium, monospacedDigit: true)
                         .foregroundStyle(selected ? Theme.onIndigoSecondary : Color.secondary)
                 }
                 Spacer(minLength: 0)
@@ -241,8 +241,8 @@ struct SidebarView: View {
 
     private func osChip(_ os: ServerOS, selected: Bool) -> some View {
         HStack(spacing: 3) {
-            Image(systemName: os.symbol).font(.system(size: 8.5))
-            Text(os.label).scaledFont(size: 9.5, weight: .semibold).lineLimit(1)
+            Image(systemName: os.symbol).scaledFont(size: 8.5)
+            Text(os.label).scaledFont(size: Theme.TextSize.micro, weight: .semibold).lineLimit(1)
         }
         .foregroundStyle(selected ? Theme.onIndigo : os.tint)
         .padding(.horizontal, 5).padding(.vertical, 1.5)
@@ -281,7 +281,7 @@ struct SidebarView: View {
             HStack(spacing: 9) {
                 Group {
                     if let symbol {
-                        Image(systemName: symbol).font(.system(size: 13))
+                        Image(systemName: symbol).scaledFont(size: Theme.TextSize.body)
                     } else if let dot {
                         Circle()
                             .fill(dot)
@@ -293,11 +293,11 @@ struct SidebarView: View {
                 .frame(width: 16)
                 .a11yDecorative()
                 Text(label)
-                    .scaledFont(size: 13)
+                    .scaledFont(size: Theme.TextSize.body)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 Text("\(count)")
-                    .scaledFont(size: 11, weight: .semibold, monospacedDigit: true)
+                    .scaledFont(size: Theme.TextSize.caption, weight: .semibold, monospacedDigit: true)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(
@@ -339,14 +339,14 @@ private struct MediaJobsSidebarGroup: View {
                 .accessibilityAddTraits(.isHeader)
             HStack(spacing: 9) {
                 Image(systemName: "waveform")
-                    .font(.system(size: 13))
+                    .scaledFont(size: Theme.TextSize.body)
                     .frame(width: 16)
                 Text(L10n.t("Converting"))
-                    .scaledFont(size: 13)
+                    .scaledFont(size: Theme.TextSize.body)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 Text("\(center.liveCount)")
-                    .scaledFont(size: 11, weight: .semibold, monospacedDigit: true)
+                    .scaledFont(size: Theme.TextSize.caption, weight: .semibold, monospacedDigit: true)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(Capsule().fill(Theme.accent.opacity(0.18)))

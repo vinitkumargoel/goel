@@ -15,7 +15,7 @@ struct DownloadsEmptyState: View {
 
             VStack(spacing: 6) {
                 Image(systemName: "arrow.down.circle")
-                    .font(.system(size: 38))
+                    .scaledFont(size: 38)
                     .foregroundStyle(.quaternary)
                     .a11yDecorative()
                 Text(L10n.t("Nothing downloading yet"))
@@ -125,7 +125,7 @@ private struct EmptyStateAction: View {
         Button(action: action) {
             VStack(spacing: 7) {
                 Image(systemName: symbol)
-                    .font(.system(size: 17))
+                    .scaledFont(size: 17)
                     .foregroundStyle(isPrimary ? Theme.accent : .secondary)
                     .frame(height: 22)
                 Text(title)
@@ -168,7 +168,7 @@ private struct EmptyStateHint: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: 10))
+                Image(systemName: symbol).scaledFont(size: Theme.TextSize.micro)
                 Text(text).scaledFont(size: Theme.TextSize.meta)
             }
             .foregroundStyle(hovering ? Theme.accent : Color.secondary)

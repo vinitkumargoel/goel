@@ -12,7 +12,7 @@ struct SheetHeader: View {
                 // Not `.white`: on the light accent themes that measured 2.00–2.42:1.
                 .foregroundStyle(Theme.onAccent)
                 .frame(width: 30, height: 30)
-                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.field))
                 .a11yDecorative()
             Text(title)
                 .scaledFont(size: Theme.TextSize.sheet, weight: .semibold)
@@ -37,7 +37,7 @@ struct EmptyStateView: View {
         VStack(spacing: Theme.Space.m) {
             VStack(spacing: 6) {
                 Image(systemName: systemImage)
-                    .font(.system(size: symbolSize))
+                    .scaledFont(size: symbolSize)
                     .foregroundStyle(symbolStyle)
                     .a11yDecorative()
                 Text(title)
@@ -72,7 +72,7 @@ struct SpeedStat: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: symbol).font(.system(size: size - 1.5, weight: .bold))
+            Image(systemName: symbol).scaledFont(size: size - 1.5, weight: .bold)
             Text(speed > 0 ? speed.speedString : "—")
                 .scaledFont(size: size, weight: .semibold, monospacedDigit: true)
                 .frame(minWidth: minWidth, alignment: .trailing)
@@ -298,6 +298,7 @@ struct FileTypeIcon: View {
             .frame(width: size, height: size)
             .overlay(
                 Image(systemName: type.symbol)
+                    // fixed-size: the glyph is half its tile, and the tile's frame is fixed by the caller.
                     .font(.system(size: size * 0.5, weight: .semibold))
                     // Picked per fill: white measured 1.72:1 on the old archive blue.
                     .foregroundStyle(type.ink)
@@ -424,7 +425,7 @@ struct StateButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
+                .scaledFont(size: Theme.TextSize.caption, weight: .bold)
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(Color.primary.opacity(0.08)))
                 .contentShape(Circle())

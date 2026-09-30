@@ -32,7 +32,7 @@ struct SFTPUploadConflictSheet: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 22)).foregroundStyle(Theme.orange)
+                .scaledFont(size: 22).foregroundStyle(Theme.orange)
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 3) {
                 Text(request.colliding.count == 1

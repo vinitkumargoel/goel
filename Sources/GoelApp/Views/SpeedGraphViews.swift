@@ -155,14 +155,14 @@ struct StatsView: View {
     private func statCard(_ label: String, _ value: String, _ tint: Color,
                           spokenLabel: String? = nil, spoken: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).scaledFont(size: 10.5, weight: .semibold)
+            Text(label).scaledFont(size: Theme.TextSize.caption, weight: .semibold)
                 .foregroundStyle(.secondary)
-            Text(value).scaledFont(size: 15, weight: .bold, monospacedDigit: true)
+            Text(value).scaledFont(size: Theme.TextSize.sheet, weight: .bold, monospacedDigit: true)
                 .foregroundStyle(tint)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Radius.card))
         .a11yGroup(label: spokenLabel ?? label, value: spoken ?? value)
     }
 

@@ -132,8 +132,8 @@ struct AddDownloadSheet: View {
                         .accessibilityHint(L10n.t("Paste one link per line to add several at once."))
                         .frame(height: 90)
                         .padding(6)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.field).stroke(Theme.hairline))
                         .onChange(of: text) { _, _ in inputError = nil }
                     if let inputError {
                         Label(inputError, systemImage: "exclamationmark.triangle.fill")
@@ -474,7 +474,7 @@ struct AddDownloadSheet: View {
     private var dropZone: some View {
         VStack(spacing: 7) {
             Image(systemName: "arrow.down.to.line")
-                .font(.system(size: 22, weight: .regular))
+                .scaledFont(size: 22, weight: .regular)
                 .foregroundStyle(isDropTargeted ? Theme.accent : .secondary)
                 .a11yDecorative()
             Text(MarkdownText.attributed(L10n.t("Drag a URL or **.torrent** file here")))
@@ -484,11 +484,11 @@ struct AddDownloadSheet: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.Radius.card)
                 .fill(isDropTargeted ? Theme.accent.opacity(0.08) : Color.primary.opacity(0.03))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.Radius.card)
                 .strokeBorder(isDropTargeted ? Theme.accent : Theme.hairline,
                               style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
         )

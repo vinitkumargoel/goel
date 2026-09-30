@@ -22,7 +22,7 @@ struct InAppPlayerView: View {
                 Image(systemName: "play.rectangle.fill").foregroundStyle(Theme.accent)
                     .a11yDecorative()
                 Text(item.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(size: Theme.TextSize.title, weight: .semibold)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .accessibilityLabel(L10n.t("Now playing, %@", item.title))
@@ -64,11 +64,11 @@ struct InAppPlayerView: View {
     private func unplayable(_ reason: String) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "play.slash")
-                .font(.system(size: 34))
+                .scaledFont(size: 34)
                 .foregroundStyle(.secondary)
                 .a11yDecorative()
             Text(reason)
-                .font(.system(size: 12))
+                .scaledFont(size: Theme.TextSize.meta)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)

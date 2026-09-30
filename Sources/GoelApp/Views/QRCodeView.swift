@@ -15,8 +15,8 @@ struct QRCodeView: View {
                 .resizable()
                 .frame(width: side, height: side)
                 .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.field))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.field).stroke(Theme.hairline))
                 .accessibilityLabel(L10n.t("QR code for %@", text))
         }
     }

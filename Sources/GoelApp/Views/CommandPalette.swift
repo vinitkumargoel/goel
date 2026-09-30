@@ -86,7 +86,7 @@ struct CommandPalette: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "command")
-                .font(.system(size: 13, weight: .medium))
+                .scaledFont(size: Theme.TextSize.body, weight: .medium)
                 .foregroundStyle(Theme.accent)
                 .a11yDecorative()
             TextField(L10n.t("Search actions and settings…"), text: $query)
@@ -427,7 +427,7 @@ private struct PaletteRow: View {
         Button(action: action) {
             HStack(spacing: 11) {
                 Image(systemName: command.symbol)
-                    .font(.system(size: 13))
+                    .scaledFont(size: Theme.TextSize.body)
                     .foregroundStyle(isHighlighted ? Theme.accent : Color.secondary)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
@@ -448,7 +448,7 @@ private struct PaletteRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Text(L10n.t(command.group.rawValue))
-                    .scaledFont(size: 9.5, weight: .semibold)
+                    .scaledFont(size: Theme.TextSize.micro, weight: .semibold)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(Color.primary.opacity(0.07), in: Capsule())

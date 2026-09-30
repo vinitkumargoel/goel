@@ -27,7 +27,7 @@ struct FailureCard: View {
         VStack(alignment: compact ? .leading : .center, spacing: 8) {
             VStack(alignment: compact ? .leading : .center, spacing: 4) {
                 Label(error.message, systemImage: "exclamationmark.triangle.fill")
-                    .scaledFont(size: 11.5, weight: .medium)
+                    .scaledFont(size: Theme.TextSize.meta, weight: .medium)
                     .foregroundStyle(Theme.red)
                     .multilineTextAlignment(compact ? .leading : .center)
                     .lineLimit(compact ? 2 : 4)
@@ -35,7 +35,7 @@ struct FailureCard: View {
                     .textSelection(.enabled)
                 if let hint {
                     Text(hint)
-                        .scaledFont(size: 11)
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(compact ? .leading : .center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -60,8 +60,8 @@ struct FailureCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: compact ? .leading : .center)
-        .background(Theme.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.red.opacity(0.25)))
+        .background(Theme.red.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).stroke(Theme.red.opacity(0.25)))
         .sheet(item: $sheet) { kind in
             switch kind {
             case .updateLink: UpdateLinkSheet(task: task, vm: vm)
@@ -75,11 +75,11 @@ struct FailureCard: View {
     private func recoveryButton(_ recovery: FailureAdvice.Recovery) -> some View {
         Button { perform(recovery) } label: {
             Label(recovery.title, systemImage: recovery.symbol)
-                .scaledFont(size: 11, weight: .semibold)
+                .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
                 .lineLimit(1)
                 .padding(.horizontal, 8)
                 .frame(height: 24)
-                .background(Theme.red, in: RoundedRectangle(cornerRadius: 6))
+                .background(Theme.red, in: RoundedRectangle(cornerRadius: Theme.Radius.control))
                 .foregroundStyle(Theme.onRed)
                 .contentShape(Rectangle())
         }
@@ -109,14 +109,14 @@ struct FailureCard: View {
             Button(L10n.t("Show Folder")) { showFolder() }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .frame(width: 26, height: 24)
-        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.hairline))
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.Radius.control))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control).stroke(Theme.hairline))
         .help(L10n.t("More actions"))
         .accessibilityLabel(L10n.t("More actions for %@", task.name))
     }
@@ -140,13 +140,13 @@ struct FailureCard: View {
                             prominent: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
-                .scaledFont(size: 11, weight: .medium)
+                .scaledFont(size: Theme.TextSize.caption, weight: .medium)
                 .lineLimit(1)
                 .padding(.horizontal, 8)
                 .frame(height: 24)
                 .background(prominent ? Theme.accent.opacity(0.16) : Color.primary.opacity(0.06),
-                            in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.hairline))
+                            in: RoundedRectangle(cornerRadius: Theme.Radius.control))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control).stroke(Theme.hairline))
                 .foregroundStyle(prominent ? Theme.accent : Color.primary)
                 .contentShape(Rectangle())
         }

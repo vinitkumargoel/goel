@@ -115,11 +115,11 @@ struct DetailsTab: View {
                 HStack(spacing: 8) {
                     Circle().fill(Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
                     Text(URLComponents(string: url)?.host ?? url)
-                        .scaledFont(size: 11.5, design: .monospaced)
+                        .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                         .foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Text(L10n.t("idle")).scaledFont(size: 10).foregroundStyle(.tertiary)
+                    Text(L10n.t("idle")).scaledFont(size: Theme.TextSize.micro).foregroundStyle(.tertiary)
                 }
                 .padding(.vertical, 6)
                 Divider()
@@ -179,23 +179,23 @@ struct TrackerRow: View {
             Circle().fill(statusColor).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tracker.host)
-                    .scaledFont(size: 11.5, design: .monospaced)
+                    .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                     .lineLimit(1).truncationMode(.middle)
                 if !tracker.message.isEmpty {
                     Text(tracker.message)
-                        .scaledFont(size: 10).foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.micro).foregroundStyle(.tertiary)
                         .lineLimit(1).truncationMode(.tail)
                 }
             }
             Spacer(minLength: 8)
             if let s = tracker.seeds {
-                Text("\(s)S").scaledFont(size: 10.5, monospacedDigit: true).foregroundStyle(Theme.green)
+                Text("\(s)S").scaledFont(size: Theme.TextSize.caption, monospacedDigit: true).foregroundStyle(Theme.green)
             }
             if let l = tracker.leeches {
-                Text("\(l)L").scaledFont(size: 10.5, monospacedDigit: true).foregroundStyle(Theme.orange)
+                Text("\(l)L").scaledFont(size: Theme.TextSize.caption, monospacedDigit: true).foregroundStyle(Theme.orange)
             }
             Text(tracker.statusLabel)
-                .scaledFont(size: 9.5, weight: .semibold)
+                .scaledFont(size: Theme.TextSize.micro, weight: .semibold)
                 .foregroundStyle(statusColor)
         }
         .padding(.vertical, 6)
@@ -244,7 +244,7 @@ struct ProgressTab: View {
                 SectionLabel(text: L10n.t("Piece map"))
                 if task.status == .requestingMetadata {
                     Text(L10n.t("Waiting for metadata…"))
-                        .scaledFont(size: 11.5).foregroundStyle(.secondary).padding(.vertical, 6)
+                        .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary).padding(.vertical, 6)
                 } else {
                     ProgressView(value: task.fractionCompleted).tint(Theme.accent).padding(.vertical, 6)
                 }
@@ -287,7 +287,7 @@ struct ProgressTab: View {
                         Spacer()
                         Text("\(Int((task.fractionCompleted * 100).rounded()))%")
                     }
-                    .scaledFont(size: 11)
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
                     ProgressView(value: task.fractionCompleted)
                         .tint(task.status == .completed ? Theme.green : Theme.accent)
@@ -302,7 +302,7 @@ struct ProgressTab: View {
                             Spacer()
                             Text("\(Int((segment.progress * 100).rounded()))%")
                         }
-                        .scaledFont(size: 11)
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(.secondary)
                         ProgressView(value: segment.progress)
                             .tint(segment.progress >= 1 ? Theme.green : Theme.accent)
@@ -319,7 +319,7 @@ struct ProgressTab: View {
             legendItem(Theme.accent, L10n.t("Downloading"))
             legendItem(Color.primary.opacity(0.08), L10n.t("Missing"))
         }
-        .scaledFont(size: 11)
+        .scaledFont(size: Theme.TextSize.meta)
         .foregroundStyle(.secondary)
         .padding(.top, 12)
         .a11yDecorative()
@@ -374,13 +374,13 @@ struct FilesTab: View {
             .accessibilityValue(wanted ? L10n.t("Included") : L10n.t("Skipped"))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(name).scaledFont(size: 12).lineLimit(1).truncationMode(.middle)
+                Text(name).scaledFont(size: Theme.TextSize.body).lineLimit(1).truncationMode(.middle)
                 ProgressView(value: fraction).tint(Theme.green)
             }
             .a11yGroup(label: name, value: A11y.percent(fraction))
 
             Text(size.byteString)
-                .scaledFont(size: 11, monospacedDigit: true)
+                .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(A11y.bytes(size))
 
@@ -390,9 +390,9 @@ struct FilesTab: View {
                 }, menuWidth: 130) { open in
                     HStack(spacing: 3) {
                         Text(priority.title)
-                        Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold))
+                        Image(systemName: "chevron.down").scaledFont(size: 7, weight: .semibold)
                     }
-                    .scaledFont(size: 10)
+                    .scaledFont(size: Theme.TextSize.micro)
                     .foregroundStyle(priority == .high ? Theme.orange : Color.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -463,7 +463,7 @@ struct ConnectionsTab: View {
 
     private func emptyConnections(_ text: String) -> some View {
         Text(text)
-            .scaledFont(size: 11.5)
+            .scaledFont(size: Theme.TextSize.meta)
             .foregroundStyle(.secondary)
             .padding(.vertical, 8)
     }
@@ -498,7 +498,7 @@ struct ConnectionsTab: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(label).scaledFont(size: 11.5).lineLimit(1).truncationMode(.middle)
+                    Text(label).scaledFont(size: Theme.TextSize.meta).lineLimit(1).truncationMode(.middle)
                     if let subtitle, !subtitle.isEmpty, subtitle != "peer" {
                         Text(subtitle).scaledFont(size: Theme.TextSize.caption).foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.tail)
@@ -509,7 +509,7 @@ struct ConnectionsTab: View {
                     .frame(width: 64, alignment: .trailing).foregroundStyle(Theme.green)
                 Text(trailing).frame(width: 56, alignment: .trailing).foregroundStyle(trailingColor)
             }
-            .scaledFont(size: 11.5, monospacedDigit: true)
+            .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
             .padding(.vertical, 7)
             Divider()
         }

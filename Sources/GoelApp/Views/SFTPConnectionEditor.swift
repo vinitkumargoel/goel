@@ -218,13 +218,13 @@ struct SFTPConnectionEditor: View {
                 confirmingHostKeyReset = true
             } label: {
                 Label(L10n.t("Reset pinned host key"), systemImage: "key.slash")
-                    .scaledFont(size: 11)
+                    .scaledFont(size: Theme.TextSize.meta)
             }
             .buttonStyle(.link)
             .help(L10n.t("Forget the saved SSH host-key fingerprint. Use this only after a legitimate server rekey, then re-verify with Test."))
             if hostKeyReset {
                 Text(L10n.t("Pinned key cleared — Goel will ask you to confirm the key on the next connection."))
-                    .scaledFont(size: 10).foregroundStyle(.secondary)
+                    .scaledFont(size: Theme.TextSize.micro).foregroundStyle(.secondary)
             }
         }
     }
@@ -235,23 +235,23 @@ struct SFTPConnectionEditor: View {
         case .success(let fp):
             VStack(alignment: .leading, spacing: 3) {
                 Label(L10n.t("Connected successfully"), systemImage: "checkmark.seal.fill")
-                    .foregroundStyle(Theme.green).scaledFont(size: 12, weight: .semibold)
-                Text(L10n.t("Host key SHA-256:")).scaledFont(size: 10).foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.green).scaledFont(size: Theme.TextSize.body, weight: .semibold)
+                Text(L10n.t("Host key SHA-256:")).scaledFont(size: Theme.TextSize.micro).foregroundStyle(.secondary)
                     .a11yDecorative()
-                Text(fp).scaledFont(size: 10, design: .monospaced)
+                Text(fp).scaledFont(size: Theme.TextSize.micro, design: .monospaced)
                     .foregroundStyle(.secondary).textSelection(.enabled).lineLimit(2)
                     // Spelled out character by character: base64 read as words cannot be checked against `ssh-keygen -lf`.
                     .accessibilityLabel(L10n.t("Host key SHA-256 fingerprint"))
                     .accessibilityValue(fp.map { "\($0) " }.joined())
             }
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            .background(Theme.green.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
             .accessibilityElement(children: .contain)
             .accessibilityLabel(L10n.t("Connection test succeeded"))
         case .failure(let message, let detail, let retry):
             VStack(alignment: .leading, spacing: 6) {
                 Label(message, systemImage: "xmark.octagon.fill")
-                    .foregroundStyle(Theme.red).scaledFont(size: 12)
+                    .foregroundStyle(Theme.red).scaledFont(size: Theme.TextSize.body)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel(L10n.t("Connection test failed. %@", message))
                 if let retry {
@@ -262,7 +262,7 @@ struct SFTPConnectionEditor: View {
                         }
                     } label: {
                         Label(L10n.t("Try again"), systemImage: "arrow.clockwise")
-                            .scaledFont(size: 11)
+                            .scaledFont(size: Theme.TextSize.meta)
                     }
                     .disabled(testing)
                 }
@@ -280,7 +280,7 @@ struct SFTPConnectionEditor: View {
                 }
             }
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            .background(Theme.red.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
         }
     }
 

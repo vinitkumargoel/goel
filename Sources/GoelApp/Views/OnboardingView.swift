@@ -92,15 +92,15 @@ struct OnboardingView: View {
             Image(systemName: pane.symbol)
                 .foregroundStyle(Theme.onAccent)
                 .frame(width: 30, height: 30)
-                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.field))
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.t("Welcome to Goel°"))
-                    .scaledFont(size: 11, weight: .semibold)
+                    .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel(L10n.t("Welcome to Goel"))
                 Text(pane.title)
-                    .scaledFont(size: 15, weight: .semibold)
+                    .scaledFont(size: Theme.TextSize.sheet, weight: .semibold)
                     .accessibilityAddTraits(.isHeader)
             }
             Spacer()
@@ -152,11 +152,11 @@ struct OnboardingView: View {
     private var licenceNotice: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "info.circle")
-                .font(.system(size: 10))
+                .scaledFont(size: Theme.TextSize.micro)
                 .foregroundStyle(.secondary)
                 .a11yDecorative()
             noticeText
-                .scaledFont(size: 11)
+                .scaledFont(size: Theme.TextSize.meta)
                 .accessibilityLabel(L10n.t("Free for personal use. Commercial use requires a licence. Learn more."))
                 .accessibilityAddTraits(.isLink)
             Spacer(minLength: 8)
@@ -164,7 +164,7 @@ struct OnboardingView: View {
                 licenceNoticeVisible = false
                 OnboardingState.licenceNoticeDismissed = true
             } label: {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                Image(systemName: "xmark").scaledFont(size: 9, weight: .bold)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.tertiary)
@@ -173,8 +173,8 @@ struct OnboardingView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline))
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.control))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control).stroke(Theme.hairline))
         .contentShape(Rectangle())
         .onTapGesture { NSWorkspace.shared.open(OnboardingState.commercialURL) }
     }
@@ -195,18 +195,18 @@ struct OnboardingView: View {
             OnboardingCard {
                 HStack(spacing: 12) {
                     Image(systemName: "folder.fill")
-                        .font(.system(size: 18))
+                        .scaledFont(size: 18)
                         .foregroundStyle(Theme.accent)
                         .a11yDecorative()
                     VStack(alignment: .leading, spacing: 2) {
                         Text(currentFolderLabel)
-                            .scaledFont(size: 13, weight: .medium)
+                            .scaledFont(size: Theme.TextSize.body, weight: .medium)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Text(vm.settings.defaultFolderRule == "fixed"
                              ? L10n.t("Every download goes here.")
                              : L10n.t("Sorted automatically by file type."))
-                            .scaledFont(size: 11)
+                            .scaledFont(size: Theme.TextSize.meta)
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
@@ -292,14 +292,14 @@ struct OnboardingView: View {
             OnboardingCard {
                 HStack(spacing: 12) {
                     Image(systemName: "doc.on.clipboard.fill")
-                        .font(.system(size: 18))
+                        .scaledFont(size: 18)
                         .foregroundStyle(Theme.accent)
                         .a11yDecorative()
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.t("Watch the clipboard"))
-                            .scaledFont(size: 13, weight: .medium)
+                            .scaledFont(size: Theme.TextSize.body, weight: .medium)
                         Text(L10n.t("Links you copy appear as a one-click banner at the top of the window."))
-                            .scaledFont(size: 11)
+                            .scaledFont(size: Theme.TextSize.meta)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -309,7 +309,7 @@ struct OnboardingView: View {
             }
 
             Text(L10n.t("A few other ways in"))
-                .scaledFont(size: 10.5, weight: .bold)
+                .scaledFont(size: Theme.TextSize.caption, weight: .bold)
                 .accessibilityAddTraits(.isHeader)
                 .foregroundStyle(.tertiary)
                 .padding(.top, 2)
@@ -345,7 +345,7 @@ private struct OnboardingBlurb: View {
 
     var body: some View {
         Text(text)
-            .scaledFont(size: 12)
+            .scaledFont(size: Theme.TextSize.meta)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -358,8 +358,8 @@ private struct OnboardingCard<Content: View>: View {
         content
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.hairline))
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).stroke(Theme.hairline))
     }
 }
 
@@ -372,14 +372,14 @@ private struct OnboardingRow<Control: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 11) {
             Image(systemName: symbol)
-                .font(.system(size: 13))
+                .scaledFont(size: Theme.TextSize.body)
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).scaledFont(size: 13)
+                Text(title).scaledFont(size: Theme.TextSize.body)
                 Text(detail)
-                    .scaledFont(size: 11)
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

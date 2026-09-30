@@ -43,7 +43,7 @@ struct MediaFormatPicker: View {
                 if !separateTrackFormats.isEmpty {
                     Toggle(L10n.t("Show video-only and audio-only tracks"), isOn: $showSeparateTracks)
                         .toggleStyle(.checkbox)
-                        .scaledFont(size: 11)
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -55,20 +55,20 @@ struct MediaFormatPicker: View {
     private var header: some View {
         HStack(spacing: 8) {
             Label(L10n.t("Quality"), systemImage: "square.stack.3d.up")
-                .scaledFont(size: 12, weight: .semibold)
+                .scaledFont(size: Theme.TextSize.body, weight: .semibold)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
             if phase == .loaded {
                 Text(visibleFormats.count == 1
                      ? L10n.t("%d option", visibleFormats.count)
                      : L10n.t("%d options", visibleFormats.count))
-                    .scaledFont(size: 10)
+                    .scaledFont(size: Theme.TextSize.micro)
                     .foregroundStyle(.tertiary)
             }
             if case .failed = phase {
                 Button(L10n.t("Retry")) { Task { await load(force: true) } }
                     .buttonStyle(.link)
-                    .scaledFont(size: 11)
+                    .scaledFont(size: Theme.TextSize.meta)
                     .accessibilityLabel(L10n.t("Retry loading quality options"))
             }
         }
@@ -79,7 +79,7 @@ struct MediaFormatPicker: View {
             ProgressView().controlSize(.small)
                 .a11yDecorative()
             Text(L10n.t("Asking yt-dlp what’s available…"))
-                .scaledFont(size: 11)
+                .scaledFont(size: Theme.TextSize.meta)
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
@@ -88,7 +88,7 @@ struct MediaFormatPicker: View {
 
     private func failureRow(_ message: String) -> some View {
         Label(message, systemImage: "exclamationmark.triangle.fill")
-            .scaledFont(size: 11)
+            .scaledFont(size: Theme.TextSize.meta)
             .foregroundStyle(Theme.orange)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(L10n.t("Couldn’t load quality options. %@", message))
@@ -110,8 +110,8 @@ struct MediaFormatPicker: View {
             }
         }
         .frame(maxHeight: 220)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.field).stroke(Theme.hairline))
     }
 
     private func row(id: String?, quality: String, detail: String, trailing: String?) -> some View {
@@ -123,7 +123,7 @@ struct MediaFormatPicker: View {
             HStack(spacing: 8) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
                     .foregroundStyle(isSelected ? Theme.accent : Color.secondary.opacity(0.5))
-                    .font(.system(size: 12))
+                    .scaledFont(size: Theme.TextSize.body)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(quality)
                         .scaledFont(size: Theme.TextSize.meta, weight: isSelected ? .semibold : .regular)
@@ -274,13 +274,13 @@ struct PlaylistChecklistView: View {
                     ProgressView().controlSize(.small)
                         .a11yDecorative()
                     Text(L10n.t("Listing what’s in this playlist…"))
-                        .scaledFont(size: 11)
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(.secondary)
                 }
                 .a11yGroup(label: L10n.t("Listing what’s in this playlist"))
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .scaledFont(size: 11)
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(Theme.orange)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel(L10n.t("Couldn’t list the playlist. %@", message))
@@ -297,7 +297,7 @@ struct PlaylistChecklistView: View {
         HStack(spacing: 8) {
             Label(phase == .loaded && !expansion.title.isEmpty ? expansion.title : L10n.t("Playlist"),
                   systemImage: "list.bullet.rectangle")
-                .scaledFont(size: 12, weight: .semibold)
+                .scaledFont(size: Theme.TextSize.body, weight: .semibold)
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
@@ -305,7 +305,7 @@ struct PlaylistChecklistView: View {
                 Text(expansion.items.count == 1
                      ? L10n.t("%d item", expansion.items.count)
                      : L10n.t("%d items", expansion.items.count))
-                    .scaledFont(size: 10)
+                    .scaledFont(size: Theme.TextSize.micro)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -326,11 +326,11 @@ struct PlaylistChecklistView: View {
                         .toggleStyle(.checkbox)
                         .accessibilityLabel(L10n.t("%1$@. %2$@", String(item.index), item.title))
                         Text("\(item.index).")
-                            .scaledFont(size: 10, design: .monospaced)
+                            .scaledFont(size: Theme.TextSize.micro, design: .monospaced)
                             .foregroundStyle(.tertiary)
                             .a11yDecorative()
                         Text(item.title)
-                            .scaledFont(size: 11.5)
+                            .scaledFont(size: Theme.TextSize.meta)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .help(item.url)
@@ -338,7 +338,7 @@ struct PlaylistChecklistView: View {
                         Spacer(minLength: 8)
                         if let duration = item.durationText {
                             Text(duration)
-                                .scaledFont(size: 10, design: .monospaced)
+                                .scaledFont(size: Theme.TextSize.micro, design: .monospaced)
                                 .foregroundStyle(.tertiary)
                                 .accessibilityLabel(L10n.t("Duration %@", duration))
                         }
@@ -349,15 +349,15 @@ struct PlaylistChecklistView: View {
             }
         }
         .frame(height: 240)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.field).stroke(Theme.hairline))
     }
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 6) {
             if expansion.truncated {
                 Text(L10n.t("Only the first %d items are shown.", PlaylistExpander.cap))
-                    .scaledFont(size: 10)
+                    .scaledFont(size: Theme.TextSize.micro)
                     .foregroundStyle(Theme.orange)
             }
             HStack {
@@ -366,7 +366,7 @@ struct PlaylistChecklistView: View {
                 }
                 Spacer()
                 Text(L10n.t("%d selected", selected.count))
-                    .scaledFont(size: 11)
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel(L10n.t("%1$@ of %2$@ items selected", String(selected.count), String(expansion.items.count)))
                 if sheetActions == nil {

@@ -70,7 +70,7 @@ struct AppToolbar: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-                .font(.system(size: 12))
+                .scaledFont(size: Theme.TextSize.body)
                 .a11yDecorative()
             TextField(L10n.t("Search downloads"), text: $vm.search)
                 .textFieldStyle(.plain)
@@ -98,8 +98,8 @@ struct AppToolbar: View {
         .padding(.leading, 10)
         .padding(.trailing, 4)
         .frame(height: 28)
-        .background(Theme.fillRest, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
+        .background(Theme.fillRest, in: RoundedRectangle(cornerRadius: Theme.Radius.field))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.field).stroke(Theme.hairline))
     }
 
     /// The sort keys, then Group by: both decide how the list is laid out, so they share a menu.
@@ -140,7 +140,7 @@ struct AppToolbar: View {
             HStack(spacing: 0) {
                 ActionMenu(items: filterItems) { _ in
                     HStack(spacing: 5) {
-                        Image(systemName: "line.3.horizontal.decrease.circle.fill").font(.system(size: 12))
+                        Image(systemName: "line.3.horizontal.decrease.circle.fill").scaledFont(size: Theme.TextSize.body)
                         Text(vm.filter.accessibilityName)
                             .scaledFont(size: Theme.TextSize.body, weight: .medium)
                             .lineLimit(1)
@@ -160,8 +160,8 @@ struct AppToolbar: View {
                 .padding(.trailing, 3)
             }
             .foregroundStyle(Theme.accent)
-            .background(Theme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.accent.opacity(0.35)))
+            .background(Theme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: Theme.Radius.control))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control).stroke(Theme.accent.opacity(0.35)))
         }
     }
 

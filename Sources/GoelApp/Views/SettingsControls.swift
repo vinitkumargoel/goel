@@ -7,9 +7,9 @@ struct PaneScaffold<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title).scaledFont(size: 15, weight: .semibold)
+            Text(title).scaledFont(size: Theme.TextSize.sheet, weight: .semibold)
                 .accessibilityAddTraits(.isHeader)
-            Text(subtitle).scaledFont(size: 12).foregroundStyle(.secondary).padding(.bottom, 16)
+            Text(subtitle).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary).padding(.bottom, 16)
             content
         }
     }
@@ -20,7 +20,7 @@ struct SectionHeader: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(text.uppercased())
-            .scaledFont(size: 10.5, weight: .bold)
+            .scaledFont(size: Theme.TextSize.caption, weight: .bold)
             .foregroundStyle(.tertiary)
             .padding(.top, 16)
             .padding(.bottom, 4)
@@ -42,10 +42,10 @@ struct SetRow<Control: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).scaledFont(size: 13)
+                Text(name).scaledFont(size: Theme.TextSize.body)
                 if !desc.isEmpty {
                     // Unclamped: a description is the only explanation a setting gets.
-                    Text(desc).scaledFont(size: 11).foregroundStyle(.secondary)
+                    Text(desc).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -146,7 +146,7 @@ struct ManagedPolicyNotice: View {
         if keys.contains(where: policy.isLocked) {
             Label(L10n.t("Some settings here are managed by your organisation and can’t be changed."),
                   systemImage: "lock.fill")
-                .scaledFont(size: 11)
+                .scaledFont(size: Theme.TextSize.meta)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

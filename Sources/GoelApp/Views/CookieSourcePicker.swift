@@ -40,7 +40,7 @@ struct CookieSourcePicker: View {
     private var header: some View {
         HStack(spacing: 6) {
             Image(systemName: "person.badge.key")
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
                 .foregroundStyle(Theme.accent)
                 .a11yDecorative()
             Text(L10n.t("Sign-in cookies"))
@@ -85,7 +85,7 @@ struct CookieSourcePicker: View {
             let names = sanitizedCookieHeader.map(CookieHeader.names(in:)) ?? []
             HStack(alignment: .top, spacing: 5) {
                 Image(systemName: names.isEmpty ? "exclamationmark.triangle" : "lock.fill")
-                    .font(.system(size: 10))
+                    .scaledFont(size: Theme.TextSize.micro)
                     .foregroundStyle(names.isEmpty ? Theme.orange : Theme.green)
                 Text(summaryText(names: names))
                     .scaledFont(size: Theme.TextSize.caption)

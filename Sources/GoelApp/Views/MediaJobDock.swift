@@ -18,7 +18,7 @@ struct MediaJobDock: View {
             }
             if overflow > 0 {
                 Text(L10n.t("+%d more waiting", overflow))
-                    .scaledFont(size: 10.5)
+                    .scaledFont(size: Theme.TextSize.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
@@ -59,19 +59,19 @@ private struct MediaJobCard: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
                 Image(systemName: glyph)
-                    .font(.system(size: 12, weight: .semibold))
+                    .scaledFont(size: Theme.TextSize.body, weight: .semibold)
                     .foregroundStyle(accent)
                     .frame(width: 22, height: 22)
-                    .background(accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
+                    .background(accent.opacity(0.14), in: RoundedRectangle(cornerRadius: Theme.Radius.control))
                     .a11yDecorative()
                 Text(title)
-                    .scaledFont(size: 12, weight: .semibold)
+                    .scaledFont(size: Theme.TextSize.body, weight: .semibold)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 24)
             }
             Text(subtitle)
-                .scaledFont(size: 10.5, design: .monospaced)
+                .scaledFont(size: Theme.TextSize.caption, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -92,7 +92,7 @@ private struct MediaJobCard: View {
             }
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 9, weight: .bold))
+                .scaledFont(size: 9, weight: .bold)
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
         }
@@ -134,14 +134,14 @@ private struct MediaJobCard: View {
     private var detailBox: some View {
         ScrollView {
             Text(job.log)
-                .scaledFont(size: 10, design: .monospaced)
+                .scaledFont(size: Theme.TextSize.micro, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxHeight: 66)
         .padding(6)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Radius.control))
     }
 
     @ViewBuilder
@@ -156,7 +156,7 @@ private struct MediaJobCard: View {
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
-            .scaledFont(size: 11)
+            .scaledFont(size: Theme.TextSize.meta)
         case .failed:
             HStack(spacing: 12) {
                 Button(showsDetail ? L10n.t("Hide details") : L10n.t("Show details")) {
@@ -171,21 +171,21 @@ private struct MediaJobCard: View {
                 .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
-            .scaledFont(size: 11)
+            .scaledFont(size: Theme.TextSize.meta)
         case .running where job.isStalled():
             HStack(spacing: 12) {
                 Button(L10n.t("Cancel this job")) { center.cancel(job.id) }
                     .buttonStyle(.link)
                 Spacer(minLength: 0)
             }
-            .scaledFont(size: 11)
+            .scaledFont(size: Theme.TextSize.meta)
         case .cancelling where job.isStopStuck():
             HStack(spacing: 12) {
                 Button(L10n.t("Stop waiting")) { center.forceDismiss(job.id) }
                     .buttonStyle(.link)
                 Spacer(minLength: 0)
             }
-            .scaledFont(size: 11)
+            .scaledFont(size: Theme.TextSize.meta)
         default:
             EmptyView()
         }

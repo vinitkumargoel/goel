@@ -48,18 +48,18 @@ private struct DropBasketView: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: "arrow.down.to.line.circle")
-                .font(.system(size: 26, weight: .light))
+                .scaledFont(size: 26, weight: .light)
                 .foregroundStyle(isTargeted ? Color.accentColor : .secondary)
                 .a11yDecorative()
             Text(L10n.t("Drop links here"))
-                .font(.system(size: 11))
+                .scaledFont(size: Theme.TextSize.meta)
                 .foregroundStyle(.secondary)
         }
         .a11yGroup(label: L10n.t("Drop basket"),
                    hint: L10n.t("Drag links or torrent files here to queue them."))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.Radius.card)
                 .stroke(isTargeted ? Color.accentColor : Color.secondary.opacity(0.4),
                         style: StrokeStyle(lineWidth: 1.5, dash: [5]))
                 .padding(8)

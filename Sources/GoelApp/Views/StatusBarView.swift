@@ -15,7 +15,7 @@ struct StatusBarView: View {
             stat(.up, speed: telemetry.displayedCombinedSpeed.up)
             if !activeTransfers.isEmpty { transfersIndicator }
             Spacer()
-            Text(L10n.t("Profile")).scaledFont(size: 11).foregroundStyle(.tertiary)
+            Text(L10n.t("Profile")).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.tertiary)
                 .a11yDecorative()
             profilePicker
         }
@@ -30,12 +30,12 @@ struct StatusBarView: View {
     private var transfersIndicator: some View {
         Button { showTransfers.toggle() } label: {
             HStack(spacing: 5) {
-                Image(systemName: "arrow.up.arrow.down.circle").font(.system(size: 12))
-                Text("\(activeTransfers.count)").scaledFont(size: 12, weight: .semibold, monospacedDigit: true)
+                Image(systemName: "arrow.up.arrow.down.circle").scaledFont(size: Theme.TextSize.body)
+                Text("\(activeTransfers.count)").scaledFont(size: Theme.TextSize.body, weight: .semibold, monospacedDigit: true)
             }
             .padding(.horizontal, 9)
             .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: 7).fill(Theme.indigo.opacity(0.16)))
+            .background(RoundedRectangle(cornerRadius: Theme.Radius.control).fill(Theme.indigo.opacity(0.16)))
             .foregroundStyle(Theme.indigo)
             .contentShape(Rectangle())
         }
@@ -49,12 +49,12 @@ struct StatusBarView: View {
     private var transfersPopover: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(L10n.t("SFTP Transfers")).scaledFont(size: 12, weight: .bold)
+                Text(L10n.t("SFTP Transfers")).scaledFont(size: Theme.TextSize.body, weight: .bold)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if vm.sftpTransfers.contains(where: { !$0.isActive }) {
                     Button(L10n.t("Clear")) { vm.clearFinishedSFTPTransfers() }
-                        .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
+                        .buttonStyle(.plain).scaledFont(size: Theme.TextSize.meta).foregroundStyle(Theme.accent)
                         .accessibilityLabel(L10n.t("Clear finished transfers"))
                 }
             }
@@ -93,12 +93,12 @@ struct StatusBarView: View {
                     .frame(width: 15, height: 15)
                 Text(SpeedProfileText.pill(limitEnabled: vm.settings.speedLimitEnabled,
                                            profile: vm.settings.selectedProfile))
-                    .scaledFont(size: 11.5, weight: .medium, monospacedDigit: true)
+                    .scaledFont(size: Theme.TextSize.meta, weight: .medium, monospacedDigit: true)
             }
             .padding(.horizontal, 10)
             .frame(height: 26)
             .background(
-                RoundedRectangle(cornerRadius: 7)
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
                     .fill(vm.settings.speedLimitEnabled ? Theme.orange.opacity(0.18) : Color.primary.opacity(0.08))
             )
             .foregroundStyle(vm.settings.speedLimitEnabled ? Theme.orange : Color.secondary)
@@ -121,8 +121,8 @@ struct StatusBarView: View {
     private func stat(_ direction: SpeedDirection, speed: Double) -> some View {
         HStack(spacing: 5) {
             HStack(spacing: 5) {
-                Image(systemName: direction.symbol).font(.system(size: 11))
-                Text(speed.speedString).scaledFont(size: 12, weight: .semibold, monospacedDigit: true)
+                Image(systemName: direction.symbol).scaledFont(size: Theme.TextSize.meta)
+                Text(speed.speedString).scaledFont(size: Theme.TextSize.body, weight: .semibold, monospacedDigit: true)
                     .frame(width: 72, alignment: .leading)
             }
             .foregroundStyle(direction.tint)
@@ -147,11 +147,11 @@ struct StatusBarView: View {
                     vm.setProfile(profile.name)
                 } label: {
                     Text(profile.name)
-                        .scaledFont(size: 11.5, weight: .medium)
+                        .scaledFont(size: Theme.TextSize.meta, weight: .medium)
                         .padding(.horizontal, 13)
                         .padding(.vertical, 4)
                         .background(
-                            RoundedRectangle(cornerRadius: 6)
+                            RoundedRectangle(cornerRadius: Theme.Radius.control)
                                 .fill(selected ? Theme.accent : Color.clear)
                         )
                         // Derived ink: white on the accent fill measures 2.00–2.42:1 in 3 of 4 themes.
@@ -172,7 +172,7 @@ struct StatusBarView: View {
             }
         }
         .padding(2)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.field).fill(Color.primary.opacity(0.06)))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.t("Speed profile"))
     }

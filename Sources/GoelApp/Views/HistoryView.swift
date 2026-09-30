@@ -34,7 +34,7 @@ struct HistoryView: View {
             if let entries {
                 if entries.isEmpty {
                     Text(L10n.t("Nothing here yet — finished downloads are archived automatically."))
-                        .scaledFont(size: 12)
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 } else {
@@ -78,25 +78,25 @@ struct HistoryView: View {
                 }
             }
         }
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.hairline))
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).stroke(Theme.hairline))
     }
 
     private func row(_ entry: HistoryEntry) -> some View {
         HStack(spacing: 10) {
             Image(systemName: entry.kind.symbolName)
-                .font(.system(size: 12))
+                .scaledFont(size: Theme.TextSize.meta)
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
-                    .scaledFont(size: 12, weight: .medium)
+                    .scaledFont(size: Theme.TextSize.body, weight: .medium)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(entry.completedAt.formatted(date: .abbreviated, time: .shortened)
                      + (entry.totalBytes.map { " · \($0.byteString)" } ?? ""))
-                    .scaledFont(size: 10.5)
+                    .scaledFont(size: Theme.TextSize.caption)
                     .foregroundStyle(.secondary)
             }
             .a11yGroup(label: entry.name,
@@ -133,7 +133,7 @@ struct HistoryView: View {
     private func iconButton(_ symbol: String, help: String, label: String,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 12))
+            Image(systemName: symbol).scaledFont(size: Theme.TextSize.body)
         }
         .buttonStyle(.borderless)
         .help(help)

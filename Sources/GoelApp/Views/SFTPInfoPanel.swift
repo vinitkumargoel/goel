@@ -59,11 +59,11 @@ struct SFTPInfoPanel: View {
     private var header: some View {
         HStack(spacing: 10) {
             Image(systemName: iconName)
-                .font(.system(size: 22))
+                .scaledFont(size: 22)
                 .foregroundStyle(entry.isDirectory ? Theme.accent : .secondary)
             VStack(alignment: .leading, spacing: 1) {
-                Text(entry.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                Text(kindLabel).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(entry.name).scaledFont(size: Theme.TextSize.title, weight: .semibold).lineLimit(1)
+                Text(kindLabel).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
             }
             Spacer()
             Button(action: onClose) { Image(systemName: "xmark") }
@@ -110,10 +110,10 @@ struct SFTPInfoPanel: View {
     private func row(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(label)
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
                 .frame(width: 68, alignment: .trailing)
             Text(value)
-                .font(.system(size: 11.5))
+                .scaledFont(size: Theme.TextSize.meta)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -125,19 +125,19 @@ struct SFTPInfoPanel: View {
     private func permissions(_ info: SFTPEntryInfo) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(L10n.t("Permissions")).font(.system(size: 11, weight: .semibold))
+                Text(L10n.t("Permissions")).scaledFont(size: Theme.TextSize.caption, weight: .semibold)
                 Spacer()
                 Text(SFTPPermissions.string(for: mode))
-                    .font(.system(size: 11, design: .monospaced))
+                    .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                     .foregroundStyle(.secondary)
             }
 
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
                     Text("").frame(width: 50)
-                    Text(L10n.t("Read")).font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text(L10n.t("Write")).font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text(L10n.t("Execute")).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(L10n.t("Read")).scaledFont(size: Theme.TextSize.micro).foregroundStyle(.secondary)
+                    Text(L10n.t("Write")).scaledFont(size: Theme.TextSize.micro).foregroundStyle(.secondary)
+                    Text(L10n.t("Execute")).scaledFont(size: Theme.TextSize.micro).foregroundStyle(.secondary)
                 }
                 permissionRow("Owner", read: 0o400, write: 0o200, execute: 0o100)
                 permissionRow("Group", read: 0o040, write: 0o020, execute: 0o010)
@@ -145,10 +145,10 @@ struct SFTPInfoPanel: View {
             }
 
             HStack(spacing: 8) {
-                Text(L10n.t("Octal")).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L10n.t("Octal")).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
                 TextField("0644", text: $octalText)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11, design: .monospaced))
+                    .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                     .frame(width: 68)
                     .onSubmit(applyOctal)
                     .accessibilityLabel(L10n.t("Permissions in octal"))
@@ -159,7 +159,7 @@ struct SFTPInfoPanel: View {
             // Typed octal is adopted only on submit, so a half-typed "6" can't briefly strip every permission bit off the checkboxes.
             if SFTPPermissions.parse(octal: octalText) == nil && !octalText.isEmpty {
                 Text(L10n.t("Enter three or four digits, 0–7."))
-                    .font(.system(size: 10)).foregroundStyle(Theme.red)
+                    .scaledFont(size: Theme.TextSize.micro).foregroundStyle(Theme.red)
             }
         }
     }
@@ -171,7 +171,7 @@ struct SFTPInfoPanel: View {
 
     private func permissionRow(_ label: String, read: UInt32, write: UInt32, execute: UInt32) -> some View {
         GridRow {
-            Text(L10n.t(label)).font(.system(size: 11)).frame(width: 50, alignment: .leading)
+            Text(L10n.t(label)).scaledFont(size: Theme.TextSize.meta).frame(width: 50, alignment: .leading)
             permissionBox(label, "read", read)
             permissionBox(label, "write", write)
             permissionBox(label, "execute", execute)
