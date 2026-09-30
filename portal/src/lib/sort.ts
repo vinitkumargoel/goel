@@ -1,6 +1,6 @@
 import type { StatusToken, TaskRow } from './types'
 
-export type SortKey = 'name' | 'size' | 'status'
+export type SortKey = 'name' | 'size' | 'status' | 'speed'
 export type SortDir = 'asc' | 'desc'
 
 /** `key: null` keeps the server's order, which is the order tasks were added. */
@@ -34,6 +34,8 @@ function compare(a: TaskRow, b: TaskRow, key: SortKey): number {
       return (a.totalBytes ?? -1) - (b.totalBytes ?? -1)
     case 'status':
       return STATUS_RANK[a.statusToken] - STATUS_RANK[b.statusToken]
+    case 'speed':
+      return (a.downSpeed || 0) - (b.downSpeed || 0)
   }
 }
 

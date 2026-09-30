@@ -57,7 +57,13 @@
       form.insertBefore(el, form.children[1])
     }
     el.id = 'err'
-    el.textContent = message
+    // A live region only speaks on change: the same error twice in a row (a second wrong
+    // password) would be silent. Empty it, then refill on the next frame so it is re-announced.
+    el.textContent = ''
+    const target = el
+    requestAnimationFrame(() => {
+      target.textContent = message
+    })
     // Most failures are a mistyped password: put the user straight back in that field.
     password.setAttribute('aria-describedby', 'err')
     password.select()

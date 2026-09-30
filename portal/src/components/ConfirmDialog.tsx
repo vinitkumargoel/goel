@@ -27,7 +27,7 @@ function Open({ request, onClose }: { request: ConfirmRequest; onClose: () => vo
   const cancelRef = useRef<HTMLButtonElement>(null)
   const titleId = useId()
   const bodyId = useId()
-  const onKeyDown = useDialogFocus(ref)
+  useDialogFocus(ref, { onEscape: onClose })
 
   // Destructive confirmations never take Return as their default, so focus starts on Cancel.
   useEffect(() => {
@@ -48,14 +48,6 @@ function Open({ request, onClose }: { request: ConfirmRequest; onClose: () => vo
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={bodyId}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            e.stopPropagation()
-            onClose()
-            return
-          }
-          onKeyDown(e)
-        }}
       >
         <div className="mhead">
           <div className="mic danger">

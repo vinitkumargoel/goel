@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import i18n from '../i18n'
 import { ApiError, api } from '../lib/api'
 import type { FolderListing } from '../lib/types'
@@ -27,6 +28,7 @@ export function FolderPicker({
   const [naming, setNaming] = useState(false)
   const [newName, setNewName] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
 
   // Read once through a ref: as a dep, a re-render would undo the user's navigation.
   const startRef = useRef(initialPath)
@@ -71,17 +73,13 @@ export function FolderPicker({
     if (naming) nameRef.current?.focus()
   }, [naming])
 
-  // Capture phase is required: otherwise Escape also reaches the App handler and closes the Add dialog.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.stopPropagation()
+  // Handled at the document in the capture phase, so Escape never also reaches the Add dialog below.
+  useDialogFocus(modalRef, {
+    onEscape: () => {
       if (naming) setNaming(false)
       else onClose()
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [naming, onClose])
+    },
+  })
 
   function create() {
     const name = newName.trim()
@@ -115,7 +113,7 @@ export function FolderPicker({
         onClose()
       }}
     >
-      <div className="modal picker">
+      <div className="modal picker" ref={modalRef}>
         <div className="mhead">
           <div className="mic">
             <FolderIcon />

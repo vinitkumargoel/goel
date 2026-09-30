@@ -10,6 +10,7 @@ function Harness({ onPick }: { onPick: (key: string) => void }) {
   return (
     <>
       <button
+        aria-haspopup="menu"
         onClick={() =>
           setMenu({
             x: 10,
@@ -40,6 +41,15 @@ async function open() {
 }
 
 describe('ContextMenu', () => {
+  it('closes, rather than reopens, when its own trigger is clicked again', async () => {
+    const { opener } = await open()
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    await userEvent.click(opener)
+    expect(screen.queryByRole('menu')).toBeNull()
+    await userEvent.click(opener)
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+  })
+
   it('is a labelled menu of menuitems and focuses the first on open', async () => {
     await open()
     expect(screen.getByRole('menu', { name: 'debian.iso' })).toBeInTheDocument()

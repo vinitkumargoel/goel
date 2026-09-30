@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import en from '../locales/en.json'
-import { fmtEta, fmtRate, fmtSize, fmtSpeed, fmtWhen } from './format'
+import { fmtEta, fmtSize, fmtSpeed, fmtWhen, IDLE_RATE } from './format'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -43,7 +43,9 @@ describe('byte and rate formatting is untouched by i18n', () => {
   it('formats speeds and rates', () => {
     expect(fmtSpeed(0)).toBe('—')
     expect(fmtSpeed(2048)).toBe('2.0 KB/s')
-    expect(fmtRate(0)).toBe('0 B/s')
+    expect(fmtSpeed(0, IDLE_RATE)).toBe('0 B/s')
+    expect(fmtSpeed(2048, IDLE_RATE)).toBe('2.0 KB/s')
+    expect(fmtSpeed(0, '')).toBe('')
   })
 
   it('formats ETAs', () => {

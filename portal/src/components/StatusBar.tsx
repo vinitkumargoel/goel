@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { fmtRate } from '../lib/format'
+import { fmtSpeed, IDLE_RATE } from '../lib/format'
 import { ArrowDownIcon, ArrowUpIcon } from './Icons'
 
 interface StatusBarProps {
@@ -27,12 +27,12 @@ export function StatusBar({ live, loaded, active, downSpeed, upSpeed, readOnly }
       <span className="stat down">
         <ArrowDownIcon aria-hidden="true" />
         <span className="sr-only">{t('statusbar.downSpeed')}</span>
-        <b>{fmtRate(downSpeed)}</b>
+        <b>{fmtSpeed(downSpeed, IDLE_RATE)}</b>
       </span>
       <span className="stat up">
         <ArrowUpIcon aria-hidden="true" />
         <span className="sr-only">{t('statusbar.upSpeed')}</span>
-        <b>{fmtRate(upSpeed)}</b>
+        <b>{fmtSpeed(upSpeed, IDLE_RATE)}</b>
       </span>
       {readOnly && <span className="chip chip-ro">{t('statusbar.readOnly')}</span>}
     </footer>

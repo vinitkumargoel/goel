@@ -47,4 +47,12 @@ describe('BulkBar', () => {
     const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)
     expect(names).toEqual([en.bulk.copyLinks, en.bulk.clear])
   })
+
+  it('works for a single selected row too, where it is the accessible home of the row actions', () => {
+    const handlers = { onAction: vi.fn(), onCopyLinks: vi.fn(), onRemove: vi.fn(), onClear: vi.fn() }
+    renderWithI18n(<BulkBar selected={[row('a', 'downloading')]} canWrite {...handlers} />)
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: en.common.pause })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: en.common.copyLink })).toBeInTheDocument()
+  })
 })

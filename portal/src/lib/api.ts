@@ -49,6 +49,19 @@ async function errorText(response: Response): Promise<string> {
   }
 }
 
+/**
+ * The message a caller should show for a failed action, or `null` when the api layer has already
+ * dealt with it: a 403 was toasted by the refusal handler and a 401 is navigating away. Every
+ * other failure — an HTTP error or an unreachable server — is the caller's to surface.
+ */
+export function failureMessage(error: unknown): string | null {
+  if (error instanceof ApiError) {
+    if (error.kind === 'auth' || error.kind === 'refused') return null
+    return error.message || i18n.t('api.actionFailed')
+  }
+  return i18n.t('api.actionFailed')
+}
+
 async function request(path: string, init?: RequestInit): Promise<Response> {
   let response: Response
   try {

@@ -51,4 +51,19 @@ describe('ConfirmDialog', () => {
     expect(onClose).toHaveBeenCalled()
     expect(onConfirm).not.toHaveBeenCalled()
   })
+
+  it('pulls Tab back into the dialog when focus has fallen to the page body', async () => {
+    renderConfirm()
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(document.activeElement).toBe(document.body)
+    await userEvent.tab()
+    expect(screen.getByRole('alertdialog').contains(document.activeElement)).toBe(true)
+  })
+
+  it('closes on Escape even when focus is outside the dialog', async () => {
+    const { onClose } = renderConfirm()
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    await userEvent.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalled()
+  })
 })

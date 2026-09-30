@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDialogFocus } from '../hooks/useDialogFocus'
-import { api } from '../lib/api'
+import { api, failureMessage } from '../lib/api'
 import { BOOT } from '../lib/boot'
 import { summarizeLinks } from '../lib/links'
 import type { AddRequest, NetworkAdapter, NetworkState } from '../lib/types'
@@ -33,8 +33,8 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
   const urlRef = useRef<HTMLTextAreaElement>(null)
   const modalRef = useRef<HTMLDivElement>(null)
   const id = useId()
-  // The folder picker stacks its own modal on top; while it's open, Tab belongs to it.
-  const trapTab = useDialogFocus(modalRef, !picking)
+  // The folder picker stacks its own modal on top; while it's open, Tab and Escape belong to it.
+  useDialogFocus(modalRef, { trap: !picking, onEscape: onClose })
   const links = summarizeLinks(url)
 
   useEffect(() => {
@@ -99,8 +99,10 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
     try {
       const result = await api.add(body)
       onAdded(result.added, result.refused)
-    } catch {
-      // `api` already surfaced the refusal; staying open keeps the user's typed URL.
+    } catch (e) {
+      // A 403 was already toasted by `api`; anything else is ours to report. Staying open keeps the typed URL.
+      const message = failureMessage(e)
+      if (message) onWarn(message)
       setBusy(false)
     }
   }
@@ -109,9 +111,7 @@ export function AddDialog({ onClose, onAdded, onWarn }: AddDialogProps) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       void submit()
-      return
     }
-    trapTab(e)
   }
 
   const errorId = `${id}-error`

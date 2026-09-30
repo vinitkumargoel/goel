@@ -1,5 +1,6 @@
-import type { ComponentType, SVGProps } from 'react'
+import { useEffect, useRef, type ComponentType, type RefObject, type SVGProps } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import { TYPE_FILTERS, type Filter, type FilterCounts, type TypeFilter } from '../lib/filters'
 import {
   ActiveIcon,
@@ -45,7 +46,12 @@ interface SidebarProps {
   onSelectFilter: (filter: Filter) => void
   onSelectView: (view: View) => void
   onClose: () => void
+  /** Where focus goes when the off-canvas sidebar closes with focus inside it (the hamburger). */
+  returnFocusTo?: RefObject<HTMLElement | null>
 }
+
+/** Matches portal.css: at this width the sidebar is an off-canvas drawer. */
+export const DRAWER_QUERY = '(max-width: 680px)'
 
 export function Sidebar({
   view,
@@ -55,8 +61,28 @@ export function Sidebar({
   onSelectFilter,
   onSelectView,
   onClose,
+  returnFocusTo,
 }: SidebarProps) {
   const { t } = useTranslation()
+  const drawer = useMediaQuery(DRAWER_QUERY)
+  const navRef = useRef<HTMLElement>(null)
+  const wasOpen = useRef(open)
+
+  // As a drawer: opening moves focus in; closing with focus inside (or lost) hands it to the hamburger.
+  useEffect(() => {
+    const opened = open && !wasOpen.current
+    const closed = !open && wasOpen.current
+    wasOpen.current = open
+    if (!drawer) return
+    const nav = navRef.current
+    if (opened) {
+      const current = nav?.querySelector<HTMLElement>('[aria-current="page"]')
+      ;(current ?? nav?.querySelector<HTMLElement>('button'))?.focus()
+    } else if (closed) {
+      const active = document.activeElement
+      if (!active || active === document.body || nav?.contains(active)) returnFocusTo?.current?.focus()
+    }
+  }, [open, drawer, returnFocusTo])
 
   const libraryItem = (key: Filter, label: string, Icon: Icon) => {
     const current = view === 'library' && filter === key
@@ -90,7 +116,13 @@ export function Sidebar({
   return (
     <>
       <div className={`sb-backdrop${open ? ' show' : ''}`} onClick={onClose} />
-      <nav className={`sidebar${open ? ' open' : ''}`} aria-label={t('sidebar.navLabel')}>
+      {/* Closed, the drawer is off-screen but still in the DOM: inert keeps Tab and screen readers out. */}
+      <nav
+        ref={navRef}
+        className={`sidebar${open ? ' open' : ''}`}
+        aria-label={t('sidebar.navLabel')}
+        inert={drawer && !open}
+      >
         <div className="s-lbl">{t('sidebar.library')}</div>
         {libraryItem('all', t('sidebar.allDownloads'), ListIcon)}
 

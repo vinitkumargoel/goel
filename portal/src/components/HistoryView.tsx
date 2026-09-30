@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api } from '../lib/api'
+import { api, failureMessage } from '../lib/api'
 import { fmtSize, fmtWhen } from '../lib/format'
 import { fileType, kindLabel } from '../lib/taskKind'
 import type { HistoryRow } from '../lib/types'
@@ -12,9 +12,10 @@ interface HistoryViewProps {
   canWrite: boolean
   onReadd: (source: string) => Promise<void>
   onRemoved: () => void
+  onWarn: (message: string) => void
 }
 
-export function HistoryView({ canWrite, onReadd, onRemoved }: HistoryViewProps) {
+export function HistoryView({ canWrite, onReadd, onRemoved, onWarn }: HistoryViewProps) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<HistoryRow[]>([])
   const [state, setState] = useState<LoadState>('loading')
@@ -38,8 +39,9 @@ export function HistoryView({ canWrite, onReadd, onRemoved }: HistoryViewProps) 
       await api.removeHistory(id)
       onRemoved()
       await load()
-    } catch {
-      // Already surfaced by the api layer.
+    } catch (e) {
+      const message = failureMessage(e)
+      if (message) onWarn(message)
     }
   }
 
@@ -78,7 +80,7 @@ export function HistoryView({ canWrite, onReadd, onRemoved }: HistoryViewProps) 
               return (
                 <div className="hrow" key={e.id}>
                   <div className={`hic ft-${type}`}>
-                    <FileTypeIcon type={type} />
+                    <FileTypeIcon type={type} ink="currentColor" />
                   </div>
                   <div style={{ minWidth: 0 }}>
                     <div className="ntext">{e.name}</div>

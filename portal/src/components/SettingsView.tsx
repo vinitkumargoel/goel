@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { api } from '../lib/api'
+import type { ToastTone } from '../hooks/useToasts'
+import { api, failureMessage } from '../lib/api'
 import { BOOT } from '../lib/boot'
 import { applyTheme, THEME_ACCENT, THEME_LABEL, THEMES, type Theme } from '../lib/theme'
 import type { NetworkState } from '../lib/types'
@@ -11,7 +12,7 @@ interface SettingsViewProps {
   theme: Theme
   onTheme: (theme: Theme) => void
   canWrite: boolean
-  onToast: (message: string) => void
+  onToast: (message: string, tone?: ToastTone) => void
 }
 
 export function SettingsView({ theme, onTheme, canWrite, onToast }: SettingsViewProps) {
@@ -106,7 +107,7 @@ export function SettingsView({ theme, onTheme, canWrite, onToast }: SettingsView
   )
 }
 
-function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: string) => void }) {
+function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: string, tone?: ToastTone) => void }) {
   const { t } = useTranslation()
   const [net, setNet] = useState<NetworkState | null>(null)
   const [failed, setFailed] = useState(false)
@@ -142,8 +143,9 @@ function NetworkCard({ canWrite, onToast }: { canWrite: boolean; onToast: (m: st
       // Adopt the echoed state, never `body`: the server can settle on something else.
       adopt(await api.updateNetwork(body))
       onToast(t('settings.network.saved'))
-    } catch {
-      // Already surfaced by the api layer.
+    } catch (e) {
+      const message = failureMessage(e)
+      if (message) onToast(message, 'warn')
     }
   }
 

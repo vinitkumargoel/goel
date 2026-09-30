@@ -1,6 +1,7 @@
+import type { RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BOOT } from '../lib/boot'
-import { fmtRate } from '../lib/format'
+import { fmtSpeed, IDLE_RATE } from '../lib/format'
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -25,6 +26,8 @@ interface TopbarProps {
   onUserMenu: (anchor: DOMRect) => void
   userMenuOpen: boolean
   sidebarOpen: boolean
+  /** The off-canvas sidebar hands focus back here when it closes. */
+  hamburgerRef?: RefObject<HTMLButtonElement | null>
   canWrite: boolean
 }
 
@@ -41,6 +44,7 @@ export function Topbar({
   onUserMenu,
   userMenuOpen,
   sidebarOpen,
+  hamburgerRef,
   canWrite,
 }: TopbarProps) {
   const { t } = useTranslation()
@@ -50,6 +54,7 @@ export function Topbar({
     <div className="topbar">
       <button
         className="hamburger"
+        ref={hamburgerRef}
         onClick={onToggleSidebar}
         aria-label={t('topbar.menu')}
         aria-expanded={sidebarOpen}
@@ -81,11 +86,11 @@ export function Topbar({
       <div className="stats">
         <span className="stat down">
           <ArrowDownIcon />
-          <b>{fmtRate(downSpeed)}</b>
+          <b>{fmtSpeed(downSpeed, IDLE_RATE)}</b>
         </span>
         <span className="stat up">
           <ArrowUpIcon />
-          <b>{fmtRate(upSpeed)}</b>
+          <b>{fmtSpeed(upSpeed, IDLE_RATE)}</b>
         </span>
       </div>
 

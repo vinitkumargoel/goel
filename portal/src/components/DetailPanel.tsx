@@ -132,7 +132,7 @@ function Loaded({
       <div className="dhead">
         <div className="dtop">
           <div className={`ftype ft-${type}`}>
-            <FileTypeIcon type={type} />
+            <FileTypeIcon type={type} ink="currentColor" />
           </div>
           <div style={{ minWidth: 0 }}>
             <div className="dname">{row.name}</div>

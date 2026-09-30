@@ -18,8 +18,9 @@ export function eligibleFor(selected: readonly TaskRow[], action: RowAction): st
 }
 
 /**
- * Shown for two or more selected rows. Every action fans out to the existing per-id endpoints;
- * a button only appears when at least one selected row can take it.
+ * Shown for any selection, including a single row: it is how keyboard and touch screen-reader
+ * users reach a row's actions, since a listbox option cannot contain buttons. Every action fans
+ * out to the existing per-id endpoints; a button only appears when a selected row can take it.
  */
 export function BulkBar({ selected, canWrite, onAction, onCopyLinks, onRemove, onClear }: BulkBarProps) {
   const { t } = useTranslation()
@@ -52,7 +53,7 @@ export function BulkBar({ selected, canWrite, onAction, onCopyLinks, onRemove, o
       )}
       <button className="mbtn" onClick={() => onCopyLinks(selected.map((t) => t.source))}>
         <LinkIcon />
-        {t('bulk.copyLinks')}
+        {selected.length === 1 ? t('common.copyLink') : t('bulk.copyLinks')}
       </button>
       {canWrite && (
         <button className="mbtn danger" onClick={() => onRemove(selected.map((t) => t.id))}>

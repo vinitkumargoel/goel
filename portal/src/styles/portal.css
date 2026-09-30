@@ -13,7 +13,7 @@ svg{display:block}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px}
 .brand .mk{width:28px;height:28px;border-radius:8px;overflow:hidden;box-shadow:0 3px 8px rgba(0,0,0,.3)}
 .brand .mk svg{width:100%;height:100%}
-.brand .sub{font-size:10px;font-weight:600;color:var(--text-faint);background:var(--bg-chip);padding:2px 6px;border-radius:5px}
+.brand .sub{font-size:10px;font-weight:600;color:var(--text-dim);background:var(--bg-chip);padding:2px 6px;border-radius:5px}
 .hamburger{display:none;width:36px;height:36px;border:0;background:var(--bg-control);border-radius:9px;color:var(--text);cursor:pointer;place-items:center}
 .hamburger svg{width:18px;height:18px}
 .search{flex:1;max-width:340px;display:flex;align-items:center;gap:8px;background:var(--bg-input);border:1px solid var(--border);border-radius:9px;padding:0 10px;height:34px}
@@ -140,16 +140,16 @@ textarea.finput{min-height:88px;font-family:inherit;resize:vertical}
 .pkpath{padding:10px 22px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pkbody{min-height:190px;max-height:44vh}
 .pkrow{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:13px;font-family:inherit;text-align:left;cursor:pointer}.pkrow:hover{background:var(--bg-control)}.pkrow svg{width:16px;height:16px;flex:0 0 auto;color:var(--accent)}.pkrow.up svg{color:var(--text-faint)}.pkrow .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pkrow.locked{cursor:default;color:var(--text-faint)}.pkrow.locked:hover{background:transparent}.pkrow.locked svg{color:var(--text-faint)}
-.pkno{margin-left:auto;flex:0 0 auto;font-size:10.5px;color:var(--text-faint)}
+.pkrow.locked{cursor:default;color:var(--text-dim)}.pkrow.locked:hover{background:transparent}.pkrow.locked svg{color:var(--text-faint)}
+.pkno{margin-left:auto;flex:0 0 auto;font-size:10.5px;color:var(--text-dim)}
 .pknew{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}.pknew .finput{flex:1}
 .pkfield{display:flex;gap:6px;align-items:center;padding:4px 4px 4px 12px}
-.pkfield .pkval{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}.pkfield .pkval.dim{color:var(--text-faint)}
+.pkfield .pkval{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}.pkfield .pkval.dim{color:var(--text-dim)}
 .pkfield .btn{height:30px;padding:0 10px;font-size:12px}.pkfield .btn.pkclear{padding:0 8px}.pkfield .btn svg{width:13px;height:13px}
-.menu{position:fixed;z-index:140;min-width:210px;background:var(--bg-modal);border:1px solid var(--border-strong);border-radius:11px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:5px;font-size:12.5px}
+.menu{position:fixed;z-index:140;min-width:210px;max-height:calc(100vh - 16px);overflow:auto;background:var(--bg-modal);border:1px solid var(--border-strong);border-radius:11px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:5px;font-size:12.5px}
 .mi{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border:0;border-radius:7px;background:none;font:inherit;text-align:left;cursor:pointer;color:var(--text);white-space:nowrap}.mi:hover,.mi:focus{background:var(--accent);color:var(--on-accent);outline:none}.mi:hover svg,.mi:focus svg{color:var(--on-accent)}.mi svg{width:15px;height:15px;color:var(--text-dim);flex:0 0 auto}.mi .t{flex:1}
 .mi.danger{color:var(--red)}.mi.danger svg{color:var(--red)}.mi.danger:hover,.mi.danger:focus{background:var(--red);color:var(--on-red)}.mi.danger:hover svg,.mi.danger:focus svg{color:var(--on-red)}.msep{height:1px;background:var(--border);margin:4px 6px}
-.toasts{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:160;align-items:center}.toast-region{display:flex;flex-direction:column;gap:8px;align-items:center}.toast-region:empty{display:none}
+.toasts{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:160;align-items:center}.toast-region{display:flex;flex-direction:column;gap:8px;align-items:center}/* Never display:none — that drops the live region, and the first toast into a new region is not announced. */.toast-region:empty{position:absolute;width:0;height:0;overflow:hidden}
 .toast{display:flex;align-items:center;gap:9px;background:var(--bg-modal);border:1px solid var(--border-strong);border-radius:11px;box-shadow:0 12px 34px rgba(0,0,0,.4);padding:6px 6px 6px 15px;font-size:12.5px;animation:ti .28s;max-width:88vw;transition:opacity .3s,transform .3s}.toast svg{width:16px;height:16px;color:var(--accent);flex:0 0 auto}.toast.warn>svg{color:var(--orange)}.toast.out{opacity:0;transform:translateY(8px)}
 .tclose{width:26px;height:26px;flex:0 0 auto;border:0;border-radius:7px;background:none;color:var(--text-dim);cursor:pointer;display:grid;place-items:center}.tclose:hover{background:var(--bg-control-active);color:var(--text)}.tclose svg{width:12px;height:12px;color:currentColor}
 @keyframes ti{from{opacity:0;transform:translateY(12px)}to{opacity:1}}
@@ -164,3 +164,9 @@ textarea.finput{min-height:88px;font-family:inherit;resize:vertical}
 .fprio{padding:6px 12px;font-size:11px}.s-item,.mi{padding-top:11px;padding-bottom:11px}
 .seg button,.seg.dtabs button{padding:10px 14px}.tclose{width:40px;height:40px}.sorth{padding:9px 0}
 }
+/* Wraps the page behind any modal so it can be made inert; must not add a box to #root's flex column. */
+.app-chrome{display:contents}
+/* Glyph ink per tile, as the native app picks it: whichever of white or dark ink clears 3:1 against
+   both gradient stops. White fails on the light orange, cyan and green tops (1.7–2.1:1). */
+.ftype.ft-iso,.ftype.ft-archive,.ftype.ft-app,.hic.ft-iso,.hic.ft-archive,.hic.ft-app{color:#12141a}
+.c.dspd .uspd{font-size:10.5px;font-weight:400;color:var(--teal)}

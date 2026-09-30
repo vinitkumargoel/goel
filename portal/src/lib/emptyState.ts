@@ -5,6 +5,8 @@
 export type EmptyState =
   /** First snapshot hasn't arrived; the list isn't empty, it's unknown. */
   | 'loading'
+  /** No snapshot yet and the last fetch failed. Offers Retry. */
+  | 'error'
   /** A search term matches nothing. Offers Clear search. */
   | 'noMatch'
   /** The queue itself is empty and this session may add. Offers Add. */
@@ -16,14 +18,16 @@ export type EmptyState =
 
 export interface EmptyStateInput {
   loaded: boolean
+  /** The last snapshot fetch failed. Only matters before the first snapshot lands. */
+  error?: boolean
   /** Every task on the server, before search and filter. */
   total: number
   search: string
   canWrite: boolean
 }
 
-export function emptyState({ loaded, total, search, canWrite }: EmptyStateInput): EmptyState {
-  if (!loaded) return 'loading'
+export function emptyState({ loaded, error, total, search, canWrite }: EmptyStateInput): EmptyState {
+  if (!loaded) return error ? 'error' : 'loading'
   if (search.trim() !== '') return 'noMatch'
   if (total > 0) return 'emptyFilter'
   return canWrite ? 'emptyQueue' : 'emptyReadOnly'

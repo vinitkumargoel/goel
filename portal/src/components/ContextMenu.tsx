@@ -37,18 +37,39 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
   const opener = useRef<Element | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
 
-  // Clamping needs the menu's measured size, so the first pass must render hidden and reposition after paint.
+  // Clamping needs the menu's measured size, so the first pass must render hidden and reposition
+  // after paint — and again whenever the viewport changes size under an open menu.
   useLayoutEffect(() => {
     if (!menu || !ref.current) {
       setPos(null)
       return
     }
-    const r = ref.current.getBoundingClientRect()
-    setPos({
-      left: Math.max(EDGE_GAP, Math.min(menu.x, window.innerWidth - r.width - EDGE_GAP)),
-      top: Math.max(EDGE_GAP, Math.min(menu.y, window.innerHeight - r.height - EDGE_GAP)),
-    })
+    const clamp = () => {
+      const el = ref.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      setPos({
+        left: Math.max(EDGE_GAP, Math.min(menu.x, window.innerWidth - r.width - EDGE_GAP)),
+        top: Math.max(EDGE_GAP, Math.min(menu.y, window.innerHeight - r.height - EDGE_GAP)),
+      })
+    }
+    clamp()
+    window.addEventListener('resize', clamp)
+    return () => window.removeEventListener('resize', clamp)
   }, [menu])
+
+  // The control that opened the menu (a "⋯" or the account button). A click on it while the menu
+  // is open must close the menu, not close-then-reopen it. Tracked from pointerdown because a
+  // clicked button does not take focus in every browser (Safari), so activeElement can't be trusted.
+  const trigger = useRef<Element | null>(null)
+  const lastPressed = useRef<Element | null>(null)
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      lastPressed.current = (e.target as Element | null)?.closest?.('[aria-haspopup="menu"]') ?? null
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [])
 
   // Remember who opened the menu. Focus moves in only once it is positioned: a
   // `visibility:hidden` element can't take focus, so doing it on open would silently fail.
@@ -59,7 +80,11 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
       return
     }
     if (focusedFor.current === menu) return
-    if (focusedFor.current === null) opener.current = document.activeElement
+    if (focusedFor.current === null) {
+      opener.current = document.activeElement
+      const focusedTrigger = document.activeElement?.closest('[aria-haspopup="menu"]') ?? null
+      trigger.current = focusedTrigger ?? lastPressed.current
+    }
     if (!pos) return
     focusedFor.current = menu
     items(ref.current)[0]?.focus()
@@ -69,7 +94,15 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
     if (!menu) return
     // Capture phase: without it another control's own handler runs first and can reopen a menu this closes.
     const onDocClick = (e: MouseEvent) => {
-      if (!(e.target as Element | null)?.closest('.menu')) onClose()
+      const target = e.target as Element | null
+      if (target?.closest('.menu')) return
+      const opener = trigger.current
+      if (opener && target && opener.contains(target)) {
+        // Swallow the click so the trigger's own handler doesn't open the menu again.
+        e.stopPropagation()
+        e.preventDefault()
+      }
+      onClose()
     }
     document.addEventListener('click', onDocClick, true)
     return () => document.removeEventListener('click', onDocClick, true)

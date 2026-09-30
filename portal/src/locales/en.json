@@ -86,7 +86,12 @@
     "colName": "Name",
     "colSize": "Size",
     "colStatus": "Status",
-    "colSpeed": "↓ Speed",
+    "colSpeed": "Speed",
+    "sortedAscending": "{{label}}, sorted ascending",
+    "sortedDescending": "{{label}}, sorted descending",
+    "actionsHint": "Shift+F10 for actions",
+    "loadErrorTitle": "Couldn’t load downloads",
+    "loadErrorBody": "The server didn’t answer. It may be restarting.",
     "emptyTitle": "Nothing here",
     "emptyBody": "Tap <bold>{{addLabel}}</bold> to queue a URL, magnet, or torrent.",
     "confirmRemoveWithData": "Delete the downloaded files from disk too? This permanently removes them and can't be undone.",
@@ -96,6 +101,7 @@
     "noMatchTitle": "No downloads match “{{search}}”",
     "noMatchBody": "Check the spelling, or clear the search to see every download.",
     "clearSearch": "Clear search",
+    "clearSearchAndFilter": "Clear search and filter",
     "queueLabel": "Download queue",
     "rowLabel": "{{name}}, {{kind}}, {{status}}, {{percent}}%",
     "progress": "Progress",
@@ -106,7 +112,8 @@
     "copySourceLink": "Copy source link",
     "forceRecheck": "Force recheck",
     "removeFromList": "Remove from list",
-    "removeWithData": "Remove with data"
+    "removeWithData": "Remove with data",
+    "removeMany": "Remove {{count}}"
   },
 
   "bulk": {
@@ -145,7 +152,23 @@
     "added_other": "Added {{count}} downloads",
     "refused_one": "{{count}} refused — internal network address",
     "refused_other": "{{count}} refused — internal network addresses",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "bulkPartial": {
+      "pause": "Paused {{ok}} of {{total}} — {{failed}} failed",
+      "resume": "Resumed {{ok}} of {{total}} — {{failed}} failed",
+      "retry": "Retried {{ok}} of {{total}} — {{failed}} failed",
+      "remove": "Removed {{ok}} of {{total}} — {{failed}} failed"
+    },
+    "bulkFailed": {
+      "pause_one": "Couldn’t pause {{count}} download — {{reason}}",
+      "pause_other": "Couldn’t pause {{count}} downloads — {{reason}}",
+      "resume_one": "Couldn’t resume {{count}} download — {{reason}}",
+      "resume_other": "Couldn’t resume {{count}} downloads — {{reason}}",
+      "retry_one": "Couldn’t retry {{count}} download — {{reason}}",
+      "retry_other": "Couldn’t retry {{count}} downloads — {{reason}}",
+      "remove_one": "Couldn’t remove {{count}} download — {{reason}}",
+      "remove_other": "Couldn’t remove {{count}} downloads — {{reason}}"
+    }
   },
 
   "history": {
@@ -310,7 +333,8 @@
     "unreachable": "Could not reach the server",
     "notSignedIn": "Not signed in",
     "changeBlocked": "Change blocked",
-    "requestFailed": "Request failed ({{status}})"
+    "requestFailed": "Request failed ({{status}})",
+    "actionFailed": "That didn’t work — try again"
   },
 
   "format": {

@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useStableCallback } from '../hooks/useStableCallback'
 import { emptyState } from '../lib/emptyState'
 import type { SelectionAction } from '../lib/selection'
 import { ariaSort, type SortKey, type SortState } from '../lib/sort'
@@ -14,7 +15,11 @@ interface LibraryViewProps {
   /** Every task before search and filter, so the empty state can tell "none" from "none match". */
   total: number
   loaded: boolean
+  /** The snapshot fetch is failing; before the first snapshot this shows an error with Retry. */
+  error?: boolean
   search: string
+  /** A sidebar filter other than "All" is active. */
+  filtered?: boolean
   selectedIds: ReadonlySet<string>
   lead: string | null
   sort: SortState
@@ -26,15 +31,19 @@ interface LibraryViewProps {
   onSort: (key: SortKey) => void
   onAction: (id: string, action: RowAction) => void
   onMenu: (id: string, x: number, y: number) => void
+  /** Clears the search and the sidebar filter. */
   onClearSearch: () => void
   onAdd: () => void
+  onRetry?: () => void
 }
 
 export function LibraryView({
   tasks,
   total,
   loaded,
+  error = false,
   search,
+  filtered = false,
   selectedIds,
   lead,
   sort,
@@ -47,10 +56,13 @@ export function LibraryView({
   onMenu,
   onClearSearch,
   onAdd,
+  onRetry,
 }: LibraryViewProps) {
   const { t } = useTranslation()
   const rowEls = useRef(new Map<string, HTMLDivElement>())
+  const emptyRef = useRef<HTMLDivElement>(null)
   const [focusId, setFocusId] = useState<string | null>(null)
+  const hintId = useId()
 
   const order = useMemo(() => tasks.map((task) => task.id), [tasks])
 
@@ -61,25 +73,53 @@ export function LibraryView({
     order[0] ??
     null
 
-  const rowRef = useCallback((id: string, el: HTMLDivElement | null) => {
+  const rowRef = useStableCallback((id: string, el: HTMLDivElement | null) => {
     if (el) rowEls.current.set(id, el)
     else rowEls.current.delete(id)
-  }, [])
+  })
 
   const focusRow = (id: string) => {
     setFocusId(id)
     rowEls.current.get(id)?.focus()
   }
 
-  const onRowClick = useCallback(
-    (id: string, mods: RowClick) => {
-      setFocusId(id)
-      if (mods.shift) onSelection({ type: 'range', id, order })
-      else if (mods.toggle) onSelection({ type: 'toggle', id })
-      else onOpen(id)
-    },
-    [onSelection, onOpen, order],
-  )
+  // Stable across snapshots: `order` changes every tick and would otherwise re-render every memoised row.
+  const onRowClick = useStableCallback((id: string, mods: RowClick) => {
+    setFocusId(id)
+    if (mods.shift) onSelection({ type: 'range', id, order })
+    else if (mods.toggle) onSelection({ type: 'toggle', id })
+    else onOpen(id)
+  })
+
+  /** The last row that held focus, so a removal that takes it can hand focus to a neighbour. */
+  const lastFocused = useRef<string | null>(null)
+  const onListFocus = (e: FocusEvent<HTMLDivElement>) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[role="option"]')?.dataset.id
+    if (id != null) lastFocused.current = id
+  }
+
+  const prevOrder = useRef(order)
+  useLayoutEffect(() => {
+    const before = prevOrder.current
+    prevOrder.current = order
+    const gone = lastFocused.current
+    if (before === order || gone == null || order.includes(gone)) return
+    lastFocused.current = null
+    // Only when the removal took focus with it: focus the user moved elsewhere stays put.
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    const at = before.indexOf(gone)
+    const present = new Set(order)
+    const neighbour =
+      before.slice(at + 1).find((id) => present.has(id)) ??
+      before.slice(0, Math.max(0, at)).reverse().find((id) => present.has(id))
+    if (neighbour != null) {
+      setFocusId(neighbour)
+      rowEls.current.get(neighbour)?.focus()
+    } else {
+      emptyRef.current?.focus()
+    }
+  }, [order])
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
@@ -90,7 +130,7 @@ export function LibraryView({
     // Keys pressed on a row's own buttons belong to those buttons.
     const target = e.target as HTMLElement
     if (target.getAttribute('role') !== 'option') return
-    const current = [...rowEls.current].find(([, el]) => el === target)?.[0]
+    const current = target.dataset.id
     if (current == null) return
     const at = order.indexOf(current)
 
@@ -128,14 +168,16 @@ export function LibraryView({
     }
   }
 
-  const state = tasks.length === 0 ? emptyState({ loaded, total, search, canWrite }) : null
+  const state = tasks.length === 0 ? emptyState({ loaded, error, total, search, canWrite }) : null
 
   return (
     <div className="view">
       {readOnly && <div className="ro-banner">{t('library.readOnlyBanner')}</div>}
 
-      {/* hide-* must match the cells in LibraryRow AND portal.css's ≤920px grid, or a label loses its column. */}
-      <div className="lhead" role="row">
+      {/* Plain headers, not role=columnheader: the list is a listbox, not a grid, so the sort
+          state lives in each button's name. hide-* must match the cells in LibraryRow AND
+          portal.css's ≤920px grid, or a label loses its column. */}
+      <div className="lhead">
         <SortHeader sortKey="name" sort={sort} onSort={onSort} label={t('library.colName')} />
         <SortHeader
           sortKey="size"
@@ -151,14 +193,25 @@ export function LibraryView({
           label={t('library.colStatus')}
           className="hide-sm"
         />
-        <div className="r hide-xs" role="columnheader">
-          {t('library.colSpeed')}
-        </div>
+        <SortHeader
+          sortKey="speed"
+          sort={sort}
+          onSort={onSort}
+          label={t('library.colSpeed')}
+          className="r hide-xs"
+        />
       </div>
 
       {state ? (
-        <div className="rows">
-          <LibraryEmpty state={state} search={search} onClearSearch={onClearSearch} onAdd={onAdd} />
+        <div className="rows" ref={emptyRef} tabIndex={-1}>
+          <LibraryEmpty
+            state={state}
+            search={search}
+            filtered={filtered}
+            onClearSearch={onClearSearch}
+            onAdd={onAdd}
+            onRetry={onRetry}
+          />
         </div>
       ) : (
         <div
@@ -167,6 +220,7 @@ export function LibraryView({
           aria-label={t('library.queueLabel')}
           aria-multiselectable="true"
           onKeyDown={onKeyDown}
+          onFocus={onListFocus}
         >
           {tasks.map((task) => (
             <LibraryRow
@@ -175,6 +229,7 @@ export function LibraryView({
               selected={selectedIds.has(task.id)}
               focusable={task.id === tabStop}
               canWrite={canWrite}
+              describedBy={hintId}
               rowRef={rowRef}
               onClick={onRowClick}
               onAction={onAction}
@@ -183,6 +238,9 @@ export function LibraryView({
           ))}
         </div>
       )}
+      <span id={hintId} hidden>
+        {t('library.actionsHint')}
+      </span>
     </div>
   )
 }
@@ -196,10 +254,17 @@ interface SortHeaderProps {
 }
 
 function SortHeader({ sortKey, sort, label, className, onSort }: SortHeaderProps) {
+  const { t } = useTranslation()
   const state = ariaSort(sort, sortKey)
+  const name =
+    state === 'ascending'
+      ? t('library.sortedAscending', { label })
+      : state === 'descending'
+        ? t('library.sortedDescending', { label })
+        : undefined
   return (
-    <div className={className} role="columnheader" aria-sort={state}>
-      <button type="button" className="sorth" onClick={() => onSort(sortKey)}>
+    <div className={className}>
+      <button type="button" className="sorth" aria-label={name} onClick={() => onSort(sortKey)}>
         {label}
         <span className="sarrow" aria-hidden="true">
           {state === 'ascending' ? '▲' : state === 'descending' ? '▼' : ''}

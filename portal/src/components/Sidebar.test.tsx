@@ -1,5 +1,6 @@
 import { screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { createRef } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithI18n } from '../test/renderWithI18n'
 import en from '../locales/en.json'
 import { Sidebar, type FilterCounts } from './Sidebar'
@@ -77,5 +78,57 @@ describe('Sidebar', () => {
   it('leaves no untranslated key path in the rendered output', () => {
     const { container } = renderSidebar()
     expect(container.textContent).not.toMatch(/\b(sidebar|common|status|fileType)\.\w+/)
+  })
+
+  describe('as an off-canvas drawer', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    function asDrawer() {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: true,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }))
+    }
+
+    function drawer(open: boolean, returnFocusTo = createRef<HTMLButtonElement>()) {
+      return (
+        <Sidebar
+          view="library"
+          filter="all"
+          counts={COUNTS}
+          open={open}
+          onSelectFilter={vi.fn()}
+          onSelectView={vi.fn()}
+          onClose={vi.fn()}
+          returnFocusTo={returnFocusTo}
+        />
+      )
+    }
+
+    it('is inert while closed, so Tab and screen readers skip it', () => {
+      asDrawer()
+      const { rerender } = renderWithI18n(drawer(false))
+      const nav = screen.getByRole('navigation', { hidden: true })
+      expect(nav).toHaveAttribute('inert')
+      rerender(drawer(true))
+      expect(nav).not.toHaveAttribute('inert')
+    })
+
+    it('takes focus on open and hands it back to the hamburger on close', () => {
+      asDrawer()
+      const hamburger = document.createElement('button')
+      document.body.appendChild(hamburger)
+      const ref = { current: hamburger }
+      const { rerender } = renderWithI18n(drawer(false, ref))
+      rerender(drawer(true, ref))
+      expect(screen.getByRole('button', { name: new RegExp(en.sidebar.allDownloads) })).toHaveFocus()
+      rerender(drawer(false, ref))
+      expect(hamburger).toHaveFocus()
+      hamburger.remove()
+    })
   })
 })

@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { EXIT_MS, TOAST_MS, useToasts } from './useToasts'
+import { DEDUPE_MS, EXIT_MS, MAX_TOASTS, TOAST_MS, useToasts } from './useToasts'
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -76,6 +76,48 @@ describe('useToasts', () => {
       result.current.dismiss(99)
     })
     expect(result.current.toasts).toEqual([])
+  })
+
+  it('collapses an identical toast fired moments later into one, restarting its clock', () => {
+    const { result } = setup()
+    act(() => result.current.toast('Change blocked', 'warn'))
+    act(() => vi.advanceTimersByTime(1000))
+    act(() => {
+      result.current.toast('Change blocked', 'warn')
+      result.current.toast('Change blocked', 'warn')
+    })
+    expect(result.current.toasts).toHaveLength(1)
+
+    // The clock restarted at the repeat, so it outlives the first toast's original deadline.
+    act(() => vi.advanceTimersByTime(TOAST_MS.warn - 500))
+    expect(result.current.toasts[0]?.leaving).toBe(false)
+    act(() => vi.advanceTimersByTime(500))
+    expect(result.current.toasts[0]?.leaving).toBe(true)
+  })
+
+  it('does not collapse a different message, a different tone, or a repeat after the window', () => {
+    const { result } = setup()
+    act(() => {
+      result.current.toast('Paused')
+      result.current.toast('Resumed')
+      result.current.toast('Paused', 'warn')
+    })
+    expect(result.current.toasts).toHaveLength(3)
+
+    act(() => vi.advanceTimersByTime(DEDUPE_MS))
+    act(() => result.current.toast('Paused', 'warn'))
+    expect(result.current.toasts).toHaveLength(4)
+  })
+
+  it(`keeps at most ${MAX_TOASTS} on screen, retiring the oldest`, () => {
+    const { result } = setup()
+    act(() => {
+      for (let i = 0; i < MAX_TOASTS + 2; i++) result.current.toast(`Toast ${i}`)
+    })
+    const live = result.current.toasts.filter((t) => !t.leaving).map((t) => t.message)
+    expect(live).toEqual(['Toast 2', 'Toast 3', 'Toast 4', 'Toast 5'])
+    act(() => vi.advanceTimersByTime(EXIT_MS))
+    expect(result.current.toasts).toHaveLength(MAX_TOASTS)
   })
 
   it('clears pending timers on unmount', () => {

@@ -111,6 +111,31 @@ describe('LibraryView', () => {
     expect(screen.queryByRole('button', { name: en.common.add })).toBeNull()
   })
 
+  it('offers Clear search and filter when a filter is also narrowing the list', () => {
+    renderWithI18n(
+      <LibraryView
+        tasks={[]}
+        total={3}
+        loaded
+        search="ubuntuu"
+        filtered
+        selectedIds={new Set()}
+        lead={null}
+        sort={UNSORTED}
+        canWrite
+        readOnly={false}
+        onSelection={vi.fn()}
+        onOpen={vi.fn()}
+        onSort={vi.fn()}
+        onAction={vi.fn()}
+        onMenu={vi.fn()}
+        onClearSearch={vi.fn()}
+        onAdd={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('button', { name: en.library.clearSearchAndFilter })).toBeInTheDocument()
+  })
+
   it('offers Clear search when a search matches nothing', async () => {
     const { handlers } = renderLibrary({ search: 'ubuntuu', total: 3 })
     expect(screen.getByText('No downloads match “ubuntuu”')).toBeInTheDocument()
@@ -128,14 +153,89 @@ describe('LibraryView', () => {
   })
 
   it('labels the row action button with the translated action', () => {
-    renderLibrary({ tasks: [task({ statusToken: 'downloading' })] })
-    expect(screen.getByRole('button', { name: en.common.pause })).toBeInTheDocument()
+    const { container } = renderLibrary({ tasks: [task({ statusToken: 'downloading' })] })
+    expect(container.querySelector('.sbtn')).toHaveAttribute('aria-label', en.common.pause)
   })
 
   it('labels a paused row with Resume rather than the raw token', () => {
-    renderLibrary({ tasks: [task({ statusToken: 'paused' })] })
-    expect(screen.getByRole('button', { name: en.common.resume })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'resume' })).toBeNull()
+    const { container } = renderLibrary({ tasks: [task({ statusToken: 'paused' })] })
+    expect(container.querySelector('.sbtn')).toHaveAttribute('aria-label', en.common.resume)
+  })
+
+  it('keeps controls out of the options and points each option at the actions hint', () => {
+    renderLibrary({ tasks: TWO })
+    // An option may not contain controls: the in-row buttons are pointer-only shortcuts.
+    expect(screen.queryAllByRole('button', { name: /More actions/ })).toEqual([])
+    const option = screen.getAllByRole('option')[0]!
+    expect(option).toHaveAccessibleDescription(en.library.actionsHint)
+  })
+
+  it('shows an error with Retry when the snapshot keeps failing', async () => {
+    const onRetry = vi.fn()
+    renderWithI18n(
+      <LibraryView
+        tasks={[]}
+        total={0}
+        loaded={false}
+        error
+        search=""
+        selectedIds={new Set()}
+        lead={null}
+        sort={UNSORTED}
+        canWrite
+        readOnly={false}
+        onSelection={vi.fn()}
+        onOpen={vi.fn()}
+        onSort={vi.fn()}
+        onAction={vi.fn()}
+        onMenu={vi.fn()}
+        onClearSearch={vi.fn()}
+        onAdd={vi.fn()}
+        onRetry={onRetry}
+      />,
+    )
+    expect(screen.getByText(en.library.loadErrorTitle)).toBeInTheDocument()
+    expect(screen.queryByText(en.common.loading)).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: en.common.retry }))
+    expect(onRetry).toHaveBeenCalled()
+  })
+
+  it('shows nothing for an idle row and a second upload line when seeding', () => {
+    const { container } = renderLibrary({
+      tasks: [
+        task({ id: 'idle', downSpeed: 0, upSpeed: 0 }),
+        task({ id: 'seed', downSpeed: 0, upSpeed: 2048 }),
+      ],
+    })
+    const cells = container.querySelectorAll('.c.dspd')
+    expect(cells[0]).toHaveTextContent(/^$/)
+    expect(cells[1]!.querySelector('.uspd')).toHaveTextContent('↑ 2.0 KB/s')
+  })
+
+  it('moves focus to the neighbouring row when the focused row is removed', () => {
+    const THREE = [...TWO, task({ id: 'c', name: 'c.iso' })]
+    const { rerender } = renderLibrary({ tasks: THREE })
+    screen.getAllByRole('option')[1]!.focus()
+    const props = {
+      total: 2,
+      loaded: true,
+      search: '',
+      selectedIds: new Set<string>(),
+      lead: null,
+      sort: UNSORTED,
+      canWrite: true,
+      readOnly: false,
+      onSelection: vi.fn(),
+      onOpen: vi.fn(),
+      onSort: vi.fn(),
+      onAction: vi.fn(),
+      onMenu: vi.fn(),
+      onClearSearch: vi.fn(),
+      onAdd: vi.fn(),
+    }
+    rerender(<LibraryView {...props} tasks={[THREE[0]!, THREE[2]!]} />)
+    expect(screen.getAllByRole('option')[1]).toHaveFocus()
+    expect(screen.getAllByRole('option')[1]).toHaveAttribute('data-id', 'c')
   })
 
   it('passes the server-rendered status string through untouched', () => {
@@ -195,20 +295,22 @@ describe('LibraryView', () => {
   })
 
   it('gives each row a More button that opens its menu', async () => {
-    const { handlers } = renderLibrary({ tasks: TWO })
-    const more = screen.getByRole('button', { name: 'More actions for a.iso' })
+    const { handlers, container } = renderLibrary({ tasks: TWO })
+    const more = container.querySelector<HTMLElement>('[aria-label="More actions for a.iso"]')!
     expect(more).toHaveAttribute('aria-haspopup', 'menu')
     await userEvent.click(more)
     expect(handlers.onMenu).toHaveBeenCalledWith('a', expect.any(Number), expect.any(Number))
     expect(handlers.onOpen).not.toHaveBeenCalled()
   })
 
-  it('sorts from header buttons and reports the sort on the column header', async () => {
+  it('sorts from header buttons and puts the sort state in the button name', async () => {
     const { handlers } = renderLibrary({ tasks: TWO, sort: { key: 'name', dir: 'desc' } })
-    const headers = screen.getAllByRole('columnheader')
-    expect(headers[0]).toHaveAttribute('aria-sort', 'descending')
-    expect(headers[1]).toHaveAttribute('aria-sort', 'none')
+    // Outside a grid, role=columnheader and aria-sort are ignored; the name carries the state.
+    expect(screen.queryAllByRole('columnheader')).toEqual([])
+    expect(screen.getByRole('button', { name: 'Name, sorted descending' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: en.library.colSize }))
     expect(handlers.onSort).toHaveBeenCalledWith('size')
+    await userEvent.click(screen.getByRole('button', { name: en.library.colSpeed }))
+    expect(handlers.onSort).toHaveBeenCalledWith('speed')
   })
 })

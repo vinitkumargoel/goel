@@ -1,4 +1,4 @@
-import { memo, type MouseEvent } from 'react'
+import { memo, useCallback, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { fmtSize, fmtSpeed, pct } from '../lib/format'
 import { fileType, kindBadge, kindLabel, rowAction, type RowAction } from '../lib/taskKind'
@@ -16,6 +16,8 @@ interface RowProps {
   /** The one row in the roving tab order. */
   focusable: boolean
   canWrite: boolean
+  /** Id of the "Shift+F10 for actions" hint. */
+  describedBy?: string
   rowRef: (id: string, el: HTMLDivElement | null) => void
   onClick: (id: string, mods: RowClick) => void
   onAction: (id: string, action: RowAction) => void
@@ -27,6 +29,7 @@ export const LibraryRow = memo(function LibraryRow({
   selected,
   focusable,
   canWrite,
+  describedBy,
   rowRef,
   onClick,
   onAction,
@@ -39,6 +42,10 @@ export const LibraryRow = memo(function LibraryRow({
   const action = rowAction(task.statusToken)
   const statusText = `${task.status}${task.statusToken === 'downloading' ? ` · ${whole}%` : ''}`
 
+  const id = task.id
+  // Stable, or React detaches and re-attaches the ref on every render of the row.
+  const ref = useCallback((el: HTMLDivElement | null) => rowRef(id, el), [rowRef, id])
+
   const openMenuAt = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
     const r = e.currentTarget.getBoundingClientRect()
@@ -47,9 +54,11 @@ export const LibraryRow = memo(function LibraryRow({
 
   return (
     <div
-      ref={(el) => rowRef(task.id, el)}
+      ref={ref}
       role="option"
+      data-id={task.id}
       aria-selected={selected}
+      aria-describedby={describedBy}
       aria-label={t('library.rowLabel', {
         name: task.name,
         kind: kindLabel(task.kind),
@@ -66,10 +75,13 @@ export const LibraryRow = memo(function LibraryRow({
     >
       <div className="c ncell">
         {action && canWrite ? (
-          // Out of the tab order: a listbox option is one stop, and the row menu carries this action.
+          // A pointer shortcut only. An option may not contain controls, so it is hidden from
+          // assistive tech; the same action is in the bulk bar (shown for any selection) and the
+          // row menu (Shift+F10), both reachable by keyboard and by touch screen readers.
           <button
             className="sbtn"
             tabIndex={-1}
+            aria-hidden="true"
             aria-label={t(`common.${action}`)}
             onClick={(e) => {
               e.stopPropagation()
@@ -84,7 +96,7 @@ export const LibraryRow = memo(function LibraryRow({
         )}
 
         <div className={`ftype ft-${type}`}>
-          <FileTypeIcon type={type} />
+          <FileTypeIcon type={type} ink="currentColor" />
         </div>
 
         <div className="nmeta">
@@ -117,6 +129,7 @@ export const LibraryRow = memo(function LibraryRow({
         <button
           className="rmore"
           tabIndex={-1}
+          aria-hidden="true"
           aria-haspopup="menu"
           aria-label={t('library.moreActions', { name: task.name })}
           onClick={openMenuAt}
@@ -134,7 +147,11 @@ export const LibraryRow = memo(function LibraryRow({
         </div>
       </div>
 
-      <div className="c r dspd hide-xs">{task.downSpeed > 0 ? fmtSpeed(task.downSpeed) : '—'}</div>
+      {/* Idle rows show nothing, as the native list does; upload gets a smaller second line. */}
+      <div className="c r dspd hide-xs">
+        {task.downSpeed > 0 && <div>{fmtSpeed(task.downSpeed)}</div>}
+        {task.upSpeed > 0 && <div className="uspd">↑ {fmtSpeed(task.upSpeed)}</div>}
+      </div>
     </div>
   )
 })

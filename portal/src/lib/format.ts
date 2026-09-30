@@ -16,14 +16,15 @@ export function fmtSize(bytes: number | null | undefined): string {
   return `${n.toFixed(n < 10 ? 1 : 0)} ${units[i]}`
 }
 
-export function fmtSpeed(bytesPerSecond: number | null | undefined): string {
-  return bytesPerSecond != null && bytesPerSecond > 0 ? `${fmtSize(bytesPerSecond)}/s` : '—'
+/**
+ * A transfer rate. `idle` is what a zero or unknown rate reads as: a table cell wants a dash (or
+ * nothing), while the always-visible totals in the top and status bars want a figure, `IDLE_RATE`.
+ */
+export function fmtSpeed(bytesPerSecond: number | null | undefined, idle = '—'): string {
+  return bytesPerSecond != null && bytesPerSecond > 0 ? `${fmtSize(bytesPerSecond)}/s` : idle
 }
 
-export function fmtRate(bytesPerSecond: number): string {
-  const s = fmtSpeed(bytesPerSecond)
-  return s === '—' ? '0 B/s' : s
-}
+export const IDLE_RATE = '0 B/s'
 
 export function fmtEta(seconds: number | null | undefined): string | null {
   if (seconds == null || seconds <= 0 || !isFinite(seconds)) return null
