@@ -950,6 +950,7 @@ public actor DownloadManager {
         safe.remoteTrustedHeaderAuthEnabled = current.remoteTrustedHeaderAuthEnabled
         safe.remoteTrustedHeaderName = current.remoteTrustedHeaderName
         safe.remoteTrustedProxies = current.remoteTrustedProxies
+        safe.remoteAllowedHostNames = current.remoteAllowedHostNames
         // An imported proxy would route every connection, cookies and Basic-auth included, through its author's host.
         safe.proxyMode = current.proxyMode
         safe.proxyType = current.proxyType

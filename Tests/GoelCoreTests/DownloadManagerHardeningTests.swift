@@ -25,6 +25,7 @@ final class DownloadManagerHardeningTests: XCTestCase {
         hostile.remoteTrustedHeaderAuthEnabled = true
         hostile.remoteTrustedHeaderName = "X-Forwarded-User"
         hostile.remoteTrustedProxies = ["0.0.0.0/0"]
+        hostile.remoteAllowedHostNames = ["*.attacker.example"]
         hostile.defaultSaveDirectory = "/tmp/attacker-drop"
         hostile.auditLogDirectory = "/tmp/attacker-audit"
         hostile.theme = "dark"
@@ -45,6 +46,7 @@ final class DownloadManagerHardeningTests: XCTestCase {
         XCTAssertEqual(safe.remoteRequireAuth, current.remoteRequireAuth)
         XCTAssertEqual(safe.remoteUsername, "owner")
         XCTAssertEqual(safe.remotePasswordHash, "owner-hash")
+        XCTAssertEqual(safe.remoteAllowedHostNames, current.remoteAllowedHostNames)
         XCTAssertEqual(safe.remoteReadOnly, current.remoteReadOnly)
         XCTAssertEqual(safe.remoteTLSEnabled, current.remoteTLSEnabled)
         XCTAssertEqual(safe.remoteTLSIdentityPath, current.remoteTLSIdentityPath)
