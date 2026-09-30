@@ -71,7 +71,12 @@ GTHandle gt_add_torrent_file(GTSession session, const char *file_path, const cha
                              int mode, char *err_out, int err_cap);
 
 /// Replaced atomically (temp + rename) — on timeout/failure the previous blob survives intact.
+/// Blocks up to `timeout_ms`: call off the cooperative pool. An answer to an earlier, timed-out request is never written.
 int gt_save_resume_data(GTSession session, GTHandle handle, const char *path, int timeout_ms);
+
+/// Requests every blob at once, then waits once — for quit, where N serial 2 s waits don't fit. Returns how many were saved.
+int gt_save_resume_data_many(GTSession session, GTHandle const *handles, const char *const *paths,
+                             int count, int timeout_ms);
 
 GTHandle gt_add_resume(GTSession session, const char *resume_path, const char *save_path,
                        int mode, char *err_out, int err_cap);
@@ -82,6 +87,8 @@ void gt_resume(GTHandle handle);
 void gt_remove(GTSession session, GTHandle handle, int delete_files);
 /// Frees the wrapper WITHOUT removing the torrent from the session.
 void gt_handle_free(GTHandle handle);
+/// An independent wrapper for a blocking call made off the owning actor: the original may be freed meanwhile. Free with `gt_handle_free`.
+GTHandle gt_handle_copy(GTHandle handle);
 
 int gt_get_status(GTHandle handle, GTStatus *out);
 

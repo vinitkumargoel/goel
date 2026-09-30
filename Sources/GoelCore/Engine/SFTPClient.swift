@@ -167,7 +167,6 @@ public struct SFTPClient: Sendable {
         let result = await channel.perform { session in
             box.withPointer { out in gsb_statvfs(session, path, out) }
         }
-        learnIfNeeded(channel: channel)
         guard result.code == GSB_OK else { return nil }
         return box.space
     }
@@ -285,9 +284,9 @@ public struct SFTPClient: Sendable {
         do {
             channel = try await self.channel()
         } catch let e as SFTPError {
-            return SFTPResult(code: Int32(GSB_ERR_HOSTKEY), message: e.message)
+            return SFTPResult(error: e)
         } catch {
-            return SFTPResult(code: Int32(GSB_ERR_HOSTKEY), message: error.localizedDescription)
+            return SFTPResult(code: Int32(GSB_ERR_CONNECT), message: error.localizedDescription)
         }
         let box = Unmanaged.passRetained(ctx)
         let result = await channel.perform { session in
@@ -295,7 +294,6 @@ public struct SFTPClient: Sendable {
                          sftpWriteThunk, sftpProgressThunk, box.toOpaque())
         }
         box.release()
-        learnIfNeeded(channel: channel)
         return SFTPResult(result)
     }
 
@@ -325,7 +323,6 @@ public struct SFTPClient: Sendable {
     private func run(_ body: @escaping @Sendable (OpaquePointer) -> GSBResult) async throws -> GSBResult {
         let channel = try await channel()
         let result = await channel.perform(body)
-        learnIfNeeded(channel: channel)
         guard result.code == GSB_OK else {
             throw SFTPResult(result).asError(host: target.host, port: target.port,
                                              username: target.username)
@@ -340,7 +337,6 @@ public struct SFTPClient: Sendable {
         let box = Unmanaged.passRetained(ctx)
         let result = await channel.perform { session in body(session, box.toOpaque()) }
         box.release()
-        learnIfNeeded(channel: channel)
         guard result.code == GSB_OK else {
             throw SFTPResult(result).asError(host: target.host, port: target.port,
                                              username: target.username)
@@ -352,7 +348,9 @@ public struct SFTPClient: Sendable {
         target.port == 22 ? target.host : "\(target.host):\(target.port)"
     }
 
-    /// With an approver, a credential-free pre-flight pins only on user consent; without one ``learnIfNeeded(channel:)`` does TOFU. An unreadable pin must refuse — re-learning downgrades trust.
+    /// With an approver, a credential-free pre-flight pins only on user consent; without one only an
+    /// operator-provisioned pin (``ProvisionedHostKeys``) lets a credential leave. An unreadable pin must refuse —
+    /// re-learning downgrades trust.
     private func pinnedFingerprint() async throws -> String? {
         switch hostKeys.lookup(host: target.host, port: target.port) {
         case .pinned(let fingerprint):
@@ -361,7 +359,9 @@ public struct SFTPClient: Sendable {
             throw SFTPError(kind: .hostKey,
                             message: "Goel can’t read its record of this server’s identity, so it won’t connect. Reset the pinned host key for \(endpoint) and re-verify.")
         case .none:
-            guard let approver = HostKeyTrust.shared.approver else { return nil }
+            guard let approver = HostKeyTrust.shared.approver else {
+                return try await provisionedFingerprint()
+            }
             let fingerprint = try await hostKeyFingerprint()
             guard await approver.approveFirstContact(host: target.host, port: target.port,
                                                      fingerprint: fingerprint) else {
@@ -373,13 +373,109 @@ public struct SFTPClient: Sendable {
         }
     }
 
-    /// TOFU pin after a first un-pinned connect; only reachable with no approver installed, since with one ``pinnedFingerprint()`` already pinned or refused.
-    private func learnIfNeeded(channel: SFTPSessionChannel) {
-        guard case .none = hostKeys.lookup(host: target.host, port: target.port),
-              let fp = channel.fingerprint, !fp.isEmpty else { return }
-        hostKeys.setFingerprint(fp, host: target.host, port: target.port)
+    /// Headless (daemon, CLI): nobody can confirm a first contact, and trust-on-first-use would hand the
+    /// password to whoever answers first. Not persisted, so rotating the variable is enough to re-pin.
+    private func provisionedFingerprint(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) async throws -> String {
+        if let pinned = ProvisionedHostKeys.fingerprint(host: target.host, port: target.port,
+                                                         environment: environment) {
+            return pinned
+        }
+        // Key-only pre-flight: no credential is offered, but the operator gets the value to verify and pin.
+        let seen = try? await hostKeyFingerprint()
+        throw SFTPError(kind: .hostKey,
+                        message: ProvisionedHostKeys.unpinnedMessage(host: target.host, port: target.port,
+                                                                     presented: seen))
     }
 
+}
+
+/// Host keys pinned ahead of time for processes with no one to ask: `GOEL_SSH_FINGERPRINTS` holds
+/// comma-separated `host[:port]=SHA256:<base64>` entries (the `ssh-keygen -lf` form; 64-hex also accepted).
+enum ProvisionedHostKeys {
+    static let variable = "GOEL_SSH_FINGERPRINTS"
+
+    /// Lower-case hex, the form the C shim compares against; nil when nothing valid is pinned for the endpoint.
+    static func fingerprint(host: String, port: Int, environment: [String: String]) -> String? {
+        guard let raw = environment[variable] else { return nil }
+        return parse(raw)[slot(host: host, port: port)]
+    }
+
+    static func parse(_ raw: String) -> [String: String] {
+        var pins: [String: String] = [:]
+        for entry in raw.split(separator: ",") {
+            let trimmed = entry.trimmingCharacters(in: .whitespaces)
+            // Split at the first "=": base64 padding may add more.
+            guard let eq = trimmed.firstIndex(of: "=") else { continue }
+            let endpoint = String(trimmed[..<eq]).trimmingCharacters(in: .whitespaces)
+            let value = String(trimmed[trimmed.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+            guard let (host, port) = splitEndpoint(endpoint), let hex = hexFingerprint(value) else { continue }
+            pins[slot(host: host, port: port)] = hex
+        }
+        return pins
+    }
+
+    static func hexFingerprint(_ value: String) -> String? {
+        if value.lowercased().hasPrefix("sha256:") {
+            var b64 = String(value.dropFirst("sha256:".count))
+            while b64.count % 4 != 0 { b64.append("=") }
+            guard let digest = Data(base64Encoded: b64), digest.count == 32 else { return nil }
+            return digest.map { String(format: "%02x", $0) }.joined()
+        }
+        let hex = value.lowercased()
+        guard hex.count == 64, hex.allSatisfy(\.isHexDigit) else { return nil }
+        return hex
+    }
+
+    /// `SHA256:<base64>` without padding, as `ssh-keygen -lf` prints it, so the operator can compare by eye.
+    static func displayFingerprint(hex: String) -> String? {
+        guard hex.count == 64 else { return nil }
+        var bytes = Data()
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        let b64 = bytes.base64EncodedString().replacingOccurrences(of: "=", with: "")
+        return "SHA256:\(b64)"
+    }
+
+    static func unpinnedMessage(host: String, port: Int, presented: String?) -> String {
+        let endpoint = port == 22 ? host : "\(host):\(port)"
+        var message = "Goel has no confirmed host key for \(endpoint) and no one here can approve it, so it didn’t send your credentials. "
+            + "Pin the key by setting \(variable)=\(endpoint)=SHA256:… (check it with “ssh-keygen -lf” on the server, or “ssh-keyscan -p \(port) \(host) | ssh-keygen -lf -” over a network you trust)."
+        if let presented, let shown = displayFingerprint(hex: presented) {
+            message += " The server presented \(shown) — verify it out of band before pinning it."
+        }
+        return message
+    }
+
+    private static func slot(host: String, port: Int) -> String { "\(host.lowercased()):\(port)" }
+
+    private static func splitEndpoint(_ endpoint: String) -> (String, Int)? {
+        guard !endpoint.isEmpty else { return nil }
+        if endpoint.hasPrefix("[") {
+            guard let close = endpoint.firstIndex(of: "]") else { return nil }
+            let host = String(endpoint[endpoint.index(after: endpoint.startIndex)..<close])
+            let rest = endpoint[endpoint.index(after: close)...]
+            if rest.isEmpty { return host.isEmpty ? nil : (host, 22) }
+            guard rest.hasPrefix(":"), let port = Int(rest.dropFirst()), (1...65535).contains(port) else { return nil }
+            return (host, port)
+        }
+        let parts = endpoint.split(separator: ":", omittingEmptySubsequences: false)
+        switch parts.count {
+        case 1:
+            return (endpoint, 22)
+        case 2:
+            guard !parts[0].isEmpty, let port = Int(parts[1]), (1...65535).contains(port) else { return nil }
+            return (String(parts[0]), port)
+        default:
+            return (endpoint, 22)   // a bare IPv6 literal
+        }
+    }
 }
 
 public struct SFTPResult: Sendable {
@@ -387,12 +483,23 @@ public struct SFTPResult: Sendable {
     public let value: Int64
     public let fingerprint: String
     public let message: String
+    /// A Swift-side failure (pre-flight, pin policy) whose kind and wording must survive intact.
+    private let preformatted: SFTPError?
 
     init(code: Int32, message: String) {
         self.code = code
         self.value = 0
         self.fingerprint = ""
         self.message = message
+        self.preformatted = nil
+    }
+
+    init(error: SFTPError) {
+        self.code = error.kind.gsbCode
+        self.value = 0
+        self.fingerprint = ""
+        self.message = error.message
+        self.preformatted = error
     }
 
     init(_ r: GSBResult) {
@@ -404,12 +511,14 @@ public struct SFTPResult: Sendable {
         message = withUnsafeBytes(of: r.message) {
             String(cString: $0.baseAddress!.assumingMemoryBound(to: CChar.self))
         }
+        preformatted = nil
     }
 
     public var isAborted: Bool { code == GSB_ERR_ABORTED }
     public var isSuccess: Bool { code == GSB_OK }
 
     public var asError: SFTPError {
+        if let preformatted { return preformatted }
         let kind: SFTPError.Kind
         switch Int(code) {
         case Int(GSB_ERR_RESOLVE): kind = .resolve
@@ -432,6 +541,7 @@ public struct SFTPResult: Sendable {
     }
 
     public func asError(host: String, port: Int, username: String) -> SFTPError {
+        if let preformatted { return preformatted }
         let raw = asError
         let endpoint = port == 22 ? host : "\(host):\(port)"
         let friendly: String
@@ -453,6 +563,29 @@ public struct SFTPResult: Sendable {
         }
         return SFTPError(kind: raw.kind, message: friendly,
                          detail: raw.message.isEmpty ? nil : raw.message)
+    }
+}
+
+extension SFTPError.Kind {
+    /// Round-trips through ``SFTPResult``: coding every Swift-side failure as HOSTKEY misled anything branching on it.
+    var gsbCode: Int32 {
+        switch self {
+        case .resolve: return Int32(GSB_ERR_RESOLVE)
+        case .connect: return Int32(GSB_ERR_CONNECT)
+        case .handshake: return Int32(GSB_ERR_HANDSHAKE)
+        case .hostKey: return Int32(GSB_ERR_HOSTKEY)
+        case .hostKeyMismatch: return Int32(GSB_ERR_HOSTKEY_MISMATCH)
+        case .auth, .credentialsUnavailable: return Int32(GSB_ERR_AUTH)
+        case .sftp: return Int32(GSB_ERR_SFTP)
+        case .open: return Int32(GSB_ERR_OPEN)
+        case .io: return Int32(GSB_ERR_IO)
+        case .aborted: return Int32(GSB_ERR_ABORTED)
+        case .mkdir: return Int32(GSB_ERR_MKDIR)
+        case .remove: return Int32(GSB_ERR_REMOVE)
+        case .rename: return Int32(GSB_ERR_RENAME)
+        case .stat: return Int32(GSB_ERR_STAT)
+        case .unknown: return Int32(GSB_ERR_INIT)
+        }
     }
 }
 

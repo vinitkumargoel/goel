@@ -11,7 +11,7 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/socket.h>
-#include <sys/select.h>
+#include <poll.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -131,11 +131,9 @@ static int gsb_tcp_connect(const char *host, int port, GSBResult *r) {
         }
         last_errno = errno;
         if (errno == EINPROGRESS) {
-            fd_set wset;
-            FD_ZERO(&wset);
-            FD_SET(sock, &wset);
-            struct timeval tv = { 15, 0 };
-            rc = select(sock + 1, NULL, &wset, NULL, &tv);
+            // poll, not select: FD_SET on an fd >= FD_SETSIZE (libtorrent shares the process) smashes the stack.
+            struct pollfd pfd = { sock, POLLOUT, 0 };
+            do { rc = poll(&pfd, 1, 15000); } while (rc < 0 && errno == EINTR);
             if (rc > 0) {
                 int soerr = 0;
                 socklen_t l = sizeof(soerr);
@@ -532,24 +530,18 @@ GSBResult gsb_download(GSBSession *s, const char *remote,
 
 // Wait for the socket to be usable in whichever direction libssh2 is blocked on.
 static void gsb_wait_socket(int sock, LIBSSH2_SESSION *session, int timeout_ms) {
-    fd_set rfd, wfd;
-    FD_ZERO(&rfd);
-    FD_ZERO(&wfd);
     int dir = libssh2_session_block_directions(session);
     // INBOUND wins when both directions are reported: during a window stall the
     // socket is nearly always writable, so waiting on write returns instantly
     // and the wait degenerates into a busy-spin. Progress can only come from
-    // the server's ACK arriving — a read.
-    if (dir & LIBSSH2_SESSION_BLOCK_INBOUND) {
-        FD_SET(sock, &rfd);
-    } else if (dir & LIBSSH2_SESSION_BLOCK_OUTBOUND) {
-        FD_SET(sock, &wfd);
-    } else {
-        FD_SET(sock, &rfd);
-        FD_SET(sock, &wfd);
+    // the server's ACK arriving — a read. The same holds when libssh2 reports no
+    // direction at all (an EAGAIN from the window, not the socket).
+    short events = POLLIN;
+    if (!(dir & LIBSSH2_SESSION_BLOCK_INBOUND) && (dir & LIBSSH2_SESSION_BLOCK_OUTBOUND)) {
+        events = POLLOUT;
     }
-    struct timeval tv = { timeout_ms / 1000, (timeout_ms % 1000) * 1000 };
-    select(sock + 1, &rfd, &wfd, NULL, &tv);
+    struct pollfd pfd = { sock, events, 0 };
+    poll(&pfd, 1, timeout_ms);
 }
 
 // Non-blocking with a sliding window: blocking sftp_write stalls for a server ACK

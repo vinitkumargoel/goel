@@ -1,5 +1,7 @@
 import Foundation
 
+// Test double: kept out of release binaries.
+#if DEBUG
 actor MockTorrentEngine: TorrentControlling {
     public nonisolated let kind: DownloadKind = .torrent
 
@@ -95,6 +97,23 @@ actor MockTorrentEngine: TorrentControlling {
         tasks[id] = nil
         states[id] = nil
         lastProgressEmit[id] = nil
+    }
+
+    /// The simulation's progress fields are engine-owned; everything the user can edit comes from `task`.
+    func refresh(_ task: DownloadTask) async {
+        guard let current = tasks[task.id] else { return }
+        var updated = task
+        updated.status = current.status
+        updated.totalBytes = current.totalBytes
+        updated.bytesDownloaded = current.bytesDownloaded
+        updated.bytesUploaded = current.bytesUploaded
+        updated.downloadSpeed = current.downloadSpeed
+        updated.uploadSpeed = current.uploadSpeed
+        updated.connectionCount = current.connectionCount
+        updated.completedAt = current.completedAt
+        if !current.files.isEmpty { updated.files = current.files }
+        if updated.name.isEmpty { updated.name = current.name }
+        tasks[task.id] = updated
     }
 
     private func shouldEmitProgress(_ id: UUID) -> Bool {
@@ -407,3 +426,4 @@ actor MockTorrentEngine: TorrentControlling {
         var finishedEmitted: Bool = false
     }
 }
+#endif

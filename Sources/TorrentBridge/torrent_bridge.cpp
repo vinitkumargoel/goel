@@ -20,6 +20,7 @@
 #include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/write_resume_data.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -35,14 +36,26 @@ namespace lt = libtorrent;
 
 namespace {
 
-/// What a `GTSession` really points at: the libtorrent session plus the last
-/// session-level failure we pulled off its alert queue. Alerts are drained by
-/// `gt_save_resume_data` (the only consumer); anything that isn't the blob we
-/// are waiting for is inspected for a listen failure and then discarded.
+/// One answered save_resume_data request, copied out of its alert: alert
+/// pointers die at the next pop_alerts, and the pop may happen on another thread.
+struct ResumeResult {
+    lt::torrent_handle handle;
+    lt::time_point at;
+    bool ok;
+    std::vector<char> blob;
+};
+
+/// What a `GTSession` really points at: the libtorrent session plus what we
+/// pulled off its alert queue — the last session-level failure, and answered
+/// resume-data requests waiting for whoever asked. Every pop goes through
+/// `pump_alerts`, so concurrent savers and error polls never steal each
+/// other's alerts.
 struct SessionBox {
     lt::session ses;
     std::mutex mu;
     std::string last_error;
+    std::mutex pump_mu;
+    std::vector<ResumeResult> results;
     explicit SessionBox(lt::settings_pack const &sp) : ses(sp) {}
 };
 
@@ -90,6 +103,86 @@ void note_session_error(SessionBox *box, lt::alert const *a) {
     if (box->last_error.empty()) box->last_error = failed->message();
 }
 
+bool write_atomically(std::string const &path, std::vector<char> const &data);
+
+/// Nobody claims the answer to a request that already timed out; keep the pile bounded.
+constexpr size_t kMaxPendingResults = 256;
+
+void pump_alerts(SessionBox *box) {
+    std::lock_guard<std::mutex> lock(box->pump_mu);
+    std::vector<lt::alert *> alerts;
+    box->ses.pop_alerts(&alerts);
+    for (auto *a : alerts) {
+        note_session_error(box, a);
+        if (auto const *failed = lt::alert_cast<lt::save_resume_data_failed_alert>(a)) {
+            box->results.push_back({failed->handle, a->timestamp(), false, {}});
+        } else if (auto const *saved = lt::alert_cast<lt::save_resume_data_alert>(a)) {
+            box->results.push_back({saved->handle, a->timestamp(), true,
+                                    lt::write_resume_data_buf(saved->params)});
+        }
+    }
+    if (box->results.size() > kMaxPendingResults) {
+        box->results.erase(box->results.begin(),
+                           box->results.end() - static_cast<long>(kMaxPendingResults));
+    }
+}
+
+/// An answer posted before `since` belongs to an earlier, timed-out request:
+/// taking it would persist a blob one save behind. Those are discarded.
+bool take_result(SessionBox *box, lt::torrent_handle const &h, lt::time_point since,
+                 ResumeResult &out) {
+    std::lock_guard<std::mutex> lock(box->pump_mu);
+    bool found = false;
+    for (auto it = box->results.begin(); it != box->results.end();) {
+        if (!(it->handle == h)) { ++it; continue; }
+        if (it->at >= since) {
+            out = std::move(*it);
+            found = true;
+        }
+        it = box->results.erase(it);
+        if (found) break;
+    }
+    return found;
+}
+
+/// Requests every blob first, then collects: N torrents cost one deadline, not N.
+int save_resume_many(SessionBox *box, GTHandle const *handles, const char *const *paths,
+                     int count, int timeout_ms) {
+    auto const since = lt::clock_type::now();
+    std::vector<int> pending;
+    for (int i = 0; i < count; ++i) {
+        auto *h = as_handle(handles[i]);
+        if (!h || !paths[i]) continue;
+        try {
+            // Without metadata there is nothing worth persisting, and libtorrent
+            // answers with save_resume_data_failed_alert anyway.
+            if (!h->is_valid() || !h->torrent_file()) continue;
+            h->save_resume_data(lt::torrent_handle::save_info_dict);
+            pending.push_back(i);
+        } catch (...) {}
+    }
+    int saved = 0;
+    auto const deadline = std::chrono::steady_clock::now()
+        + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 5000);
+    while (!pending.empty()) {
+        pump_alerts(box);
+        for (auto it = pending.begin(); it != pending.end();) {
+            ResumeResult r;
+            if (!take_result(box, *as_handle(handles[*it]), since, r)) { ++it; continue; }
+            if (r.ok && write_atomically(paths[*it], r.blob)) ++saved;
+            it = pending.erase(it);
+        }
+        if (pending.empty()) break;
+        auto const now = std::chrono::steady_clock::now();
+        if (now >= deadline) break;
+        // Short slices: another thread may pop the alert we were woken for.
+        auto const slice = std::min<std::chrono::steady_clock::duration>(
+            deadline - now, std::chrono::milliseconds(100));
+        box->ses.wait_for_alert(std::chrono::duration_cast<lt::time_duration>(slice));
+    }
+    return saved;
+}
+
 /// Replace `path` with `data` atomically, so an interrupted write can never
 /// leave a truncated resume blob behind (libtorrent would reject it and the
 /// torrent would silently re-hash).
@@ -134,40 +227,42 @@ GTState map_state(lt::torrent_status const &st) {
 extern "C" {
 
 GTSession gt_session_create(int enable_dht, int enable_lsd, int enable_utp, int enc_policy) {
-    lt::settings_pack sp;
-    // `storage` carries save_resume_data_alert — without it fast resume would
-    // silently never produce a blob.
-    sp.set_int(lt::settings_pack::alert_mask,
-               lt::alert_category::status | lt::alert_category::error
-                   | lt::alert_category::storage);
-    sp.set_bool(lt::settings_pack::enable_dht, enable_dht != 0);
-    sp.set_bool(lt::settings_pack::enable_lsd, enable_lsd != 0);
-    sp.set_bool(lt::settings_pack::enable_outgoing_utp, enable_utp != 0);
-    sp.set_bool(lt::settings_pack::enable_incoming_utp, enable_utp != 0);
+    try {
+        lt::settings_pack sp;
+        // `storage` carries save_resume_data_alert — without it fast resume would
+        // silently never produce a blob.
+        sp.set_int(lt::settings_pack::alert_mask,
+                   lt::alert_category::status | lt::alert_category::error
+                       | lt::alert_category::storage);
+        sp.set_bool(lt::settings_pack::enable_dht, enable_dht != 0);
+        sp.set_bool(lt::settings_pack::enable_lsd, enable_lsd != 0);
+        sp.set_bool(lt::settings_pack::enable_outgoing_utp, enable_utp != 0);
+        sp.set_bool(lt::settings_pack::enable_incoming_utp, enable_utp != 0);
 
-    int const policy = map_enc_policy(enc_policy);
-    sp.set_int(lt::settings_pack::out_enc_policy, policy);
-    sp.set_int(lt::settings_pack::in_enc_policy, policy);
+        int const policy = map_enc_policy(enc_policy);
+        sp.set_int(lt::settings_pack::out_enc_policy, policy);
+        sp.set_int(lt::settings_pack::in_enc_policy, policy);
 
-    // The ephemeral entries are a fallback: another BitTorrent client already
-    // holding 6881 would otherwise leave us with no listen socket at all, i.e.
-    // no inbound peers, with nothing in the UI saying so.
-    sp.set_str(lt::settings_pack::listen_interfaces,
-               "0.0.0.0:6881,[::]:6881,0.0.0.0:0,[::]:0");
-    sp.set_str(lt::settings_pack::user_agent, "GoelDownloader/1.0 libtorrent/2.0");
+        // The ephemeral entries are a fallback: another BitTorrent client already
+        // holding 6881 would otherwise leave us with no listen socket at all, i.e.
+        // no inbound peers, with nothing in the UI saying so.
+        sp.set_str(lt::settings_pack::listen_interfaces,
+                   "0.0.0.0:6881,[::]:6881,0.0.0.0:0,[::]:0");
+        sp.set_str(lt::settings_pack::user_agent, "GoelDownloader/1.0 libtorrent/2.0");
 
-    // Throughput tuning. libtorrent's stock defaults are tuned conservatively;
-    // these safe bumps help a client saturate modern broadband:
-    //  - connection_speed: peer connection attempts per second — dial the swarm
-    //    up faster so download speed ramps sooner (default ~30).
-    //  - aio_threads: disk I/O / hashing worker threads — keeps piece writes and
-    //    hash checks off the critical path on fast NVMe storage (default ~10).
-    // connections_limit is applied separately from the active traffic profile
-    // (see gt_session_set_connections).
-    sp.set_int(lt::settings_pack::connection_speed, 100);
-    sp.set_int(lt::settings_pack::aio_threads, 16);
+        // Throughput tuning. libtorrent's stock defaults are tuned conservatively;
+        // these safe bumps help a client saturate modern broadband:
+        //  - connection_speed: peer connection attempts per second — dial the swarm
+        //    up faster so download speed ramps sooner (default ~30).
+        //  - aio_threads: disk I/O / hashing worker threads — keeps piece writes and
+        //    hash checks off the critical path on fast NVMe storage (default ~10).
+        // connections_limit is applied separately from the active traffic profile
+        // (see gt_session_set_connections).
+        sp.set_int(lt::settings_pack::connection_speed, 100);
+        sp.set_int(lt::settings_pack::aio_threads, 16);
 
-    return static_cast<GTSession>(new SessionBox(sp));
+        return static_cast<GTSession>(new SessionBox(sp));
+    } catch (...) { return nullptr; }
 }
 
 void gt_session_destroy(GTSession session) {
@@ -175,187 +270,188 @@ void gt_session_destroy(GTSession session) {
 }
 
 void gt_session_set_rate_limits(GTSession session, int download_bps, int upload_bps) {
-    if (!session) return;
-    lt::settings_pack sp;
-    sp.set_int(lt::settings_pack::download_rate_limit, download_bps);
-    sp.set_int(lt::settings_pack::upload_rate_limit, upload_bps);
-    as_box(session)->ses.apply_settings(sp);
+    try {
+        if (!session) return;
+        lt::settings_pack sp;
+        sp.set_int(lt::settings_pack::download_rate_limit, download_bps);
+        sp.set_int(lt::settings_pack::upload_rate_limit, upload_bps);
+        as_box(session)->ses.apply_settings(sp);
+    } catch (...) {}
 }
 
 void gt_session_set_connections(GTSession session, int connections_limit) {
-    if (!session || connections_limit < 1) return;
-    lt::settings_pack sp;
-    sp.set_int(lt::settings_pack::connections_limit, connections_limit);
-    as_box(session)->ses.apply_settings(sp);
+    try {
+        if (!session || connections_limit < 1) return;
+        lt::settings_pack sp;
+        sp.set_int(lt::settings_pack::connections_limit, connections_limit);
+        as_box(session)->ses.apply_settings(sp);
+    } catch (...) {}
 }
 
 void gt_session_apply_settings(GTSession session, int enable_dht, int enable_lsd,
                                int enable_utp, int enc_policy) {
-    if (!session) return;
-    lt::settings_pack sp;
-    sp.set_bool(lt::settings_pack::enable_dht, enable_dht != 0);
-    sp.set_bool(lt::settings_pack::enable_lsd, enable_lsd != 0);
-    sp.set_bool(lt::settings_pack::enable_outgoing_utp, enable_utp != 0);
-    sp.set_bool(lt::settings_pack::enable_incoming_utp, enable_utp != 0);
-    int const policy = map_enc_policy(enc_policy);
-    sp.set_int(lt::settings_pack::out_enc_policy, policy);
-    sp.set_int(lt::settings_pack::in_enc_policy, policy);
-    as_box(session)->ses.apply_settings(sp);
+    try {
+        if (!session) return;
+        lt::settings_pack sp;
+        sp.set_bool(lt::settings_pack::enable_dht, enable_dht != 0);
+        sp.set_bool(lt::settings_pack::enable_lsd, enable_lsd != 0);
+        sp.set_bool(lt::settings_pack::enable_outgoing_utp, enable_utp != 0);
+        sp.set_bool(lt::settings_pack::enable_incoming_utp, enable_utp != 0);
+        int const policy = map_enc_policy(enc_policy);
+        sp.set_int(lt::settings_pack::out_enc_policy, policy);
+        sp.set_int(lt::settings_pack::in_enc_policy, policy);
+        as_box(session)->ses.apply_settings(sp);
+    } catch (...) {}
 }
 
 void gt_session_set_proxy(GTSession session, int proxy_type, const char *host,
                           int port, int peer_connections) {
-    if (!session) return;
-    lt::settings_pack sp;
-    sp.set_int(lt::settings_pack::proxy_type, proxy_type);
-    sp.set_str(lt::settings_pack::proxy_hostname, host ? host : "");
-    sp.set_int(lt::settings_pack::proxy_port, port);
-    // Resolve tracker/peer hostnames at the proxy so the local resolver never
-    // sees them, and always carry tracker announces. Peer connections are the
-    // caller's call — an HTTP proxy cannot carry them, and libtorrent warns
-    // against asking it to.
-    sp.set_bool(lt::settings_pack::proxy_hostnames, true);
-    sp.set_bool(lt::settings_pack::proxy_tracker_connections, true);
-    sp.set_bool(lt::settings_pack::proxy_peer_connections, peer_connections != 0);
-    as_box(session)->ses.apply_settings(sp);
+    try {
+        if (!session) return;
+        lt::settings_pack sp;
+        sp.set_int(lt::settings_pack::proxy_type, proxy_type);
+        sp.set_str(lt::settings_pack::proxy_hostname, host ? host : "");
+        sp.set_int(lt::settings_pack::proxy_port, port);
+        // Resolve tracker/peer hostnames at the proxy so the local resolver never
+        // sees them, and always carry tracker announces. Peer connections are the
+        // caller's call — an HTTP proxy cannot carry them, and libtorrent warns
+        // against asking it to.
+        sp.set_bool(lt::settings_pack::proxy_hostnames, true);
+        sp.set_bool(lt::settings_pack::proxy_tracker_connections, true);
+        sp.set_bool(lt::settings_pack::proxy_peer_connections, peer_connections != 0);
+        as_box(session)->ses.apply_settings(sp);
+    } catch (...) {}
 }
 
 int gt_session_last_error(GTSession session, char *out, int cap) {
-    if (!session || !out || cap <= 0) return 0;
-    auto *box = as_box(session);
-    // Drain whatever is queued first. Nothing else consumes alerts between
-    // resume saves, and libtorrent starts dropping them once the queue fills.
-    // Safe against `gt_save_resume_data`'s own pump: both are called from the
-    // same actor, which never runs two of its own methods at once.
-    std::vector<lt::alert *> alerts;
-    box->ses.pop_alerts(&alerts);
-    for (auto *a : alerts) note_session_error(box, a);
-    std::lock_guard<std::mutex> lock(box->mu);
-    if (box->last_error.empty()) return 0;
-    copy_string(out, cap, box->last_error);
-    box->last_error.clear();
-    return 1;
+    try {
+        if (!session || !out || cap <= 0) return 0;
+        auto *box = as_box(session);
+        // Drain whatever is queued first: libtorrent starts dropping alerts once
+        // the queue fills. Resume answers are parked for their savers, not lost.
+        pump_alerts(box);
+        std::lock_guard<std::mutex> lock(box->mu);
+        if (box->last_error.empty()) return 0;
+        copy_string(out, cap, box->last_error);
+        box->last_error.clear();
+        return 1;
+    } catch (...) { return 0; }
 }
 
 GTHandle gt_add_magnet(GTSession session, const char *magnet_uri, const char *save_path,
                        int mode, char *err_out, int err_cap) {
-    if (!session) return nullptr;
-    auto *ses = &as_box(session)->ses;
-    lt::error_code ec;
-    lt::add_torrent_params atp = lt::parse_magnet_uri(magnet_uri, ec);
-    if (ec) { if (err_out) copy_string(err_out, err_cap, ec.message()); return nullptr; }
-    atp.save_path = save_path;
-    atp.flags &= ~lt::torrent_flags::auto_managed;
-    atp.flags &= ~lt::torrent_flags::paused;
-    apply_add_mode(atp, mode);
-    lt::torrent_handle handle = ses->add_torrent(std::move(atp), ec);
-    if (ec || !handle.is_valid()) {
-        if (err_out) copy_string(err_out, err_cap, ec ? ec.message() : "could not add magnet");
-        return nullptr;
-    }
-    return static_cast<GTHandle>(new lt::torrent_handle(handle));
+    try {
+        if (!session) return nullptr;
+        auto *ses = &as_box(session)->ses;
+        lt::error_code ec;
+        lt::add_torrent_params atp = lt::parse_magnet_uri(magnet_uri, ec);
+        if (ec) { if (err_out) copy_string(err_out, err_cap, ec.message()); return nullptr; }
+        atp.save_path = save_path;
+        atp.flags &= ~lt::torrent_flags::auto_managed;
+        atp.flags &= ~lt::torrent_flags::paused;
+        apply_add_mode(atp, mode);
+        lt::torrent_handle handle = ses->add_torrent(std::move(atp), ec);
+        if (ec || !handle.is_valid()) {
+            if (err_out) copy_string(err_out, err_cap, ec ? ec.message() : "could not add magnet");
+            return nullptr;
+        }
+        return static_cast<GTHandle>(new lt::torrent_handle(handle));
+    } catch (...) { return nullptr; }
 }
 
 GTHandle gt_add_torrent_file(GTSession session, const char *file_path, const char *save_path,
                              int mode, char *err_out, int err_cap) {
-    if (!session) return nullptr;
-    auto *ses = &as_box(session)->ses;
-    lt::error_code ec;
-    auto info = std::make_shared<lt::torrent_info>(std::string(file_path), ec);
-    if (ec) { if (err_out) copy_string(err_out, err_cap, ec.message()); return nullptr; }
-    lt::add_torrent_params atp;
-    atp.ti = info;
-    atp.save_path = save_path;
-    atp.flags &= ~lt::torrent_flags::auto_managed;
-    atp.flags &= ~lt::torrent_flags::paused;
-    apply_add_mode(atp, mode);
-    lt::torrent_handle handle = ses->add_torrent(std::move(atp), ec);
-    if (ec || !handle.is_valid()) {
-        if (err_out) copy_string(err_out, err_cap, ec ? ec.message() : "could not add torrent");
-        return nullptr;
-    }
-    return static_cast<GTHandle>(new lt::torrent_handle(handle));
+    try {
+        if (!session) return nullptr;
+        auto *ses = &as_box(session)->ses;
+        lt::error_code ec;
+        auto info = std::make_shared<lt::torrent_info>(std::string(file_path), ec);
+        if (ec) { if (err_out) copy_string(err_out, err_cap, ec.message()); return nullptr; }
+        lt::add_torrent_params atp;
+        atp.ti = info;
+        atp.save_path = save_path;
+        atp.flags &= ~lt::torrent_flags::auto_managed;
+        atp.flags &= ~lt::torrent_flags::paused;
+        apply_add_mode(atp, mode);
+        lt::torrent_handle handle = ses->add_torrent(std::move(atp), ec);
+        if (ec || !handle.is_valid()) {
+            if (err_out) copy_string(err_out, err_cap, ec ? ec.message() : "could not add torrent");
+            return nullptr;
+        }
+        return static_cast<GTHandle>(new lt::torrent_handle(handle));
+    } catch (...) { return nullptr; }
 }
 
 int gt_save_resume_data(GTSession session, GTHandle handle, const char *path, int timeout_ms) {
-    auto *h = as_handle(handle);
-    if (!session || !h || !h->is_valid() || !path) return 0;
-    auto *box = as_box(session);
-    auto *ses = &box->ses;
+    if (!session || !handle || !path) return 0;
     try {
-        // Without metadata there is nothing worth persisting, and libtorrent
-        // answers with save_resume_data_failed_alert anyway.
-        if (!h->torrent_file()) return 0;
-        h->save_resume_data(lt::torrent_handle::save_info_dict);
+        GTHandle const handles[1] = { handle };
+        const char *const paths[1] = { path };
+        return save_resume_many(as_box(session), handles, paths, 1, timeout_ms);
     } catch (...) { return 0; }
+}
 
-    auto const deadline = std::chrono::steady_clock::now()
-        + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 5000);
+int gt_save_resume_data_many(GTSession session, GTHandle const *handles, const char *const *paths,
+                             int count, int timeout_ms) {
+    if (!session || !handles || !paths || count <= 0) return 0;
     try {
-        for (;;) {
-            auto const now = std::chrono::steady_clock::now();
-            if (now >= deadline) return 0;
-            ses->wait_for_alert(std::chrono::duration_cast<lt::time_duration>(deadline - now));
-            std::vector<lt::alert *> alerts;
-            ses->pop_alerts(&alerts);
-            for (auto *a : alerts) {
-                note_session_error(box, a);
-                if (auto const *failed = lt::alert_cast<lt::save_resume_data_failed_alert>(a)) {
-                    if (failed->handle == *h) return 0;
-                } else if (auto const *saved = lt::alert_cast<lt::save_resume_data_alert>(a)) {
-                    if (!(saved->handle == *h)) continue;
-                    return write_atomically(path, lt::write_resume_data_buf(saved->params)) ? 1 : 0;
-                }
-            }
-        }
+        return save_resume_many(as_box(session), handles, paths, count, timeout_ms);
     } catch (...) { return 0; }
 }
 
 GTHandle gt_add_resume(GTSession session, const char *resume_path, const char *save_path,
                        int mode, char *err_out, int err_cap) {
-    if (!session || !resume_path) return nullptr;
-    auto *ses = &as_box(session)->ses;
-    std::ifstream in(resume_path, std::ios::binary);
-    if (!in) { if (err_out) copy_string(err_out, err_cap, "no saved resume data"); return nullptr; }
-    std::vector<char> const buf((std::istreambuf_iterator<char>(in)),
-                                std::istreambuf_iterator<char>());
-    if (buf.empty()) { if (err_out) copy_string(err_out, err_cap, "resume data is empty"); return nullptr; }
-    lt::error_code ec;
-    lt::add_torrent_params atp = lt::read_resume_data(buf, ec);
-    if (ec) { if (err_out) copy_string(err_out, err_cap, ec.message()); return nullptr; }
-    // The blob remembers where it was last saved; the app's folder is the one
-    // the user can still see and change, so it wins.
-    atp.save_path = save_path;
-    atp.flags &= ~lt::torrent_flags::auto_managed;
-    atp.flags &= ~lt::torrent_flags::paused;
-    apply_add_mode(atp, mode);
-    lt::torrent_handle handle = ses->add_torrent(std::move(atp), ec);
-    if (ec || !handle.is_valid()) {
-        if (err_out) copy_string(err_out, err_cap, ec ? ec.message() : "could not restore torrent");
-        return nullptr;
-    }
-    return static_cast<GTHandle>(new lt::torrent_handle(handle));
+    try {
+        if (!session || !resume_path) return nullptr;
+        auto *ses = &as_box(session)->ses;
+        std::ifstream in(resume_path, std::ios::binary);
+        if (!in) { if (err_out) copy_string(err_out, err_cap, "no saved resume data"); return nullptr; }
+        std::vector<char> const buf((std::istreambuf_iterator<char>(in)),
+                                    std::istreambuf_iterator<char>());
+        if (buf.empty()) { if (err_out) copy_string(err_out, err_cap, "resume data is empty"); return nullptr; }
+        lt::error_code ec;
+        lt::add_torrent_params atp = lt::read_resume_data(buf, ec);
+        if (ec) { if (err_out) copy_string(err_out, err_cap, ec.message()); return nullptr; }
+        // The blob remembers where it was last saved; the app's folder is the one
+        // the user can still see and change, so it wins.
+        atp.save_path = save_path;
+        atp.flags &= ~lt::torrent_flags::auto_managed;
+        atp.flags &= ~lt::torrent_flags::paused;
+        apply_add_mode(atp, mode);
+        lt::torrent_handle handle = ses->add_torrent(std::move(atp), ec);
+        if (ec || !handle.is_valid()) {
+            if (err_out) copy_string(err_out, err_cap, ec ? ec.message() : "could not restore torrent");
+            return nullptr;
+        }
+        return static_cast<GTHandle>(new lt::torrent_handle(handle));
+    } catch (...) { return nullptr; }
 }
 
 void gt_pause(GTHandle handle) {
-    auto *h = as_handle(handle);
-    if (h && h->is_valid()) {
-        h->unset_flags(lt::torrent_flags::auto_managed);
-        h->pause();
-    }
+    try {
+        auto *h = as_handle(handle);
+        if (h && h->is_valid()) {
+            h->unset_flags(lt::torrent_flags::auto_managed);
+            h->pause();
+        }
+    } catch (...) {}
 }
 
 void gt_resume(GTHandle handle) {
-    auto *h = as_handle(handle);
-    if (h && h->is_valid()) h->resume();
+    try {
+        auto *h = as_handle(handle);
+        if (h && h->is_valid()) h->resume();
+    } catch (...) {}
 }
 
 void gt_remove(GTSession session, GTHandle handle, int delete_files) {
     auto *h = as_handle(handle);
-    if (session && h && h->is_valid()) {
-        as_box(session)->ses.remove_torrent(
-            *h, delete_files ? lt::session::delete_files : lt::remove_flags_t{});
-    }
+    try {
+        if (session && h && h->is_valid()) {
+            as_box(session)->ses.remove_torrent(
+                *h, delete_files ? lt::session::delete_files : lt::remove_flags_t{});
+        }
+    } catch (...) {}
     delete h;
 }
 
@@ -363,59 +459,75 @@ void gt_handle_free(GTHandle handle) {
     delete as_handle(handle);
 }
 
+GTHandle gt_handle_copy(GTHandle handle) {
+    try {
+        auto *h = as_handle(handle);
+        if (!h) return nullptr;
+        return static_cast<GTHandle>(new lt::torrent_handle(*h));
+    } catch (...) { return nullptr; }
+}
+
 int gt_get_status(GTHandle handle, GTStatus *out) {
-    auto *h = as_handle(handle);
-    if (!h || !h->is_valid() || !out) return 0;
-    lt::torrent_status st = h->status();
-    std::memset(out, 0, sizeof(GTStatus));
-    out->state = map_state(st);
-    out->has_metadata = (h->torrent_file() != nullptr) ? 1 : 0;
-    out->num_peers = st.num_peers;
-    out->num_seeds = st.num_seeds;
-    out->total_bytes = static_cast<int64_t>(st.total_wanted);
-    out->downloaded_bytes = static_cast<int64_t>(st.total_wanted_done);
-    out->uploaded_bytes = static_cast<int64_t>(st.all_time_upload);
-    out->download_rate = static_cast<double>(st.download_payload_rate);
-    out->upload_rate = static_cast<double>(st.upload_payload_rate);
-    out->progress = static_cast<double>(st.progress);
-    copy_string(out->name, sizeof(out->name), st.name);
-    if (st.errc) copy_string(out->error, sizeof(out->error), st.errc.message());
-    return 1;
+    try {
+        auto *h = as_handle(handle);
+        if (!h || !h->is_valid() || !out) return 0;
+        lt::torrent_status st = h->status();
+        std::memset(out, 0, sizeof(GTStatus));
+        out->state = map_state(st);
+        out->has_metadata = (h->torrent_file() != nullptr) ? 1 : 0;
+        out->num_peers = st.num_peers;
+        out->num_seeds = st.num_seeds;
+        out->total_bytes = static_cast<int64_t>(st.total_wanted);
+        out->downloaded_bytes = static_cast<int64_t>(st.total_wanted_done);
+        out->uploaded_bytes = static_cast<int64_t>(st.all_time_upload);
+        out->download_rate = static_cast<double>(st.download_payload_rate);
+        out->upload_rate = static_cast<double>(st.upload_payload_rate);
+        out->progress = static_cast<double>(st.progress);
+        copy_string(out->name, sizeof(out->name), st.name);
+        if (st.errc) copy_string(out->error, sizeof(out->error), st.errc.message());
+        return 1;
+    } catch (...) { return 0; }
 }
 
 int gt_peers(GTHandle handle, GTPeer *out, int cap) {
-    auto *h = as_handle(handle);
-    if (!h || !h->is_valid() || !out || cap <= 0) return 0;
-    std::vector<lt::peer_info> peers;
-    h->get_peer_info(peers);
-    int n = 0;
-    for (auto const &p : peers) {
-        if (n >= cap) break;
-        GTPeer &gp = out[n];
-        std::memset(&gp, 0, sizeof(GTPeer));
-        std::ostringstream endpoint;
-        endpoint << p.ip;
-        copy_string(gp.address, sizeof(gp.address), endpoint.str());
-        copy_string(gp.client, sizeof(gp.client), p.client);
-        gp.down_rate = static_cast<double>(p.payload_down_speed);
-        gp.up_rate = static_cast<double>(p.payload_up_speed);
-        gp.progress = static_cast<double>(p.progress);
-        ++n;
-    }
-    return n;
+    try {
+        auto *h = as_handle(handle);
+        if (!h || !h->is_valid() || !out || cap <= 0) return 0;
+        std::vector<lt::peer_info> peers;
+        h->get_peer_info(peers);
+        int n = 0;
+        for (auto const &p : peers) {
+            if (n >= cap) break;
+            GTPeer &gp = out[n];
+            std::memset(&gp, 0, sizeof(GTPeer));
+            std::ostringstream endpoint;
+            endpoint << p.ip;
+            copy_string(gp.address, sizeof(gp.address), endpoint.str());
+            copy_string(gp.client, sizeof(gp.client), p.client);
+            gp.down_rate = static_cast<double>(p.payload_down_speed);
+            gp.up_rate = static_cast<double>(p.payload_up_speed);
+            gp.progress = static_cast<double>(p.progress);
+            ++n;
+        }
+        return n;
+    } catch (...) { return 0; }
 }
 
 void gt_set_sequential(GTHandle handle, int sequential) {
-    auto *h = as_handle(handle);
-    if (!h || !h->is_valid()) return;
-    if (sequential) h->set_flags(lt::torrent_flags::sequential_download);
-    else h->unset_flags(lt::torrent_flags::sequential_download);
+    try {
+        auto *h = as_handle(handle);
+        if (!h || !h->is_valid()) return;
+        if (sequential) h->set_flags(lt::torrent_flags::sequential_download);
+        else h->unset_flags(lt::torrent_flags::sequential_download);
+    } catch (...) {}
 }
 
 void gt_set_download_limit(GTHandle handle, int bytes_per_sec) {
-    auto *h = as_handle(handle);
-    if (!h || !h->is_valid()) return;
-    h->set_download_limit(bytes_per_sec > 0 ? bytes_per_sec : 0);
+    try {
+        auto *h = as_handle(handle);
+        if (!h || !h->is_valid()) return;
+        h->set_download_limit(bytes_per_sec > 0 ? bytes_per_sec : 0);
+    } catch (...) {}
 }
 
 void gt_set_pex(GTHandle handle, int enable) {
@@ -428,36 +540,40 @@ void gt_set_pex(GTHandle handle, int enable) {
 }
 
 int gt_file_count(GTHandle handle) {
-    auto *h = as_handle(handle);
-    if (!h || !h->is_valid()) return 0;
-    auto info = h->torrent_file();
-    if (!info) return 0;
-    return info->files().num_files();
+    try {
+        auto *h = as_handle(handle);
+        if (!h || !h->is_valid()) return 0;
+        auto info = h->torrent_file();
+        if (!info) return 0;
+        return info->files().num_files();
+    } catch (...) { return 0; }
 }
 
 int gt_file_info(GTHandle handle, int index, char *name_out, int name_cap,
                  int64_t *size_out, int64_t *done_out, int *priority_out) {
-    auto *h = as_handle(handle);
-    if (!h || !h->is_valid()) return 0;
-    auto info = h->torrent_file();
-    if (!info) return 0;
-    lt::file_storage const &fs = info->files();
-    if (index < 0 || index >= fs.num_files()) return 0;
-    lt::file_index_t fi(index);
-    // The path relative to the save folder, not the bare file name: two files
-    // called `01.mkv` in different subfolders are otherwise indistinguishable in
-    // the picker and over the remote portal. It stays inert text on the Swift
-    // side — nothing joins it onto a save directory.
-    if (name_out) copy_string(name_out, name_cap, fs.file_path(fi));
-    if (size_out) *size_out = static_cast<int64_t>(fs.file_size(fi));
-    if (done_out) {
-        std::vector<std::int64_t> progress;
-        h->file_progress(progress);
-        *done_out = (index < static_cast<int>(progress.size()))
-            ? static_cast<int64_t>(progress[static_cast<size_t>(index)]) : 0;
-    }
-    if (priority_out) *priority_out = static_cast<int>(h->file_priority(fi));
-    return 1;
+    try {
+        auto *h = as_handle(handle);
+        if (!h || !h->is_valid()) return 0;
+        auto info = h->torrent_file();
+        if (!info) return 0;
+        lt::file_storage const &fs = info->files();
+        if (index < 0 || index >= fs.num_files()) return 0;
+        lt::file_index_t fi(index);
+        // The path relative to the save folder, not the bare file name: two files
+        // called `01.mkv` in different subfolders are otherwise indistinguishable in
+        // the picker and over the remote portal. It stays inert text on the Swift
+        // side — nothing joins it onto a save directory.
+        if (name_out) copy_string(name_out, name_cap, fs.file_path(fi));
+        if (size_out) *size_out = static_cast<int64_t>(fs.file_size(fi));
+        if (done_out) {
+            std::vector<std::int64_t> progress;
+            h->file_progress(progress);
+            *done_out = (index < static_cast<int>(progress.size()))
+                ? static_cast<int64_t>(progress[static_cast<size_t>(index)]) : 0;
+        }
+        if (priority_out) *priority_out = static_cast<int>(h->file_priority(fi));
+        return 1;
+    } catch (...) { return 0; }
 }
 
 int gt_file_progress(GTHandle handle, int64_t *out, int cap) {

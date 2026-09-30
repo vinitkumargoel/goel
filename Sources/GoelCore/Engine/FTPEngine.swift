@@ -60,6 +60,12 @@ actor FTPEngine: DownloadEngine {
 
     func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
 
+    /// Renames, limits and credentials edited while paused apply to the next run; a running one keeps its snapshot.
+    func refresh(_ task: DownloadTask) async {
+        guard tasks[task.id] != nil else { return }
+        tasks[task.id] = task
+    }
+
     nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
@@ -101,20 +107,23 @@ actor FTPEngine: DownloadEngine {
         emit(id, .statusChanged(.downloading))
 
         let credential = credentials(for: url)
+        if let credential, !credential.requireTLS {
+            GoelLog.engineFTP.notice("inline FTP password may travel in plaintext if the server refuses TLS",
+                                     .host(url.host ?? ""))
+        }
         let probe = await Self.remoteSizeBlocking(
             url: url.absoluteString, userpwd: credential?.userpwd,
             requireTLS: credential?.requireTLS ?? false)
+        // A pause during the probe only cancelled this task: no context existed yet to abort.
+        if Task.isCancelled { return }
         let opened: RemoteTransferPrep.Opened
         do {
             opened = try RemoteTransferPrep.openForResume(
                 saveDirectory: task.saveDirectory, savePath: task.savePath,
                 remoteSize: probe.size >= 0 ? probe.size : nil)
         } catch {
-            if let de = error as? DownloadError {
-                hub.fail(id, de)
-            } else {
-                hub.fail(id, DownloadError.unknown("Couldn’t create the download folder"))
-            }
+            hub.fail(id, RemoteTransferPrep.prepFailure(error, saveDirectory: task.saveDirectory,
+                                                        log: GoelLog.engineFTP))
             return
         }
         let handle = opened.handle
@@ -128,13 +137,24 @@ actor FTPEngine: DownloadEngine {
         contexts[id] = context
         defer { contexts[id] = nil }
 
-        let result = await Self.downloadBlocking(
-            url: url.absoluteString, resumeFrom: resumeFrom,
-            userpwd: credential?.userpwd,
-            requireTLS: credential?.requireTLS ?? false,
-            maxBytesPerSecond: cap, context: context)
+        let result = await withTaskCancellationHandler {
+            await Self.downloadBlocking(
+                url: url.absoluteString, resumeFrom: resumeFrom,
+                userpwd: credential?.userpwd,
+                requireTLS: credential?.requireTLS ?? false,
+                maxBytesPerSecond: cap, context: context)
+        } onCancel: {
+            context.abort()
+        }
         try? handle.close()
 
+        // Before the abort check: a failed write aborts curl too, and ENOSPC must not read as a network error.
+        if let writeError = context.writeError {
+            let remaining = probe.size > 0 ? probe.size - resumeFrom - context.bytesWritten : nil
+            hub.fail(id, RemoteTransferPrep.writeFailure(writeError, fileURL: fileURL, needed: remaining,
+                                                         log: GoelLog.engineFTP))
+            return
+        }
         if gcb_is_aborted(result.code) != 0 {
             return   // our own pause/remove; the manager owns the state
         }
@@ -152,16 +172,23 @@ actor FTPEngine: DownloadEngine {
             written: written, expected: task.expectedChecksum)
     }
 
-    /// Keychain logins ride TLS only — they fail rather than leak on a downgrade.
-    private func credentials(for url: URL) -> (userpwd: String, requireTLS: Bool)? {
+    /// Keychain logins ride TLS only — they fail rather than leak on a downgrade. So do inline ones on
+    /// `ftps://`, where the user asked for TLS; plain `ftp://` inline passwords keep the opportunistic upgrade.
+    static func credentials(for url: URL,
+                            lookup: (String) -> (username: String, password: String)?)
+        -> (userpwd: String, requireTLS: Bool)? {
         // Inline userinfo counts only with a password: bare `ftp://user@host` must reach the Keychain.
         if let user = url.user, !user.isEmpty, let pass = url.password, !pass.isEmpty {
-            return ("\(user):\(pass)", false)
+            return ("\(user):\(pass)", url.scheme?.lowercased() == "ftps")
         }
-        if let host = url.host, let stored = credentialLookup(host) {
+        if let host = url.host, let stored = lookup(host) {
             return ("\(stored.username):\(stored.password)", true)
         }
         return nil
+    }
+
+    private func credentials(for url: URL) -> (userpwd: String, requireTLS: Bool)? {
+        Self.credentials(for: url, lookup: credentialLookup)
     }
 
     private nonisolated func emit(_ id: UUID, _ event: EngineEvent) {
@@ -210,6 +237,7 @@ final class FTPTransferContext: @unchecked Sendable {
 
     private let lock = NSLock()
     private var aborted = false
+    private var failedWrite: Error?
     private var written: Int64 = 0
     private var totalHint: Int64 = 0
     private var meter: TransferProgressMeter
@@ -228,6 +256,12 @@ final class FTPTransferContext: @unchecked Sendable {
         return written
     }
 
+    /// Why the last write failed; curl only reports "failure writing output".
+    var writeError: Error? {
+        lock.lock(); defer { lock.unlock() }
+        return failedWrite
+    }
+
     func abort() {
         lock.lock(); defer { lock.unlock() }
         aborted = true
@@ -238,6 +272,7 @@ final class FTPTransferContext: @unchecked Sendable {
         do {
             try handle.write(contentsOf: buf)
         } catch {
+            lock.lock(); failedWrite = error; lock.unlock()
             return false
         }
         lock.lock()

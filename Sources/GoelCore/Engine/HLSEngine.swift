@@ -19,13 +19,19 @@ actor HLSEngine: HLSConfigurable {
 
     private var tasks: [UUID: DownloadTask] = [:]
     private var jobs: [UUID: Task<Void, Never>] = [:]
+    /// A finishing job may clear only its own slot: a paused-then-resumed task already holds a successor there.
+    private var jobTokens: [UUID: UUID] = [:]
     private var profile: TrafficProfile
     private var maxHeight: Int = 0
+    /// Engine-wide: per-job pacers alone let N streams take N times the profile cap.
+    private let downloadPacer: RateLimiter
 
-    init(profile: TrafficProfile, userAgent: String = "GoelDownloader/1.0 (macOS)") {
+    init(profile: TrafficProfile, userAgent: String = "GoelDownloader/1.0 (macOS)",
+         configuration: URLSessionConfiguration? = nil) {
         self.profile = profile
         self.userAgent = userAgent
-        let config = URLSessionConfiguration.default
+        self.downloadPacer = RateLimiter(bytesPerSecond: profile.maxDownloadBytesPerSec)
+        let config = configuration ?? URLSessionConfiguration.default
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.timeoutIntervalForRequest = 60
         #if !os(Linux)
@@ -57,6 +63,7 @@ actor HLSEngine: HLSConfigurable {
         let job = jobs[id]
         job?.cancel()
         jobs[id] = nil
+        jobTokens[id] = nil
         let task = tasks[id]
         tasks[id] = nil
         // Wait for writers to stop before unlinking.
@@ -68,7 +75,19 @@ actor HLSEngine: HLSConfigurable {
         hub.finishAll(id)
     }
 
-    func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
+    func applyLimits(_ profile: TrafficProfile) async {
+        self.profile = profile
+        await downloadPacer.setRate(profile.maxDownloadBytesPerSec)
+    }
+
+    /// Cookies, headers, limits and renames edited while paused apply to the next run.
+    func refresh(_ task: DownloadTask) async {
+        guard tasks[task.id] != nil else { return }
+        tasks[task.id] = task
+    }
+
+    func hasJob(_ id: UUID) -> Bool { jobs[id] != nil }
+    func storedTask(_ id: UUID) -> DownloadTask? { tasks[id] }
 
     func setMaxHeight(_ height: Int) { maxHeight = max(0, height) }
 
@@ -88,17 +107,23 @@ actor HLSEngine: HLSConfigurable {
         previous?.cancel()
         let height = maxHeight
         let bound = max(1, min(8, profile.maxConnectionsPerServer == 0 ? 6 : profile.maxConnectionsPerServer))
-        let rateCap = tasks[id].map { profile.effectiveDownloadCap(taskLimit: $0.speedLimitBytesPerSec) } ?? 0
+        let taskCap = max(0, tasks[id]?.speedLimitBytesPerSec ?? 0)
+        let token = UUID()
+        jobTokens[id] = token
         jobs[id] = Task {
             _ = await previous?.value
             guard !Task.isCancelled else { return }
-            await self.run(id, maxHeight: height, concurrency: bound, rateCap: rateCap)
+            await self.run(id, token: token, maxHeight: height, concurrency: bound, taskCap: taskCap)
         }
     }
 
-    private func clearJob(_ id: UUID) { jobs[id] = nil }
+    func clearJob(_ id: UUID, token: UUID) {
+        guard jobTokens[id] == token else { return }
+        jobs[id] = nil
+        jobTokens[id] = nil
+    }
 
-    private func run(_ id: UUID, maxHeight: Int, concurrency: Int, rateCap: Int64) async {
+    private func run(_ id: UUID, token: UUID, maxHeight: Int, concurrency: Int, taskCap: Int64) async {
         guard let task = tasks[id], case .hlsStream(let playlistURL) = task.source else {
             let e = DownloadError.unknown("HLSEngine requires an HLS source")
             hub.fail(id, e)
@@ -108,14 +133,16 @@ actor HLSEngine: HLSConfigurable {
         do {
             try Task.checkCancellation()
             let plan = try await resolveMediaPlaylist(playlistURL, maxHeight: maxHeight, task: task)
-            try await produce(id: id, task: task, plan: plan, concurrency: concurrency, rateCap: rateCap)
+            let limiter = RateLimiter(bytesPerSecond: taskCap, next: downloadPacer)
+            try await produce(id: id, task: task, plan: plan, concurrency: concurrency, limiter: limiter)
+            clearJob(id, token: token)
         } catch is CancellationError {
             // pause()/remove() cancelled the job; the manager owns the state.
         } catch {
             if Task.isCancelled { return }
             let de = DownloadError(mapping: error)
             hub.fail(id, de)
-            jobs[id] = nil
+            clearJob(id, token: token)
         }
     }
 
@@ -149,9 +176,10 @@ actor HLSEngine: HLSConfigurable {
     }
 
     private nonisolated func produce(id: UUID, task: DownloadTask, plan: MediaPlan,
-                                      concurrency: Int, rateCap: Int64) async throws {
+                                      concurrency: Int, limiter: RateLimiter?) async throws {
         let segments = plan.segments
         guard !segments.isEmpty else { throw DownloadError.unknown("HLS playlist had no segments") }
+        guard HLSParser.usesSingleInitMap(segments) else { throw Self.multipleInitMapsRefusal }
         // Defense in depth: a sanitisation bypass upstream must not let the destination escape the save directory.
         guard task.isSavePathContained else {
             throw DownloadError.unknown("HLS destination escapes the download folder")
@@ -166,7 +194,6 @@ actor HLSEngine: HLSConfigurable {
 
         let keyCache = KeyCache()
         let progress = ProgressTracker(hub: hub, id: id, connections: concurrency)
-        let limiter: RateLimiter? = rateCap > 0 ? RateLimiter(bytesPerSecond: rateCap) : nil
 
         if let initMap = plan.initMap {
             try Task.checkCancellation()
@@ -211,14 +238,19 @@ actor HLSEngine: HLSConfigurable {
         }
 
         let destURL = URL(fileURLWithPath: task.savePath)
-        try? FileManager.default.removeItem(at: destURL)
+        // Must succeed: a stale destination left in place keeps its old tail past the new bytes.
+        if FileManager.default.fileExists(atPath: destURL.path) {
+            try FileManager.default.removeItem(at: destURL)
+        }
         if plan.initMap != nil {
             try Self.concatenate(parts, to: destURL)
         } else {
             let tsURL = workDir.appendingPathComponent("combined.ts")
             try Self.concatenate(parts, to: tsURL)
+            try Task.checkCancellation()
             try await Self.remuxToMP4(from: tsURL, to: destURL)
         }
+        try Task.checkCancellation()
 
         // Never fall back to the estimate: a concat/remux that produced nothing would report as complete.
         guard let actual = Self.fileSize(destURL) else {
@@ -235,9 +267,10 @@ actor HLSEngine: HLSConfigurable {
             guard matched else { throw DownloadError.checksumMismatch }
         }
 
+        // A job paused this late must not report completion over its successor.
+        try Task.checkCancellation()
         try? FileManager.default.removeItem(at: workDir)
         hub.complete(id)
-        await clearJob(id)
     }
 
     private nonisolated func downloadSegment(index: Int, segment: HLSSegment, task: DownloadTask,
@@ -346,6 +379,9 @@ actor HLSEngine: HLSConfigurable {
 
     private static let maxPlaylistBytes = 8 * 1024 * 1024
 
+    static let multipleInitMapsRefusal = DownloadError.unknown(
+        "This stream switches its fMP4 header part-way through (often at an ad break), so its pieces can’t be joined into one playable file.")
+
     static let liveStreamRefusal = DownloadError.unknown(
         "This is a live HLS stream (no #EXT-X-ENDLIST). Only finished (VOD) streams can be downloaded — the file would stop at whatever part had been published.")
 
@@ -388,8 +424,9 @@ actor HLSEngine: HLSConfigurable {
         return size
     }
 
-    private static func concatenate(_ parts: [URL], to dest: URL) throws {
-        FileManager.default.createFile(atPath: dest.path, contents: nil)
+    static func concatenate(_ parts: [URL], to dest: URL) throws {
+        // Throwing and truncating: `createFile` ignores failure and keeps an existing file's bytes.
+        try Data().write(to: dest)
         let out = try FileHandle(forWritingTo: dest)
         defer { try? out.close() }
         for part in parts {
@@ -463,40 +500,62 @@ actor HLSEngine: HLSConfigurable {
         }
         export.outputURL = dest
         export.outputFileType = .mp4
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            export.exportAsynchronously { continuation.resume() }
+        // A pause must stop a long VOD remux, not let it finish over the resumed job's output.
+        let exporter = UncheckedSendable(export)
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                exporter.value.exportAsynchronously { continuation.resume() }
+            }
+        } onCancel: {
+            exporter.value.cancelExport()
         }
+        try Task.checkCancellation()
         if export.status != .completed {
             throw export.error ?? DownloadError.unknown("HLS → MP4 conversion failed (unsupported codec)")
         }
         #else
         // `aac_adtstoasc` rewrites AAC-in-TS for MP4; `+faststart` moves the moov atom up to stay streamable.
+        // The whitelist keeps a hostile stream from steering ffmpeg to other local files or the network.
         let ff = Process()
         ff.executableURL = URL(fileURLWithPath: Self.ffmpegPath)
-        ff.arguments = [
-            "-y", "-loglevel", "error", "-i", src.path,
-            "-c", "copy", "-bsf:a", "aac_adtstoasc",
-            "-movflags", "+faststart", dest.path,
-        ]
+        ff.arguments = Self.remuxArguments(source: src.path, destination: dest.path)
         ff.standardOutput = FileHandle.nullDevice
         let errPipe = Pipe()
         ff.standardError = errPipe
         let errHandle = errPipe.fileHandleForReading
+        // Drain stderr WHILE ffmpeg runs: reading after termination deadlocks once it fills the ~64 KB pipe.
+        // The handler is installed before `run()`: an ffmpeg that exits at once would otherwise never resume us.
+        let exited = AsyncStream<Void> { continuation in
+            ff.terminationHandler = { _ in continuation.yield(); continuation.finish() }
+        }
         do {
             try ff.run()
         } catch {
             throw DownloadError.unknown("ffmpeg not found for HLS remux (install ffmpeg): \(error)")
         }
-        // Drain stderr WHILE ffmpeg runs: reading after termination deadlocks once it fills the ~64 KB pipe.
         let errData = Task.detached { errHandle.readDataToEndOfFile() }
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            ff.terminationHandler = { _ in c.resume() }
+        let process = UncheckedSendable(ff)
+        await withTaskCancellationHandler {
+            for await _ in exited {}
+        } onCancel: {
+            if process.value.isRunning { process.value.terminate() }
         }
+        try Task.checkCancellation()
         if ff.terminationStatus != 0 {
             let msg = String(data: await errData.value, encoding: .utf8) ?? ""
             throw DownloadError.unknown("HLS → MP4 conversion failed: \(msg)")
         }
         #endif
+    }
+
+    static func remuxArguments(source: String, destination: String) -> [String] {
+        [
+            "-y", "-loglevel", "error",
+            "-protocol_whitelist", "file,crypto,data",
+            "-i", source,
+            "-c", "copy", "-bsf:a", "aac_adtstoasc",
+            "-movflags", "+faststart", destination,
+        ]
     }
 
     #if os(Linux)
@@ -548,4 +607,10 @@ actor HLSEngine: HLSConfigurable {
                                    downloadSpeed: progress.speed, uploadSpeed: 0, connectionCount: connections))
         }
     }
+}
+
+/// AVAssetExportSession and Process predate Sendable; the cancel paths only call their thread-safe stop methods.
+private struct UncheckedSendable<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
 }

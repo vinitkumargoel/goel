@@ -50,14 +50,42 @@ actor SFTPEngine: DownloadEngine {
 
     func applyLimits(_ profile: TrafficProfile) async { self.profile = profile }
 
+    /// Renames, limits and credentials edited while paused apply to the next run; a running one keeps its snapshot.
+    func refresh(_ task: DownloadTask) async {
+        guard tasks[task.id] != nil else { return }
+        tasks[task.id] = task
+    }
+
     nonisolated func events(for id: UUID) -> AsyncStream<EngineEvent> { hub.subscribe(id) }
 
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? {
         guard case .url(let url) = source, source.kind == .sftp,
               let client = SFTPSession.client(for: url) else { return nil }
         let name = PathSafety.sanitizedName(url.lastPathComponent, fallback: url.host ?? "download")
-        let size = try? await client.size(url.path)
-        return EngineMetadata(name: name, totalBytes: size, reachable: size != nil)
+        do {
+            let size = try await client.size(url.path)
+            return EngineMetadata(name: name, totalBytes: size)
+        } catch {
+            return EngineMetadata(name: name, totalBytes: nil, reachable: false,
+                                  failureNote: Self.probeFailureNote(error))
+        }
+    }
+
+    /// "Couldn't reach the server" must never stand in for a changed host key — that one may be an attack.
+    static func probeFailureNote(_ error: Error) -> String {
+        guard let e = error as? SFTPError else { return error.localizedDescription }
+        if e.kind == .hostKeyMismatch { return "Security warning: \(e.message)" }
+        return e.message
+    }
+
+    /// Identity and sign-in failures are not network trouble; saying so sends the user to check their Wi-Fi.
+    static func downloadError(_ e: SFTPError) -> DownloadError {
+        switch e.kind {
+        case .hostKey, .hostKeyMismatch, .auth, .credentialsUnavailable:
+            return .unknown(e.message)
+        default:
+            return .network(e.message)
+        }
     }
 
     private func startJob(_ id: UUID) {
@@ -86,18 +114,27 @@ actor SFTPEngine: DownloadEngine {
         }
         emit(id, .statusChanged(.downloading))
 
-        let remoteSize = try? await client.size(url.path)
+        let remoteSize: Int64?
+        do {
+            remoteSize = try await client.size(url.path)
+        } catch let e as SFTPError where [.hostKey, .hostKeyMismatch, .auth, .credentialsUnavailable].contains(e.kind) {
+            // Nothing below can succeed, and a refused identity must not become a generic transfer error.
+            if Task.isCancelled { return }
+            hub.fail(id, Self.downloadError(e))
+            return
+        } catch {
+            remoteSize = nil
+        }
+        // A pause during the probe only cancelled this task: no state existed yet to abort.
+        if Task.isCancelled { return }
         let opened: RemoteTransferPrep.Opened
         do {
             opened = try RemoteTransferPrep.openForResume(
                 saveDirectory: task.saveDirectory, savePath: task.savePath,
                 remoteSize: remoteSize)
         } catch {
-            if let de = error as? DownloadError {
-                hub.fail(id, de)
-            } else {
-                hub.fail(id, DownloadError.unknown("Couldn’t create the download folder"))
-            }
+            hub.fail(id, RemoteTransferPrep.prepFailure(error, saveDirectory: task.saveDirectory,
+                                                        log: GoelLog.engineSFTP))
             return
         }
         let handle = opened.handle
@@ -111,16 +148,28 @@ actor SFTPEngine: DownloadEngine {
         states[id] = state
         defer { states[id] = nil }
 
-        let result = await client.streamingDownload(
-            remote: url.path, resumeFrom: resumeFrom, maxBytesPerSecond: cap,
-            write: { buf in state.write(buf) },
-            progress: { total, sofar in state.progress(total: total, sofar: sofar) })
+        let result = await withTaskCancellationHandler {
+            await client.streamingDownload(
+                remote: url.path, resumeFrom: resumeFrom, maxBytesPerSecond: cap,
+                write: { buf in state.write(buf) },
+                progress: { total, sofar in state.progress(total: total, sofar: sofar) })
+        } onCancel: {
+            state.abort()
+        }
         try? handle.close()
 
+        // Before the abort check: a failed local write aborts the shim too, and ENOSPC is not a network error.
+        if let writeError = state.writeError {
+            let remaining = remoteSize.map { $0 - state.finalBytes }
+            hub.fail(id, RemoteTransferPrep.writeFailure(writeError, fileURL: fileURL, needed: remaining,
+                                                         log: GoelLog.engineSFTP))
+            return
+        }
         if result.isAborted { return }   // our own pause/remove
         guard result.isSuccess else {
-            let e = DownloadError.network(result.asError.message)
-            hub.fail(id, e)
+            hub.fail(id, Self.downloadError(result.asError(host: client.target.host,
+                                                           port: client.target.port,
+                                                           username: client.target.username)))
             return
         }
 
@@ -141,6 +190,7 @@ final class SFTPDownloadState: @unchecked Sendable {
 
     private let lock = NSLock()
     private var aborted = false
+    private var failedWrite: Error?
     private var meter: TransferProgressMeter
 
     init(hub: EventHub, id: UUID, name: String, handle: FileHandle, resumeFrom: Int64) {
@@ -156,6 +206,12 @@ final class SFTPDownloadState: @unchecked Sendable {
         return meter.finalBytes
     }
 
+    /// Why the last local write failed; the shim only sees "aborted".
+    var writeError: Error? {
+        lock.lock(); defer { lock.unlock() }
+        return failedWrite
+    }
+
     func abort() {
         lock.lock(); defer { lock.unlock() }
         aborted = true
@@ -166,6 +222,7 @@ final class SFTPDownloadState: @unchecked Sendable {
             try handle.write(contentsOf: buf)
             return true
         } catch {
+            lock.lock(); failedWrite = error; lock.unlock()
             return false
         }
     }

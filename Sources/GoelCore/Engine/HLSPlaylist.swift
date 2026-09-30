@@ -47,6 +47,10 @@ public struct HLSSegment: Sendable, Hashable {
     public var sequence: Int
     public var key: HLSKey?
     public var byteRange: HLSByteRange? = nil
+    /// The `#EXT-X-MAP` in force for this segment: an ad break may switch it, and each part decodes only against its own.
+    public var initMap: HLSInitMap? = nil
+    /// Preceded by `#EXT-X-DISCONTINUITY`: encoding parameters or timestamps may reset here.
+    public var discontinuity: Bool = false
 }
 
 public enum HLSPlaylist: Sendable {
@@ -79,6 +83,7 @@ enum HLSParser {
         var pendingVariant: (bw: Int, h: Int?, codecs: String?, audio: String?)?
         var pendingDuration: Double?
         var pendingByteRange: HLSByteRange?
+        var pendingDiscontinuity = false
         var lastByteRangeEnd = 0
         var separateAudioGroups: Set<String> = []
 
@@ -100,7 +105,15 @@ enum HLSParser {
             } else if line.hasPrefix("#EXT-X-TARGETDURATION:") {
                 targetDuration = Double(value(of: line)) ?? 0
             } else if line.hasPrefix("#EXT-X-KEY:") {
-                currentKey = parseKey(attributes(after: "#EXT-X-KEY:", in: line), baseURL: baseURL)
+                let attrs = attributes(after: "#EXT-X-KEY:", in: line)
+                // A malformed IV must not fall back to the sequence IV: every segment's first block would decrypt wrong.
+                if HLSKey.Method(playlistValue: attrs["METHOD"] ?? "NONE") != .none,
+                   let raw = attrs["IV"], hexToData(raw)?.count != 16 {
+                    return nil
+                }
+                currentKey = parseKey(attrs, baseURL: baseURL)
+            } else if line == "#EXT-X-DISCONTINUITY" {
+                pendingDiscontinuity = true
             } else if line.hasPrefix("#EXT-X-MAP:") {
                 let attrs = attributes(after: "#EXT-X-MAP:", in: line)
                 // A nil `map` switches the engine to MPEG-TS remux: an unplayable file reported as success.
@@ -148,12 +161,15 @@ enum HLSParser {
                     guard let u = resolve(line, baseURL) else { return nil }
                     segments.append(HLSSegment(url: u, duration: duration,
                                                sequence: seq, key: currentKey,
-                                               byteRange: pendingByteRange))
+                                               byteRange: pendingByteRange,
+                                               initMap: map,
+                                               discontinuity: pendingDiscontinuity))
                     if let br = pendingByteRange, let brEnd = end(of: br) { lastByteRangeEnd = brEnd }
                     // Overflow-safe only because `maxMediaSequence` bounds the start.
                     seq += 1
                     pendingDuration = nil
                     pendingByteRange = nil
+                    pendingDiscontinuity = false
                 }
             }
         }
@@ -170,6 +186,12 @@ enum HLSParser {
         let total = segments.reduce(0) { $0 + $1.duration }
         return .media(segments: segments, map: map,
                       targetDuration: targetDuration, totalDuration: total)
+    }
+
+    /// One file has one init header: a stream that switches maps (typically at a discontinuity) can't be
+    /// concatenated without decoding part of it against the wrong one.
+    static func usesSingleInitMap(_ segments: [HLSSegment]) -> Bool {
+        Set(segments.compactMap(\.initMap)).count <= 1
     }
 
     static func selectVariant(_ variants: [HLSVariant], maxHeight: Int? = nil) -> HLSVariant? {
