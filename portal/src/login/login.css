@@ -16,3 +16,14 @@ button:disabled{opacity:.6;cursor:progress}button:disabled:hover{background:var(
 .err{background:var(--red-soft);color:var(--red);font-size:12.5px;border-radius:9px;padding:9px 11px;margin-bottom:14px;text-align:center}
 .foot{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);text-align:center;font-size:11.5px;color:var(--text-faint);line-height:1.6}
 .warn{color:var(--orange)}
+.pw{position:relative}
+.pw input{padding-right:46px}
+.pw input::-ms-reveal{display:none}
+button.eye{position:absolute;top:4px;right:4px;width:34px;height:34px;margin:0;padding:0;display:grid;place-items:center;border-radius:8px;background:transparent;color:var(--text-dim)}
+button.eye:hover{background:var(--bg-input);color:var(--text)}
+.eye svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.eye .i-hide,.eye[aria-pressed="true"] .i-show{display:none}
+.eye[aria-pressed="true"] .i-hide{display:block}
+.caps{margin-top:6px;font-size:12px;color:var(--orange)}
+.secure{color:var(--green)}
+[hidden]{display:none!important}

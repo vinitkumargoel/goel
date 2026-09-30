@@ -28,11 +28,12 @@ public actor RemoteControlServer {
 
     /// Capped overall and per peer so idle clients can't exhaust descriptors; the identifier map makes teardown exactly-once, since a double release erodes the cap.
     private let gate = RemoteConnectionGate()
+    private let uploadSlots = RemoteUploadSlots()
     private var liveConnections: [ObjectIdentifier: String] = [:]
     /// Absolute deadline for the whole request, not an idle timer: trickling a byte a second must not keep a slot.
     private static let receiveTimeout: UInt64 = 10 * 1_000_000_000
-    /// Ceiling on one request (headers + body) so a client can't grow the accumulation buffer without bound.
-    private static let maxRequestBytes = 2 * 1024 * 1024
+    /// A torrent upload may take longer than `receiveTimeout`; still an absolute deadline, from its headers.
+    private static let uploadReceiveTimeout: UInt64 = 120 * 1_000_000_000
 
     /// Capped separately: each stream holds its slot for its whole lifetime, unlike one-shot requests.
     private var sseConnections = 0
@@ -252,15 +253,19 @@ public actor RemoteControlServer {
             return
         }
         liveConnections[ObjectIdentifier(connection)] = client
-        let timeout = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.receiveTimeout)
+        let timeout = armDeadline(connection, nanoseconds: Self.receiveTimeout)
+        connection.start(queue: DispatchQueue(label: "goel.remote-conn"))
+        readRequest(connection, buffer: Data(), timeout: timeout, client: client)
+    }
+
+    private nonisolated func armDeadline(_ connection: NWConnection, nanoseconds: UInt64) -> Task<Void, Never> {
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
             if !Task.isCancelled {
                 connection.cancel()
                 await self?.connectionClosed(connection)
             }
         }
-        connection.start(queue: DispatchQueue(label: "goel.remote-conn"))
-        readRequest(connection, buffer: Data(), timeout: timeout, client: client)
     }
 
     /// The socket's own peer IP — the only address auth trusts, since unlike `X-Forwarded-For` a client can't choose it.
@@ -276,7 +281,8 @@ public actor RemoteControlServer {
 
     /// Read until a COMPLETE request arrives: a single `receive` sees a POST body in a later segment as truncated → 400.
     private nonisolated func readRequest(_ connection: NWConnection, buffer: Data,
-                                         timeout: Task<Void, Never>, client: String) {
+                                         timeout: Task<Void, Never>, client: String,
+                                         extended: Bool = false) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] chunk, _, isComplete, error in
             guard let self else { return }
             var buffer = buffer
@@ -287,8 +293,7 @@ public actor RemoteControlServer {
                 connection.cancel()
                 Task { await self.connectionClosed(connection) }
             }
-            if error != nil || buffer.count > Self.maxRequestBytes
-                || RemoteRequest.headerTooLarge(buffer) { return abort() }
+            if error != nil || RemoteRequest.exceedsLimit(buffer) { return abort() }
             guard let bodyStart = RemoteRequest.headerEnd(buffer) else {
                 if isComplete { return abort() }
                 return self.readRequest(connection, buffer: buffer, timeout: timeout, client: client)
@@ -296,7 +301,16 @@ public actor RemoteControlServer {
             let needBody = RemoteRequest.contentLength(buffer.prefix(bodyStart))
             if buffer.count - bodyStart < needBody {
                 if isComplete { return abort() }
-                return self.readRequest(connection, buffer: buffer, timeout: timeout, client: client)
+                // Once, when an upload's headers are in: swap the short deadline for the upload one.
+                if !extended, RemoteRequest.isTorrentUpload(header: buffer.prefix(bodyStart)) {
+                    guard self.uploadSlots.tryAcquire(ObjectIdentifier(connection)) else { return abort() }
+                    timeout.cancel()
+                    let longer = self.armDeadline(connection, nanoseconds: Self.uploadReceiveTimeout)
+                    return self.readRequest(connection, buffer: buffer, timeout: longer,
+                                            client: client, extended: true)
+                }
+                return self.readRequest(connection, buffer: buffer, timeout: timeout,
+                                        client: client, extended: extended)
             }
             timeout.cancel()
             let data = buffer
@@ -375,6 +389,7 @@ public actor RemoteControlServer {
     }
 
     private func connectionClosed(_ connection: NWConnection) {
+        uploadSlots.release(ObjectIdentifier(connection))
         guard let client = liveConnections.removeValue(forKey: ObjectIdentifier(connection)) else { return }
         gate.release(client: client)
     }

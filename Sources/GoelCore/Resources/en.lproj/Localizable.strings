@@ -256,6 +256,7 @@
 "Can’t paste “%@” inside itself." = "Can’t paste “%@” inside itself.";
 "Can’t upload into “%@”" = "Can’t upload into “%@”";
 "Capped at %@" = "Capped at %@";
+"Caps Lock is on" = "Caps Lock is on";
 "Capture downloads from your browser, or send links here by hand." = "Capture downloads from your browser, or send links here by hand.";
 "Catch downloads from your browser" = "Catch downloads from your browser";
 "Check Now" = "Check Now";
@@ -1252,6 +1253,7 @@
 "Search settings" = "Search settings";
 "Seconds before a stalled connection drops." = "Seconds before a stalled connection drops.";
 "Seconds to wait between retries." = "Seconds to wait between retries.";
+"Secure connection" = "Secure connection";
 "Seed Until Ratio" = "Seed Until Ratio";
 "Seed indefinitely" = "Seed indefinitely";
 "Seed target" = "Seed target";
@@ -1321,6 +1323,7 @@
 "Show in Finder" = "Show in Finder";
 "Show in menu bar" = "Show in menu bar";
 "Show or hide the Drop Basket" = "Show or hide the Drop Basket";
+"Show password" = "Show password";
 "Show the browser extension folder in Finder" = "Show the browser extension folder in Finder";
 "Show the download folder for %@" = "Show the download folder for %@";
 "Show the remote folder for %@" = "Show the remote folder for %@";

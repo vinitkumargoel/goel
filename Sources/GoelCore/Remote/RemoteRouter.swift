@@ -122,7 +122,7 @@ public struct RemoteRouter: Sendable {
             let folder = payload.folder?.trimmingCharacters(in: .whitespaces)
             // Refuse an unwritable folder rather than quietly saving elsewhere.
             if let folder, !folder.isEmpty, await backend.remoteSaveDirectoryAllowed(folder) == false {
-                return Self.forbidden("That save folder cannot be used — it does not exist, is not a folder, this user has no permission for it, or it is a protected system, hidden or Library folder.")
+                return Self.forbidden(Self.saveFolderRefusal)
             }
             let priority = Self.priority(payload.priority)
             let paused = payload.paused ?? false
@@ -197,6 +197,15 @@ public struct RemoteRouter: Sendable {
                                             adapterIds: payload.adapters,
                                             streams: payload.streams)
             return Self.json(await backend.networkState())
+
+        case ("GET", "/api/bandwidth"):
+            return await Self.getBandwidth(backend)
+
+        case ("POST", "/api/bandwidth"):
+            return await Self.postBandwidth(request, backend: backend)
+
+        case ("POST", RemoteTorrentUpload.path):
+            return await Self.addTorrents(request, backend: backend)
 
         case ("POST", "/api/history-remove"):
             guard let id = queryID(request) else { return Self.badRequest() }
