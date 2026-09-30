@@ -105,6 +105,7 @@ actor FTPEngine: DownloadEngine {
             return
         }
         emit(id, .statusChanged(.downloading))
+        tasks[id]?.status = .downloading
 
         let credential = credentials(for: url)
         if let credential, !credential.requireTLS {
@@ -167,9 +168,11 @@ actor FTPEngine: DownloadEngine {
         }
 
         let written = resumeFrom + context.bytesWritten
-        await RemoteTransferPrep.finishWithOptionalChecksum(
+        let finished = await RemoteTransferPrep.finishWithOptionalChecksum(
             hub: hub, id: id, name: task.name, fileURL: fileURL,
             written: written, expected: task.expectedChecksum)
+        // Removal trashes only a finished file; a partial is unlinked.
+        if finished { tasks[id]?.status = .completed }
     }
 
     /// Keychain logins ride TLS only — they fail rather than leak on a downgrade. So do inline ones on

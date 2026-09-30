@@ -52,6 +52,8 @@ enum RemoteTransferPrep {
         return Opened(handle: handle, resumeFrom: resumeFrom, fileURL: fileURL)
     }
 
+    /// True when it reported completion — the caller then owns a finished file, not a partial.
+    @discardableResult
     static func finishWithOptionalChecksum(
         hub: EventHub,
         id: UUID,
@@ -59,7 +61,7 @@ enum RemoteTransferPrep {
         fileURL: URL,
         written: Int64,
         expected: Checksum?
-    ) async {
+    ) async -> Bool {
         hub.emit(id, .metadataResolved(name: name, totalBytes: written,
                                        files: [TransferFile(id: 0, path: name, length: written)]))
         hub.emit(id, .progress(bytesDownloaded: written, bytesUploaded: 0,
@@ -71,19 +73,20 @@ enum RemoteTransferPrep {
             do {
                 matches = try await ChecksumVerifier.verify(fileAt: fileURL, expected: expected)
             } catch is CancellationError {
-                return   // paused/removed mid-verify; the manager owns the state
+                return false   // paused/removed mid-verify; the manager owns the state
             } catch {
                 hub.fail(id, DownloadError.unknown(
                     "Couldn’t verify “\(name)”: \(error.localizedDescription)"))
-                return
+                return false
             }
-            if Task.isCancelled { return }
+            if Task.isCancelled { return false }
             guard matches else {
                 hub.fail(id, DownloadError.checksumMismatch)
-                return
+                return false
             }
         }
         hub.complete(id)
+        return true
     }
 
     /// Setup failures keep their cause: "couldn't create the folder" for ENOSPC or EACCES sends users the wrong way.
@@ -122,10 +125,16 @@ enum RemoteTransferPrep {
 
     /// "Remove and delete file" for every engine. The row goes either way — but a delete that fails
     /// (read-only share, file held open by a scanner) must not read as success, or the user is told the
-    /// bytes are gone while they still fill the disk.
+    /// bytes are gone while they still fill the disk. Only a finished file goes to the Trash: an
+    /// in-progress partial is scratch, and trashing it just fills the Trash with torn files.
     static func removeSavedFile(hub: EventHub, id: UUID, task: DownloadTask) {
+        let url = URL(fileURLWithPath: task.savePath)
         do {
-            try trashOrDelete(URL(fileURLWithPath: task.savePath))
+            if task.status == .completed {
+                try trashOrDelete(url)
+            } else {
+                try FileManager.default.removeItem(at: url)
+            }
         } catch {
             // Only a file that survives the attempt is a real failure: a task removed before it ever wrote
             // has nothing to delete, and reporting that would cry wolf on every queued row.
