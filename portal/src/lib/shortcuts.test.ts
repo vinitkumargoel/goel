@@ -62,4 +62,15 @@ describe('resolveShortcut', () => {
     const row = el('<div role="option" tabindex="0"></div>')
     expect(resolveShortcut({ key: 'Delete', target: row })).toBe('remove')
   })
+
+  it('leaves every key to an open menu', () => {
+    for (const role of ['menuitem', 'menuitemcheckbox', 'menuitemradio']) {
+      const item = el(`<button role="${role}">Pause</button>`)
+      for (const key of ['n', 'j', '/', ' ', 'Delete']) {
+        expect(resolveShortcut({ key, target: item })).toBeNull()
+      }
+    }
+    const inside = el('<div role="menu"><span tabindex="-1">x</span></div>').firstElementChild!
+    expect(resolveShortcut({ key: 'n', target: inside })).toBeNull()
+  })
 })

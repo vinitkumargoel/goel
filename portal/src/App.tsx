@@ -211,7 +211,8 @@ export function App() {
   const modalOpen = addOpen || confirmReq != null || helpOpen
 
   useAppKeys({
-    enabled: !modalOpen,
+    // An open menu owns the keyboard like a modal does: N or Delete must not act behind it.
+    enabled: !modalOpen && menu == null,
     onEscape: () => {
       setMenu(null)
       closeAdd()

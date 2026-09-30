@@ -63,11 +63,16 @@ function ownsActivationKeys(el: Element | null): boolean {
   return el == null || el === document.body || el.getAttribute('role') === 'option'
 }
 
+/** A menu's items take letters for type-ahead and Space/Enter to activate; none of it is ours. */
+function isInMenu(el: Element): boolean {
+  return (el.getAttribute('role') ?? '').startsWith('menuitem') || el.closest('[role="menu"]') != null
+}
+
 /** Which shortcut a keydown is, or null when it belongs to someone else. */
 export function resolveShortcut(e: KeyLike): ShortcutId | null {
   if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return null
   const target = e.target instanceof Element ? e.target : null
-  if (target && isTextEntry(target)) return null
+  if (target && (isTextEntry(target) || isInMenu(target))) return null
 
   switch (e.key) {
     case '/':
