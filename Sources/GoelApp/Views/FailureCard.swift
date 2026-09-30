@@ -3,13 +3,25 @@ import AppKit
 import GoelCore
 
 /// What went wrong, why it probably happened, and the next step — instead of a bare red string.
+/// When the error points at a specific fix (a login, a new link, a folder with room, the proxy,
+/// a busy server) that fix is the filled button; Retry stays beside it as the fallback, and the
+/// housekeeping (Copy Details, Show Folder) sits in the "…" menu.
 struct FailureCard: View {
     let task: DownloadTask
     let error: DownloadError
     let vm: AppViewModel
     var compact: Bool = false
 
+    @Environment(\.openSettings) private var openSettings
+    @State private var sheet: RecoverySheetKind?
+
+    private enum RecoverySheetKind: String, Identifiable {
+        case updateLink, cookies, changeFolder
+        var id: String { rawValue }
+    }
+
     private var hint: String? { FailureAdvice.hint(for: error) }
+    private var recovery: FailureAdvice.Recovery? { FailureAdvice.recovery(for: task, error: error) }
 
     var body: some View {
         VStack(alignment: compact ? .leading : .center, spacing: 8) {
@@ -35,20 +47,78 @@ struct FailureCard: View {
             .accessibilityValue(hint ?? "")
 
             HStack(spacing: 6) {
-                cardButton(L10n.t("Retry"), "arrow.clockwise",
-                           spoken: L10n.t("Retry %@", task.name), prominent: true) { vm.retry(task.id) }
-                cardButton(L10n.t("Copy Details"), "doc.on.doc",
-                           spoken: L10n.t("Copy error details for %@", task.name)) {
-                    vm.copyToPasteboard(FailureAdvice.details(for: task, error: error))
+                if let recovery {
+                    recoveryButton(recovery)
+                    cardButton(L10n.t("Retry"), "arrow.clockwise",
+                               spoken: L10n.t("Retry %@ now", task.name)) { vm.retry(task.id) }
+                } else {
+                    cardButton(L10n.t("Retry"), "arrow.clockwise",
+                               spoken: L10n.t("Retry %@", task.name), prominent: true) { vm.retry(task.id) }
                 }
-                cardButton(L10n.t("Show Folder"), "folder",
-                           spoken: L10n.t("Show the download folder for %@", task.name)) { showFolder() }
+                moreMenu
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: compact ? .leading : .center)
         .background(Theme.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.red.opacity(0.25)))
+        .sheet(item: $sheet) { kind in
+            switch kind {
+            case .updateLink: UpdateLinkSheet(task: task, vm: vm)
+            case .cookies: AttachCookiesSheet(task: task, vm: vm)
+            case .changeFolder: ChangeFolderSheet(task: task, vm: vm)
+            }
+        }
+    }
+
+    /// Filled red with the contrast-checked ink: the one action the error itself asks for.
+    private func recoveryButton(_ recovery: FailureAdvice.Recovery) -> some View {
+        Button { perform(recovery) } label: {
+            Label(recovery.title, systemImage: recovery.symbol)
+                .scaledFont(size: 11, weight: .semibold)
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .frame(height: 24)
+                .background(Theme.red, in: RoundedRectangle(cornerRadius: 6))
+                .foregroundStyle(Theme.onRed)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(hint ?? recovery.title)
+        .a11yButton(A11y.sentence(recovery.title, task.name), hint: hint)
+    }
+
+    private func perform(_ recovery: FailureAdvice.Recovery) {
+        switch recovery {
+        case .attachCookies: sheet = .cookies
+        case .updateLink: sheet = .updateLink
+        case .changeFolder: sheet = .changeFolder
+        case .proxySettings:
+            SettingsRoute.shared.request(.network)
+            openSettings()
+        case .retryLater(let delay):
+            vm.retryLater(task, after: delay)
+        }
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            Button(L10n.t("Copy Details")) {
+                vm.copyToPasteboard(FailureAdvice.details(for: task, error: error))
+            }
+            Button(L10n.t("Show Folder")) { showFolder() }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(width: 26, height: 24)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.hairline))
+        .help(L10n.t("More actions"))
+        .accessibilityLabel(L10n.t("More actions for %@", task.name))
     }
 
     /// A failed download often has no file yet, and revealing a missing file is an error toast;
