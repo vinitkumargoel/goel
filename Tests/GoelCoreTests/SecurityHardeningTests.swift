@@ -117,6 +117,20 @@ final class SecurityHardeningTests: XCTestCase {
         XCTAssertNil(out.value(forHTTPHeaderField: "Cookie"))
     }
 
+    func testRedirectKeepsSecretsOnlyForTheSameOrigin() {
+        func keeps(_ from: String, _ to: String) -> Bool {
+            let out = RedirectSanitizer.sanitize(request(to, headers: ["Authorization": "Basic x"]),
+                                                 originalURL: URL(string: from)!)
+            return out.value(forHTTPHeaderField: "Authorization") != nil
+        }
+        XCTAssertFalse(keeps("https://example.com/a", "https://example.com:8443/b"), "port change strips")
+        XCTAssertFalse(keeps("http://example.com:8080/a", "http://example.com/b"), "port change strips")
+        XCTAssertTrue(keeps("https://example.com/a", "https://EXAMPLE.com:443/b"), "explicit default port")
+        XCTAssertTrue(keeps("http://example.com/a", "https://example.com/b"), "default-port upgrade")
+        XCTAssertFalse(keeps("http://example.com:8080/a", "https://example.com:8443/b"))
+        XCTAssertFalse(keeps("https://example.com/a", "http://example.com/b"), "downgrade strips")
+    }
+
     func testPasswordHashIsV2AndVerifies() {
         let hash = RemotePassword.hash("correct horse")
         XCTAssertTrue(hash.hasPrefix("v2$"), "new hashes use PBKDF2 (v2)")

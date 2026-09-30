@@ -13,17 +13,33 @@ public final class RedirectSanitizer: NSObject, URLSessionTaskDelegate, @uncheck
 
     static func sanitize(_ request: URLRequest, originalURL: URL?) -> URLRequest {
         var sanitized = request
-        let originalHost = originalURL?.host?.lowercased()
-        let newHost = request.url?.host?.lowercased()
-        // Only https→http: the new scheme alone would also strip on a same-host http→http hop.
-        let downgradedToHTTP = (originalURL?.scheme?.lowercased() == "https")
-            && (request.url?.scheme?.lowercased() != "https")
-        guard originalHost != newHost || downgradedToHTTP else { return sanitized }
+        guard !keepsSecrets(from: originalURL, to: request.url) else { return sanitized }
         for name in (request.allHTTPHeaderFields ?? [:]).keys
         where !crossHostSafeHeaders.contains(name.lowercased()) {
             sanitized.setValue(nil, forHTTPHeaderField: name)
         }
         return sanitized
+    }
+
+    /// Mirrors `gcb_redirect_keeps_secrets`: same scheme+host+port, or the http→https upgrade on
+    /// default ports. A port change is another server (`:8080` may be anyone's), so it strips.
+    static func keepsSecrets(from origin: URL?, to hop: URL?) -> Bool {
+        guard let a = origin, let b = hop,
+              let schemeA = a.scheme?.lowercased(), let schemeB = b.scheme?.lowercased(),
+              let hostA = a.host?.lowercased(), let hostB = b.host?.lowercased(),
+              hostA == hostB else { return false }
+        let portA = a.port ?? defaultPort(schemeA)
+        let portB = b.port ?? defaultPort(schemeB)
+        if schemeA == schemeB { return portA == portB }
+        return schemeA == "http" && schemeB == "https" && portA == 80 && portB == 443
+    }
+
+    private static func defaultPort(_ scheme: String) -> Int? {
+        switch scheme {
+        case "http": return 80
+        case "https": return 443
+        default: return nil
+        }
     }
 
     /// Nil refuses the hop: an unscreened `Location` can 302 the app into `127.0.0.1`/`169.254.169.254`.

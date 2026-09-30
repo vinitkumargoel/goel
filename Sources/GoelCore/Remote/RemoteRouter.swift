@@ -35,7 +35,9 @@ public struct RemoteRouter: Sendable {
         self.init(backend: backend, config: Config(token: token))
     }
 
-    public func handle(_ request: RemoteRequest, sessionAuthed: Bool = false) async -> Data {
+    /// `fromTrustedProxy`: the kernel peer is a listed proxy, so its `X-Forwarded-Host` may be believed.
+    public func handle(_ request: RemoteRequest, sessionAuthed: Bool = false,
+                       fromTrustedProxy: Bool = false) async -> Data {
         guard authorize(request, sessionAuthed: sessionAuthed) else {
             return Self.response(status: "401 Unauthorized", type: "text/plain",
                                  body: Data("Not signed in. Open / to log in, or send Authorization: Bearer <token>.\n".utf8))
@@ -46,7 +48,7 @@ public struct RemoteRouter: Sendable {
         }
 
         // SameSite=Strict covers sessions, but an open portal authorises everyone — refuse foreign Origins.
-        guard Self.crossSiteWriteAllowed(request) else {
+        guard Self.crossSiteWriteAllowed(request, fromTrustedProxy: fromTrustedProxy) else {
             return Self.forbidden("Cross-site request refused.")
         }
 
@@ -120,7 +122,7 @@ public struct RemoteRouter: Sendable {
             let folder = payload.folder?.trimmingCharacters(in: .whitespaces)
             // Refuse an unwritable folder rather than quietly saving elsewhere.
             if let folder, !folder.isEmpty, await backend.remoteSaveDirectoryAllowed(folder) == false {
-                return Self.forbidden("That save folder cannot be written to — it does not exist, is not a folder, or this user has no permission for it.")
+                return Self.forbidden("That save folder cannot be used — it does not exist, is not a folder, this user has no permission for it, or it is a protected system, hidden or Library folder.")
             }
             let priority = Self.priority(payload.priority)
             let paused = payload.paused ?? false
@@ -223,11 +225,12 @@ public struct RemoteRouter: Sendable {
         return Self.constantTimeEquals(query, config.token)
     }
 
-    /// Absent `Origin` = no browser; foreign = cross-site write. `X-Forwarded-Host` counts (proxies keep `Host`).
-    static func crossSiteWriteAllowed(_ request: RemoteRequest) -> Bool {
+    /// Absent `Origin` = no browser; foreign = cross-site write. `X-Forwarded-Host` counts only from a
+    /// listed proxy peer (proxies keep `Host`) — from anyone else it is attacker-chosen text.
+    static func crossSiteWriteAllowed(_ request: RemoteRequest, fromTrustedProxy: Bool = false) -> Bool {
         guard request.method == "POST", let origin = request.headers["origin"] else { return true }
-        return originMatchesHost(origin, host: request.headers["host"])
-            || originMatchesHost(origin, host: request.headers["x-forwarded-host"])
+        if originMatchesHost(origin, host: request.headers["host"]) { return true }
+        return fromTrustedProxy && originMatchesHost(origin, host: request.headers["x-forwarded-host"])
     }
 
     /// Scheme is deliberately ignored: `Host` carries none and the socket speaks only one scheme.

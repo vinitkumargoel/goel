@@ -204,6 +204,68 @@ final class SaveFolderBrowserTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: under(readOnly, "ISOs")))
     }
 
+    // MARK: protected destinations (security#1)
+
+    func testSystemHiddenAndLibraryFoldersAreProtected() throws {
+        let home = under(base, "home")
+        try mkdir(under(home, "Library/LaunchAgents"))
+        try mkdir(under(home, ".ssh"))
+        try mkdir(under(home, "Movies"))
+        for path in ["/", "/etc", "/private/etc", "/usr/local/bin", "/bin", "/sbin", "/System",
+                     "/Library/LaunchDaemons", "/var/root", "/private/var/db", "/opt", "/Applications",
+                     "/dev", "/boot", "/proc", "/sys", "/root",
+                     under(home, "Library"), under(home, "Library/LaunchAgents"), under(home, ".ssh"),
+                     under(home, ".config/autostart"), "/Volumes/Data/.hidden"] {
+            XCTAssertTrue(SaveFolderBrowser.isProtected(path, home: home, defaultFolder: downloads), path)
+        }
+        for path in [under(home, "Movies"), home, downloads, sibling, "/tmp", "/Volumes/Data",
+                     "/mnt/nas", "/srv/media", "/home/alice/Downloads"] {
+            XCTAssertFalse(SaveFolderBrowser.isProtected(path, home: home, defaultFolder: downloads), path)
+        }
+    }
+
+    func testASymlinkCannotLaunderAProtectedDestination() throws {
+        let home = under(base, "home")
+        try mkdir(under(home, "Library/LaunchAgents"))
+        let link = under(downloads, "innocent")
+        try FileManager.default.createSymbolicLink(atPath: link,
+                                                   withDestinationPath: under(home, "Library/LaunchAgents"))
+        XCTAssertTrue(SaveFolderBrowser.isProtected(link, home: home, defaultFolder: downloads))
+        XCTAssertFalse(SaveFolderBrowser.canSave(into: link, defaultFolder: downloads, home: home))
+        let dotted = under(downloads, "../elsewhere/.config")
+        try mkdir(dotted)
+        XCTAssertFalse(SaveFolderBrowser.canSave(into: dotted, defaultFolder: downloads, home: home))
+    }
+
+    func testAProtectedRootIsFineWhenItIsTheOperatorsDefaultOrHome() {
+        // A Linux daemon's home and download folder commonly live in /var/lib.
+        XCTAssertFalse(SaveFolderBrowser.isProtected(
+            "/var/lib/goel/downloads/iso", home: "/var/lib/goel", defaultFolder: "/var/lib/goel/downloads"))
+        XCTAssertTrue(SaveFolderBrowser.isProtected(
+            "/var/lib/goel/.config", home: "/var/lib/goel", defaultFolder: "/var/lib/goel/downloads"))
+        XCTAssertTrue(SaveFolderBrowser.isProtected(
+            "/var/lib/other", home: "/var/lib/goel", defaultFolder: "/var/lib/goel/downloads"))
+        XCTAssertFalse(SaveFolderBrowser.isProtected(
+            "/home/u/.local/share/goel/x", home: "/home/u", defaultFolder: "/home/u/.local/share/goel"),
+            "the default folder's own dotted spelling is the operator's choice")
+    }
+
+    func testListingHidesAndRefusesProtectedFolders() throws {
+        let home = under(base, "home")
+        try mkdir(under(home, "Library"))
+        try mkdir(under(home, "Movies"))
+        let listed = try XCTUnwrap(SaveFolderBrowser.listing(of: home, defaultFolder: downloads, home: home))
+        XCTAssertEqual(listed.folders.map(\.name), ["Movies"])
+        XCTAssertNil(SaveFolderBrowser.listing(of: under(home, "Library"), defaultFolder: downloads, home: home))
+        XCTAssertNil(SaveFolderBrowser.create(named: "LaunchAgents", in: under(home, "Library"),
+                                              defaultFolder: downloads, home: home))
+        let root = try XCTUnwrap(SaveFolderBrowser.listing(of: "/", defaultFolder: downloads, home: home))
+        XCTAssertFalse(root.writable)
+        for hidden in ["etc", "usr", "bin", "sbin"] {
+            XCTAssertFalse(root.folders.map(\.name).contains(hidden), hidden)
+        }
+    }
+
     func testPlainFolderNamesAreAccepted() {
         for name in ["ISOs", "Linux Distros", "2024-releases", "naïve", "a.b"] {
             XCTAssertTrue(RemoteRouter.isPlainFolderName(name), name)

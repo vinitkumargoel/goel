@@ -192,9 +192,21 @@ final class PortalTests: XCTestCase {
         let router = RemoteRouter(backend: backend, config: config)
         let out = str(await router.handle(request(
             "POST /api/pause-all HTTP/1.1\r\nHost: 127.0.0.1:8899\r\n"
-            + "X-Forwarded-Host: goel.example.com\r\nOrigin: https://goel.example.com\r\n\r\n")))
+            + "X-Forwarded-Host: goel.example.com\r\nOrigin: https://goel.example.com\r\n\r\n"),
+            fromTrustedProxy: true))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
         XCTAssertTrue(backend.pausedAll)
+    }
+
+    func testForwardedHostFromAnUnlistedPeerIsIgnored() async {
+        let backend = FakeRemoteBackend()
+        let config = RemoteRouter.Config(token: "", requireAuth: false)
+        let router = RemoteRouter(backend: backend, config: config)
+        let out = str(await router.handle(request(
+            "POST /api/pause-all HTTP/1.1\r\nHost: 127.0.0.1:8899\r\n"
+            + "X-Forwarded-Host: evil.test\r\nOrigin: https://evil.test\r\n\r\n")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 403"), out)
+        XCTAssertFalse(backend.pausedAll, "a self-asserted X-Forwarded-Host must not satisfy the Origin check")
     }
 
     func testOriginMatchingIgnoresSchemeButNotPort() {

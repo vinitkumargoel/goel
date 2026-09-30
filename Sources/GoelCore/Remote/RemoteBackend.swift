@@ -148,8 +148,9 @@ extension DownloadManager: RemoteBackend {
     }
 
     public func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool {
-        await Task.detached(priority: .userInitiated) {
-            SaveFolderBrowser.canSave(into: folder)
+        let defaultFolder = settings.defaultSaveDirectory
+        return await Task.detached(priority: .userInitiated) {
+            SaveFolderBrowser.canSave(into: folder, defaultFolder: defaultFolder)
         }.value
     }
 
@@ -169,7 +170,8 @@ extension DownloadManager: RemoteBackend {
     public func createFolder(named name: String, in parent: String?) async -> String? {
         let defaultFolder = settings.defaultSaveDirectory
         return await Task.detached(priority: .userInitiated) {
-            SaveFolderBrowser.create(named: name, in: parent, defaultFolder: defaultFolder)
+            SaveFolderBrowser.create(named: name, in: parent, defaultFolder: defaultFolder,
+                                     home: NSHomeDirectory())
         }.value
     }
 
@@ -202,12 +204,14 @@ extension DownloadManager: RemoteBackend {
         await updateSettings(updated)
     }
 
-    /// The check is the filesystem's, not a root of ours — a real widening of what a remote add may write.
+    /// The filesystem decides, minus ``SaveFolderBrowser/isProtected(_:home:defaultFolder:)`` locations.
     func remoteSaveDirectory(_ folder: String?) -> String? {
         guard let folder = folder?.trimmingCharacters(in: .whitespacesAndNewlines),
               !folder.isEmpty else { return nil }
-        if SaveFolderBrowser.canSave(into: folder) { return folder }
-        GoelLog.remote.error("Remote add: save folder is not writable; using default",
+        if SaveFolderBrowser.canSave(into: folder, defaultFolder: settings.defaultSaveDirectory) {
+            return folder
+        }
+        GoelLog.remote.error("Remote add: save folder is not writable or is protected; using default",
                              .path(folder))
         return nil
     }

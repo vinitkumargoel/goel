@@ -142,7 +142,7 @@ public actor RemoteControlServer {
     func dispatch(requestData: Data, sink: ChannelSink, client: String) async {
         let request = RemoteRequest(raw: requestData)
         // Every route, streams included: a rebound name must not reach even the login page.
-        guard RemoteHostPolicy.allows(hostHeader: request.headers["host"], client: client,
+        guard RemoteHostPolicy.allows(headers: request.headers, client: client,
                                       security: security) else {
             _ = await sink.send(RemoteAuthService.misdirected())
             sink.close()
@@ -209,7 +209,8 @@ public actor RemoteControlServer {
             return Self.htmlResponse(RemoteRouter.loginPage(theme: cfg.theme, error: nil))
         case ("POST", "/login"):
             // CSRF: without this a foreign page can force-log-in a victim.
-            guard RemoteRouter.crossSiteWriteAllowed(request) else {
+            guard RemoteRouter.crossSiteWriteAllowed(
+                request, fromTrustedProxy: IPMatcher.matches(client, any: security.sso.trustedProxies)) else {
                 return RemoteRouter.forbidden("Cross-site request refused.")
             }
             return await handleLogin(request, client: client)
@@ -236,7 +237,9 @@ public actor RemoteControlServer {
                request.method == "GET", !request.path.hasPrefix("/api") {
                 return Self.redirect(to: "/login")
             }
-            return await router.handle(request, sessionAuthed: authed)
+            return await router.handle(
+                request, sessionAuthed: authed,
+                fromTrustedProxy: IPMatcher.matches(client, any: security.sso.trustedProxies))
         }
     }
 
