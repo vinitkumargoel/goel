@@ -34,6 +34,7 @@ typedef struct GCBHTTPResult {
     int64_t bytes_written;
     int range_total_mismatch;
     int range_ignored;           /* server answered a ranged GET with 200; aborted before any body write */
+    int range_mismatch;          /* 206 did not start at the requested offset; nothing was written */
     char etag[256];
     char last_modified[128];
 } GCBHTTPResult;
@@ -47,6 +48,7 @@ GCBHTTPResult gcb_http_range(const char *url,
                              const char *referer,
                              const char *authorization,
                              const char *extra_headers,
+                             const char *if_range,     /* sent only with a Range; NULL = none */
                              long connect_timeout_sec,
                              long long max_recv_bps,
                              long long expected_total,
@@ -56,6 +58,13 @@ GCBHTTPResult gcb_http_range(const char *url,
 
 // Returns 1 on success; skips userinfo so `user@host` cannot spoof the host callers screen on.
 int gcb_extract_host(const char *url, char *out, size_t out_sz);
+
+// RFC 3986 resolution of a Location against its request URL; caller frees with gcb_free. NULL on failure.
+char *gcb_resolve_location(const char *base, const char *loc);
+void gcb_free(void *p);
+
+// 1 when a redirect hop may carry the origin's secrets: same host, scheme and port (or an http→https upgrade).
+int gcb_redirect_keeps_secrets(const char *origin_url, const char *hop_url);
 
 #ifdef __cplusplus
 }

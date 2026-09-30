@@ -15,6 +15,8 @@ enum BoundHTTPClient {
         var connectTimeout: Double
         /// When > 0, CurlBridge aborts before writing a body whose Content-Range total differs.
         var expectedTotal: Int64?
+        /// Strong validator: a changed entity then answers 200, never a 206 spliced from another version.
+        var ifRange: String? = nil
     }
 
     struct Response: Sendable {
@@ -28,6 +30,10 @@ enum BoundHTTPClient {
         var rangeIgnored: Bool = false
         var etag: String? = nil
         var lastModified: String? = nil
+        /// The 206 started somewhere other than `rangeStart`; C refused the body.
+        var rangeMismatch: Bool = false
+        /// A LOCAL write failed: the NIC is healthy, so this must never demote it or be retried as network.
+        var writeFailure: DownloadError? = nil
     }
 
     /// `@unchecked Sendable`: body writes run on the curl thread, `abort` may flip from any thread.
@@ -38,6 +44,7 @@ enum BoundHTTPClient {
         let shouldAbort: (@Sendable () -> Bool)?
         private let lock = NSLock()
         private var _aborted = false
+        private var _writeFailure: DownloadError?
         /// Coalesce RateLimiter hops — Task-per-write thrashes under multi-path.
         private var pendingPace = 0
         private static let paceBatch = 64 * 1024
@@ -60,21 +67,35 @@ enum BoundHTTPClient {
             lock.lock(); _aborted = true; lock.unlock()
         }
 
+        var writeFailure: DownloadError? {
+            lock.lock(); defer { lock.unlock() }
+            return _writeFailure
+        }
+
+        func recordWriteFailure(_ error: Error) {
+            let mapped = SegmentedTransfer.diskFullError(error)
+                ?? DownloadError.unknown("Couldn't write to disk: \((error as NSError).localizedDescription)")
+            lock.lock(); _writeFailure = mapped; lock.unlock()
+        }
+
         func paceIfNeeded(_ size: Int, force: Bool = false) {
-            guard limiter != nil else { return }
+            guard let limiter, !limiter.isEffectivelyUnlimited else { return }
             lock.lock()
             pendingPace += size
             let n = pendingPace
             let fire = force ? n > 0 : n >= Self.paceBatch
             if fire { pendingPace = 0 }
             lock.unlock()
-            guard fire, let limiter, n > 0 else { return }
+            guard fire, n > 0 else { return }
             let sem = DispatchSemaphore(value: 0)
-            Task {
+            let paceTask = Task {
                 await limiter.pace(n)
                 sem.signal()
             }
-            _ = sem.wait(timeout: .now() + 60)
+            // Poll, don't cap: a hard timeout let curl outrun the limit, and a long wait blocked pause/remove.
+            while sem.wait(timeout: .now() + 0.2) == .timedOut {
+                if aborted { paceTask.cancel(); return }
+            }
         }
     }
 
@@ -119,7 +140,9 @@ enum BoundHTTPClient {
         let context = contextBox.toOpaque()
         defer { contextBox.release() }
 
+        // The C side splits on "\n", so a CR/LF inside a value would smuggle in a header of its own.
         let extra = request.extraHeaders
+            .filter { SegmentedTransfer.isSafeHeader(name: $0.key, value: $0.value) }
             .sorted { $0.key < $1.key }
             .map { "\($0.key): \($0.value)" }
             .joined(separator: "\n")
@@ -130,6 +153,7 @@ enum BoundHTTPClient {
         let ua = request.userAgent
         let ref = request.referer ?? ""
         let auth = request.authorization ?? ""
+        let ifRange = request.ifRange ?? ""
 
         let expected = request.expectedTotal ?? 0
         let ctx = contextBox.takeUnretainedValue()
@@ -139,22 +163,25 @@ enum BoundHTTPClient {
                     ref.withCString { refC in
                         auth.withCString { authC in
                             extra.withCString { extraC in
-                                gcb_http_range(
-                                    urlC,
-                                    request.rangeStart,
-                                    request.rangeEnd,
-                                    ifname.isEmpty ? nil : ifC,
-                                    uaC,
-                                    ref.isEmpty ? nil : refC,
-                                    auth.isEmpty ? nil : authC,
-                                    extra.isEmpty ? nil : extraC,
-                                    timeout,
-                                    0,
-                                    expected,
-                                    boundWriteThunk,
-                                    boundProgressThunk,
-                                    context
-                                )
+                                ifRange.withCString { ifRangeC in
+                                    gcb_http_range(
+                                        urlC,
+                                        request.rangeStart,
+                                        request.rangeEnd,
+                                        ifname.isEmpty ? nil : ifC,
+                                        uaC,
+                                        ref.isEmpty ? nil : refC,
+                                        auth.isEmpty ? nil : authC,
+                                        extra.isEmpty ? nil : extraC,
+                                        ifRange.isEmpty ? nil : ifRangeC,
+                                        timeout,
+                                        0,
+                                        expected,
+                                        boundWriteThunk,
+                                        boundProgressThunk,
+                                        context
+                                    )
+                                }
                             }
                         }
                     }
@@ -174,7 +201,9 @@ enum BoundHTTPClient {
             rangeTotalMismatch: raw.range_total_mismatch != 0,
             rangeIgnored: raw.range_ignored != 0,
             etag: Self.cString(raw.etag),
-            lastModified: Self.cString(raw.last_modified)
+            lastModified: Self.cString(raw.last_modified),
+            rangeMismatch: raw.range_mismatch != 0,
+            writeFailure: ctx.writeFailure
         )
     }
 
@@ -198,6 +227,7 @@ private func boundWriteThunk(_ data: UnsafePointer<CChar>?, _ size: Int, _ userd
         ctx.paceIfNeeded(size)
         return size
     } catch {
+        ctx.recordWriteFailure(error)
         return 0
     }
 }
