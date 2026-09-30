@@ -51,7 +51,10 @@ public enum TaskListQuery: Sendable {
     ) -> Bool {
         let result: Bool
         switch key {
-        case .index, .added:
+        case .index:
+            // "#" is the queue order the scheduler starts rows in, not when they were added.
+            result = QueueOrder.precedes(a, b)
+        case .added:
             result = a.addedAt < b.addedAt
         case .name:
             result = a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
@@ -76,15 +79,55 @@ public enum TaskListQuery: Sendable {
         extraMatch: ((DownloadTask) -> Bool)? = nil
     ) -> [DownloadTask] {
         var list = tasks.filter { matches($0, filter: filter) && (extraMatch?($0) ?? true) }
-        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
-        if !q.isEmpty {
-            list = list.filter { task in
-                task.name.lowercased().contains(q)
-                    || task.allTags.contains { $0.lowercased().contains(q) }
-                    || (task.note?.lowercased().contains(q) ?? false)
-            }
+        let query = Search(search)
+        if !query.isEmpty {
+            list = list.filter(query.matches)
         }
         return list.sorted { compare($0, $1, key: sortKey, ascending: ascending) }
+    }
+
+    /// The search field's text, parsed. `host:example` tokens narrow to a source host (every one
+    /// must match); whatever else is typed is matched as one phrase against the name, tags, label,
+    /// note, source host and source URL, so a pasted link finds its row.
+    public struct Search: Sendable, Equatable {
+        public let hosts: [String]
+        public let text: String
+
+        public init(_ raw: String) {
+            var hosts: [String] = []
+            var words: [Substring] = []
+            var tookToken = false
+            for word in raw.split(whereSeparator: \.isWhitespace) {
+                let lower = word.lowercased()
+                guard lower.hasPrefix("host:") else { words.append(word); continue }
+                tookToken = true
+                let host = lower.dropFirst("host:".count)
+                // A bare "host:" while still typing narrows nothing rather than everything.
+                if !host.isEmpty { hosts.append(String(host)) }
+            }
+            self.hosts = hosts
+            // Rebuilt from the words only when a token was taken out, so a plain search keeps
+            // its exact inner spacing.
+            let phrase = tookToken ? words.joined(separator: " ") : raw.trimmingCharacters(in: .whitespaces)
+            self.text = phrase.lowercased()
+        }
+
+        public var isEmpty: Bool { hosts.isEmpty && text.isEmpty }
+
+        public func matches(_ task: DownloadTask) -> Bool {
+            if !hosts.isEmpty {
+                guard let host = task.sourceHost,
+                      hosts.allSatisfy({ host.contains($0) }) else { return false }
+            }
+            guard !text.isEmpty else { return true }
+            let q = text
+            return task.name.lowercased().contains(q)
+                || task.allTags.contains { $0.lowercased().contains(q) }
+                || (task.label?.lowercased().contains(q) ?? false)
+                || (task.note?.lowercased().contains(q) ?? false)
+                || (task.sourceHost?.contains(q) ?? false)
+                || task.source.locator.lowercased().contains(q)
+        }
     }
 
     public static func count(tasks: [DownloadTask], filter: Filter) -> Int {
