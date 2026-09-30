@@ -335,7 +335,7 @@ final class CoreReviewFixesTests: XCTestCase {
 
     func testAnExistingLoginIsKeptUnlessReplacing() async {
         let store = FakeCredentialStore()
-        store.setCredential(username: "old", password: "1", host: "e.test")
+        _ = store.setCredential(username: "old", password: "1", host: "e.test")
         let m = manager(credentials: store)
         await m.adoptInlineCredentials("https://new:2@e.test/a")
         XCTAssertEqual(store.credential(forHost: "e.test")?.username, "old")
