@@ -31,6 +31,7 @@ extension RemoteRouter {
         let credentials = htmlEscape(L10n.t("Wrong username or password"))
         let offline = htmlEscape(L10n.t("Could not reach the server"))
         let busy = htmlEscape(L10n.t("Signing in…"))
+        let showPassword = htmlEscape(L10n.t("Show password"))
         return #"""
         <!doctype html><html lang="\#(L10n.languageCode(for: L10n.currentLanguage))" data-theme="\#(themeAttr)"><head>
         <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -44,9 +45,10 @@ extension RemoteRouter {
           <div class="brand"><span class="mk">\#(logoSVG)</span><h1>Goel° Web</h1><div class="sub">\#(htmlEscape(L10n.t("Sign in to control your downloads")))</div></div>
           \#(errHTML)
           <div class="fld"><label for="u">\#(htmlEscape(L10n.t("Username")))</label><input id="u" name="username" autocomplete="username" required autofocus></div>
-          <div class="fld"><label for="p">\#(htmlEscape(L10n.t("Password")))</label><input id="p" name="password" type="password" autocomplete="current-password" required></div>
-          <button type="submit">\#(htmlEscape(L10n.t("Sign in")))</button>
-          <div class="foot">\#(htmlEscape(L10n.t("Goel° download manager")))<br><span class="warn">⚠</span> \#(htmlEscape(L10n.t("Plain HTTP — use only on a trusted network or behind TLS.")))</div>
+          <div class="fld"><label for="p">\#(htmlEscape(L10n.t("Password")))</label><div class="pw"><input id="p" name="password" type="password" autocomplete="current-password" required><button type="button" class="eye" id="eye" aria-controls="p" aria-pressed="false" aria-label="\#(showPassword)" title="\#(showPassword)">\#(eyeSVG)</button></div>
+          <div class="caps" id="caps" role="status" aria-live="polite" hidden>\#(htmlEscape(L10n.t("Caps Lock is on")))</div></div>
+          <button type="submit" id="submit">\#(htmlEscape(L10n.t("Sign in")))</button>
+          <div class="foot">\#(htmlEscape(L10n.t("Goel° download manager")))<br><span id="plain"><span class="warn">⚠</span> \#(htmlEscape(L10n.t("Plain HTTP — use only on a trusted network or behind TLS.")))</span><span id="secure" class="secure" hidden>🔒 \#(htmlEscape(L10n.t("Secure connection")))</span></div>
         </form>
         <script src="\#(PortalBundle.loginJSPath)"></script>
         </body></html>
@@ -73,6 +75,9 @@ extension RemoteRouter {
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
     }
+
+    /// Both glyphs ship; CSS picks one from `aria-pressed`, so the script only flips state.
+    static let eyeSVG = ##"<svg class="i-show" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="i-hide" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.9 5.2A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.9M6.6 6.6C3.9 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>"##
 
     static let logoSVG = ##"<svg viewBox="0 0 48 48"><defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5db4f5"/><stop offset="1" stop-color="#2f83e6"/></linearGradient></defs><rect width="48" height="48" rx="10.8" fill="url(#lg)"/><g stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="24" cy="21" r="8.5"/><path d="M32.5 12.5 L32.5 32 Q32.5 36 27 36"/></g><circle cx="38.2" cy="11" r="3.1" fill="#fff"/></svg>"##
 

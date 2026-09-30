@@ -20,9 +20,50 @@
     password.select()
   }
 
+  // Only plain HTTP earns the warning; https (directly or via a TLS proxy) shows the lock instead.
+  const plain = document.getElementById('plain')
+  const secure = document.getElementById('secure')
+  if (plain && secure && location.protocol !== 'http:') {
+    plain.hidden = true
+    secure.hidden = false
+  }
+
+  // Show/hide password. A constant label plus aria-pressed is the toggle-button pattern: the
+  // state is announced, not a changing name. Mouse presses must not pull focus out of the field.
+  const eye = document.getElementById('eye')
+  if (eye && password) {
+    eye.addEventListener('mousedown', (e) => e.preventDefault())
+    eye.addEventListener('click', () => {
+      const reveal = password.type === 'password'
+      const start = password.selectionStart
+      const end = password.selectionEnd
+      password.type = reveal ? 'text' : 'password'
+      eye.setAttribute('aria-pressed', reveal ? 'true' : 'false')
+      // Keyboard users keep focus on the toggle; a pointer click never left the field.
+      if (document.activeElement === password && start !== null && end !== null) {
+        password.setSelectionRange(start, end)
+      }
+    })
+  }
+
+  // Caps Lock: only knowable from a key event, so it is checked on every key in either field.
+  const caps = document.getElementById('caps')
+  if (caps && password) {
+    const check = (e) => {
+      if (typeof e.getModifierState !== 'function') return
+      caps.hidden = !e.getModifierState('CapsLock')
+    }
+    password.addEventListener('keydown', check)
+    password.addEventListener('keyup', check)
+    password.addEventListener('blur', () => {
+      caps.hidden = true
+    })
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault()
-    const button = form.querySelector('button')
+    // Not the first <button>: the password field's eye toggle comes before it.
+    const button = form.querySelector('button[type="submit"]')
     const idle = button.textContent
     button.disabled = true
     button.textContent = msg('msgBusy', 'Signing in…')
