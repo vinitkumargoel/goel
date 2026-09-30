@@ -138,15 +138,24 @@ Things that will be declined regardless of how well they are written:
 
 ## Development setup
 
-macOS 14+ with a Swift 6 toolchain. Homebrew is needed **only to build** — the shipped
-`.app` is self-contained.
+macOS 14+ with a Swift 6 toolchain and the macOS 15 SDK or newer. The shipped `.app` is
+self-contained; the native libraries (libtorrent, OpenSSL, libssh2, Boost) are needed only
+to build.
 
 ```bash
-brew install libtorrent-rasterbar openssl@3 libssh2 boost
+Scripts/macos/build-deps.sh      # once, ~30 min: builds them into Vendor/macos/<arch>
 swift build
 swift test
 swift run GoelDownloader
 ```
+
+`Package.swift` picks the native-library prefix in this order: `GOEL_BREW_PREFIX` if set,
+then `Vendor/macos/<arch>` if `build-deps.sh` has populated it, then `/opt/homebrew`. The
+Homebrew fallback (`brew install libtorrent-rasterbar openssl@3 libssh2 boost`) is fine for
+a quick local build, but its bottles target *your* macOS rather than the app's 14.0 floor,
+so `Scripts/build_app.sh` refuses to make a release (`GOEL_RELEASE=1`) from it. SwiftPM
+caches the evaluated manifest, so the first build after populating `Vendor/` needs
+`swift build --manifest-cache none` (or an explicit `GOEL_BREW_PREFIX`) to notice it.
 
 Linux daemon builds are covered in the [README](README.md#build-from-source).
 
@@ -163,9 +172,19 @@ Specifically:
 - **Doc comments explain *why*, not *what*.** `/// Increments the counter` is noise.
   `/// Kept separate from the main queue so a stalled SFTP handshake cannot starve HTTP
   transfers` is the standard here. If a decision looks arbitrary, write down why it is not.
-- **Swift 6 strict concurrency is enforced.** Respect actor isolation, mark types
-  `Sendable` deliberately rather than by reflex, and do not reach for `@unchecked Sendable`
-  or `nonisolated(unsafe)` to silence a warning you have not understood.
+- **No compiler warnings in `Sources/`.** CI fails the build on any Swift warning in our
+  own code. The package is still in the Swift 5 language mode (see *Future work* below),
+  so concurrency problems surface as warnings, not errors; treat them as errors anyway.
+  Respect actor isolation, mark types `Sendable` deliberately rather than by reflex, and do
+  not reach for `@unchecked Sendable` or `nonisolated(unsafe)` to silence a warning you
+  have not understood.
+- **Formatting.** `.swift-format` records the house style (4-space indent, 120 columns).
+  It is a reference, not a gate: the existing code predates it, so run
+  `swift format lint --configuration .swift-format <file>` on what you touch and do not
+  reformat files you are not otherwise changing.
+- **Shell scripts pass `shellcheck`.** CI runs it over every script in `Scripts/` and
+  `website/install.sh`; an intentional exception carries a `# shellcheck disable=` with a
+  reason.
 - **Keep access control tight.** Default to `internal`; make things `public` only when a
   different module genuinely needs them.
 - **Follow the existing naming.** Types, services, engines and views all have established
@@ -175,7 +194,7 @@ Specifically:
 
 ## Tests
 
-The suite runs in about 13 seconds. There is no excuse for skipping it.
+The suite runs in about a minute. There is no excuse for skipping it.
 
 ```bash
 swift test
@@ -186,6 +205,15 @@ swift test
 - **Do not weaken or delete an existing test** to make a change pass. If a test is wrong,
   say so explicitly in the PR and explain why.
 - Tests must not require network access, a real server, or credentials.
+- Tests must not touch the developer's machine outside a temporary directory. Engines move
+  deleted files to the Trash; a suite that exercises "remove and delete" installs
+  `TestTrash.install()` so a run never fills `~/.Trash`.
+- **Name test files after their subject**, in UpperCamelCase matching the class
+  (`SSRFValidationTests.swift`), not after the audit or review round that produced them.
+
+CI runs the suite with `--enable-code-coverage` and prints the `llvm-cov` total in the job
+summary. There is no floor yet; one will be added once the trust-boundary files that
+currently have no tests do (`NativeMessagingHost`, `goel doctor`, the daemon entry point).
 
 ---
 
@@ -198,6 +226,26 @@ swift test
   unreviewable.
 - Every commit signed off (see above).
 - Note any user-visible change so it can go in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## Future work
+
+Known build-system debts, recorded so nobody rediscovers them:
+
+- **Swift 6 language mode.** The toolchain is Swift 6, but `Package.swift` still declares
+  `swift-tools-version:5.10`, so strict concurrency checking is off and data-race
+  diagnostics are warnings. Migrating means `// swift-tools-version:6.0` with
+  `swiftLanguageModes: [.v6]` (or per-target `.swiftLanguageMode(.v6)`), starting with
+  GoelCore, and fixing what the compiler then rejects — `@MainActor` calls from
+  nonisolated contexts in `AppViewModel`, `NSLock` in async test helpers, and global
+  mutable state such as test seams. The warnings gate in CI keeps the backlog from growing
+  in the meantime.
+- **`unsafeFlags` in `Package.swift`.** The libtorrent/libssh2 include and link paths are
+  passed with `unsafeFlags`, which SwiftPM refuses in a package consumed as a remote
+  dependency, so the declared `GoelCore` library product cannot actually be depended on.
+  The fix is `.systemLibrary` targets with `pkgConfig`/`providers`, or prebuilt
+  `.binaryTarget` xcframeworks. See RELEASE.md, *Follow-ups*.
 
 ---
 

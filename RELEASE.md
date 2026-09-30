@@ -3,7 +3,10 @@
 CI (`.github/workflows/ci.yml`) builds, tests and runs the deployment-target and
 Info.plist gates on every push and pull request, but it does **not** cut releases —
 signing needs a certificate that cannot live on a hosted runner. So this file is
-still the release pipeline. Follow it top to bottom, in order, ticking boxes as
+still the release pipeline. (`.github/workflows/release.yml` is a skeleton that
+automates sections 3-7 for a `v*` tag once its `release` environment and secrets
+exist; see *Follow-ups* at the end. Until it has been proven on a real tag, cut
+releases by hand as below.) Follow it top to bottom, in order, ticking boxes as
 you go. It is written to be followed at 1am by someone who is tired and has
 forgotten everything, so nothing is left implicit.
 
@@ -107,9 +110,12 @@ Scripts/macos/build-deps.sh                          # ~30 min the first time
 export GOEL_BREW_PREFIX="$PWD/Vendor/macos/$(uname -m)"
 ```
 
-Keep `GOEL_BREW_PREFIX` exported for **every** later step in this document —
-sections 3, 5 and 7 all need it, and a build that silently falls back to
-Homebrew is exactly the failure this prevents. The script verifies every dylib
+`Package.swift` and `build_app.sh` now default to `Vendor/macos/<arch>` when it is
+populated, and `build_app.sh` refuses `GOEL_RELEASE=1` against `/opt/homebrew`.
+Export `GOEL_BREW_PREFIX` for **every** later step anyway — sections 3, 5 and 7
+all need it, it makes the choice explicit in your shell history, and SwiftPM's
+manifest cache does not notice a `Vendor/` directory that appeared after the last
+build. The script verifies every dylib
 it produced before it exits, so if it succeeded, the floor is satisfied.
 
 Note that *building* the app now requires the macOS 15 SDK or newer, regardless
@@ -168,7 +174,7 @@ What the script does with each variable:
 | Env var | Effect |
 |---|---|
 | `GOEL_RELEASE` | `1` demands a Developer ID Application identity, a configured updater and a clean Gatekeeper assessment, and is the only way a distributable archive is emitted. Unset/`0` → local build, no archive. |
-| `CODESIGN_IDENTITY` | Signs inside-out with hardened runtime + `Scripts/Goel.entitlements`. Under `GOEL_RELEASE=1` it must start with `Developer ID Application: `, spelled exactly as `security find-identity -v -p codesigning` prints it; leave it unset and the script picks the single Developer ID identity, or refuses if there are none or several. Outside a release, unset → auto-picks the first identity in your keychain (dev convenience) and `-` → ad-hoc. |
+| `CODESIGN_IDENTITY` | Signs inside-out with hardened runtime: the app and its executable with the minimal `Scripts/Goel.entitlements` (Apple Events only), the bundled yt-dlp alone with `Scripts/YtDlp.entitlements` (JIT, unsigned executable memory, disabled library validation — its frozen Python needs them; the app must not have them). Under `GOEL_RELEASE=1` it must start with `Developer ID Application: `, spelled exactly as `security find-identity -v -p codesigning` prints it; leave it unset and the script picks the single Developer ID identity, or refuses if there are none or several. Outside a release, unset → auto-picks the first identity in your keychain (dev convenience) and `-` → ad-hoc. |
 | `NOTARY_PROFILE` | Submits to Apple's notary service, waits, and staples the ticket to the `.app`. Only runs when `CODESIGN_IDENTITY` is set. |
 | `GOEL_NO_UPDATER` | `1` acknowledges shipping a release with no Sparkle feed. Without it, `GOEL_RELEASE=1` refuses to build when `SPARKLE_FEED_URL`/`SPARKLE_ED_KEY` are unset. |
 | `GOEL_LOCAL_DEV` | `1` downgrades the deployment-target gates to warnings for a throwaway build. Mutually exclusive with `GOEL_RELEASE=1`, never produces an archive, and — because a stapled ticket is what makes a bundle look shippable to `make_dmg.sh` — refuses to notarize or staple a bundle whose gate it waived. |
@@ -176,7 +182,8 @@ What the script does with each variable:
 | `SPARKLE_FEED_URL` | Written to `Info.plist` as `SUFeedURL`. Must be `https://`. |
 | `SPARKLE_ED_KEY` | Written to `Info.plist` as `SUPublicEDKey`. |
 | `GOEL_VERSION` / `GOEL_BUILD` | Override the tag-derived `CFBundleShortVersionString` / `CFBundleVersion`. |
-| `GOEL_BREW_PREFIX` | Where the native libraries come from. **Set this to `Vendor/macos/<arch>` for every release build** (section 3): the default `/opt/homebrew` yields bottles built for the build machine's OS, which fails the deployment-target gate on anything newer than the floor. `Scripts/macos/build-deps.sh` populates it. |
+| `GOEL_BREW_PREFIX` | Where the native libraries come from. **Set this to `Vendor/macos/<arch>` for every release build** (section 3). Unset, the script uses `Vendor/macos/<arch>` when `Scripts/macos/build-deps.sh` has populated it, else `/opt/homebrew` — whose bottles are built for the build machine's OS, so `GOEL_RELEASE=1` refuses it outright. |
+| `FFMPEG_LOCAL` / `FFMPEG_SHA256` | A local or vendored (`Vendor/ffmpeg/<arch>/ffmpeg`) ffmpeg is bundled only with a digest: `FFMPEG_SHA256`, or a `ffmpeg.sha256` file beside the binary. `GOEL_ALLOW_UNVERIFIED_FFMPEG=1` waives that for a throwaway local build and is ignored under `GOEL_RELEASE=1`. |
 | `GOEL_ARCH` | `x86_64` (with a matching `GOEL_BREW_PREFIX` — either `/usr/local` for an Intel Homebrew, or `Vendor/macos/x86_64` built by `Scripts/macos/build-deps.sh`) to cross-build an Intel app. |
 
 `SPARKLE_FEED_URL` and `SPARKLE_ED_KEY` are all-or-nothing: supply both or
@@ -215,8 +222,11 @@ codesign --verify --strict --deep --verbose=4 "dist/Goel°.app"
 #     → "valid on disk" + "satisfies its Designated Requirement"
 
 # 6d. The hardened runtime and the intended entitlements are actually on it:
-codesign -d --verbose=4 --entitlements - "dist/Goel°.app" 2>&1 | grep -E 'flags|disable-library-validation'
-#     → flags=0x10000(runtime)  and the disable-library-validation key
+codesign -d --verbose=4 --entitlements - "dist/Goel°.app" 2>&1 | grep -E 'flags|security\.'
+#     → flags=0x10000(runtime)  and ONLY com.apple.security.automation.apple-events
+codesign -d --entitlements - "dist/Goel°.app/Contents/Resources/yt-dlp" 2>&1 | grep 'security\.'
+#     → allow-jit, allow-unsigned-executable-memory, disable-library-validation
+#       (yt-dlp alone; build_app.sh fails if the app executable carries any of them)
 
 # 6e. The version really is the one you tagged:
 /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "dist/Goel°.app/Contents/Info.plist"
@@ -454,3 +464,57 @@ gh release create v1.1.0 --title "Goel° 1.1.0" --notes-file notes.md \
   "dist/Goel-Downloader-1.1.0-macos-arm64.zip"
 # → publish appcast.xml last
 ```
+
+---
+
+## Dependency updates
+
+Dependabot (`.github/dependabot.yml`) proposes weekly bumps for SwiftPM, the
+portal's and the video project's npm packages, and the SHA-pinned GitHub
+Actions. It cannot see these, which are bumped by hand:
+
+- the native library pins and digests in `Scripts/macos/build-deps.sh`
+  (OpenSSL, libssh2, libtorrent, Boost);
+- the yt-dlp pin in `Scripts/fetch_ytdlp.sh`;
+- ffmpeg, which still has no pinned upstream asset (`Scripts/fetch_ffmpeg.sh`
+  says `unpinned`): a maintainer-staged binary must come with its digest.
+
+A portal bump is not done until `cd portal && npm run build` has regenerated
+`Sources/GoelCore/Remote/Generated/PortalBundle.swift` and that is committed.
+
+---
+
+## Follow-ups
+
+Known gaps in the release machinery, in rough priority order:
+
+1. **Automate signing and publishing (BUILD-9).** `.github/workflows/release.yml`
+   runs only for a pushed `v*` tag, inside a `release` environment. Before it can
+   work, a maintainer must create that environment with required reviewers and a
+   `v*` tag rule, then add the secrets it lists at the top
+   (`DEVELOPER_ID_P12_BASE64`, `DEVELOPER_ID_P12_PASSWORD`, `CODESIGN_IDENTITY`,
+   `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, `NOTARY_APP_PASSWORD`) and the variables
+   `SPARKLE_FEED_URL` and `SPARKLE_ED_KEY`. It stops at uploading the signed,
+   notarized `.dmg`/`.zip` as a workflow artifact; Sparkle `sign_update`, the
+   appcast and `gh release create` (sections 8-12) stay manual until the skeleton
+   has been proven on a real tag. `SUPublicEDKey` should then become a hard
+   failure when empty rather than something `GOEL_NO_UPDATER=1` can waive.
+2. **Lock the Linux dependency graph (BUILD-6).** swift-nio and swift-crypto are
+   declared only under `#if os(Linux)`, so the committed `Package.resolved`
+   (written on macOS) does not pin them and every Linux build resolves them
+   afresh. Generate `Package.resolved` **on Linux** (e.g.
+   `docker run --rm -v "$PWD:/w" -w /w swift:6.1-noble swift package resolve`),
+   merge the extra pins into the committed file, and add a CI step that runs
+   `swift package resolve` followed by `git diff --exit-code Package.resolved` on
+   both platforms. Alternatively declare the dependencies unconditionally and
+   restrict them per target with `.when(platforms: [.linux])`.
+3. **Stop freezing the distro libtorrent in the Linux tarball (BUILD-8).** The
+   tarball vendors whatever `libtorrent-rasterbar`, Boost and OpenSSL Ubuntu
+   shipped on the day CI ran, so an apt security fix reaches users only with the
+   next Goel° release. At minimum record the vendored library versions in
+   `VERSION` and have `goel doctor` print them; better, build them from pinned
+   source as `build-deps.sh` does on macOS, or add a scheduled job that diffs
+   `apt-cache policy` against the recorded versions and opens an issue.
+4. **Drop `unsafeFlags` (BUILD-4).** See CONTRIBUTING.md, *Future work*: the
+   `GoelCore` library product cannot be consumed as a remote package while the
+   native targets use `unsafeFlags`.
