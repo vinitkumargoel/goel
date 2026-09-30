@@ -691,8 +691,8 @@ private struct MediaMenuItems: View {
 
     var body: some View {
         if let reason = vm.ffmpegUnavailableReason {
-            Button(L10n.t("Convert To…")) { vm.toastNow(reason) }
-            Button(L10n.t("Extract Audio…")) { vm.toastNow(reason) }
+            Button(L10n.t("Convert To…")) { vm.toastNow(reason, kind: .info) }
+            Button(L10n.t("Extract Audio…")) { vm.toastNow(reason, kind: .info) }
         } else {
             jobItems
         }
