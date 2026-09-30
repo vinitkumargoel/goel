@@ -9,10 +9,28 @@ struct Toast: Identifiable, Equatable {
         let perform: @MainActor () -> Void
     }
 
+    /// What the leading glyph says: done (green check), failed (red octagon), or just so you
+    /// know (accent info circle) — a notice that nothing went wrong must not read as success.
+    enum Kind: Equatable {
+        case success, error, info
+    }
+
     let id = UUID()
     let message: String
-    let isError: Bool
+    let kind: Kind
     let action: Action?
+
+    var isError: Bool { kind == .error }
+
+    init(message: String, kind: Kind, action: Action?) {
+        self.message = message
+        self.kind = kind
+        self.action = action
+    }
+
+    init(message: String, isError: Bool, action: Action?) {
+        self.init(message: message, kind: isError ? .error : .success, action: action)
+    }
 
     static func == (lhs: Toast, rhs: Toast) -> Bool { lhs.id == rhs.id }
 
@@ -31,7 +49,11 @@ struct Toast: Identifiable, Equatable {
 final class ToastQueue: ObservableObject {
 
     @Published private(set) var current: Toast?
-    private(set) var pending: [Toast] = []
+    /// Published so the capsule's "+N" chip follows the line behind it.
+    @Published private(set) var pending: [Toast] = []
+    /// The visible toast's remaining time, for the action toast's shrinking hairline. Nil when
+    /// it never expires on its own (VoiceOver keeps action and error toasts up).
+    @Published private(set) var countdown: ToastCountdown?
 
     /// A burst beyond this drops its oldest waiting entries; errors are kept over confirmations,
     /// and toasts with a button over both.
@@ -71,11 +93,16 @@ final class ToastQueue: ObservableObject {
     /// Returns the toast's id so its poster can retire it (⌘Z retires an Undo toast); nil when deduplicated.
     @discardableResult
     func show(_ message: String, isError: Bool = false, action: Toast.Action? = nil) -> Toast.ID? {
+        show(message, kind: isError ? .error : .success, action: action)
+    }
+
+    @discardableResult
+    func show(_ message: String, kind: Toast.Kind, action: Toast.Action? = nil) -> Toast.ID? {
         // The same words already on screen or queued add nothing but delay.
-        if current?.message == message, current?.isError == isError, action == nil { return nil }
-        if pending.contains(where: { $0.message == message && $0.isError == isError && $0.action == nil }),
+        if current?.message == message, current?.kind == kind, action == nil { return nil }
+        if pending.contains(where: { $0.message == message && $0.kind == kind && $0.action == nil }),
            action == nil { return nil }
-        let toast = Toast(message: message, isError: isError, action: action)
+        let toast = Toast(message: message, kind: kind, action: action)
         guard let shown = current else { present(toast); return toast.id }
         if action != nil {
             // An Undo belongs next to what it undoes: it jumps the line. What it displaces waits
@@ -111,6 +138,7 @@ final class ToastQueue: ObservableObject {
         heldRemaining = nil
         if pending.isEmpty {
             current = nil
+            countdown = nil
         } else {
             present(pending.removeFirst())
         }
@@ -123,6 +151,10 @@ final class ToastQueue: ObservableObject {
         heldRemaining = expiresAt.map { max(0, $0.timeIntervalSinceNow) / timeScale }
         // Invalidates the pending expiry.
         generation &+= 1
+        if let heldRemaining, let shown = countdown {
+            countdown = ToastCountdown(total: shown.total, deadline: nil,
+                                       frozenRemaining: heldRemaining * timeScale)
+        }
     }
 
     /// Restarts the countdown with what was left, but never less than ``releaseGrace``.
@@ -157,16 +189,20 @@ final class ToastQueue: ObservableObject {
 
     private func scheduleExpiry(of toast: Toast, after seconds: TimeInterval) {
         let scaled = seconds * timeScale
+        let total = max(seconds, toast.dwell) * timeScale
         guard !isHeld else {
             // A toast that arrives under the pointer starts its full time once the pointer leaves.
             heldRemaining = seconds
+            countdown = ToastCountdown(total: total, deadline: nil, frozenRemaining: scaled)
             return
         }
         if toast.action != nil || toast.isError, isVoiceOverRunning() {
             expiresAt = nil
+            countdown = nil
             return
         }
         expiresAt = Date().addingTimeInterval(scaled)
+        countdown = ToastCountdown(total: total, deadline: expiresAt, frozenRemaining: nil)
         guard autoAdvance else { return }
         let expected = generation
         Task { @MainActor [weak self] in
@@ -188,5 +224,32 @@ final class ToastQueue: ObservableObject {
                 pending.removeFirst()
             }
         }
+    }
+}
+
+/// How much of the visible toast's time is left, as a fraction the hairline draws. While the
+/// toast is held (pointer or focus on it) the fraction is frozen at what was left.
+struct ToastCountdown: Equatable {
+    /// The full span the hairline represents (the toast's dwell, or longer after a release grace).
+    let total: TimeInterval
+    /// When the toast leaves; nil while held.
+    let deadline: Date?
+    /// What was left when the hold began; nil while running.
+    let frozenRemaining: TimeInterval?
+
+    var isRunning: Bool { deadline != nil }
+
+    func fraction(at now: Date) -> Double {
+        guard total > 0 else { return 0 }
+        let left = deadline.map { $0.timeIntervalSince(now) } ?? frozenRemaining ?? total
+        return min(1, max(0, left / total))
+    }
+}
+
+extension AppViewModel {
+    /// For a notice that is neither a success nor a failure (a feature that is unavailable here).
+    @discardableResult
+    func toastNow(_ message: String, kind: Toast.Kind, action: Toast.Action? = nil) -> Toast.ID? {
+        toasts.show(message, kind: kind, action: action)
     }
 }

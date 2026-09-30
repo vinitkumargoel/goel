@@ -197,4 +197,71 @@ final class ToastQueueTests: XCTestCase {
         try await wait(0.2)
         XCTAssertNil(queue.current)
     }
+
+    // MARK: Kinds, waiting count, countdown
+
+    func testInfoIsItsOwnKindAndNotAnError() {
+        let queue = ToastQueue(autoAdvance: false, announce: { _ in })
+        queue.show("FFmpeg isn’t available", kind: .info)
+        XCTAssertEqual(queue.current?.kind, .info)
+        XCTAssertFalse(queue.current?.isError ?? true)
+        XCTAssertEqual(queue.current?.dwell ?? 0, 2.4, accuracy: 0.01)
+    }
+
+    func testTheSameWordsAsADifferentKindAreNotDeduplicated() {
+        let queue = ToastQueue(autoAdvance: false, announce: { _ in })
+        queue.show("Heads up", kind: .info)
+        queue.show("Heads up", kind: .info)
+        XCTAssertTrue(queue.pending.isEmpty)
+        queue.show("Heads up", isError: true)
+        XCTAssertEqual(queue.pending.count, 1)
+    }
+
+    func testIsErrorInitialiserMapsToKinds() {
+        XCTAssertEqual(Toast(message: "a", isError: true, action: nil).kind, .error)
+        XCTAssertEqual(Toast(message: "a", isError: false, action: nil).kind, .success)
+    }
+
+    func testPendingCountFeedsTheWaitingChip() {
+        let queue = ToastQueue(autoAdvance: false, announce: { _ in })
+        queue.show("one")
+        XCTAssertEqual(queue.pending.count, 0)
+        queue.show("two")
+        queue.show("three")
+        XCTAssertEqual(queue.pending.count, 2)
+        queue.advance()
+        XCTAssertEqual(queue.pending.count, 1)
+    }
+
+    func testCountdownShrinksOverTheDwell() {
+        let start = Date()
+        let countdown = ToastCountdown(total: 8, deadline: start.addingTimeInterval(8), frozenRemaining: nil)
+        XCTAssertEqual(countdown.fraction(at: start), 1, accuracy: 0.001)
+        XCTAssertEqual(countdown.fraction(at: start.addingTimeInterval(2)), 0.75, accuracy: 0.001)
+        XCTAssertEqual(countdown.fraction(at: start.addingTimeInterval(20)), 0)
+        let frozen = ToastCountdown(total: 8, deadline: nil, frozenRemaining: 4)
+        XCTAssertEqual(frozen.fraction(at: start.addingTimeInterval(100)), 0.5, accuracy: 0.001)
+        XCTAssertFalse(frozen.isRunning)
+    }
+
+    func testAnActionToastRunsACountdownThatFreezesWhileHeld() {
+        let queue = ToastQueue(autoAdvance: false, announce: { _ in }, isVoiceOverRunning: { false })
+        queue.show("Removed “a”", action: Toast.Action(title: "Undo") {})
+        let running = queue.countdown
+        XCTAssertEqual(running?.total ?? 0, 8, accuracy: 0.01)
+        XCTAssertTrue(running?.isRunning ?? false)
+        queue.hold()
+        XCTAssertEqual(queue.countdown?.isRunning, false, "hover pauses the hairline with the timer")
+        XCTAssertGreaterThan(queue.countdown?.fraction(at: Date().addingTimeInterval(60)) ?? 0, 0.9)
+        queue.release()
+        XCTAssertEqual(queue.countdown?.isRunning, true)
+        queue.advance()
+        XCTAssertNil(queue.countdown)
+    }
+
+    func testNoCountdownWhenVoiceOverKeepsTheToastUp() {
+        let queue = ToastQueue(autoAdvance: false, announce: { _ in }, isVoiceOverRunning: { true })
+        queue.show("Removed “a”", action: Toast.Action(title: "Undo") {})
+        XCTAssertNil(queue.countdown)
+    }
 }

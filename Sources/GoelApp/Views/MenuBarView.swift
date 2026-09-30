@@ -37,15 +37,18 @@ struct MenuBarView: View {
         vm.sftpTransfers.filter { $0.occupiesDestination }
     }
 
+    private var justFinished: [DownloadTask] { MenuBarJustFinished(tasks: vm.tasks).shown }
+
     var body: some View {
         let attention = self.attention
+        let justFinished = self.justFinished
         VStack(spacing: 0) {
             header(failures: attention.total)
             Divider()
             // The window's blocking card is invisible in menu-bar-only mode, yet the countdown still fires.
             MenuBarCountdownSection(countdown: vm.autoShutdownCountdown)
             if listedTasks.isEmpty && activeTransfers.isEmpty && vm.mediaLiveCount == 0
-                && attention.shown.isEmpty {
+                && attention.shown.isEmpty && justFinished.isEmpty {
                 emptyState
             } else {
                 ScrollView {
@@ -79,6 +82,13 @@ struct MenuBarView: View {
                         if vm.mediaLiveCount > 0 {
                             sectionLabel(L10n.t("Conversions"))
                             MenuBarMediaSection(center: vm.mediaJobs)
+                        }
+                        if !justFinished.isEmpty {
+                            sectionLabel(L10n.t("Just finished"))
+                            ForEach(justFinished) { task in
+                                MenuBarFinishedRow(task: task, vm: vm)
+                                Divider()
+                            }
                         }
                     }
                     .background(
@@ -157,6 +167,8 @@ struct MenuBarView: View {
 
     private var footer: some View {
         VStack(spacing: 9) {
+            MenuBarSpeedControls(vm: vm)
+
             Button(action: addDownload) {
                 HStack(spacing: 7) {
                     Image(systemName: "plus").font(.system(size: 12, weight: .bold))
@@ -262,10 +274,11 @@ private struct MenuBarDownloadRow: View {
             FileTypeIcon(type: task.fileType, size: 30)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(task.name)
+                    Text(task.compactDisplayName)
                         .scaledFont(size: 12, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .help(task.name)
                     KindBadge(task: task)
                     Spacer(minLength: 0)
                 }
@@ -283,7 +296,7 @@ private struct MenuBarDownloadRow: View {
                     }
                 }
             }
-            .a11yGroup(label: A11y.sentence(task.name,
+            .a11yGroup(label: A11y.sentence(task.compactDisplayName,
                                             task.accessibilityKindName,
                                             task.accessibilityStatusName),
                        value: task.accessibilityProgressValue)
@@ -313,7 +326,7 @@ private struct MenuBarFailedRow: View {
         HStack(spacing: 10) {
             FileTypeIcon(type: task.fileType, size: 30)
             VStack(alignment: .leading, spacing: 3) {
-                Text(task.name)
+                Text(task.compactDisplayName)
                     .scaledFont(size: 12, weight: .medium)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -326,7 +339,7 @@ private struct MenuBarFailedRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .a11yGroup(label: A11y.sentence(task.name, task.accessibilityStatusName))
+            .a11yGroup(label: A11y.sentence(task.compactDisplayName, task.accessibilityStatusName))
             Button(L10n.t("Retry")) { vm.retry(task.id) }
                 .buttonStyle(TintedPillButtonStyle(tint: Theme.red))
                 .a11yButton(L10n.t("Retry %@", task.name))
@@ -334,6 +347,124 @@ private struct MenuBarFailedRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .contentShape(Rectangle())
+    }
+}
+
+/// A download that finished in the last day: open it or show it in Finder from the menu bar.
+private struct MenuBarFinishedRow: View {
+    let task: DownloadTask
+    let vm: AppViewModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            FileTypeIcon(type: task.fileType, size: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.name)
+                    .scaledFont(size: 12, weight: .medium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(task.name)
+                if let completedAt = task.completedAt {
+                    // Rendered by SwiftUI so "2 min ago" keeps counting while the popover is open.
+                    Text(completedAt, format: .relative(presentation: .named))
+                        .scaledFont(size: 10.5)
+                        .foregroundStyle(.secondary)
+                        .environment(\.locale, DisplayFormat.appLocale)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            IconButton(symbol: "magnifyingglass", help: L10n.t("Show in Finder"), size: 11,
+                       spokenLabel: L10n.t("Show %@ in Finder", task.name)) {
+                vm.revealInFinder(task)
+            }
+            Button(L10n.t("Open")) { vm.openFile(task) }
+                .buttonStyle(TintedPillButtonStyle(tint: Theme.green))
+                .a11yButton(L10n.t("Open %@", task.name))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .contentShape(Rectangle())
+    }
+}
+
+/// The status bar's speed controls, for menu-bar-only use: the snail toggles the global limit
+/// and the segments switch profile, through the same view-model actions.
+private struct MenuBarSpeedControls: View {
+    @ObservedObject var vm: AppViewModel
+
+    var body: some View {
+        let settings = vm.settings
+        let snailLocked = vm.managedPolicy.isLocked(.speedLimitEnabled)
+        let profileLocked = vm.managedPolicy.isLocked(.selectedProfileName)
+        HStack(spacing: 8) {
+            Button(action: vm.toggleSnail) {
+                HStack(spacing: 5) {
+                    Snail()
+                        .stroke(style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                        .frame(width: 13, height: 13)
+                    Text(SpeedProfileText.pill(limitEnabled: settings.speedLimitEnabled,
+                                               profile: settings.selectedProfile))
+                        .scaledFont(size: 11, weight: .medium, monospacedDigit: true)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 9)
+                .frame(height: 24)
+                .background(Capsule().fill(settings.speedLimitEnabled ? Theme.orange.opacity(0.18)
+                                                                      : Color.primary.opacity(0.08)))
+                .foregroundStyle(settings.speedLimitEnabled ? Theme.orange : Color.secondary)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(snailLocked)
+            .help(snailLocked ? AppViewModel.managedFootnote : L10n.t("Toggle global speed limit"))
+            .a11yButton(L10n.t("Global speed limit"),
+                        hint: snailLocked ? AppViewModel.managedFootnote
+                                          : L10n.t("Activate to turn the speed limit on or off."))
+            .accessibilityValue(settings.speedLimitEnabled
+                                ? L10n.t("On, %@ profile", settings.selectedProfileName)
+                                : L10n.t("Off, unlimited"))
+
+            Spacer(minLength: 0)
+
+            Picker(L10n.t("Speed profile"), selection: Binding(
+                get: { vm.settings.selectedProfileName },
+                set: { vm.setProfile($0) })) {
+                ForEach(settings.profiles) { profile in
+                    Text(profile.name)
+                        .help(SpeedProfileText.summary(profile))
+                        .tag(profile.name)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .fixedSize()
+            .disabled(profileLocked)
+            .help(SpeedProfileText.summary(settings.selectedProfile))
+            .accessibilityValue(SpeedProfileText.spokenLimits(settings.selectedProfile))
+        }
+    }
+}
+
+/// What "Just finished" lists: the newest few downloads completed in the last day whose file
+/// is still there to open.
+struct MenuBarJustFinished {
+    static let limit = 3
+    static let window: TimeInterval = 24 * 60 * 60
+
+    let shown: [DownloadTask]
+
+    init(tasks: [DownloadTask], now: Date = Date(), limit: Int = Self.limit) {
+        let cutoff = now.addingTimeInterval(-Self.window)
+        shown = Array(tasks
+            .filter { task in
+                guard task.status == .completed, !task.isFileMissing,
+                      let done = task.completedAt else { return false }
+                return done >= cutoff && done <= now.addingTimeInterval(60)
+            }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+            .prefix(max(0, limit)))
     }
 }
 

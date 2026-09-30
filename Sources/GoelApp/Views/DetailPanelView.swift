@@ -7,7 +7,9 @@ struct DetailPanelView: View {
 
     var body: some View {
         Group {
-            if let task = vm.selectedTask {
+            if vm.selectedTasks.count > 1 {
+                MultiSelectionPanel()
+            } else if let task = vm.selectedTask {
                 content(for: task)
             } else {
                 emptyState
@@ -45,7 +47,11 @@ struct DetailPanelView: View {
         switch vm.detailTab {
         case .general:
             VStack(spacing: 0) {
-                hero(for: task)
+                if task.status == .completed {
+                    CompletedHero(task: task, vm: vm)
+                } else {
+                    hero(for: task)
+                }
                 facts(for: task)
             }
         case .details:
@@ -100,6 +106,8 @@ struct DetailPanelView: View {
                 DetailSpeedStat(symbol: "arrow.down", speed: telemetry.displaySpeed(for: task).down, color: Theme.green, size: 13)
                 DetailSpeedStat(symbol: "arrow.up", speed: telemetry.displaySpeed(for: task).up, color: Theme.teal, size: 13)
             }
+
+            TaskSpeedGraph(taskID: task.id, window: 60, height: 44)
 
             Text(sizeAndETA(for: task))
                 .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
@@ -163,6 +171,13 @@ struct DetailPanelView: View {
             }
             KVRow(key: L10n.t("Priority"), value: task.priority.title)
             KVRow(key: L10n.t("Added"), value: task.addedString)
+            if task.status == .completed, let completedAt = task.completedAt {
+                KVRow(key: L10n.t("Finished"), value: DownloadTask.addedString(for: completedAt))
+                if let took = CompletionSummary.tookLine(bytes: CompletionSummary.size(of: task),
+                                                         addedAt: task.addedAt, completedAt: completedAt) {
+                    KVRow(key: L10n.t("Took"), value: took)
+                }
+            }
             KVRow(key: L10n.t("Save path"), value: task.savePath, copyable: true)
             KVRow(key: L10n.t("Source"), value: task.sourceLocator, copyable: true)
         }

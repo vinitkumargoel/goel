@@ -51,6 +51,77 @@ enum FailureAdvice {
         }
     }
 
+    /// The one step most likely to fix this failure, shown as the card's filled button. Retry
+    /// stays next to it as the fallback; nil means Retry itself is the best next step.
+    enum Recovery: Equatable {
+        /// 401/403: the server wants a login — attach the browser's cookies.
+        case attachCookies
+        /// 404/410: the link is stale — point the download at a fresh one.
+        case updateLink
+        /// No room left — move the download somewhere that has it.
+        case changeFolder
+        /// 407: the proxy wants credentials.
+        case proxySettings
+        /// 408/429/5xx/timeout: the server is overloaded — come back in a few minutes.
+        case retryLater(TimeInterval)
+
+        static let retryLaterDelay: TimeInterval = 5 * 60
+
+        var title: String {
+            switch self {
+            case .attachCookies: return L10n.t("Attach Cookies…")
+            case .updateLink: return L10n.t("Update Link…")
+            case .changeFolder: return L10n.t("Change Folder…")
+            case .proxySettings: return L10n.t("Proxy Settings")
+            case .retryLater(let delay):
+                return L10n.t("Retry in %@", DisplayFormat.duration(delay, locale: DisplayFormat.appLocale))
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .attachCookies: return "person.badge.key"
+            case .updateLink: return "link"
+            case .changeFolder: return "folder.badge.plus"
+            case .proxySettings: return "network"
+            case .retryLater: return "clock.arrow.circlepath"
+            }
+        }
+    }
+
+    /// Only what the task can actually take: a link or cookie swap needs an HTTP download, and
+    /// only HTTP carries a partial file to another folder.
+    static func recovery(for error: DownloadError, kind: DownloadKind, hasData: Bool) -> Recovery? {
+        switch error {
+        case .httpStatus(let code):
+            switch code {
+            case 401, 403: return kind == .http ? .attachCookies : nil
+            case 404, 410: return kind == .http ? .updateLink : nil
+            case 407: return .proxySettings
+            case 408, 429, 500...599: return .retryLater(Recovery.retryLaterDelay)
+            default: return nil
+            }
+        case .timedOut:
+            return .retryLater(Recovery.retryLaterDelay)
+        case .diskFull:
+            return canChangeFolder(kind: kind, hasData: hasData) ? .changeFolder : nil
+        case .network(let message), .unknown(let message):
+            return looksLikeDiskFull(message) && canChangeFolder(kind: kind, hasData: hasData)
+                ? .changeFolder : nil
+        case .checksumMismatch, .rangeNotSupported, .remoteFileChanged, .fileMissing, .canceled:
+            return nil
+        }
+    }
+
+    static func recovery(for task: DownloadTask, error: DownloadError) -> Recovery? {
+        recovery(for: error, kind: task.kind, hasData: task.bytesDownloaded > 0)
+    }
+
+    /// Mirrors `DownloadManager.relocate`: only HTTP carries its partial across folders.
+    private static func canChangeFolder(kind: DownloadKind, hasData: Bool) -> Bool {
+        kind == .http || !hasData
+    }
+
     /// POSIX ENOSPC surfaces through several layers as free text; match its common spellings.
     static func looksLikeDiskFull(_ message: String) -> Bool {
         let lower = message.lowercased()

@@ -67,6 +67,68 @@ final class FailureAdviceTests: XCTestCase {
         XCTAssertFalse(details.contains("alice"))
     }
 
+    // MARK: - Recovery
+
+    private func recovery(_ error: DownloadError, kind: DownloadKind = .http,
+                          hasData: Bool = false) -> FailureAdvice.Recovery? {
+        FailureAdvice.recovery(for: error, kind: kind, hasData: hasData)
+    }
+
+    func testLoginFailuresOfferCookies() {
+        XCTAssertEqual(recovery(.httpStatus(401)), .attachCookies)
+        XCTAssertEqual(recovery(.httpStatus(403)), .attachCookies)
+        XCTAssertNil(recovery(.httpStatus(403), kind: .ftp), "cookies only ride on HTTP")
+    }
+
+    func testMissingFilesOfferANewLink() {
+        XCTAssertEqual(recovery(.httpStatus(404)), .updateLink)
+        XCTAssertEqual(recovery(.httpStatus(410)), .updateLink)
+        XCTAssertNil(recovery(.httpStatus(404), kind: .hls))
+    }
+
+    func testProxyLoginOpensProxySettings() {
+        XCTAssertEqual(recovery(.httpStatus(407)), .proxySettings)
+    }
+
+    func testBusyServersOfferRetryInFiveMinutes() {
+        for code in [408, 429, 500, 502, 503, 599] {
+            XCTAssertEqual(recovery(.httpStatus(code)), .retryLater(300), "HTTP \(code)")
+        }
+        XCTAssertEqual(recovery(.timedOut), .retryLater(300))
+    }
+
+    func testFullDiskOffersAnotherFolderOnlyWhereThePartialCanMove() {
+        XCTAssertEqual(recovery(.diskFull(needed: 10, available: 1)), .changeFolder)
+        XCTAssertEqual(recovery(.network("No space left on device")), .changeFolder)
+        XCTAssertEqual(recovery(.diskFull(needed: 10, available: 1), kind: .torrent, hasData: false),
+                       .changeFolder)
+        XCTAssertNil(recovery(.diskFull(needed: 10, available: 1), kind: .torrent, hasData: true))
+    }
+
+    func testFailuresThatRetryAlreadyFixesHaveNoSpecialAction() {
+        XCTAssertNil(recovery(.httpStatus(418)))
+        XCTAssertNil(recovery(.checksumMismatch))
+        XCTAssertNil(recovery(.network("The Internet connection appears to be offline.")))
+        XCTAssertNil(recovery(.canceled))
+    }
+
+    func testTaskRecoveryReadsTheTasksKindAndProgress() {
+        var task = DownloadTask(source: .url(URL(string: "https://example.test/a.iso")!),
+                                name: "a.iso", saveDirectory: "/tmp", totalBytes: 100,
+                                status: .failed(.httpStatus(404)))
+        XCTAssertEqual(FailureAdvice.recovery(for: task, error: .httpStatus(404)), .updateLink)
+        task.bytesDownloaded = 50
+        XCTAssertEqual(FailureAdvice.recovery(for: task, error: .diskFull(needed: 1, available: 0)),
+                       .changeFolder)
+    }
+
+    func testRecoveryTitlesNameTheAction() {
+        XCTAssertEqual(FailureAdvice.Recovery.attachCookies.title, "Attach Cookies…")
+        XCTAssertEqual(FailureAdvice.Recovery.updateLink.title, "Update Link…")
+        XCTAssertEqual(FailureAdvice.Recovery.changeFolder.title, "Change Folder…")
+        XCTAssertTrue(FailureAdvice.Recovery.retryLater(300).title.hasPrefix("Retry in"))
+    }
+
     func testRedactionLeavesPlainLocatorsAlone() {
         let magnet = "magnet:?xt=urn:btih:abc"
         XCTAssertEqual(FailureAdvice.redactedLocator(magnet), magnet)

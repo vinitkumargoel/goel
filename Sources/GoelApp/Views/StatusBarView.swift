@@ -6,12 +6,13 @@ struct StatusBarView: View {
     @EnvironmentObject private var telemetry: TelemetryStore
     @EnvironmentObject private var sftpStore: SFTPTransferStore
     @State private var showTransfers = false
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         HStack(spacing: 14) {
             snail
-            stat(symbol: "arrow.down", speed: telemetry.displayedCombinedSpeed.down, color: Theme.green)
-            stat(symbol: "arrow.up", speed: telemetry.displayedCombinedSpeed.up, color: Theme.teal)
+            stat(.down, speed: telemetry.displayedCombinedSpeed.down)
+            stat(.up, speed: telemetry.displayedCombinedSpeed.up)
             if !activeTransfers.isEmpty { transfersIndicator }
             Spacer()
             Text(L10n.t("Profile")).scaledFont(size: 11).foregroundStyle(.tertiary)
@@ -90,8 +91,9 @@ struct StatusBarView: View {
                 Snail()
                     .stroke(style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
                     .frame(width: 15, height: 15)
-                Text(vm.settings.speedLimitEnabled ? vm.settings.selectedProfileName : L10n.t("Unlimited"))
-                    .scaledFont(size: 11.5, weight: .medium)
+                Text(SpeedProfileText.pill(limitEnabled: vm.settings.speedLimitEnabled,
+                                           profile: vm.settings.selectedProfile))
+                    .scaledFont(size: 11.5, weight: .medium, monospacedDigit: true)
             }
             .padding(.horizontal, 10)
             .frame(height: 26)
@@ -104,24 +106,37 @@ struct StatusBarView: View {
         }
         .buttonStyle(.plain)
         .disabled(locked)
-        .help(locked ? AppViewModel.managedFootnote : L10n.t("Toggle global speed limit"))
+        .help(locked ? AppViewModel.managedFootnote
+                     : A11y.sentence(L10n.t("Toggle global speed limit"),
+                                     SpeedProfileText.summary(vm.settings.selectedProfile)))
         .a11yButton(L10n.t("Global speed limit"),
                     hint: locked ? AppViewModel.managedFootnote
                                  : L10n.t("Activate to turn the speed limit on or off."))
         .accessibilityValue(vm.settings.speedLimitEnabled
-                            ? L10n.t("On, %@ profile", vm.settings.selectedProfileName)
+                            ? A11y.sentence(L10n.t("On, %@ profile", vm.settings.selectedProfileName),
+                                            SpeedProfileText.spokenLimits(vm.settings.selectedProfile))
                             : L10n.t("Off, unlimited"))
     }
 
-    private func stat(symbol: String, speed: Double, color: Color) -> some View {
+    private func stat(_ direction: SpeedDirection, speed: Double) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: symbol).font(.system(size: 11))
-            Text(speed.speedString).scaledFont(size: 12, weight: .semibold, monospacedDigit: true)
-                .frame(width: 72, alignment: .leading)
+            HStack(spacing: 5) {
+                Image(systemName: direction.symbol).font(.system(size: 11))
+                Text(speed.speedString).scaledFont(size: 12, weight: .semibold, monospacedDigit: true)
+                    .frame(width: 72, alignment: .leading)
+            }
+            .foregroundStyle(direction.tint)
+            .a11yGroup(label: direction == .up ? L10n.t("Total upload speed") : L10n.t("Total download speed"),
+                       value: A11y.speed(speed))
+            GlobalSpeedSparkline(direction: direction)
         }
-        .foregroundStyle(color)
-        .a11yGroup(label: symbol == "arrow.up" ? L10n.t("Total upload speed") : L10n.t("Total download speed"),
-                   value: A11y.speed(speed))
+    }
+
+    /// The Traffic Limits pane edits the active profile, so editing one makes it the active one.
+    private func editProfile(_ name: String) {
+        if name != vm.settings.selectedProfileName { vm.setProfile(name) }
+        SettingsRoute.shared.request(.traffic)
+        openSettings()
     }
 
     private var profilePicker: some View {
@@ -144,8 +159,16 @@ struct StatusBarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help(SpeedProfileText.summary(profile))
+                .contextMenu {
+                    Button(L10n.t("Edit Profile…")) { editProfile(profile.name) }
+                        .disabled(profile.name != vm.settings.selectedProfileName
+                                  && vm.managedPolicy.isLocked(.selectedProfileName))
+                }
                 .accessibilityLabel(L10n.t("%@ speed profile", profile.name))
+                .accessibilityValue(SpeedProfileText.spokenLimits(profile))
                 .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+                .accessibilityAction(named: L10n.t("Edit Profile")) { editProfile(profile.name) }
             }
         }
         .padding(2)
@@ -155,7 +178,7 @@ struct StatusBarView: View {
     }
 }
 
-private struct Snail: Shape {
+struct Snail: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 24
         let sy = rect.height / 24
