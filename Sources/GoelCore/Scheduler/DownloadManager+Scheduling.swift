@@ -56,6 +56,8 @@ extension DownloadManager {
         // A terminal state tore the consumer down; re-subscribe before the engine emits again.
         if consumers[id] == nil { subscribe(id, to: engine) }
         if resume {
+            // The engine's copy dates from `add`: a rename, limit or cookie change since then must reach it first.
+            await engine.refresh(task)
             await engine.resume(id)
         } else {
             await engine.add(task)

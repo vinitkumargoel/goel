@@ -248,9 +248,15 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
 
     private func save(_ dict: [String: Entry]) -> Bool {
         let url = storeURL
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700])
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+        } catch {
+            GoelLog.persistence.error("Couldn’t create the credentials folder",
+                                      .detail(String(describing: error)))
+            return false
+        }
         guard let data = try? JSONEncoder().encode(dict) else { return false }
         #if canImport(Glibc)
         // Creates the atomic temp file 0600 from birth: no world-readable window before the chmod.
@@ -264,10 +270,16 @@ public final class KeychainCredentialStore: CredentialProviding, CredentialManag
             return false
         }
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        if let mode = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? NSNumber,
-           mode.intValue & 0o077 != 0 {
+        // "Stored" must mean "stored privately": a group- or world-readable secret is a failed write.
+        guard let mode = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions]
+                as? NSNumber else {
+            GoelLog.persistence.fault("Couldn’t verify the credentials file’s permissions")
+            return false
+        }
+        if mode.intValue & 0o077 != 0 {
             GoelLog.persistence.fault("Credentials file is not private",
                                       .state(String(mode.intValue, radix: 8), label: "mode"))
+            return false
         }
         return true
     }

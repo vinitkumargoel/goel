@@ -78,6 +78,10 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
 
     public var networkSelection: NetworkSelection?
 
+    /// A completed row whose payload the file sweep can't find (ENOENT only). The row is kept — a
+    /// moved file or an unmounted share must never silently erase the record — and cleared on reappearance.
+    public var fileMissing: Bool?
+
     public init(
         id: UUID = UUID(),
         source: DownloadSource,
@@ -119,7 +123,8 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         cookieHost: String? = nil,
         retryAttempt: Int? = nil,
         initialSkipFileIDs: [Int]? = nil,
-        networkSelection: NetworkSelection? = nil
+        networkSelection: NetworkSelection? = nil,
+        fileMissing: Bool? = nil
     ) {
         self.id = id
         self.source = source
@@ -162,6 +167,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         self.retryAttempt = retryAttempt
         self.initialSkipFileIDs = initialSkipFileIDs
         self.networkSelection = networkSelection
+        self.fileMissing = fileMissing
     }
 
     /// Listed by hand so ``cookieHeader`` stays absent and can never be encoded; add every new property.
@@ -177,6 +183,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         case label, tags, note, referer, requestHeaders
         case cookieSource, cookieHost           // provenance only — never the value
         case retryAttempt, initialSkipFileIDs, networkSelection
+        case fileMissing
     }
 
     public var allTags: [String] {

@@ -60,6 +60,7 @@
 "%d cookies" = "%d cookies";
 "%d custom" = "%d custom";
 "%d downloads" = "%d downloads";
+"%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted." = "%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted.";
 "%d file" = "%d file";
 "%d files" = "%d files";
 "%d folder" = "%d folder";
@@ -239,6 +240,8 @@
 "Cancelled" = "Cancelled";
 "Cancelled before anything was written" = "Cancelled before anything was written";
 "Cancelled, partial file removed" = "Cancelled, partial file removed";
+"Can’t find the file for “%@” — it may have been moved or deleted. It stays in your list." = "Can’t find the file for “%@” — it may have been moved or deleted. It stays in your list.";
+"Can’t find the files for %d completed downloads — they may have been moved or deleted. They stay in your list." = "Can’t find the files for %d completed downloads — they may have been moved or deleted. They stay in your list.";
 "Can’t paste “%@” inside itself." = "Can’t paste “%@” inside itself.";
 "Can’t upload into “%@”" = "Can’t upload into “%@”";
 "Capped at %@" = "Capped at %@";
@@ -377,6 +380,7 @@
 "Couldn’t reach the source server." = "Couldn’t reach the source server.";
 "Couldn’t reach the update feed." = "Couldn’t reach the update feed.";
 "Couldn’t read that file" = "Couldn’t read that file";
+"Couldn’t read your download history — the saved database may be unreadable." = "Couldn’t read your download history — the saved database may be unreadable.";
 "Couldn’t read “%1$@”%2$@ inside “%3$@” — nothing was uploaded." = "Couldn’t read “%1$@”%2$@ inside “%3$@” — nothing was uploaded.";
 "Couldn’t read “%1$@”, so “%2$@” wasn’t downloaded." = "Couldn’t read “%1$@”, so “%2$@” wasn’t downloaded.";
 "Couldn’t read “%@” — nothing was downloaded." = "Couldn’t read “%@” — nothing was downloaded.";
@@ -386,7 +390,10 @@
 "Couldn’t save your servers to disk: %@" = "Couldn’t save your servers to disk: %@";
 "Couldn’t shut this Mac down" = "Couldn’t shut this Mac down";
 "Couldn’t start yt-dlp." = "Couldn’t start yt-dlp.";
+"Couldn’t unpack “%@” — the archive may be damaged." = "Couldn’t unpack “%@” — the archive may be damaged.";
+"Couldn’t unpack “%@”: the extractor didn’t start." = "Couldn’t unpack “%@”: the extractor didn’t start.";
 "Couldn’t work out where to save “%@”." = "Couldn’t work out where to save “%@”.";
+"Couldn’t write the automatic backup of your download list: %@" = "Couldn’t write the automatic backup of your download list: %@";
 "Couldn’t write the diagnostics report to that location." = "Couldn’t write the diagnostics report to that location.";
 "Couldn’t write the helper script" = "Couldn’t write the helper script";
 "Create" = "Create";
@@ -1056,6 +1063,7 @@
 "Removed from the list, but the file is still on disk" = "Removed from the list, but the file is still on disk";
 "Removed with data" = "Removed with data";
 "Removed “%@” from the list, but its file is still on disk" = "Removed “%@” from the list, but its file is still on disk";
+"Removed “%@” from the list, but its file is still on disk." = "Removed “%@” from the list, but its file is still on disk.";
 "Rename" = "Rename";
 "Rename %d Selected…" = "Rename %d Selected…";
 "Rename %d downloads" = "Rename %d downloads";
@@ -1325,6 +1333,7 @@
 "The notices file ships inside the packaged app. In a source build, read THIRD-PARTY-NOTICES.md in the repository." = "The notices file ships inside the packaged app. In a source build, read THIRD-PARTY-NOTICES.md in the repository.";
 "The page couldn’t be loaded." = "The page couldn’t be loaded.";
 "The portal's look. Independent of the app theme — the desktop and the browser each keep their own." = "The portal's look. Independent of the app theme — the desktop and the browser each keep their own.";
+"The post-download script failed or couldn’t be started for “%@”." = "The post-download script failed or couldn’t be started for “%@”.";
 "The server is presenting the key Goel pinned. Connections to this server are verified against it." = "The server is presenting the key Goel pinned. Connections to this server are verified against it.";
 "The server sent an item named “%@”, which Goel won’t write to disk." = "The server sent an item named “%@”, which Goel won’t write to disk.";
 "The server those items came from is no longer set up." = "The server those items came from is no longer set up.";
@@ -1410,6 +1419,7 @@
 "Unknown size" = "Unknown size";
 "Unlimited" = "Unlimited";
 "Unpack finished .zip downloads next to the file." = "Unpack finished .zip downloads next to the file.";
+"Unpacking “%@” took too long and was stopped." = "Unpacking “%@” took too long and was stopped.";
 "Unsupported URL." = "Unsupported URL.";
 "Up" = "Up";
 "Up to date — version %@" = "Up to date — version %@";
@@ -1512,6 +1522,8 @@
 "Your Keychain refused to remove the login for %@ — unlock it, allow the prompt, and try again" = "Your Keychain refused to remove the login for %@ — unlock it, allow the prompt, and try again";
 "Your Keychain refused to save the login for %@ — unlock it, allow the prompt, and try again" = "Your Keychain refused to save the login for %@ — unlock it, allow the prompt, and try again";
 "Your saved servers couldn’t be read, so nothing was changed — the other servers are still there." = "Your saved servers couldn’t be read, so nothing was changed — the other servers are still there.";
+"Your saved settings couldn’t be read or backed up. Changes to settings won’t be saved until Goel° restarts, so nothing overwrites them." = "Your saved settings couldn’t be read or backed up. Changes to settings won’t be saved until Goel° restarts, so nothing overwrites them.";
+"Your saved settings couldn’t be read, so defaults are in use. The original was kept as a backup in the database." = "Your saved settings couldn’t be read, so defaults are in use. The original was kept as a backup in the database.";
 "You’re running %@. Open the release page to download the update?" = "You’re running %@. Open the release page to download the update?";
 "about %.1f hours remaining" = "about %.1f hours remaining";
 "about %d minute remaining" = "about %d minute remaining";
@@ -1589,6 +1601,7 @@
 "“%@” is still transferring. It will stop and be removed from the list." = "“%@” is still transferring. It will stop and be removed from the list.";
 "“%@” is too large to drag out of the browser." = "“%@” is too large to drag out of the browser.";
 "“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk" = "“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk";
+"“%@” wasn’t scanned: the antivirus scanner set in Settings can’t be run." = "“%@” wasn’t scanned: the antivirus scanner set in Settings can’t be run.";
 "“%@” will stop transferring and be removed from the list." = "“%@” will stop transferring and be removed from the list.";
 "•••••• (unchanged)" = "•••••• (unchanged)";
 "✓ Sequential Download" = "✓ Sequential Download";

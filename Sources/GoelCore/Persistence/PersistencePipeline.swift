@@ -2,6 +2,8 @@ import Foundation
 
 public enum PersistOp: Sendable {
     case saveTask(DownloadTask)
+    /// One transaction for a batch — launch normalisation of 2,000 rows must not be 2,000 commits.
+    case saveTasks([DownloadTask])
     case deleteTask(UUID)
     case saveSettings(AppSettings)
     case saveStats(TransferStats)
@@ -74,6 +76,7 @@ public actor PersistencePipeline {
                 do {
                     switch op {
                     case .saveTask(let task): try store.saveTask(task)
+                    case .saveTasks(let tasks): try store.saveTasks(tasks)
                     case .deleteTask(let id): try store.deleteTask(id)
                     case .saveSettings(let settings): try store.saveSettings(settings)
                     case .saveStats(let stats): try store.saveStats(stats)

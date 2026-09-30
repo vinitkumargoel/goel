@@ -104,11 +104,13 @@ extension DownloadManager {
             tasks[i].remoteInfo = info
         }
 
-        // `.finished` would write a stale snapshot over the terminal one; `.resumeDataUpdated` must still persist.
+        // `.finished` would write a stale snapshot over the terminal one; `.resumeDataUpdated` is coalesced.
         switch event {
         case .progress, .fileProgress, .finished, .connectionsUpdated, .swarmUpdated,
              .trackersUpdated, .piecesUpdated:
             break
+        case .resumeDataUpdated:
+            noteResumeDataChanged(id)
         default:
             persist(tasks[i])
         }
@@ -149,7 +151,10 @@ extension DownloadManager {
         case .seeding:
             runningSlots.remove(id)
             // Must happen here: a seeding task never reaches `.completed`, so the cleanup would never run.
-            if let i = index(of: id) { deleteSourceTorrentIfRequested(tasks[i]) }
+            if let i = index(of: id) {
+                markQuarantined(tasks[i])
+                deleteSourceTorrentIfRequested(tasks[i])
+            }
             schedule()
         case .paused:
             runningSlots.remove(id)

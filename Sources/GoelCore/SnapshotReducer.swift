@@ -12,9 +12,8 @@ public enum SnapshotReducer {
             task.status == .completed && prev.lastStatuses[task.id] != .completed
         }
         var drainIntent: DrainIntent?
-        if env.autoShutdownAction != "none",
-           prev.lastHadActiveWork, !hasActiveWork, completedThisTick {
-            drainIntent = DrainIntent(action: env.autoShutdownAction)
+        if prev.lastHadActiveWork, !hasActiveWork, completedThisTick {
+            drainIntent = DrainIntent(action: env.shutdown)
         }
 
         // The first snapshot only seeds the baseline, or restored tasks all fire "added".
@@ -89,11 +88,23 @@ public struct NotifyPrefs: Equatable, Sendable {
 public struct ReducerEnv: Sendable {
     public var notify: NotifyPrefs
     public var isAppActive: Bool
-    public var autoShutdownAction: String   // "none" | "quit" | "sleep" | "shutdown"
-    public init(notify: NotifyPrefs, isAppActive: Bool, autoShutdownAction: String) {
+    public var shutdown: AutoShutdownAction
+
+    /// The raw string stays for callers still holding the persisted value; unknown means `.none`.
+    public var autoShutdownAction: String {
+        get { shutdown.rawValue }
+        set { shutdown = AutoShutdownAction(rawValue: newValue) ?? .none }
+    }
+
+    public init(notify: NotifyPrefs, isAppActive: Bool, shutdown: AutoShutdownAction) {
         self.notify = notify
         self.isAppActive = isAppActive
-        self.autoShutdownAction = autoShutdownAction
+        self.shutdown = shutdown
+    }
+
+    public init(notify: NotifyPrefs, isAppActive: Bool, autoShutdownAction: String) {
+        self.init(notify: notify, isAppActive: isAppActive,
+                  shutdown: AutoShutdownAction(rawValue: autoShutdownAction) ?? .none)
     }
 }
 
@@ -107,13 +118,18 @@ public enum AppNotification: Equatable, Sendable {
 public enum DrainIntent: Equatable, Sendable {
     case quit, sleep, shutdown
 
-    public init?(action: String) {
+    public init?(action: AutoShutdownAction) {
         switch action {
-        case "quit": self = .quit
-        case "sleep": self = .sleep
-        case "shutdown": self = .shutdown
-        default: return nil
+        case .quit: self = .quit
+        case .sleep: self = .sleep
+        case .shutdown: self = .shutdown
+        case .none: return nil
         }
+    }
+
+    public init?(action: String) {
+        guard let typed = AutoShutdownAction(rawValue: action) else { return nil }
+        self.init(action: typed)
     }
 }
 

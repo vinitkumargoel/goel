@@ -80,10 +80,14 @@ extension DownloadManager {
                 try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
                 let stamp = Self.backupStampFormatter.string(from: Date())
                 let file = (dir as NSString).appendingPathComponent("backup-\(stamp).json")
-                try data.write(to: URL(fileURLWithPath: file))
+                // Atomic: a crash mid-write must not leave a truncated backup that still counts toward retention.
+                try data.write(to: URL(fileURLWithPath: file), options: .atomic)
                 Self.pruneBackups(in: dir, keep: keep)
             } catch {
-                await self?.notePersistenceError(error)
+                // Not "couldn't save to disk": the queue itself is fine, only the backup copy failed.
+                GoelLog.persistence.error("Automatic backup failed", .detail(String(describing: error)))
+                await self?.postNotice(L10n.t("Couldn’t write the automatic backup of your download list: %@",
+                                              error.localizedDescription))
             }
         }
     }
@@ -109,8 +113,26 @@ extension DownloadManager {
         return f
     }()
 
+    /// Gatekeeper only checks what carries `com.apple.quarantine`. Synchronous on purpose: it must land
+    /// before the completion is published, so nothing (auto-open, extract, scripts) sees an unmarked file.
+    func markQuarantined(_ task: DownloadTask) {
+        guard task.isSavePathContained else { return }
+        Quarantine.mark(URL(fileURLWithPath: task.savePath),
+                        sourceURL: Self.quarantineSourceURL(task.source),
+                        referrer: task.referer.flatMap { URL(string: $0) })
+    }
+
+    static func quarantineSourceURL(_ source: DownloadSource) -> URL? {
+        switch source {
+        case .url(let url), .hlsStream(let url): return url
+        case .torrentFile(let url): return url.isFileURL ? nil : url
+        case .magnet: return nil
+        }
+    }
+
     /// Multi-file torrents are scanned per file: a scanner handed a folder can pass having read none of it.
     func onDownloadCompleted(_ task: DownloadTask) {
+        markQuarantined(task)
         if settings.antivirusEnabled {
             let id = task.id
             let executable = settings.antivirusExecutablePath
@@ -124,11 +146,14 @@ extension DownloadManager {
                 deleteSourceTorrentIfRequested(task)
                 return
             }
-            // Separate a misconfigured scanner from a real detection: both end up `flagged`, but they are not the same message.
-            if !ProcessSafety.isSafeExecutable(executable.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            // A scanner that can't run is not a detection: its `false` becomes "error", not "flagged", or every
+            // download looks infected. Either way it fails closed — nothing unscanned reaches extract or the script.
+            let runnable = ProcessSafety.isSafeExecutable(executable.trimmingCharacters(in: .whitespacesAndNewlines))
+            if !runnable {
                 GoelLog.scheduler.error(
                     "Antivirus is enabled but the configured scanner cannot be run", .path(executable))
             }
+            let name = task.name
             Task.detached { [weak self] in
                 var passed = true
                 for path in paths {
@@ -137,6 +162,10 @@ extension DownloadManager {
                     GoelLog.scheduler.error("Antivirus scan flagged or failed", .path(path))
                     passed = false
                     break
+                }
+                if !passed, !runnable {
+                    await self?.recordScanError(id, name: name)
+                    return
                 }
                 await self?.recordScanVerdict(id, passed: passed)
                 // Only a *clean* file reaches auto-extract / post-download actions, else a malicious archive unpacks before the scanner vetoes it.
@@ -161,12 +190,18 @@ extension DownloadManager {
         _ = mutateTask(id) { $0.scanVerdict = passed ? "clean" : "flagged" }
     }
 
+    func recordScanError(_ id: UUID, name: String) {
+        _ = mutateTask(id) { $0.scanVerdict = "error" }
+        postNotice(L10n.t("“%@” wasn’t scanned: the antivirus scanner set in Settings can’t be run.", name),
+                   taskID: id)
+    }
+
     /// A user script goes through the same `FileScanning` port so it inherits the blocklist and the timeout.
     func runPostDownloadActions(_ task: DownloadTask) {
         let path = task.savePath
         if settings.postDownloadExtractArchives {
             if Self.extractableArchiveKind(for: path) != nil {
-                extractArchive(at: path, into: task.saveDirectory)
+                extractArchive(at: path, into: task.saveDirectory, for: task)
             } else {
                 GoelLog.scheduler.error("Auto-extract skipped — unsupported archive type", .path(path))
             }
@@ -175,13 +210,17 @@ extension DownloadManager {
             let executable = settings.postDownloadScriptPath
             let template = settings.postDownloadScriptArgs
             let scanner = self.scanner
-            Task.detached {
+            let name = task.name, id = task.id
+            Task.detached { [weak self] in
                 // A failing script never fails the task, but one that is missing, non-executable, ProcessSafety-vetoed or non-zero must not look like it ran.
                 let ok = await scanner.scan(path: path, executablePath: executable,
                                             argumentTemplate: template)
                 if !ok {
                     GoelLog.scheduler.error(
                         "Post-download script failed or could not be launched", .path(executable))
+                    await self?.postNotice(
+                        L10n.t("The post-download script failed or couldn’t be started for “%@”.", name),
+                        taskID: id)
                 }
             }
         }
@@ -192,9 +231,12 @@ extension DownloadManager {
     }
 
     /// Watchdog-bounded so a zip bomb can't park the task, then escapees are swept. macOS-only: no `/usr/bin/ditto` on the Linux daemon.
-    private func extractArchive(at path: String, into directory: String) {
+    private func extractArchive(at path: String, into directory: String, for task: DownloadTask) {
         #if os(macOS)
-        Task.detached {
+        let id = task.id, name = task.name
+        let source = Self.quarantineSourceURL(task.source)
+        let referrer = task.referer.flatMap { URL(string: $0) }
+        Task.detached { [weak self] in
             let unzip = Process()
             unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
             let target = (directory as NSString)
@@ -205,21 +247,28 @@ extension DownloadManager {
             } catch {
                 // Must return: `waitUntilExit()` on an unlaunched `Process` is undefined on Darwin.
                 GoelLog.scheduler.error("Auto-extract failed to launch", .path(path))
+                await self?.postNotice(L10n.t("Couldn’t unpack “%@”: the extractor didn’t start.", name), taskID: id)
                 return
             }
             let gate = ExtractionGate(process: unzip)
-            Task.detached {
+            let watchdog = Task.detached {
                 try? await Task.sleep(for: Self.extractionTimeout)
                 if gate.timeoutKill() {
                     GoelLog.scheduler.error("Auto-extract timed out and was stopped", .path(path))
                 }
             }
             unzip.waitUntilExit()
-            gate.finish()
-            if unzip.terminationStatus != 0 {
-                GoelLog.scheduler.error("Auto-extract failed — the archive may be corrupt", .path(path))
-            }
+            let timedOut = !gate.finish()
+            watchdog.cancel()
             Self.quarantineExtractedEscapees(under: target)
+            // The archive's flag does not carry over through ditto; the unpacked files need their own.
+            Quarantine.mark(URL(fileURLWithPath: target), sourceURL: source, referrer: referrer)
+            if timedOut {
+                await self?.postNotice(L10n.t("Unpacking “%@” took too long and was stopped.", name), taskID: id)
+            } else if unzip.terminationStatus != 0 {
+                GoelLog.scheduler.error("Auto-extract failed — the archive may be corrupt", .path(path))
+                await self?.postNotice(L10n.t("Couldn’t unpack “%@” — the archive may be damaged.", name), taskID: id)
+            }
         }
         #else
         GoelLog.scheduler.error("Auto-extract is macOS-only and was skipped", .path(path))
@@ -265,8 +314,13 @@ private final class ExtractionGate: @unchecked Sendable {
         self.process = process
     }
 
-    func finish() {
-        lock.lock(); finished = true; lock.unlock()
+    /// False when the watchdog already claimed it, i.e. the process was killed for time.
+    @discardableResult
+    func finish() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !finished else { return false }
+        finished = true
+        return true
     }
 
     func timeoutKill() -> Bool {

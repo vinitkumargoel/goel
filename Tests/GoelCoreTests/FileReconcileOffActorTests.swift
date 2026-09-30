@@ -67,13 +67,13 @@ final class FileReconcileOffActorTests: XCTestCase {
             let task = await manager.task(id)
             XCTAssertNotNil(task, "\(label) must survive the async sweep")
         }
-        let pruned = await manager.task(gone.id)
-        XCTAssertNil(pruned, "the deleted payload's row is dropped")
+        let flagged = await manager.task(gone.id)
+        XCTAssertEqual(flagged?.fileMissing, true, "the deleted payload's row is flagged, not dropped")
 
         // Drain the serial persistence pipeline first, or this assertion races its detached writer.
         await manager.shutdown()
-        XCTAssertFalse(try store.loadAllTasks().contains { $0.id == gone.id },
-                       "the prune is written through to disk, not just the in-memory list")
+        XCTAssertEqual(try store.loadAllTasks().first { $0.id == gone.id }?.fileMissing, true,
+                       "the flag is written through to disk, not just the in-memory list")
     }
 
     func testSweepWithNothingMissingLeavesTheQueueIntact() async throws {
@@ -114,15 +114,18 @@ final class FileReconcileOffActorTests: XCTestCase {
         await manager.restore()
         try FileManager.default.removeItem(atPath: gonePath)
 
+        _ = await manager.takeNotices()
         await manager.reconcileCompletedFiles()
         await manager.reconcileCompletedFiles()
         await manager.reconcileCompletedFiles()
 
         let survivingRow = await manager.task(gone.id)
-        XCTAssertNil(survivingRow)
+        XCTAssertEqual(survivingRow?.fileMissing, true)
+        let notices = await manager.takeNotices()
+        XCTAssertEqual(notices.count, 1, "the user is told once, not on every sweep")
         // Drain the persistence pipeline before reading the store.
         await manager.shutdown()
-        XCTAssertTrue(try store.loadAllTasks().isEmpty,
-                      "three sweeps leave exactly one delete behind, not a resurrected row")
+        XCTAssertEqual(try store.loadAllTasks().map(\.id), [gone.id],
+                       "three sweeps leave the one row behind, flagged")
     }
 }

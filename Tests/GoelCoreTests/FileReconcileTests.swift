@@ -60,7 +60,7 @@ final class FileReconcileTests: XCTestCase {
         XCTAssertFalse(DownloadManager.completedPayloadIsMissing(task, fileManager: .default))
     }
 
-    func testRestorePrunesOnlyCompletedDownloadsWithDeletedFiles() async throws {
+    func testRestoreMarksOnlyCompletedDownloadsWithDeletedFiles() async throws {
         let store = try PersistenceStore()
         let dir = makeTempDir()
 
@@ -88,12 +88,15 @@ final class FileReconcileTests: XCTestCase {
         let paused2 = await manager.task(paused.id)
 
         XCTAssertNotNil(present2, "a completed download whose file is present is kept")
-        XCTAssertNil(gone2, "a completed download whose file was deleted is pruned")
+        XCTAssertNil(present2?.fileMissing)
+        XCTAssertNotNil(gone2, "a moved or deleted payload never erases the row")
+        XCTAssertEqual(gone2?.fileMissing, true, "…it is flagged instead")
         XCTAssertNotNil(unmounted2, "an absent directory is ambiguous → kept")
-        XCTAssertNotNil(paused2, "a non-completed download is never pruned")
+        XCTAssertNil(unmounted2?.fileMissing, "ambiguous is not missing")
+        XCTAssertNotNil(paused2, "a non-completed download is never touched")
 
         // Persistence writes on a detached task: read the store without draining and you race the writer.
         await manager.shutdown()
-        XCTAssertFalse(try store.loadAllTasks().contains { $0.id == gone.id })
+        XCTAssertEqual(try store.loadAllTasks().first { $0.id == gone.id }?.fileMissing, true)
     }
 }

@@ -75,6 +75,21 @@ public actor DownloadManager {
 
     var lastStatsFlush = Date.distantPast
 
+    /// Set when the settings row couldn't be read AND couldn't be backed up: persisting now would
+    /// replace the portal token, password hash, feeds and proxy with defaults, irrecoverably.
+    var settingsLoadFailed = false
+
+    var pendingNotices: [UserNotice] = []
+
+    /// Resume-data-only changes are coalesced per task — see ``noteResumeDataChanged(_:)``.
+    var resumeDirty: Set<UUID> = []
+    var lastResumeFlush: [UUID: Date] = [:]
+    var resumeFlushTask: Task<Void, Never>?
+    static let resumeFlushInterval: TimeInterval = 5
+
+    /// Quit must not hang on an engine that can't reach its session; resume data is best effort.
+    static let engineShutdownDeadline: TimeInterval = 5
+
     typealias StatsMark = StatsAccumulator.Mark
     var statsMarks: [UUID: StatsMark] = [:]
 
@@ -172,6 +187,8 @@ public actor DownloadManager {
             adoptStoredSettings(saved ?? storedSettings)
         } catch {
             notePersistenceError(error, stage: .loading)
+            // Defaults are about to be written over the row we couldn't read — keep a raw copy first.
+            noteSettingsLoadFailure(store: store)
             adoptStoredSettings(storedSettings)
         }
 
@@ -185,8 +202,9 @@ public actor DownloadManager {
         }
 
         let loaded: [DownloadTask]
+        let skipped: Int
         do {
-            loaded = try store.loadAllTasks()
+            (loaded, skipped) = try store.loadAllTasksReport()
         } catch {
             // Never present an empty queue silently — it is indistinguishable from a fresh install.
             persistenceWarning = "Couldn’t restore your downloads — the saved database may be unreadable."
@@ -195,12 +213,24 @@ public actor DownloadManager {
             return
         }
 
-        tasks = loaded.map(Self.normalizeRestored)
+        if skipped > 0 {
+            // A partial queue with no explanation reads as data loss; the raw rows are in task_quarantine.
+            let message = L10n.t("%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted.", skipped)
+            persistenceWarning = message
+            postNotice(message)
+        }
+
+        let normalized = loaded.map(Self.normalizeRestored)
+        tasks = normalized
         rebuildTaskIndex()
 
-        pruneMissingCompletedFiles()
+        // Only rows normalisation changed, and in one transaction: 2,000 commits at launch is seconds of churn.
+        let changed = zip(loaded, normalized).compactMap { $0 == $1 ? nil : $1 }
+        if !changed.isEmpty { pipeline?.enqueue(.saveTasks(changed)) }
 
-        for task in tasks { persist(task) }
+        // Off-actor stat sweep: marks missing payloads, never drops them.
+        await reconcileCompletedFiles()
+
         await applyEngineConfigs()
         await updateWatchFolder()
         updateBackupSchedule()
@@ -211,6 +241,8 @@ public actor DownloadManager {
         armScheduledStarts()
         updatePowerAssertion()
         publish()
+        // Rows restored as `.queued` (including interrupted ones) pick up where they left off.
+        schedule()
     }
 
     var persistenceWarning: String?
@@ -230,7 +262,14 @@ public actor DownloadManager {
 
     public func history(limit: Int = 1000) -> [HistoryEntry] {
         guard let store else { return [] }
-        return (try? store.loadHistory(limit: limit)) ?? []
+        do {
+            return try store.loadHistory(limit: limit)
+        } catch {
+            // Must not look like "no history": the user would assume it was cleared.
+            GoelLog.persistence.error("History load failed", .detail(String(describing: error)))
+            postNotice(L10n.t("Couldn’t read your download history — the saved database may be unreadable."))
+            return []
+        }
     }
 
     public func removeHistoryEntry(_ id: UUID) {
@@ -247,7 +286,8 @@ public actor DownloadManager {
     }
 
     public func updates() -> AsyncStream<[DownloadTask]> {
-        let (stream, continuation) = AsyncStream<[DownloadTask]>.makeStream(bufferingPolicy: .unbounded)
+        // Newest only: each snapshot is the whole queue, so a stalled main thread needs just the latest.
+        let (stream, continuation) = AsyncStream<[DownloadTask]>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let key = UUID()
         observers[key] = continuation
         continuation.yield(tasks)
@@ -303,15 +343,16 @@ public actor DownloadManager {
             // finished one whose file is still on disk — already promises that, so the
             // duplicate maps onto it. A FAILED task does not: re-adding the source is
             // the caller retrying, so retry it. And a completed task whose file has
-            // been deleted is a row the reconcile sweep will drop within seconds —
-            // a caller who deletes and immediately re-adds must not win that race and
-            // be handed a "Saved" that points at nothing.
+            // been deleted is only a record now — re-adding the source is the user
+            // asking for the payload again, so the stale row gives way to a fresh task
+            // rather than handing back a "Saved" that points at nothing.
             if case .failed = existing.status {
                 reactivateFailed(at: i)
                 return tasks[i]
             }
             if existing.status == .completed,
-               Self.completedPayloadIsMissing(existing, fileManager: FileManager.default) {
+               existing.fileMissing == true
+                || Self.completedPayloadIsMissing(existing, fileManager: FileManager.default) {
                 dropTaskLocally(existingID)   // falls through to a fresh task
             } else {
                 return existing
@@ -472,7 +513,9 @@ public actor DownloadManager {
 
     func scheduleAutoRetryIfNeeded(_ id: DownloadTask.ID) {
         guard settings.autoRetryEnabled, settings.autoRetryMaxAttempts > 0 else { return }
-        guard let i = index(of: id), case .failed = tasks[i].status else { return }
+        guard let i = index(of: id), case .failed(let error) = tasks[i].status else { return }
+        // Retrying against a full disk only fails again and churns the volume; the user must free space.
+        if case .diskFull = error { return }
         let attempt = tasks[i].retryAttempt ?? 0
         guard attempt < settings.autoRetryMaxAttempts else { return }
         let next = attempt + 1
@@ -510,9 +553,40 @@ public actor DownloadManager {
         updatePowerAssertion()
         publish()
         schedule()
+        if deleteData { await removeLeftoverPayload(task) }
+    }
+
+    /// The engine only deletes what it still tracks — a row restored at launch was never handed to it — and
+    /// its own failure is reported on a stream whose consumer is already gone. So the manager sweeps what's
+    /// left and says so when the bytes are still on disk.
+    func removeLeftoverPayload(_ task: DownloadTask) async {
+        let dir = (task.saveDirectory as NSString).standardizingPath
+        let target = (task.savePath as NSString).standardizingPath
+        // Never the folder itself: a degenerate name would otherwise turn "delete file" into "delete Downloads".
+        guard task.isSavePathContained, target != dir, !task.name.isEmpty,
+              task.name != ".", task.name != ".." else { return }
+        let paths = [task.savePath, task.savePath + ".goelpart"]
+        let stranded = await Task.detached(priority: .utility) { () -> [String] in
+            let fm = FileManager()
+            var left: [String] = []
+            for path in paths where fm.fileExists(atPath: path) {
+                do {
+                    try fm.removeItem(atPath: path)
+                } catch {
+                    if fm.fileExists(atPath: path) { left.append(path) }
+                }
+            }
+            return left
+        }.value
+        guard !stranded.isEmpty else { return }
+        postNotice(L10n.t("Removed “%@” from the list, but its file is still on disk.", task.name),
+                   taskID: task.id)
     }
 
     public func shutdown() async {
+        // Engines first, while consumers still run, so their last resume data reaches the rows flushed below.
+        await shutdownEngines()
+        for _ in 0..<8 { await Task.yield() }
         for consumer in consumers.values { consumer.cancel() }
         consumers.removeAll()
         for retry in autoRetryTasks.values { retry.cancel() }
@@ -534,8 +608,41 @@ public actor DownloadManager {
         let folderWatch = self.folderWatch
         await folderWatch.stop()
         power.setPreventSleep(false)
+        flushPendingResumeData()
         persistStats(force: true)
         await pipeline?.shutdown()
+    }
+
+    /// Each distinct engine once (tests pass one mock for several kinds), all in parallel, bounded overall.
+    func shutdownEngines(deadline: TimeInterval = DownloadManager.engineShutdownDeadline) async {
+        var seen = Set<ObjectIdentifier>()
+        let engines = [httpEngine, torrentEngine, hlsEngine, ftpEngine, sftpEngine]
+            .filter { seen.insert(ObjectIdentifier($0)).inserted }
+        let finished = await Self.runWithDeadline(seconds: deadline) {
+            await withTaskGroup(of: Void.self) { group in
+                for engine in engines { group.addTask { await engine.shutdown() } }
+            }
+        }
+        if !finished {
+            GoelLog.scheduler.error("Engine shutdown missed its deadline — quitting anyway")
+        }
+    }
+
+    /// True when `work` finished in time. A task group can't do this: it waits for children that ignore cancellation.
+    static func runWithDeadline(seconds: TimeInterval,
+                                _ work: @escaping @Sendable () async -> Void) async -> Bool {
+        let gate = OnceGate()
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let timer = Task {
+                try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+                if gate.claim() { continuation.resume(returning: false) }
+            }
+            Task {
+                await work()
+                timer.cancel()
+                if gate.claim() { continuation.resume(returning: true) }
+            }
+        }
     }
 
     public func pauseAll() async {
@@ -647,6 +754,13 @@ public actor DownloadManager {
         _ = mutateTask(id) {
             $0.speedLimitBytesPerSec = (bytesPerSec ?? 0) > 0 ? bytesPerSec : nil
         }
+        await refreshEngineCopy(id)
+    }
+
+    /// An engine that has seen a task keeps its own copy; a stopped task must not resume with the old one.
+    func refreshEngineCopy(_ id: DownloadTask.ID) async {
+        guard engineStarted.contains(id), let task = task(id), !task.status.isActive else { return }
+        await engine(for: task.source).refresh(task)
     }
 
     public func setTaskUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) async {
@@ -716,6 +830,7 @@ public actor DownloadManager {
         tasks[i].requestHeaders = cleaned.isEmpty ? nil : cleaned
         persist(tasks[i])
         publish()
+        await refreshEngineCopy(id)
         return raw.keys
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { Self.reservedHeaderNames.contains($0) }
@@ -732,6 +847,7 @@ public actor DownloadManager {
         tasks[i].cookieHost = cleaned == nil ? nil : (host ?? tasks[i].sourceHost)
         persist(tasks[i])
         publish()
+        await refreshEngineCopy(id)
     }
 
     public enum RenameResult: Sendable, Equatable {
@@ -760,9 +876,16 @@ public actor DownloadManager {
             do { try fm.moveItem(atPath: oldPath, toPath: newPath) }
             catch { return .ioError(error.localizedDescription) }
         }
+        // The in-progress sibling moves with it, or resume starts the new name from zero.
+        let oldPart = oldPath + ".goelpart", newPart = newPath + ".goelpart"
+        if fm.fileExists(atPath: oldPart), !fm.fileExists(atPath: newPart) {
+            do { try fm.moveItem(atPath: oldPart, toPath: newPart) }
+            catch { return .ioError(error.localizedDescription) }
+        }
         tasks[i].name = finalName
         persist(tasks[i])
         publish()
+        await refreshEngineCopy(id)
         return .renamed(finalName)
     }
 
@@ -826,7 +949,9 @@ public actor DownloadManager {
         let envelope = try JSONDecoder().decode(AppExport.self, from: data)
         var added = 0
         for imported in envelope.tasks {
-            let task = PersistenceStore.sanitizedForImport(imported)
+            // Contained by the CURRENT save folder: the imported settings' own folder is ignored below.
+            let task = PersistenceStore.sanitizedForImport(imported,
+                                                           defaultDirectory: settings.defaultSaveDirectory)
             // Untrusted input may repeat a task id; `taskIndex` keys on it, so the loser becomes a zombie row.
             guard index(of: task.id) == nil else { continue }
             guard dedupIndex[task.source.dedupKey] == nil else { continue }
@@ -958,9 +1083,11 @@ public actor DownloadManager {
 
     static func normalizeRestored(_ task: DownloadTask) -> DownloadTask {
         var t = task
+        // Interrupted work goes back in line rather than to `.paused`, which is reserved for the user's
+        // choice — else "Start All" after a relaunch also resumes what they paused on purpose.
         switch t.status {
-        case .downloading, .verifying, .requestingMetadata, .queued, .seeding:
-            t.status = .paused
+        case .downloading, .verifying, .requestingMetadata, .seeding:
+            t.status = .queued
         default:
             break
         }
@@ -980,6 +1107,8 @@ public actor DownloadManager {
         engineStarted.remove(id)
         statsMarks[id] = nil
         speedMeters[id] = nil
+        resumeDirty.remove(id)
+        lastResumeFlush[id] = nil
         if removeFromList, let i = index(of: id) {
             removeTask(at: i)
         }
@@ -1011,5 +1140,18 @@ public actor DownloadManager {
         case .ftp: return ftpEngine
         case .sftp: return sftpEngine
         }
+    }
+}
+
+/// Exactly-once latch for ``DownloadManager/runWithDeadline(seconds:_:)``: a continuation resumed twice traps.
+final class OnceGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !claimed else { return false }
+        claimed = true
+        return true
     }
 }

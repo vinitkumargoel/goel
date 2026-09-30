@@ -44,6 +44,16 @@ public final class SFTPConnectionStore: @unchecked Sendable {
         return list
     }
 
+    /// Like ``load()``, but an unreadable file is a failure the UI can show, not an empty sidebar.
+    public func loadOutcome() -> Result<[SFTPConnection], SFTPStoreError> {
+        lock.lock(); defer { lock.unlock() }
+        switch readState() {
+        case .ok(let list): return .success(list)
+        case .missing: return .success([])
+        case .unreadable: return .failure(.unreadable)
+        }
+    }
+
     private enum FileState {
         case ok([SFTPConnection])
         case missing

@@ -34,6 +34,8 @@ public extension AppSettings {
         if s.existingFileReaction != "rename", s.existingFileReaction != "overwrite" {
             s.existingFileReaction = "rename"
         }
+        // An unknown action (a typo, an import, a newer build) must never be carried around as a live value.
+        s.autoShutdownAction = s.autoShutdown.rawValue
         return s
     }
 

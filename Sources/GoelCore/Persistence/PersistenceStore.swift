@@ -8,8 +8,15 @@ public final class PersistenceStore: @unchecked Sendable {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
+    /// WAL + synchronous=NORMAL: progress rows land every few seconds per task, and a rollback
+    /// journal fsyncs twice per commit — WAL is durable across app crashes and far cheaper on the SSD.
     public init(path: String) throws {
-        self.dbQueue = try DatabaseQueue(path: path)
+        var config = Configuration()
+        config.journalMode = .wal
+        config.prepareDatabase { db in
+            try db.execute(sql: "PRAGMA synchronous = NORMAL")
+        }
+        self.dbQueue = try DatabaseQueue(path: path, configuration: config)
         self.encoder = Self.makeEncoder()
         self.decoder = JSONDecoder()
         try Self.migrator.migrate(dbQueue)
@@ -49,8 +56,41 @@ public final class PersistenceStore: @unchecked Sendable {
                 t.column("data", .blob).notNull()
             }
         }
+        migrator.registerMigration("v3-quarantine") { db in
+            // Raw copies only: a newer build's rows, or a settings row we failed to read, survive
+            // any later write that would otherwise replace them.
+            try db.create(table: "task_quarantine") { t in
+                t.column("id", .text).primaryKey()
+                t.column("savedAt", .double).notNull()
+                t.column("data", .blob).notNull()
+            }
+            try db.create(table: "settings_backup") { t in
+                t.column("key", .text).primaryKey()
+                t.column("savedAt", .double).notNull()
+                t.column("data", .blob).notNull()
+            }
+        }
         return migrator
     }()
+
+    /// Test seam for the WAL setting.
+    func journalMode() throws -> String {
+        try dbQueue.read { db in try String.fetchOne(db, sql: "PRAGMA journal_mode") ?? "" }
+    }
+
+    /// Test seam: plant a row this build can't decode, as a newer build would.
+    func writeRawRow(table: String, key: String, data: Data) throws {
+        try dbQueue.write { db in
+            switch table {
+            case "task":
+                try db.execute(sql: "INSERT OR REPLACE INTO task (id, addedAt, status, data) VALUES (?, 0, 'future', ?)",
+                               arguments: [key, data])
+            default:
+                try db.execute(sql: "INSERT OR REPLACE INTO settings (key, data) VALUES (?, ?)",
+                               arguments: [key, data])
+            }
+        }
+    }
 
     private static let settingsKey = "app"
 
@@ -82,23 +122,38 @@ public final class PersistenceStore: @unchecked Sendable {
 
     /// Undecodable rows are skipped on purpose: one corrupt task must not take the whole queue with it.
     public func loadAllTasks() throws -> [DownloadTask] {
-        try dbQueue.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT data FROM task ORDER BY addedAt ASC")
+        try loadAllTasksReport().tasks
+    }
+
+    /// Like ``loadAllTasks()``, but reports how many rows didn't decode (a newer build's enum case, a
+    /// downgrade) and copies each raw row to `task_quarantine` so no later write can erase it.
+    public func loadAllTasksReport() throws -> (tasks: [DownloadTask], skipped: Int) {
+        try dbQueue.write { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT id, data FROM task ORDER BY addedAt ASC")
+            var tasks: [DownloadTask] = []
             var skipped = 0
-            let tasks: [DownloadTask] = rows.compactMap { row in
+            for row in rows {
                 let data: Data = row["data"]
                 if let task = try? self.decoder.decode(DownloadTask.self, from: data) {
-                    return task
+                    tasks.append(task)
+                    continue
                 }
                 skipped += 1
-                return nil
+                let id: String = row["id"]
+                try db.execute(
+                    sql: "INSERT OR REPLACE INTO task_quarantine (id, savedAt, data) VALUES (?, ?, ?)",
+                    arguments: [id, Date().timeIntervalSinceReferenceDate, data])
             }
             if skipped > 0 {
-                GoelLog.persistence.error("Skipped corrupt task rows on load",
+                GoelLog.persistence.error("Skipped undecodable task rows on load",
                                           .count(skipped, label: "rows"))
             }
-            return tasks
+            return (tasks, skipped)
         }
+    }
+
+    func quarantinedTaskCount() throws -> Int {
+        try dbQueue.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM task_quarantine") ?? 0 }
     }
 
     private static func writeTask(_ task: DownloadTask, data: Data, into db: Database) throws {
@@ -148,6 +203,30 @@ public final class PersistenceStore: @unchecked Sendable {
         }
     }
 
+    /// Copies the raw settings row, byte for byte, to `settings_backup` — run before defaults may be
+    /// written over a row we failed to decode (portal token, password hash, feeds, proxy, folders).
+    /// Returns false when there was no row to back up.
+    @discardableResult
+    public func backupSettingsRow() throws -> Bool {
+        try dbQueue.write { db in
+            guard let row = try Row.fetchOne(
+                db, sql: "SELECT data FROM settings WHERE key = ?", arguments: [Self.settingsKey]
+            ) else { return false }
+            let data: Data = row["data"]
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO settings_backup (key, savedAt, data) VALUES (?, ?, ?)",
+                arguments: [Self.settingsKey, Date().timeIntervalSinceReferenceDate, data])
+            return true
+        }
+    }
+
+    public func loadSettingsBackup() throws -> Data? {
+        try dbQueue.read { db in
+            try Row.fetchOne(db, sql: "SELECT data FROM settings_backup WHERE key = ?",
+                             arguments: [Self.settingsKey]).map { $0["data"] as Data }
+        }
+    }
+
     private static let statsKey = "stats"
 
     public func saveStats(_ stats: TransferStats) throws {
@@ -180,7 +259,13 @@ public final class PersistenceStore: @unchecked Sendable {
                 arguments: [Self.speedHistoryKey]
             ) else { return [:] }
             let data: Data = row["data"]
-            return (try? self.decoder.decode([String: [SpeedHistoryPoint]].self, from: data)) ?? [:]
+            do {
+                return try self.decoder.decode([String: [SpeedHistoryPoint]].self, from: data)
+            } catch {
+                GoelLog.persistence.error("Speed history undecodable — starting empty",
+                                          .detail(String(describing: error)))
+                return [:]
+            }
         }
     }
 
@@ -208,10 +293,18 @@ public final class PersistenceStore: @unchecked Sendable {
                 sql: "SELECT data FROM history ORDER BY completedAt DESC LIMIT ?",
                 arguments: [limit]
             )
-            return rows.compactMap { row in
+            var skipped = 0
+            let entries: [HistoryEntry] = rows.compactMap { row in
                 let data: Data = row["data"]
-                return try? self.decoder.decode(HistoryEntry.self, from: data)
+                if let entry = try? self.decoder.decode(HistoryEntry.self, from: data) { return entry }
+                skipped += 1
+                return nil
             }
+            if skipped > 0 {
+                GoelLog.persistence.error("Skipped undecodable history rows",
+                                          .count(skipped, label: "rows"))
+            }
+            return entries
         }
     }
 
@@ -237,21 +330,37 @@ public final class PersistenceStore: @unchecked Sendable {
     }
 
     @discardableResult
-    public func importList(_ data: Data) throws -> [DownloadTask] {
+    public func importList(_ data: Data,
+                           defaultDirectory: String = AppSettings.systemDownloadsDirectory) throws -> [DownloadTask] {
         let decoded = try decoder.decode([DownloadTask].self, from: data)
-        let tasks = decoded.map(Self.sanitizedForImport)
+        let tasks = decoded.map { Self.sanitizedForImport($0, defaultDirectory: defaultDirectory) }
         try saveTasks(tasks)
         return tasks
     }
 
-    /// Imported files are untrusted: sanitize `name` and reject `..`/relative `saveDirectory` (arbitrary write).
-    public static func sanitizedForImport(_ task: DownloadTask) -> DownloadTask {
+    /// Imported files are untrusted. A shared backup naming `~/Library/LaunchAgents` would drop a plist
+    /// that runs at login, and one claiming `completed` at `~/Documents/thesis.docx` would hand that file
+    /// to "Remove and delete". So the folder is forced inside `defaultDirectory`, nothing starts on its
+    /// own, and `completed` survives only when the payload is really at the sanitized path.
+    public static func sanitizedForImport(
+        _ task: DownloadTask,
+        defaultDirectory: String = AppSettings.systemDownloadsDirectory
+    ) -> DownloadTask {
         var t = task
         t.name = PathSafety.sanitizedName(t.name, fallback: "download")
         let dir = t.saveDirectory
-        if !dir.hasPrefix("/") || dir.split(separator: "/").contains("..") {
-            t.saveDirectory = AppSettings.systemDownloadsDirectory
+        let wellFormed = dir.hasPrefix("/") && !dir.split(separator: "/").contains("..")
+        if !wellFormed || !PathSafety.isContained(dir, within: defaultDirectory) {
+            t.saveDirectory = defaultDirectory
         }
+        if t.status == .completed, FileManager.default.fileExists(atPath: t.savePath) {
+            t.fileMissing = nil
+        } else if t.status != .paused {
+            t.status = .paused
+            t.completedAt = nil
+        }
+        t.retryAttempt = nil
+        t.scheduledAt = nil
         return t
     }
 

@@ -125,7 +125,14 @@ public struct AppSettings: Codable, Sendable, Hashable {
     public var antivirusArgumentTemplate: String
 
     /// One-shot: must be reset to `none` after firing, or a forgotten toggle shuts the Mac down days later.
+    /// Stored as the raw string so existing rows and the settings UI keep working; read it typed via ``autoShutdown``.
     public var autoShutdownAction: String
+
+    /// Typed view of ``autoShutdownAction``; an unknown stored value reads as `.none`, never as an action.
+    public var autoShutdown: AutoShutdownAction {
+        get { AutoShutdownAction(rawValue: autoShutdownAction) ?? .none }
+        set { autoShutdownAction = newValue.rawValue }
+    }
 
     public var scheduleEnabled: Bool
 
@@ -613,4 +620,9 @@ public struct AppSettings: Codable, Sendable, Hashable {
             .path
             ?? NSTemporaryDirectory()
     }
+}
+
+/// What to do once every download has finished. Raw values are the persisted strings — never rename them.
+public enum AutoShutdownAction: String, Codable, Sendable, CaseIterable {
+    case none, quit, sleep, shutdown
 }

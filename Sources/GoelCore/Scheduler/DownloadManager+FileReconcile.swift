@@ -10,6 +10,10 @@ extension DownloadManager {
         let savePath: String
     }
 
+    /// `unknown` covers every "can't tell": an unmounted volume, EACCES/EPERM from a TCC-protected
+    /// folder, an SMB hiccup. Only a definite ENOENT counts as missing.
+    enum PayloadState: Sendable, Equatable { case present, missing, unknown }
+
     func startFileReconcile() {
         fileReconcileTask?.cancel()
         fileReconcileTask = Task { [weak self] in
@@ -22,7 +26,9 @@ extension DownloadManager {
         }
     }
 
-    /// `stat` must stay off the actor: one unresponsive SMB/NFS share would stall every engine event.
+    /// Flags completed rows whose payload is gone and clears the flag when it comes back. Never drops a
+    /// row: the user moving a finished file in Finder must not erase its record with no word.
+    /// `stat` stays off the actor: one unresponsive SMB/NFS share would stall every engine event.
     public func reconcileCompletedFiles() async {
         let probes = tasks.compactMap { task -> PayloadProbe? in
             guard task.status == .completed else { return nil }
@@ -32,42 +38,41 @@ extension DownloadManager {
         }
         guard !probes.isEmpty else { return }
 
-        // A private `FileManager`, not `.default`: no instance state shared with other threads.
-        let missing = await Task.detached(priority: .utility) {
-            let fm = FileManager()
-            return probes.filter {
-                Self.payloadIsMissing(saveDirectory: $0.saveDirectory, savePath: $0.savePath, fileManager: fm)
-            }
+        let verdicts = await Task.detached(priority: .utility) {
+            probes.map { ($0, Self.payloadState(saveDirectory: $0.saveDirectory, savePath: $0.savePath)) }
         }.value
 
-        guard pruneConfirmedMissing(missing) else { return }
-        publish()
-        schedule()
+        if applyPayloadVerdicts(verdicts) { publish() }
     }
 
     /// Recheck each row: the probe is a stale snapshot and must not overrule newer state.
-    private func pruneConfirmedMissing(_ probes: [PayloadProbe]) -> Bool {
-        var pruned = false
-        for probe in probes {
-            guard let i = index(of: probe.id) else { continue }
-            let task = tasks[i]
-            guard task.status == .completed, task.savePath == probe.savePath else { continue }
-            dropTaskLocally(probe.id)
-            pruned = true
+    private func applyPayloadVerdicts(_ verdicts: [(PayloadProbe, PayloadState)]) -> Bool {
+        var changed = false
+        var newlyMissing: [String] = []
+        for (probe, state) in verdicts {
+            guard let i = index(of: probe.id),
+                  tasks[i].status == .completed, tasks[i].savePath == probe.savePath else { continue }
+            switch state {
+            case .missing where tasks[i].fileMissing != true:
+                tasks[i].fileMissing = true
+                newlyMissing.append(tasks[i].name)
+            case .present where tasks[i].fileMissing == true:
+                tasks[i].fileMissing = nil
+            default:
+                continue
+            }
+            persist(tasks[i])
+            changed = true
         }
-        return pruned
-    }
-
-    /// Blocking — only safe from `restore()` at launch; the periodic sweep uses the async variant.
-    @discardableResult
-    func pruneMissingCompletedFiles() -> Bool {
-        let fm = FileManager.default
-        let gone = tasks.filter {
-            $0.status == .completed && Self.completedPayloadIsMissing($0, fileManager: fm)
+        if newlyMissing.count == 1, let name = newlyMissing.first {
+            postNotice(L10n.t("Can’t find the file for “%@” — it may have been moved or deleted. It stays in your list.", name),
+                       isError: false)
+        } else if newlyMissing.count > 1 {
+            postNotice(L10n.t("Can’t find the files for %d completed downloads — they may have been moved or deleted. They stay in your list.",
+                              newlyMissing.count),
+                       isError: false)
         }
-        guard !gone.isEmpty else { return false }
-        for task in gone { dropTaskLocally(task.id) }
-        return true
+        return changed
     }
 
     static func completedPayloadIsMissing(_ task: DownloadTask, fileManager fm: FileManager) -> Bool {
@@ -76,8 +81,15 @@ extension DownloadManager {
 
     /// An absent containing directory means "unknown" (unmounted volume), never "deleted".
     static func payloadIsMissing(saveDirectory: String, savePath: String, fileManager fm: FileManager) -> Bool {
-        guard fm.fileExists(atPath: saveDirectory) else { return false }
-        return !fm.fileExists(atPath: savePath)
+        payloadState(saveDirectory: saveDirectory, savePath: savePath) == .missing
+    }
+
+    /// `fileExists` can't tell ENOENT from EACCES, so this asks `stat` and reads `errno`.
+    static func payloadState(saveDirectory: String, savePath: String) -> PayloadState {
+        var info = stat()
+        guard stat(saveDirectory, &info) == 0 else { return .unknown }
+        if stat(savePath, &info) == 0 { return .present }
+        return errno == ENOENT ? .missing : .unknown
     }
 
     func dropTaskLocally(_ id: DownloadTask.ID) {

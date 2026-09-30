@@ -20,6 +20,13 @@ public protocol DownloadEngine: AnyObject, Sendable {
     nonisolated var capabilities: EngineCapabilities { get }
 
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata?
+
+    /// Hands the engine the manager's current copy of a task it already knows — called before every
+    /// `resume` and after a rename, limit, header, cookie or folder change, so it never resumes stale.
+    func refresh(_ task: DownloadTask) async
+
+    /// Quit: persist resume state and stop the session cleanly. The manager bounds the wait.
+    func shutdown() async
 }
 
 public extension DownloadEngine {
@@ -30,6 +37,10 @@ public extension DownloadEngine {
     nonisolated var capabilities: EngineCapabilities { [] }
 
     func resolveMetadata(for source: DownloadSource, in directory: String) async -> EngineMetadata? { nil }
+
+    func refresh(_ task: DownloadTask) async {}
+
+    func shutdown() async {}
 }
 
 public protocol FilePrioritizing: DownloadEngine {

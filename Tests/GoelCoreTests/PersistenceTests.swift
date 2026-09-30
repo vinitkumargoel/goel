@@ -226,8 +226,9 @@ final class PersistenceTests: XCTestCase {
         XCTAssertTrue(persistedToDisk)
 
         let storeB = try PersistenceStore(path: path)
+        let httpB = FakeEngine(kind: .http)
         let managerB = DownloadManager(
-            httpEngine: FakeEngine(kind: .http),
+            httpEngine: httpB,
             torrentEngine: FakeEngine(kind: .torrent),
             store: storeB
         )
@@ -239,7 +240,10 @@ final class PersistenceTests: XCTestCase {
         let rb = await managerB.task(b.id)
         let ra = await managerB.task(a.id)
 
-        XCTAssertEqual(rb?.status, .paused)
+        // Interrupted work goes back in line and restarts, instead of turning into a user pause.
+        XCTAssertNotEqual(rb?.status, .paused)
+        let relaunched = await waitUntil { httpB.added.contains(b.id) }
+        XCTAssertTrue(relaunched, "a restored in-flight download is scheduled again on launch")
         XCTAssertEqual(rb?.bytesDownloaded, 2048)
         XCTAssertEqual(rb?.resumeData, Data([0xAB, 0xCD]))
         XCTAssertEqual(rb?.downloadSpeed, 0, "transient speed is cleared on restore")
@@ -260,11 +264,18 @@ final class PersistenceTests: XCTestCase {
         XCTAssertFalse(exported.isEmpty)
 
         let destination = try PersistenceStore()
-        let imported = try destination.importList(exported)
-        XCTAssertEqual(Set(imported), Set(originals))
+        let imported = try destination.importList(exported, defaultDirectory: "/tmp/dl")
+        XCTAssertEqual(imported.map(\.id), originals.map(\.id))
+        XCTAssertEqual(imported.map(\.source), originals.map(\.source))
+        XCTAssertEqual(imported.map(\.bytesDownloaded), originals.map(\.bytesDownloaded))
+        XCTAssertEqual(imported.map(\.resumeData), originals.map(\.resumeData))
+        XCTAssertEqual(imported.map(\.saveDirectory), originals.map(\.saveDirectory),
+                       "a folder already inside the save folder is kept")
+        // An import is untrusted: nothing starts or claims to be finished on its own (no payload exists here).
+        XCTAssertTrue(imported.allSatisfy { $0.status == .paused })
 
         let reloaded = try destination.loadAllTasks()
-        XCTAssertEqual(reloaded, originals, "export → import must reproduce the list exactly")
+        XCTAssertEqual(Set(reloaded), Set(imported), "export → import round-trips through the store")
     }
 
     @discardableResult
