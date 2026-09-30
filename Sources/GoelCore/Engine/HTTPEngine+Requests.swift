@@ -17,8 +17,9 @@ extension HTTPEngine {
             where SegmentedTransfer.isSafeHeader(name: name, value: value) {
             req.setValue(value, forHTTPHeaderField: name)
         }
+        // Stored hosts are lowercased; `url.host` keeps the user's casing, so a raw lookup misses.
         if url.scheme?.lowercased() == "https",
-           let host = url.host, let auth = credentials.basicAuthorization(forHost: host) {
+           let host = url.host?.lowercased(), let auth = credentials.basicAuthorization(forHost: host) {
             req.setValue(auth, forHTTPHeaderField: "Authorization")
         }
         if let referer, !referer.isEmpty {

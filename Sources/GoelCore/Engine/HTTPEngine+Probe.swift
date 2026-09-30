@@ -133,12 +133,19 @@ extension HTTPEngine {
             if r.acceptsRanges { return r }
         }
 
+        // A pause during the HEAD must not go on to park on the GET for a whole request timeout.
+        try Task.checkCancellation()
         // Must stream, not `session.data(for:)`: a server ignoring `Range` returns the whole body → OOM.
         var get = makeRequest(url, userAgent: networkConfig.userAgent,
                               referer: referer, extraHeaders: extraHeaders)
         get.setValue("bytes=0-0", forHTTPHeaderField: "Range")
-        let (http, _, streamer) = try await SegmentedTransfer.openStream(
-            session: session, request: get) { _ in }
+        let box = StreamerBox()
+        let session = self.session
+        let (http, _, streamer) = try await withTaskCancellationHandler {
+            try await SegmentedTransfer.openStream(session: session, request: get) {
+                box.set($0); if Task.isCancelled { box.cancel() }
+            }
+        } onCancel: { box.cancel() }
         // Stop before the body streams, or an unranged 200 pulls the whole file into memory.
         streamer.cancelTask()
         guard (200..<300).contains(http.statusCode) else {

@@ -113,6 +113,7 @@ actor SFTPEngine: DownloadEngine {
             return
         }
         emit(id, .statusChanged(.downloading))
+        tasks[id]?.status = .downloading
 
         let remoteSize: Int64?
         do {
@@ -123,6 +124,11 @@ actor SFTPEngine: DownloadEngine {
             hub.fail(id, Self.downloadError(e))
             return
         } catch {
+            // Carries on without a size (the transfer reports its own failure), but the cause is kept.
+            if !Task.isCancelled {
+                GoelLog.engineSFTP.notice("SFTP size probe failed; downloading without a known size",
+                                          .detail(Self.probeFailureNote(error)))
+            }
             remoteSize = nil
         }
         // A pause during the probe only cancelled this task: no state existed yet to abort.
@@ -173,9 +179,11 @@ actor SFTPEngine: DownloadEngine {
             return
         }
 
-        await RemoteTransferPrep.finishWithOptionalChecksum(
+        let finished = await RemoteTransferPrep.finishWithOptionalChecksum(
             hub: hub, id: id, name: task.name, fileURL: fileURL,
             written: state.finalBytes, expected: task.expectedChecksum)
+        // Removal trashes only a finished file; a partial is unlinked.
+        if finished { tasks[id]?.status = .completed }
     }
 
     private nonisolated func emit(_ id: UUID, _ event: EngineEvent) { hub.emit(id, event) }

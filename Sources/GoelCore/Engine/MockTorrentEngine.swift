@@ -1,7 +1,7 @@
 import Foundation
 
-// Test double: kept out of release binaries.
-#if DEBUG
+// Test double. Compiled in every configuration so `swift test -c release` still builds; `internal` and
+// never constructed by the app or CLI, so it is dead-stripped from what ships.
 actor MockTorrentEngine: TorrentControlling {
     public nonisolated let kind: DownloadKind = .torrent
 
@@ -426,4 +426,3 @@ actor MockTorrentEngine: TorrentControlling {
         var finishedEmitted: Bool = false
     }
 }
-#endif

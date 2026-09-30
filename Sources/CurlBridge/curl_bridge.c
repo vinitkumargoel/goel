@@ -187,6 +187,10 @@ struct gcb_http_ctx {
     /* Ranged only: the most bytes this hop may write; an overshooting 206 must not spill into the next segment. */
     int64_t want;
     int clamped;
+    /* Header presence, not just a parsed value: a CR-less 206 is judged differently from a malformed one. */
+    int has_content_range;
+    int is_multipart;
+    int64_t content_length;
     char etag[256];
     char last_modified[128];
     /* Heap, unbounded: presigned Location URLs routinely exceed 2 KB and a clipped signature 403s. */
@@ -231,7 +235,9 @@ static size_t gcb_http_write_thunk(char *ptr, size_t size, size_t nmemb, void *u
     struct gcb_http_ctx *ctx = (struct gcb_http_ctx *)ud;
     size_t n = size * nmemb;
 
-    if (ctx->expected_total > 0 && ctx->http_status == 206 && !ctx->range_total_mismatch) {
+    /* A 206 with no Content-Range has no total to compare; the span check below holds it instead. */
+    if (ctx->expected_total > 0 && ctx->http_status == 206 && !ctx->range_total_mismatch
+        && ctx->has_content_range) {
         if (ctx->content_range_total < 0) {
             ctx->range_total_mismatch = 1;
             ctx->reject_body = 1;
@@ -259,6 +265,15 @@ static size_t gcb_http_write_thunk(char *ptr, size_t size, size_t nmemb, void *u
 
     size_t allowed = n;
     if (!ctx->unranged) {
+        /* RFC 9110 wants Content-Range on a single-range 206; some servers omit it. We asked for ONE
+         * range, so the body is that range — unless its declared length says otherwise, or it's multipart. */
+        if (!ctx->has_content_range && ctx->content_range_start < 0) {
+            if (ctx->is_multipart || (ctx->content_length >= 0 && ctx->content_length != ctx->want)) {
+                ctx->range_mismatch = 1;
+                return 0;
+            }
+            ctx->content_range_start = ctx->range_start;
+        }
         if (ctx->content_range_start != ctx->range_start) {
             ctx->range_mismatch = 1;
             return 0;
@@ -343,11 +358,25 @@ static size_t gcb_http_header_thunk(char *buffer, size_t size, size_t nitems, vo
         ctx->location = NULL;
         ctx->range_total_mismatch = 0;
         ctx->reject_body = 0;
+        ctx->has_content_range = 0;
+        ctx->is_multipart = 0;
+        ctx->content_length = -1;
         /* A redirect chain must surface the FINAL response's validators only. */
         ctx->etag[0] = '\0';
         ctx->last_modified[0] = '\0';
+    } else if (strncasecmp(line, "Content-Length:", 15) == 0) {
+        const char *v = line + 15;
+        while (*v == ' ' || *v == '\t') v++;
+        char *after = NULL;
+        long long len = strtoll(v, &after, 10);
+        ctx->content_length = (isdigit((unsigned char)*v) && after && *after == '\0' && len >= 0) ? len : -1;
+    } else if (strncasecmp(line, "Content-Type:", 13) == 0) {
+        const char *v = line + 13;
+        while (*v == ' ' || *v == '\t') v++;
+        ctx->is_multipart = strncasecmp(v, "multipart/", 10) == 0;
     } else if (strncasecmp(line, "Content-Range:", 14) == 0) {
         int64_t start, end, total;
+        ctx->has_content_range = 1;
         gcb_parse_content_range(line + 14, &start, &end, &total);
         ctx->content_range_start = start;
         ctx->content_range_end = end;
@@ -518,11 +547,13 @@ GCBHTTPResult gcb_http_range(const char *url,
                              long long expected_total,
                              gcb_write write_cb,
                              gcb_progress progress_cb,
+                             gcb_allow_hop allow_hop,
                              void *userdata) {
     GCBHTTPResult result;
     memset(&result, 0, sizeof(result));
     result.code = -1;
     result.content_range_total = -1;
+    result.content_length = -1;
     if (!url || !write_cb || !progress_cb) return result;
     /* range_start < 0 is the sentinel for "whole body, send no Range header". */
     if (range_start >= 0 && range_end < range_start) {
@@ -572,6 +603,7 @@ GCBHTTPResult gcb_http_range(const char *url,
         ctx.content_range_total = -1;
         ctx.content_range_start = -1;
         ctx.content_range_end = -1;
+        ctx.content_length = -1;
         ctx.expected_total = expected_total;
         ctx.unranged = (range_start < 0);
         ctx.range_start = range_start;
@@ -627,6 +659,8 @@ GCBHTTPResult gcb_http_range(const char *url,
         result.range_total_mismatch = ctx.range_total_mismatch;
         result.range_ignored = ctx.range_ignored;
         result.range_mismatch = ctx.range_mismatch;
+        result.has_content_range = ctx.has_content_range;
+        result.content_length = ctx.content_length;
         snprintf(result.etag, sizeof(result.etag), "%s", ctx.etag);
         snprintf(result.last_modified, sizeof(result.last_modified), "%s", ctx.last_modified);
 
@@ -648,6 +682,14 @@ GCBHTTPResult gcb_http_range(const char *url,
 
         int finished = (rc != CURLE_OK) || ctx.range_total_mismatch || ctx.range_mismatch || !next_url;
         if (finished) {
+            free(next_url);
+            free(current);
+            return result;
+        }
+        /* Every hop is screened before it is fetched: a Location may point at loopback or cloud metadata. */
+        if (allow_hop && !allow_hop(userdata, next_url)) {
+            result.redirect_refused = 1;
+            result.code = (int)CURLE_REMOTE_ACCESS_DENIED;
             free(next_url);
             free(current);
             return result;

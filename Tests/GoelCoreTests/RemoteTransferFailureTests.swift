@@ -65,7 +65,8 @@ final class RemoteTransferFailureTests: XCTestCase {
                 hub: hub, id: id, name: "big.bin", fileURL: file, written: 4 << 20, expected: self.sha)
         }
         job.cancel()
-        await job.value
+        let reportedDone = await job.value
+        XCTAssertFalse(reportedDone)
         hub.finishAll(id)
         var seen: [EngineEvent] = []
         for await event in stream { seen.append(event) }
@@ -127,6 +128,33 @@ final class RemoteTransferFailureTests: XCTestCase {
         try RemoteTransferPrep.trashOrDelete(file)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
     }
+
+    #if os(macOS)
+    /// integration#13: a partial is scratch — unlinked, never trashed; only a finished file is recoverable.
+    func testRemoveSavedFileTrashesOnlyACompletedFile() throws {
+        var trashed: [URL] = []
+        let original = RemoteTransferPrep.trashItem
+        RemoteTransferPrep.trashItem = { trashed.append($0); try FileManager.default.removeItem(at: $0) }
+        defer { RemoteTransferPrep.trashItem = original }
+
+        let partial = dir.appendingPathComponent("half.iso")
+        try Data([1, 2]).write(to: partial)
+        var running = DownloadTask(source: .url(URL(string: "ftp://h/half.iso")!), name: "half.iso",
+                                   saveDirectory: dir.path)
+        running.status = .downloading
+        RemoteTransferPrep.removeSavedFile(hub: EventHub(), id: running.id, task: running)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: partial.path))
+        XCTAssertTrue(trashed.isEmpty, "an unfinished partial must not land in the Trash")
+
+        let done = dir.appendingPathComponent("done.iso")
+        try Data([3]).write(to: done)
+        var finished = DownloadTask(source: .url(URL(string: "ftp://h/done.iso")!), name: "done.iso",
+                                    saveDirectory: dir.path)
+        finished.status = .completed
+        RemoteTransferPrep.removeSavedFile(hub: EventHub(), id: finished.id, task: finished)
+        XCTAssertEqual(trashed.map(\.lastPathComponent), ["done.iso"])
+    }
+    #endif
 
     func testTrashOrDeleteOfAMissingFileThrows() {
         XCTAssertThrowsError(try RemoteTransferPrep.trashOrDelete(dir.appendingPathComponent("nope")))

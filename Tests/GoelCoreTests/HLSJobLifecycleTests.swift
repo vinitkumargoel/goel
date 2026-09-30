@@ -65,8 +65,28 @@ final class HLSJobLifecycleTests: XCTestCase {
         """
     }
 
-    func testShortIVRejectsThePlaylistInsteadOfFallingBackToTheSequence() {
-        XCTAssertNil(HLSParser.parse(keyedPlaylist(iv: "0x0102030405060708"), baseURL: base))
+    /// The IV is a 128-bit integer: a packager that drops leading zeros still means the same IV.
+    func testShortIVIsLeftPaddedNotRefused() throws {
+        guard case .media(let segs, _, _, _)? = HLSParser.parse(keyedPlaylist(iv: "0x0102030405060708"),
+                                                                baseURL: base) else {
+            return XCTFail("a short IV is a valid integer")
+        }
+        XCTAssertEqual(segs.first?.key?.iv,
+                       Data(repeating: 0, count: 8) + Data([1, 2, 3, 4, 5, 6, 7, 8]))
+        XCTAssertEqual(HLSParser.ivData("0x1"), Data(repeating: 0, count: 15) + Data([1]))
+    }
+
+    func testOverlongIVRejectsThePlaylist() {
+        XCTAssertNil(HLSParser.parse(keyedPlaylist(iv: "0x" + String(repeating: "01", count: 17)), baseURL: base))
+    }
+
+    /// A SAMPLE-AES/DRM line must reach the "can't decrypt" refusal, not die as "not a valid playlist".
+    func testIVIsOnlyValidatedForAES128() throws {
+        guard case .media(let segs, _, _, _)? = HLSParser.parse(keyedPlaylist(iv: "junk", method: "SAMPLE-AES"),
+                                                                baseURL: base) else {
+            return XCTFail("the playlist parses; the engine refuses the method later")
+        }
+        guard case .unsupported? = segs.first?.key?.method else { return XCTFail("method must be unsupported") }
     }
 
     func testMalformedIVRejectsThePlaylist() {
@@ -126,6 +146,107 @@ final class HLSJobLifecycleTests: XCTestCase {
             return XCTFail("must parse")
         }
         XCTAssertTrue(HLSParser.usesSingleInitMap(segs))
+    }
+
+    func testSameInitMapRestatedAfterAKeyRotationIsOneMap() throws {
+        let text = """
+        #EXTM3U
+        #EXT-X-TARGETDURATION:6
+        #EXT-X-KEY:METHOD=AES-128,URI="k1.bin",IV=0x01
+        #EXT-X-MAP:URI="init.mp4"
+        #EXTINF:6.0,
+        a.m4s
+        #EXT-X-KEY:METHOD=AES-128,URI="k2.bin",IV=0x02
+        #EXT-X-MAP:URI="init.mp4"
+        #EXTINF:6.0,
+        b.m4s
+        #EXT-X-ENDLIST
+        """
+        guard case .media(let segs, _, _, _)? = HLSParser.parse(text, baseURL: base) else {
+            return XCTFail("must parse")
+        }
+        XCTAssertNotEqual(segs[0].initMap?.key?.url, segs[1].initMap?.key?.url)
+        XCTAssertTrue(HLSParser.usesSingleInitMap(segs), "the header's bytes are the same; only the key moved")
+    }
+
+    func testSegmentsWithAndWithoutAMapAreRefused() throws {
+        let text = """
+        #EXTM3U
+        #EXT-X-TARGETDURATION:6
+        #EXTINF:6.0,
+        pre.ts
+        #EXT-X-MAP:URI="init.mp4"
+        #EXTINF:6.0,
+        a.m4s
+        #EXT-X-ENDLIST
+        """
+        guard case .media(let segs, _, _, _)? = HLSParser.parse(text, baseURL: base) else {
+            return XCTFail("must parse")
+        }
+        XCTAssertFalse(HLSParser.usesSingleInitMap(segs), "TS and fMP4 can't share one file")
+    }
+
+    // MARK: - Disk full (silent#4)
+
+    func testDiskFullIsRecognisedFromEveryLayer() {
+        XCTAssertTrue(HLSEngine.isDiskFull(NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))))
+        XCTAssertTrue(HLSEngine.isDiskFull(
+            NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.fileWriteOutOfSpace.rawValue)))
+        XCTAssertTrue(HLSEngine.isDiskFull(DownloadError.unknown(
+            "HLS → MP4 conversion failed: av_interleaved_write_frame(): No space left on device")))
+        XCTAssertFalse(HLSEngine.isDiskFull(DownloadError.unknown("HLS segment decryption failed")))
+        guard case .diskFull = HLSEngine.failure(
+            for: NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC)), savePath: "/tmp/x.mp4") else {
+            return XCTFail("ENOSPC must map to diskFull")
+        }
+    }
+
+    // MARK: - Sub-resource screen (security#2)
+
+    func testSubresourceOnAnInternalHostIsRefusedBeforeItIsFetched() async throws {
+        let playlist = """
+        #EXTM3U
+        #EXT-X-TARGETDURATION:6
+        #EXTINF:6.0,
+        https://sneaky.example/seg0.ts
+        #EXT-X-ENDLIST
+        """
+        ScriptedURLProtocol.script { req in
+            .init(status: 200, headers: [:], body: Data(playlist.utf8))
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ScriptedURLProtocol.self]
+        let engine = HLSEngine(profile: .high, configuration: config)
+        await engine.setSubresourceCheck { url, _ in url.host != "sneaky.example" }
+        let task = DownloadTask(source: .hlsStream(base), name: "clip.mp4",
+                                saveDirectory: FileManager.default.temporaryDirectory.path)
+        let events = engine.events(for: task.id)
+        await engine.add(task)
+        var failure: DownloadError?
+        for await event in events {
+            if case .failed(let e) = event { failure = e; break }
+            if case .finished = event { break }
+        }
+        XCTAssertEqual(failure, HLSEngine.internalSubresourceRefusal)
+        XCTAssertFalse(ScriptedURLProtocol.requests.contains { $0.url?.host == "sneaky.example" },
+                       "the refused host must never see a request")
+        await engine.remove(task.id, deleteData: false)
+    }
+
+    func testScreenVerdictIsCachedPerHost() async {
+        final class Calls: @unchecked Sendable {
+            private let lock = NSLock()
+            private var n = 0
+            func bump() { lock.lock(); n += 1; lock.unlock() }
+            var count: Int { lock.lock(); defer { lock.unlock() }; return n }
+        }
+        let calls = Calls()
+        let screen = SubresourceScreen(parent: base) { _, _ in calls.bump(); return true }
+        for i in 0..<5 {
+            _ = await screen.allows(URL(string: "https://cdn2.example.com/seg\(i).ts")!)
+        }
+        _ = await screen.allows(URL(string: "https://cdn3.example.com/seg.ts")!)
+        XCTAssertEqual(calls.count, 2, "one resolution per host, not per segment")
     }
 
     func testDiscontinuitySequenceTagIsNotADiscontinuity() throws {

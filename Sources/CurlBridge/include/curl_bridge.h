@@ -35,9 +35,15 @@ typedef struct GCBHTTPResult {
     int range_total_mismatch;
     int range_ignored;           /* server answered a ranged GET with 200; aborted before any body write */
     int range_mismatch;          /* 206 did not start at the requested offset; nothing was written */
+    int has_content_range;       /* the final response carried a Content-Range header at all */
+    int redirect_refused;        /* allow_hop vetoed a Location; nothing was fetched from it */
+    int64_t content_length;      /* final response's Content-Length; -1 when absent */
     char etag[256];
     char last_modified[128];
 } GCBHTTPResult;
+
+/// Screens each redirect hop before it is fetched; nonzero = follow. NULL allows every hop.
+typedef int (*gcb_allow_hop)(void *userdata, const char *url);
 
 // `range_start < 0` streams the whole body; redirects are followed manually, capped at 10.
 GCBHTTPResult gcb_http_range(const char *url,
@@ -54,6 +60,7 @@ GCBHTTPResult gcb_http_range(const char *url,
                              long long expected_total,
                              gcb_write write_cb,
                              gcb_progress progress_cb,
+                             gcb_allow_hop allow_hop,
                              void *userdata);
 
 // Returns 1 on success; skips userinfo so `user@host` cannot spoof the host callers screen on.

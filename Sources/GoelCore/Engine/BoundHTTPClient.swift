@@ -34,6 +34,23 @@ enum BoundHTTPClient {
         var rangeMismatch: Bool = false
         /// A LOCAL write failed: the NIC is healthy, so this must never demote it or be retried as network.
         var writeFailure: DownloadError? = nil
+        /// The final response carried a Content-Range header (a CR-less 206 was held to our span in C).
+        var hasContentRange: Bool = true
+        var contentLength: Int64? = nil
+        /// A redirect hop failed the resolving SSRF screen; nothing was fetched from it.
+        var redirectRefused: Bool = false
+    }
+
+    /// Redirect hops are screened like URLSession's (``RedirectSanitizer``): spelling AND resolved address.
+    typealias HopScreen = @Sendable (_ hop: URL, _ origin: URL) async -> Bool
+
+    static let defaultHopScreen: HopScreen = { hop, origin in
+        let allowed = await NetworkGuard.isAllowedRedirectResolvingNames(hop, from: origin)
+        if !allowed {
+            GoelLog.remote.error("Refusing a redirect hop that resolves to an internal address",
+                                 .state(hop.scheme ?? "", label: "scheme"))
+        }
+        return allowed
     }
 
     /// `@unchecked Sendable`: body writes run on the curl thread, `abort` may flip from any thread.
@@ -42,6 +59,8 @@ enum BoundHTTPClient {
         let limiter: RateLimiter?
         let onBytes: (@Sendable (Int) -> Void)?
         let shouldAbort: (@Sendable () -> Bool)?
+        let origin: URL?
+        let hopScreen: HopScreen
         private let lock = NSLock()
         private var _aborted = false
         private var _writeFailure: DownloadError?
@@ -51,11 +70,32 @@ enum BoundHTTPClient {
 
         init(handle: FileHandle, limiter: RateLimiter?,
              onBytes: (@Sendable (Int) -> Void)? = nil,
-             shouldAbort: (@Sendable () -> Bool)? = nil) {
+             shouldAbort: (@Sendable () -> Bool)? = nil,
+             origin: URL? = nil,
+             hopScreen: @escaping HopScreen = BoundHTTPClient.defaultHopScreen) {
             self.handle = handle
             self.limiter = limiter
             self.onBytes = onBytes
             self.shouldAbort = shouldAbort
+            self.origin = origin
+            self.hopScreen = hopScreen
+        }
+
+        /// Runs on the curl thread (a dedicated `Thread`, never the cooperative pool), so blocking on the
+        /// async resolving screen is fine; an abort stops the wait and refuses the hop.
+        func allowsHop(_ hop: URL) -> Bool {
+            guard let origin else { return false }
+            let verdict = HopVerdict()
+            let sem = DispatchSemaphore(value: 0)
+            let screen = hopScreen
+            let check = Task.detached {
+                verdict.set(await screen(hop, origin))
+                sem.signal()
+            }
+            while sem.wait(timeout: .now() + 0.2) == .timedOut {
+                if aborted { check.cancel(); return false }
+            }
+            return verdict.get()
         }
 
         var aborted: Bool {
@@ -105,10 +145,11 @@ enum BoundHTTPClient {
         fileOffset: UInt64,
         limiter: RateLimiter?,
         onBytes: (@Sendable (Int) -> Void)? = nil,
-        shouldAbort: (@Sendable () -> Bool)? = nil
+        shouldAbort: (@Sendable () -> Bool)? = nil,
+        hopScreen: @escaping HopScreen = BoundHTTPClient.defaultHopScreen
     ) async -> Response {
         let ctx = TransferContext(handle: file, limiter: limiter, onBytes: onBytes,
-                                  shouldAbort: shouldAbort)
+                                  shouldAbort: shouldAbort, origin: request.url, hopScreen: hopScreen)
         do {
             try file.seek(toOffset: fileOffset)
         } catch {
@@ -179,6 +220,7 @@ enum BoundHTTPClient {
                                         expected,
                                         boundWriteThunk,
                                         boundProgressThunk,
+                                        boundAllowHopThunk,
                                         context
                                     )
                                 }
@@ -203,7 +245,10 @@ enum BoundHTTPClient {
             etag: Self.cString(raw.etag),
             lastModified: Self.cString(raw.last_modified),
             rangeMismatch: raw.range_mismatch != 0,
-            writeFailure: ctx.writeFailure
+            writeFailure: ctx.writeFailure,
+            hasContentRange: raw.has_content_range != 0,
+            contentLength: raw.content_length >= 0 ? raw.content_length : nil,
+            redirectRefused: raw.redirect_refused != 0
         )
     }
 
@@ -230,6 +275,20 @@ private func boundWriteThunk(_ data: UnsafePointer<CChar>?, _ size: Int, _ userd
         ctx.recordWriteFailure(error)
         return 0
     }
+}
+
+private func boundAllowHopThunk(_ userdata: UnsafeMutableRawPointer?, _ url: UnsafePointer<CChar>?) -> Int32 {
+    guard let userdata, let url, let hop = URL(string: String(cString: url)) else { return 0 }
+    let ctx = Unmanaged<BoundHTTPClient.TransferContext>.fromOpaque(userdata).takeUnretainedValue()
+    return ctx.allowsHop(hop) ? 1 : 0
+}
+
+/// Written by the screening task, read by the curl thread after the semaphore — the lock orders them.
+private final class HopVerdict: @unchecked Sendable {
+    private let lock = NSLock()
+    private var allowed = false
+    func set(_ value: Bool) { lock.lock(); allowed = value; lock.unlock() }
+    func get() -> Bool { lock.lock(); defer { lock.unlock() }; return allowed }
 }
 
 private func boundProgressThunk(_ userdata: UnsafeMutableRawPointer?, _ dltotal: Int64, _ dlnow: Int64) -> Int32 {

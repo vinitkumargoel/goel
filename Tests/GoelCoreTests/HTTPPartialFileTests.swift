@@ -170,7 +170,9 @@ final class HTTPPartialFileTests: XCTestCase {
         restart.bytesDownloaded = 0
         await engine.refresh(restart)
         let cleared = await engine.tasks[t.id]?.resumeData
-        XCTAssertNil(cleared, "a deliberate restart (no cursor, no bytes) is honoured")
+        // With no streamed cursor the manager's copy stands; a streamed one is never dropped by refresh
+        // (HTTPEngineUnwindTests covers that) — a restart is the manager's remove + re-add.
+        XCTAssertNil(cleared)
         await engine.remove(t.id, deleteData: false)
     }
 
