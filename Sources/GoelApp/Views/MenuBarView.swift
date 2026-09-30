@@ -6,6 +6,8 @@ import GoelCore
 /// one is closed, and it can only address a group that declares an id.
 enum MainWindowID {
     static let value = "main"
+    static let history = "history"
+    static let player = "player"
 }
 
 struct MenuBarView: View {
@@ -205,7 +207,7 @@ struct MenuBarView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .a11yButton(L10n.t("Add download"), hint: L10n.t("Opens the main window's add sheet."))
+            .a11yButton(L10n.t("Add download"), hint: L10n.t("Opens the main window’s add sheet."))
 
             HStack(spacing: 0) {
                 MenuBarPauseAllButton(state: vm.commandState, vm: vm)

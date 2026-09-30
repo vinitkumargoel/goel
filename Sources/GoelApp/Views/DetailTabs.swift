@@ -342,7 +342,9 @@ struct FilesTab: View {
             VStack(alignment: .leading, spacing: 10) {
                 fileRow(name: task.name, fraction: task.fractionCompleted,
                         size: task.totalBytes ?? 0, wanted: true, fileID: nil, priority: .normal)
-                Text(L10n.t("Single-file HTTP download — the one-file case of the unified multi-file model."))
+                Text(task.kind == .torrent
+                     ? L10n.t("The file list appears once the torrent’s metadata arrives.")
+                     : L10n.t("This download is a single file."))
                     .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
             }

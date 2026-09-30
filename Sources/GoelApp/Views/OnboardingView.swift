@@ -88,53 +88,35 @@ struct OnboardingView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 11) {
-            Image(systemName: pane.symbol)
-                .foregroundStyle(Theme.onAccent)
-                .frame(width: 30, height: 30)
-                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.field))
-                .a11yDecorative()
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.t("Welcome to Goel°"))
-                    .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(L10n.t("Welcome to Goel"))
-                Text(pane.title)
-                    .scaledFont(size: Theme.TextSize.sheet, weight: .semibold)
-                    .accessibilityAddTraits(.isHeader)
-            }
-            Spacer()
-        }
-        .padding(18)
+        SheetHeader(systemImage: pane.symbol, title: pane.title, eyebrow: L10n.t("Welcome to Goel°"))
     }
 
     private var footer: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 0) {
             if pane == .clipboard, licenceNoticeVisible {
                 licenceNotice
+                    .padding([.horizontal, .top], 14)
             }
-            HStack(spacing: 8) {
+            // Esc always means "leave setup", on every step; Back is a plain button.
+            SheetFooter(cancelTitle: L10n.t("Skip setup"), onCancel: finish,
+                        primaryTitle: pane == .clipboard ? L10n.t("Start using Goel°") : L10n.t("Continue"),
+                        onPrimary: advance) {
                 progressDots
-                Spacer()
-                // Esc always means "leave setup", on every step; Back is a plain button.
-                Button(L10n.t("Skip setup")) { finish() }
-                    .keyboardShortcut(.cancelAction)
+            } secondary: {
                 if pane != .saveFolder {
                     Button(L10n.t("Back")) { pane = Pane(rawValue: pane.rawValue - 1) ?? .saveFolder }
                         .accessibilityLabel(L10n.t("Back to the previous step"))
                 }
-                Button(pane == .clipboard ? L10n.t("Start using Goel°") : L10n.t("Continue")) {
-                    if let next = Pane(rawValue: pane.rawValue + 1) {
-                        pane = next
-                    } else {
-                        finish()
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
             }
         }
-        .padding(14)
+    }
+
+    private func advance() {
+        if let next = Pane(rawValue: pane.rawValue + 1) {
+            pane = next
+        } else {
+            finish()
+        }
     }
 
     private var progressDots: some View {
@@ -256,7 +238,7 @@ struct OnboardingView: View {
             OnboardingRow(symbol: "puzzlepiece.extension",
                           title: L10n.t("1. Load the extension"),
                           detail: extensionFolderMessage
-                              ?? L10n.t("Opens the folder to point your browser's “Load unpacked” at.")) {
+                              ?? L10n.t("Opens the folder to point your browser’s “Load unpacked” at.")) {
                 Button(L10n.t("Show Folder")) { revealExtensionFolder() }
                     .accessibilityLabel(L10n.t("Show the browser extension folder in Finder"))
             }

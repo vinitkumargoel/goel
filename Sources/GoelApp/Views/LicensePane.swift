@@ -161,7 +161,7 @@ struct LicensePane: View {
             L10n.t("No trial clock. Nothing expires and nothing stops working."),
             L10n.t("No feature gating — paying unlocks nothing, because nothing is locked."),
             L10n.t("No telemetry, no analytics, no phone-home. Nothing checks whether you have paid."),
-            L10n.t("Diagnostics are only ever sent by you, by hand, from Settings ▸ Advanced."),
+            L10n.t("Diagnostics are only ever sent by you, by hand, from Settings ▸ Diagnostics."),
         ]
     }
 

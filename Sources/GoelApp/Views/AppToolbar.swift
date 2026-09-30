@@ -11,6 +11,18 @@ struct AppToolbar: View {
     var body: some View {
         HStack(spacing: 8) {
             Button {
+                vm.sidebarVisible.toggle()
+            } label: {
+                Image(systemName: "sidebar.left")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.large)
+            // ⌃⌘S is bound once, in View ▸ Toggle Sidebar.
+            .help(ShortcutHint.help(L10n.t("Toggle sidebar"), "⌃⌘S"))
+            .a11yButton(L10n.t("Sidebar"))
+            .accessibilityValue(vm.sidebarVisible ? L10n.t("Shown") : L10n.t("Hidden"))
+
+            Button {
                 vm.isAddSheetPresented = true
             } label: {
                 Label(L10n.t("Add download"), systemImage: "plus")
@@ -75,7 +87,8 @@ struct AppToolbar: View {
             TextField(L10n.t("Search downloads"), text: $vm.search)
                 .textFieldStyle(.plain)
                 .scaledFont(size: Theme.TextSize.body)
-                .frame(width: 180)
+                // Gives way first when the window narrows, so the menus keep their labels.
+                .frame(minWidth: 90, idealWidth: 180, maxWidth: 180)
                 .accessibilityLabel(L10n.t("Search downloads"))
                 .focused($searchFocused)
                 .help(ShortcutHint.help(L10n.t("Search downloads (host:example.com narrows to a site)"), "⌘F"))

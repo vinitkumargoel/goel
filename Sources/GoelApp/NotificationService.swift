@@ -30,6 +30,35 @@ enum NotificationService {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
+    /// What System Settings allows, for the Notifications pane's status row.
+    enum Permission: Equatable {
+        case allowed, denied, notAsked
+    }
+
+    static func permission() async -> Permission {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: return .allowed
+        case .denied: return .denied
+        default: return .notAsked
+        }
+    }
+
+    /// The pane's "Send Test": proof that banners arrive, without waiting for a download.
+    static func sendTest(sound: Bool) {
+        let content = content(title: L10n.t("Notifications are working"),
+                              body: L10n.t("This is how Goel° tells you a download finished or failed."),
+                              sound: sound)
+        post(identifier: "test-\(UUID().uuidString)", content: content)
+    }
+
+    @MainActor
+    static func openSystemSettings() {
+        let bundle = Bundle.main.bundleIdentifier ?? ""
+        let target = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(bundle)"
+        if let url = URL(string: target) { NSWorkspace.shared.open(url) }
+    }
+
     /// Must run at launch, before the first banner: a click that launches the app is delivered
     /// to whichever delegate is set by then.
     @MainActor

@@ -93,16 +93,9 @@ struct SFTPUploadConflictSheet: View {
     }
 
     private var footer: some View {
-        HStack {
+        SheetFooter(onCancel: onCancel, primaryTitle: L10n.t("Upload"), onPrimary: { onResolve(decisions) }) {
             Text(summary).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
-            Spacer()
-            Button(L10n.t("Cancel"), role: .cancel, action: onCancel)
-                .keyboardShortcut(.cancelAction)
-            Button(L10n.t("Upload")) { onResolve(decisions) }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
         }
-        .padding(16)
     }
 
     private var displayDir: String { request.remoteDir == "." ? L10n.t("Home") : request.remoteDir }

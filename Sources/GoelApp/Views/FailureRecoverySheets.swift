@@ -4,6 +4,7 @@ import GoelCore
 /// Shared chrome for the failure card's recovery sheets: a title, a line of context, the body,
 /// and Cancel plus one confirm button.
 private struct RecoverySheet<Content: View>: View {
+    let symbol: String
     let title: String
     let subtitle: String
     let confirmTitle: String
@@ -13,26 +14,21 @@ private struct RecoverySheet<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.m) {
-            Text(title)
-                .scaledFont(size: Theme.TextSize.sheet, weight: .bold)
-                .accessibilityAddTraits(.isHeader)
-            Text(subtitle)
-                .scaledFont(size: Theme.TextSize.meta)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            content()
-            HStack {
-                Spacer()
-                Button(L10n.t("Cancel"), role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button(confirmTitle, action: onConfirm)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(confirmDisabled)
+        VStack(alignment: .leading, spacing: 0) {
+            SheetHeader(systemImage: symbol, title: title)
+            Divider()
+            VStack(alignment: .leading, spacing: Theme.Space.m) {
+                Text(subtitle)
+                    .scaledFont(size: Theme.TextSize.meta)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                content()
             }
-            .padding(.top, Theme.Space.xs)
+            .padding(18)
+            Divider()
+            SheetFooter(onCancel: { dismiss() }, primaryTitle: confirmTitle,
+                        primaryDisabled: confirmDisabled, onPrimary: onConfirm)
         }
-        .padding(Theme.Space.xl)
         .frame(width: 440)
     }
 }
@@ -48,6 +44,7 @@ struct UpdateLinkSheet: View {
 
     var body: some View {
         RecoverySheet(
+            symbol: "link",
             title: L10n.t("Update Link"),
             subtitle: L10n.t("Paste the new address for “%@”. The download keeps its name and the part already on disk.", task.name),
             confirmTitle: task.status.isFailed ? L10n.t("Update & Retry") : L10n.t("Update"),
@@ -105,6 +102,7 @@ struct AttachCookiesSheet: View {
 
     var body: some View {
         RecoverySheet(
+            symbol: "person.badge.key",
             title: L10n.t("Attach Cookies"),
             subtitle: L10n.t("The server refused “%1$@” without a login. Attach the cookies your browser sends to %2$@.",
                              task.name, task.sourceHost ?? "—"),
@@ -137,6 +135,7 @@ struct ChangeFolderSheet: View {
 
     var body: some View {
         RecoverySheet(
+            symbol: "folder",
             title: L10n.t("Change Folder"),
             subtitle: L10n.t("Move “%@” to a folder with more room. The part already downloaded moves with it.", task.name),
             confirmTitle: L10n.t("Move & Retry"),

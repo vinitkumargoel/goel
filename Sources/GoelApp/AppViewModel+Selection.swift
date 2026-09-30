@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import GoelCore
 
 @MainActor
@@ -151,6 +152,38 @@ extension AppViewModel {
         for task in selectedTasks {
             if task.status.isFailed { retry(task.id) }
         }
+    }
+
+    /// In queue order, so the selection keeps its relative order on the move.
+    func moveSelectedInQueue(to placement: QueueOrder.Placement) {
+        let ids = selectedTasks.map(\.id).sorted { (queueRanks[$0] ?? .max) < (queueRanks[$1] ?? .max) }
+        guard !ids.isEmpty else { return }
+        moveInQueue(ids, to: placement)
+    }
+
+    func setPrioritySelected(_ priority: FilePriority) {
+        let ids = selectedTasks.map(\.id)
+        guard !ids.isEmpty else { return }
+        let manager = self.manager
+        Task { for id in ids { await manager.setPriority(priority, task: id) } }
+        toastSuccess(ids.count == 1 ? L10n.t("Priority set to %@", priority.title)
+                                    : L10n.t("Priority set to %1$@ for %2$d downloads", priority.title, ids.count))
+    }
+
+    /// One Finder window selecting every file that exists, rather than one per row.
+    func revealSelected() {
+        let urls = selectedTasks
+            .map { URL(fileURLWithPath: $0.savePath) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !urls.isEmpty else { toastWarning(L10n.t("None of the selected files are on disk")); return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    func copySelectedLinks() {
+        let links = selectedTasks.map(\.sourceLocator)
+        guard !links.isEmpty else { return }
+        copyToPasteboard(links.joined(separator: "\n"))
+        toastSuccess(links.count == 1 ? L10n.t("Link copied") : L10n.t("%d links copied", links.count))
     }
 
     func visibleNeighbor(after id: DownloadTask.ID) -> DownloadTask.ID? {

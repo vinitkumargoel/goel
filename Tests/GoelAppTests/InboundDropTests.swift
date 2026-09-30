@@ -38,9 +38,9 @@ final class InboundDropTests: XCTestCase {
         XCTAssertEqual(plan.unsupportedFiles, [zip, folder])
         XCTAssertTrue(plan.links.isEmpty)
         XCTAssertEqual(InboundDrop.unsupportedMessage(for: [zip]),
-                       "Goel takes links and .torrent files — “archive.zip” is neither")
+                       "Goel° takes links and .torrent files — “archive.zip” is neither")
         XCTAssertEqual(InboundDrop.unsupportedMessage(for: [zip, folder]),
-                       "Goel takes links and .torrent files — 2 of the dropped files are neither")
+                       "Goel° takes links and .torrent files — 2 of the dropped files are neither")
         XCTAssertNil(InboundDrop.unsupportedMessage(for: []))
     }
 

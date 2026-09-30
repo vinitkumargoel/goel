@@ -24,7 +24,7 @@ struct DownloadsEmptyState: View {
                     .accessibilityAddTraits(.isHeader)
                 Text(clipboardLink == nil
                      ? L10n.t("Add a link and it will show up here.")
-                     : L10n.t("There's a link on your clipboard — start with that one."))
+                     : L10n.t("There’s a link on your clipboard — start with that one."))
                     .scaledFont(size: Theme.TextSize.body)
                     // Secondary: this line is the instruction, not decoration.
                     .foregroundStyle(.secondary)

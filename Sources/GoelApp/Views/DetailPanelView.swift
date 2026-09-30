@@ -12,7 +12,7 @@ struct DetailPanelView: View {
             } else if let task = vm.selectedTask {
                 content(for: task)
             } else {
-                emptyState
+                QueueOverviewPanel()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -25,8 +25,7 @@ struct DetailPanelView: View {
             header(for: task)
             Divider()
 
-            // Five segments truncate ("Connecti…") below ~360 pt, so the picker becomes a menu there.
-            DetailTabPicker(selection: $vm.detailTab, segmentedMinWidth: 336)
+            DetailTabPicker(selection: $vm.detailTab, tabs: DetailTab.available(for: task))
                 .controlSize(.small)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
@@ -44,24 +43,31 @@ struct DetailPanelView: View {
 
     @ViewBuilder
     private func tabBody(for task: DownloadTask) -> some View {
-        switch vm.detailTab {
-        case .general:
+        switch vm.detailTab.resolved(for: task) {
+        case .overview:
             VStack(spacing: 0) {
                 if task.status == .completed {
                     CompletedHero(task: task, vm: vm)
                 } else {
                     hero(for: task)
                 }
+                if task.showsProgressDetail {
+                    ProgressTab(task: task)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 facts(for: task)
             }
-        case .details:
-            DetailsTab(task: task).padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        case .progress:
-            ProgressTab(task: task).padding(16).frame(maxWidth: .infinity, alignment: .leading)
         case .files:
             FilesTab(task: task).padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        case .connections:
-            ConnectionsTab(task: task).padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        case .network:
+            VStack(alignment: .leading, spacing: 18) {
+                DetailsTab(task: task)
+                ConnectionsTab(task: task)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -83,46 +89,47 @@ struct DetailPanelView: View {
         .padding(16)
     }
 
+    /// Ring and numbers side by side instead of stacked: about 120 pt shorter, which brings the
+    /// save path and source above the fold at the window's minimum height.
     private func hero(for task: DownloadTask) -> some View {
-        VStack(spacing: 14) {
-            ZStack {
-                ProgressRing(fraction: task.fractionCompleted, tint: task.progressTint)
-                    .frame(width: 132, height: 132)
-                VStack(spacing: 1) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 16) {
+                ZStack {
+                    ProgressRing(fraction: task.fractionCompleted, tint: task.progressTint)
+                        .frame(width: 88, height: 88)
                     Text("\(task.percentComplete)%")
-                        .scaledFont(size: 30, weight: .bold, monospacedDigit: true)
-                    Text(L10n.t("complete"))
-                        .scaledFont(size: Theme.TextSize.caption)
-                        .foregroundStyle(.secondary)
+                        .scaledFont(size: 20, weight: .bold, monospacedDigit: true)
                 }
-            }
-            .padding(.top, 4)
-            .accessibilityElement(children: .ignore)
-            .accessibilityAddTraits(.updatesFrequently)
-            .accessibilityLabel(L10n.t("Download progress"))
-            .accessibilityValue(task.accessibilityProgressValue)
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.updatesFrequently)
+                .accessibilityLabel(L10n.t("Download progress"))
+                .accessibilityValue(task.accessibilityProgressValue)
 
-            HStack(spacing: 22) {
-                DetailSpeedStat(symbol: "arrow.down", speed: telemetry.displaySpeed(for: task).down, color: Theme.green, size: 13)
-                DetailSpeedStat(symbol: "arrow.up", speed: telemetry.displaySpeed(for: task).up, color: Theme.teal, size: 13)
+                VStack(alignment: .leading, spacing: 6) {
+                    DetailSpeedStat(symbol: "arrow.down", speed: telemetry.displaySpeed(for: task).down,
+                                    color: Theme.green, size: 15)
+                    DetailSpeedStat(symbol: "arrow.up", speed: telemetry.displaySpeed(for: task).up,
+                                    color: Theme.teal, size: 12)
+                    Text(sizeAndETA(for: task))
+                        .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(A11y.sentence(
+                            L10n.t("%1$@ of %2$@", A11y.bytes(task.bytesDownloaded), A11y.bytes(task.totalBytes)),
+                            A11y.eta(task.estimatedTimeRemaining)))
+                }
+                Spacer(minLength: 0)
             }
 
             TaskSpeedGraph(taskID: task.id, window: 60, height: 44)
-
-            Text(sizeAndETA(for: task))
-                .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel(A11y.sentence(
-                    L10n.t("%1$@ of %2$@", A11y.bytes(task.bytesDownloaded), A11y.bytes(task.totalBytes)),
-                    A11y.eta(task.estimatedTimeRemaining)))
 
             if case .failed(let error) = task.status {
                 FailureCard(task: task, error: error, vm: vm)
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 18)
-        .padding(.bottom, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 14)
     }
 
     private func sizeAndETA(for task: DownloadTask) -> String {
@@ -184,23 +191,6 @@ struct DetailPanelView: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 14)
     }
-
-    private var emptyState: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer(minLength: 0)
-                PanelDockToggle()
-            }
-            .padding(12)
-            Spacer(minLength: 0)
-            EmptyStateView(systemImage: "doc.text.magnifyingglass",
-                           title: L10n.t("No selection"),
-                           subtitle: L10n.t("Select a download to see its progress, live speed, and details."),
-                           symbolSize: 40)
-                .padding(.horizontal, 30)
-            Spacer(minLength: 0)
-        }
-    }
 }
 
 /// The download's name as the panel heading. Middle truncation keeps the extension visible,
@@ -219,26 +209,29 @@ struct DetailTitle: View {
     }
 }
 
-/// Segmented while there is room for every tab label, a pop-up menu otherwise.
+/// Segmented while there is room for every tab label, a pop-up menu otherwise. The three short
+/// labels fit segmented in the right panel; the menu is only the large-text fallback.
 struct DetailTabPicker: View {
     @Binding var selection: DetailTab
-    /// Below this width the segmented labels truncate.
-    let segmentedMinWidth: CGFloat
+    let tabs: [DetailTab]
     var segmentedMaxWidth: CGFloat? = nil
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             picker.pickerStyle(.segmented)
-                .frame(minWidth: segmentedMinWidth, maxWidth: segmentedMaxWidth ?? .infinity)
+                .frame(maxWidth: segmentedMaxWidth ?? .infinity)
             picker.pickerStyle(.menu)
                 .fixedSize()
         }
         .accessibilityLabel(L10n.t("Detail section"))
     }
 
+    /// Bound through the drawn tab, so a Files choice remembered from a torrent shows Overview
+    /// selected on a single file rather than no segment at all.
     private var picker: some View {
-        Picker("", selection: $selection) {
-            ForEach(DetailTab.allCases) { tab in
+        Picker("", selection: Binding(get: { tabs.contains(selection) ? selection : .overview },
+                                      set: { selection = $0 })) {
+            ForEach(tabs) { tab in
                 Text(tab.title).tag(tab)
             }
         }

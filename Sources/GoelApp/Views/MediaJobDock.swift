@@ -9,14 +9,14 @@ struct MediaJobDock: View {
     private static let visibleLimit = 5
 
     var body: some View {
-        let shown = center.jobs.prefix(Self.visibleLimit)
+        let shown = center.jobs.prefix(center.isDockHidden ? 0 : Self.visibleLimit)
         let overflow = center.jobs.count - shown.count
         VStack(alignment: .trailing, spacing: 8) {
             ForEach(shown) { job in
                 MediaJobCard(job: job, center: center)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
-            if overflow > 0 {
+            if overflow > 0, !center.isDockHidden {
                 Text(L10n.t("+%d more waiting", overflow))
                     .scaledFont(size: Theme.TextSize.caption)
                     .foregroundStyle(.secondary)

@@ -295,9 +295,9 @@ extension AppViewModel {
             return (nil, L10n.t("This server is misconfigured."))
         case .credentialsUnavailable(let lookup):
             return (nil, lookup.isRetryable
-                ? L10n.t("Goel wasn't allowed to read this server's saved secret from your "
+                ? L10n.t("Goel° wasn’t allowed to read this server’s saved secret from your "
                     + "Keychain. Try again and choose Allow.")
-                : L10n.t("This server's saved secret couldn't be read from your Keychain."))
+                : L10n.t("This server’s saved secret couldn’t be read from your Keychain."))
         }
     }
 

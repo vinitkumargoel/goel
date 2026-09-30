@@ -24,7 +24,7 @@ struct GoelDownloaderApp: App {
                 .environmentObject(viewModel)
                 .environmentObject(viewModel.telemetry)
                 .environmentObject(viewModel.sftpStore)
-                .frame(minWidth: 1040, minHeight: 620)
+                .frame(minWidth: WindowLayout.minimumWindowWidth, minHeight: WindowLayout.minimumWindowHeight)
                 .preferredColorScheme(appearance.colorScheme)
                 .task {
                     await viewModel.start()
@@ -37,6 +37,22 @@ struct GoelDownloaderApp: App {
         // AppDelegate routes the URL, and ExternalAdd raises (or reopens) the one main window.
         .handlesExternalEvents(matching: [])
         .commands { GoelCommands(viewModel: viewModel, state: viewModel.commandState) }
+
+        // Own windows, not sheets: History is browsed alongside the list, and a video wants
+        // resizing and full screen. SwiftUI saves each window's frame under its id.
+        Window(L10n.t("History"), id: MainWindowID.history) {
+            HistoryView()
+                .environmentObject(viewModel)
+                .preferredColorScheme(appearance.colorScheme)
+        }
+        .defaultSize(width: 700, height: 520)
+
+        Window(L10n.t("Player"), id: MainWindowID.player) {
+            PlayerWindow()
+                .environmentObject(viewModel)
+                .preferredColorScheme(appearance.colorScheme)
+        }
+        .defaultSize(width: 960, height: 580)
 
         Settings {
             SettingsView()
@@ -208,6 +224,7 @@ struct GoelCommands: Commands {
     /// Not observed: the menus rebuild from ``CommandState`` alone, not on every snapshot.
     let viewModel: AppViewModel
     @ObservedObject var state: CommandState
+    @Environment(\.openWindow) private var openWindow
 
     private var s: CommandState.Snapshot { state.snapshot }
 
@@ -268,7 +285,7 @@ struct GoelCommands: Commands {
             Divider()
             Button(L10n.t("Statistics…")) { viewModel.isStatsPresented = true }
                 .keyboardShortcut("y", modifiers: .command)
-            Button(L10n.t("History…")) { viewModel.isHistoryPresented = true }
+            Button(L10n.t("History…")) { openWindow(id: MainWindowID.history) }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
             Divider()
             Picker(L10n.t("When Downloads Finish"), selection: autoShutdownBinding) {
@@ -279,6 +296,8 @@ struct GoelCommands: Commands {
             }
         }
         CommandGroup(after: .sidebar) {
+            Button(L10n.t("Toggle Sidebar")) { viewModel.sidebarVisible.toggle() }
+            .keyboardShortcut("s", modifiers: [.command, .control])
             Button(L10n.t("Toggle Detail Panel")) { viewModel.detailPanelVisible.toggle() }
                 .keyboardShortcut("i", modifiers: .command)
             Button(L10n.t("Toggle Theme")) { cycleTheme() }

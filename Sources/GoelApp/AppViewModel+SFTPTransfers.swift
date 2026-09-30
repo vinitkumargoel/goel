@@ -667,7 +667,7 @@ extension AppViewModel {
             }
             guard SFTPBrowserPaths.isSafeChildName(name) else {
                 throw SFTPError(kind: .io,
-                                message: L10n.t("The server sent an item named “%@”, which Goel won’t write to disk.", name))
+                                message: L10n.t("The server sent an item named “%@”, which Goel° won’t write to disk.", name))
             }
             let key = parent.standardizedFileURL.path
             var taken = claimed[key] ?? []

@@ -262,7 +262,7 @@ struct RemoteAccessPane: View {
                 }
 
                 SetRow(name: L10n.t("Web theme"),
-                       desc: L10n.t("The portal's look. Independent of the app theme — the desktop and the browser each keep their own.")) {
+                       desc: L10n.t("The portal’s look. Independent of the app theme — the desktop and the browser each keep their own.")) {
                     Picker("", selection: $vm.remoteTheme) {
                         ForEach(AppTheme.allCases) { Text($0.rawValue).tag($0) }
                     }
@@ -545,7 +545,7 @@ struct BrowserIntegrationPane: View {
             guard error != nil else { return }
             Task { @MainActor in
                 vm.settingsMessage(L10n.t("Safari Extension"),
-                    L10n.t("Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app."))
+                    L10n.t("Couldn’t open Safari’s extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app."))
             }
         }
     }

@@ -443,7 +443,7 @@ final class SFTPBrowserModel: ObservableObject {
         guard let client else { return false }
         // Server-supplied name joined onto the browsed path: ".." or "a/b" would walk out of the tree.
         guard SFTPBrowserPaths.isSafeChildName(entry.name) else {
-            error = L10n.t("“%@” has a name Goel can’t handle safely.", entry.name)
+            error = L10n.t("“%@” has a name Goel° can’t handle safely.", entry.name)
             return false
         }
         let full = Self.join(path, entry.name)

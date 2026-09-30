@@ -42,13 +42,25 @@ enum SortKey: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Three short tabs fit segmented in the 340 pt panel, where five collapsed into a pop-up menu.
+/// Overview folds in General and Progress; Network folds in Details and Connections.
 enum DetailTab: String, CaseIterable, Identifiable {
-    case general = "General"
-    case details = "Details"
-    case progress = "Progress"
+    case overview = "Overview"
     case files = "Files"
-    case connections = "Connections"
+    case network = "Network"
     var id: String { rawValue }
+
+    /// Files only earns a tab when there is a list to show: a torrent (even before its metadata
+    /// arrives) or a multi-file download.
+    static func available(for task: DownloadTask) -> [DetailTab] {
+        task.kind == .torrent || task.files.count > 1 ? allCases : [.overview, .network]
+    }
+
+    /// The tab to draw for this task: a remembered Files tab falls back to Overview on a
+    /// single-file download instead of showing an empty page.
+    func resolved(for task: DownloadTask) -> DetailTab {
+        Self.available(for: task).contains(self) ? self : .overview
+    }
 }
 
 @MainActor
@@ -125,10 +137,12 @@ final class AppViewModel: ObservableObject {
     /// because a drop's payload can only be read asynchronously, after the drop has been accepted.
     var queueDragIDs: [DownloadTask.ID] = []
     @Published var detailPanelVisible: Bool = true
-    @Published var detailTab: DetailTab = .general
+    @Published var detailTab: DetailTab = .overview
     @Published var isAddSheetPresented: Bool = false
     @Published var isStatsPresented: Bool = false
     @Published var isHistoryPresented: Bool = false
+    /// Bumped whenever the archived history changes; the History window reloads on it.
+    @Published var historyRevision = 0
     @Published var isLinkGrabberPresented: Bool = false
 
     @Published var playerItem: PlayerItem?
@@ -238,6 +252,21 @@ final class AppViewModel: ObservableObject {
     func toggleDetailPanelPosition() {
         detailPanelPosition = detailPanelPosition == .right ? .bottom : .right
     }
+
+    /// Set by the window while it is too narrow for a right-docked panel (see ``WindowLayout``).
+    @Published var detailDockForcedBottom = false
+
+    /// Where the panel is drawn: the preference, unless the window is too narrow for it.
+    var effectiveDetailPanelPosition: DetailPanelPosition {
+        detailDockForcedBottom ? .bottom : detailPanelPosition
+    }
+
+    /// Remembered across launches, like the grouping: hiding it is a way of working.
+    @Published var sidebarVisible: Bool = UserDefaults.standard.object(forKey: AppViewModel.sidebarVisibleKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(sidebarVisible, forKey: Self.sidebarVisibleKey) }
+    }
+
+    static let sidebarVisibleKey = "sidebarVisible"
 
     @Published var confirmRequest: ConfirmRequest?
 
@@ -1074,7 +1103,7 @@ final class AppViewModel: ObservableObject {
             case let .upToDate(current):
                 self.toastSuccess(L10n.t("Up to date — version %@", current))
             case .notConfigured:
-                self.toastWarning(L10n.t("Set an update feed URL in Settings → Advanced first"))
+                self.toastWarning(L10n.t("Set an update feed URL in Settings → Backup & Updates first"))
             case let .failed(message):
                 self.toastError(L10n.t("Update check failed: %@", message))
             }
@@ -1187,6 +1216,23 @@ final class AppViewModel: ObservableObject {
             toastNow(L10n.t("Automatic action cancelled — downloads started again"))
         }
         postNotifications(output.notifications, previous: previous, snapshot: snapshot)
+        if Self.hasNewlyCompleted(snapshot, previous: previous.lastStatuses) { bumpHistoryRevision(after: 1) }
+    }
+
+    /// Whether this snapshot finished something the last one hadn't: the History window reloads.
+    nonisolated static func hasNewlyCompleted(_ snapshot: [DownloadTask],
+                                              previous: [DownloadTask.ID: DownloadStatus]) -> Bool {
+        snapshot.contains { $0.status == .completed && previous[$0.id] != .completed }
+    }
+
+    /// The history row is written by the persistence pipeline after the status flips, so a
+    /// completion reloads a moment later rather than reading the table before the row lands.
+    func bumpHistoryRevision(after seconds: Double = 0) {
+        guard seconds > 0 else { historyRevision &+= 1; return }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            self?.historyRevision &+= 1
+        }
     }
 
     /// Completion banners go out per task (Show in Finder / Open, one banner per download);
@@ -1285,12 +1331,25 @@ final class AppViewModel: ObservableObject {
     }
 
     func deleteHistoryEntry(_ id: UUID) {
-        Task { await manager.removeHistoryEntry(id) }
+        Task {
+            await manager.removeHistoryEntry(id)
+            bumpHistoryRevision(after: 0.3)
+        }
         toastSuccess(L10n.t("Entry removed"))
     }
 
+    func relocateHistoryEntry(_ entry: HistoryEntry, to path: String) {
+        Task {
+            await manager.relocateHistoryEntry(entry, to: path)
+            bumpHistoryRevision(after: 0.3)
+        }
+    }
+
     func clearHistory() {
-        Task { await manager.clearHistory() }
+        Task {
+            await manager.clearHistory()
+            bumpHistoryRevision(after: 0.3)
+        }
         toastSuccess(L10n.t("History cleared"))
     }
 

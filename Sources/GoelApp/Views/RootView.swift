@@ -6,6 +6,7 @@ struct RootView: View {
     @EnvironmentObject private var vm: AppViewModel
     @Environment(\.undoManager) private var undoManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openWindow) private var openWindow
 
     /// The bottom detail panel's height, dragged by its top edge.
     @AppStorage("detailBottomPanelHeight") private var bottomPanelHeight: Double = DetailPanelHeight.standard
@@ -14,6 +15,9 @@ struct RootView: View {
     /// The list column's height, so the panel can't squeeze the list out of a short window.
     @State private var listColumnHeight: Double = 0
 
+    /// Rounded to 10 pt: the dock decision only needs coarse steps, not a redraw per pixel of a resize.
+    @State private var windowWidth: CGFloat = 0
+
     @State private var isDropTargeted = false
 
     @State private var isCommandPalettePresented = false
@@ -21,135 +25,191 @@ struct RootView: View {
     /// Read once at init: the flag flips when the sheet appears, and re-reading tears it down mid-present.
     @State private var isOnboardingPresented = OnboardingState.needsOnboarding
 
+    /// With nothing selected the panel shows the queue overview, so it follows the toggle alone.
     private var showDetail: Bool {
-        vm.detailPanelVisible && vm.selectedTask != nil
+        vm.detailPanelVisible
+    }
+
+    private var forcedBottom: Bool {
+        vm.detailPanelPosition == .right
+            && WindowLayout.detailPosition(preferred: .right, windowWidth: windowWidth,
+                                           sidebarVisible: vm.sidebarVisible) == .bottom
     }
 
     var body: some View {
+        let framed: some View = chrome
+            .frame(minWidth: WindowLayout.minimumWindowWidth, minHeight: WindowLayout.minimumWindowHeight)
+            .onGeometryChange(for: CGFloat.self) { ($0.size.width / 10).rounded() * 10 } action: { windowWidth = $0 }
+            .onChange(of: forcedBottom, initial: true) { _, forced in vm.detailDockForcedBottom = forced }
+            .background { windowBackground }
+        return withSheets(withObservers(withOverlays(framed)))
+    }
+
+    // Split into typed pieces: one long modifier chain took the older CI toolchain over a
+    // second to type-check.
+
+    private var chrome: some View {
         VStack(spacing: 0) {
             AppToolbar()
             Divider()
-            if let warning = vm.persistenceWarning {
-                persistenceBanner(warning)
-                Divider()
-            }
-            if let warning = vm.serverStoreWarning {
-                warningBanner(warning) { vm.serverStoreWarning = nil }
-                Divider()
-            }
-            if let link = vm.clipboardSuggestion {
-                clipboardBanner(link)
-                Divider()
-            }
-            HStack(spacing: 0) {
-                SidebarView()
-                    .frame(width: 200)
-                Divider()
-                VStack(spacing: 0) {
-                    if let server = vm.server(vm.selectedServer) {
-                        // The `.id` must include the generation, or Reconnect reuses the dead client.
-                        SFTPBrowserView(connection: server,
-                                        client: vm.sftpClient(for: server))
-                            .id("\(server.id)-\(vm.browserGeneration)")
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if vm.tasks.isEmpty && vm.isRestoring {
-                        // The queue loads asynchronously; the first-run screen would flash here.
-                        RestoringPlaceholderList()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if vm.tasks.isEmpty {
-                        DownloadsEmptyState()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        DownloadListView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        if showDetail && vm.detailPanelPosition == .bottom {
-                            DetailPanelResizeHandle(storedHeight: $bottomPanelHeight,
-                                                    liveHeight: $liveBottomPanelHeight,
-                                                    displayedHeight: displayedBottomPanelHeight)
-                            DetailBottomPanel()
-                                .frame(height: displayedBottomPanelHeight)
-                                .transition(panelTransition(.bottom))
-                        }
-                    }
-                }
-                .frame(minWidth: 420, maxWidth: .infinity)
-                .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { listColumnHeight = $0 }
-                if showDetail && vm.selectedServer == nil && vm.detailPanelPosition == .right {
-                    Divider()
-                    DetailPanelView()
-                        .frame(width: 340)
-                        .transition(panelTransition(.trailing))
-                }
-            }
-            .animation(panelAnimation, value: vm.detailPanelVisible)
-            .animation(panelAnimation, value: vm.detailPanelPosition)
-            .animation(panelAnimation, value: showDetail)
+            banners
+            columns
             Divider()
             StatusBarView()
         }
-        .frame(minWidth: 1040, minHeight: 620)
-        .background {
-            Color(nsColor: .windowBackgroundColor)
-                .overlay { if let tint = Theme.windowTint { tint } }
+    }
+
+    @ViewBuilder
+    private var banners: some View {
+        if let warning = vm.persistenceWarning {
+            persistenceBanner(warning)
+            Divider()
         }
-        .overlay(alignment: .bottom) { ToastOverlay(queue: vm.toasts) }
-        // Must stay after the toast overlay: a passing toast cannot be allowed to cover the job card.
-        .overlay(alignment: .bottomTrailing) { MediaJobDock(center: vm.mediaJobs) }
-        .overlay { dropOverlay }
-        .overlay { confirmOverlay }
-        .overlay { AutoShutdownCountdownView(countdown: vm.autoShutdownCountdown) }
-        // The window's undo stack is where Edit ▸ Undo looks; "Remove from List" registers there.
-        .onAppear { vm.undoManager = undoManager }
-        .onChange(of: undoManager) { _, manager in vm.undoManager = manager }
-        .onChange(of: vm.persistenceWarning) { _, warning in
-            if let warning { A11yAnnouncer.announce(L10n.t("Warning. %@", warning)) }
+        if let warning = vm.serverStoreWarning {
+            warningBanner(warning) { vm.serverStoreWarning = nil }
+            Divider()
         }
-        .animation(.easeInOut(duration: 0.08), value: isDropTargeted)
-        .onDrop(of: [.url, .fileURL], isTargeted: $isDropTargeted) { handleDrop($0) }
-        .sheet(isPresented: $vm.isAddSheetPresented) {
-            AddDownloadSheet()
-                .environmentObject(vm)
+        if let link = vm.clipboardSuggestion {
+            clipboardBanner(link)
+            Divider()
         }
-        .sheet(isPresented: $vm.isStatsPresented) {
-            StatsView()
-                .environmentObject(vm)
+    }
+
+    private var columns: some View {
+        HStack(spacing: 0) {
+            if vm.sidebarVisible {
+                SidebarView()
+                    .frame(width: WindowLayout.sidebarWidth)
+                    .transition(panelTransition(.leading))
+                Divider()
+            }
+            listColumn
+                .frame(minWidth: WindowLayout.minimumListWidth, maxWidth: .infinity)
+                .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { listColumnHeight = $0 }
+            if showDetail && vm.selectedServer == nil && vm.effectiveDetailPanelPosition == .right {
+                Divider()
+                DetailPanelView()
+                    .frame(width: WindowLayout.detailPanelWidth)
+                    .transition(panelTransition(.trailing))
+            }
         }
-        .sheet(isPresented: $vm.isHistoryPresented) {
-            HistoryView()
-                .environmentObject(vm)
+        .animation(panelAnimation, value: vm.detailPanelVisible)
+        .animation(panelAnimation, value: vm.effectiveDetailPanelPosition)
+        .animation(panelAnimation, value: vm.sidebarVisible)
+        .animation(panelAnimation, value: showDetail)
+    }
+
+    @ViewBuilder
+    private var listColumn: some View {
+        VStack(spacing: 0) {
+            if let server = vm.server(vm.selectedServer) {
+                // The `.id` must include the generation, or Reconnect reuses the dead client.
+                SFTPBrowserView(connection: server,
+                                client: vm.sftpClient(for: server))
+                    .id("\(server.id)-\(vm.browserGeneration)")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if vm.tasks.isEmpty && vm.isRestoring {
+                // The queue loads asynchronously; the first-run screen would flash here.
+                RestoringPlaceholderList()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if vm.tasks.isEmpty {
+                DownloadsEmptyState()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                DownloadListView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                bottomDock
+            }
         }
-        .sheet(isPresented: $vm.isLinkGrabberPresented) {
-            LinkGrabberSheet()
-                .environmentObject(vm)
+    }
+
+    @ViewBuilder
+    private var bottomDock: some View {
+        if showDetail && vm.effectiveDetailPanelPosition == .bottom {
+            DetailPanelResizeHandle(storedHeight: $bottomPanelHeight,
+                                    liveHeight: $liveBottomPanelHeight,
+                                    displayedHeight: displayedBottomPanelHeight)
+            DetailBottomPanel()
+                .frame(height: displayedBottomPanelHeight)
+                .transition(panelTransition(.bottom))
         }
-        .sheet(isPresented: $vm.isServerEditorPresented) {
-            SFTPConnectionEditor(existing: vm.editingServer)
-                .environmentObject(vm)
-        }
-        .sheet(item: $vm.sftpUploadConflicts) { request in
-            SFTPUploadConflictSheet(
-                request: request,
-                onResolve: { vm.resolveUploadConflicts(request, decisions: $0) },
-                onCancel: { vm.sftpUploadConflicts = nil })
-        }
-        .sheet(item: $vm.playerItem) { item in
-            InAppPlayerView(item: item) { vm.playerItem = nil }
-        }
-        .sheet(isPresented: $isCommandPalettePresented) {
-            CommandPalette()
-                .environmentObject(vm)
-        }
-        .sheet(isPresented: $isOnboardingPresented) {
-            OnboardingView()
-                .environmentObject(vm)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: CommandPaletteBus.toggleNotification)) { _ in
-            // Suppressed during onboarding, or the first-run sheet ends up underneath a second sheet.
-            guard !isOnboardingPresented else { return }
-            isCommandPalettePresented.toggle()
-        }
-        // A crash or force-quit mid-preview leaves SFTP Quick Look copies in $TMPDIR.
-        .task(priority: .background) { QuickLookPresenter.sweepStaleTemps() }
+    }
+
+    private var windowBackground: some View {
+        Color(nsColor: .windowBackgroundColor)
+            .overlay { if let tint = Theme.windowTint { tint } }
+    }
+
+    private func withOverlays<Content: View>(_ content: Content) -> some View {
+        content
+            .overlay(alignment: .bottom) { ToastOverlay(queue: vm.toasts) }
+            // Must stay after the toast overlay: a passing toast cannot be allowed to cover the job card.
+            .overlay(alignment: .bottomTrailing) { MediaJobDock(center: vm.mediaJobs) }
+            .overlay { dropOverlay }
+            .overlay { confirmOverlay }
+            .overlay { AutoShutdownCountdownView(countdown: vm.autoShutdownCountdown) }
+    }
+
+    private func withObservers<Content: View>(_ content: Content) -> some View {
+        content
+            // The window's undo stack is where Edit ▸ Undo looks; "Remove from List" registers there.
+            .onAppear { vm.undoManager = undoManager }
+            .onChange(of: undoManager) { _, manager in vm.undoManager = manager }
+            .onChange(of: vm.persistenceWarning) { _, warning in
+                if let warning { A11yAnnouncer.announce(L10n.t("Warning. %@", warning)) }
+            }
+            // History and the player are windows now; the flags stay as the one way to ask for them.
+            .onChange(of: vm.isHistoryPresented) { _, wanted in
+                guard wanted else { return }
+                openWindow(id: MainWindowID.history)
+                vm.isHistoryPresented = false
+            }
+            .onChange(of: vm.playerItem?.id) { _, id in
+                if id != nil { openWindow(id: MainWindowID.player) }
+            }
+            .animation(.easeInOut(duration: 0.08), value: isDropTargeted)
+            .onDrop(of: [.url, .fileURL], isTargeted: $isDropTargeted) { handleDrop($0) }
+            .onReceive(NotificationCenter.default.publisher(for: CommandPaletteBus.toggleNotification)) { _ in
+                // Suppressed during onboarding, or the first-run sheet ends up underneath a second sheet.
+                guard !isOnboardingPresented else { return }
+                isCommandPalettePresented.toggle()
+            }
+            // A crash or force-quit mid-preview leaves SFTP Quick Look copies in $TMPDIR.
+            .task(priority: .background) { QuickLookPresenter.sweepStaleTemps() }
+    }
+
+    private func withSheets<Content: View>(_ content: Content) -> some View {
+        content
+            .sheet(isPresented: $vm.isAddSheetPresented) {
+                AddDownloadSheet()
+                    .environmentObject(vm)
+            }
+            .sheet(isPresented: $vm.isStatsPresented) {
+                StatsView()
+                    .environmentObject(vm)
+            }
+            .sheet(isPresented: $vm.isLinkGrabberPresented) {
+                LinkGrabberSheet()
+                    .environmentObject(vm)
+            }
+            .sheet(isPresented: $vm.isServerEditorPresented) {
+                SFTPConnectionEditor(existing: vm.editingServer)
+                    .environmentObject(vm)
+            }
+            .sheet(item: $vm.sftpUploadConflicts) { request in
+                SFTPUploadConflictSheet(
+                    request: request,
+                    onResolve: { vm.resolveUploadConflicts(request, decisions: $0) },
+                    onCancel: { vm.sftpUploadConflicts = nil })
+            }
+            .sheet(isPresented: $isCommandPalettePresented) {
+                CommandPalette()
+                    .environmentObject(vm)
+            }
+            .sheet(isPresented: $isOnboardingPresented) {
+                OnboardingView()
+                    .environmentObject(vm)
+            }
     }
 
     /// Under Reduce Motion panels fade in place instead of sliding.

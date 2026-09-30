@@ -116,6 +116,35 @@ extension DownloadTask {
         }
     }
 
+    /// Whether Overview carries the old Progress tab's section: a torrent's piece map while it is
+    /// unfinished, or live segments. A single-connection download would only repeat the ring.
+    var showsProgressDetail: Bool {
+        if kind == .torrent { return status != .completed && status != .seeding }
+        return !(connections ?? []).isEmpty
+    }
+
+    /// The compact list has no Speed column, so the rate leads the status: "↓ 7.7 MB/s · 1m left".
+    func statusFoldedText(speed: SpeedSample, queueRank: Int? = nil) -> String {
+        let compact = statusCompactText(queueRank: queueRank)
+        switch status {
+        case .downloading where speed.down >= 1:
+            return L10n.t("%1$@ · %2$@", "↓ " + speed.down.speedString, compact)
+        case .seeding where speed.up >= 1:
+            return L10n.t("%1$@ · %2$@", "↑ " + speed.up.speedString, compact)
+        default:
+            return compact
+        }
+    }
+
+    /// The compact list's line under the name, standing in for the Size column: "2.2 GB · 78%".
+    /// A finished row needs no percent; an unknown size keeps only the percent.
+    var compactSizeLine: String {
+        let percent = L10n.t("%d%%", percentComplete)
+        guard let total = totalBytes, total > 0 else { return status == .completed ? "" : percent }
+        if status == .completed || status == .seeding { return total.byteString }
+        return L10n.t("%1$@ · %2$@", total.byteString, percent)
+    }
+
     /// How far a seeding torrent is toward its ratio target, for the status column's micro-bar;
     /// nil when it seeds without a target, so no bar pretends there is one.
     var seedTargetProgress: Double? {

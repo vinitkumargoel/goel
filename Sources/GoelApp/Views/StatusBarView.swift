@@ -14,19 +14,33 @@ struct StatusBarView: View {
             stat(.down, speed: telemetry.displayedCombinedSpeed.down)
             stat(.up, speed: telemetry.displayedCombinedSpeed.up)
             if !activeTransfers.isEmpty { transfersIndicator }
+            queueFinish
             selectionEcho
             Spacer()
             Text(L10n.t("Queue profile")).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
                 .a11yDecorative()
             profilePicker
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, Theme.Space.m)
         .frame(height: 38)
         .background(.bar)
         .accessibilityLabel(L10n.t("Status bar"))
     }
 
     private var activeTransfers: [SFTPTransfer] { vm.sftpTransfers.filter { $0.isActive } }
+
+    /// "1.2 GB left · done ≈ 14:32": answers "can I close the lid yet?" without adding up rows.
+    @ViewBuilder
+    private var queueFinish: some View {
+        let overview = QueueOverview(tasks: vm.tasks) { telemetry.displaySpeed(for: $0) }
+        if let done = overview.doneText() {
+            Text(L10n.t("%1$@ left · %2$@", overview.remainingBytes.byteString, done))
+                .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .help(L10n.t("When the running and queued downloads finish at the current combined speed"))
+        }
+    }
 
     /// With the panel closed (or several rows picked) nothing else confirms what is selected.
     @ViewBuilder
@@ -113,7 +127,7 @@ struct StatusBarView: View {
             .frame(height: 26)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.control)
-                    .fill(vm.settings.speedLimitEnabled ? Theme.orange.opacity(0.18) : Color.primary.opacity(0.08))
+                    .fill(vm.settings.speedLimitEnabled ? Theme.orange.opacity(0.18) : Theme.fillRest)
             )
             .foregroundStyle(vm.settings.speedLimitEnabled ? Theme.orange : Color.secondary)
             .contentShape(Rectangle())
@@ -146,7 +160,7 @@ struct StatusBarView: View {
         }
     }
 
-    /// The Traffic Limits pane edits the active profile, so editing one makes it the active one.
+    /// The Speed & Connections pane edits the active profile, so editing one makes it the active one.
     private func editProfile(_ name: String) {
         if name != vm.settings.selectedProfileName { vm.setProfile(name) }
         SettingsRoute.shared.request(.traffic)
@@ -187,7 +201,7 @@ struct StatusBarView: View {
             }
         }
         .padding(2)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.field).fill(Color.primary.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.field).fill(Theme.fillRest))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.t("Queue profile"))
     }

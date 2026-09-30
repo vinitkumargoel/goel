@@ -103,6 +103,10 @@ final class MediaJobCenter: ObservableObject {
 
     var liveCount: Int { jobs.filter { $0.state.isLive }.count }
 
+    /// The sidebar's Converting row tucks the cards away (and brings them back) without
+    /// cancelling anything; a new job shows them again so it is never started unseen.
+    @Published var isDockHidden = false
+
     var runningFractions: [Double] {
         jobs.filter { $0.state == .running }.compactMap(\.fraction)
     }
@@ -150,6 +154,7 @@ final class MediaJobCenter: ObservableObject {
             return .unavailable(L10n.t("The source file is missing."))
         }
         jobs.append(job)
+        isDockHidden = false
         startTicker()
         pumpQueue()
         onLiveWorkChanged?()
@@ -313,6 +318,7 @@ final class MediaJobCenter: ObservableObject {
         switch outcome {
         case .success(let url, let usedStreamCopy):
             jobs[index].state = .finished(url, usedStreamCopy: usedStreamCopy)
+            isDockHidden = false
             Self.quarantine(output: url, derivedFrom: jobs[index].input)
             if let total = jobs[index].totalSeconds {
                 jobs[index].processedSeconds = total
@@ -320,6 +326,8 @@ final class MediaJobCenter: ObservableObject {
         case .failure(let summary, let detail):
             jobs[index].state = .failed(summary)
             jobs[index].log = detail
+            // A hidden dock must not swallow the error card.
+            isDockHidden = false
         case .cancelled:
             jobs[index].state = .cancelled
             jobs[index].removedPartial = removedPartial

@@ -71,7 +71,7 @@ struct CookieSourcePicker: View {
                 .textFieldStyle(.roundedBorder)
                 .scaledFont(size: Theme.TextSize.body, design: .monospaced)
                 .accessibilityLabel(L10n.t("Cookie header"))
-                .accessibilityHint(L10n.t("Paste the Cookie request header from your browser's developer tools."))
+                .accessibilityHint(L10n.t("Paste the Cookie request header from your browser’s developer tools."))
             Text(L10n.t("In your browser: DevTools ▸ Network ▸ the download request ▸ copy the Cookie request header."))
                 .scaledFont(size: Theme.TextSize.caption)
                 .foregroundStyle(.secondary)

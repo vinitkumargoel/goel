@@ -35,15 +35,15 @@ struct InAppPlayerView: View {
                 .keyboardShortcut(.cancelAction)
                 .accessibilityLabel(L10n.t("Close player"))
             }
-            .padding(10)
+            .padding(Theme.Space.s)
             if let failure {
                 unplayable(failure)
             } else {
                 VideoPlayer(player: player)
-                    .frame(minWidth: 640, minHeight: 360)
             }
         }
-        .frame(width: 760, height: 480)
+        .frame(minWidth: 480, minHeight: 300)
+        .navigationTitle(item.title)
         .onAppear { player.play() }
         .onDisappear { player.pause() }
         // AVPlayer reports a file it cannot decode by playing nothing, so the reason has to be
@@ -78,5 +78,26 @@ struct InAppPlayerView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The Player window's content: whatever ``AppViewModel/playerItem`` holds. Closing the window
+/// clears it, so the next Play opens a fresh player instead of resuming a stale one.
+struct PlayerWindow: View {
+    @EnvironmentObject private var vm: AppViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Group {
+            if let item = vm.playerItem {
+                InAppPlayerView(item: item) { dismiss() }
+                    .id(item.id)
+            } else {
+                EmptyStateView(systemImage: "play.rectangle", title: L10n.t("Nothing playing"),
+                               subtitle: L10n.t("Choose Play on a finished video or audio download."))
+                    .frame(minWidth: 480, minHeight: 300)
+            }
+        }
+        .onDisappear { vm.playerItem = nil }
     }
 }

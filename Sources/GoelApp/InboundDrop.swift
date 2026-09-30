@@ -44,8 +44,8 @@ enum InboundDrop {
     static func unsupportedMessage(for files: [URL]) -> String? {
         switch files.count {
         case 0: return nil
-        case 1: return L10n.t("Goel takes links and .torrent files — “%@” is neither", files[0].lastPathComponent)
-        default: return L10n.t("Goel takes links and .torrent files — %d of the dropped files are neither", files.count)
+        case 1: return L10n.t("Goel° takes links and .torrent files — “%@” is neither", files[0].lastPathComponent)
+        default: return L10n.t("Goel° takes links and .torrent files — %d of the dropped files are neither", files.count)
         }
     }
 

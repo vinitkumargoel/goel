@@ -40,7 +40,7 @@ struct AggregationSettingsPane: View {
                     .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                     .a11yDecorative()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(L10n.t("Aggregation"))
+                    Text(L10n.t("Multi-path"))
                         .scaledFont(size: Theme.TextSize.sheet, weight: .semibold)
                         .accessibilityAddTraits(.isHeader)
                     Text(L10n.t("Multi-path HTTP downloads across network adapters"))

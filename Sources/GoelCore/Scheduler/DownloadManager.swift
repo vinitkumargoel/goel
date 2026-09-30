@@ -309,6 +309,13 @@ public actor DownloadManager {
         await discardOrphanedSpools(sources, ignoringHistory: [id])
     }
 
+    /// History's "Locate…": the file was moved by hand, so point the entry at where it is now.
+    public func relocateHistoryEntry(_ entry: HistoryEntry, to path: String) {
+        var moved = entry
+        moved.savePath = path
+        persistHistory(moved)
+    }
+
     public func clearHistory() async {
         let sources = historySources(nil)
         persistHistoryClear()
@@ -815,6 +822,12 @@ public actor DownloadManager {
     public func forceReannounce(_ id: DownloadTask.ID) async {
         guard let task = task(id) else { return }
         await (engine(for: task.source) as? TorrentControlling)?.forceReannounce(id)
+    }
+
+    /// A waiting download's place among the others; the scheduler reads it when a slot frees.
+    public func setPriority(_ priority: FilePriority, task id: DownloadTask.ID) async {
+        guard mutateTask(id, { $0.priority = priority }) else { return }
+        schedule()
     }
 
     public func setLabel(_ label: String?, task id: DownloadTask.ID) async {

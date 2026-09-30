@@ -5,6 +5,8 @@ import GoelCore
 struct SheetHeader: View {
     let systemImage: String
     let title: String
+    /// A small line above the title, e.g. "Welcome to Goel°" over the step name.
+    var eyebrow: String? = nil
 
     var body: some View {
         HStack(spacing: 11) {
@@ -14,12 +16,67 @@ struct SheetHeader: View {
                 .frame(width: 30, height: 30)
                 .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.field))
                 .a11yDecorative()
-            Text(title)
-                .scaledFont(size: Theme.TextSize.sheet, weight: .semibold)
-                .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: 2) {
+                if let eyebrow {
+                    Text(eyebrow)
+                        .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
+                        .foregroundStyle(.secondary)
+                }
+                Text(title)
+                    .scaledFont(size: Theme.TextSize.sheet, weight: .semibold)
+                    .accessibilityAddTraits(.isHeader)
+            }
             Spacer()
         }
         .padding(18)
+    }
+}
+
+/// Every sheet's bottom row: optional context on the left, then Cancel and the primary action
+/// on the right — ⎋ and ⏎ always land on the same two buttons.
+struct SheetFooter<Leading: View, Secondary: View>: View {
+    var cancelTitle: String?
+    var onCancel: (() -> Void)?
+    let primaryTitle: String
+    var primaryDisabled = false
+    let onPrimary: () -> Void
+    @ViewBuilder var leading: Leading
+    @ViewBuilder var secondary: Secondary
+
+    var body: some View {
+        HStack(spacing: Theme.Space.s) {
+            leading
+            Spacer(minLength: Theme.Space.s)
+            if let onCancel {
+                Button(cancelTitle ?? L10n.t("Cancel"), role: .cancel, action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+            }
+            secondary
+            Button(primaryTitle, action: onPrimary)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(primaryDisabled)
+        }
+        .padding(14)
+    }
+}
+
+extension SheetFooter where Secondary == EmptyView {
+    init(cancelTitle: String? = nil, onCancel: (() -> Void)? = nil, primaryTitle: String,
+         primaryDisabled: Bool = false, onPrimary: @escaping () -> Void,
+         @ViewBuilder leading: () -> Leading) {
+        self.init(cancelTitle: cancelTitle, onCancel: onCancel, primaryTitle: primaryTitle,
+                  primaryDisabled: primaryDisabled, onPrimary: onPrimary,
+                  leading: leading, secondary: { EmptyView() })
+    }
+}
+
+extension SheetFooter where Leading == EmptyView, Secondary == EmptyView {
+    init(cancelTitle: String? = nil, onCancel: (() -> Void)? = nil, primaryTitle: String,
+         primaryDisabled: Bool = false, onPrimary: @escaping () -> Void) {
+        self.init(cancelTitle: cancelTitle, onCancel: onCancel, primaryTitle: primaryTitle,
+                  primaryDisabled: primaryDisabled, onPrimary: onPrimary,
+                  leading: { EmptyView() }, secondary: { EmptyView() })
     }
 }
 

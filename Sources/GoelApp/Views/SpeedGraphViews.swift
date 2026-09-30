@@ -112,15 +112,21 @@ struct StatsView: View {
     @State private var stats: TransferStats?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(L10n.t("Statistics")).scaledFont(size: 16, weight: .bold)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                Button(L10n.t("Done")) { vm.isStatsPresented = false }
-                    .keyboardShortcut(.defaultAction)
-            }
+        VStack(spacing: 0) {
+            SheetHeader(systemImage: "chart.bar.xaxis", title: L10n.t("Statistics"))
+            Divider()
+            content
+                .padding(18)
+                .frame(maxHeight: .infinity, alignment: .top)
+            Divider()
+            SheetFooter(primaryTitle: L10n.t("Done")) { vm.isStatsPresented = false }
+        }
+        .frame(width: 460, height: 470)
+        .task { stats = await vm.fetchStats() }
+    }
 
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 14) {
             if let stats {
                 HStack(spacing: 12) {
                     statCard(L10n.t("Downloaded"), stats.totalDownloadedBytes.byteString, Theme.accent,
@@ -145,11 +151,7 @@ struct StatsView: View {
                 ProgressView().frame(maxWidth: .infinity, alignment: .center)
                     .accessibilityLabel(L10n.t("Loading statistics"))
             }
-            Spacer(minLength: 0)
         }
-        .padding(18)
-        .frame(width: 460, height: 380)
-        .task { stats = await vm.fetchStats() }
     }
 
     private func statCard(_ label: String, _ value: String, _ tint: Color,
@@ -162,7 +164,7 @@ struct StatsView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .background(Theme.fillRest, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
         .a11yGroup(label: spokenLabel ?? label, value: spoken ?? value)
     }
 
@@ -173,7 +175,7 @@ struct StatsView: View {
                 let total = entry.totals.down + entry.totals.up
                 VStack(spacing: 3) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(total > 0 ? Theme.accent : Color.primary.opacity(0.08))
+                        .fill(total > 0 ? Theme.accent : Theme.fillRest)
                         .frame(height: max(3, CGFloat(Double(total) / Double(peak)) * 80))
                         .help(L10n.t("%1$@: ↓ %2$@ · ↑ %3$@", entry.day,
                                      entry.totals.down.byteString, entry.totals.up.byteString))

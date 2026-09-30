@@ -18,75 +18,104 @@ struct DownloadListView: View {
     /// Grows the fixed columns with the text size, the same factor `scaledFont` applies.
     @ScaledMetric(relativeTo: .body) private var widthScale: CGFloat = 100
 
-    private var columns: DownloadColumns { DownloadColumns(scale: widthScale / 100) }
+    /// Measured, so the column set follows the list rather than the window.
+    @State private var listWidth: CGFloat = 0
+
+    private var columns: DownloadColumns { DownloadColumns(scale: widthScale / 100, listWidth: listWidth) }
 
     var body: some View {
-        VStack(spacing: 0) {
+        let content: some View = VStack(spacing: 0) {
             header
             Divider()
             if vm.visibleTasks.isEmpty {
                 emptyState
             } else {
-                let context = DownloadRow.Context(vm: vm)
-                let columns = self.columns
-                let focused = listFocused
-                let selectionSummary = DownloadRow.SelectionSummary(vm.selection.count > 1 ? vm.selectedTasks : [])
-                let reorderable = vm.isQueueReorderable
-                let ranks = vm.queueRanks
-                ScrollViewReader { proxy in
-                ScrollView {
-                    // Pinned, so a long group keeps its name in view while it scrolls.
-                    LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                        if vm.grouping == .none {
-                            rows(vm.visibleTasks, offset: 0, reorderable: reorderable, ranks: ranks,
-                                 context: context, columns: columns, focused: focused,
-                                 selectionSummary: selectionSummary)
-                        } else {
-                            let offsets = sectionOffsets
-                            ForEach(vm.visibleSections) { section in
-                                Section {
-                                    rows(section.tasks, offset: offsets[section.id] ?? 0, reorderable: false,
-                                         ranks: ranks, context: context, columns: columns, focused: focused,
-                                         selectionSummary: selectionSummary)
-                                } header: {
-                                    ListSectionHeader(section: section)
-                                }
-                            }
-                        }
-                        Color.clear
-                            .frame(maxWidth: .infinity, minHeight: 60)
-                            .contentShape(Rectangle())
-                            .onTapGesture { vm.selectNone() }
-                            .a11yDecorative()
-                    }
+                scrollingRows(RowInputs(vm: vm, columns: columns, focused: listFocused))
+            }
+        }
+        return withKeyboard(content
+            .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
+            .onGeometryChange(for: CGFloat.self) { $0.size.width.rounded() } action: { listWidth = $0 }
+            .contentShape(Rectangle())
+            .onTapGesture { vm.selectNone() }
+            .quickLookPreview($quickLookItem)
+            .environment(\.quickLookAction, QuickLookAction(item: $quickLookItem)))
+    }
+
+    /// What every row of one pass shares, worked out once per body instead of per row.
+    private struct RowInputs {
+        let context: DownloadRow.Context
+        let columns: DownloadColumns
+        let focused: Bool
+        let selectionSummary: DownloadRow.SelectionSummary
+        let reorderable: Bool
+        let ranks: [DownloadTask.ID: Int]
+
+        @MainActor
+        init(vm: AppViewModel, columns: DownloadColumns, focused: Bool) {
+            context = DownloadRow.Context(vm: vm)
+            self.columns = columns
+            self.focused = focused
+            selectionSummary = DownloadRow.SelectionSummary(vm.selection.count > 1 ? vm.selectedTasks : [])
+            reorderable = vm.isQueueReorderable
+            ranks = vm.queueRanks
+        }
+    }
+
+    // Split out of `body`: the whole chain in one expression took the older CI toolchain ~4 s.
+    private func scrollingRows(_ inputs: RowInputs) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                // Pinned, so a long group keeps its name in view while it scrolls.
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    groupedRows(inputs)
+                    Color.clear
+                        .frame(maxWidth: .infinity, minHeight: 60)
+                        .contentShape(Rectangle())
+                        .onTapGesture { vm.selectNone() }
+                        .a11yDecorative()
                 }
-                .onChange(of: vm.selectedTask?.id) { _, id in
-                    guard let id else { return }
-                    // Reduce Motion jumps instead of gliding.
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
-                        proxy.scrollTo(id, anchor: .center)
-                    }
-                }
+            }
+            .onChange(of: vm.selectedTask?.id) { _, id in
+                guard let id else { return }
+                // Reduce Motion jumps instead of gliding.
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+                    proxy.scrollTo(id, anchor: .center)
                 }
             }
         }
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
-        .contentShape(Rectangle())
-        .onTapGesture { vm.selectNone() }
-        .quickLookPreview($quickLookItem)
-        .environment(\.quickLookAction, QuickLookAction(item: $quickLookItem))
-        .focusable()
-        .focusEffectDisabled()
-        .focused($listFocused)
-        .defaultFocus($listFocused, true)
-        // `defaultFocus` alone is not enough: the queue is restored from disk asynchronously, so
-        // this view mounts after the window's first-appearance focus pass has already run.
-        .task { listFocused = true }
-        .onKeyPress { press in handleKey(press) }
-        // Delete removes from the list (undoable); ⌘⌫ (see `handleKey`) is the one that trashes files.
-        .onDeleteCommand { vm.removeSelected(deleteData: false) }
-        .accessibilityLabel(L10n.t("Download queue"))
-        .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, shift with an arrow to extend the selection, command A to select all, space to preview, return to open."))
+    }
+
+    @ViewBuilder
+    private func groupedRows(_ inputs: RowInputs) -> some View {
+        if vm.grouping == .none {
+            rows(vm.visibleTasks, offset: 0, reorderable: inputs.reorderable, inputs: inputs)
+        } else {
+            let offsets = sectionOffsets
+            ForEach(vm.visibleSections) { section in
+                Section {
+                    rows(section.tasks, offset: offsets[section.id] ?? 0, reorderable: false, inputs: inputs)
+                } header: {
+                    ListSectionHeader(section: section)
+                }
+            }
+        }
+    }
+
+    private func withKeyboard<Content: View>(_ content: Content) -> some View {
+        content
+            .focusable()
+            .focusEffectDisabled()
+            .focused($listFocused)
+            .defaultFocus($listFocused, true)
+            // `defaultFocus` alone is not enough: the queue is restored from disk asynchronously, so
+            // this view mounts after the window's first-appearance focus pass has already run.
+            .task { listFocused = true }
+            .onKeyPress { press in handleKey(press) }
+            // Delete removes from the list (undoable); ⌘⌫ (see `handleKey`) is the one that trashes files.
+            .onDeleteCommand { vm.removeSelected(deleteData: false) }
+            .accessibilityLabel(L10n.t("Download queue"))
+            .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, shift with an arrow to extend the selection, command A to select all, space to preview, return to open."))
     }
 
     /// Each section's first row index in the flattened list, so zebra striping and `displayIndex`
@@ -102,30 +131,32 @@ struct DownloadListView: View {
     }
 
     @ViewBuilder
-    private func rows(_ tasks: [DownloadTask], offset: Int, reorderable: Bool, ranks: [DownloadTask.ID: Int],
-                      context: DownloadRow.Context, columns: DownloadColumns, focused: Bool,
-                      selectionSummary: DownloadRow.SelectionSummary) -> some View {
+    private func rows(_ tasks: [DownloadTask], offset: Int, reorderable: Bool, inputs: RowInputs) -> some View {
         ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
-            let isSelected = vm.isSelected(task.id)
-            HoverTrackingRow(row: DownloadRow(
-                task: task,
-                displayIndex: offset + index + 1,
-                queueRank: ranks[task.id],
-                reorderable: reorderable,
-                isSelected: isSelected,
-                // Only a selected row draws focus, so the rest stay equal when focus moves.
-                listFocused: focused && isSelected,
-                speed: telemetry.displaySpeed(for: task),
-                selectionSummary: isSelected ? selectionSummary : nil,
-                context: context,
-                columns: columns,
-                vm: vm
-            ))
+            HoverTrackingRow(row: row(task, displayIndex: offset + index + 1, reorderable: reorderable, inputs: inputs))
             .equatable()
             .modifier(QueueDropTarget(taskID: task.id, enabled: reorderable, vm: vm))
             .id(task.id)
             Divider()
         }
+    }
+
+    private func row(_ task: DownloadTask, displayIndex: Int, reorderable: Bool, inputs: RowInputs) -> DownloadRow {
+        let isSelected: Bool = vm.isSelected(task.id)
+        return DownloadRow(
+            task: task,
+            displayIndex: displayIndex,
+            queueRank: inputs.ranks[task.id],
+            reorderable: reorderable,
+            isSelected: isSelected,
+            // Only a selected row draws focus, so the rest stay equal when focus moves.
+            listFocused: inputs.focused && isSelected,
+            speed: telemetry.displaySpeed(for: task),
+            selectionSummary: isSelected ? inputs.selectionSummary : nil,
+            context: inputs.context,
+            columns: inputs.columns,
+            vm: vm
+        )
     }
 
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
@@ -169,13 +200,19 @@ struct DownloadListView: View {
         return HStack(spacing: 0) {
             headerCol(.index, width: columns.index, alignment: .center)
             headerCol(.name, width: nil, alignment: .leading)
-            headerCol(.size, width: columns.size, alignment: .trailing)
+            if columns.showsSize {
+                headerCol(.size, width: columns.size, alignment: .trailing)
+            }
             headerCol(.status, width: columns.status, alignment: .leading)
-            headerCol(.added, width: columns.added, alignment: .leading)
-            // One column for both directions; it sorts by download speed. The toolbar's Sort
-            // menu can still pick upload speed, and the chevron shows here then too.
-            headerCol(.downloadSpeed, width: columns.speed, alignment: .trailing,
-                      title: L10n.t("Speed"), alsoSortedBy: [.uploadSpeed])
+            if columns.showsAdded {
+                headerCol(.added, width: columns.added, alignment: .leading)
+            }
+            if columns.showsSpeed {
+                // One column for both directions; it sorts by download speed. The toolbar's Sort
+                // menu can still pick upload speed, and the chevron shows here then too.
+                headerCol(.downloadSpeed, width: columns.speed, alignment: .trailing,
+                          title: L10n.t("Speed"), alsoSortedBy: [.uploadSpeed])
+            }
         }
         .padding(.horizontal, 12)
         .frame(height: 28)
@@ -311,6 +348,13 @@ struct DownloadRow: View, Equatable {
     }
 
     var body: some View {
+        withInteractions(withAccessibility(cells
+            .padding(.horizontal, 12)
+            .frame(minHeight: 50)
+            .background(rowBackground)))
+    }
+
+    private var cells: some View {
         HStack(spacing: 0) {
             indexCell
                 .frame(width: columns.index)
@@ -320,11 +364,13 @@ struct DownloadRow: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 6)
 
-            Text(task.totalBytes?.byteString ?? "—")
-                .scaledFont(size: Theme.TextSize.body, monospacedDigit: true)
-                .frame(width: columns.size, alignment: .trailing)
-                .padding(.horizontal, 6)
-                .foregroundStyle(.secondary)
+            if columns.showsSize {
+                Text(task.totalBytes?.byteString ?? "—")
+                    .scaledFont(size: Theme.TextSize.body, monospacedDigit: true)
+                    .frame(width: columns.size, alignment: .trailing)
+                    .padding(.horizontal, 6)
+                    .foregroundStyle(.secondary)
+            }
 
             statusCell
                 // For a failure the tooltip adds the advice to the reason shown in the cell;
@@ -333,56 +379,74 @@ struct DownloadRow: View, Equatable {
                 .frame(width: columns.status, alignment: .leading)
                 .padding(.horizontal, 6)
 
-            Text(task.addedColumnString)
-                .scaledFont(size: Theme.TextSize.meta)
-                .lineLimit(1)
-                .foregroundStyle(.secondary)
-                .help(task.addedString)
-                .frame(width: columns.added, alignment: .leading)
-                .padding(.horizontal, 6)
+            if columns.showsAdded {
+                Text(task.addedColumnString)
+                    .scaledFont(size: Theme.TextSize.meta)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+                    .help(task.addedString)
+                    .frame(width: columns.added, alignment: .leading)
+                    .padding(.horizontal, 6)
+            }
 
-            speedCell
-                .frame(width: columns.speed, alignment: .trailing)
-                .padding(.horizontal, 6)
-        }
-        .padding(.horizontal, 12)
-        .frame(minHeight: 50)
-        .background(rowBackground)
-        // Label is identity only: folding in the ticking percent makes VoiceOver re-speak the row every second.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(task.accessibilityIdentityLabel)
-        .accessibilityValue(accessibilityValue)
-        .accessibilityAddTraits(isSelected
-                                ? [.isButton, .isSelected, .updatesFrequently]
-                                : [.isButton, .updatesFrequently])
-        .accessibilityHint(failureHint ?? L10n.t("Select to show details."))
-        .accessibilityAction(named: Text(L10n.t(task.accessibilityStateActionName)), primaryStateAction)
-        .accessibilityAction(named: Text(L10n.t("Show in Finder"))) { vm.revealInFinder(task) }
-        .accessibilityAction(named: Text(L10n.t("Copy source link"))) { vm.copyToPasteboard(task.sourceLocator) }
-        .accessibilityAction(named: Text(L10n.t("Remove from list"))) { vm.remove(task.id, deleteData: false) }
-        // The keyboard and VoiceOver path to reordering; dragging is pointer-only.
-        .accessibilityAction(named: Text(L10n.t("Move to Top of Queue"))) {
-            vm.moveInQueue(vm.queueTargets(for: task.id), to: .top)
-        }
-        .accessibilityAction(named: Text(L10n.t("Move to Bottom of Queue"))) {
-            vm.moveInQueue(vm.queueTargets(for: task.id), to: .bottom)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            let mods = NSEvent.modifierFlags
-            if mods.contains(.shift) {
-                // ⇧⌘ adds the run to what is already selected; plain ⇧ replaces it.
-                vm.extendSelection(through: task.id, additive: mods.contains(.command))
-            } else if mods.contains(.command) {
-                vm.toggleSelection(task.id)
-            } else {
-                vm.selectOnly(task.id)
+            if columns.showsSpeed {
+                speedCell
+                    .frame(width: columns.speed, alignment: .trailing)
+                    .padding(.horizontal, 6)
             }
         }
-        .contextMenu { contextMenu }
-        .onDrag {
-            guard task.status.hasData else { return NSItemProvider() }
-            return NSItemProvider(object: URL(fileURLWithPath: task.savePath) as NSURL)
+    }
+
+    private func withAccessibility<Content: View>(_ content: Content) -> some View {
+        let traits: AccessibilityTraits = isSelected
+            ? [.isButton, .isSelected, .updatesFrequently]
+            : [.isButton, .updatesFrequently]
+        let hint: String = failureHint ?? L10n.t("Select to show details.")
+        let described = content
+            // Label is identity only: folding in the ticking percent makes VoiceOver re-speak the row every second.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(task.accessibilityIdentityLabel)
+            .accessibilityValue(accessibilityValue)
+            .accessibilityAddTraits(traits)
+            .accessibilityHint(hint)
+        return withAccessibilityActions(described)
+    }
+
+    private func withAccessibilityActions<Content: View>(_ content: Content) -> some View {
+        content
+            .accessibilityAction(named: Text(L10n.t(task.accessibilityStateActionName)), primaryStateAction)
+            .accessibilityAction(named: Text(L10n.t("Show in Finder"))) { vm.revealInFinder(task) }
+            .accessibilityAction(named: Text(L10n.t("Copy source link"))) { vm.copyToPasteboard(task.sourceLocator) }
+            .accessibilityAction(named: Text(L10n.t("Remove from list"))) { vm.remove(task.id, deleteData: false) }
+            // The keyboard and VoiceOver path to reordering; dragging is pointer-only.
+            .accessibilityAction(named: Text(L10n.t("Move to Top of Queue"))) {
+                vm.moveInQueue(vm.queueTargets(for: task.id), to: .top)
+            }
+            .accessibilityAction(named: Text(L10n.t("Move to Bottom of Queue"))) {
+                vm.moveInQueue(vm.queueTargets(for: task.id), to: .bottom)
+            }
+    }
+
+    private func withInteractions<Content: View>(_ content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .onTapGesture(perform: handleTap)
+            .contextMenu { contextMenu }
+            .onDrag {
+                guard task.status.hasData else { return NSItemProvider() }
+                return NSItemProvider(object: URL(fileURLWithPath: task.savePath) as NSURL)
+            }
+    }
+
+    private func handleTap() {
+        let mods = NSEvent.modifierFlags
+        if mods.contains(.shift) {
+            // ⇧⌘ adds the run to what is already selected; plain ⇧ replaces it.
+            vm.extendSelection(through: task.id, additive: mods.contains(.command))
+        } else if mods.contains(.command) {
+            vm.toggleSelection(task.id)
+        } else {
+            vm.selectOnly(task.id)
         }
     }
 
@@ -414,8 +478,10 @@ struct DownloadRow: View, Equatable {
             HStack(spacing: 6) {
                 Circle().fill(task.statusColor).frame(width: 7, height: 7)
                     .a11yDecorative()
-                Text(task.statusCompactText(queueRank: queueRank))
-                    .scaledFont(size: Theme.TextSize.meta)
+                Text(columns.showsSpeed
+                     ? task.statusCompactText(queueRank: queueRank)
+                     : task.statusFoldedText(speed: speed, queueRank: queueRank))
+                    .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 if let progress = task.seedTargetProgress {
@@ -499,6 +565,12 @@ struct DownloadRow: View, Equatable {
                 // A failed row keeps its (red) track: how far it got before the reason in Status.
                 MiniProgressBar(task: task)
                     .frame(maxWidth: 340)
+                if !columns.showsSize, !task.compactSizeLine.isEmpty {
+                    Text(task.compactSizeLine)
+                        .scaledFont(size: Theme.TextSize.caption, monospacedDigit: true)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
         }
     }
@@ -742,14 +814,47 @@ struct DownloadColumns: Equatable {
     var status: CGFloat = 150
     var added: CGFloat = 96
     var speed: CGFloat = 92
+    var layout: Layout = .full
 
-    init(scale: CGFloat = 1) {
+    /// Which columns fit. Narrower lists shed Added first, then fold Size under the name and
+    /// Speed into Status, so the name never drops below ``minimumNameWidth``.
+    enum Layout: Equatable {
+        case full
+        case noAdded
+        case compact
+    }
+
+    static let minimumNameWidth: CGFloat = 180
+    /// Each cell's 6 pt of padding on both sides.
+    static let cellPadding: CGFloat = 12
+    /// The row's 12 pt on both sides.
+    static let rowPadding: CGFloat = 24
+
+    init(scale: CGFloat = 1, listWidth: CGFloat? = nil) {
         let s = scale.isFinite && scale > 0 ? scale : 1
         index = (index * s).rounded()
         size = (size * s).rounded()
         status = (status * s).rounded()
         added = (added * s).rounded()
         speed = (speed * s).rounded()
+        if let listWidth { layout = Self.layout(for: listWidth, columns: self) }
+    }
+
+    var showsSize: Bool { layout != .compact }
+    var showsAdded: Bool { layout == .full }
+    var showsSpeed: Bool { layout != .compact }
+
+    /// The widest set whose fixed columns still leave the name its minimum. An unmeasured
+    /// (zero) width keeps the full set rather than flashing the compact one on first layout.
+    static func layout(for listWidth: CGFloat, columns: DownloadColumns) -> Layout {
+        guard listWidth.isFinite, listWidth > 0 else { return .full }
+        let chrome = rowPadding + cellPadding
+        let base = columns.index + columns.status + 2 * cellPadding + chrome
+        let full = base + columns.size + columns.added + columns.speed + 3 * cellPadding
+        if listWidth >= full + minimumNameWidth { return .full }
+        let noAdded = full - columns.added - cellPadding
+        if listWidth >= noAdded + minimumNameWidth { return .noAdded }
+        return .compact
     }
 }
 

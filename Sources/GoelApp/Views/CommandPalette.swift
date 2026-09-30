@@ -388,6 +388,12 @@ struct CommandPalette: View {
 
     private var viewCommands: [PaletteCommand] {
         [
+            PaletteCommand(id: "view.sidebar", title: L10n.t("Toggle Sidebar"),
+                           subtitle: L10n.t("Hide the filters to give the list the width"),
+                           symbol: "sidebar.left", group: .view, shortcut: "⌃⌘S",
+                           keywords: ["sidebar", "filters", "narrow", "hide"]) {
+                vm.sidebarVisible.toggle()
+            },
             PaletteCommand(id: "view.detail", title: L10n.t("Toggle Detail Panel"),
                            subtitle: L10n.t("Files, peers, trackers, and per-task limits"),
                            symbol: "sidebar.right", group: .view, shortcut: "⌘I",
@@ -395,10 +401,16 @@ struct CommandPalette: View {
                 vm.detailPanelVisible.toggle()
             },
             PaletteCommand(id: "view.detailPosition", title: L10n.t("Move Detail Panel"),
-                           subtitle: L10n.t("Dock it on the right edge or along the bottom"),
+                           subtitle: vm.detailDockForcedBottom
+                               ? L10n.t("Held at the bottom: the window is too narrow for a right dock")
+                               : L10n.t("Dock it on the right edge or along the bottom"),
                            symbol: "rectangle.split.2x1", group: .view,
                            keywords: ["dock", "bottom", "right", "layout"]) {
-                vm.toggleDetailPanelPosition()
+                if vm.detailDockForcedBottom {
+                    vm.toastWarning(L10n.t("Widen the window to dock the panel on the right"))
+                } else {
+                    vm.toggleDetailPanelPosition()
+                }
             },
         ] + AppTheme.allCases.map { theme in
             PaletteCommand(id: "view.theme.\(theme.settingsValue)",
@@ -442,12 +454,16 @@ struct CommandPalette: View {
                 openAddWithAdvanced()
             },
             PaletteCommand(id: "find.filePriority", title: L10n.t("Per-file priority in a torrent"),
-                           subtitle: L10n.t("Select a torrent, then the detail panel's Files tab — skip, low, normal, high"),
+                           subtitle: L10n.t("Select a torrent, then the detail panel’s Files tab — skip, low, normal, high"),
                            symbol: "list.bullet.indent", group: .discover,
                            keywords: ["priority", "files", "torrent", "skip", "select"]) {
                 vm.detailPanelVisible = true
                 vm.detailTab = .files
-                if vm.selectedTask == nil {
+                if let task = vm.selectedTask {
+                    if !DetailTab.available(for: task).contains(.files) {
+                        vm.toastWarning(L10n.t("“%@” is a single file — per-file priority is for torrents and multi-file downloads", task.name))
+                    }
+                } else {
                     vm.toastWarning(L10n.t("Select a torrent to set per-file priority"))
                 }
             },
@@ -477,14 +493,18 @@ struct CommandPalette: View {
 
     private static func paneSummary(_ pane: SettingsView.Pane) -> String {
         switch pane {
-        case .general:     return L10n.t("Theme, language, default folder, clipboard capture, ffmpeg")
+        case .general:     return L10n.t("Theme, language, default folder, clipboard capture, sleep")
+        case .notifications: return L10n.t("Banners for added, finished and failed downloads")
         case .network:     return L10n.t("Proxy, timeouts, retries, saved per-host credentials")
         case .aggregation: return L10n.t("Combine Wi-Fi and Ethernet on one download")
         case .traffic:     return L10n.t("Three switchable speed and connection profiles")
         case .bittorrent:  return L10n.t("DHT, PeX, encryption, and the .torrent watch folder")
         case .scheduler:   return L10n.t("Daily download window and what happens when the queue drains")
         case .rss:         return L10n.t("Watch feeds and queue matching items automatically")
-        case .advanced:    return L10n.t("Notifications, power, post-download actions, backup, diagnostics")
+        case .afterDownload: return L10n.t("Unpack archives and run a script when a download finishes")
+        case .media:       return L10n.t("Stream quality, subtitles, ffmpeg conversions")
+        case .backup:      return L10n.t("Back up the download list and check for updates")
+        case .diagnostics: return L10n.t("A redacted support report to copy or export")
         case .antivirus:   return L10n.t("Run an external scanner over finished files")
         case .browser:     return L10n.t("The extension, the helper, the bookmarklet, the URL scheme")
         case .remote:      return L10n.t("Reach your queue from a phone or another machine")
@@ -495,15 +515,18 @@ struct CommandPalette: View {
 
     private static func paneKeywords(_ pane: SettingsView.Pane) -> [String] {
         switch pane {
-        case .general:     return ["theme", "folder", "language", "clipboard", "ffmpeg", "subtitles"]
+        case .general:     return ["theme", "folder", "language", "clipboard", "sleep", "battery", "power"]
+        case .notifications: return ["notifications", "banner", "alert", "sound", "notify"]
         case .network:     return ["proxy", "socks", "timeout", "retry", "user agent", "credentials", "password"]
         case .aggregation: return ["aggregation", "multipath", "wifi", "ethernet", "adapter", "bonding"]
         case .traffic:     return ["speed", "limit", "throttle", "connections", "seed ratio", "profile"]
         case .bittorrent:  return ["torrent", "dht", "pex", "encryption", "watch folder", "magnet", "seeding"]
         case .scheduler:   return ["schedule", "window", "night", "shutdown", "sleep", "quit"]
         case .rss:         return ["rss", "feed", "atom", "podcast", "auto download", "subscribe"]
-        case .advanced:    return ["notifications", "battery", "sleep", "backup", "script", "extract",
-                                   "diagnostics", "support", "updates"]
+        case .afterDownload: return ["script", "extract", "unzip", "archive", "post-download", "automation"]
+        case .media:       return ["ffmpeg", "subtitles", "video", "quality", "hls", "convert", "audio"]
+        case .backup:      return ["backup", "restore", "updates", "sparkle", "release"]
+        case .diagnostics: return ["diagnostics", "support", "bug report", "logs"]
         case .antivirus:   return ["antivirus", "scan", "clamav", "virus", "malware"]
         case .browser:     return ["browser", "extension", "chrome", "firefox", "safari", "bookmarklet", "capture"]
         case .remote:      return ["remote", "web", "portal", "phone", "lan", "tls", "server"]

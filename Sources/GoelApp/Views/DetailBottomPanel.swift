@@ -9,11 +9,11 @@ struct DetailBottomPanel: View {
     var body: some View {
         Group {
             if vm.selectedTasks.count > 1 {
-                MultiSelectionPanel()
+                MultiSelectionPanel(horizontal: true)
             } else if let task = vm.selectedTask {
                 content(for: task)
             } else {
-                emptyState
+                QueueOverviewPanel(horizontal: true)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -137,7 +137,8 @@ struct DetailBottomPanel: View {
     private func detailZone(for task: DownloadTask) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                DetailTabPicker(selection: $vm.detailTab, segmentedMinWidth: 300, segmentedMaxWidth: 440)
+                DetailTabPicker(selection: $vm.detailTab, tabs: DetailTab.available(for: task),
+                                segmentedMaxWidth: 360)
                 Spacer(minLength: 8)
                 PanelDockToggle()
             }
@@ -155,17 +156,20 @@ struct DetailBottomPanel: View {
 
     @ViewBuilder
     private func tabBody(for task: DownloadTask) -> some View {
-        switch vm.detailTab {
-        case .general:
-            generalFacts(for: task).frame(maxWidth: 620, alignment: .leading)
-        case .details:
-            DetailsTab(task: task).frame(maxWidth: 620, alignment: .leading)
-        case .progress:
-            ProgressTab(task: task)
+        switch vm.detailTab.resolved(for: task) {
+        case .overview:
+            VStack(alignment: .leading, spacing: 16) {
+                generalFacts(for: task)
+                if task.showsProgressDetail { ProgressTab(task: task) }
+            }
+            .frame(maxWidth: 620, alignment: .leading)
         case .files:
             FilesTab(task: task)
-        case .connections:
-            ConnectionsTab(task: task)
+        case .network:
+            VStack(alignment: .leading, spacing: 18) {
+                DetailsTab(task: task).frame(maxWidth: 620, alignment: .leading)
+                ConnectionsTab(task: task)
+            }
         }
     }
 
@@ -195,37 +199,28 @@ struct DetailBottomPanel: View {
                 .padding(.top, 14)
         }
     }
-
-    private var emptyState: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer(minLength: 0)
-                PanelDockToggle()
-            }
-            .padding(12)
-            Spacer(minLength: 0)
-            EmptyStateView(systemImage: "doc.text.magnifyingglass",
-                           title: L10n.t("No selection"),
-                           subtitle: L10n.t("Select a download to see its details, progress, and live throughput."),
-                           symbolSize: 30)
-            Spacer(minLength: 0)
-        }
-    }
 }
 
 struct PanelDockToggle: View {
     @EnvironmentObject private var vm: AppViewModel
 
     var body: some View {
-        let docksRight = vm.detailPanelPosition == .right
+        let docksRight = vm.effectiveDetailPanelPosition == .right
+        // A window too narrow for a right dock keeps the panel below; the toggle says why instead of doing nothing.
+        let forced = vm.detailDockForcedBottom
         IconButton(symbol: docksRight ? "rectangle.bottomhalf.inset.filled" : "rectangle.trailinghalf.inset.filled",
-                   help: docksRight ? L10n.t("Dock panel to bottom") : L10n.t("Dock panel to right"),
+                   help: forced ? L10n.t("Widen the window to dock the panel on the right")
+                       : docksRight ? L10n.t("Dock panel to bottom") : L10n.t("Dock panel to right"),
                    size: 13,
-                   spokenLabel: docksRight
+                   spokenLabel: forced
+                       ? L10n.t("Dock detail panel to the right, unavailable while the window is narrow")
+                       : docksRight
                        ? L10n.t("Dock detail panel to the bottom")
                        : L10n.t("Dock detail panel to the right")) {
             vm.toggleDetailPanelPosition()
         }
-        .accessibilityValue(docksRight ? L10n.t("Currently docked right") : L10n.t("Currently docked bottom"))
+        .disabled(forced)
+        .accessibilityValue(forced ? L10n.t("Docked bottom because the window is narrow")
+                            : docksRight ? L10n.t("Currently docked right") : L10n.t("Currently docked bottom"))
     }
 }

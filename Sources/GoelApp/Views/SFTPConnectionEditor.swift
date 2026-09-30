@@ -123,7 +123,7 @@ struct SFTPConnectionEditor: View {
             Button(L10n.t("Cancel"), role: .cancel) { }
             Button(L10n.t("Reset Key"), role: .destructive) { resetPinnedHostKey() }
         } message: {
-            Text(L10n.t("Goel will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test.", pinnedEndpointHost))
+            Text(L10n.t("Goel° will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test.", pinnedEndpointHost))
         }
     }
 
@@ -182,7 +182,7 @@ struct SFTPConnectionEditor: View {
                         .onChange(of: keyPassphrase) { _, _ in keyPassphraseEdited = true }
                 }
                 if !FileManager.default.isReadableFile(atPath: expandedKeyPath) {
-                    Text(L10n.t("Goel can't read that file — check the path and its permissions."))
+                    Text(L10n.t("Goel° can’t read that file — check the path and its permissions."))
                         .scaledFont(size: Theme.TextSize.caption).foregroundStyle(Theme.red)
                 }
             }
@@ -223,7 +223,7 @@ struct SFTPConnectionEditor: View {
             .buttonStyle(.link)
             .help(L10n.t("Forget the saved SSH host-key fingerprint. Use this only after a legitimate server rekey, then re-verify with Test."))
             if hostKeyReset {
-                Text(L10n.t("Pinned key cleared — Goel will ask you to confirm the key on the next connection."))
+                Text(L10n.t("Pinned key cleared — Goel° will ask you to confirm the key on the next connection."))
                     .scaledFont(size: Theme.TextSize.micro).foregroundStyle(.secondary)
             }
         }
@@ -290,7 +290,7 @@ struct SFTPConnectionEditor: View {
 
     private func resetPinnedHostKey() {
         guard HostKeyStore.shared.reset(host: pinnedEndpointHost, port: pinnedEndpointPort) else {
-            testResult = .failure(L10n.t("Goel couldn’t clear the saved host key for %@.", pinnedEndpointHost),
+            testResult = .failure(L10n.t("Goel° couldn’t clear the saved host key for %@.", pinnedEndpointHost),
                                   detail: nil)
             return
         }
@@ -372,8 +372,8 @@ struct SFTPConnectionEditor: View {
         guard outcome.didStore else {
             testResult = .failure(
                 outcome.isRetryable
-                    ? L10n.t("The server was saved, but Goel wasn't allowed to store the secret in your Keychain. Choose Allow when macOS asks, then try again.")
-                    : L10n.t("The server was saved, but its secret couldn't be written to your Keychain."),
+                    ? L10n.t("The server was saved, but Goel° wasn’t allowed to store the secret in your Keychain. Choose Allow when macOS asks, then try again.")
+                    : L10n.t("The server was saved, but its secret couldn’t be written to your Keychain."),
                 detail: outcome.statusDetail,
                 retry: outcome.isRetryable ? .save : nil)
             return

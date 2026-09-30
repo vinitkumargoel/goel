@@ -7,6 +7,7 @@ extension SettingsView.Pane {
     enum Group: String, CaseIterable, Identifiable {
         case basics = "Basics"
         case transfers = "Transfers"
+        case afterDownload = "After download"
         case integrations = "Integrations"
         case admin = "Admin"
 
@@ -16,6 +17,7 @@ extension SettingsView.Pane {
             switch self {
             case .basics: return L10n.t("Basics")
             case .transfers: return L10n.t("Transfers")
+            case .afterDownload: return L10n.t("After download")
             case .integrations: return L10n.t("Integrations")
             case .admin: return L10n.t("Admin")
             }
@@ -23,10 +25,11 @@ extension SettingsView.Pane {
 
         var panes: [SettingsView.Pane] {
             switch self {
-            case .basics: return [.general, .network]
-            case .transfers: return [.traffic, .aggregation, .bittorrent, .scheduler, .rss]
-            case .integrations: return [.browser, .remote, .antivirus]
-            case .admin: return [.advanced, .audit, .license]
+            case .basics: return [.general, .notifications, .network]
+            case .transfers: return [.traffic, .bittorrent, .scheduler, .rss, .aggregation]
+            case .afterDownload: return [.afterDownload, .antivirus, .media]
+            case .integrations: return [.browser, .remote]
+            case .admin: return [.backup, .audit, .diagnostics, .license]
             }
         }
     }
@@ -40,11 +43,20 @@ extension SettingsView.Pane {
     var searchKeywords: [String] {
         switch self {
         case .general:
-            return ["Appearance, startup, and where files land.",
+            return ["Appearance, startup, where files land, and sleep.",
                     "Theme", "Language", "Launch at login", "Launch minimized", "Show in menu bar",
                     "Default download folder", "Fixed folder", "When a file exists", "Clipboard capture",
-                    "Max video quality", "Media tools", "Download subtitles", "Subtitle languages",
-                    "Include auto-captions", "ffmpeg path", "Conversions at once"]
+                    "Power management", "Prevent sleep during active downloads",
+                    "Allow sleep if downloads can resume later", "Allow sleep while seeding",
+                    "Pause downloads below battery threshold", "Don’t seed on battery"]
+        case .notifications:
+            return ["Which events show a banner, and whether macOS lets them through.",
+                    "Permission", "Send Test", "Notify me", "On download added", "On download completed",
+                    "On download failed", "Only when app is inactive", "Play sound"]
+        case .media:
+            return ["Stream quality, subtitles, and ffmpeg conversions.",
+                    "Max video quality", "Subtitles", "Download subtitles", "Subtitle languages",
+                    "Include auto-captions", "Conversions", "ffmpeg path", "Conversions at once"]
         case .network:
             return ["Proxy, timeouts, retries, and authentication.",
                     "Proxy", "Proxy type", "Proxy host", "Proxy port", "Connection timeout",
@@ -53,14 +65,14 @@ extension SettingsView.Pane {
                     "Network awareness", "Pause on expensive networks", "Pause in Low Data Mode",
                     "Site logins", "Host", "Username", "Password"]
         case .aggregation:
-            return ["Multi-path HTTP downloads across network adapters", "Enable multi-path downloads", "Adapters",
+            return ["Multi-path HTTP downloads across network adapters", "Aggregation", "Enable multi-path downloads", "Adapters",
                     "Options", "Include expensive networks", "Allow paths outside VPN",
                     "Streams per adapter", "Check path diversity"]
         case .traffic:
             return ["Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile.",
                     "Max download speed", "Max upload speed", "Max connections (global)",
                     "Max connections per server", "Max simultaneous downloads", "Stop seeding at ratio",
-                    "Max metadata-resolution downloads", "Additional connections to optimize speed"]
+                    "Max metadata-resolution downloads", "Extra connections per download"]
         case .bittorrent:
             return ["Protocol, privacy, and watch-folder behavior.",
                     "Default torrent client", "Auto-delete .torrent when done",
@@ -76,16 +88,16 @@ extension SettingsView.Pane {
             return ["Watch feeds and queue new items automatically (podcasts, releases, torrent feeds).",
                     "Check feeds every", "Feeds", "Add a feed", "Feed URL", "Title contains",
                     "Add items paused"]
-        case .advanced:
-            return ["Notifications, power management, and backup.",
-                    "Notifications", "On download added", "On download completed", "On download failed",
-                    "Only when app is inactive", "Play sound", "Power management",
-                    "Prevent sleep during active downloads", "Allow sleep if downloads can resume later",
-                    "Allow sleep while seeding", "Pause downloads below battery threshold",
-                    "Don't seed on battery", "Post-download actions", "Auto-extract archives",
-                    "Run a script on completion", "Script path", "Arguments", "Backup",
-                    "Periodically back up the download list", "Backup interval", "Keep", "Updates",
-                    "Check for updates automatically", "Release feed URL", "Diagnostics", "Support report"]
+        case .afterDownload:
+            return ["What happens to a file once it finishes.",
+                    "Extract", "Auto-extract archives", "Script", "Run a script on completion",
+                    "Script path", "Arguments"]
+        case .backup:
+            return ["Keep a copy of the download list, and keep the app current.",
+                    "Backup", "Periodically back up the download list", "Backup interval", "Keep",
+                    "Updates", "Check for updates automatically", "Release feed URL", "Check Now"]
+        case .diagnostics:
+            return ["A support report you can read before you share it.", "Support report"]
         case .antivirus:
             return ["Run an external scanner on finished files. Optional, low priority on macOS.",
                     "Scan finished files", "Scanner", "Executable path", "Argument template"]

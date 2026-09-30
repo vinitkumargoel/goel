@@ -191,11 +191,9 @@ extension SortKey {
 extension DetailTab {
     var title: String {
         switch self {
-        case .general: return L10n.t("General")
-        case .details: return L10n.t("Details")
-        case .progress: return L10n.t("Progress")
+        case .overview: return L10n.t("Overview")
         case .files: return L10n.t("Files")
-        case .connections: return L10n.t("Connections")
+        case .network: return L10n.t("Network")
         }
     }
 }

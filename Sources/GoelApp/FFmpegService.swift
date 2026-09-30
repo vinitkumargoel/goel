@@ -58,7 +58,7 @@ enum FFmpegService {
             audio. This copy of the app was built without the included one, and there \
             isn’t an ffmpeg installed on this Mac. Re-download Goel° from the official \
             release page to get the built-in copy, or install ffmpeg yourself and enter \
-            its full path in Settings → Media tools → “ffmpeg path”.
+            its full path in Settings → Media Tools → “ffmpeg path”.
             """)
     }
 
