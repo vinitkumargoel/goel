@@ -64,14 +64,14 @@ curl -fsSL https://goel.vinitk.dev/install.sh | sudo GOEL_PORT=9090 GOEL_LAN=tru
 | `GOEL_SAVE_DIR` | `/var/lib/goel/downloads` | Download folder |
 | `GOEL_NO_START` | — | Install without enabling or starting the service |
 | `GOEL_SKIP_DEPS` | — | Don't touch `apt`; you are supplying the libraries |
-| `GOEL_INSECURE` | — | Install even if the release publishes no checksum |
+| `GOEL_INSECURE` | — | Install even if the release publishes no checksum, or (with a signing key configured) no `.minisig` / no `minisign`. Environment only. Never overrides a signature that fails to verify |
 | `GOEL_MINISIGN_PUBKEY` | — | A minisign public key (`RWS…`). Makes signature verification **mandatory**: the install fails if the release has no `.minisig`, if `minisign` is not installed, or if the signature does not match |
 
 Every download is checked against the release's published `.sha256`. If the installer carries
 an embedded minisign key, or you pass `GOEL_MINISIGN_PUBKEY`, the tarball's `.minisig` is
-verified too (install `minisign` first: `sudo apt install minisign`). Without an explicit
-`GOEL_MINISIGN_PUBKEY` a missing signature or a missing `minisign` falls back to the checksum
-with a warning; a signature that is present and does not match is always fatal:
+verified too (install `minisign` first: `sudo apt install minisign`). With either key in place
+a missing signature or a missing `minisign` stops the install (`GOEL_INSECURE=1` downgrades
+those two to a warning); a signature that is present and does not match is always fatal:
 
 ```sh
 curl -fsSL https://goel.vinitk.dev/install.sh \
@@ -175,6 +175,7 @@ sync` if you changed a path.
 | `GOEL_AGGREGATION_STREAMS` | `2` | Connections opened per interface, 1–8 |
 | `GOEL_PORTAL_ALLOWED_HOSTS` | unset | Extra host names the portal answers to, comma-separated; `*.example.com` wildcards allowed. See [Behind a reverse proxy](#behind-a-reverse-proxy) |
 | `GOEL_SSH_FINGERPRINTS` | unset | Pinned SFTP host keys, `host[:port]=SHA256:base64`, comma-separated. See [SFTP host keys](#sftp-host-keys) |
+| `GOEL_PRIVATE_TARGET_ALLOWLIST` | unset | LAN hosts that `/api/add` and the portal may download from, comma-separated host names, IPs or IPv4 CIDRs (`nas.lan,192.168.1.0/24`). Never unlocks loopback or link-local. Read once at startup |
 
 ### Behind a reverse proxy
 
@@ -188,11 +189,15 @@ passes the public name through (the Caddy and Traefik default) needs that name l
 GOEL_PORTAL_ALLOWED_HOSTS=goel.example.com
 ```
 
-then `sudo systemctl restart goel`. Alternatively list the proxy's own address as a trusted
-proxy (portal → Settings → Web Access, or `remoteTrustedProxies` in
-`/etc/goel/managed-policy.json`); requests arriving from a trusted proxy are accepted under any host
-name, and only a trusted proxy's `X-Forwarded-Proto` is believed. The daemon prints a note at
-startup when neither is set. See [remote-api.md](remote-api.md#host-names-dns-rebinding-defence).
+then `sudo systemctl restart goel`. Names can also be forced through
+`remoteAllowedHostNames` in `/etc/goel/managed-policy.json`; both lists are combined.
+Alternatively list the proxy's own address as a trusted proxy (`remoteTrustedProxies` in the
+managed policy) **and** have it send `X-Goel-Proxy-Secret` with the value of
+`GOEL_PORTAL_PROXY_SECRET` (Caddy: `header_up X-Goel-Proxy-Secret {env.GOEL_PORTAL_PROXY_SECRET}`);
+a trusted peer without the secret is still held to the host-name check unless the
+`X-Forwarded-Host` it forwards is itself allowed. Only a trusted proxy's `X-Forwarded-Proto`
+and `X-Forwarded-Host` are believed. The daemon prints a note at startup when no extra name is
+configured. See [remote-api.md](remote-api.md#host-names-dns-rebinding-defence).
 
 ### SFTP host keys
 
@@ -210,9 +215,8 @@ GOEL_SSH_FINGERPRINTS=nas.lan:2222=SHA256:mVk1…,backup.example.com=SHA256:3fQ9
 ```
 
 then `sudo systemctl restart goel`. Pins are read from the environment and not stored, so
-changing the variable re-pins. Outside systemd (`run.sh`, Docker), export
-`GOEL_SSH_FINGERPRINTS` in the process environment; the config file alone is not enough for
-this key.
+changing the variable re-pins. Outside systemd (`run.sh`, Docker) the daemon reads it from its
+config file too; a value in the process environment wins.
 
 ### Using more than one network interface
 

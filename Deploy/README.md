@@ -323,6 +323,7 @@ management's equivalent:
 |---|---|---|
 | `GOEL_PORTAL_ALLOWED_HOSTS` | `goel.example.com,*.corp.example` | Host names the portal answers to besides IPs, `localhost`, `.local` and bare names. Without it, a request through a reverse proxy that passes its public `Host` through gets `421 Misdirected Request` (the DNS-rebinding defence). Listing the proxy in `remoteTrustedProxies` works too. |
 | `GOEL_SSH_FINGERPRINTS` | `host[:port]=SHA256:<base64>`, comma-separated | Pinned SFTP host keys. The daemon has no one to confirm a first contact, so an unpinned SFTP host is refused before any credential is sent; the error quotes the presented key. Get the value with `ssh-keyscan -p <port> <host> \| ssh-keygen -lf -` over a network you trust. |
+| `GOEL_PRIVATE_TARGET_ALLOWLIST` | host names, IPs or IPv4 CIDRs, comma-separated | LAN targets that `/api/add` and the portal may download from (a NAS). Every private-range target is refused without it; loopback and link-local stay refused regardless. Read once at startup, from the environment or the config file. |
 | `GOEL_MINISIGN_PUBKEY` | `RWS…` | For `install.sh`, not the daemon: makes minisign verification of the release tarball mandatory (the install fails if the signature, or `minisign` itself, is missing). |
 
 See [docs/linux.md](../docs/linux.md#configuration) for the rest of

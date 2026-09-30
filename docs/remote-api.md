@@ -71,21 +71,32 @@ machine's address and talk to the portal as a same-origin site. The portal answe
 - IP address literals (`192.168.1.20:8899`, `[::1]:8899`), `localhost` and `*.localhost`;
 - mDNS names (`*.local`, as Bonjour advertises it) and single-label LAN names (`nas`);
 - this machine's own host name;
-- any name listed in **`GOEL_PORTAL_ALLOWED_HOSTS`** — comma- or space-separated, exact
-  names or `*.suffix` wildcards, e.g. `GOEL_PORTAL_ALLOWED_HOSTS=goel.example.com,*.corp.example`;
-- anything at all when the TCP peer is a **trusted proxy** (Settings → Web Access →
-  trusted proxies, `remoteTrustedProxies` in managed policy; IPs or CIDRs), because the
-  proxy chose the `Host` itself.
+- any name listed in **Settings → Web Access → Extra host names** (the
+  `remoteAllowedHostNames` setting, also a managed-policy key) or in
+  **`GOEL_PORTAL_ALLOWED_HOSTS`** — comma- or space-separated, exact names or `*.suffix`
+  wildcards, e.g. `GOEL_PORTAL_ALLOWED_HOSTS=goel.example.com,*.corp.example`. The two lists
+  are combined. The setting accepts a pasted URL (`https://Goel.Home:8899/` is stored as
+  `goel.home`) and keeps at most 32 names;
+- any name when the TCP peer is a **trusted proxy** (Settings → Web Access → trusted
+  proxies, `remoteTrustedProxies` in managed policy; IPs or CIDRs) **and** that proxy either
+  sends `X-Goel-Proxy-Secret` equal to `GOEL_PORTAL_PROXY_SECRET`, or forwards an
+  `X-Forwarded-Host` that is itself allowed by the rules above. A peer address alone is not
+  enough: a proxy on loopback also relays a DNS-rebound browser on the same machine.
+
+An IPv6 `Host` must be exactly `[addr]` or `[addr]:port` — `[::1].evil.com` is refused.
 
 Anything else gets `421 Misdirected Request`. A request with no `Host` header at all
 (HTTP/1.0 scripts) is let through, since a rebinding browser always sends one.
 
 Behind a reverse proxy that passes the public `Host` through (the Caddy and Traefik
-default), either list that name in `GOEL_PORTAL_ALLOWED_HOSTS` or list the proxy's address
-in the trusted proxies. `GOEL_PORTAL_ALLOWED_HOSTS` is read from the environment of the app
-or daemon process at startup, like `GOEL_PORTAL_PROXY_SECRET`; on Linux put it in
-`/etc/goel/config` (see [linux.md](linux.md)). A trusted proxy is also the only peer whose
-`X-Forwarded-Proto: https` is believed when deciding to mark the session cookie `Secure`.
+default), list that name under Extra host names or in `GOEL_PORTAL_ALLOWED_HOSTS`, or list the
+proxy in the trusted proxies and have it send the proxy secret. On a Mac reached through
+Tailscale MagicDNS, add the `*.ts.net` name the same way. `GOEL_PORTAL_ALLOWED_HOSTS` is read
+from the environment of the app or daemon process at startup, like
+`GOEL_PORTAL_PROXY_SECRET`; on Linux put it in `/etc/goel/config` (see
+[linux.md](linux.md)). A trusted proxy is also the only peer whose
+`X-Forwarded-Proto: https` is believed when deciding to mark the session cookie `Secure`, and
+the only peer whose `X-Forwarded-Host` counts when a `POST`'s `Origin` is checked.
 
 ### Read-only mode
 
@@ -223,6 +234,11 @@ The only route with a JSON request body.
 - `url` is **newline-separated**: one request can add a batch. Each line is parsed as a
   download source; unparseable lines are skipped silently.
 - If no line parses into a valid source, the response is `400 Bad Request`.
+- An `http(s)` line with inline credentials (`https://user:pass@host/…`) fails the whole
+  request with `400` — `Put the login in Goel°'s saved logins; inline user:password in links
+  isn't accepted over the API.` Links are stored without their userinfo, so accepting one
+  would queue a download that can only fail. Save the login in the app (sent over HTTPS
+  only) and add the plain URL.
 - `folder` is trimmed; empty means "use the per-source default".
 - `network` chooses the interface(s) this download egresses, overriding the server-wide
   aggregation policy. One of:
@@ -253,17 +269,21 @@ always present:
   already-queued task returns *that* task's ID, so the ID is always pollable.
 - Clients must tolerate the field being absent (a pre-1.1 daemon).
 
-> **Save folders are bounded by the server user, not by a root.** A `folder` this
-> user cannot write to fails the whole request with `403 Forbidden` and adds nothing — it is
-> **not** silently redirected to the default, because a client told "added" should be able to
-> assume the file landed where it asked. Anything the daemon's own uid can write to is a
-> legal destination, including outside the configured downloads folder.
+> **Save folders are bounded by the server user, minus protected locations.** A `folder` this
+> user cannot write to — or a protected one — fails the whole request with `403 Forbidden` and
+> adds nothing; it is **not** silently redirected to the default, because a client told "added"
+> should be able to assume the file landed where it asked. Otherwise anything the process's
+> uid can write to is a legal destination, including outside the configured downloads folder.
 >
-> Be aware of what that means for exposure. On macOS the app runs as the logged-in user, so
-> an authenticated session can write into auto-run locations such as `~/Library/LaunchAgents`;
-> the portal password is what stands in front of that. On Linux the daemon runs as the
-> unprivileged `goel` system user, so its reach is whatever you have granted that user — the
-> intended way to bound this is to bound the account, not to trust a check in the app.
+> **Protected** (checked after resolving symlinks and `..`): any path with a hidden (dot)
+> component, `~/Library` and everything under it, `/`, and the system roots `/etc`, `/usr`,
+> `/bin`, `/sbin`, `/System`, `/Library`, `/var`, `/opt`, `/Applications`, `/dev`, `/cores`,
+> `/boot`, `/proc`, `/sys`, `/root`, `/run`, `/lib`, `/lib64` (and their `/private/…`
+> spellings). `/tmp`, the process's temp directory, home and the configured downloads folder
+> stay usable even when they sit under one of those roots (a daemon home in `/var/lib`).
+> This keeps a token holder out of auto-run locations such as `~/Library/LaunchAgents` and
+> `~/.config/autostart`. On Linux the daemon also runs as the unprivileged `goel` user, which
+> bounds everything else.
 >
 > **Internal-address guard.** Every URL-bearing source is screened against loopback, the
 > link-local/cloud-metadata range, the unspecified address **and the private LAN ranges**
@@ -276,11 +296,12 @@ always present:
 > a way to probe or pull from other machines on your network.
 >
 > The private ranges can be reopened for specific hosts through a **private-target
-> allowlist** (exact host names, IPv4 literals or IPv4 CIDRs — a NAS, say). It never
-> unlocks loopback or link-local, and an allowlisted name that resolves to loopback is still
-> refused. The allowlist is implemented in `NetworkGuard.privateTargetAllowlist` but is **not
-> yet exposed** as a setting or environment variable, so today every LAN target added
-> through the API is refused; add LAN downloads from the app itself. Magnet links carry no
+> allowlist** (exact host names, IPv4 literals or IPv4 CIDRs — a NAS, say):
+> `GOEL_PRIVATE_TARGET_ALLOWLIST=nas.lan,192.168.1.0/24`, comma- or space-separated, read
+> once at startup from the environment of the app or daemon (the daemon also reads it from
+> its config file). It never unlocks loopback or link-local, and an allowlisted name that
+> resolves to loopback is still refused. Without it every LAN target added through the API
+> is refused; LAN downloads added in the app itself are unaffected. Magnet links carry no
 > fetch target and are not screened. When a proxy that resolves names itself (SOCKS5) is
 > configured, name resolution is left to the proxy.
 >
@@ -320,9 +341,9 @@ rather than by a configured root — see the note under [`POST /api/add`](#post-
 }
 ```
 
-Only directories are listed, name-sorted, and dot-folders are omitted from the listing —
-that is a display choice, not a rule: a dot-folder passed as `folder` to `add` is accepted
-if the uid can write it.
+Only directories are listed, name-sorted; dot-folders and other protected folders (see
+`add` above) are omitted, and asking for a protected `path` answers `404`. `/` itself stays
+browsable so volumes and mounts can be reached, but reports `writable: false`.
 
 `readable` and `writable` are `access(2)` answers, so they are the same answers the write
 itself would get. Show an unreadable folder rather than hiding it, and do not offer an
