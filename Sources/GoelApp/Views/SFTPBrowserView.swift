@@ -16,6 +16,7 @@ struct SFTPBrowserView: View {
     @State private var showNewFolder = false
     @State private var newFolderName = ""
     @State private var pendingDelete: SFTPEntry?
+    @State private var errorExpanded = false
 
     @State private var hoveredEntry: SFTPEntry.ID?
     @State private var folderDropTarget: SFTPEntry.ID?
@@ -114,21 +115,26 @@ struct SFTPBrowserView: View {
                               onClose: { closeInfo() })
             }
         }
+        // Finder's default, so Return alone makes a folder; Create stays off for a blank name.
+        .onChange(of: showNewFolder) { _, showing in
+            if showing { newFolderName = RemoteNameInput.defaultFolderName }
+        }
+        .onChange(of: model.error) { _, _ in errorExpanded = false }
         .alert(L10n.t("New Folder"), isPresented: $showNewFolder) {
             TextField(L10n.t("Name"), text: $newFolderName)
             Button(L10n.t("Cancel"), role: .cancel) { newFolderName = "" }
             Button(L10n.t("Create")) {
-                let name = newFolderName
+                let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
                 newFolderName = ""
                 Task {
                     if await model.makeDirectory(named: name) {
                         vm.toastNow(L10n.t("Folder created"))
                     } else if !name.isEmpty {
-                        vm.toastNow(model.error ?? L10n.t("Couldn’t create the folder “%@”", name),
-                                    isError: true)
+                        showFailure(L10n.t("Couldn’t create the folder “%@”", name))
                     }
                 }
             }
+            .disabled(!RemoteNameInput.isAcceptable(newFolderName))
         }
         .alert(L10n.t("Delete “%@”?", pendingDelete?.name ?? ""),
                isPresented: Binding(get: { pendingDelete != nil },
@@ -140,8 +146,7 @@ struct SFTPBrowserView: View {
                         if await model.delete(entry) {
                             vm.toastNow(L10n.t("Deleted “%@”", entry.name))
                         } else {
-                            vm.toastNow(model.error ?? L10n.t("Couldn’t delete “%@”", entry.name),
-                                        isError: true)
+                            showFailure(L10n.t("Couldn’t delete “%@”", entry.name))
                         }
                     }
                 }
@@ -165,25 +170,27 @@ struct SFTPBrowserView: View {
                             vm.toastNow(L10n.t("Renamed"))
                         } else if newName.trimmingCharacters(in: .whitespacesAndNewlines) != entry.name {
                             // Confirming the prefilled name unchanged is a no-op, not a failure.
-                            vm.toastNow(model.error ?? L10n.t("Couldn’t rename “%@”", entry.name),
-                                        isError: true)
+                            showFailure(L10n.t("Couldn’t rename “%@”", entry.name))
                         }
                     }
                 }
                 renaming = nil
             }
+            .disabled(!RemoteNameInput.isAcceptable(renameText))
         }
     }
 
     private var header: some View {
         HStack(spacing: 10) {
+            // A labelled chevron: the old door-and-arrow glyph read as "disconnect".
             Button { vm.closeServerBrowser() } label: {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .font(.system(size: 12, weight: .semibold))
+                Label(L10n.t("Downloads"), systemImage: "chevron.left")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .help(L10n.t("Back to downloads"))
-            .a11yButton(L10n.t("Back to downloads"))
+            .accessibilityLabel(L10n.t("Back to downloads"))
+
+            Divider().frame(height: 18)
 
             Button { Task { await model.goBack() } } label: { Image(systemName: "chevron.backward") }
                 .disabled(!model.canGoBack).help(L10n.t("Back"))
@@ -197,24 +204,12 @@ struct SFTPBrowserView: View {
             Image(systemName: "lock.rectangle.on.rectangle").foregroundStyle(Theme.indigo)
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.connection.label).font(.system(size: 13, weight: .semibold))
+                Text(model.connection.label).scaledFont(size: Theme.TextSize.title, weight: .semibold)
                     .accessibilityAddTraits(.isHeader)
                 breadcrumbBar
             }
             Spacer(minLength: 8)
-            Picker("", selection: $isGrid) {
-                Image(systemName: "list.bullet").tag(false)
-                    .accessibilityLabel(L10n.t("List"))
-                Image(systemName: "square.grid.2x2").tag(true)
-                    .accessibilityLabel(L10n.t("Grid"))
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 78)
-            .help(L10n.t("Switch between list and grid view"))
-            .accessibilityLabel(L10n.t("View style"))
-
-            sortMenu
+            viewMenu
 
             Button { Task { await model.goUp() } } label: {
                 Image(systemName: "arrow.up")
@@ -224,9 +219,6 @@ struct SFTPBrowserView: View {
             .keyboardShortcut(.upArrow, modifiers: .command)
             .a11yButton(L10n.t("Parent folder"))
 
-            Button { chooseUploadItems() } label: { Image(systemName: "arrow.up.doc") }
-                .help(L10n.t("Upload files or folders"))
-                .a11yButton(L10n.t("Upload files or folders"))
             Button { showNewFolder = true } label: { Image(systemName: "folder.badge.plus") }
                 .help(L10n.t("New folder"))
                 .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -239,6 +231,13 @@ struct SFTPBrowserView: View {
                 ProgressView().controlSize(.small)
                     .accessibilityLabel(L10n.t("Loading folder"))
             }
+            // The main action, so it reads as one: labelled and bordered, unlike the glyphs beside it.
+            Button { chooseUploadItems() } label: {
+                Label(L10n.t("Upload"), systemImage: "arrow.up.doc")
+            }
+            .buttonStyle(.bordered)
+            .help(L10n.t("Upload files or folders"))
+            .accessibilityLabel(L10n.t("Upload files or folders"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -258,7 +257,7 @@ struct SFTPBrowserView: View {
                     let isLast = idx == breadcrumbs.count - 1
                     Button { if !isLast { Task { await model.go(toPath: crumb.path) } } } label: {
                         Text(crumb.label)
-                            .font(.system(size: 11, design: .monospaced))
+                            .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                             .foregroundStyle(isLast ? Color.primary : Color.secondary)
                     }
                     .buttonStyle(.plain).disabled(isLast)
@@ -272,21 +271,29 @@ struct SFTPBrowserView: View {
         .accessibilityLabel(L10n.t("Folder path"))
     }
 
-    private var sortMenu: some View {
+    /// View style, sort order and hidden files in one menu, as Finder's View menu has them.
+    private var viewMenu: some View {
         Menu {
-            Button(sortItemLabel(L10n.t("Name"), "name")) { setSort("name") }
-            Button(sortItemLabel(L10n.t("Size"), "size")) { setSort("size") }
-            Button(sortItemLabel(L10n.t("Date Modified"), "modified")) { setSort("modified") }
+            Picker(L10n.t("View style"), selection: $isGrid) {
+                Label(L10n.t("List"), systemImage: "list.bullet").tag(false)
+                Label(L10n.t("Grid"), systemImage: "square.grid.2x2").tag(true)
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Section(L10n.t("Sort By")) {
+                Button(sortItemLabel(L10n.t("Name"), "name")) { setSort("name") }
+                Button(sortItemLabel(L10n.t("Size"), "size")) { setSort("size") }
+                Button(sortItemLabel(L10n.t("Date Modified"), "modified")) { setSort("modified") }
+            }
             Divider()
             Toggle(L10n.t("Show Hidden Files"), isOn: $showHidden)
         } label: {
-            Image(systemName: "arrow.up.arrow.down")
+            Label(L10n.t("View"), systemImage: isGrid ? "square.grid.2x2" : "list.bullet")
         }
-        .menuIndicator(.hidden)
-        .frame(width: 24)
+        .fixedSize()
         .help(L10n.t("Sort & display options"))
         .accessibilityLabel(L10n.t("Sort and display options"))
-        .accessibilityValue("\(sortKeyRaw), \(sortAscending ? L10n.t("ascending") : L10n.t("descending"))")
+        .accessibilityValue("\(isGrid ? L10n.t("Grid") : L10n.t("List")), \(sortKeyRaw), \(sortAscending ? L10n.t("ascending") : L10n.t("descending"))")
     }
 
     private func sortItemLabel(_ title: String, _ key: String) -> String {
@@ -356,13 +363,13 @@ struct SFTPBrowserView: View {
                 .a11yDecorative()
             TextField(L10n.t("Filter this folder"), text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .scaledFont(size: Theme.TextSize.body)
                 .onSubmit(openSoleSearchResult)
                 .accessibilityLabel(L10n.t("Filter this folder"))
                 .accessibilityHint(L10n.t("Press return to open the only match."))
             if !searchText.isEmpty {
                 Text("\(visibleEntries.count)")
-                    .font(.system(size: 10.5, weight: .medium)).monospacedDigit()
+                    .scaledFont(size: Theme.TextSize.caption, weight: .medium, monospacedDigit: true)
                     .foregroundStyle(.tertiary)
                     .accessibilityLabel(L10n.t("%d matches", visibleEntries.count))
                 Button { searchText = "" } label: {
@@ -559,8 +566,7 @@ struct SFTPBrowserView: View {
                 vm.toastNow(L10n.t("Permissions updated"))
                 entryInfo = await model.info(for: entry)
             } else {
-                vm.toastNow(model.error ?? L10n.t("Couldn’t change permissions for “%@”", entry.name),
-                            isError: true)
+                showFailure(L10n.t("Couldn’t change permissions for “%@”", entry.name))
             }
         }
     }
@@ -593,10 +599,10 @@ struct SFTPBrowserView: View {
                 let result = await model.deleteMany(entries)
                 selection.removeAll()
                 if let failure = result.failure {
-                    vm.toastNow(result.deleted > 0
+                    // A partial result must stay readable: the banner, not a toast that times out.
+                    model.error = result.deleted > 0
                         ? L10n.t("Deleted %1$d of %2$d items — %3$@", result.deleted, entries.count, failure)
-                        : failure,
-                        isError: true)
+                        : failure
                 } else {
                     vm.toastNow(L10n.t("Deleted %d items", result.deleted))
                 }
@@ -608,7 +614,7 @@ struct SFTPBrowserView: View {
 
     private func quickLook(_ entry: SFTPEntry) {
         guard !entry.isDirectory, let client else { return }
-        guard entry.size < previewByteCap else { vm.toastNow(L10n.t("Too large to preview")); return }
+        guard entry.size < previewByteCap else { model.error = L10n.t("Too large to preview"); return }
         let safe = PathSafety.sanitizedName(entry.name)
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(QuickLookPresenter.tempPrefix + UUID().uuidString, isDirectory: true)
@@ -626,14 +632,14 @@ struct SFTPBrowserView: View {
                 }
                 guard cap.underLimit else {
                     try? FileManager.default.removeItem(at: dir)
-                    _ = await MainActor.run { vm.toastNow(L10n.t("Too large to preview")) }
+                    await MainActor.run { model.error = L10n.t("Too large to preview") }
                     return
                 }
                 await MainActor.run { QuickLookPresenter.shared.present(tmp, ownedDirectory: dir) }
             } catch {
                 try? FileManager.default.removeItem(at: dir)
                 let message = cap.underLimit ? L10n.t("Couldn’t preview “%@”", entry.name) : L10n.t("Too large to preview")
-                _ = await MainActor.run { vm.toastNow(message) }
+                await MainActor.run { model.error = message }
             }
         }
     }
@@ -661,8 +667,7 @@ struct SFTPBrowserView: View {
                         if await model.move(entry, toDirectory: SFTPBrowserModel.parent(of: model.path)) {
                             vm.toastNow(L10n.t("Moved “%@”", entry.name))
                         } else {
-                            vm.toastNow(model.error ?? L10n.t("Couldn’t move “%@” to the parent folder", entry.name),
-                                        isError: true)
+                            showFailure(L10n.t("Couldn’t move “%@” to the parent folder", entry.name))
                         }
                     }
                 }
@@ -681,9 +686,7 @@ struct SFTPBrowserView: View {
                             if await model.move(entry, toDirectory: SFTPBrowserModel.join(model.path, folder.name)) {
                                 vm.toastNow(L10n.t("Moved to “%@”", folder.name))
                             } else {
-                                vm.toastNow(model.error ?? L10n.t("Couldn’t move “%1$@” to “%2$@”",
-                                                                 entry.name, folder.name),
-                                            isError: true)
+                                showFailure(L10n.t("Couldn’t move “%1$@” to “%2$@”", entry.name, folder.name))
                             }
                         }
                     }
@@ -711,7 +714,7 @@ struct SFTPBrowserView: View {
                     .help(L10n.t("%1$@ of %2$@ used on this volume", space.usedBytes.byteString, space.totalBytes.byteString))
             }
         }
-        .font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.secondary)
+        .scaledFont(size: Theme.TextSize.caption, monospacedDigit: true).foregroundStyle(.secondary)
         .padding(.horizontal, 14).padding(.vertical, 4)
         .background(.regularMaterial)
     }
@@ -848,7 +851,7 @@ struct SFTPBrowserView: View {
     private func sortHeader(_ title: String, key: String) -> some View {
         Button { setSort(key) } label: {
             HStack(spacing: 3) {
-                Text(title).font(.system(size: 10, weight: .semibold))
+                Text(title).scaledFont(size: Theme.TextSize.caption, weight: .semibold)
                 if sortKeyRaw == key {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 7, weight: .bold))
@@ -907,16 +910,16 @@ struct SFTPBrowserView: View {
                 .frame(width: 18)
             // These column widths are mirrored in `columnHeaders`; change both together.
             HStack(spacing: 6) {
-                Text(entry.name).font(.system(size: 13)).lineLimit(1)
+                Text(entry.name).scaledFont(size: Theme.TextSize.title).lineLimit(1)
                 if entry.isSymlink { symlinkBadge(entry) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(entry.isDirectory ? "—" : entry.size.byteString)
-                .font(.system(size: 11)).monospacedDigit()
+                .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
                 .foregroundStyle(entry.isDirectory ? .tertiary : .secondary)
                 .frame(width: 72, alignment: .trailing)
             Text(entry.modified.map { $0.formatted(.dateTime.year().month().day()) } ?? "—")
-                .font(.system(size: 11)).foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.tertiary)
                 .frame(width: 92, alignment: .trailing)
         }
         .padding(.horizontal, 14)
@@ -955,10 +958,10 @@ struct SFTPBrowserView: View {
                 .foregroundStyle(SFTPFileIcon.tint(for: entry))
                 .frame(height: 38)
             Text(entry.name)
-                .font(.system(size: 12)).lineLimit(2).multilineTextAlignment(.center)
+                .scaledFont(size: Theme.TextSize.body).lineLimit(2).multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
             Text(entry.isDirectory ? L10n.t("Folder") : entry.size.byteString)
-                .font(.system(size: 10)).monospacedDigit().foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.caption, monospacedDigit: true).foregroundStyle(.tertiary)
         }
         .padding(.vertical, 14).padding(.horizontal, 8)
         .frame(maxWidth: .infinity, minHeight: 118)
@@ -1096,7 +1099,7 @@ struct SFTPBrowserView: View {
             Theme.accent.opacity(0.08)
             VStack(spacing: 10) {
                 Image(systemName: "arrow.up.doc").font(.system(size: 30))
-                Text(L10n.t("Upload to %@", model.displayPath)).font(.system(size: 13, weight: .semibold))
+                Text(L10n.t("Upload to %@", model.displayPath)).scaledFont(size: Theme.TextSize.title, weight: .semibold)
             }
             .foregroundStyle(Theme.accent)
         }
@@ -1115,13 +1118,34 @@ struct SFTPBrowserView: View {
                           volumeSpace: volumeSpace)
     }
 
+    /// A failed action goes to the banner, which stays until dismissed and can be copied.
+    /// The model's own message, when it set one, is more specific than the fallback.
+    private func showFailure(_ fallback: String) {
+        model.error = model.error ?? fallback
+    }
+
     private func errorBanner(_ message: String) -> some View {
-        HStack(spacing: 8) {
+        let isLong = message.count > 140 || message.contains("\n")
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
                 .a11yDecorative()
-            Text(message).font(.system(size: 12)).lineLimit(2)
+            Text(message).scaledFont(size: Theme.TextSize.body)
+                .lineLimit(errorExpanded ? nil : 2)
+                .fixedSize(horizontal: false, vertical: errorExpanded)
+                .textSelection(.enabled)
                 .accessibilityLabel(L10n.t("Error. %@", message))
-            Spacer()
+            Spacer(minLength: 8)
+            if isLong {
+                Button(errorExpanded ? L10n.t("Hide details") : L10n.t("Show details")) {
+                    errorExpanded.toggle()
+                }
+                .buttonStyle(.link)
+                .scaledFont(size: Theme.TextSize.meta)
+            }
+            Button(L10n.t("Copy")) { copyToPasteboard(message) }
+                .buttonStyle(.link)
+                .scaledFont(size: Theme.TextSize.meta)
+                .accessibilityLabel(L10n.t("Copy error message"))
             Button { model.error = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .a11yButton(L10n.t("Dismiss error"))
@@ -1134,11 +1158,11 @@ struct SFTPBrowserView: View {
     private func deleteProgressBanner(_ note: String) -> some View {
         HStack(spacing: 9) {
             ProgressView().controlSize(.small)
-            Text(note).font(.system(size: 12)).monospacedDigit().lineLimit(1)
+            Text(note).scaledFont(size: Theme.TextSize.body, monospacedDigit: true).lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
             Button(L10n.t("Cancel")) { model.cancelDelete() }
-                .font(.system(size: 11))
+                .scaledFont(size: Theme.TextSize.meta)
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .a11yButton(L10n.t("Cancel delete"))
         }
@@ -1157,7 +1181,7 @@ struct SFTPBrowserView: View {
     private func handleUploadDrop(_ providers: [NSItemProvider], into folder: SFTPEntry) -> Bool {
         // `folder.name` is untrusted server listing data: refuse separators and traversal.
         guard SFTPBrowserPaths.isSafeChildName(folder.name) else {
-            vm.toastNow(L10n.t("Can’t upload into “%@”", folder.name))
+            model.error = L10n.t("Can’t upload into “%@”", folder.name)
             return false
         }
         let connection = model.connection

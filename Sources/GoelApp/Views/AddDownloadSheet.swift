@@ -25,6 +25,11 @@ struct AddDownloadSheet: View {
     @State private var inputError: String?
     @State private var resolveTask: Task<Void, Never>?
     @State private var resolvedPageURL: URL?
+    /// Shown under the yt-dlp row: a toast would draw in the main window, behind this sheet.
+    @State private var ytDlpError: String?
+    /// The text the clipboard put in the box; the "Pasted from clipboard" note shows while it's unchanged.
+    @State private var pastedText: String?
+    @State private var showAdvanced = false
 
     @State private var cookieSource: CookieSource = .none
 
@@ -76,7 +81,15 @@ struct AddDownloadSheet: View {
             case .resolving:    resolvingContent
             case .confirm(let preview): confirmContent(preview)
             case .playlist(let url):
-                PlaylistChecklistView(playlistURL: url) { items in
+                PlaylistChecklistView(
+                    playlistURL: url,
+                    sheetActions: .init(
+                        back: { phase = .input },
+                        singleVideo: {
+                            if let line = firstParseableLine() { resolveSingle(line) }
+                        },
+                        cancel: { dismiss() })
+                ) { items in
                     vm.add(rawLines: items.map(\.url).joined(separator: "\n"),
                            saveDirectory: resolvedSaveDirectory, priority: priority)
                     dismiss()
@@ -100,11 +113,17 @@ struct AddDownloadSheet: View {
                 dropZone
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.t("URL, magnet, or .m3u8 stream"))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Text(L10n.t("URL, magnet, or .m3u8 stream"))
+                            .scaledFont(size: Theme.TextSize.body, weight: .semibold)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        if let pastedText, pastedText == text {
+                            pastedNote
+                        }
+                    }
                     TextEditor(text: $text)
-                        .font(.system(size: 12, design: .monospaced))
+                        .scaledFont(size: Theme.TextSize.body, design: .monospaced)
                         .accessibilityLabel(L10n.t("URL, magnet, or m3u8 stream"))
                         .accessibilityHint(L10n.t("Paste one link per line to add several at once."))
                         .frame(height: 90)
@@ -114,13 +133,15 @@ struct AddDownloadSheet: View {
                         .onChange(of: text) { _, _ in inputError = nil }
                     if let inputError {
                         Label(inputError, systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11))
+                            .scaledFont(size: Theme.TextSize.meta)
                             .foregroundStyle(Theme.orange)
                             .accessibilityLabel(L10n.t("Error. %@", inputError))
                     } else {
-                        Text(L10n.t("Paste several lines to add them all at once (batch). Patterns expand too: file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts."))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
+                        Text(L10n.t("Paste several lines to add them all at once (batch). Patterns expand too: file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts.")
+                             + " " + L10n.t("Press ⌘↩ to continue."))
+                            .scaledFont(size: Theme.TextSize.meta)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -131,12 +152,32 @@ struct AddDownloadSheet: View {
                 Spacer()
                 Button(L10n.t("Cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                // ⌘↩, not ↩: the focused editor takes a plain Return as a new line.
                 Button(L10n.t("Continue")) { continueTapped() }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.return, modifiers: .command)
                     .buttonStyle(.borderedProminent)
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help(L10n.t("Continue (⌘↩)"))
             }
             .padding(14)
+        }
+    }
+
+    private var pastedNote: some View {
+        HStack(spacing: 4) {
+            Label(L10n.t("Pasted from clipboard"), systemImage: "doc.on.clipboard")
+                .scaledFont(size: Theme.TextSize.meta)
+                .foregroundStyle(.secondary)
+            Button {
+                text = ""
+                pastedText = nil
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(L10n.t("Clear the pasted text"))
+            .a11yButton(L10n.t("Clear the pasted text"))
         }
     }
 
@@ -146,10 +187,10 @@ struct AddDownloadSheet: View {
                 .controlSize(.large)
                 .accessibilityLabel(L10n.t("Fetching details"))
             Text(L10n.t("Fetching details…"))
-                .font(.system(size: 13, weight: .medium))
+                .scaledFont(size: Theme.TextSize.title, weight: .medium)
                 .accessibilityAddTraits(.isHeader)
             Text(L10n.t("Reading the file name and size. Magnet links ask peers for the file list, which can take a few seconds."))
-                .font(.system(size: 11))
+                .scaledFont(size: Theme.TextSize.meta)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
@@ -163,8 +204,8 @@ struct AddDownloadSheet: View {
             }
             .padding(.top, 4)
             Text(L10n.t("Continue anyway adds it straight to the queue — the name and size fill in as it starts."))
-                .font(.system(size: 10.5))
-                .foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.caption)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
         }
@@ -181,99 +222,192 @@ struct AddDownloadSheet: View {
         dismiss()
     }
 
+    /// Leaves room for the sheet's header and footer, the window title and the menu bar.
+    private var confirmBodyMaxHeight: CGFloat {
+        CappedScrollView<EmptyView>.screenCap(reserving: 220, upTo: 560)
+    }
+
     private func confirmContent(_ preview: DownloadPreview) -> some View {
         VStack(spacing: 0) {
+            CappedScrollView(maxHeight: confirmBodyMaxHeight) {
+                confirmBody(preview)
+            }
+            .task(id: diskSpaceFolder(for: preview)) { await refreshFreeSpace(in: diskSpaceFolder(for: preview)) }
+            .onAppear {
+                showAdvanced = AddSheetInput.advancedHasContent(
+                    checksum: checksumText, mirrors: mirrorsText, cookieSource: cookieSource,
+                    hasCapturedCookies: capturedCookies != nil)
+            }
+
+            Divider()
+            HStack {
+                Button(L10n.t("Back")) { deselectedFileIDs = []; ytDlpError = nil; phase = .input }
+                Spacer()
+                Button(L10n.t("Cancel")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(unreachableMessage(preview) == nil ? L10n.t("Start download") : L10n.t("Continue anyway")) {
+                    start(preview)
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                // A second press during a resolve queues a second copy; an all-unticked torrent fetches nothing.
+                .disabled(isResolvingMedia || allFilesDeselected(preview))
+            }
+            .padding(14)
+        }
+    }
+
+    /// The reason the preview came back empty, for links whose server answered badly or not at all.
+    /// A torrent without peers yet and a yt-dlp stream keep their plain informational note.
+    private func unreachableMessage(_ preview: DownloadPreview) -> String? {
+        guard resolvedPageURL == nil, let note = preview.note else { return nil }
+        switch preview.kind {
+        case .http, .ftp, .sftp:
+            return AddSheetInput.resolveFailureMessage(host: previewHost(preview), reason: note)
+        case .torrent, .hls:
+            return nil
+        }
+    }
+
+    private func resolveFailureBlock(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .scaledFont(size: Theme.TextSize.meta)
+                .foregroundStyle(Theme.orange)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(L10n.t("Error. %@", message))
+            HStack(spacing: 8) {
+                Button(L10n.t("Try again")) {
+                    if let line = firstParseableLine() { resolveSingle(line, keepFields: true) }
+                }
+                .controlSize(.small)
+                Text(L10n.t("Or continue anyway — the name and size fill in as it starts."))
+                    .scaledFont(size: Theme.TextSize.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func confirmBody(_ preview: DownloadPreview) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            metadataSummary(preview)
+
+            if let duplicate = vm.existingDuplicate(of: preview.source) {
+                Label(L10n.t("Already in your list (%@) — starting it again won’t add a second copy.",
+                           L10n.midSentence(L10n.t(duplicate.status.displayName))),
+                      systemImage: "exclamationmark.triangle.fill")
+                    .scaledFont(size: Theme.TextSize.meta)
+                    .foregroundStyle(Theme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !preview.files.isEmpty {
+                AddSheetFileList(files: preview.files, selectable: preview.kind == .torrent,
+                                 deselectedFileIDs: $deselectedFileIDs)
+            }
+
+            if allFilesDeselected(preview) {
+                Label(L10n.t("Pick at least one file to download."),
+                      systemImage: "exclamationmark.triangle.fill")
+                    .scaledFont(size: Theme.TextSize.meta)
+                    .foregroundStyle(Theme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let failure = unreachableMessage(preview) {
+                resolveFailureBlock(failure)
+            } else if let note = preview.note {
+                Label(note, systemImage: "info.circle.fill")
+                    .scaledFont(size: Theme.TextSize.meta)
+                    .foregroundStyle(Theme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.t("Save to")).scaledFont(size: Theme.TextSize.body, weight: .semibold).foregroundStyle(.secondary)
+                    Dropdown(selection: $saveSelection, items: saveOptions) { newValue in
+                        handleSaveSelection(newValue)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.t("Priority")).scaledFont(size: Theme.TextSize.body, weight: .semibold).foregroundStyle(.secondary)
+                    Dropdown(selection: $priority, items: [
+                        .option(.high, L10n.t("High")),
+                        .option(.normal, L10n.t("Normal")),
+                        .option(.low, L10n.t("Low")),
+                    ], width: 120)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.t("Start")).scaledFont(size: Theme.TextSize.body, weight: .semibold).foregroundStyle(.secondary)
+                    Dropdown(selection: $startSelection, items: startOptions, width: 150)
+                }
+            }
+
+            diskSpaceRow(preview)
+
+            // A torrent has no checksum, mirror or per-host cookie to offer.
+            if preview.kind != .torrent || previewHost(preview) != nil {
+                advancedOptions(preview)
+            }
+
+            if preview.kind == .http, YtDlpResolver.isAvailable {
+                ytDlpRow(preview)
+                if let ytDlpError {
+                    Label(ytDlpError, systemImage: "exclamationmark.triangle.fill")
+                        .scaledFont(size: Theme.TextSize.meta)
+                        .foregroundStyle(Theme.red)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(L10n.t("Error. %@", ytDlpError))
+                }
+                // This list spawns `yt-dlp -F` just by appearing, so mount it only for a video *page*.
+                if case .url(let pageURL) = preview.source,
+                   !preview.source.looksLikeDownloadableFile,
+                   resolvedPageURL == nil {
+                    MediaFormatPicker(pageURL: pageURL) { chosenFormat = $0 }
+                }
+            }
+        }
+        .padding(20)
+    }
+
+    private func advancedOptions(_ preview: DownloadPreview) -> some View {
+        DisclosureGroup(isExpanded: $showAdvanced) {
             VStack(alignment: .leading, spacing: 16) {
-                metadataSummary(preview)
-
-                if let duplicate = vm.existingDuplicate(of: preview.source) {
-                    Label(L10n.t("Already in your list (%@) — starting it again won’t add a second copy.",
-                               L10n.midSentence(L10n.t(duplicate.status.displayName))),
-                          systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if !preview.files.isEmpty {
-                    fileList(preview.files, selectable: preview.kind == .torrent)
-                }
-
-                if allFilesDeselected(preview) {
-                    Label(L10n.t("Pick at least one file to download."),
-                          systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let note = preview.note {
-                    Label(note, systemImage: "info.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.t("Save to")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                        Dropdown(selection: $saveSelection, items: saveOptions) { newValue in
-                            handleSaveSelection(newValue)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.t("Priority")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                        Dropdown(selection: $priority, items: [
-                            .option(.high, L10n.t("High")),
-                            .option(.normal, L10n.t("Normal")),
-                            .option(.low, L10n.t("Low")),
-                        ], width: 120)
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.t("Start")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                        Dropdown(selection: $startSelection, items: startOptions, width: 150)
-                    }
-                }
-
-                diskSpaceRow(preview)
-
                 if preview.kind != .torrent {
-                    checksumField
+                    AddSheetChecksumField(text: $checksumText)
                 }
                 if preview.kind == .http {
-                    mirrorsField
+                    AddSheetMirrorsField(text: $mirrorsText)
                 }
                 CookieSourcePicker(host: previewHost(preview),
                                    source: $cookieSource,
                                    pastedCookies: $pastedCookies,
                                    capturedCookies: capturedCookies)
-                if preview.kind == .http, YtDlpResolver.isAvailable {
-                    ytDlpRow(preview)
-                    // This list spawns `yt-dlp -F` just by appearing, so mount it only for a video *page*.
-                    if case .url(let pageURL) = preview.source,
-                       !preview.source.looksLikeDownloadableFile,
-                       resolvedPageURL == nil {
-                        MediaFormatPicker(pageURL: pageURL) { chosenFormat = $0 }
-                    }
-                }
             }
-            .padding(20)
-            .task(id: diskSpaceFolder(for: preview)) { await refreshFreeSpace(in: diskSpaceFolder(for: preview)) }
+            .padding(.top, 10)
+        } label: {
+            HStack(spacing: 6) {
+                Text(L10n.t("Advanced options"))
+                    .scaledFont(size: Theme.TextSize.body, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                Text(advancedSummary(preview))
+                    .scaledFont(size: Theme.TextSize.meta)
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.12)) { showAdvanced.toggle() } }
+        }
+    }
 
-            Divider()
-            HStack {
-                Button(L10n.t("Back")) { deselectedFileIDs = []; phase = .input }
-                Spacer()
-                Button(L10n.t("Cancel")) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button(L10n.t("Start download")) { start(preview) }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    // A second press during a resolve queues a second copy; an all-unticked torrent fetches nothing.
-                    .disabled(isResolvingMedia || allFilesDeselected(preview))
-            }
-            .padding(14)
+    private func advancedSummary(_ preview: DownloadPreview) -> String {
+        switch preview.kind {
+        case .http: return L10n.t("checksum, mirrors, cookies")
+        default: return L10n.t("checksum, cookies")
         }
     }
 
@@ -308,13 +442,13 @@ struct AddDownloadSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Label(DiskSpaceCheck.message(for: verdict),
                       systemImage: verdict.isSufficient ? "internaldrive" : "exclamationmark.triangle.fill")
-                    .font(.system(size: 11, weight: verdict.isSufficient ? .regular : .semibold))
+                    .scaledFont(size: Theme.TextSize.meta, weight: verdict.isSufficient ? .regular : .semibold)
                     .foregroundStyle(verdict.isSufficient ? Color.secondary : Theme.red)
                     .accessibilityLabel(DiskSpaceCheck.spokenMessage(for: verdict))
                 if !verdict.isSufficient {
                     HStack(spacing: 8) {
                         Text(L10n.t("There isn’t enough free space on this disk. The download would stop partway."))
-                            .font(.system(size: 11))
+                            .scaledFont(size: Theme.TextSize.meta)
                             .foregroundStyle(Theme.red)
                             .fixedSize(horizontal: false, vertical: true)
                         Button(L10n.t("Choose another folder…")) {
@@ -344,83 +478,23 @@ struct AddDownloadSheet: View {
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 4) {
                 Text(preview.suggestedName)
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: Theme.TextSize.title, weight: .semibold)
                     .lineLimit(2)
                     .textSelection(.enabled)
                     .accessibilityAddTraits(.isHeader)
                 HStack(spacing: 8) {
-                    kindBadge(preview.kind)
+                    AddSheetKindBadge(kind: preview.kind)
                     Text(sizeText(preview))
-                        .font(.system(size: 12))
+                        .scaledFont(size: Theme.TextSize.body)
                         .foregroundStyle(.secondary)
                     if !preview.files.isEmpty {
                         Text("· " + (preview.files.count == 1 ? L10n.t("%d file", preview.files.count) : L10n.t("%d files", preview.files.count)))
-                            .font(.system(size: 12))
+                            .scaledFont(size: Theme.TextSize.body)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
             Spacer()
-        }
-    }
-
-    private func fileList(_ files: [TransferFile], selectable: Bool) -> some View {
-        let selectedCount = files.count - files.filter { deselectedFileIDs.contains($0.id) }.count
-        let selectedBytes = files.filter { !deselectedFileIDs.contains($0.id) }.reduce(Int64(0)) { $0 + $1.length }
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(L10n.t("Files")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                Spacer()
-                if selectable {
-                    Text(L10n.t("%1$d of %2$d · %3$@", selectedCount, files.count, selectedBytes.byteString))
-                        .font(.system(size: 11)).foregroundStyle(.tertiary).monospacedDigit()
-                }
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(files) { file in
-                        let wanted = !deselectedFileIDs.contains(file.id)
-                        HStack(spacing: 8) {
-                            if selectable {
-                                Button {
-                                    if wanted { deselectedFileIDs.insert(file.id) }
-                                    else { deselectedFileIDs.remove(file.id) }
-                                } label: {
-                                    Image(systemName: wanted ? "checkmark.square.fill" : "square")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(wanted ? Theme.accent : Color.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .a11yButton(wanted
-                                    ? L10n.t("Skip %@", (file.path as NSString).lastPathComponent)
-                                    : L10n.t("Download %@", (file.path as NSString).lastPathComponent))
-                                .accessibilityValue(wanted ? L10n.t("Included") : L10n.t("Skipped"))
-                            } else {
-                                Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(.tertiary)
-                                    .a11yDecorative()
-                            }
-                            Text((file.path as NSString).lastPathComponent)
-                                .font(.system(size: 11))
-                                .foregroundStyle(wanted ? .primary : .secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer(minLength: 8)
-                            Text(file.length.byteString)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .accessibilityLabel(A11y.bytes(file.length))
-                        }
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
-                        if file.id != files.last?.id {
-                            Divider().opacity(0.4)
-                        }
-                    }
-                }
-            }
-            .frame(height: min(CGFloat(files.count) * 28 + 4, 170))
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
         }
     }
 
@@ -431,7 +505,7 @@ struct AddDownloadSheet: View {
                 .foregroundStyle(isDropTargeted ? Theme.accent : .secondary)
                 .a11yDecorative()
             Text(MarkdownText.attributed(L10n.t("Drag a URL or **.torrent** file here")))
-                .font(.system(size: 12))
+                .scaledFont(size: Theme.TextSize.body)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -449,45 +523,19 @@ struct AddDownloadSheet: View {
         .animation(.easeInOut(duration: 0.08), value: isDropTargeted)
     }
 
-    private var checksumField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(L10n.t("Checksum (optional)"))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-            TextField(L10n.t("MD5, SHA-1, or SHA-256 hex"), text: $checksumText)
-                .accessibilityLabel(L10n.t("Expected checksum"))
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12, design: .monospaced))
-                .disableAutocorrection(true)
-            if !checksumText.trimmingCharacters(in: .whitespaces).isEmpty {
-                if let parsed = Checksum.parse(checksumText) {
-                    Label(L10n.t("%@ — verified after the download finishes", parsed.algorithm.displayName),
-                          systemImage: "checkmark.seal.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.green)
-                } else {
-                    Label(L10n.t("Not a valid MD5 / SHA-1 / SHA-256 hex digest"),
-                          systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.orange)
-                }
-            }
-        }
-    }
-
     private func ytDlpRow(_ preview: DownloadPreview) -> some View {
         HStack(spacing: 8) {
             if isResolvingMedia {
                 ProgressView().controlSize(.small)
                     .accessibilityLabel(L10n.t("Resolving media formats"))
                 Text(L10n.t("Asking yt-dlp…"))
-                    .font(.system(size: 11))
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
             } else {
                 Button(L10n.t("Resolve Media with yt-dlp")) { resolveWithYtDlp(preview) }
                 Text(L10n.t("For video-site pages: download the stream, not the page."))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.tertiary)
+                    .scaledFont(size: Theme.TextSize.caption)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
         }
@@ -495,6 +543,7 @@ struct AddDownloadSheet: View {
 
     private func resolveWithYtDlp(_ preview: DownloadPreview) {
         guard case .url(let pageURL) = preview.source else { return }
+        ytDlpError = nil
         isResolvingMedia = true
         resolveTask = Task { @MainActor in
             defer { isResolvingMedia = false }
@@ -502,7 +551,7 @@ struct AddDownloadSheet: View {
             case .resolved(let resolved):
                 guard let mediaPreview = YtDlpResolver.preview(for: resolved) else {
                     inputError = nil
-                    vm.toastNow(L10n.t("yt-dlp couldn’t resolve that page"), isError: true)
+                    ytDlpError = L10n.t("yt-dlp couldn’t resolve that page")
                     return
                 }
                 // Don't fetch subtitles here: "Save to" is still editable, so sidecars would be orphaned.
@@ -512,36 +561,17 @@ struct AddDownloadSheet: View {
                 break
             case .failed(let reason):
                 inputError = nil
-                vm.toastNow(reason, isError: true)
+                ytDlpError = reason
             }
-        }
-    }
-
-    private var mirrorsField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(L10n.t("Mirrors (optional, one per line)"))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-            TextEditor(text: $mirrorsText)
-                .font(.system(size: 11, design: .monospaced))
-                .frame(height: 44)
-                .padding(4)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
-            Text(L10n.t("Alternative URLs for the same file — segments spread across them and fail over automatically."))
-                .font(.system(size: 10.5))
-                .foregroundStyle(.tertiary)
         }
     }
 
     private func autoPasteFromClipboard() {
         guard text.isEmpty,
-              let clip = NSPasteboard.general.string(forType: .string)?
-                  .trimmingCharacters(in: .whitespacesAndNewlines),
-              !clip.isEmpty,
-              AppViewModel.parseSource(clip) != nil
+              let prefill = AddSheetInput.clipboardPrefill(NSPasteboard.general.string(forType: .string))
         else { return }
-        text = clip
+        text = prefill
+        pastedText = prefill
     }
 
     private func continueTapped() {
@@ -559,11 +589,7 @@ struct AddDownloadSheet: View {
             inputError = L10n.t("Enter a valid URL, magnet, or .m3u8 link.")
             return
         }
-        // Reset every per-link field: state left from the previous link would silently apply to this one.
-        checksumText = ""
-        mirrorsText = ""
-        chosenFormat = nil
-        resolvedPageURL = nil
+        resetPerLinkFields()
         // Without the checklist a playlist link resolves to one video and silently drops the rest.
         if YtDlpResolver.isAvailable,
            PlaylistExpander.looksLikePlaylist(line),
@@ -571,6 +597,23 @@ struct AddDownloadSheet: View {
             phase = .playlist(url)
             return
         }
+        resolveSingle(line)
+    }
+
+    /// Reset every per-link field: state left from the previous link would silently apply to this one.
+    private func resetPerLinkFields() {
+        checksumText = ""
+        mirrorsText = ""
+        chosenFormat = nil
+        resolvedPageURL = nil
+        ytDlpError = nil
+    }
+
+    /// The ordinary one-link path: preview it, then confirm. `keepFields` is for Try again,
+    /// which must not throw away a checksum or mirrors the user already typed.
+    private func resolveSingle(_ line: String, keepFields: Bool = false) {
+        if !keepFields { resetPerLinkFields() }
+        resolveTask?.cancel()
         phase = .resolving
         resolveTask = Task { @MainActor in
             let preview = await vm.resolveMetadata(for: line, saveDirectory: nil)
@@ -583,8 +626,10 @@ struct AddDownloadSheet: View {
                 }
                 phase = .confirm(preview)
             } else {
+                // Only a line that doesn't parse comes back empty; network failures return a
+                // preview whose note carries the reason, shown on the confirm step.
                 phase = .input
-                inputError = L10n.t("That link isn’t valid.")
+                inputError = L10n.t("Enter a valid URL, magnet, or .m3u8 link.")
             }
         }
     }
@@ -605,6 +650,7 @@ struct AddDownloadSheet: View {
 
     private func resolveThenCommit(_ preview: DownloadPreview, formatSelector: String) {
         guard case .url(let pageURL) = preview.source else { return commit(preview) }
+        ytDlpError = nil
         isResolvingMedia = true
         resolveTask = Task { @MainActor in
             defer { isResolvingMedia = false }
@@ -614,9 +660,9 @@ struct AddDownloadSheet: View {
             guard case .resolved(let resolved) = outcome,
                   let mediaPreview = YtDlpResolver.preview(for: resolved) else {
                 if case .failed(let reason) = outcome {
-                    vm.toastNow(reason, isError: true)
+                    ytDlpError = reason
                 } else if case .resolved = outcome {
-                    vm.toastNow(L10n.t("yt-dlp couldn’t resolve that page"), isError: true)
+                    ytDlpError = L10n.t("yt-dlp couldn’t resolve that page")
                 }
                 return
             }
@@ -766,23 +812,5 @@ struct AddDownloadSheet: View {
             return preview.isEstimatedSize ? L10n.t("Size resolved while downloading") : L10n.t("Unknown size")
         }
         return (preview.isEstimatedSize ? "~" : "") + bytes.byteString
-    }
-
-    private func kindBadge(_ kind: DownloadKind) -> some View {
-        let label: String
-        let color: Color
-        switch kind {
-        case .http: label = "HTTP"; color = Theme.accent
-        case .torrent: label = "BT"; color = Theme.green
-        case .hls: label = "HLS"; color = Theme.orange
-        case .ftp: label = "FTP"; color = Theme.teal
-        case .sftp: label = "SFTP"; color = Theme.indigo
-        }
-        return Text(label)
-            .font(.system(size: 10, weight: .bold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15), in: Capsule())
-            .foregroundStyle(color)
     }
 }

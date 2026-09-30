@@ -52,11 +52,11 @@ struct LicensePane: View {
                     .a11yDecorative()
                 VStack(alignment: .leading, spacing: 3) {
                     Text("PolyForm Noncommercial 1.0.0")
-                        .font(.system(size: 14, weight: .semibold))
+                        .scaledFont(size: Theme.TextSize.title, weight: .semibold)
                         .accessibilityAddTraits(.isHeader)
                     Text(L10n.t("Free for personal use, forever. The full source is available to read and modify. "
                          + "Commercial and business use requires a separate paid licence."))
-                        .font(.system(size: 12))
+                        .scaledFont(size: Theme.TextSize.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -74,7 +74,7 @@ struct LicensePane: View {
             Text(L10n.t("Version %1$@ (%2$@)",
                         DiagnosticsBundle.hostAppVersion, DiagnosticsBundle.hostBuildNumber)
                  + " · © 2026 Vinit Kumar Goel")
-                .font(.system(size: 10.5))
+                .scaledFont(size: Theme.TextSize.caption)
                 .foregroundStyle(.tertiary)
         }
         .padding(14)
@@ -88,7 +88,7 @@ struct LicensePane: View {
             Text(L10n.t("If Goel° is used in the course of a business — even by one person, on one laptop, "
                  + "for internal work — that is commercial use and needs a paid licence. "
                  + "Personal downloads, study, charities, schools and public research bodies do not."))
-                .font(.system(size: 12))
+                .scaledFont(size: Theme.TextSize.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -109,14 +109,14 @@ struct LicensePane: View {
                     ])
                     Text(L10n.t("Not sure which side you fall on? Ask. A one-line email costs nothing and the "
                          + "answer is usually “you’re fine”."))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.meta)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 8)
             } label: {
                 Text(showsDetail ? L10n.t("Hide the detail") : L10n.t("Who needs one, exactly?"))
-                    .font(.system(size: 12))
+                    .scaledFont(size: Theme.TextSize.body)
             }
 
             HStack(spacing: 8) {
@@ -144,7 +144,7 @@ struct LicensePane: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.green)
                     Text(line)
-                        .font(.system(size: 12))
+                        .scaledFont(size: Theme.TextSize.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
@@ -170,8 +170,8 @@ struct LicensePane: View {
             Text(L10n.t("Bought a commercial licence? You can note the details here so they travel with the "
                  + "install for your own audit or asset records. Goel° never reads these fields, never "
                  + "checks them, and never sends them anywhere — leaving them blank changes nothing."))
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.meta)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             SetRow(name: L10n.t("Licensed to"), desc: L10n.t("The legal entity named on your licence.")) {
@@ -231,7 +231,7 @@ private struct LicenceList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: Theme.TextSize.meta, weight: .semibold)
                 .foregroundStyle(tint)
             ForEach(items, id: \.self) { item in
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -240,7 +240,7 @@ private struct LicenceList: View {
                         .frame(width: 4, height: 4)
                         .offset(y: -2)
                     Text(item)
-                        .font(.system(size: 11.5))
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)

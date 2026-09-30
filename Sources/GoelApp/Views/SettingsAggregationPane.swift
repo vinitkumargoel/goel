@@ -41,10 +41,10 @@ struct AggregationSettingsPane: View {
                     .a11yDecorative()
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.t("Aggregation"))
-                        .font(.system(size: 16, weight: .semibold))
+                        .scaledFont(size: Theme.TextSize.sheet, weight: .semibold)
                         .accessibilityAddTraits(.isHeader)
                     Text(L10n.t("Multi-path HTTP downloads across network adapters"))
-                        .font(.system(size: 12))
+                        .scaledFont(size: Theme.TextSize.body)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -61,9 +61,9 @@ struct AggregationSettingsPane: View {
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 4) {
                 Text(active ? L10n.t("Multi-path ready") : (enabled ? L10n.t("Multi-path idle") : L10n.t("Multi-path off")))
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(size: Theme.TextSize.title, weight: .semibold)
                 Text(statusDetail())
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -73,7 +73,7 @@ struct AggregationSettingsPane: View {
                     vm.refreshAggregationState()
                 } label: {
                     Label(L10n.t("Refresh"), systemImage: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .medium))
+                        .scaledFont(size: Theme.TextSize.meta, weight: .medium)
                 }
                 .buttonStyle(.borderless)
             }
@@ -107,9 +107,9 @@ struct AggregationSettingsPane: View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.t("Enable multi-path downloads"))
-                    .font(.system(size: 13.5, weight: .medium))
+                    .scaledFont(size: Theme.TextSize.title, weight: .medium)
                 Text(L10n.t("Split large HTTP downloads across selected adapters using byte ranges. Default off."))
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -131,11 +131,11 @@ struct AggregationSettingsPane: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(L10n.t("ADAPTERS"))
-                    .font(.system(size: 10.5, weight: .bold))
+                    .scaledFont(size: Theme.TextSize.caption, weight: .bold)
                     .foregroundStyle(.tertiary)
                 Spacer()
                 Text(selectionCaption)
-                    .font(.system(size: 11))
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
             }
 
@@ -150,8 +150,8 @@ struct AggregationSettingsPane: View {
             }
 
             Text(L10n.t("Leave none selected to use every eligible adapter. Two NICs on the same home router usually will not double speed."))
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.meta)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -170,9 +170,9 @@ struct AggregationSettingsPane: View {
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 3) {
                 Text(L10n.t("No adapters found"))
-                    .font(.system(size: 13, weight: .medium))
+                    .scaledFont(size: Theme.TextSize.title, weight: .medium)
                 Text(L10n.t("Connect Wi‑Fi, Ethernet, or a phone hotspot, then refresh."))
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -192,7 +192,7 @@ struct AggregationSettingsPane: View {
     private var optionsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(L10n.t("OPTIONS"))
-                .font(.system(size: 10.5, weight: .bold))
+                .scaledFont(size: Theme.TextSize.caption, weight: .bold)
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 4)
 
@@ -232,7 +232,7 @@ struct AggregationSettingsPane: View {
     private var tipsFooter: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.t("HOW IT WORKS"))
-                .font(.system(size: 10.5, weight: .bold))
+                .scaledFont(size: Theme.TextSize.caption, weight: .bold)
                 .foregroundStyle(.tertiary)
             tipRow(icon: "arrow.triangle.branch",
                    text: L10n.t("Ranged HTTP segments bind to different adapters (not OS link aggregation)."))
@@ -253,7 +253,7 @@ struct AggregationSettingsPane: View {
                 .foregroundStyle(Theme.accent)
                 .frame(width: 18)
             Text(text)
-                .font(.system(size: 11.5))
+                .scaledFont(size: Theme.TextSize.meta)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -299,14 +299,14 @@ private struct AdapterRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(adapter.displayName.isEmpty ? adapter.bsdName : adapter.displayName)
-                            .font(.system(size: 13, weight: .medium))
+                            .scaledFont(size: Theme.TextSize.title, weight: .medium)
                             .foregroundStyle(.primary)
                         Text(adapter.bsdName)
-                            .font(.system(size: 10.5).monospaced())
+                            .scaledFont(size: Theme.TextSize.caption, design: .monospaced)
                             .foregroundStyle(.tertiary)
                     }
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .scaledFont(size: Theme.TextSize.meta)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -315,7 +315,7 @@ private struct AdapterRow: View {
 
                 if adapter.isExpensive {
                     Text(L10n.t("EXPENSIVE"))
-                        .font(.system(size: 9, weight: .bold))
+                        .scaledFont(size: Theme.TextSize.caption, weight: .bold)
                         .tracking(0.4)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)

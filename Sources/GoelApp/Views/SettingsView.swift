@@ -45,33 +45,16 @@ struct SettingsView: View {
     }
 
     @State private var selection: Pane = .general
+    @State private var searchText = ""
 
     @ObservedObject private var route = SettingsRoute.shared
 
+    private var matchingPanes: [Pane] { SettingsSearch.panes(matching: searchText) }
+
     var body: some View {
         HStack(spacing: 0) {
-            List(Pane.allCases, selection: $selection) { pane in
-                Label {
-                    HStack {
-                        Text(L10n.t(pane.rawValue))
-                        if pane.comingSoon {
-                            Spacer()
-                            Text(L10n.t("soon"))
-                                .scaledFont(size: 9)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(Color.primary.opacity(0.08), in: Capsule())
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                } icon: {
-                    Image(systemName: pane.symbol)
-                }
-                .tag(pane)
-                .opacity(pane.comingSoon ? 0.6 : 1)
-            }
-            .listStyle(.sidebar)
-            .frame(width: 184)
+            sidebar
+                .frame(width: 184)
 
             Divider()
 
@@ -82,10 +65,17 @@ struct SettingsView: View {
                 .padding(22)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .environment(\.settingsSearchQuery, searchText)
+        }
+        // Follow the filter: a pane the search hides must not stay on screen as if it matched.
+        .onChange(of: searchText) { _, _ in
+            let panes = matchingPanes
+            if let first = panes.first, !panes.contains(selection) { selection = first }
         }
         // Clear the request once consumed, or asking for the same pane twice never fires onChange again.
         .onChange(of: route.requestedPane) { _, requested in
             guard let requested else { return }
+            searchText = ""
             selection = requested
             route.requestedPane = nil
         }
@@ -113,6 +103,79 @@ struct SettingsView: View {
         }
     }
 
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .a11yDecorative()
+                TextField(L10n.t("Search settings"), text: $searchText)
+                    .textFieldStyle(.plain)
+                    .accessibilityLabel(L10n.t("Search settings"))
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help(L10n.t("Clear search"))
+                    .a11yButton(L10n.t("Clear search"))
+                }
+            }
+            .padding(.horizontal, Theme.Space.s)
+            .padding(.vertical, 5)
+            .background(Theme.fillRest, in: RoundedRectangle(cornerRadius: Theme.Radius.control))
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+
+            let matches = matchingPanes
+            if matches.isEmpty {
+                Text(L10n.t("No settings match “%@”.", searchText.trimmingCharacters(in: .whitespaces)))
+                    .scaledFont(size: Theme.TextSize.meta)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(Theme.Space.m)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else {
+                List(selection: $selection) {
+                    ForEach(Pane.Group.allCases) { group in
+                        let panes = group.panes.filter(matches.contains)
+                        if !panes.isEmpty {
+                            Section(group.title) {
+                                ForEach(panes) { pane in
+                                    sidebarRow(pane)
+                                }
+                            }
+                        }
+                    }
+                }
+                .listStyle(.sidebar)
+            }
+        }
+    }
+
+    private func sidebarRow(_ pane: Pane) -> some View {
+        Label {
+            HStack {
+                Text(L10n.t(pane.rawValue))
+                if pane.comingSoon {
+                    Spacer()
+                    Text(L10n.t("soon"))
+                        .scaledFont(size: 9)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.primary.opacity(0.08), in: Capsule())
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        } icon: {
+            Image(systemName: pane.symbol)
+        }
+        .tag(pane)
+        .opacity(pane.comingSoon ? 0.6 : 1)
+    }
 
     @ViewBuilder
     private var paneContent: some View {
@@ -381,13 +444,13 @@ struct SettingsView: View {
             SetRow(name: L10n.t("Max download speed"), desc: L10n.t("0 = unlimited.")) {
                 HStack(spacing: 4) {
                     SettingDouble(value: megabytesBinding(\.maxDownloadBytesPerSec), width: 70)
-                    Text(L10n.t("MB/s")).font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(L10n.t("MB/s")).scaledFont(size: 13).foregroundStyle(.secondary)
                 }
             }
             SetRow(name: L10n.t("Max upload speed"), desc: "") {
                 HStack(spacing: 4) {
                     SettingDouble(value: megabytesBinding(\.maxUploadBytesPerSec), width: 70)
-                    Text(L10n.t("MB/s")).font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(L10n.t("MB/s")).scaledFont(size: 13).foregroundStyle(.secondary)
                 }
             }
             SetRow(name: L10n.t("Max connections (global)"), desc: "") {
@@ -538,7 +601,7 @@ struct SettingsView: View {
                             }
                         }
                     ), width: 48)
-                    Text(L10n.t("%")).font(.system(size: 13))
+                    Text(L10n.t("%")).scaledFont(size: 13)
                 }
             }
             SetRow(name: L10n.t("Don't seed on battery"), desc: "") { SettingSwitch(isOn: binding(\.dontSeedOnBattery)) }
@@ -607,7 +670,7 @@ struct SettingsView: View {
         Text(L10n.t("Withheld from every report: %@.",
                     DiagnosticsRedaction.withheldSettingsKeys.sorted().joined(separator: ", ")))
             .scaledFont(size: 10)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 

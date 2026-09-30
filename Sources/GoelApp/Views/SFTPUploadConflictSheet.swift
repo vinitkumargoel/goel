@@ -38,10 +38,10 @@ struct SFTPUploadConflictSheet: View {
                 Text(request.colliding.count == 1
                      ? L10n.t("An item already exists")
                      : L10n.t("%d items already exist", request.colliding.count))
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: Theme.TextSize.title, weight: .semibold)
                     .accessibilityAddTraits(.isHeader)
                 Text(L10n.t("These already exist in %@. Choose what to do with each.", displayDir))
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .scaledFont(size: Theme.TextSize.body).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
@@ -50,12 +50,12 @@ struct SFTPUploadConflictSheet: View {
 
     private var applyToAll: some View {
         HStack(spacing: 8) {
-            Text(L10n.t("Apply to all")).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+            Text(L10n.t("Apply to all")).scaledFont(size: Theme.TextSize.meta, weight: .semibold).foregroundStyle(.secondary)
             Spacer()
             ForEach(Policy.allCases) { policy in
                 Button(L10n.t(policy.rawValue)) { setAll(policy) }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
+                    .scaledFont(size: Theme.TextSize.meta, weight: .medium)
                     .foregroundStyle(Theme.accent)
                     .accessibilityLabel(L10n.t("Apply %@ to all items", L10n.t(policy.rawValue)))
             }
@@ -72,7 +72,7 @@ struct SFTPUploadConflictSheet: View {
                             .foregroundStyle(item.isDirectory ? Theme.accent : .secondary)
                             .frame(width: 18)
                             .a11yDecorative()
-                        Text(item.name).font(.system(size: 13)).lineLimit(1).truncationMode(.middle)
+                        Text(item.name).scaledFont(size: Theme.TextSize.title).lineLimit(1).truncationMode(.middle)
                             .accessibilityLabel(L10n.t("%1$@, %2$@",
                                                        item.isDirectory ? L10n.t("Folder") : L10n.t("File"),
                                                        item.name))
@@ -94,7 +94,7 @@ struct SFTPUploadConflictSheet: View {
 
     private var footer: some View {
         HStack {
-            Text(summary).font(.system(size: 11)).foregroundStyle(.tertiary)
+            Text(summary).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
             Spacer()
             Button(L10n.t("Cancel"), role: .cancel, action: onCancel)
                 .keyboardShortcut(.cancelAction)
