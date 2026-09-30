@@ -26,7 +26,7 @@ extension RemoteRouter {
     /// instead — escaped like any other value, since a translation may contain `"` or `<`.
     static func loginPage(theme: String, error: String?) -> String {
         let themeAttr = AppThemeToken.sanitize(theme)
-        let errHTML = error.map { #"<div class="err">\#(htmlEscape($0))</div>"# } ?? ""
+        let errHTML = error.map { #"<div class="err" id="err" role="alert">\#(htmlEscape($0))</div>"# } ?? ""
         let failed = htmlEscape(L10n.t("Sign-in failed"))
         let credentials = htmlEscape(L10n.t("Wrong username or password"))
         let offline = htmlEscape(L10n.t("Could not reach the server"))
@@ -42,8 +42,8 @@ extension RemoteRouter {
               data-msg-offline="\#(offline)">
           <div class="brand"><span class="mk">\#(logoSVG)</span><h1>Goel° Web</h1><div class="sub">\#(htmlEscape(L10n.t("Sign in to control your downloads")))</div></div>
           \#(errHTML)
-          <div class="fld"><label>\#(htmlEscape(L10n.t("Username")))</label><input id="u" name="username" autocomplete="username" autofocus></div>
-          <div class="fld"><label>\#(htmlEscape(L10n.t("Password")))</label><input id="p" name="password" type="password" autocomplete="current-password"></div>
+          <div class="fld"><label for="u">\#(htmlEscape(L10n.t("Username")))</label><input id="u" name="username" autocomplete="username" required autofocus></div>
+          <div class="fld"><label for="p">\#(htmlEscape(L10n.t("Password")))</label><input id="p" name="password" type="password" autocomplete="current-password" required></div>
           <button type="submit">\#(htmlEscape(L10n.t("Sign in")))</button>
           <div class="foot">\#(htmlEscape(L10n.t("Goel° download manager")))<br><span class="warn">⚠</span> \#(htmlEscape(L10n.t("Plain HTTP — use only on a trusted network or behind TLS.")))</div>
         </form>

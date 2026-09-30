@@ -206,6 +206,17 @@ export function ArrowUpIcon(props: IconProps) {
   )
 }
 
+/** The "⋯" of a row or detail More button. */
+export function MoreIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <circle cx="5" cy="12" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="19" cy="12" r="1.8" />
+    </svg>
+  )
+}
+
 export function ListIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...props}>
@@ -276,20 +287,22 @@ export function SettingsIcon(props: IconProps) {
   )
 }
 
-const tile = {
-  fill: 'none',
-  stroke: '#fff',
-  strokeWidth: 2,
-  strokeLinejoin: 'round',
-} as const
-
-export function FileTypeIcon({ type, ...props }: IconProps & { type: FileType }) {
+/**
+ * White by default, for the coloured type tiles. `ink="currentColor"` draws the same glyph as a
+ * plain icon that follows the surrounding text, as in the sidebar's Type group.
+ */
+export function FileTypeIcon({
+  type,
+  ink = '#fff',
+  ...props
+}: IconProps & { type: FileType; ink?: string }) {
+  const tile = { fill: 'none', stroke: ink, strokeWidth: 2, strokeLinejoin: 'round' } as const
   switch (type) {
     case 'iso':
       return (
         <svg viewBox="0 0 24 24" {...props}>
           <circle cx="12" cy="12" r="9" {...tile} />
-          <circle cx="12" cy="12" r="2.5" fill="#fff" />
+          <circle cx="12" cy="12" r="2.5" fill={ink} />
         </svg>
       )
     case 'video':

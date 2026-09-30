@@ -23,6 +23,8 @@ interface TopbarProps {
   onAdd: () => void
   onToggleSidebar: () => void
   onUserMenu: (anchor: DOMRect) => void
+  userMenuOpen: boolean
+  sidebarOpen: boolean
   canWrite: boolean
 }
 
@@ -37,6 +39,8 @@ export function Topbar({
   onAdd,
   onToggleSidebar,
   onUserMenu,
+  userMenuOpen,
+  sidebarOpen,
   canWrite,
 }: TopbarProps) {
   const { t } = useTranslation()
@@ -44,7 +48,12 @@ export function Topbar({
 
   return (
     <div className="topbar">
-      <button className="hamburger" onClick={onToggleSidebar} aria-label={t('topbar.menu')}>
+      <button
+        className="hamburger"
+        onClick={onToggleSidebar}
+        aria-label={t('topbar.menu')}
+        aria-expanded={sidebarOpen}
+      >
         <MenuIcon />
       </button>
 
@@ -59,6 +68,7 @@ export function Topbar({
       <div className="search">
         <SearchIcon />
         <input
+          type="search"
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder={t('topbar.searchDownloads')}
@@ -92,6 +102,7 @@ export function Topbar({
         style={showPanelToggle ? undefined : { display: 'none' }}
         onClick={onTogglePanel}
         title={t('topbar.detailPanel')}
+        aria-label={t('topbar.detailPanel')}
         aria-pressed={panelOpen}
       >
         <PanelIcon />
@@ -100,8 +111,11 @@ export function Topbar({
       <button
         className="user"
         onClick={(e) => onUserMenu(e.currentTarget.getBoundingClientRect())}
+        aria-label={t('topbar.accountMenu', { username: BOOT.username })}
+        aria-haspopup="menu"
+        aria-expanded={userMenuOpen}
       >
-        <span className="avatar">{initial}</span>
+        <span className="avatar" aria-hidden="true">{initial}</span>
         <span className="uname">{BOOT.username}</span>
         <ChevronDownIcon />
       </button>

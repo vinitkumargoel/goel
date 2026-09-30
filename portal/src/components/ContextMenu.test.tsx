@@ -1,0 +1,79 @@
+import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
+import { describe, expect, it, vi } from 'vitest'
+import { renderWithI18n } from '../test/renderWithI18n'
+import { ContextMenu, type MenuState } from './ContextMenu'
+
+function Harness({ onPick }: { onPick: (key: string) => void }) {
+  const [menu, setMenu] = useState<MenuState | null>(null)
+  return (
+    <>
+      <button
+        onClick={() =>
+          setMenu({
+            x: 10,
+            y: 10,
+            label: 'debian.iso',
+            entries: [
+              { key: 'a', label: 'Pause', action: () => onPick('a') },
+              { separator: true },
+              { key: 'b', label: 'Copy source link', action: () => onPick('b') },
+              { key: 'c', label: 'Remove', danger: true, action: () => onPick('c') },
+            ],
+          })
+        }
+      >
+        More
+      </button>
+      <ContextMenu menu={menu} onClose={() => setMenu(null)} />
+    </>
+  )
+}
+
+async function open() {
+  const onPick = vi.fn()
+  renderWithI18n(<Harness onPick={onPick} />)
+  const opener = screen.getByRole('button', { name: 'More' })
+  await userEvent.click(opener)
+  return { onPick, opener }
+}
+
+describe('ContextMenu', () => {
+  it('is a labelled menu of menuitems and focuses the first on open', async () => {
+    await open()
+    expect(screen.getByRole('menu', { name: 'debian.iso' })).toBeInTheDocument()
+    const items = screen.getAllByRole('menuitem')
+    expect(items).toHaveLength(3)
+    expect(items[0]).toHaveFocus()
+  })
+
+  it('moves with the arrow keys, wrapping, and jumps with Home/End', async () => {
+    await open()
+    const items = screen.getAllByRole('menuitem')
+    await userEvent.keyboard('{ArrowDown}')
+    expect(items[1]).toHaveFocus()
+    await userEvent.keyboard('{End}')
+    expect(items[2]).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(items[0]).toHaveFocus()
+    await userEvent.keyboard('{ArrowUp}')
+    expect(items[2]).toHaveFocus()
+    await userEvent.keyboard('{Home}')
+    expect(items[0]).toHaveFocus()
+  })
+
+  it('closes on Escape and gives focus back to the opener', async () => {
+    const { opener } = await open()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(opener).toHaveFocus()
+  })
+
+  it('runs the chosen item with Enter and closes', async () => {
+    const { onPick } = await open()
+    await userEvent.keyboard('{ArrowDown}{Enter}')
+    expect(onPick).toHaveBeenCalledWith('b')
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+})
