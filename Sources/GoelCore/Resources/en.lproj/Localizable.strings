@@ -656,6 +656,8 @@
 "Fetch subtitles alongside yt-dlp video downloads (requires yt-dlp)." = "Fetch subtitles alongside yt-dlp video downloads (requires yt-dlp).";
 "Fetching details" = "Fetching details";
 "Fetching details…" = "Fetching details…";
+"Fetching metadata" = "Fetching metadata";
+"Fetching metadata · %@" = "Fetching metadata · %@";
 "Fetching…" = "Fetching…";
 "Fewer than 2 selected adapters are up" = "Fewer than 2 selected adapters are up";
 "File" = "File";
@@ -805,6 +807,7 @@
 "It may still work when you start." = "It may still work when you start.";
 "Its passphrase is read from the GOEL_PORTAL_TLS_PASSPHRASE environment variable — Goel° never stores it." = "Its passphrase is read from the GOEL_PORTAL_TLS_PASSPHRASE environment variable — Goel° never stores it.";
 "Its settings match yours, so no setting changes." = "Its settings match yours, so no setting changes.";
+"Just finished" = "Just finished";
 "Keep" = "Keep";
 "Keep Going" = "Keep Going";
 "Keep an audit log" = "Keep an audit log";

@@ -178,7 +178,7 @@ struct StatusBarView: View {
     }
 }
 
-private struct Snail: Shape {
+struct Snail: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 24
         let sy = rect.height / 24

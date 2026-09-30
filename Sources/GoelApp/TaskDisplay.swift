@@ -165,3 +165,27 @@ struct SpeedCellText: Equatable {
         }
     }
 }
+
+extension DownloadTask {
+
+    /// The name a compact row shows. A magnet still fetching its metadata has no real name yet —
+    /// only the generic placeholder or, from some sources, the raw `magnet:?xt=…` URI — so it
+    /// reads "Fetching metadata · 5c1a9d3e" (the start of its info-hash) instead.
+    var compactDisplayName: String {
+        guard case .magnet = source, totalBytes == nil else { return name }
+        return Self.pendingMagnetTitle(name: name, infoHash: displayInfoHash) ?? name
+    }
+
+    /// nil when `name` is already a real name (a magnet's `dn=`) worth showing as-is.
+    static func pendingMagnetTitle(name: String, infoHash: String?) -> String? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isPlaceholder = trimmed.isEmpty
+            || trimmed == "Magnet download"
+            || trimmed.lowercased().hasPrefix("magnet:")
+        guard isPlaceholder else { return nil }
+        guard let hash = infoHash?.trimmingCharacters(in: .whitespacesAndNewlines), !hash.isEmpty else {
+            return L10n.t("Fetching metadata")
+        }
+        return L10n.t("Fetching metadata · %@", String(hash.prefix(8)).lowercased())
+    }
+}
