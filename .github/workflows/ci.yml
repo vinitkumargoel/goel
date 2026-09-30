@@ -136,6 +136,10 @@ jobs:
       - name: Fail if the committed base strings table is stale
         run: python3 Scripts/extract-l10n-keys.py --check
 
+      # Safari has no downloads API, so its capture rests entirely on these click rules.
+      - name: Browser extension tests
+        run: node --test Tests/BrowserExtension
+
       # A language is offered in Settings only once it is (almost) fully translated:
       # "Deutsch" at 1% coverage gave German users an English UI with a German label.
       # Fails if any language in L10n.supportedLanguages is below 95%.

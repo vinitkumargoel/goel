@@ -281,6 +281,10 @@ final class AppViewModel: ObservableObject {
     }
 
     @Published var clipboardSuggestion: String?
+    /// Where ``clipboardSuggestion`` came from, so the banner doesn't call a browser send a copied link.
+    @Published var suggestionIsFromBrowser = false
+    /// Consumed by the Add sheet when it appears; set for a page a browser sent for its video.
+    var addSheetPrefill: String?
 
     let manager: DownloadManager
     private var updatesTask: Task<Void, Never>?
@@ -763,6 +767,7 @@ final class AppViewModel: ObservableObject {
         guard let link, link != lastClipboardHandled, let source = Self.parseSource(link) else { return }
         if tasks.contains(where: { $0.source.dedupKey == source.dedupKey }) { return }
         lastClipboardHandled = link
+        suggestionIsFromBrowser = false
         clipboardSuggestion = link
     }
 
@@ -778,7 +783,8 @@ final class AppViewModel: ObservableObject {
 
     /// Web-triggerable `goeldownloader://` payloads must go through confirmation, never straight to the queue.
     private func handleExternalAdd(_ payload: ExternalAdd.Payload) {
-        NSApp.activate(ignoringOtherApps: true)
+        // Reopens the main window if it was closed: the scene no longer makes one per URL.
+        MainWindowPresenter.activate()
         if payload.drainBrowserSpool {
             drainBrowserSpool()
             return
@@ -789,8 +795,14 @@ final class AppViewModel: ObservableObject {
             return
         }
         guard let lines = payload.lines else { return }
+        if payload.opensAddSheet, let first = parsedSources(in: lines).first {
+            addSheetPrefill = first.locator
+            isAddSheetPresented = true
+            return
+        }
         if payload.needsConfirmation {
             if let first = parsedSources(in: lines).first {
+                suggestionIsFromBrowser = true
                 clipboardSuggestion = first.locator
             }
         } else {

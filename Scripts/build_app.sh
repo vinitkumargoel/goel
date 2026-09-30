@@ -315,7 +315,8 @@ swiftc -parse-as-library \
   -target "${ARCH}-apple-macosx14.0" \
   -framework Foundation -framework AppKit -framework SafariServices \
   -Xlinker -e -Xlinker _NSExtensionMain
-codesign --force -s - "$APPEX"
+# Unsandboxed, pkd drops the appex silently and Safari never lists it.
+codesign --force -s - --entitlements Scripts/SafariExtension.entitlements "$APPEX"
 
 if [ "${BUNDLE_YTDLP:-1}" = "1" ]; then
   YTDLP_ARCH="$ARCH_ENV" Scripts/fetch_ytdlp.sh "$APP/Contents/Resources/yt-dlp"
@@ -350,6 +351,7 @@ minos_gate "$APP"
 # JIT / unsigned-memory / disabled library validation (see the comments in each file).
 ENTITLEMENTS="Scripts/Goel.entitlements"
 YTDLP_ENTITLEMENTS="Scripts/YtDlp.entitlements"
+SAFARI_EXT_ENTITLEMENTS="Scripts/SafariExtension.entitlements"
 
 # An ad-hoc cdhash changes each rebuild, so TCC drops grants (Local Network then fails as EHOSTUNREACH).
 DISTRIBUTABLE=0
@@ -428,7 +430,7 @@ if [ -n "${CODESIGN_IDENTITY:-}" ]; then
   [ -e "$APP/Contents/Resources/ffmpeg" ] && sign "$APP/Contents/Resources/ffmpeg"
 
   for b in "$APP/Contents/MacOS/"*.bundle; do [ -e "$b" ] && sign "$b"; done
-  for x in "$APP/Contents/PlugIns/"*.appex; do [ -e "$x" ] && sign "$x"; done
+  for x in "$APP/Contents/PlugIns/"*.appex; do [ -e "$x" ] && sign --entitlements "$SAFARI_EXT_ENTITLEMENTS" "$x"; done
 
   sign --entitlements "$ENTITLEMENTS" "$APP/Contents/MacOS/$APP_NAME"
   sign --entitlements "$ENTITLEMENTS" "$APP"

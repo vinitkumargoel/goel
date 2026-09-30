@@ -126,11 +126,21 @@ signed-in download came back as a login page.
 | | Chrome / Edge / Brave / Chromium / Vivaldi / Arc | Firefox | Safari |
 |---|---|---|---|
 | Right-click → **Download with Goel°** | ✅ | ✅ | ✅ |
-| Capture mode (toolbar toggle intercepts all downloads) | ✅ | ✅ | ❌ — Safari has no `downloads` API |
+| Capture mode (toolbar toggle intercepts all downloads) | ✅ | ✅ | ⚠️ link clicks only — see below |
+| Right-click a video page → **Download video from this page** | ❌ | ❌ | ✅ — opens the Add sheet for yt-dlp |
 | Signed-in downloads (forwards cookies) | ✅ | ✅ | ❌ — see below |
 | Survives a browser restart | ✅ | ❌ — reload each time | ✅ |
 | Needs the messaging helper | ✅ | ✅ | ❌ |
 | Adds without a confirmation prompt | ✅ | ✅ | ❌ — Safari captures open the add confirmation |
+
+**How Safari capture works.** Safari has no `downloads` API, so it can't hand over a download
+it has already started. Instead, while the toolbar toggle is on, the extension watches link
+clicks: a link to a file (by extension or a `download` attribute) goes straight to Goel°, and a
+link that might redirect into one — another site, or a path like `/download/…` — is checked first
+with a quick header request that follows redirects. If the answer is a file, Goel° gets it;
+otherwise the page opens as normal. A download a page starts from its own script or a form
+submit still goes to Safari. Turning capture on asks for access to all websites, since the click
+watcher has to run on every page.
 
 **Why Safari can't do cookies.** A Safari extension runs in a sandbox that cannot write
 Goel°'s hand-off spool, so its only route to the app is opening a `goeldownloader://add?url=…`

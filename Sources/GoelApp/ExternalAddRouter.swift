@@ -12,6 +12,8 @@ enum ExternalAdd {
         var torrentFile: URL?
         var needsConfirmation: Bool
         var drainBrowserSpool: Bool = false
+        /// A page sent for its video: only the Add sheet runs yt-dlp, and the sheet is the confirmation.
+        var opensAddSheet: Bool = false
     }
 
     private static var pending: [Payload] = []
@@ -61,9 +63,14 @@ enum ExternalAdd {
                   let inner = URL(string: target),
                   ["http", "https", "magnet"].contains(inner.scheme?.lowercased() ?? "")
             else { return nil }
-            return fromDisposition(
+            var payload = fromDisposition(
                 InboundAdd.classify(origin: .urlScheme, payload: .init(lines: target))
             )
+            let kind = components?.queryItems?.first(where: { $0.name == "kind" })?.value
+            if kind == "page", payload?.needsConfirmation == true {
+                payload?.opensAddSheet = true
+            }
+            return payload
         case "magnet":
             return fromDisposition(
                 InboundAdd.classify(origin: .userExplicit,

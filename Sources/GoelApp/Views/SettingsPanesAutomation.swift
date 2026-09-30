@@ -496,11 +496,11 @@ struct BrowserIntegrationPane: View {
                 EmptyView()
             }
             SetRow(name: L10n.t("3. Capture"),
-                   desc: L10n.t("Right-click a link → “Download with Goel°”. Safari-captured links open here with a quick confirmation.")) {
+                   desc: L10n.t("Click the Goel° toolbar button to turn capture on: clicking a download link, including one that redirects to a file, sends it here instead of Safari. Or right-click a link → “Download with Goel°”, or a video page → “Download video from this page with Goel°”. Links from Safari open here with a quick confirmation.")) {
                 EmptyView()
             }
             SetRow(name: L10n.t("What Safari can’t do"),
-                   desc: L10n.t("No capture toggle (Safari has no downloads API) and no signed-in downloads: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for either.")) {
+                   desc: L10n.t("Safari has no downloads API, so capture works by catching link clicks: a download a page starts from its own script or a form still goes to Safari. No signed-in downloads either: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for those.")) {
                 EmptyView()
             }
 

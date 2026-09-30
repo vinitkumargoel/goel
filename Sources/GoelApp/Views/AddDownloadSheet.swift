@@ -526,6 +526,11 @@ struct AddDownloadSheet: View {
     }
 
     private func autoPasteFromClipboard() {
+        if text.isEmpty, let prefill = vm.addSheetPrefill {
+            vm.addSheetPrefill = nil
+            text = prefill
+            return
+        }
         guard text.isEmpty,
               let prefill = AddSheetInput.clipboardPrefill(NSPasteboard.general.string(forType: .string))
         else { return }

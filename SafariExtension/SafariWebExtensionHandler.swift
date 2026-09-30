@@ -20,7 +20,12 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return false
         }
         // Never put `message["cookie"]` here: this scheme is world-triggerable and LaunchServices-logged.
-        components.queryItems = [URLQueryItem(name: "url", value: raw)]
+        var items = [URLQueryItem(name: "url", value: raw)]
+        // `page`: a video page for the Add sheet's yt-dlp. Any other value is dropped, not forwarded.
+        if message?["kind"] as? String == "page" {
+            items.append(URLQueryItem(name: "kind", value: "page"))
+        }
+        components.queryItems = items
         guard let appURL = components.url else { return false }
         // Brokered scheme open is the only handoff a sandboxed extension gets; direct file writes fail.
         NSWorkspace.shared.open(appURL)

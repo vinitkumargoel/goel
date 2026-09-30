@@ -232,9 +232,11 @@ struct RootView: View {
 
     private func clipboardBanner(_ link: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
+            Image(systemName: vm.suggestionIsFromBrowser ? "safari.fill" : "doc.on.clipboard.fill")
+                .foregroundStyle(Theme.accent)
                 .a11yDecorative()
-            Text(L10n.t("Copied link detected")).scaledFont(size: Theme.TextSize.body, weight: .semibold)
+            Text(vm.suggestionIsFromBrowser ? L10n.t("Link from your browser") : L10n.t("Copied link detected"))
+                .scaledFont(size: Theme.TextSize.body, weight: .semibold)
             Text(link)
                 .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                 .foregroundStyle(.secondary)
@@ -244,7 +246,9 @@ struct RootView: View {
             Button(L10n.t("Add")) { vm.acceptClipboardSuggestion() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .accessibilityLabel(L10n.t("Add copied link to downloads"))
+                .accessibilityLabel(vm.suggestionIsFromBrowser
+                                    ? L10n.t("Add the link from your browser to downloads")
+                                    : L10n.t("Add copied link to downloads"))
             IconButton(symbol: "xmark", help: L10n.t("Dismiss copied link suggestion"), size: 10) {
                 vm.dismissClipboardSuggestion()
             }

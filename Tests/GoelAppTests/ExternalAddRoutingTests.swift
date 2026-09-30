@@ -95,4 +95,33 @@ final class ExternalAddRoutingTests: XCTestCase {
         XCTAssertTrue(result.needsConfirmation,
                       "an uppercased scheme must not fall through to the trusted default branch")
     }
+
+    func testAFileLinkFromTheBrowserUsesTheOneClickBanner() throws {
+        let encoded = "https://example.test/a.zip"
+            .addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        let result = try XCTUnwrap(payload("goeldownloader://add?url=\(encoded)"))
+        XCTAssertFalse(result.opensAddSheet)
+    }
+
+    func testAPageSentForItsVideoOpensTheAddSheet() throws {
+        let page = "https://www.youtube.com/watch?v=abc123"
+        let encoded = page.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        let result = try XCTUnwrap(payload("goeldownloader://add?url=\(encoded)&kind=page"))
+        XCTAssertEqual(result.lines, page)
+        XCTAssertTrue(result.opensAddSheet, "only the Add sheet runs yt-dlp on a page link")
+        XCTAssertTrue(result.needsConfirmation, "the sheet is itself the confirmation step")
+    }
+
+    func testAPageRequestStillRefusesAnInnerSchemeOutsideTheAllowlist() {
+        let encoded = "file:///etc/passwd".addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        XCTAssertNil(payload("goeldownloader://add?url=\(encoded)&kind=page"))
+    }
+
+    func testAnUnknownKindFallsBackToTheBanner() throws {
+        let encoded = "https://example.test/a.zip"
+            .addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        let result = try XCTUnwrap(payload("goeldownloader://add?url=\(encoded)&kind=bogus"))
+        XCTAssertFalse(result.opensAddSheet)
+        XCTAssertTrue(result.needsConfirmation)
+    }
 }

@@ -33,6 +33,9 @@ struct GoelDownloaderApp: App {
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
+        // Otherwise every goeldownloader:// or magnet: open spawns another main window. The
+        // AppDelegate routes the URL, and ExternalAdd raises (or reopens) the one main window.
+        .handlesExternalEvents(matching: [])
         .commands { GoelCommands(viewModel: viewModel, state: viewModel.commandState) }
 
         Settings {

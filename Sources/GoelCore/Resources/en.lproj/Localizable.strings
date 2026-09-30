@@ -162,6 +162,7 @@
 "Add sheet ▸ Mirrors — segments spread across alternate URLs and fail over" = "Add sheet ▸ Mirrors — segments spread across alternate URLs and fail over";
 "Add sheet ▸ Sign-in cookies — for files behind a login" = "Add sheet ▸ Sign-in cookies — for files behind a login";
 "Add tags to %d downloads" = "Add tags to %d downloads";
+"Add the link from your browser to downloads" = "Add the link from your browser to downloads";
 "Add to Download Queue" = "Add to Download Queue";
 "Added" = "Added";
 "Added %1$@ · skipped %2$@ already in your list" = "Added %1$@ · skipped %2$@ already in your list";
@@ -320,6 +321,7 @@
 "Clear the download history?" = "Clear the download history?";
 "Clear the pasted text" = "Clear the pasted text";
 "Cleared finished transfers" = "Cleared finished transfers";
+"Click the Goel° toolbar button to turn capture on: clicking a download link, including one that redirects to a file, sends it here instead of Safari. Or right-click a link → “Download with Goel°”, or a video page → “Download video from this page with Goel°”. Links from Safari open here with a quick confirmation." = "Click the Goel° toolbar button to turn capture on: clicking a download link, including one that redirects to a file, sends it here instead of Safari. Or right-click a link → “Download with Goel°”, or a video page → “Download video from this page with Goel°”. Links from Safari open here with a quick confirmation.";
 "Click the extension’s toolbar button to toggle capture of all downloads, or right-click any link → “Download with Goel°”. For files behind a login, use “(stay signed in)” and accept the cookie prompt." = "Click the extension’s toolbar button to toggle capture of all downloads, or right-click any link → “Download with Goel°”. For files behind a login, use “(stay signed in)” and accept the cookie prompt.";
 "Click to include or exclude from multi-path" = "Click to include or exclude from multi-path";
 "Clipboard capture" = "Clipboard capture";
@@ -558,9 +560,9 @@
 "Downloading %d items to Downloads" = "Downloading %d items to Downloads";
 "Downloading “%@” again" = "Downloading “%@” again";
 "Downloading “%@” to Downloads" = "Downloading “%@” to Downloads";
-"Downloads can’t be saved in that folder, so “%@” wasn’t moved" = "Downloads can’t be saved in that folder, so “%@” wasn’t moved";
 "Downloads" = "Downloads";
 "Downloads are still running." = "Downloads are still running.";
+"Downloads can’t be saved in that folder, so “%@” wasn’t moved" = "Downloads can’t be saved in that folder, so “%@” wasn’t moved";
 "Downloads finished — Goel° will quit" = "Downloads finished — Goel° will quit";
 "Downloads finished — this Mac will go to sleep" = "Downloads finished — this Mac will go to sleep";
 "Downloads finished — this Mac will shut down" = "Downloads finished — this Mac will shut down";
@@ -854,6 +856,7 @@
 "Limit" = "Limit";
 "Limited to %@ — applies on next start" = "Limited to %@ — applies on next start";
 "Link Grabber · ⌘⇧L" = "Link Grabber · ⌘⇧L";
+"Link from your browser" = "Link from your browser";
 "Link updated" = "Link updated";
 "Link updated · resuming if the file is unchanged" = "Link updated · resuming if the file is unchanged";
 "Links you copy appear as a one-click banner at the top of the window." = "Links you copy appear as a one-click banner at the top of the window.";
@@ -953,7 +956,6 @@
 "No active peers" = "No active peers";
 "No adapters found" = "No adapters found";
 "No app is set up to open ssh:// links" = "No app is set up to open ssh:// links";
-"No capture toggle (Safari has no downloads API) and no signed-in downloads: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for either." = "No capture toggle (Safari has no downloads API) and no signed-in downloads: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for either.";
 "No completed downloads to clear" = "No completed downloads to clear";
 "No cookies were captured with this link. Re-copy it from the browser extension." = "No cookies were captured with this link. Re-copy it from the browser extension.";
 "No downloadable links found in that file" = "No downloadable links found in that file";
@@ -1293,7 +1295,6 @@
 "Revealed in Finder" = "Revealed in Finder";
 "Review & start" = "Review & start";
 "Review matches before any bytes move." = "Review matches before any bytes move.";
-"Right-click a link → “Download with Goel°”. Safari-captured links open here with a quick confirmation." = "Right-click a link → “Download with Goel°”. Safari-captured links open here with a quick confirmation.";
 "Rotate at (MB)" = "Rotate at (MB)";
 "Rotated files older than this are deleted. 0 keeps them forever." = "Rotated files older than this are deleted. 0 keeps them forever.";
 "Rotated files to keep" = "Rotated files to keep";
@@ -1310,6 +1311,7 @@
 "SSH key" = "SSH key";
 "Safari Extension" = "Safari Extension";
 "Safari finds the extension bundled inside this app — no helper and no loading needed. If you just installed the app, quit and reopen Safari once so it appears." = "Safari finds the extension bundled inside this app — no helper and no loading needed. If you just installed the app, quit and reopen Safari once so it appears.";
+"Safari has no downloads API, so capture works by catching link clicks: a download a page starts from its own script or a form still goes to Safari. No signed-in downloads either: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for those." = "Safari has no downloads API, so capture works by catching link clicks: a download a page starts from its own script or a form still goes to Safari. No signed-in downloads either: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for those.";
 "Save" = "Save";
 "Save is unavailable. %@" = "Save is unavailable. %@";
 "Save path" = "Save path";
