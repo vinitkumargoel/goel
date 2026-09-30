@@ -260,6 +260,15 @@ public struct RemoteZipStream {
         return table
     }()
 
+    /// Little-endian 32-bit word at `i`.
+    private static func word(_ p: UnsafeBufferPointer<UInt8>, at i: Int) -> UInt32 {
+        let b0: UInt32 = UInt32(p[i])
+        let b1: UInt32 = UInt32(p[i + 1]) << 8
+        let b2: UInt32 = UInt32(p[i + 2]) << 16
+        let b3: UInt32 = UInt32(p[i + 3]) << 24
+        return b0 | b1 | b2 | b3
+    }
+
     static func crc32(_ data: Data, seed: UInt32 = 0) -> UInt32 {
         var c = ~seed
         data.withUnsafeBytes { raw in
@@ -267,14 +276,19 @@ public struct RemoteZipStream {
             Self.crcTable.withUnsafeBufferPointer { t in
                 var i = 0
                 while p.count - i >= 8 {
-                    let one = c ^ (UInt32(p[i]) | UInt32(p[i + 1]) << 8
-                        | UInt32(p[i + 2]) << 16 | UInt32(p[i + 3]) << 24)
-                    let two = UInt32(p[i + 4]) | UInt32(p[i + 5]) << 8
-                        | UInt32(p[i + 6]) << 16 | UInt32(p[i + 7]) << 24
-                    c = t[7 * 256 + Int(one & 0xFF)] ^ t[6 * 256 + Int((one >> 8) & 0xFF)]
-                        ^ t[5 * 256 + Int((one >> 16) & 0xFF)] ^ t[4 * 256 + Int(one >> 24)]
-                        ^ t[3 * 256 + Int(two & 0xFF)] ^ t[2 * 256 + Int((two >> 8) & 0xFF)]
-                        ^ t[256 + Int((two >> 16) & 0xFF)] ^ t[Int(two >> 24)]
+                    // Split into typed steps: the one-expression form times out the
+                    // type checker on older toolchains (Linux CI, Xcode 16).
+                    let one: UInt32 = c ^ Self.word(p, at: i)
+                    let two: UInt32 = Self.word(p, at: i + 4)
+                    var x: UInt32 = t[7 * 256 + Int(one & 0xFF)]
+                    x ^= t[6 * 256 + Int((one >> 8) & 0xFF)]
+                    x ^= t[5 * 256 + Int((one >> 16) & 0xFF)]
+                    x ^= t[4 * 256 + Int(one >> 24)]
+                    x ^= t[3 * 256 + Int(two & 0xFF)]
+                    x ^= t[2 * 256 + Int((two >> 8) & 0xFF)]
+                    x ^= t[256 + Int((two >> 16) & 0xFF)]
+                    x ^= t[Int(two >> 24)]
+                    c = x
                     i += 8
                 }
                 while i < p.count {
