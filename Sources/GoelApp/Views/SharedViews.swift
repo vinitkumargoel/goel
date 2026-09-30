@@ -366,6 +366,13 @@ struct IndeterminateBar: View {
     let tint: Color
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// A list can hold many of these; one scrolled out of view (or in a closed window) must not keep
+    /// asking for frames.
+    @State private var isVisible = false
+
+    /// Capped: an uncapped `.animation` timeline redraws each row at the display's full refresh rate,
+    /// which for a highlight this soft is only wasted frames.
+    static let frameInterval: TimeInterval = 1.0 / 30
 
     /// One sweep, left edge to right edge.
     static let period: TimeInterval = 1.2
@@ -384,7 +391,7 @@ struct IndeterminateBar: View {
             if reduceMotion {
                 stripes(size: geo.size)
             } else {
-                TimelineView(.animation) { context in
+                TimelineView(.animation(minimumInterval: Self.frameInterval, paused: !isVisible)) { context in
                     let width = geo.size.width * Self.bandFraction
                     Capsule()
                         .fill(LinearGradient(colors: [tint.opacity(0), tint, tint.opacity(0)],
@@ -397,6 +404,8 @@ struct IndeterminateBar: View {
         }
         .clipShape(Capsule())
         .a11yDecorative()
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false }
     }
 
     /// 45° stripes, spaced by the bar's height so they stay diagonal at any thickness.
