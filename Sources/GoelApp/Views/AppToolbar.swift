@@ -26,6 +26,9 @@ struct AppToolbar: View {
                 .button(L10n.t("Select all")) { vm.selectAll() },
                 .button(L10n.t("Select none")) { vm.selectNone() },
                 .button(L10n.t("Select completed")) { vm.selectCompleted() },
+                ActionMenuItem(kind: .separator),
+                // Off the list, not off the disk; the toast that follows offers Undo.
+                .button(L10n.t("Clear completed")) { vm.clearCompleted() },
             ]) { open in
                 ToolbarMenuLabel(title: L10n.t("Select"), systemImage: "checkmark.circle", active: open)
             }
@@ -37,12 +40,11 @@ struct AppToolbar: View {
             .accessibilityValue(L10n.t("%1$@, %2$@", vm.sortKey.title,
                                       vm.sortAscending ? L10n.t("ascending") : L10n.t("descending")))
 
-            ActionMenu(items: filterItems) { open in
-                ToolbarMenuLabel(title: L10n.t("Filter"), systemImage: "line.3.horizontal.decrease.circle", active: open)
-            }
-            .accessibilityValue(vm.filter.accessibilityName)
+            filterControl
 
             Spacer()
+
+            pauseResumeAllButton
 
             searchField
 
@@ -76,11 +78,18 @@ struct AppToolbar: View {
                 .frame(width: 180)
                 .accessibilityLabel(L10n.t("Search downloads"))
                 .focused($searchFocused)
-                .help(ShortcutHint.help(L10n.t("Search downloads"), "⌘F"))
+                .help(ShortcutHint.help(L10n.t("Search downloads (host:example.com narrows to a site)"), "⌘F"))
                 .onExitCommand {
                     // Escape clears, then a second Escape hands the keyboard back to the list.
                     if vm.search.isEmpty { searchFocused = false } else { vm.search = "" }
                 }
+            if !vm.search.isEmpty {
+                IconButton(symbol: "xmark.circle.fill", help: L10n.t("Clear search"), size: 11) {
+                    vm.search = ""
+                    // Back to the field, so the next search can be typed straight away.
+                    searchFocused = true
+                }
+            }
             PaletteKeycap()
         }
         .onReceive(NotificationCenter.default.publisher(for: FocusBus.focusSearch)) { _ in
@@ -93,20 +102,85 @@ struct AppToolbar: View {
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline))
     }
 
+    /// The sort keys, then Group by: both decide how the list is laid out, so they share a menu.
     private var sortItems: [ActionMenuItem] {
-        SortKey.allCases.map { key in
+        let keys: [ActionMenuItem] = SortKey.allCases.map { key in
             .button(key.title,
                     trailing: vm.sortKey == key ? (vm.sortAscending ? "chevron.up" : "chevron.down") : nil) {
                 vm.toggleSort(key)
             }
         }
+        let groups: [ActionMenuItem] = ListGrouping.allCases.map { grouping in
+            .button(L10n.t("Group by %@", L10n.midSentence(grouping.title)),
+                    trailing: vm.grouping == grouping ? "checkmark" : nil) {
+                vm.grouping = grouping
+            }
+        }
+        return keys + [ActionMenuItem(kind: .separator)] + groups
     }
 
     /// Mirrors the sidebar's Status and Type groups, with a checkmark on the active one.
     private var filterItems: [ActionMenuItem] {
-        let status: [SidebarFilter] = [.all, .active, .paused, .completed, .seeding, .failed]
-        let types: [SidebarFilter] = [.type(.video), .type(.iso), .type(.archive), .type(.app)]
+        let status = (SidebarCatalog.library + SidebarCatalog.status).map(\.filter)
+        let types = SidebarCatalog.types.map(\.filter)
         return status.map(filterItem) + [ActionMenuItem(kind: .separator)] + types.map(filterItem)
+    }
+
+    /// At rest the Filter menu; with a filter on, a tinted chip naming it, whose ✕ goes back to All.
+    /// Before, nothing in the toolbar said the list was narrowed.
+    @ViewBuilder
+    private var filterControl: some View {
+        if vm.filter == .all {
+            ActionMenu(items: filterItems) { open in
+                ToolbarMenuLabel(title: L10n.t("Filter"), systemImage: "line.3.horizontal.decrease.circle",
+                                 active: open)
+            }
+            .accessibilityValue(vm.filter.accessibilityName)
+        } else {
+            HStack(spacing: 0) {
+                ActionMenu(items: filterItems) { _ in
+                    HStack(spacing: 5) {
+                        Image(systemName: "line.3.horizontal.decrease.circle.fill").font(.system(size: 12))
+                        Text(vm.filter.accessibilityName)
+                            .scaledFont(size: Theme.TextSize.body, weight: .medium)
+                            .lineLimit(1)
+                    }
+                    .padding(.leading, 10)
+                    .frame(height: 28)
+                    .contentShape(Rectangle())
+                    .a11yGroup(label: L10n.t("Filter"),
+                               hint: L10n.t("Activate to open the %@ menu.", L10n.midSentence(L10n.t("Filter"))))
+                    .accessibilityAddTraits(.isButton)
+                }
+                .accessibilityValue(vm.filter.accessibilityName)
+                IconButton(symbol: "xmark", help: L10n.t("Show all downloads"), size: 9, tint: Theme.accent,
+                           spokenLabel: L10n.t("Clear filter")) {
+                    vm.filter = .all
+                }
+                .padding(.trailing, 3)
+            }
+            .foregroundStyle(Theme.accent)
+            .background(Theme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.accent.opacity(0.35)))
+        }
+    }
+
+    /// Pause All while anything is running or waiting, Resume All once everything is paused.
+    /// Disabled, not hidden, when there is nothing to do, so the toolbar doesn't shift.
+    private var pauseResumeAllButton: some View {
+        let state = vm.commandState.snapshot
+        let pausing = state.hasPausable || !state.hasResumable
+        let title = pausing ? L10n.t("Pause All") : L10n.t("Resume All")
+        return Button {
+            if pausing { vm.pauseAll() } else { vm.resumeAll() }
+        } label: {
+            Image(systemName: pausing ? "pause.circle" : "play.circle")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(!state.hasPausable && !state.hasResumable)
+        .help(title)
+        .a11yButton(title)
     }
 
     private func filterItem(_ filter: SidebarFilter) -> ActionMenuItem {

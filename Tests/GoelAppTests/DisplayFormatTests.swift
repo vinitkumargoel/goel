@@ -78,7 +78,7 @@ final class DisplayFormatTests: XCTestCase {
     // MARK: Enum titles
 
     func testSortKeyTitlesAreHumanNotRawValues() {
-        XCTAssertEqual(SortKey.index.title, "Row number")
+        XCTAssertEqual(SortKey.index.title, "Queue order")
         XCTAssertEqual(SortKey.index.columnTitle, "#")
         XCTAssertEqual(SortKey.downloadSpeed.columnTitle, "↓ Speed")
         XCTAssertEqual(SortKey.uploadSpeed.title, "Upload speed")

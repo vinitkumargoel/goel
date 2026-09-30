@@ -92,4 +92,63 @@ final class TaskListQueryTests: XCTestCase {
         XCTAssertLessThan(TaskListQuery.statusOrder(.queued),
                           TaskListQuery.statusOrder(.completed))
     }
+
+    // MARK: - Search
+
+    private func hosted(_ name: String, _ url: String, label: String? = nil) -> DownloadTask {
+        DownloadTask(source: .url(URL(string: url)!), name: name, saveDirectory: "/tmp", label: label)
+    }
+
+    private var hostedSample: [DownloadTask] {
+        [
+            hosted("ubuntu.iso", "https://releases.ubuntu.com/24.04/ubuntu.iso"),
+            hosted("model.bin", "https://cdn.huggingface.co/x/model.bin?rev=abc123"),
+            hosted("notes.pdf", "https://files.example.org/notes.pdf", label: "Work"),
+            DownloadTask(source: .magnet("magnet:?xt=urn:btih:ffff"), name: "Pack", saveDirectory: "/tmp"),
+        ]
+    }
+
+    private func search(_ q: String) -> [String] {
+        TaskListQuery.visible(tasks: hostedSample, filter: .all, search: q, sortKey: .name, ascending: true)
+            .map(\.name)
+    }
+
+    func testSearchParsesHostTokensOutOfThePhrase() {
+        let q = TaskListQuery.Search("  host:GitHub.com   release  notes ")
+        XCTAssertEqual(q.hosts, ["github.com"])
+        XCTAssertEqual(q.text, "release notes")
+    }
+
+    func testPlainSearchKeepsItsSpacingAndIsCaseInsensitive() {
+        let q = TaskListQuery.Search("  Big  File ")
+        XCTAssertEqual(q.hosts, [])
+        XCTAssertEqual(q.text, "big  file")
+    }
+
+    func testABareHostPrefixNarrowsNothing() {
+        let q = TaskListQuery.Search("host:")
+        XCTAssertTrue(q.isEmpty)
+        XCTAssertEqual(search("host:"), ["model.bin", "notes.pdf", "Pack", "ubuntu.iso"])
+    }
+
+    func testSearchMatchesTheSourceHostAndURL() {
+        XCTAssertEqual(search("huggingface"), ["model.bin"])
+        XCTAssertEqual(search("rev=abc123"), ["model.bin"], "a pasted URL fragment finds its row")
+        XCTAssertEqual(search("24.04"), ["ubuntu.iso"])
+    }
+
+    func testSearchMatchesTheLabel() {
+        XCTAssertEqual(search("work"), ["notes.pdf"])
+    }
+
+    func testHostTokenNarrowsToThatHostAndCombinesWithText() {
+        XCTAssertEqual(search("host:ubuntu.com"), ["ubuntu.iso"])
+        XCTAssertEqual(search("host:example.org notes"), ["notes.pdf"])
+        XCTAssertEqual(search("host:example.org ubuntu"), [])
+        XCTAssertEqual(search("host:example.org host:ubuntu"), [], "every host token must match")
+    }
+
+    func testHostTokenNeverMatchesAMagnet() {
+        XCTAssertFalse(search("host:btih").contains("Pack"))
+    }
 }

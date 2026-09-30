@@ -31,26 +31,27 @@ struct DownloadListView: View {
                 let columns = self.columns
                 let focused = listFocused
                 let selectionSummary = DownloadRow.SelectionSummary(vm.selection.count > 1 ? vm.selectedTasks : [])
+                let reorderable = vm.isQueueReorderable
+                let ranks = vm.queueRanks
                 ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(vm.visibleTasks.enumerated()), id: \.element.id) { index, task in
-                            let isSelected = vm.isSelected(task.id)
-                            HoverTrackingRow(row: DownloadRow(
-                                task: task,
-                                displayIndex: index + 1,
-                                isSelected: isSelected,
-                                // Only a selected row draws focus, so the rest stay equal when focus moves.
-                                listFocused: focused && isSelected,
-                                speed: telemetry.displaySpeed(for: task),
-                                selectionSummary: isSelected ? selectionSummary : nil,
-                                context: context,
-                                columns: columns,
-                                vm: vm
-                            ))
-                            .equatable()
-                            .id(task.id)
-                            Divider()
+                    // Pinned, so a long group keeps its name in view while it scrolls.
+                    LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        if vm.grouping == .none {
+                            rows(vm.visibleTasks, offset: 0, reorderable: reorderable, ranks: ranks,
+                                 context: context, columns: columns, focused: focused,
+                                 selectionSummary: selectionSummary)
+                        } else {
+                            let offsets = sectionOffsets
+                            ForEach(vm.visibleSections) { section in
+                                Section {
+                                    rows(section.tasks, offset: offsets[section.id] ?? 0, reorderable: false,
+                                         ranks: ranks, context: context, columns: columns, focused: focused,
+                                         selectionSummary: selectionSummary)
+                                } header: {
+                                    ListSectionHeader(section: section)
+                                }
+                            }
                         }
                         Color.clear
                             .frame(maxWidth: .infinity, minHeight: 60)
@@ -86,6 +87,45 @@ struct DownloadListView: View {
         .onDeleteCommand { vm.removeSelected(deleteData: false) }
         .accessibilityLabel(L10n.t("Download queue"))
         .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, shift with an arrow to extend the selection, command A to select all, space to preview, return to open."))
+    }
+
+    /// Each section's first row index in the flattened list, so zebra striping and `displayIndex`
+    /// run on across headers instead of restarting under each one.
+    private var sectionOffsets: [String: Int] {
+        var offsets: [String: Int] = [:]
+        var running = 0
+        for section in vm.visibleSections {
+            offsets[section.id] = running
+            running += section.tasks.count
+        }
+        return offsets
+    }
+
+    @ViewBuilder
+    private func rows(_ tasks: [DownloadTask], offset: Int, reorderable: Bool, ranks: [DownloadTask.ID: Int],
+                      context: DownloadRow.Context, columns: DownloadColumns, focused: Bool,
+                      selectionSummary: DownloadRow.SelectionSummary) -> some View {
+        ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
+            let isSelected = vm.isSelected(task.id)
+            HoverTrackingRow(row: DownloadRow(
+                task: task,
+                displayIndex: offset + index + 1,
+                queueRank: ranks[task.id],
+                reorderable: reorderable,
+                isSelected: isSelected,
+                // Only a selected row draws focus, so the rest stay equal when focus moves.
+                listFocused: focused && isSelected,
+                speed: telemetry.displaySpeed(for: task),
+                selectionSummary: isSelected ? selectionSummary : nil,
+                context: context,
+                columns: columns,
+                vm: vm
+            ))
+            .equatable()
+            .modifier(QueueDropTarget(taskID: task.id, enabled: reorderable, vm: vm))
+            .id(task.id)
+            Divider()
+        }
     }
 
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
@@ -202,6 +242,10 @@ struct DownloadListView: View {
 struct DownloadRow: View, Equatable {
     let task: DownloadTask
     let displayIndex: Int
+    /// The row's place in the queue, which "#" shows whatever the sort.
+    var queueRank: Int?
+    /// The list is in queue order, so hovering "#" offers a drag grip.
+    var reorderable = false
     let isSelected: Bool
     /// Selection is dimmer while focus is elsewhere (the search field), so it's clear where arrows go.
     let listFocused: Bool
@@ -219,6 +263,8 @@ struct DownloadRow: View, Equatable {
     nonisolated static func == (lhs: DownloadRow, rhs: DownloadRow) -> Bool {
         lhs.task == rhs.task
             && lhs.displayIndex == rhs.displayIndex
+            && lhs.queueRank == rhs.queueRank
+            && lhs.reorderable == rhs.reorderable
             && lhs.isSelected == rhs.isSelected
             && lhs.listFocused == rhs.listFocused
             && lhs.isHovered == rhs.isHovered
@@ -272,9 +318,7 @@ struct DownloadRow: View, Equatable {
 
     var body: some View {
         HStack(spacing: 0) {
-            Text("\(displayIndex)")
-                .scaledFont(size: 11.5, monospacedDigit: true)
-                .foregroundStyle(.tertiary)
+            indexCell
                 .frame(width: columns.index)
                 .padding(.horizontal, 6)
 
@@ -290,7 +334,8 @@ struct DownloadRow: View, Equatable {
 
             statusCell
                 // The whole message is on the name's second line; the tooltip adds the advice.
-                .help(failureTooltip ?? "")
+                // Otherwise the tooltip is the long form the compact cell leaves out.
+                .help(failureTooltip ?? task.statusDetailText)
                 .frame(width: columns.status, alignment: .leading)
                 .padding(.horizontal, 6)
 
@@ -314,7 +359,7 @@ struct DownloadRow: View, Equatable {
         .accessibilityLabel(A11y.sentence(task.name,
                                           task.accessibilityKindName,
                                           task.accessibilityStatusName))
-        .accessibilityValue(task.accessibilityProgressValue)
+        .accessibilityValue(accessibilityValue)
         .accessibilityAddTraits(isSelected
                                 ? [.isButton, .isSelected, .updatesFrequently]
                                 : [.isButton, .updatesFrequently])
@@ -323,6 +368,13 @@ struct DownloadRow: View, Equatable {
         .accessibilityAction(named: Text(L10n.t("Show in Finder"))) { vm.revealInFinder(task) }
         .accessibilityAction(named: Text(L10n.t("Copy source link"))) { vm.copyToPasteboard(task.sourceLocator) }
         .accessibilityAction(named: Text(L10n.t("Remove from list"))) { vm.remove(task.id, deleteData: false) }
+        // The keyboard and VoiceOver path to reordering; dragging is pointer-only.
+        .accessibilityAction(named: Text(L10n.t("Move to Top of Queue"))) {
+            vm.moveInQueue(vm.queueTargets(for: task.id), to: .top)
+        }
+        .accessibilityAction(named: Text(L10n.t("Move to Bottom of Queue"))) {
+            vm.moveInQueue(vm.queueTargets(for: task.id), to: .bottom)
+        }
         .contentShape(Rectangle())
         .onTapGesture {
             let mods = NSEvent.modifierFlags
@@ -362,11 +414,47 @@ struct DownloadRow: View, Equatable {
             HStack(spacing: 6) {
                 Circle().fill(task.statusColor).frame(width: 7, height: 7)
                     .a11yDecorative()
-                Text(task.statusDetailText)
+                Text(task.statusCompactText(queueRank: queueRank))
                     .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if let progress = task.seedTargetProgress {
+                    SeedTargetBar(progress: progress)
+                }
             }
+        }
+    }
+
+    /// "#" is the queue place. While the list is in queue order, hovering swaps it for a grip that
+    /// drags the row (or the selection it belongs to) to a new place.
+    @ViewBuilder
+    private var indexCell: some View {
+        if reorderable && isHovered {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .help(L10n.t("Drag to reorder the queue"))
+                .onDrag {
+                    let ids = vm.beginQueueDrag(from: task.id)
+                    return NSItemProvider(object: ids.map(\.uuidString).joined(separator: "\n") as NSString)
+                }
+                .a11yDecorative()
+        } else {
+            Text("\(queueRank ?? displayIndex)")
+                .scaledFont(size: 11.5, monospacedDigit: true)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    /// The progress value plus what the compact status cell dropped: the ratio against its target
+    /// while seeding, the place in line while queued.
+    private var accessibilityValue: String {
+        switch task.status {
+        case .seeding: return A11y.sentence(task.accessibilityProgressValue, task.statusDetailText)
+        case .queued: return A11y.sentence(task.accessibilityProgressValue, task.statusCompactText(queueRank: queueRank))
+        default: return task.accessibilityProgressValue
         }
     }
 
@@ -456,6 +544,8 @@ struct DownloadRow: View, Equatable {
         if summary.canRename {
             Button(L10n.t("Rename %d Selected…", count)) { vm.promptForBatchRename(tasks: vm.selectedTasks) }
         }
+        Divider()
+        queueMenuItems
         Divider()
         Button(L10n.t("Remove %d from List", count), role: .destructive) {
             vm.removeSelected(deleteData: false)
@@ -564,6 +654,8 @@ struct DownloadRow: View, Equatable {
             }
         }
         Divider()
+        queueMenuItems
+        Divider()
         Button(L10n.t("Remove from list"), role: .destructive) { vm.remove(task.id, deleteData: false) }
         Button(L10n.t("Remove and Move File to Trash"), role: .destructive) {
             vm.requestConfirm(
@@ -573,6 +665,13 @@ struct DownloadRow: View, Equatable {
                 destructive: true
             ) { vm.remove(task.id, deleteData: true) }
         }
+    }
+
+    /// Acts on the selection when the row is part of one, else on this row.
+    @ViewBuilder
+    private var queueMenuItems: some View {
+        Button(L10n.t("Move to Top")) { vm.moveInQueue(vm.queueTargets(for: task.id), to: .top) }
+        Button(L10n.t("Move to Bottom")) { vm.moveInQueue(vm.queueTargets(for: task.id), to: .bottom) }
     }
 
     private var isFailed: Bool { task.status.isFailed }
@@ -677,76 +776,5 @@ private struct HoverTrackingRow: View, Equatable {
         return shown
             .equatable()
             .onHover { hovered = $0 }
-    }
-}
-
-/// Observes ``MediaJobCenter`` directly: a nested observable's changes don't propagate through the outer one.
-private struct MediaMenuItems: View {
-
-    let task: DownloadTask
-    let vm: AppViewModel
-    @ObservedObject var center: MediaJobCenter
-
-    private var input: URL { URL(fileURLWithPath: task.savePath) }
-
-    var body: some View {
-        if let reason = vm.ffmpegUnavailableReason {
-            Button(L10n.t("Convert To…")) { vm.toastNow(reason) }
-            Button(L10n.t("Extract Audio…")) { vm.toastNow(reason) }
-        } else {
-            jobItems
-        }
-    }
-
-    @ViewBuilder
-    private var jobItems: some View {
-        let live = center.liveJobs(input: input)
-        ForEach(live) { job in
-            Button(L10n.t("Cancel %@", L10n.midSentence(job.kind.activeTitle))) { center.cancel(job.id) }
-        }
-        if !live.isEmpty { Divider() }
-        Menu(L10n.t("Convert To")) {
-            ForEach(MediaContainer.convertTargets, id: \.self) { ext in
-                Button(label(for: ext)) { vm.convertFile(task: task, toExtension: ext) }
-                    .disabled(center.liveJob(input: input, outputExtension: ext) != nil)
-            }
-        }
-        Menu(L10n.t("Extract Audio")) {
-            ForEach(AudioExtractionFormat.allCases, id: \.self) { format in
-                Button(format.displayName) { vm.extractAudio(task: task, format: format) }
-                    .disabled(center.liveJob(input: input, outputExtension: format.rawValue) != nil)
-            }
-        }
-    }
-
-    private func label(for ext: String) -> String {
-        let source = input.pathExtension
-        guard !source.isEmpty,
-              MediaContainer.likelyStreamCopy(from: source, to: ext) else {
-            return ext.uppercased()
-        }
-        return L10n.t("%@ — copy, instant", ext.uppercased())
-    }
-}
-
-/// How a row asks the list to Quick Look a file. It lives in the environment rather than as a
-/// closure parameter: a fresh closure on every list body made every row compare as changed.
-struct QuickLookAction: Equatable {
-    var item: Binding<URL?>?
-
-    func callAsFunction(_ url: URL) { item?.wrappedValue = url }
-
-    /// Always equal: the binding points at the same `@State` for the life of the list.
-    static func == (lhs: QuickLookAction, rhs: QuickLookAction) -> Bool { true }
-}
-
-private struct QuickLookActionKey: EnvironmentKey {
-    static let defaultValue = QuickLookAction(item: nil)
-}
-
-extension EnvironmentValues {
-    var quickLookAction: QuickLookAction {
-        get { self[QuickLookActionKey.self] }
-        set { self[QuickLookActionKey.self] = newValue }
     }
 }

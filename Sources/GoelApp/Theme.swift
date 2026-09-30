@@ -229,17 +229,21 @@ extension NSColor {
     }
 }
 
+/// Case order is the sidebar's and the Group by Type order.
 enum FileType: String, CaseIterable, Hashable {
-    case iso, video, archive, app, magnet, doc
+    case video, audio, image, iso, archive, app, doc, magnet, other
 
     var symbol: String {
         switch self {
         case .iso: return "opticaldisc"
         case .video: return "film"
+        case .audio: return "music.note"
+        case .image: return "photo"
         case .archive: return "doc.zipper"
         case .app: return "app.badge"
         case .magnet: return "link"
-        case .doc: return "doc"
+        case .doc: return "doc.text"
+        case .other: return "doc"
         }
     }
 
@@ -248,10 +252,13 @@ enum FileType: String, CaseIterable, Hashable {
         switch self {
         case .iso: return colors.orange
         case .video: return colors.purple
+        case .audio: return colors.indigo
+        case .image: return colors.yellow
         case .archive: return colors.teal
         case .app: return colors.green
         case .magnet: return colors.red
-        case .doc: return IconFill.neutral
+        // Neutral on purpose: a text file or an unknown blob should not out-shout the media rows.
+        case .doc, .other: return IconFill.neutral
         }
     }
 

@@ -340,9 +340,7 @@ struct MiniProgressBar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(0.08))
                 if task.status == .requestingMetadata {
-                    Capsule()
-                        .fill(Theme.orange.opacity(0.7))
-                        .frame(width: geo.size.width * 0.4)
+                    IndeterminateBar(tint: Theme.orange)
                 } else {
                     Capsule()
                         .fill(task.progressTint)
@@ -357,6 +355,64 @@ struct MiniProgressBar: View {
         .accessibilityValue(task.status == .requestingMetadata
                             ? L10n.t("Requesting information")
                             : task.accessibilityProgressValue)
+    }
+}
+
+/// "Working, amount unknown". A static capsule at 40% read as 40% progress, so this sweeps a short
+/// highlight across the track instead; under Reduce Motion it holds still as diagonal stripes,
+/// which read as "in progress" without claiming a fraction.
+struct IndeterminateBar: View {
+    let tint: Color
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// One sweep, left edge to right edge.
+    static let period: TimeInterval = 1.2
+    /// The highlight's share of the track.
+    static let bandFraction: CGFloat = 0.3
+
+    /// The band's leading edge at `time`, as a fraction of the track: it starts fully off the left
+    /// and ends fully off the right, so the sweep wraps without a visible jump.
+    static func bandOffset(at time: TimeInterval) -> CGFloat {
+        let phase = CGFloat(time.truncatingRemainder(dividingBy: period) / period)
+        return -bandFraction + phase * (1 + bandFraction)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            if reduceMotion {
+                stripes(size: geo.size)
+            } else {
+                TimelineView(.animation) { context in
+                    let width = geo.size.width * Self.bandFraction
+                    Capsule()
+                        .fill(LinearGradient(colors: [tint.opacity(0), tint, tint.opacity(0)],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(width: width)
+                        .offset(x: geo.size.width
+                                * Self.bandOffset(at: context.date.timeIntervalSinceReferenceDate))
+                }
+            }
+        }
+        .clipShape(Capsule())
+        .a11yDecorative()
+    }
+
+    /// 45° stripes, spaced by the bar's height so they stay diagonal at any thickness.
+    private func stripes(size: CGSize) -> some View {
+        Path { path in
+            let step = max(size.height * 2, 4)
+            var x = -size.height
+            while x < size.width + size.height {
+                path.move(to: CGPoint(x: x, y: size.height))
+                path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                path.addLine(to: CGPoint(x: x + size.height + step / 2, y: 0))
+                path.addLine(to: CGPoint(x: x + step / 2, y: size.height))
+                path.closeSubpath()
+                x += step
+            }
+        }
+        .fill(tint.opacity(0.7))
     }
 }
 

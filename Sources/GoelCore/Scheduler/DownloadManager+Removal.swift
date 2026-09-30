@@ -169,7 +169,7 @@ extension DownloadManager {
             task.connectionCount = 0
             task.connections = nil
             appendTask(task)
-            persist(task)
+            persist(tasks[tasks.count - 1])
             added = true
         }
         guard added else { return }

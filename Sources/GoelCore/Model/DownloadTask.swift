@@ -82,6 +82,11 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// moved file or an unmounted share must never silently erase the record — and cleared on reappearance.
     public var fileMissing: Bool?
 
+    /// Where the row stands in the user's queue: lower starts first (after priority). nil only on
+    /// rows saved before the queue could be reordered; ``QueueOrder/backfilled(_:)`` numbers those
+    /// on restore in the order they were added, which is the order they used to start in.
+    public var queuePosition: Int?
+
     public init(
         id: UUID = UUID(),
         source: DownloadSource,
@@ -124,7 +129,8 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         retryAttempt: Int? = nil,
         initialSkipFileIDs: [Int]? = nil,
         networkSelection: NetworkSelection? = nil,
-        fileMissing: Bool? = nil
+        fileMissing: Bool? = nil,
+        queuePosition: Int? = nil
     ) {
         self.id = id
         self.source = source
@@ -168,6 +174,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         self.initialSkipFileIDs = initialSkipFileIDs
         self.networkSelection = networkSelection
         self.fileMissing = fileMissing
+        self.queuePosition = queuePosition
     }
 
     /// Listed by hand so ``cookieHeader`` stays absent and can never be encoded; add every new property.
@@ -183,7 +190,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         case label, tags, note, referer, requestHeaders
         case cookieSource, cookieHost           // provenance only — never the value
         case retryAttempt, initialSkipFileIDs, networkSelection
-        case fileMissing
+        case fileMissing, queuePosition
     }
 
     public var allTags: [String] {
