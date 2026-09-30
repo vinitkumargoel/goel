@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { summarizeLinks } from './links'
+import { removeLine, summarizeLinks } from './links'
 
 describe('summarizeLinks', () => {
   it('counts one link per non-blank line', () => {
@@ -19,6 +19,16 @@ describe('summarizeLinks', () => {
       'file:///etc/passwd',
       'magnet:',
     ])
+  })
+
+  it('accepts ftps, which the daemon parses as FTP over TLS', () => {
+    expect(summarizeLinks('ftps://host/f.iso').valid).toBe(1)
+  })
+
+  it('removes every copy of a flagged line and keeps the rest', () => {
+    expect(removeLine('https://a/x\n  bad  \nmagnet:?xt=1\nbad', 'bad')).toBe(
+      'https://a/x\nmagnet:?xt=1',
+    )
   })
 
   it('accepts schemes in any case', () => {

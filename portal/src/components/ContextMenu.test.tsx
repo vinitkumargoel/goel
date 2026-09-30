@@ -86,4 +86,29 @@ describe('ContextMenu', () => {
     expect(onPick).toHaveBeenCalledWith('b')
     expect(screen.queryByRole('menu')).toBeNull()
   })
+
+  it('renders choices as checkable radio items, with detail, kbd hints and disabled entries', async () => {
+    const pick = vi.fn()
+    renderWithI18n(
+      <ContextMenu
+        menu={{
+          x: 0,
+          y: 0,
+          entries: [
+            { key: 'a', label: 'Low', detail: '↓ 1 MB/s', checked: true, action: pick },
+            { key: 'b', label: 'High', checked: false, disabled: true, action: pick },
+            { key: 'c', label: 'Pause', shortcut: 'Space', action: pick },
+          ],
+        }}
+        onClose={vi.fn()}
+      />,
+    )
+    const radios = screen.getAllByRole('menuitemradio')
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true')
+    expect(radios[0]).toHaveTextContent('↓ 1 MB/s')
+    expect(radios[1]).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(radios[1]!)
+    expect(pick).not.toHaveBeenCalled()
+    expect(screen.getByRole('menuitem', { name: 'Pause' })).toHaveAttribute('aria-keyshortcuts', 'Space')
+  })
 })

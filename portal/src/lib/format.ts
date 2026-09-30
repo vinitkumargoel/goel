@@ -46,3 +46,43 @@ export function fmtWhen(unixSeconds: number): string {
 export function pct(fraction: number): number {
   return fraction * 100
 }
+
+/** A compact relative time for a list cell — "just now", "5m ago", "2h ago", "3d ago", then a date. */
+export function fmtAgo(unixSeconds: number, nowMs: number = Date.now()): string {
+  const diff = Math.max(0, Math.floor(nowMs / 1000 - unixSeconds))
+  if (diff < 60) return i18n.t('format.justNow')
+  if (diff < 3600) return i18n.t('format.minutesAgo', { count: Math.floor(diff / 60) })
+  if (diff < 86400) return i18n.t('format.hoursAgo', { count: Math.floor(diff / 3600) })
+  if (diff < 86400 * 30) return i18n.t('format.daysAgo', { count: Math.floor(diff / 86400) })
+  return new Date(unixSeconds * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+/** The full local date and time, for a tooltip behind a relative time. */
+export function fmtAbsolute(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/** An elapsed duration as a clock: 14 → "0:14", 125 → "2:05", 3725 → "1:02:05". */
+export function fmtClock(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = String(s % 60).padStart(2, '0')
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
+}
+
+/** "2.9/4.7 GB" when both share a unit, "900 MB/4.7 GB" when not, only the done part when the total is unknown. */
+export function fmtProgressSize(done: number, total: number | null): string {
+  const d = fmtSize(done)
+  if (total == null) return d
+  const t = fmtSize(total)
+  const [dn, du] = d.split(' ')
+  const tu = t.split(' ')[1]
+  return du === tu ? `${dn}/${t}` : `${d}/${t}`
+}

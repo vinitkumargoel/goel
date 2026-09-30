@@ -3,20 +3,35 @@ import { Trans, useTranslation } from 'react-i18next'
 import type { ToastTone } from '../hooks/useToasts'
 import { api, failureMessage } from '../lib/api'
 import { BOOT } from '../lib/boot'
-import { applyTheme, THEME_ACCENT, THEME_LABEL, THEMES, type Theme } from '../lib/theme'
+import type { Bandwidth } from '../hooks/useBandwidth'
+import {
+  applyTheme,
+  AUTO_THEME,
+  THEME_ACCENT,
+  THEME_LABEL,
+  THEMES,
+  type ThemeChoice,
+} from '../lib/theme'
 import type { NetworkState } from '../lib/types'
 import { AdapterLine } from './AddDialog'
+import { BandwidthCard } from './BandwidthCard'
 import { LogoutIcon, WarnIcon } from './Icons'
 
 interface SettingsViewProps {
-  theme: Theme
-  onTheme: (theme: Theme) => void
+  theme: ThemeChoice
+  onTheme: (theme: ThemeChoice) => void
   canWrite: boolean
   onToast: (message: string, tone?: ToastTone) => void
+  bandwidth?: Bandwidth
 }
 
-export function SettingsView({ theme, onTheme, canWrite, onToast }: SettingsViewProps) {
+export function SettingsView({ theme, onTheme, canWrite, onToast, bandwidth }: SettingsViewProps) {
   const { t } = useTranslation()
+  const pick = (choice: ThemeChoice, label: string) => {
+    applyTheme(choice, true)
+    onTheme(choice)
+    onToast(t('settings.theme.toast', { theme: label }))
+  }
 
   return (
     <div className="view">
@@ -34,16 +49,21 @@ export function SettingsView({ theme, onTheme, canWrite, onToast }: SettingsView
             </div>
           </div>
           <div className="seg">
+            <button
+              className={theme === AUTO_THEME ? 'on' : ''}
+              aria-pressed={theme === AUTO_THEME}
+              onClick={() => pick(AUTO_THEME, t('settings.theme.auto'))}
+            >
+              <span className="sw sw-auto" aria-hidden="true" />
+              {t('settings.theme.auto')}
+            </button>
             {/* Theme names are product nomenclature shared with the desktop app, so they stay verbatim. */}
             {THEMES.map((name) => (
               <button
                 key={name}
                 className={name === theme ? 'on' : ''}
-                onClick={() => {
-                  applyTheme(name, true)
-                  onTheme(name)
-                  onToast(t('settings.theme.toast', { theme: THEME_LABEL[name] }))
-                }}
+                aria-pressed={name === theme}
+                onClick={() => pick(name, THEME_LABEL[name])}
               >
                 <span className="sw" style={{ background: THEME_ACCENT[name] }} />
                 {THEME_LABEL[name]}
@@ -86,6 +106,8 @@ export function SettingsView({ theme, onTheme, canWrite, onToast }: SettingsView
             </div>
           </div>
         </div>
+
+        {bandwidth && <BandwidthCard bandwidth={bandwidth} canWrite={canWrite} onToast={onToast} />}
 
         <NetworkCard canWrite={canWrite} onToast={onToast} />
 

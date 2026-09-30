@@ -5,6 +5,14 @@ export const THEMES = ['frost-light', 'frost-dark', 'dracula', 'nord'] as const
 
 export type Theme = (typeof THEMES)[number]
 
+/**
+ * What the user picked: a concrete theme, or `auto`, which follows the OS light/dark setting via
+ * the Frost pair. `auto` is web-only — the desktop never sends it, and it is never written to `data-theme`.
+ */
+export type ThemeChoice = Theme | 'auto'
+
+export const AUTO_THEME = 'auto' as const
+
 export const THEME_LABEL: Record<Theme, string> = {
   'frost-light': 'Frost Light',
   'frost-dark': 'Frost Dark',
@@ -20,37 +28,67 @@ export const THEME_ACCENT: Record<Theme, string> = {
 }
 
 const STORAGE_KEY = 'goel-web-theme'
+const DARK_QUERY = '(prefers-color-scheme: dark)'
 
 function isTheme(value: string | null): value is Theme {
   return value != null && (THEMES as readonly string[]).includes(value)
 }
 
+function isChoice(value: string | null): value is ThemeChoice {
+  return value === AUTO_THEME || isTheme(value)
+}
+
 /** `localStorage` throws in private-mode Safari and when cookies are blocked. */
-function readStored(): Theme | null {
+function readStored(): ThemeChoice | null {
   try {
     const v = localStorage.getItem(STORAGE_KEY)
-    return isTheme(v) ? v : null
+    return isChoice(v) ? v : null
   } catch {
     return null
   }
 }
 
-function writeStored(theme: Theme): void {
+function writeStored(choice: ThemeChoice): void {
   try {
-    localStorage.setItem(STORAGE_KEY, theme)
+    localStorage.setItem(STORAGE_KEY, choice)
   } catch {
     // Swallowed: a throwing theme switch would leave the settings pane half-rendered.
   }
 }
 
-/** Never persist `BOOT.theme`: a browser follows the desktop default only while nothing is stored. */
-export function initialTheme(): Theme {
+/**
+ * The stored choice, else Auto. A desktop default of Dracula or Nord is a deliberate pick with no
+ * light twin, so a new browser starts on it; the Frost defaults defer to the OS setting instead.
+ * `BOOT.theme` is never persisted: a browser follows the desktop only while nothing is stored.
+ */
+export function initialTheme(): ThemeChoice {
   const stored = readStored()
   if (stored) return stored
-  return isTheme(BOOT.theme) ? BOOT.theme : 'frost-dark'
+  return BOOT.theme === 'dracula' || BOOT.theme === 'nord' ? BOOT.theme : AUTO_THEME
 }
 
-export function applyTheme(theme: Theme, persist: boolean): void {
-  document.documentElement.dataset['theme'] = theme
-  if (persist) writeStored(theme)
+/** Whether the OS asks for a dark appearance. Dark where `matchMedia` is missing, the old default. */
+export function systemPrefersDark(): boolean {
+  if (typeof window.matchMedia !== 'function') return true
+  return window.matchMedia(DARK_QUERY).matches
+}
+
+/** The concrete theme a choice paints with. */
+export function resolveTheme(choice: ThemeChoice, prefersDark: boolean): Theme {
+  if (choice !== AUTO_THEME) return choice
+  return prefersDark ? 'frost-dark' : 'frost-light'
+}
+
+export function applyTheme(choice: ThemeChoice, persist: boolean): void {
+  document.documentElement.dataset['theme'] = resolveTheme(choice, systemPrefersDark())
+  if (persist) writeStored(choice)
+}
+
+/** Calls `onChange` whenever the OS appearance flips. Returns the unsubscribe. */
+export function watchSystemTheme(onChange: (prefersDark: boolean) => void): () => void {
+  if (typeof window.matchMedia !== 'function') return () => {}
+  const list = window.matchMedia(DARK_QUERY)
+  const listener = (e: MediaQueryListEvent) => onChange(e.matches)
+  list.addEventListener('change', listener)
+  return () => list.removeEventListener('change', listener)
 }

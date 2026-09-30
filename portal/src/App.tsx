@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AddDialog } from './components/AddDialog'
 import { BulkBar } from './components/BulkBar'
 import { ConfirmDialog, type ConfirmRequest } from './components/ConfirmDialog'
 import { ContextMenu, type MenuState } from './components/ContextMenu'
@@ -8,30 +7,37 @@ import { DetailPanel } from './components/DetailPanel'
 import type { DetailTab } from './components/DetailPanes'
 import { HistoryView } from './components/HistoryView'
 import { LibraryView } from './components/LibraryView'
+import { isStale, ReconnectBanner } from './components/ReconnectBanner'
 import { SettingsView } from './components/SettingsView'
+import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { Sidebar, type Filter, type View } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
 import { Toasts } from './components/Toasts'
 import { Topbar } from './components/Topbar'
+import { useAddFlow } from './hooks/useAddFlow'
+import { useBandwidth } from './hooks/useBandwidth'
+import { useBandwidthMenu } from './hooks/useBandwidthMenu'
 import { useDetail } from './hooks/useDetail'
-import { useGlobalKeys } from './hooks/useGlobalKeys'
 import { useMenus } from './hooks/useMenus'
+import { useNow } from './hooks/useNow'
+import { useSearchFocus } from './hooks/useSearchFocus'
+import { useAppKeys } from './hooks/useAppKeys'
 import { useStableCallback } from './hooks/useStableCallback'
 import { useTaskActions } from './hooks/useTaskActions'
 import { useTasks } from './hooks/useTasks'
+import { useThemeChoice } from './hooks/useThemeChoice'
 import { useToasts } from './hooks/useToasts'
-import { api, failureMessage, setRefusalHandler } from './lib/api'
+import { setRefusalHandler } from './lib/api'
 import { BOOT } from './lib/boot'
 import { copyText } from './lib/clipboard'
 import { countFilters, filterTasks } from './lib/filters'
 import { EMPTY_SELECTION, selectionReducer } from './lib/selection'
 import { nextSort, sortTasks, UNSORTED, type SortKey, type SortState } from './lib/sort'
 import type { RowAction } from './lib/taskKind'
-import { applyTheme, initialTheme, type Theme } from './lib/theme'
 
 const PANEL_BREAKPOINT = 920
 
-type AppMenu = MenuState & { owner: 'row' | 'user' }
+type AppMenu = MenuState & { owner: 'row' | 'user' | 'bandwidth' }
 
 /** The row element for a task id: the detail panel hands focus back to it when it closes. */
 function rowElement(id: string): HTMLElement | undefined {
@@ -50,23 +56,29 @@ export function App() {
   const [tab, setTab] = useState<DetailTab>('general')
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > PANEL_BREAKPOINT)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
   const [menu, setMenu] = useState<AppMenu | null>(null)
   const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null)
-  const [theme, setTheme] = useState<Theme>(initialTheme)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [theme, setTheme] = useThemeChoice()
   const hamburgerRef = useRef<HTMLButtonElement>(null)
+  const { searchRef, mobileSearch, setMobileSearch, focusSearch } = useSearchFocus()
 
-  const { tasks, live, loaded, error, refresh } = useTasks()
+  const { tasks, live, loaded, error, lastUpdate, speeds, refresh, reconnect } = useTasks()
   const { toasts, toast, dismiss, pause, resume } = useToasts()
   const warn = useCallback((message: string) => toast(message, 'warn'), [toast])
+  const bandwidth = useBandwidth()
 
   const canWrite = !BOOT.readOnly
+
+  // Ticks only while the stream is down, for the banner's "0:14 ago".
+  const now = useNow(1000, !live)
+  const stale = isStale(live, lastUpdate, now)
 
   const tasksRef = useRef(tasks)
   tasksRef.current = tasks
   const currentIds = useCallback(() => new Set(tasksRef.current.map((task) => task.id)), [])
 
-  const { runAction, runBulk, removeTask, removeMany } = useTaskActions({
+  const { runAction, runBulk, removeTask, removeMany, pauseAll, resumeAll } = useTaskActions({
     refresh,
     toast,
     confirm: setConfirmReq,
@@ -76,10 +88,6 @@ export function App() {
   useEffect(() => {
     setRefusalHandler(warn)
   }, [warn])
-
-  useEffect(() => {
-    applyTheme(theme, false)
-  }, [theme])
 
   // Crossing the breakpoint resets the panel to that layout's default; a toggle within one layout sticks.
   useEffect(() => {
@@ -138,22 +146,6 @@ export function App() {
     [toast, t],
   )
 
-  const readd = useCallback(
-    async (source: string) => {
-      try {
-        await api.add({ url: source })
-        toast(t('toast.readded'))
-        setView('library')
-        await refresh()
-      } catch (e) {
-        // Null for a 403 or 401: the api layer has already reported those.
-        const message = failureMessage(e)
-        if (message) warn(message)
-      }
-    },
-    [refresh, toast, warn, t],
-  )
-
   const openMenu = useCallback((m: MenuState) => setMenu({ ...m, owner: 'row' }), [])
 
   const { openRowMenu, removeEntries, userMenu } = useMenus({
@@ -173,22 +165,22 @@ export function App() {
 
   const openUserMenu = useCallback(
     (anchor: DOMRect) =>
-      setMenu({ ...userMenu(anchor, () => setView('settings')), owner: 'user' }),
+      setMenu({
+        ...userMenu(
+          anchor,
+          () => setView('settings'),
+          () => setHelpOpen(true),
+        ),
+        owner: 'user',
+      }),
     [userMenu],
   )
 
-  useGlobalKeys({
-    onEscape: () => {
-      setMenu(null)
-      setAddOpen(false)
-      setSidebarOpen(false)
-    },
-    onSelectAll: () => {
-      if (view !== 'library' || visible.length === 0) return false
-      select({ type: 'all', order: visible.map((task) => task.id) })
-      return true
-    },
-  })
+  const openBandwidthMenu = useBandwidthMenu(
+    bandwidth,
+    useCallback((m: MenuState) => setMenu({ ...m, owner: 'bandwidth' }), []),
+    toast,
+  )
 
   const selectView = useCallback((next: View) => {
     setView(next)
@@ -201,6 +193,49 @@ export function App() {
     if (!panelOpen) setPanelOpen(true)
   })
 
+  const { addOpen, openAdd, closeAdd, readd, dialog } = useAddFlow({
+    canWrite,
+    toast,
+    refresh,
+    onQueued: useCallback(
+      (resetFilter: boolean) => {
+        if (resetFilter) setFilter('all')
+        selectView('library')
+      },
+      [selectView],
+    ),
+  })
+
+  // While a dialog is up, everything behind it is inert: Tab, a screen reader's virtual cursor and
+  // a stray click can't reach it, even when focus has fallen back to <body>.
+  const modalOpen = addOpen || confirmReq != null || helpOpen
+
+  useAppKeys({
+    enabled: !modalOpen,
+    onEscape: () => {
+      setMenu(null)
+      closeAdd()
+      setSidebarOpen(false)
+      setHelpOpen(false)
+    },
+    view,
+    visible,
+    lead: selection.lead,
+    selectedVisible,
+    canWrite,
+    select,
+    openDetail,
+    runBulk,
+    removeMany,
+    openAdd,
+    focusSearch: () => {
+      setView('library')
+      focusSearch()
+    },
+    openHelp: () => setHelpOpen(true),
+    rowElement,
+  })
+
   const onRowAction = useCallback((id: string, a: RowAction) => void runAction(id, a), [runAction])
 
   const onSort = useCallback((key: SortKey) => setSort((s) => nextSort(s, key)), [])
@@ -210,26 +245,24 @@ export function App() {
     setFilter('all')
   }, [])
 
-  const openAdd = useCallback(() => setAddOpen(true), [])
-
   /** Closing from inside the panel would strand focus in an inert region: hand it back to the row. */
   const closePanel = useCallback(() => {
     setPanelOpen(false)
     if (detailId != null) rowElement(detailId)?.focus()
   }, [detailId])
 
-  // While a dialog is up, everything behind it is inert: Tab, a screen reader's virtual cursor and
-  // a stray click can't reach it, even when focus has fallen back to <body>.
-  const modalOpen = addOpen || confirmReq != null
-
   return (
     <>
-      <div className="app-chrome" inert={modalOpen}>
+      <div className={`app-chrome${stale ? ' stale' : ''}`} inert={modalOpen}>
         <Topbar
           search={search}
           onSearch={setSearch}
+          searchRef={searchRef}
+          mobileSearchOpen={mobileSearch}
+          onMobileSearch={setMobileSearch}
           downSpeed={totals.down}
           upSpeed={totals.up}
+          speedSamples={speeds.total}
           showPanelToggle={view === 'library'}
           panelOpen={panelOpen}
           onTogglePanel={() => setPanelOpen((p) => !p)}
@@ -241,6 +274,8 @@ export function App() {
           hamburgerRef={hamburgerRef}
           canWrite={canWrite}
         />
+
+        <ReconnectBanner stale={stale} lastUpdate={lastUpdate} now={now} onRetry={reconnect} />
 
         <div className="shell">
           <Sidebar
@@ -298,10 +333,17 @@ export function App() {
                 onReadd={readd}
                 onRemoved={() => toast(t('toast.entryRemoved'), 'trash')}
                 onWarn={warn}
+                onToast={toast}
               />
             )}
             {view === 'settings' && (
-              <SettingsView theme={theme} onTheme={setTheme} canWrite={canWrite} onToast={toast} />
+              <SettingsView
+                theme={theme}
+                onTheme={setTheme}
+                canWrite={canWrite}
+                onToast={toast}
+                bandwidth={bandwidth}
+              />
             )}
           </main>
 
@@ -321,6 +363,7 @@ export function App() {
                 void setFilePriority(fileId, wasSkipped ? 'normal' : 'skip')
               }
               onCyclePriority={cyclePriority}
+              samples={detailId != null ? speeds.perTask.get(detailId) : undefined}
             />
           )}
         </div>
@@ -332,30 +375,17 @@ export function App() {
           downSpeed={totals.down}
           upSpeed={totals.up}
           readOnly={BOOT.readOnly}
+          onPauseAll={pauseAll}
+          onResumeAll={resumeAll}
+          bandwidth={bandwidth.status === 'unsupported' ? null : bandwidth.state}
+          bandwidthMenuOpen={menu?.owner === 'bandwidth'}
+          onBandwidthMenu={openBandwidthMenu}
         />
       </div>
 
-      <div
-        className={`scrim${addOpen ? ' open' : ''}`}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) setAddOpen(false)
-        }}
-      >
-        {addOpen && (
-          <AddDialog
-            onClose={() => setAddOpen(false)}
-            onWarn={warn}
-            onAdded={(added, refused) => {
-              setAddOpen(false)
-              setFilter('all')
-              selectView('library')
-              toast(t('toast.added', { count: added }))
-              if (refused > 0) toast(t('toast.refused', { count: refused }), 'warn')
-              void refresh()
-            }}
-          />
-        )}
-      </div>
+      {dialog}
+
+      {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
 
       <ConfirmDialog request={confirmReq} onClose={() => setConfirmReq(null)} />
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />

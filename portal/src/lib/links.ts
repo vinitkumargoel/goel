@@ -1,5 +1,16 @@
-/** The schemes the daemon's add endpoint understands. Anything else is flagged, not blocked. */
-const SUPPORTED = /^(https?|s?ftp):\/\/\S+$|^magnet:\?\S+$/i
+/**
+ * The schemes the daemon's add endpoint understands (`DownloadSource.parse`): http, https, ftp,
+ * ftps, sftp and magnet. Anything else is flagged, not blocked.
+ */
+const SUPPORTED = /^(https?|ftps?|sftp):\/\/\S+$|^magnet:\?\S+$/i
+
+/** The input without any line that trims to `text` — the ✕ on a flagged line. */
+export function removeLine(input: string, text: string): string {
+  return input
+    .split(/\r\n|\r|\n/)
+    .filter((l) => l.trim() !== text)
+    .join('\n')
+}
 
 export interface LinkLine {
   text: string

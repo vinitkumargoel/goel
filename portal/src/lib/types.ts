@@ -126,6 +126,21 @@ export interface AddResult {
   ids: string[]
 }
 
+/** `POST /api/add-torrent`: the /api/add envelope plus one entry per file the server refused. */
+export interface TorrentAddResult {
+  added: number
+  refused?: number
+  ids?: string[]
+  errors?: { file: string; error: string }[]
+}
+
+export interface TorrentAddOptions {
+  /** Blank or missing: the server's default folder. */
+  dir?: string
+  priority?: 'low' | 'normal' | 'high'
+  paused?: boolean
+}
+
 export interface AddRequest {
   url: string
   folder?: string

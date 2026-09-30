@@ -1,7 +1,11 @@
-import { useId, useRef, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, type KeyboardEvent, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useDialogFocus } from '../hooks/useDialogFocus'
+import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useSheetDrag } from '../hooks/useSheetDrag'
 import { streamURL } from '../lib/api'
 import { fileType, isActive, kindLabel } from '../lib/taskKind'
+import type { SpeedSample } from '../lib/speedHistory'
 import type { FilePriority, TaskDetail } from '../lib/types'
 import {
   DETAIL_TABS,
@@ -40,6 +44,8 @@ interface DetailPanelProps {
   onCopy: (text: string) => void
   onToggleFile: (fileId: number, wasSkipped: boolean) => void
   onCyclePriority: (fileId: number, current: FilePriority) => void
+  /** The shown download's last minute of rates, for the Progress tab's chart. */
+  samples?: readonly SpeedSample[]
 }
 
 export function DetailPanel({
@@ -55,39 +61,70 @@ export function DetailPanel({
   onCopy,
   onToggleFile,
   onCyclePriority,
+  samples,
 }: DetailPanelProps) {
   const { t } = useTranslation()
+  const ref = useRef<HTMLElement>(null)
+  // ≤680px the panel is a bottom sheet: modal, focus-trapped, dismissed by Esc, the scrim or a drag.
+  const phone = useMediaQuery('(max-width: 680px)')
+  const sheet = phone && open
+  const drag = useSheetDrag(onClose)
 
   return (
-    <aside
-      className={`detail${open ? '' : ' hidden'}`}
-      aria-label={t('detail.label')}
-      aria-hidden={open ? undefined : true}
-      inert={!open}
-    >
-      {detail ? (
-        <Loaded
-          detail={detail}
-          tab={tab}
-          canWrite={canWrite}
-          onTab={onTab}
-          onClose={onClose}
-          onAction={onAction}
-          onRemove={onRemove}
-          onMore={onMore}
-          onCopy={onCopy}
-          onToggleFile={onToggleFile}
-          onCyclePriority={onCyclePriority}
-        />
-      ) : (
-        <div className="empty" style={{ padding: '40px 26px' }}>
-          <FileIcon />
-          <h4>{t('detail.emptyTitle')}</h4>
-          <p>{t('detail.emptyBody')}</p>
-        </div>
+    <>
+      {phone && (
+        <div className={`sheet-scrim${open ? ' open' : ''}`} onClick={onClose} aria-hidden="true" />
       )}
-    </aside>
+      <aside
+        ref={ref}
+        className={`detail${open ? '' : ' hidden'}${phone ? ' sheet' : ''}${drag.dragging ? ' dragging' : ''}`}
+        role={sheet ? 'dialog' : undefined}
+        aria-modal={sheet ? true : undefined}
+        aria-label={t('detail.label')}
+        aria-hidden={open ? undefined : true}
+        inert={!open}
+        style={drag.offset > 0 ? { transform: `translateY(${drag.offset}px)` } : undefined}
+      >
+        {sheet && <SheetFocus target={ref} onEscape={onClose} />}
+        {phone && (
+          <div className="grabber" title={t('detail.sheetHandle')} aria-hidden="true" {...drag.handlers}>
+            <span />
+          </div>
+        )}
+        {detail ? (
+          <Loaded
+            detail={detail}
+            tab={tab}
+            canWrite={canWrite}
+            onTab={onTab}
+            onClose={onClose}
+            onAction={onAction}
+            onRemove={onRemove}
+            onMore={onMore}
+            onCopy={onCopy}
+            onToggleFile={onToggleFile}
+            onCyclePriority={onCyclePriority}
+            samples={samples}
+          />
+        ) : (
+          <div className="empty" style={{ padding: '40px 26px' }}>
+            <FileIcon />
+            <h4>{t('detail.emptyTitle')}</h4>
+            <p>{t('detail.emptyBody')}</p>
+          </div>
+        )}
+      </aside>
+    </>
   )
+}
+
+/** Mounted only while the sheet is up, so the dialog-focus hook remembers the row that opened it. */
+function SheetFocus({ target, onEscape }: { target: RefObject<HTMLElement | null>; onEscape: () => void }) {
+  useDialogFocus(target, { onEscape })
+  useEffect(() => {
+    target.current?.querySelector<HTMLElement>('.dx')?.focus()
+  }, [target])
+  return null
 }
 
 function Loaded({
@@ -102,6 +139,7 @@ function Loaded({
   onCopy,
   onToggleFile,
   onCyclePriority,
+  samples,
 }: Omit<DetailPanelProps, 'open' | 'detail'> & { detail: TaskDetail }) {
   const { t } = useTranslation()
   const row = detail.row
@@ -248,6 +286,7 @@ function Loaded({
         <Pane
           tab={tab}
           detail={detail}
+          samples={samples}
           canWrite={canWrite}
           onCopy={onCopy}
           onToggleFile={onToggleFile}
@@ -261,6 +300,7 @@ function Loaded({
 function Pane({
   tab,
   detail,
+  samples,
   canWrite,
   onCopy,
   onToggleFile,
@@ -268,6 +308,7 @@ function Pane({
 }: {
   tab: DetailTab
   detail: TaskDetail
+  samples?: readonly SpeedSample[]
   canWrite: boolean
   onCopy: (text: string) => void
   onToggleFile: (fileId: number, wasSkipped: boolean) => void
@@ -279,7 +320,7 @@ function Pane({
     case 'details':
       return <DetailsPane detail={detail} />
     case 'progress':
-      return <ProgressPane detail={detail} />
+      return <ProgressPane detail={detail} samples={samples} />
     case 'files':
       return (
         <FilesPane

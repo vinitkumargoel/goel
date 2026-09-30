@@ -12,6 +12,14 @@ export interface MenuItem {
   label: string
   icon?: ReactNode
   danger?: boolean
+  /** Makes the item a `menuitemradio` with this state (a choice among options, e.g. a profile). */
+  checked?: boolean
+  /** Secondary text under the label, e.g. a profile's caps. */
+  detail?: string
+  /** A keyboard shortcut hint drawn as a kbd chip, e.g. "Space". */
+  shortcut?: string
+  /** Shown but inert (e.g. pinned by a policy); still reachable by arrow keys, so it is announced. */
+  disabled?: boolean
   action: () => void
 }
 
@@ -23,6 +31,8 @@ export interface MenuState {
   entries: MenuEntry[]
   /** Accessible name for the menu, e.g. the download it acts on. */
   label?: string
+  /** Open upward: the menu's bottom edge sits at `y` (for a trigger at the bottom of the window). */
+  above?: boolean
 }
 
 const EDGE_GAP = 8
@@ -48,9 +58,10 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
       const el = ref.current
       if (!el) return
       const r = el.getBoundingClientRect()
+      const y = menu.above ? menu.y - r.height : menu.y
       setPos({
         left: Math.max(EDGE_GAP, Math.min(menu.x, window.innerWidth - r.width - EDGE_GAP)),
-        top: Math.max(EDGE_GAP, Math.min(menu.y, window.innerHeight - r.height - EDGE_GAP)),
+        top: Math.max(EDGE_GAP, Math.min(y, window.innerHeight - r.height - EDGE_GAP)),
       })
     }
     clamp()
@@ -165,19 +176,35 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
         ) : (
           <button
             type="button"
-            role="menuitem"
+            role={entry.checked === undefined ? 'menuitem' : 'menuitemradio'}
+            aria-checked={entry.checked}
+            aria-keyshortcuts={entry.shortcut}
+            aria-disabled={entry.disabled || undefined}
             tabIndex={-1}
-            className={`mi${entry.danger ? ' danger' : ''}`}
+            className={`mi${entry.danger ? ' danger' : ''}${entry.detail ? ' two' : ''}`}
             key={entry.key}
             onClick={() => {
+              if (entry.disabled) return
               onClose()
               // Focus goes home before the action runs, so a dialog the action opens can take it.
               restoreFocus()
               entry.action()
             }}
           >
-            {entry.icon}
-            <span className="t">{entry.label}</span>
+            {entry.checked !== undefined ? (
+              <span className={`mcheck${entry.checked ? ' on' : ''}`} aria-hidden="true" />
+            ) : (
+              entry.icon
+            )}
+            <span className="t">
+              {entry.label}
+              {entry.detail && <span className="mdetail">{entry.detail}</span>}
+            </span>
+            {entry.shortcut && (
+              <kbd className="kbd" aria-hidden="true">
+                {entry.shortcut}
+              </kbd>
+            )}
           </button>
         ),
       )}
@@ -186,5 +213,5 @@ export function ContextMenu({ menu, onClose }: ContextMenuProps) {
 }
 
 function items(root: HTMLElement | null): HTMLElement[] {
-  return root ? [...root.querySelectorAll<HTMLElement>('[role="menuitem"]')] : []
+  return root ? [...root.querySelectorAll<HTMLElement>('[role^="menuitem"]')] : []
 }

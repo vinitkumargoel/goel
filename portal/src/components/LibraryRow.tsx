@@ -1,6 +1,6 @@
 import { memo, useCallback, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { fmtSize, fmtSpeed, pct } from '../lib/format'
+import { fmtAbsolute, fmtAgo, fmtEta, fmtProgressSize, fmtSize, fmtSpeed, pct } from '../lib/format'
 import { fileType, kindBadge, kindLabel, rowAction, type RowAction } from '../lib/taskKind'
 import type { TaskRow } from '../lib/types'
 import { FileTypeIcon, MoreIcon, PauseIcon, PlayIcon, RetryIcon } from './Icons'
@@ -16,6 +16,14 @@ interface RowProps {
   /** The one row in the roving tab order. */
   focusable: boolean
   canWrite: boolean
+  /**
+   * The ≤680px card layout: the action button moves to the right edge, grows to 40px and is
+   * exposed to assistive tech (touch screen readers have no Shift+F10), and a meta line replaces
+   * the hidden columns.
+   */
+  phone?: boolean
+  /** Minute-resolution clock for the Added column; a change re-renders the relative times. */
+  now: number
   /** Id of the "Shift+F10 for actions" hint. */
   describedBy?: string
   rowRef: (id: string, el: HTMLDivElement | null) => void
@@ -29,6 +37,8 @@ export const LibraryRow = memo(function LibraryRow({
   selected,
   focusable,
   canWrite,
+  phone = false,
+  now,
   describedBy,
   rowRef,
   onClick,
@@ -41,6 +51,7 @@ export const LibraryRow = memo(function LibraryRow({
   const type = fileType(task)
   const action = rowAction(task.statusToken)
   const statusText = `${task.status}${task.statusToken === 'downloading' ? ` · ${whole}%` : ''}`
+  const eta = fmtEta(task.etaSeconds)
 
   const id = task.id
   // Stable, or React detaches and re-attaches the ref on every render of the row.
@@ -74,7 +85,7 @@ export const LibraryRow = memo(function LibraryRow({
       }}
     >
       <div className="c ncell">
-        {action && canWrite ? (
+        {phone ? null : action && canWrite ? (
           // A pointer shortcut only. An option may not contain controls, so it is hidden from
           // assistive tech; the same action is in the bulk bar (shown for any selection) and the
           // row menu (Shift+F10), both reachable by keyboard and by touch screen readers.
@@ -116,26 +127,61 @@ export const LibraryRow = memo(function LibraryRow({
           >
             <i style={{ width: `${percent}%` }} />
           </div>
-          {/* Only shown once the Status column is gone, so colour is never the only status cue. */}
-          <div className="nstat">
-            <span className={`sdot st-${task.statusToken}`} />
-            <span className="stext">
-              {statusText}
-              {task.downSpeed > 0 && ` · ${fmtSpeed(task.downSpeed)}`}
-            </span>
-          </div>
+          {phone ? (
+            <div className="pmeta">
+              <span className={`sdot st-${task.statusToken}`} />
+              <span className="stext">
+                {[
+                  task.statusToken === 'downloading'
+                    ? fmtProgressSize(task.doneBytes, task.totalBytes)
+                    : task.status,
+                  task.downSpeed > 0 ? fmtSpeed(task.downSpeed) : null,
+                  eta,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            </div>
+          ) : (
+            // Only shown once the Status column is gone, so colour is never the only status cue.
+            <div className="nstat">
+              <span className={`sdot st-${task.statusToken}`} />
+              <span className="stext">
+                {statusText}
+                {task.downSpeed > 0 && ` · ${fmtSpeed(task.downSpeed)}`}
+              </span>
+            </div>
+          )}
         </div>
 
-        <button
-          className="rmore"
-          tabIndex={-1}
-          aria-hidden="true"
-          aria-haspopup="menu"
-          aria-label={t('library.moreActions', { name: task.name })}
-          onClick={openMenuAt}
-        >
-          <MoreIcon />
-        </button>
+        {phone ? (
+          action &&
+          canWrite && (
+            // Out of the tab order (the row is the tab stop) but announced and touchable.
+            <button
+              className="pbtn"
+              tabIndex={-1}
+              aria-label={t('library.actionNamed', { action: t(`common.${action}`), name: task.name })}
+              onClick={(e) => {
+                e.stopPropagation()
+                onAction(task.id, action)
+              }}
+            >
+              <ActionIcon action={action} />
+            </button>
+          )
+        ) : (
+          <button
+            className="rmore"
+            tabIndex={-1}
+            aria-hidden="true"
+            aria-haspopup="menu"
+            aria-label={t('library.moreActions', { name: task.name })}
+            onClick={openMenuAt}
+          >
+            <MoreIcon />
+          </button>
+        )}
       </div>
 
       <div className="c r">{fmtSize(task.totalBytes)}</div>
@@ -151,6 +197,12 @@ export const LibraryRow = memo(function LibraryRow({
       <div className="c r dspd hide-xs">
         {task.downSpeed > 0 && <div>{fmtSpeed(task.downSpeed)}</div>}
         {task.upSpeed > 0 && <div className="uspd">↑ {fmtSpeed(task.upSpeed)}</div>}
+      </div>
+
+      <div className="c r eta hide-sm hide-md">{eta ?? '—'}</div>
+
+      <div className="c added hide-lg" title={task.addedAt ? fmtAbsolute(task.addedAt) : undefined}>
+        {task.addedAt ? fmtAgo(task.addedAt, now) : '—'}
       </div>
     </div>
   )

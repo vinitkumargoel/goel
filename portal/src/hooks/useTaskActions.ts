@@ -125,5 +125,23 @@ export function useTaskActions({ refresh, toast, confirm, currentIds }: Deps) {
     [remove, confirm, t],
   )
 
-  return { runAction, runBulk, removeTask, removeMany }
+  /** Server-side "all": covers tasks the filter hides, unlike a bulk action on the selection. */
+  const runAll = useCallback(
+    async (verb: 'pause' | 'resume') => {
+      try {
+        await (verb === 'pause' ? api.pauseAll() : api.resumeAll())
+        toast(verb === 'pause' ? t('statusbar.pausedAll') : t('statusbar.resumedAll'))
+      } catch (e) {
+        const message = failureMessage(e)
+        if (message) toast(message, 'warn')
+      }
+      await refresh()
+    },
+    [refresh, toast, t],
+  )
+
+  const pauseAll = useCallback(() => void runAll('pause'), [runAll])
+  const resumeAll = useCallback(() => void runAll('resume'), [runAll])
+
+  return { runAction, runBulk, removeTask, removeMany, pauseAll, resumeAll }
 }
