@@ -390,7 +390,7 @@ struct FilesTab: View {
                     .button(L10n.t(p.displayName)) { vm.setFilePriority(p, fileID: fileID, task: task.id) }
                 }, menuWidth: 130) { open in
                     HStack(spacing: 3) {
-                        Text(L10n.t(priority.displayName))
+                        Text(priority.title)
                         Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold))
                     }
                     .scaledFont(size: 10)
@@ -402,7 +402,7 @@ struct FilesTab: View {
                     .contentShape(Rectangle())
                 }
                 .accessibilityLabel(L10n.t("Priority for %@", name))
-                .accessibilityValue(L10n.t(priority.displayName))
+                .accessibilityValue(priority.title)
             }
         }
         .padding(.vertical, 8)

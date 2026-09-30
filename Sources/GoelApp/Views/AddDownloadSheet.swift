@@ -41,6 +41,9 @@ struct AddDownloadSheet: View {
     @State private var previousSaveSelection: String = ("~/Downloads" as NSString).expandingTildeInPath
     @State private var customFolder: String?
 
+    /// Free space on the chosen folder's volume; refreshed when the folder changes, not per frame.
+    @State private var freeBytes: Int64?
+
     private enum SaveOption {
         static let automatic = "automatic"
         static let choose = "__choose__"
@@ -233,6 +236,8 @@ struct AddDownloadSheet: View {
                     }
                 }
 
+                diskSpaceRow(preview)
+
                 if preview.kind != .torrent {
                     checksumField
                 }
@@ -254,6 +259,7 @@ struct AddDownloadSheet: View {
                 }
             }
             .padding(20)
+            .task(id: diskSpaceFolder) { await refreshFreeSpace() }
 
             Divider()
             HStack {
@@ -268,6 +274,55 @@ struct AddDownloadSheet: View {
                     .disabled(isResolvingMedia || allFilesDeselected(preview))
             }
             .padding(14)
+        }
+    }
+
+    /// The folder whose volume the space check asks about. "Automatic" sorts by type under the
+    /// default folder, so that folder's volume is the best guess.
+    private var diskSpaceFolder: String {
+        resolvedSaveDirectory ?? vm.settings.defaultSaveDirectory
+    }
+
+    private func refreshFreeSpace() async {
+        let folder = diskSpaceFolder
+        let free = await Task.detached(priority: .userInitiated) {
+            DiskSpaceCheck.availableCapacity(forFolder: folder)
+        }.value
+        if !Task.isCancelled { freeBytes = free }
+    }
+
+    /// Bytes this preview will write: for a torrent, only the files still ticked.
+    private func neededBytes(_ preview: DownloadPreview) -> Int64? {
+        if preview.kind == .torrent, !preview.files.isEmpty {
+            let wanted = preview.files.filter { !deselectedFileIDs.contains($0.id) }
+            return wanted.reduce(Int64(0)) { $0 + $1.length }
+        }
+        return preview.totalBytes
+    }
+
+    @ViewBuilder
+    private func diskSpaceRow(_ preview: DownloadPreview) -> some View {
+        if let verdict = DiskSpaceCheck.verdict(needed: neededBytes(preview), available: freeBytes) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(DiskSpaceCheck.message(for: verdict),
+                      systemImage: verdict.isSufficient ? "internaldrive" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: verdict.isSufficient ? .regular : .semibold))
+                    .foregroundStyle(verdict.isSufficient ? Color.secondary : Theme.red)
+                    .accessibilityLabel(DiskSpaceCheck.spokenMessage(for: verdict))
+                if !verdict.isSufficient {
+                    HStack(spacing: 8) {
+                        Text(L10n.t("There isn’t enough free space on this disk. The download would stop partway."))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button(L10n.t("Choose another folder…")) {
+                            saveSelection = SaveOption.choose
+                            handleSaveSelection(SaveOption.choose)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
         }
     }
 
@@ -373,7 +428,7 @@ struct AddDownloadSheet: View {
                 .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(isDropTargeted ? Theme.accent : .secondary)
                 .a11yDecorative()
-            (Text(L10n.t("Drag a URL or ")) + Text(".torrent").bold() + Text(L10n.t(" file here")))
+            Text(MarkdownText.attributed(L10n.t("Drag a URL or **.torrent** file here")))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
@@ -662,23 +717,20 @@ struct AddDownloadSheet: View {
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         collectDroppedURLs(providers) { urls in
-            guard !urls.isEmpty else { return }
-            // `DownloadSource.parse` rejects `file:`, so local .torrent drops must go via ExternalAdd.
-            let isTorrentFile: (URL) -> Bool = { $0.isFileURL && $0.pathExtension.lowercased() == "torrent" }
-            let torrentFiles = urls.filter(isTorrentFile)
-            let others = urls.filter { !isTorrentFile($0) }
-            if !others.isEmpty {
-                appendLines(others.map(\.absoluteString))
+            // Same split as the main window and the drop basket; links land in the editor here
+            // so they get the usual preview, while local torrents queue straight away.
+            let plan = InboundDrop.plan(for: urls)
+            guard !plan.isEmpty else { return }
+            if !plan.links.isEmpty {
+                appendLines(plan.links.map(\.absoluteString))
             }
-            guard !torrentFiles.isEmpty else { return }
+            if let message = InboundDrop.unsupportedMessage(for: plan.unsupportedFiles) {
+                inputError = message
+            }
+            guard !plan.torrentFiles.isEmpty else { return }
             Task { @MainActor in
-                for url in torrentFiles {
-                    if var payload = ExternalAdd.payload(from: url) {
-                        payload.needsConfirmation = false
-                        ExternalAdd.post(payload)
-                    }
-                }
-                if others.isEmpty { dismiss() }
+                InboundDrop.queueTorrentFiles(plan.torrentFiles)
+                if plan.links.isEmpty && plan.unsupportedFiles.isEmpty { dismiss() }
             }
         }
     }

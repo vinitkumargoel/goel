@@ -7,19 +7,18 @@
    To add a language: copy this file to <code>.lproj/Localizable.strings and translate the
    right-hand side of each line. Untranslated keys fall back to English automatically. */
 
-" +%d more" = " +%d more";
 " and %d more item" = " and %d more item";
 " and %d more items" = " and %d more items";
-" file here" = " file here";
-" to %@" = " to %@";
-" · added paused" = " · added paused";
+"#" = "#";
 "%" = "%";
 "%1$@ %2$@" = "%1$@ %2$@";
 "%1$@ (%2$@)" = "%1$@ (%2$@)";
 "%1$@ adapters will share ranged HTTP segments · %2$@ stream(s) each." = "%1$@ adapters will share ranged HTTP segments · %2$@ stream(s) each.";
+"%1$@ and %2$d more" = "%1$@ and %2$d more";
 "%1$@ attached · %2$@" = "%1$@ attached · %2$@";
 "%1$@ can %2$@" = "%1$@ can %2$@";
 "%1$@ conns · %2$@ active" = "%1$@ conns · %2$@ active";
+"%1$@ for %2$@: %3$@." = "%1$@ for %2$@: %3$@.";
 "%1$@ of %2$@" = "%1$@ of %2$@";
 "%1$@ of %2$@ blocks complete, %3$@ in progress, %4$@ not started" = "%1$@ of %2$@ blocks complete, %3$@ in progress, %4$@ not started";
 "%1$@ of %2$@ items selected" = "%1$@ of %2$@ items selected";
@@ -28,11 +27,11 @@
 "%1$@ · %2$@" = "%1$@ · %2$@";
 "%1$@ · %2$@ · %3$d ms" = "%1$@ · %2$@ · %3$d ms";
 "%1$@ — SHA-256:\n%2$@" = "%1$@ — SHA-256:\n%2$@";
-"%1$@%2$@ — %3$@%4$@. " = "%1$@%2$@ — %3$@%4$@. ";
 "%1$@, %2$@" = "%1$@, %2$@";
 "%1$@, sorted %2$@" = "%1$@, sorted %2$@";
 "%1$@. %2$@" = "%1$@. %2$@";
 "%1$@: %2$@" = "%1$@: %2$@";
+"%1$@: %2$@." = "%1$@: %2$@.";
 "%1$@: ↓ %2$@ · ↑ %3$@" = "%1$@: ↓ %2$@ · ↑ %3$@";
 "%1$d of %2$d · %3$@" = "%1$d of %2$d · %3$@";
 "%1$d%% · %2$@ left" = "%1$d%% · %2$@ left";
@@ -52,6 +51,7 @@
 "%@ — verified after the download finishes" = "%@ — verified after the download finishes";
 "%@ — won’t stop" = "%@ — won’t stop";
 "%@, destructive" = "%@, destructive";
+"%d MB/s" = "%d MB/s";
 "%d active" = "%d active";
 "%d available" = "%d available";
 "%d connected" = "%d connected";
@@ -249,12 +249,14 @@
 "Check for Updates…" = "Check for Updates…";
 "Check for updates automatically" = "Check for updates automatically";
 "Check path diversity" = "Check path diversity";
+"Check your internet connection, then retry." = "Check your internet connection, then retry.";
 "Checking" = "Checking";
 "Checksum" = "Checksum";
 "Checksum (optional)" = "Checksum (optional)";
 "Choose" = "Choose";
 "Choose a file exported by aria2, JDownloader, IDM, a browser, etc." = "Choose a file exported by aria2, JDownloader, IDM, a browser, etc.";
 "Choose an SSH private key (for example id_ed25519 — not the .pub file)." = "Choose an SSH private key (for example id_ed25519 — not the .pub file).";
+"Choose another folder…" = "Choose another folder…";
 "Choose automatically, by type, by source URL, or fixed." = "Choose automatically, by type, by source URL, or fixed.";
 "Choose download folder" = "Choose download folder";
 "Choose files or folders to upload to %@" = "Choose files or folders to upload to %@";
@@ -329,6 +331,7 @@
 "Copy %d Items" = "Copy %d Items";
 "Copy %d Source Links" = "Copy %d Source Links";
 "Copy Bookmarklet" = "Copy Bookmarklet";
+"Copy Details" = "Copy Details";
 "Copy Example" = "Copy Example";
 "Copy Fingerprint" = "Copy Fingerprint";
 "Copy Host" = "Copy Host";
@@ -343,6 +346,7 @@
 "Copy Tracker URL" = "Copy Tracker URL";
 "Copy a link, download it" = "Copy a link, download it";
 "Copy details" = "Copy details";
+"Copy error details for %@" = "Copy error details for %@";
 "Copy link" = "Copy link";
 "Copy link for “%@”" = "Copy link for “%@”";
 "Copy sftp:// Link" = "Copy sftp:// Link";
@@ -412,10 +416,7 @@
 "Delete" = "Delete";
 "Delete %d Items" = "Delete %d Items";
 "Delete %d items?" = "Delete %d items?";
-"Delete Files" = "Delete Files";
 "Delete cancelled." = "Delete cancelled.";
-"Delete downloaded files for %d items?" = "Delete downloaded files for %d items?";
-"Delete downloaded files for “%@”?" = "Delete downloaded files for “%@”?";
 "Delete “%@”?" = "Delete “%@”?";
 "Deleted %1$d of %2$d items — %3$@" = "Deleted %1$d of %2$d items — %3$@";
 "Deleted %d items" = "Deleted %d items";
@@ -475,6 +476,7 @@
 "Download window" = "Download window";
 "Download windows, scheduled profiles, and what happens when the queue finishes." = "Download windows, scheduled profiles, and what happens when the queue finishes.";
 "Download “%@” again" = "Download “%@” again";
+"Download: %@" = "Download: %@";
 "Downloaded" = "Downloaded";
 "Downloaded %d subtitle file" = "Downloaded %d subtitle file";
 "Downloaded %d subtitle files" = "Downloaded %d subtitle files";
@@ -488,10 +490,11 @@
 "Downloads finished, but the shutdown command couldn’t be prepared." = "Downloads finished, but the shutdown command couldn’t be prepared.";
 "Downloads finished, but the sleep command didn’t run." = "Downloads finished, but the sleep command didn’t run.";
 "Downloads it contains are added paused; ones already in your list are skipped.\n\nSecurity-sensitive settings are never taken from a backup: your proxy, the remote portal’s access, credentials and trusted-header (SSO) sign-in, your save and watch folders, RSS feeds, update feed, and any script or antivirus paths all stay as they are." = "Downloads it contains are added paused; ones already in your list are skipped.\n\nSecurity-sensitive settings are never taken from a backup: your proxy, the remote portal’s access, credentials and trusted-header (SSO) sign-in, your save and watch folders, RSS feeds, update feed, and any script or antivirus paths all stay as they are.";
+"Downloads · %d" = "Downloads · %d";
 "Downloads, %d in progress" = "Downloads, %d in progress";
 "Dracula" = "Dracula";
 "Drag a .torrent or a link onto this window" = "Drag a .torrent or a link onto this window";
-"Drag a URL or " = "Drag a URL or ";
+"Drag a URL or **.torrent** file here" = "Drag a URL or **.torrent** file here";
 "Drag links or torrent files here to queue them." = "Drag links or torrent files here to queue them.";
 "Drag-save as a bookmark; clicking it sends the current page here." = "Drag-save as a bookmark; clicking it sends the current page here.";
 "Drop Basket" = "Drop Basket";
@@ -537,10 +540,12 @@
 "Entry removed" = "Entry removed";
 "Error" = "Error";
 "Error. %@" = "Error. %@";
+"Error: %@" = "Error: %@";
 "Every action and settings pane in one search field." = "Every action and settings pane in one search field.";
 "Every day" = "Every day";
 "Every download goes here." = "Every download goes here.";
 "Every item" = "Every item";
+"Every item · added paused" = "Every item · added paused";
 "Everyone" = "Everyone";
 "Everything you queue lands in one place unless you say otherwise. You can still pick a different folder for any individual download." = "Everything you queue lands in one place unless you say otherwise. You can still pick a different folder for any individual download.";
 "Exchange peers with other clients." = "Exchange peers with other clients.";
@@ -606,6 +611,7 @@
 "Free for personal use. Commercial use requires a licence — " = "Free for personal use. Commercial use requires a licence — ";
 "Free for personal use. Commercial use requires a licence. Learn more." = "Free for personal use. Commercial use requires a licence. Learn more.";
 "From" = "From";
+"From %@" = "From %@";
 "From · %@" = "From · %@";
 "Frost Dark" = "Frost Dark";
 "Frost Light" = "Frost Light";
@@ -624,6 +630,8 @@
 "Goel has never connected to this server, so it can't tell whether the machine answering is yours. Compare the fingerprint below with the one the server reports for its own host key, then decide.\n\nGoel remembers the key you accept and refuses to connect if it changes." = "Goel has never connected to this server, so it can't tell whether the machine answering is yours. Compare the fingerprint below with the one the server reports for its own host key, then decide.\n\nGoel remembers the key you accept and refuses to connect if it changes.";
 "Goel hasn’t pinned a key for this server yet — it will ask you to confirm the one below the first time it connects. Compare it with the fingerprint the server reports for its own host key." = "Goel hasn’t pinned a key for this server yet — it will ask you to confirm the one below the first time it connects. Compare it with the fingerprint the server reports for its own host key.";
 "Goel hasn’t pinned a key for this server yet, and couldn’t read the server’s current key: %@" = "Goel hasn’t pinned a key for this server yet, and couldn’t read the server’s current key: %@";
+"Goel takes links and .torrent files — %d of the dropped files are neither" = "Goel takes links and .torrent files — %d of the dropped files are neither";
+"Goel takes links and .torrent files — “%@” is neither" = "Goel takes links and .torrent files — “%@” is neither";
 "Goel wasn't allowed to read this server's saved secret from your Keychain. Try again and choose Allow." = "Goel wasn't allowed to read this server's saved secret from your Keychain. Try again and choose Allow.";
 "Goel will stop checking this server against its saved key and will ask you to confirm the key on the next connection.\n\nDo this only after you rekeyed the server yourself. If the key changed for any other reason, forgetting it accepts whatever is answering." = "Goel will stop checking this server against its saved key and will ask you to confirm the key on the next connection.\n\nDo this only after you rekeyed the server yourself. If the key changed for any other reason, forgetting it accepts whatever is answering.";
 "Goel will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test." = "Goel will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test.";
@@ -702,6 +710,7 @@
 "It changes %1$d setting: %2$@." = "It changes %1$d setting: %2$@.";
 "It changes %1$d settings, including %2$@." = "It changes %1$d settings, including %2$@.";
 "It changes %1$d settings: %2$@." = "It changes %1$d settings: %2$@.";
+"It is removed from the list. You can restore the file from the Trash." = "It is removed from the list. You can restore the file from the Trash.";
 "Its passphrase is read from the GOEL_PORTAL_TLS_PASSPHRASE environment variable — Goel° never stores it." = "Its passphrase is read from the GOEL_PORTAL_TLS_PASSPHRASE environment variable — Goel° never stores it.";
 "Its settings match yours, so no setting changes." = "Its settings match yours, so no setting changes.";
 "Keep" = "Keep";
@@ -778,7 +787,10 @@
 "Modified" = "Modified";
 "More actions" = "More actions";
 "Move Detail Panel" = "Move Detail Panel";
+"Move the files of %d downloads to the Trash?" = "Move the files of %d downloads to the Trash?";
 "Move to" = "Move to";
+"Move to Trash" = "Move to Trash";
+"Move “%@” to the Trash?" = "Move “%@” to the Trash?";
 "Moved to “%@”" = "Moved to “%@”";
 "Moved “%@”" = "Moved “%@”";
 "Multi-path HTTP downloads across network adapters" = "Multi-path HTTP downloads across network adapters";
@@ -791,6 +803,8 @@
 "Name" = "Name";
 "Navigate" = "Navigate";
 "Need at least two eligible adapters. Enable expensive networks if using a phone hotspot." = "Need at least two eligible adapters. Enable expensive networks if using a phone hotspot.";
+"Needs %1$@ · %2$@ free" = "Needs %1$@ · %2$@ free";
+"Needs %1$@, %2$@ free" = "Needs %1$@, %2$@ free";
 "Network" = "Network";
 "Network adapter" = "Network adapter";
 "Network awareness" = "Network awareness";
@@ -836,6 +850,7 @@
 "Normal" = "Normal";
 "Not a valid MD5 / SHA-1 / SHA-256 hex digest" = "Not a valid MD5 / SHA-1 / SHA-256 hex digest";
 "Not enough disk space — this needs about %1$@ and there is %2$@ free." = "Not enough disk space — this needs about %1$@ and there is %2$@ free.";
+"Not enough space. Needs %1$@, only %2$@ free" = "Not enough space. Needs %1$@, only %2$@ free";
 "Not included" = "Not included";
 "Not loaded — re-import from %@" = "Not loaded — re-import from %@";
 "Not now? The full step-by-step, plus the bookmarklet, the URL scheme and the Services-menu route, all live in Settings ▸ Browser." = "Not now? The full step-by-step, plus the bookmarklet, the URL scheme and the Services-menu route, all live in Settings ▸ Browser.";
@@ -1036,8 +1051,9 @@
 "Remote folder %@" = "Remote folder %@";
 "Remote portal" = "Remote portal";
 "Remove" = "Remove";
+"Remove %d and Move Files to Trash" = "Remove %d and Move Files to Trash";
 "Remove %d from List" = "Remove %d from List";
-"Remove %d with Data" = "Remove %d with Data";
+"Remove and Move File to Trash" = "Remove and Move File to Trash";
 "Remove entry" = "Remove entry";
 "Remove feed" = "Remove feed";
 "Remove feed %@" = "Remove feed %@";
@@ -1047,7 +1063,6 @@
 "Remove the private key" = "Remove the private key";
 "Remove the saved login for %@?" = "Remove the saved login for %@?";
 "Remove the source file after completion." = "Remove the source file after completion.";
-"Remove with data" = "Remove with data";
 "Remove “%@” from history" = "Remove “%@” from history";
 "Remove “%@”?" = "Remove “%@”?";
 "Removed %1$d downloads, but %2$d of their files are still on disk" = "Removed %1$d downloads, but %2$d of their files are still on disk";
@@ -1126,6 +1141,7 @@
 "Safari finds the extension bundled inside this app — no helper and no loading needed. If you just installed the app, quit and reopen Safari once so it appears." = "Safari finds the extension bundled inside this app — no helper and no loading needed. If you just installed the app, quit and reopen Safari once so it appears.";
 "Save" = "Save";
 "Save path" = "Save path";
+"Save path: %@" = "Save path: %@";
 "Save to" = "Save to";
 "Saved — ignored reserved header: %@" = "Saved — ignored reserved header: %@";
 "Saved — ignored reserved headers: %@" = "Saved — ignored reserved headers: %@";
@@ -1209,6 +1225,7 @@
 "Show in menu bar" = "Show in menu bar";
 "Show or hide the Drop Basket" = "Show or hide the Drop Basket";
 "Show the browser extension folder in Finder" = "Show the browser extension folder in Finder";
+"Show the download folder for %@" = "Show the download folder for %@";
 "Show the remote folder for %@" = "Show the remote folder for %@";
 "Show video-only and audio-only tracks" = "Show video-only and audio-only tracks";
 "Shown" = "Shown";
@@ -1244,6 +1261,7 @@
 "Sorted descending" = "Sorted descending";
 "Sorting by file type, already chosen" = "Sorting by file type, already chosen";
 "Source" = "Source";
+"Source: %@" = "Source: %@";
 "Speed Limit" = "Speed Limit";
 "Speed graph, last %d seconds" = "Speed graph, last %d seconds";
 "Speed limit off · Unlimited" = "Speed limit off · Unlimited";
@@ -1279,6 +1297,7 @@
 "Subtitle languages" = "Subtitle languages";
 "Subtitles skipped — pick a folder under “Save to” so they land beside the video" = "Subtitles skipped — pick a folder under “Save to” so they land beside the video";
 "Subtitles: %@" = "Subtitles: %@";
+"Suggestion: %@" = "Suggestion: %@";
 "Support report" = "Support report";
 "Switch between Unlimited and the active traffic profile" = "Switch between Unlimited and the active traffic profile";
 "Switch between list and grid view" = "Switch between list and grid view";
@@ -1311,22 +1330,31 @@
 "The built-in player can’t open %@ — opening your default player" = "The built-in player can’t open %@ — opening your default player";
 "The bundled extension folder is only available in the packaged app, not a dev build." = "The bundled extension folder is only available in the packaged app, not a dev build.";
 "The bundled extension is only in the packaged app, not a dev build" = "The bundled extension is only in the packaged app, not a dev build";
-"The drop basket takes links and .torrent files — “%@” is neither" = "The drop basket takes links and .torrent files — “%@” is neither";
+"The disk is full. Free up space or choose another folder, then retry." = "The disk is full. Free up space or choose another folder, then retry.";
 "The extension, the helper, the bookmarklet, the URL scheme" = "The extension, the helper, the bookmarklet, the URL scheme";
 "The ffmpeg path in Settings (“%@”) isn’t a full path. Enter the complete location, e.g. /opt/homebrew/bin/ffmpeg, or clear the field to use the copy included with Goel°." = "The ffmpeg path in Settings (“%@”) isn’t a full path. Enter the complete location, e.g. /opt/homebrew/bin/ffmpeg, or clear the field to use the copy included with Goel°.";
 "The ffmpeg path in Settings (“%@”) isn’t a program Goel° can run. Clear the field to use the copy included with Goel°." = "The ffmpeg path in Settings (“%@”) isn’t a program Goel° can run. Clear the field to use the copy included with Goel°.";
 "The ffmpeg path in Settings points at “%@”, which is a script interpreter rather than ffmpeg. Goel° won’t run it. Clear the field to use the copy included with Goel°." = "The ffmpeg path in Settings points at “%@”, which is a script interpreter rather than ffmpeg. Goel° won’t run it. Clear the field to use the copy included with Goel°.";
+"The file changed on the server. Retry starts the download from the beginning." = "The file changed on the server. Retry starts the download from the beginning.";
+"The file doesn’t match its published checksum — it may be damaged. Retry to download it again." = "The file doesn’t match its published checksum — it may be damaged. Retry to download it again.";
+"The file is no longer at this address. Check the link on the page you got it from." = "The file is no longer at this address. Check the link on the page you got it from.";
 "The first delay after the limit is hit; it doubles from there." = "The first delay after the limit is hit; it doubles from there.";
 "The folder and everything inside it will be permanently removed from the server." = "The folder and everything inside it will be permanently removed from the server.";
+"The folder “%@” no longer exists" = "The folder “%@” no longer exists";
 "The key this server is presenting does NOT match the one Goel pinned, so connections are being refused.\n\nIf you rekeyed this server yourself, use “Forget Host Key” and confirm the new key on the next connection. If you did not, do not connect — something is answering in this server’s place." = "The key this server is presenting does NOT match the one Goel pinned, so connections are being refused.\n\nIf you rekeyed this server yourself, use “Forget Host Key” and confirm the new key on the next connection. If you did not, do not connect — something is answering in this server’s place.";
 "The legal entity named on your licence." = "The legal entity named on your licence.";
+"The link may have expired or needs a login. Copy a fresh link from the page, or attach browser cookies." = "The link may have expired or needs a login. Copy a fresh link from the page, or attach browser cookies.";
 "The live file is rotated once it passes this size." = "The live file is rotated once it passes this size.";
 "The manual proxy is missing a host or port, so the swarm goes out directly." = "The manual proxy is missing a host or port, so the swarm goes out directly.";
 "The notices file ships inside the packaged app. In a source build, read THIRD-PARTY-NOTICES.md in the repository." = "The notices file ships inside the packaged app. In a source build, read THIRD-PARTY-NOTICES.md in the repository.";
 "The page couldn’t be loaded." = "The page couldn’t be loaded.";
+"The partial file was moved or deleted. Retry starts the download from the beginning." = "The partial file was moved or deleted. Retry starts the download from the beginning.";
 "The portal's look. Independent of the app theme — the desktop and the browser each keep their own." = "The portal's look. Independent of the app theme — the desktop and the browser each keep their own.";
+"The server had a problem. Try again later." = "The server had a problem. Try again later.";
+"The server is busy or limiting requests. Wait a few minutes, then retry." = "The server is busy or limiting requests. Wait a few minutes, then retry.";
 "The server is presenting the key Goel pinned. Connections to this server are verified against it." = "The server is presenting the key Goel pinned. Connections to this server are verified against it.";
 "The server sent an item named “%@”, which Goel won’t write to disk." = "The server sent an item named “%@”, which Goel won’t write to disk.";
+"The server stopped answering. Check your connection, then retry." = "The server stopped answering. Check your connection, then retry.";
 "The server those items came from is no longer set up." = "The server those items came from is no longer set up.";
 "The server was saved, but Goel wasn't allowed to store the secret in your Keychain. Choose Allow when macOS asks, then try again." = "The server was saved, but Goel wasn't allowed to store the secret in your Keychain. Choose Allow when macOS asks, then try again.";
 "The server was saved, but its secret couldn't be written to your Keychain." = "The server was saved, but its secret couldn't be written to your Keychain.";
@@ -1340,19 +1368,20 @@
 "Theme, language, default folder, clipboard capture, ffmpeg" = "Theme, language, default folder, clipboard capture, ffmpeg";
 "Theme: %@" = "Theme: %@";
 "Then" = "Then";
+"There isn’t enough free space on this disk. The download would stop partway." = "There isn’t enough free space on this disk. The download would stop partway.";
 "There's a link on your clipboard — start with that one." = "There's a link on your clipboard — start with that one.";
 "There’s no file at the ffmpeg path set in Settings (“%@”). Fix the path, or clear the field to use the copy included with Goel°." = "There’s no file at the ffmpeg path set in Settings (“%@”). Fix the path, or clear the field to use the copy included with Goel°.";
 "These already exist in %@. Choose what to do with each." = "These already exist in %@. Choose what to do with each.";
+"They are removed from the list. You can restore the files from the Trash." = "They are removed from the list. You can restore the files from the Trash.";
 "Third-Party Notices" = "Third-Party Notices";
 "This deletes the saved connection and its Keychain password. Files on the server are not touched." = "This deletes the saved connection and its Keychain password. Files on the server are not touched.";
 "This file’s video or audio track uses a codec macOS can’t decode." = "This file’s video or audio track uses a codec macOS can’t decode.";
 "This folder is empty" = "This folder is empty";
-"This permanently deletes the file from disk and can’t be undone." = "This permanently deletes the file from disk and can’t be undone.";
-"This permanently deletes the files from disk and can’t be undone." = "This permanently deletes the files from disk and can’t be undone.";
 "This permanently removes the file from the server." = "This permanently removes the file from the server.";
 "This permanently removes them from the server. Folders are removed with everything inside them." = "This permanently removes them from the server. Folders are removed with everything inside them.";
 "This protocol does not support aggregation yet" = "This protocol does not support aggregation yet";
 "This removes every archived entry. Files on disk are not touched." = "This removes every archived entry. Files on disk are not touched.";
+"This server can’t resume. Retry starts the download from the beginning." = "This server can’t resume. Retry starts the download from the beginning.";
 "This server is misconfigured." = "This server is misconfigured.";
 "This server's saved secret couldn't be read from your Keychain." = "This server's saved secret couldn't be read from your Keychain.";
 "This server’s address can’t be opened in Terminal" = "This server’s address can’t be opened in Terminal";
@@ -1364,7 +1393,9 @@
 "Timed out" = "Timed out";
 "Title contains" = "Title contains";
 "Titles containing “%@”" = "Titles containing “%@”";
+"Titles containing “%@” · added paused" = "Titles containing “%@” · added paused";
 "To" = "To";
+"To %@" = "To %@";
 "To · %@" = "To · %@";
 "Today ↑" = "Today ↑";
 "Today ↓" = "Today ↓";
@@ -1511,6 +1542,7 @@
 "You need a warranty, an indemnity, support, or a signed agreement to file." = "You need a warranty, an indemnity, support, or a signed agreement to file.";
 "Your Keychain refused to remove the login for %@ — unlock it, allow the prompt, and try again" = "Your Keychain refused to remove the login for %@ — unlock it, allow the prompt, and try again";
 "Your Keychain refused to save the login for %@ — unlock it, allow the prompt, and try again" = "Your Keychain refused to save the login for %@ — unlock it, allow the prompt, and try again";
+"Your proxy needs a login. Check the proxy settings." = "Your proxy needs a login. Check the proxy settings.";
 "Your saved servers couldn’t be read, so nothing was changed — the other servers are still there." = "Your saved servers couldn’t be read, so nothing was changed — the other servers are still there.";
 "You’re running %@. Open the release page to download the update?" = "You’re running %@. Open the release page to download the update?";
 "about %.1f hours remaining" = "about %.1f hours remaining";
@@ -1591,5 +1623,6 @@
 "“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk" = "“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk";
 "“%@” will stop transferring and be removed from the list." = "“%@” will stop transferring and be removed from the list.";
 "•••••• (unchanged)" = "•••••• (unchanged)";
-"✓ Sequential Download" = "✓ Sequential Download";
+"↑ Speed" = "↑ Speed";
+"↓ Speed" = "↓ Speed";
 "⬆︎ Parent folder" = "⬆︎ Parent folder";

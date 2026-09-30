@@ -103,7 +103,7 @@ struct MenuBarView: View {
     private var header: some View {
         let count = listedTasks.count + activeTransfers.count + vm.mediaLiveCount
         return HStack(spacing: 12) {
-            Text(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads") + " · \(count)")
+            Text(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads · %d", count))
                 .scaledFont(size: 13, weight: .semibold)
                 .accessibilityLabel(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads, %d in progress", count))
                 .accessibilityAddTraits(.isHeader)

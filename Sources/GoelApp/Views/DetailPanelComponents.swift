@@ -185,7 +185,7 @@ extension DownloadTask {
     var percentComplete: Int { Int((fractionCompleted * 100).rounded()) }
 
     var sizeProgressText: String {
-        "\(bytesDownloaded.byteString) of \(totalBytes?.byteString ?? "—")"
+        L10n.t("%1$@ of %2$@", bytesDownloaded.byteString, totalBytes?.byteString ?? "—")
     }
 
     var etaText: String? {

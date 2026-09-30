@@ -268,16 +268,31 @@ struct ConfirmDialogView: View {
                 }
 
                 HStack(spacing: 10) {
-                    DialogButton(title: "Cancel", kind: .normal, action: dismiss)
-                        .keyboardShortcut(.cancelAction)
-                    DialogButton(title: request.confirmTitle,
-                                 kind: request.isDestructive ? .destructive : .primary) {
-                        request.onConfirm()
-                        dismiss()
+                    if request.isDestructive {
+                        // Return must never confirm a destructive action: a stray keypress would
+                        // throw away files. Cancel takes Return, Escape still cancels, and the
+                        // destructive button needs a deliberate click (or VoiceOver press).
+                        DialogButton(title: L10n.t("Cancel"), kind: .normal, isDefault: true, action: dismiss)
+                            .keyboardShortcut(.defaultAction)
+                        DialogButton(title: request.confirmTitle, kind: .destructive, action: confirm)
+                    } else {
+                        DialogButton(title: L10n.t("Cancel"), kind: .normal, action: dismiss)
+                            .keyboardShortcut(.cancelAction)
+                        DialogButton(title: request.confirmTitle, kind: .primary, action: confirm)
+                            .keyboardShortcut(.defaultAction)
                     }
-                    .keyboardShortcut(.defaultAction)
                 }
                 .padding(.top, 2)
+                .background {
+                    // Escape for the destructive layout, where Cancel already holds Return.
+                    if request.isDestructive {
+                        Button("", action: dismiss)
+                            .keyboardShortcut(.cancelAction)
+                            .opacity(0)
+                            .frame(width: 0, height: 0)
+                            .accessibilityHidden(true)
+                    }
+                }
             }
             .padding(22)
             .frame(width: 360)
@@ -289,12 +304,19 @@ struct ConfirmDialogView: View {
             .accessibilityLabel(request.title)
         }
     }
+
+    private func confirm() {
+        request.onConfirm()
+        dismiss()
+    }
 }
 
 private struct DialogButton: View {
     enum Kind { case normal, primary, destructive }
     let title: String
     let kind: Kind
+    /// Draws the Return-key ring, so the keyboard default is visible when it is not the tinted button.
+    var isDefault: Bool = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -306,12 +328,14 @@ private struct DialogButton: View {
                 .padding(.horizontal, 18)
                 .frame(height: 30)
                 .background(background, in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(kind == .normal ? Theme.hairline : .clear))
+                .overlay(RoundedRectangle(cornerRadius: 7)
+                    .stroke(isDefault ? Theme.accent : (kind == .normal ? Theme.hairline : .clear),
+                            lineWidth: isDefault ? 2 : 1))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .accessibilityLabel(kind == .destructive ? "\(title), destructive" : title)
+        .accessibilityLabel(kind == .destructive ? L10n.t("%@, destructive", title) : title)
         .accessibilityAddTraits(.isButton)
     }
 

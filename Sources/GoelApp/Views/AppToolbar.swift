@@ -4,6 +4,10 @@ import GoelCore
 struct AppToolbar: View {
     @EnvironmentObject private var vm: AppViewModel
 
+    /// Driven by `FocusBus`: SwiftUI ignores `.keyboardShortcut` on a TextField, so ⌘F lives
+    /// in the menu bar and reaches the field through a notification.
+    @FocusState private var searchFocused: Bool
+
     var body: some View {
         HStack(spacing: 8) {
             Button {
@@ -29,7 +33,7 @@ struct AppToolbar: View {
             ActionMenu(items: sortItems) { open in
                 ToolbarMenuLabel(title: L10n.t("Sort"), systemImage: "arrow.up.arrow.down", active: open)
             }
-            .accessibilityValue(L10n.t("%1$@, %2$@", L10n.t(vm.sortKey.accessibilityName),
+            .accessibilityValue(L10n.t("%1$@, %2$@", vm.sortKey.title,
                                       vm.sortAscending ? L10n.t("ascending") : L10n.t("descending")))
 
             ActionMenu(items: [
@@ -54,7 +58,14 @@ struct AppToolbar: View {
                     .textFieldStyle(.plain)
                     .frame(width: 180)
                     .accessibilityLabel(L10n.t("Search downloads"))
-                    .keyboardShortcut("f", modifiers: .command)
+                    .focused($searchFocused)
+                    .onExitCommand {
+                        // Escape clears, then a second Escape hands the keyboard back to the list.
+                        if vm.search.isEmpty { searchFocused = false } else { vm.search = "" }
+                    }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: FocusBus.focusSearch)) { _ in
+                searchFocused = true
             }
             .padding(.horizontal, 10)
             .frame(height: 28)
@@ -81,7 +92,7 @@ struct AppToolbar: View {
 
     private var sortItems: [ActionMenuItem] {
         SortKey.allCases.map { key in
-            .button(key.rawValue,
+            .button(key.title,
                     trailing: vm.sortKey == key ? (vm.sortAscending ? "chevron.up" : "chevron.down") : nil) {
                 vm.toggleSort(key)
             }

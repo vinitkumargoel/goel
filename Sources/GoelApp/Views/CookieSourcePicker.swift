@@ -105,13 +105,16 @@ struct CookieSourcePicker: View {
                 ? L10n.t("No cookies were captured with this link. Re-copy it from the browser extension.")
                 : L10n.t("Nothing usable pasted yet.")
         }
-        let shown = names.prefix(4).joined(separator: ", ")
-        let more = names.count > 4 ? L10n.t(" +%d more", names.count - 4) : ""
-        let where_ = host.map { L10n.t(" to %@", $0) } ?? ""
+        let shownNames = names.prefix(4).joined(separator: ", ")
+        let list = names.count > 4
+            ? L10n.t("%1$@ and %2$d more", shownNames, names.count - 4)
+            : shownNames
         let count = names.count == 1
             ? L10n.t("%d cookie", names.count)
             : L10n.t("%d cookies", names.count)
-        return L10n.t("%1$@%2$@ — %3$@%4$@. ", count, where_, shown, more)
+        let summary = host.map { L10n.t("%1$@ for %2$@: %3$@.", count, $0, list) }
+            ?? L10n.t("%1$@: %2$@.", count, list)
+        return summary + " "
             + L10n.t("Kept in memory for this download only: never saved to disk, never written to logs.")
     }
 }

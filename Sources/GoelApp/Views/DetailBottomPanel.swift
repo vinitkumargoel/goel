@@ -53,14 +53,7 @@ struct DetailBottomPanel: View {
             MiniProgressBar(task: task, height: 6)
 
             if case .failed(let error) = task.status {
-                Text(error.message)
-                    .scaledFont(size: 11)
-                    .foregroundStyle(Theme.red)
-                    .lineLimit(2)
-                    .padding(9)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-                    .accessibilityLabel(L10n.t("Download failed. %@", error.message))
+                FailureCard(task: task, error: error, vm: vm, compact: true)
             }
 
             Spacer(minLength: 0)
@@ -130,7 +123,7 @@ struct DetailBottomPanel: View {
             HStack(spacing: 10) {
                 Picker("", selection: $vm.detailTab) {
                     ForEach(DetailTab.allCases) { tab in
-                        Text(L10n.t(tab.rawValue)).tag(tab)
+                        Text(tab.title).tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -185,7 +178,7 @@ struct DetailBottomPanel: View {
                 KVRow(key: L10n.t("Uploaded"), value: task.bytesUploaded.byteString)
                 KVRow(key: L10n.t("Share ratio"), value: String(format: "%.2f", task.shareRatio))
             }
-            KVRow(key: L10n.t("Priority"), value: L10n.t(task.priority.displayName))
+            KVRow(key: L10n.t("Priority"), value: task.priority.title)
             KVRow(key: L10n.t("Added"), value: task.addedString)
             KVRow(key: L10n.t("Save path"), value: task.savePath, copyable: true)
             KVRow(key: L10n.t("Source"), value: task.sourceLocator, copyable: true)

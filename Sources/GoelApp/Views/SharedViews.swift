@@ -150,7 +150,9 @@ struct SFTPTransferRow: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
-            Text(L10n.t(transfer.folderPreposition) + " " + transfer.remoteFolderLabel)
+            Text(transfer.direction == .download
+                 ? L10n.t("From %@", transfer.remoteFolderLabel)
+                 : L10n.t("To %@", transfer.remoteFolderLabel))
                 .scaledFont(size: density == .compact ? 10 : 10.5)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

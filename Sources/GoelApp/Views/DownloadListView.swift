@@ -19,17 +19,23 @@ struct DownloadListView: View {
             if vm.visibleTasks.isEmpty {
                 emptyState
             } else {
+                let context = DownloadRow.Context(vm: vm)
+                let selectionSummary = DownloadRow.SelectionSummary(vm.selection.count > 1 ? vm.selectedTasks : [])
                 ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(vm.visibleTasks.enumerated()), id: \.element.id) { index, task in
+                            let isSelected = vm.isSelected(task.id)
                             DownloadRow(
                                 task: task,
                                 displayIndex: index + 1,
-                                isSelected: vm.isSelected(task.id),
-                                vm: vm,
-                                quickLook: { quickLookItem = $0 }
+                                isSelected: isSelected,
+                                speed: vm.displaySpeed(for: task),
+                                selectionSummary: isSelected ? selectionSummary : nil,
+                                context: context,
+                                vm: vm
                             )
+                            .equatable()
                             .id(task.id)
                             Divider()
                         }
@@ -51,6 +57,7 @@ struct DownloadListView: View {
         .contentShape(Rectangle())
         .onTapGesture { vm.selectNone() }
         .quickLookPreview($quickLookItem)
+        .environment(\.quickLookAction, QuickLookAction(item: $quickLookItem))
         .focusable()
         .focusEffectDisabled()
         .focused($listFocused)
@@ -102,13 +109,13 @@ struct DownloadListView: View {
 
     private var header: some View {
         HStack(spacing: 0) {
-            headerCol("#", .index, width: 30, alignment: .center)
-            headerCol("Name", .name, width: nil, alignment: .leading)
-            headerCol("Size", .size, width: 84, alignment: .trailing)
-            headerCol("Status", .status, width: 130, alignment: .leading)
-            headerCol("Added", .added, width: 104, alignment: .leading)
-            headerCol("↓ Speed", .downloadSpeed, width: 84, alignment: .trailing)
-            headerCol("↑ Speed", .uploadSpeed, width: 84, alignment: .trailing)
+            headerCol(.index, width: 30, alignment: .center)
+            headerCol(.name, width: nil, alignment: .leading)
+            headerCol(.size, width: 84, alignment: .trailing)
+            headerCol(.status, width: 130, alignment: .leading)
+            headerCol(.added, width: 104, alignment: .leading)
+            headerCol(.downloadSpeed, width: 84, alignment: .trailing)
+            headerCol(.uploadSpeed, width: 84, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .frame(height: 28)
@@ -117,14 +124,14 @@ struct DownloadListView: View {
     }
 
     @ViewBuilder
-    private func headerCol(_ title: String, _ key: SortKey, width: CGFloat?, alignment: Alignment) -> some View {
+    private func headerCol(_ key: SortKey, width: CGFloat?, alignment: Alignment) -> some View {
         let isSortKey = vm.sortKey == key
         Button {
             vm.toggleSort(key)
         } label: {
             HStack(spacing: 3) {
                 if alignment == .trailing { Spacer(minLength: 0) }
-                Text(L10n.t(title))
+                Text(key.columnTitle)
                 if isSortKey {
                     Image(systemName: vm.sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8, weight: .bold))
@@ -138,7 +145,7 @@ struct DownloadListView: View {
         .frame(width: width, alignment: alignment)
         .frame(maxWidth: width == nil ? .infinity : nil)
         .padding(.horizontal, 6)
-        .a11yButton(spokenHeader(title),
+        .a11yButton(key.title,
                     hint: isSortKey
                         ? L10n.t("Currently sorting %@. Activate to reverse.",
                                  vm.sortAscending ? L10n.t("ascending") : L10n.t("descending"))
@@ -146,15 +153,6 @@ struct DownloadListView: View {
         .accessibilityValue(isSortKey
                             ? (vm.sortAscending ? L10n.t("Sorted ascending") : L10n.t("Sorted descending"))
                             : L10n.t("Not sorted"))
-    }
-
-    private func spokenHeader(_ title: String) -> String {
-        switch title {
-        case "#": return L10n.t("Row number")
-        case "↓ Speed": return L10n.t("Download speed")
-        case "↑ Speed": return L10n.t("Upload speed")
-        default: return L10n.t(title)
-        }
     }
 
     private var emptyState: some View {
@@ -165,12 +163,65 @@ struct DownloadListView: View {
 }
 
 /// `vm` is deliberately non-observed: observing it rebuilds every row on every task's progress tick.
-struct DownloadRow: View {
+/// Everything the body reads is a value property compared in `==`, and `vm` is used only inside
+/// actions, so `.equatable()` skips the rows whose data didn't change on a telemetry tick.
+struct DownloadRow: View, Equatable {
     let task: DownloadTask
     let displayIndex: Int
     let isSelected: Bool
+    let speed: AppViewModel.SpeedSample
+    /// Non-nil only for a selected row; `count > 1` means the context menu acts on the selection.
+    let selectionSummary: SelectionSummary?
+    let context: Context
     let vm: AppViewModel
-    var quickLook: (URL) -> Void = { _ in }
+
+    @Environment(\.quickLookAction) private var quickLook
+
+    nonisolated static func == (lhs: DownloadRow, rhs: DownloadRow) -> Bool {
+        lhs.task == rhs.task
+            && lhs.displayIndex == rhs.displayIndex
+            && lhs.isSelected == rhs.isSelected
+            && lhs.speed == rhs.speed
+            && lhs.selectionSummary == rhs.selectionSummary
+            && lhs.context == rhs.context
+            && lhs.vm === rhs.vm
+    }
+
+    /// App-wide values the context menu reads, captured once per list body instead of per row.
+    struct Context: Equatable {
+        var streamLinkPrefix: String?
+        var profileSeedRatio: Double
+
+        @MainActor
+        init(vm: AppViewModel) {
+            let settings = vm.settings
+            if settings.remoteAccessEnabled, !settings.remoteToken.isEmpty {
+                // With `remoteTLSEnabled` the socket speaks only TLS; a hardcoded http:// link cannot connect.
+                let scheme = settings.remoteTLSEnabled ? "https" : "http"
+                streamLinkPrefix = "\(scheme)://127.0.0.1:\(settings.remotePort)/stream?token=\(settings.remoteToken)"
+            } else {
+                streamLinkPrefix = nil
+            }
+            profileSeedRatio = settings.effectiveProfile.seedRatioLimit
+        }
+    }
+
+    /// What the bulk context menu needs to know about the selection, computed once per list body.
+    struct SelectionSummary: Equatable {
+        var count = 0
+        var canResume = false
+        var canPause = false
+        var canRetry = false
+        var canRename = false
+
+        init(_ targets: [DownloadTask]) {
+            count = targets.count
+            canResume = targets.contains { $0.status == .paused || $0.status == .queued }
+            canPause = targets.contains { $0.status.isActive }
+            canRetry = targets.contains { if case .failed = $0.status { return true } else { return false } }
+            canRename = targets.allSatisfy { $0.kind != .torrent && !$0.status.isActive }
+        }
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -198,26 +249,29 @@ struct DownloadRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            // The column truncates a failure to a few words; the tooltip carries all of it.
+            .help(failureTooltip ?? "")
             .frame(width: 130, alignment: .leading)
             .padding(.horizontal, 6)
 
             Text(task.addedString)
                 .scaledFont(size: 11.5)
+                .lineLimit(1)
                 .foregroundStyle(.secondary)
                 .frame(width: 104, alignment: .leading)
                 .padding(.horizontal, 6)
 
-            Text(vm.displaySpeed(for: task).down.speedString)
+            Text(speed.down.speedString)
                 .frame(width: 84, alignment: .trailing)
                 .padding(.horizontal, 6)
                 .scaledFont(size: 12.5, weight: .medium, monospacedDigit: true)
-                .foregroundStyle(vm.displaySpeed(for: task).down > 0 ? Theme.green : Color.secondary)
+                .foregroundStyle(speed.down > 0 ? Theme.green : Color.secondary)
 
-            Text(vm.displaySpeed(for: task).up.speedString)
+            Text(speed.up.speedString)
                 .frame(width: 84, alignment: .trailing)
                 .padding(.horizontal, 6)
                 .scaledFont(size: 12.5, monospacedDigit: true)
-                .foregroundStyle(vm.displaySpeed(for: task).up > 0 ? Theme.teal : Color.secondary)
+                .foregroundStyle(speed.up > 0 ? Theme.teal : Color.secondary)
         }
         .padding(.horizontal, 12)
         .frame(minHeight: 50)
@@ -231,7 +285,7 @@ struct DownloadRow: View {
         .accessibilityAddTraits(isSelected
                                 ? [.isButton, .isSelected, .updatesFrequently]
                                 : [.isButton, .updatesFrequently])
-        .accessibilityHint(L10n.t("Select to show details."))
+        .accessibilityHint(failureHint ?? L10n.t("Select to show details."))
         .accessibilityAction(named: Text(L10n.t(task.accessibilityStateActionName)), primaryStateAction)
         .accessibilityAction(named: Text(L10n.t("Show in Finder"))) { vm.revealInFinder(task) }
         .accessibilityAction(named: Text(L10n.t("Copy source link"))) { vm.copyToPasteboard(task.sourceLocator) }
@@ -285,41 +339,45 @@ struct DownloadRow: View {
 
     @ViewBuilder
     private var contextMenu: some View {
-        if vm.actsOnSelection(task.id) { selectionMenu } else { singleRowMenu }
+        if let summary = selectionSummary, summary.count > 1 {
+            selectionMenu(summary)
+        } else {
+            singleRowMenu
+        }
     }
 
     /// Right-clicking inside a multi-row selection commands the selection, not the row under the
     /// pointer. Only the commands that mean something in bulk appear; per-row ones (tags, note,
     /// Quick Look, per-task limits) stay on the single-row menu.
+    /// Actions re-read `vm.selectedTasks` when they run: the summary only decides what is shown.
     @ViewBuilder
-    private var selectionMenu: some View {
-        let targets = vm.selectedTasks
-        let count = targets.count
-        if targets.contains(where: { $0.status == .paused || $0.status == .queued }) {
+    private func selectionMenu(_ summary: SelectionSummary) -> some View {
+        let count = summary.count
+        if summary.canResume {
             Button(L10n.t("Resume %d Selected", count)) { vm.resumeSelected() }
         }
-        if targets.contains(where: { $0.status.isActive }) {
+        if summary.canPause {
             Button(L10n.t("Pause %d Selected", count)) { vm.pauseSelected() }
         }
-        if targets.contains(where: { if case .failed = $0.status { return true } else { return false } }) {
+        if summary.canRetry {
             Button(L10n.t("Retry %d Selected", count)) { vm.retrySelected() }
         }
         Divider()
         Button(L10n.t("Copy %d Source Links", count)) {
-            vm.copyToPasteboard(targets.map(\.sourceLocator).joined(separator: "\n"))
+            vm.copyToPasteboard(vm.selectedTasks.map(\.sourceLocator).joined(separator: "\n"))
         }
-        if targets.allSatisfy({ $0.kind != .torrent && !$0.status.isActive }) {
-            Button(L10n.t("Rename %d Selected…", count)) { vm.promptForBatchRename(tasks: targets) }
+        if summary.canRename {
+            Button(L10n.t("Rename %d Selected…", count)) { vm.promptForBatchRename(tasks: vm.selectedTasks) }
         }
         Divider()
         Button(L10n.t("Remove %d from List", count), role: .destructive) {
             vm.removeSelected(deleteData: false)
         }
-        Button(L10n.t("Remove %d with Data", count), role: .destructive) {
+        Button(L10n.t("Remove %d and Move Files to Trash", count), role: .destructive) {
             vm.requestConfirm(
-                title: L10n.t("Delete downloaded files for %d items?", count),
-                message: L10n.t("This permanently deletes the files from disk and can’t be undone."),
-                confirmTitle: L10n.t("Delete Files"),
+                title: L10n.t("Move the files of %d downloads to the Trash?", count),
+                message: L10n.t("They are removed from the list. You can restore the files from the Trash."),
+                confirmTitle: L10n.t("Move to Trash"),
                 destructive: true
             ) { vm.removeSelected(deleteData: true) }
         }
@@ -345,50 +403,37 @@ struct DownloadRow: View {
             Button(L10n.t("Quick Look")) { quickLook(URL(fileURLWithPath: task.savePath)) }
         }
         if task.status == .completed, task.isMediaFile {
-            if let reason = vm.ffmpegUnavailableReason {
-                Button(L10n.t("Convert To…")) { vm.toastNow(reason) }
-                Button(L10n.t("Extract Audio…")) { vm.toastNow(reason) }
-            } else {
-                MediaMenuItems(task: task, vm: vm, center: vm.mediaJobs)
-            }
+            MediaMenuItems(task: task, vm: vm, center: vm.mediaJobs)
         }
         Button(L10n.t("Copy source link")) { vm.copyToPasteboard(task.sourceLocator) }
-        if vm.settings.remoteAccessEnabled, !vm.settings.remoteToken.isEmpty,
-           RemoteStreamService.streamPlan(for: task) != nil {
+        if let prefix = context.streamLinkPrefix, RemoteStreamService.streamPlan(for: task) != nil {
             Button(L10n.t("Copy Stream Link")) {
-                // With `remoteTLSEnabled` the socket speaks only TLS; a hardcoded http:// link cannot connect.
-                let scheme = vm.settings.remoteTLSEnabled ? "https" : "http"
-                vm.copyToPasteboard("\(scheme)://127.0.0.1:\(vm.settings.remotePort)/stream?id=\(task.id.uuidString)&token=\(vm.settings.remoteToken)")
+                vm.copyToPasteboard("\(prefix)&id=\(task.id.uuidString)")
             }
         }
         Divider()
+        // Toggles and inline pickers, not "✓ " prefixes: the menu then shows a real checkmark and
+        // VoiceOver reads the item's state instead of "check mark Sequential Download".
         Menu(L10n.t("Speed Limit")) {
-            Button(limitLabel(nil)) { vm.setTaskSpeedLimit(nil, task: task.id) }
-            ForEach([1, 2, 5, 10, 25], id: \.self) { mb in
-                Button(limitLabel(Int64(mb) * 1_000_000)) {
-                    vm.setTaskSpeedLimit(Int64(mb) * 1_000_000, task: task.id)
-                }
-            }
+            limitPicker(current: task.speedLimitBytesPerSec) { vm.setTaskSpeedLimit($0, task: task.id) }
         }
         if task.kind == .torrent {
-            Button(task.sequentialDownload == true
-                   ? L10n.t("✓ Sequential Download") : L10n.t("Sequential Download")) {
-                vm.setSequential(!(task.sequentialDownload == true), task: task.id)
-            }
+            Toggle(L10n.t("Sequential Download"), isOn: Binding(
+                get: { task.sequentialDownload == true },
+                set: { vm.setSequential($0, task: task.id) }))
             Menu(L10n.t("Upload Limit")) {
-                Button(uploadLimitLabel(nil)) { vm.setTaskUploadLimit(nil, task: task.id) }
-                ForEach([1, 2, 5, 10, 25], id: \.self) { mb in
-                    Button(uploadLimitLabel(Int64(mb) * 1_000_000)) {
-                        vm.setTaskUploadLimit(Int64(mb) * 1_000_000, task: task.id)
-                    }
-                }
+                limitPicker(current: task.uploadLimitBytesPerSec) { vm.setTaskUploadLimit($0, task: task.id) }
             }
             Menu(L10n.t("Seed Until Ratio")) {
-                Button(seedRatioLabel(nil)) { vm.setSeedRatioLimit(nil, task: task.id) }
-                Button(seedRatioLabel(0)) { vm.setSeedRatioLimit(0, task: task.id) }
-                ForEach([0.5, 1.0, 1.5, 2.0, 3.0], id: \.self) { r in
-                    Button(seedRatioLabel(r)) { vm.setSeedRatioLimit(r, task: task.id) }
+                Picker(L10n.t("Seed Until Ratio"), selection: Binding(
+                    get: { seedRatioChoice },
+                    set: { choice in vm.setSeedRatioLimit(choice.ratio, task: task.id) })) {
+                    ForEach(Self.seedRatioChoices, id: \.self) { choice in
+                        Text(seedRatioLabel(choice.ratio)).tag(choice)
+                    }
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
             }
             if task.status.isActive || task.status == .seeding || task.status == .paused {
                 Button(L10n.t("Force Recheck")) { vm.forceRecheck(task.id) }
@@ -421,11 +466,11 @@ struct DownloadRow: View {
         }
         Divider()
         Button(L10n.t("Remove from list"), role: .destructive) { vm.remove(task.id, deleteData: false) }
-        Button(L10n.t("Remove with data"), role: .destructive) {
+        Button(L10n.t("Remove and Move File to Trash"), role: .destructive) {
             vm.requestConfirm(
-                title: L10n.t("Delete downloaded files for “%@”?", task.name),
-                message: L10n.t("This permanently deletes the file from disk and can’t be undone."),
-                confirmTitle: L10n.t("Delete Files"),
+                title: L10n.t("Move “%@” to the Trash?", task.name),
+                message: L10n.t("It is removed from the list. You can restore the file from the Trash."),
+                confirmTitle: L10n.t("Move to Trash"),
                 destructive: true
             ) { vm.remove(task.id, deleteData: true) }
         }
@@ -443,40 +488,59 @@ struct DownloadRow: View {
             && task.fractionCompleted > 0.02
     }
 
-    private func limitLabel(_ bytesPerSec: Int64?) -> String {
-        let current = task.speedLimitBytesPerSec
-        let isActive = bytesPerSec == nil
-            ? (current == nil || current == 0)
-            : current == bytesPerSec
-        let name = bytesPerSec.map { "\($0 / 1_000_000) MB/s" } ?? L10n.t("Unlimited")
-        return isActive ? "✓ \(name)" : name
-    }
+    private static let limitSteps: [Int64] = [1, 2, 5, 10, 25].map { $0 * 1_000_000 }
 
-    private func uploadLimitLabel(_ bytesPerSec: Int64?) -> String {
-        let current = task.uploadLimitBytesPerSec
-        let isActive = bytesPerSec == nil
-            ? (current == nil || current == 0)
-            : current == bytesPerSec
-        let name = bytesPerSec.map { "\($0 / 1_000_000) MB/s" } ?? L10n.t("Unlimited")
-        return isActive ? "✓ \(name)" : name
+    /// nil and 0 both mean "no per-task cap", so both select Unlimited.
+    @ViewBuilder
+    private func limitPicker(current: Int64?, set: @escaping (Int64?) -> Void) -> some View {
+        let selected: Int64 = current ?? 0
+        Picker(L10n.t("Limit"), selection: Binding(get: { selected },
+                                                   set: { set($0 == 0 ? nil : $0) })) {
+            Text(L10n.t("Unlimited")).tag(Int64(0))
+            ForEach(Self.limitSteps, id: \.self) { bytes in
+                Text(L10n.t("%d MB/s", Int(bytes / 1_000_000))).tag(bytes)
+            }
+        }
+        .pickerStyle(.inline)
+        .labelsHidden()
     }
 
     /// nil means the profile's global limit applies; an explicit 0 seeds forever regardless of it.
+    struct SeedRatioChoice: Hashable {
+        let ratio: Double?
+    }
+
+    private static let seedRatioChoices: [SeedRatioChoice] =
+        [SeedRatioChoice(ratio: nil), SeedRatioChoice(ratio: 0)]
+        + [0.5, 1.0, 1.5, 2.0, 3.0].map { SeedRatioChoice(ratio: $0) }
+
+    /// The preset matching the task's ratio; a custom ratio set elsewhere matches none, so nothing is ticked.
+    private var seedRatioChoice: SeedRatioChoice {
+        guard let current = task.seedRatioLimit else { return SeedRatioChoice(ratio: nil) }
+        return Self.seedRatioChoices.first { choice in
+            choice.ratio.map { abs($0 - current) < 0.001 } ?? false
+        } ?? SeedRatioChoice(ratio: current)
+    }
+
     private func seedRatioLabel(_ ratio: Double?) -> String {
-        let current = task.seedRatioLimit
-        let isActive = ratio == nil
-            ? (current == nil)
-            : (current.map { abs($0 - ratio!) < 0.001 } ?? false)
-        let name: String
         switch ratio {
         case nil:
-            name = L10n.t("Profile default (%.1f×)", vm.settings.effectiveProfile.seedRatioLimit)
+            return L10n.t("Profile default (%.1f×)", context.profileSeedRatio)
         case .some(let r) where r <= 0:
-            name = L10n.t("Seed indefinitely")
+            return L10n.t("Seed indefinitely")
         case .some(let r):
-            name = String(format: "%.1f", r)
+            return String(format: "%.1f", r)
         }
-        return isActive ? "✓ \(name)" : name
+    }
+
+    private var failureTooltip: String? {
+        guard case .failed(let error) = task.status else { return nil }
+        return A11y.sentence(error.message, FailureAdvice.hint(for: error))
+    }
+
+    private var failureHint: String? {
+        guard case .failed(let error) = task.status else { return nil }
+        return FailureAdvice.hint(for: error)
     }
 
     private var isMagnet: Bool {
@@ -495,6 +559,16 @@ private struct MediaMenuItems: View {
     private var input: URL { URL(fileURLWithPath: task.savePath) }
 
     var body: some View {
+        if let reason = vm.ffmpegUnavailableReason {
+            Button(L10n.t("Convert To…")) { vm.toastNow(reason) }
+            Button(L10n.t("Extract Audio…")) { vm.toastNow(reason) }
+        } else {
+            jobItems
+        }
+    }
+
+    @ViewBuilder
+    private var jobItems: some View {
         let live = center.liveJobs(input: input)
         ForEach(live) { job in
             Button(L10n.t("Cancel %@", L10n.midSentence(job.kind.activeTitle))) { center.cancel(job.id) }
@@ -521,5 +595,27 @@ private struct MediaMenuItems: View {
             return ext.uppercased()
         }
         return L10n.t("%@ — copy, instant", ext.uppercased())
+    }
+}
+
+/// How a row asks the list to Quick Look a file. It lives in the environment rather than as a
+/// closure parameter: a fresh closure on every list body made every row compare as changed.
+struct QuickLookAction: Equatable {
+    var item: Binding<URL?>?
+
+    func callAsFunction(_ url: URL) { item?.wrappedValue = url }
+
+    /// Always equal: the binding points at the same `@State` for the life of the list.
+    static func == (lhs: QuickLookAction, rhs: QuickLookAction) -> Bool { true }
+}
+
+private struct QuickLookActionKey: EnvironmentKey {
+    static let defaultValue = QuickLookAction(item: nil)
+}
+
+extension EnvironmentValues {
+    var quickLookAction: QuickLookAction {
+        get { self[QuickLookActionKey.self] }
+        set { self[QuickLookActionKey.self] = newValue }
     }
 }

@@ -90,27 +90,18 @@ extension DownloadTask {
         }
     }
 
-    static func etaString(_ seconds: TimeInterval) -> String {
-        if seconds >= 3600 { return String(format: "%.1fh", seconds / 3600) }
-        if seconds >= 60 { return String(format: "%.0fm", seconds / 60) }
-        return String(format: "%.0fs", seconds)
+    /// "1h 30m", "4m 5s", "12s" — abbreviated in the app's language ("1 Std., 30 Min." in German),
+    /// two units at most, so the GUI and the CLI agree instead of the GUI saying "1.5h".
+    static func etaString(_ seconds: TimeInterval, locale: Locale = DisplayFormat.appLocale) -> String {
+        DisplayFormat.duration(seconds, locale: locale)
     }
 
-    private static let todayFormatter = Self.formatter("'Today' HH:mm")
-    private static let yesterdayFormatter = Self.formatter("'Yesterday' HH:mm")
-    private static let dateFormatter = Self.formatter("dd MMM HH:mm")
+    /// "Today at 14:03", "Yesterday at 2:03 PM", "12 Mar 2026 at 14:03" — relative words, date
+    /// order and the 12/24-hour clock all follow the locale instead of a fixed English pattern.
+    var addedString: String { Self.addedString(for: addedAt) }
 
-    private static func formatter(_ format: String) -> DateFormatter {
-        let f = DateFormatter()
-        f.dateFormat = format
-        return f
-    }
-
-    var addedString: String {
-        let cal = Calendar.current
-        if cal.isDateInToday(addedAt) { return Self.todayFormatter.string(from: addedAt) }
-        if cal.isDateInYesterday(addedAt) { return Self.yesterdayFormatter.string(from: addedAt) }
-        return Self.dateFormatter.string(from: addedAt)
+    static func addedString(for date: Date, locale: Locale = DisplayFormat.appLocale) -> String {
+        DisplayFormat.relativeDateTime(date, locale: locale)
     }
 
     var magnetInfoHash: String? {
