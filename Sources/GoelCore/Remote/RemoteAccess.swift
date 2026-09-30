@@ -63,7 +63,9 @@ public actor RemoteAccess {
             await stop()
             return
         }
-        if let applied, running, !RemoteAccessPolicy.needsRestart(previous: applied, next: settings) {
+        // A listener that died after binding (async EADDRINUSE) must be rebound, not trusted.
+        if let applied, running, !RemoteAccessPolicy.needsRestart(previous: applied, next: settings),
+           await server?.boundState() != nil {
             return
         }
         // `exactly:` not `clamping:`: an out-of-range port is a typo, and clamping it to 0 makes Network.framework bind any free port.
@@ -116,9 +118,23 @@ public actor RemoteAccess {
         failure = nil
     }
 
-    public var isRunning: Bool { running }
+    /// Asks the server, not a cached flag: the listener can fail after `apply` returned.
+    public var isRunning: Bool {
+        get async { await refreshed().running }
+    }
 
-    public var lastStartFailure: RemotePortalStartFailure? { failure }
+    public var lastStartFailure: RemotePortalStartFailure? {
+        get async { await refreshed().failure }
+    }
+
+    private func refreshed() async -> (running: Bool, failure: RemotePortalStartFailure?) {
+        if running, let server, await server.boundState() == nil {
+            running = false
+            applied = nil
+            failure = await server.lastStartFailure()
+        }
+        return (running, failure)
+    }
 
     public func boundState() async -> (port: UInt16, exposedLAN: Bool)? {
         await server?.boundState()

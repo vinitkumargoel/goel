@@ -129,13 +129,13 @@ final class RemoteRouterTests: XCTestCase {
             ("no token at all", FakeRemoteBackend(),
              "GET /api/tasks HTTP/1.1\r\n\r\n", "HTTP/1.1 401 Unauthorized"),
             ("wrong token", FakeRemoteBackend(),
-             "GET /api/tasks?token=nope HTTP/1.1\r\n\r\n", "HTTP/1.1 401"),
+             "GET /api/tasks HTTP/1.1\r\nAuthorization: Bearer nope\r\n\r\n", "HTTP/1.1 401"),
             ("unknown route", FakeRemoteBackend(),
-             "GET /nope?token=secret HTTP/1.1\r\n\r\n", "HTTP/1.1 404 Not Found"),
+             "GET /nope HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n", "HTTP/1.1 404 Not Found"),
             ("a folder that is not there", folderBackend(),
-             "GET /api/folders?token=secret&path=%2Fnope HTTP/1.1\r\n\r\n", "HTTP/1.1 404"),
+             "GET /api/folders?path=%2Fnope HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n", "HTTP/1.1 404"),
             ("no backend attached", nil,
-             "GET /api/tasks?token=secret HTTP/1.1\r\n\r\n", "HTTP/1.1 503"),
+             "GET /api/tasks HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n", "HTTP/1.1 503"),
         ]
         for c in cases {
             let router = RemoteRouter(backend: c.backend, token: "secret")
@@ -165,7 +165,7 @@ final class RemoteRouterTests: XCTestCase {
     func testTasksJSONCarriesTaskName() async {
         let backend = FakeRemoteBackend(tasks: [task(UUID(), "movie.mkv")])
         let router = RemoteRouter(backend: backend, token: "secret")
-        let out = str(await router.handle(request("GET /api/tasks?token=secret HTTP/1.1\r\n\r\n")))
+        let out = str(await router.handle(request("GET /api/tasks HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.contains("application/json"))
         XCTAssertTrue(out.contains("movie.mkv"))
     }
@@ -175,7 +175,7 @@ final class RemoteRouterTests: XCTestCase {
         let backend = FakeRemoteBackend(tasks: [task(id, "a")])
         let router = RemoteRouter(backend: backend, token: "secret")
         let out = str(await router.handle(request(
-            "POST /api/pause?id=\(id.uuidString)&token=secret HTTP/1.1\r\n\r\n")))
+            "POST /api/pause?id=\(id.uuidString) HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
         XCTAssertEqual(backend.paused, [id])
     }
@@ -183,8 +183,8 @@ final class RemoteRouterTests: XCTestCase {
     func testPauseAllAndResumeAll() async {
         let backend = FakeRemoteBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
-        _ = await router.handle(request("POST /api/pause-all?token=secret HTTP/1.1\r\n\r\n"))
-        _ = await router.handle(request("POST /api/resume-all?token=secret HTTP/1.1\r\n\r\n"))
+        _ = await router.handle(request("POST /api/pause-all HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n"))
+        _ = await router.handle(request("POST /api/resume-all HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n"))
         XCTAssertTrue(backend.pausedAll)
         XCTAssertTrue(backend.resumedAll)
     }
@@ -193,13 +193,13 @@ final class RemoteRouterTests: XCTestCase {
         let backend = FakeRemoteBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
         let out = str(await router.handle(request(
-            "POST /api/add?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{\"url\":\"https://e/x.bin\"}")))
+            "POST /api/add HTTP/1.1\r\nAuthorization: Bearer secret\r\nContent-Type: application/json\r\n\r\n{\"url\":\"https://e/x.bin\"}")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
         XCTAssertEqual(backend.added.first?.locator, "https://e/x.bin")
     }
 
     private func post(_ path: String, _ body: String) -> RemoteRequest {
-        request("POST \(path)?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n\r\n\(body)")
+        request("POST \(path) HTTP/1.1\r\nAuthorization: Bearer secret\r\nContent-Type: application/json\r\n\r\n\(body)")
     }
 
     /// The CLI follows a download by the IDs this reply carries — they must match what was queued.
@@ -250,7 +250,7 @@ final class RemoteRouterTests: XCTestCase {
             adapters: [.init(name: "eth0", label: "eth0", type: "wired",
                              ipv4: "10.0.0.2", expensive: false, eligible: true)])
         let router = RemoteRouter(backend: backend, token: "secret")
-        let out = str(await router.handle(request("GET /api/network?token=secret HTTP/1.1\r\n\r\n")))
+        let out = str(await router.handle(request("GET /api/network HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
         XCTAssertTrue(out.contains("\"streamsPerAdapter\":3"))
         XCTAssertTrue(out.contains("\"locked\":true"))
@@ -319,7 +319,7 @@ final class RemoteRouterTests: XCTestCase {
 
     func testFolderListingDefaultsToTheConfiguredDownloadsFolder() async throws {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
-        let out = str(await router.handle(request("GET /api/folders?token=secret HTTP/1.1\r\n\r\n")))
+        let out = str(await router.handle(request("GET /api/folders HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
         XCTAssertTrue(out.contains("\"path\":\"\\/home\\/goel\\/Downloads\""), out)
         XCTAssertTrue(out.contains("\"name\":\"Linux\""), out)
@@ -328,14 +328,14 @@ final class RemoteRouterTests: XCTestCase {
 
     func testTheDownloadsFolderOffersAWayUp() async {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
-        let out = str(await router.handle(request("GET /api/folders?token=secret HTTP/1.1\r\n\r\n")))
+        let out = str(await router.handle(request("GET /api/folders HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.contains("\"parent\":\"\\/home\\/goel\""), out)
     }
 
     func testFolderListingFollowsThePathQuery() async {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
         let out = str(await router.handle(request(
-            "GET /api/folders?token=secret&path=%2Fhome%2Fgoel%2FDownloads%2FLinux HTTP/1.1\r\n\r\n")))
+            "GET /api/folders?path=%2Fhome%2Fgoel%2FDownloads%2FLinux HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.contains("\"name\":\"ISOs\""), out)
         XCTAssertTrue(out.contains("\"parent\":\"\\/home\\/goel\\/Downloads\""), out)
     }
@@ -344,7 +344,7 @@ final class RemoteRouterTests: XCTestCase {
     func testFolderListingReachesOutsideTheDownloadsFolder() async {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
         let out = str(await router.handle(request(
-            "GET /api/folders?token=secret&path=%2Fhome%2Fgoel HTTP/1.1\r\n\r\n")))
+            "GET /api/folders?path=%2Fhome%2Fgoel HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
         XCTAssertTrue(out.contains("\"name\":\"Documents\""), out)
     }
@@ -352,7 +352,7 @@ final class RemoteRouterTests: XCTestCase {
     func testOnlyTheFilesystemRootHasNoParent() async {
         let router = RemoteRouter(backend: folderBackend(), token: "secret")
         let out = str(await router.handle(request(
-            "GET /api/folders?token=secret&path=%2F HTTP/1.1\r\n\r\n")))
+            "GET /api/folders?path=%2F HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
         XCTAssertFalse(out.contains("\"parent\""), out)
     }
@@ -395,7 +395,7 @@ final class RemoteRouterTests: XCTestCase {
         XCTAssertTrue(created.hasPrefix("HTTP/1.1 403"), created)
         XCTAssertTrue(backend.createdFolders.isEmpty)
 
-        let listed = str(await router.handle(request("GET /api/folders?token=secret HTTP/1.1\r\n\r\n")))
+        let listed = str(await router.handle(request("GET /api/folders HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(listed.hasPrefix("HTTP/1.1 200 OK"), listed)
     }
 
@@ -412,7 +412,7 @@ final class RemoteRouterTests: XCTestCase {
         let id = UUID()
         let backend = FakeRemoteBackend(tasks: [task(id, "a")])
         let router = RemoteRouter(backend: backend, token: "secret")
-        _ = await router.handle(request("POST /api/remove?id=\(id.uuidString)&data=1&token=secret HTTP/1.1\r\n\r\n"))
+        _ = await router.handle(request("POST /api/remove?id=\(id.uuidString)&data=1 HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n"))
         XCTAssertEqual(backend.removed.first?.0, id)
         XCTAssertEqual(backend.removed.first?.1, true)
     }
@@ -422,7 +422,7 @@ final class RemoteRouterTests: XCTestCase {
         let backend = FakeRemoteBackend(tasks: [task(id, "a")])
         let router = RemoteRouter(backend: backend, token: "secret")
         _ = await router.handle(request(
-            "POST /api/file-priority?id=\(id.uuidString)&file=3&prio=skip&token=secret HTTP/1.1\r\n\r\n"))
+            "POST /api/file-priority?id=\(id.uuidString)&file=3&prio=skip HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n"))
         XCTAssertEqual(backend.filePriorities.first?.1, 3)
         XCTAssertEqual(backend.filePriorities.first?.2, .skip)
     }
@@ -431,7 +431,7 @@ final class RemoteRouterTests: XCTestCase {
         let id = UUID()
         let backend = FakeRemoteBackend(tasks: [task(id, "a")])
         let router = RemoteRouter(backend: backend, token: "secret")
-        _ = await router.handle(request("POST /api/retry?id=\(id.uuidString)&token=secret HTTP/1.1\r\n\r\n"))
+        _ = await router.handle(request("POST /api/retry?id=\(id.uuidString) HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n"))
         XCTAssertEqual(backend.retried, [id])
     }
 
@@ -439,7 +439,7 @@ final class RemoteRouterTests: XCTestCase {
         let backend = FakeRemoteBackend()
         let config = RemoteRouter.Config(token: "secret", readOnly: true)
         let router = RemoteRouter(backend: backend, config: config)
-        let out = str(await router.handle(request("POST /api/pause-all?token=secret HTTP/1.1\r\n\r\n")))
+        let out = str(await router.handle(request("POST /api/pause-all HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 403"))
         XCTAssertFalse(backend.pausedAll)
     }
@@ -448,14 +448,14 @@ final class RemoteRouterTests: XCTestCase {
         let backend = FakeRemoteBackend(tasks: [task(UUID(), "a")])
         let config = RemoteRouter.Config(token: "secret", readOnly: true)
         let router = RemoteRouter(backend: backend, config: config)
-        let out = str(await router.handle(request("GET /api/tasks?token=secret HTTP/1.1\r\n\r\n")))
+        let out = str(await router.handle(request("GET /api/tasks HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"))
     }
 
     func testConfigRouteReportsThemeAndUser() async {
         let config = RemoteRouter.Config(token: "secret", theme: "nord", username: "vinit")
         let router = RemoteRouter(backend: FakeRemoteBackend(), config: config)
-        let out = str(await router.handle(request("GET /api/config?token=secret HTTP/1.1\r\n\r\n")))
+        let out = str(await router.handle(request("GET /api/config HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.contains("nord"))
         XCTAssertTrue(out.contains("vinit"))
     }

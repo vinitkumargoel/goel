@@ -237,6 +237,7 @@
 "Cancel this conversion" = "Cancel this conversion";
 "Cancel this job" = "Cancel this job";
 "Cancel transfer of %@" = "Cancel transfer of %@";
+"Canceled" = "Canceled";
 "Cancelled" = "Cancelled";
 "Cancelled before anything was written" = "Cancelled before anything was written";
 "Cancelled, partial file removed" = "Cancelled, partial file removed";
@@ -255,6 +256,7 @@
 "Checking" = "Checking";
 "Checksum" = "Checksum";
 "Checksum (optional)" = "Checksum (optional)";
+"Checksum mismatch — the file did not match its published hash" = "Checksum mismatch — the file did not match its published hash";
 "Choose" = "Choose";
 "Choose a file exported by aria2, JDownloader, IDM, a browser, etc." = "Choose a file exported by aria2, JDownloader, IDM, a browser, etc.";
 "Choose an SSH private key (for example id_ed25519 — not the .pub file)." = "Choose an SSH private key (for example id_ed25519 — not the .pub file).";
@@ -303,6 +305,7 @@
 "Connection refused" = "Connection refused";
 "Connection test failed. %@" = "Connection test failed. %@";
 "Connection test succeeded" = "Connection test succeeded";
+"Connection timed out" = "Connection timed out";
 "Connection timeout" = "Connection timeout";
 "Connections" = "Connections";
 "Continue" = "Continue";
@@ -801,6 +804,7 @@
 "Network" = "Network";
 "Network adapter" = "Network adapter";
 "Network awareness" = "Network awareness";
+"Network error: %@" = "Network error: %@";
 "New API token generated" = "New API token generated";
 "New Folder" = "New Folder";
 "New folder" = "New folder";
@@ -842,6 +846,7 @@
 "Nord" = "Nord";
 "Normal" = "Normal";
 "Not a valid MD5 / SHA-1 / SHA-256 hex digest" = "Not a valid MD5 / SHA-1 / SHA-256 hex digest";
+"Not enough disk space (need %@, have %@)" = "Not enough disk space (need %@, have %@)";
 "Not enough disk space — this needs about %1$@ and there is %2$@ free." = "Not enough disk space — this needs about %1$@ and there is %2$@ free.";
 "Not included" = "Not included";
 "Not loaded — re-import from %@" = "Not loaded — re-import from %@";
@@ -1187,10 +1192,14 @@
 "Server added" = "Server added";
 "Server browser toolbar" = "Server browser toolbar";
 "Server does not support multi-path ranges" = "Server does not support multi-path ranges";
+"Server does not support resuming (no range support)" = "Server does not support resuming (no range support)";
 "Server is no longer available" = "Server is no longer available";
 "Server now" = "Server now";
+"Server redirected (HTTP %ld) to an address that was not followed" = "Server redirected (HTTP %ld) to an address that was not followed";
 "Server rejected multi-path" = "Server rejected multi-path";
 "Server removed" = "Server removed";
+"Server returned HTTP %ld" = "Server returned HTTP %ld";
+"Server returned HTTP %ld (%@)" = "Server returned HTTP %ld (%@)";
 "Server saved" = "Server saved";
 "Servers" = "Servers";
 "Serves the browser UI and JSON API on the port below." = "Serves the browser UI and JSON API on the port below.";
@@ -1307,6 +1316,7 @@
 "Test connection" = "Test connection";
 "Testing “%@”…" = "Testing “%@”…";
 "Testing…" = "Testing…";
+"That address is on this machine or a link-local range — refused." = "That address is on this machine or a link-local range — refused.";
 "That conversion is already running." = "That conversion is already running.";
 "That download no longer exists" = "That download no longer exists";
 "That isn’t a web page address." = "That isn’t a web page address.";
@@ -1329,11 +1339,13 @@
 "The key this server is presenting does NOT match the one Goel pinned, so connections are being refused.\n\nIf you rekeyed this server yourself, use “Forget Host Key” and confirm the new key on the next connection. If you did not, do not connect — something is answering in this server’s place." = "The key this server is presenting does NOT match the one Goel pinned, so connections are being refused.\n\nIf you rekeyed this server yourself, use “Forget Host Key” and confirm the new key on the next connection. If you did not, do not connect — something is answering in this server’s place.";
 "The legal entity named on your licence." = "The legal entity named on your licence.";
 "The live file is rotated once it passes this size." = "The live file is rotated once it passes this size.";
+"The local file is missing" = "The local file is missing";
 "The manual proxy is missing a host or port, so the swarm goes out directly." = "The manual proxy is missing a host or port, so the swarm goes out directly.";
 "The notices file ships inside the packaged app. In a source build, read THIRD-PARTY-NOTICES.md in the repository." = "The notices file ships inside the packaged app. In a source build, read THIRD-PARTY-NOTICES.md in the repository.";
 "The page couldn’t be loaded." = "The page couldn’t be loaded.";
 "The portal's look. Independent of the app theme — the desktop and the browser each keep their own." = "The portal's look. Independent of the app theme — the desktop and the browser each keep their own.";
 "The post-download script failed or couldn’t be started for “%@”." = "The post-download script failed or couldn’t be started for “%@”.";
+"The remote file changed since the download started" = "The remote file changed since the download started";
 "The server is presenting the key Goel pinned. Connections to this server are verified against it." = "The server is presenting the key Goel pinned. Connections to this server are verified against it.";
 "The server sent an item named “%@”, which Goel won’t write to disk." = "The server sent an item named “%@”, which Goel won’t write to disk.";
 "The server those items came from is no longer set up." = "The server those items came from is no longer set up.";
@@ -1416,6 +1428,7 @@
 "URL, magnet, or .m3u8 stream" = "URL, magnet, or .m3u8 stream";
 "URL, magnet, or m3u8 stream" = "URL, magnet, or m3u8 stream";
 "Unknown" = "Unknown";
+"Unknown error" = "Unknown error";
 "Unknown size" = "Unknown size";
 "Unlimited" = "Unlimited";
 "Unpack finished .zip downloads next to the file." = "Unpack finished .zip downloads next to the file.";

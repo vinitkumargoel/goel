@@ -19,7 +19,8 @@ public actor RemoteControlServer {
 
     private var group: MultiThreadedEventLoopGroup?
     private var channel: Channel?
-    private var gate: ConnectionGate?
+    private var gate: RemoteConnectionGate?
+    private let frameCache = RemoteEventFrameCache()
     private var boundPort: UInt16?
     private var boundExposeLAN: Bool?
 
@@ -27,7 +28,6 @@ public actor RemoteControlServer {
     private var startFailure: StartFailure?
 
     private var sseConnections = 0
-    private static let maxConnections = 32
     private static let maxSSEConnections = 4
 
     private var router: RemoteRouter { RemoteRouter(backend: manager, config: routerConfig) }
@@ -86,7 +86,7 @@ public actor RemoteControlServer {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         let host = exposeLAN ? "0.0.0.0" : "127.0.0.1"
         let server = self
-        let gate = ConnectionGate(limit: Self.maxConnections)
+        let gate = RemoteConnectionGate()
         self.gate = gate
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 32)
@@ -141,6 +141,13 @@ public actor RemoteControlServer {
 
     func dispatch(requestData: Data, sink: ChannelSink, client: String) async {
         let request = RemoteRequest(raw: requestData)
+        // Every route, streams included: a rebound name must not reach even the login page.
+        guard RemoteHostPolicy.allows(hostHeader: request.headers["host"], client: client,
+                                      security: security) else {
+            _ = await sink.send(RemoteAuthService.misdirected())
+            sink.close()
+            return
+        }
         switch (request.method, request.path) {
         case ("GET", "/api/events"):
             await serveEvents(sink, request, client: client)
@@ -173,13 +180,13 @@ public actor RemoteControlServer {
         head += "X-Content-Type-Options: nosniff\r\n"
         head += "Connection: keep-alive\r\n\r\n"
         if await sink.send(Data(head.utf8)) {
+            var pacer = RemoteEventPacer()
             while generation == myGeneration, let manager {
-                guard let frame = router.eventFrame(for: await manager.taskSnapshot()) else {
-                    // Skipping the tick, not sending an empty list, which would blank a live queue.
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    continue
+                // A nil frame is skipped, not sent as an empty list, which would blank a live queue.
+                let frame = frameCache.frame(for: await manager.taskSnapshot())
+                if let payload = RemoteEventPacer.payload(pacer.next(frame)) {
+                    guard await sink.send(payload) else { break }
                 }
-                guard await sink.send(frame) else { break }
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
             }
         }
@@ -214,7 +221,7 @@ public actor RemoteControlServer {
                     : RemoteRouter.response(status: "401 Unauthorized", type: "text/plain",
                                             body: Data("Not signed in\n".utf8))
             }
-            return await handleLogout(request)
+            return await handleLogout(request, client: client)
         default:
             if RemoteAuthService.shouldPromoteTokenToSession(
                 request, requireAuth: cfg.requireAuth,
@@ -222,7 +229,8 @@ public actor RemoteControlServer {
                 return RemoteRouter.response(
                     status: "200 OK", type: "text/html; charset=utf-8",
                     body: Data(RemoteRouter.page(config: cfg).utf8),
-                    extraHeaders: ["Set-Cookie": await sessionStore.issueSession()])
+                    extraHeaders: ["Set-Cookie": await sessionStore.issueSession(
+                        secure: secureCookie(request, client: client))])
             }
             if cfg.requireAuth, !authed, !tokenAuthed(request),
                request.method == "GET", !request.path.hasPrefix("/api") {
@@ -247,12 +255,19 @@ public actor RemoteControlServer {
         RemoteAuthService.tokenAuthed(request, token: routerConfig.token)
     }
 
-    private func handleLogin(_ request: RemoteRequest, client: String) async -> Data {
-        await sessionStore.handleLogin(request, client: client)
+    /// No TLS here, so only a trusted proxy's `X-Forwarded-Proto: https` makes the cookie Secure.
+    private func secureCookie(_ request: RemoteRequest, client: String) -> Bool {
+        RemoteAuthService.wantsSecureCookie(request, client: client, security: security)
     }
 
-    private func handleLogout(_ request: RemoteRequest) async -> Data {
-        let result = await sessionStore.handleLogout(request)
+    private func handleLogin(_ request: RemoteRequest, client: String) async -> Data {
+        await sessionStore.handleLogin(request, client: client,
+                                       secureCookie: secureCookie(request, client: client))
+    }
+
+    private func handleLogout(_ request: RemoteRequest, client: String) async -> Data {
+        let result = await sessionStore.handleLogout(
+            request, secureCookie: secureCookie(request, client: client))
         // Only bump on a real sign-out: an unconditional bump kills every stream on any stray request.
         if result.droppedSession { generation += 1 }
         return result.response
@@ -338,7 +353,8 @@ public actor RemoteControlServer {
         var cursor = start
         while cursor <= end, generation == myGeneration {
             let want = Int(min(Int64(512 * 1024), end - cursor + 1))
-            guard let chunk = try? handle.read(upToCount: want), !chunk.isEmpty else { break }
+            guard let chunk = RemoteStreamService.readChunk(handle, upTo: want, path: plan.path,
+                                                            offset: cursor) else { break }
             guard await sink.send(chunk) else { break }
             cursor += Int64(chunk.count)
         }
@@ -379,46 +395,28 @@ final class ChannelSink: @unchecked Sendable {
     func close() { channel.close(promise: nil) }
 }
 
-/// Must stay synchronous and lock-based: NIO handlers call it on the event loop, off the actor.
-final class ConnectionGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var count = 0
-    private let limit: Int
-    init(limit: Int) { self.limit = limit }
-
-    func tryAcquire() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        guard count < limit else { return false }
-        count += 1
-        return true
-    }
-
-    func release() {
-        lock.lock(); count = max(0, count - 1); lock.unlock()
-    }
-}
-
 final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = ByteBuffer
 
     private let server: RemoteControlServer
-    private let gate: ConnectionGate
-    private var acquired = false
+    private let gate: RemoteConnectionGate
+    private var acquiredFor: String?
     private var buffer = Data()
     private var dispatched = false
     private var idleTask: Scheduled<Void>?
     private static let maxRequestBytes = 2 * 1024 * 1024
     private static let idleTimeout = TimeAmount.seconds(15)
 
-    init(server: RemoteControlServer, gate: ConnectionGate) {
+    init(server: RemoteControlServer, gate: RemoteConnectionGate) {
         self.server = server
         self.gate = gate
     }
 
     func channelActive(context: ChannelHandlerContext) {
-        // Capped before a buffer is allocated: a flood of slow clients would otherwise exhaust memory.
-        guard gate.tryAcquire() else { context.close(promise: nil); return }
-        acquired = true
+        // Capped (overall and per peer) before a buffer is allocated: a flood of slow clients would otherwise exhaust memory.
+        let client = context.channel.remoteAddress?.ipAddress ?? ""
+        guard gate.tryAcquire(client: client) else { context.close(promise: nil); return }
+        acquiredFor = client
         let channel = context.channel
         idleTask = context.eventLoop.scheduleTask(in: Self.idleTimeout) { [weak self] in
             if self?.dispatched != true { channel.close(promise: nil) }
@@ -428,7 +426,7 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
 
     func channelInactive(context: ChannelHandlerContext) {
         idleTask?.cancel()
-        if acquired { gate.release(); acquired = false }
+        if let client = acquiredFor { gate.release(client: client); acquiredFor = nil }
         context.fireChannelInactive()
     }
 
@@ -439,9 +437,11 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
         if let bytes = incoming.readBytes(length: incoming.readableBytes) {
             buffer.append(contentsOf: bytes)
         }
-        if buffer.count > Self.maxRequestBytes { context.close(promise: nil); return }
-        guard let bodyStart = Self.headerEnd(buffer) else { return }
-        let needBody = Self.contentLength(buffer.prefix(bodyStart))
+        if buffer.count > Self.maxRequestBytes || RemoteRequest.headerTooLarge(buffer) {
+            context.close(promise: nil); return
+        }
+        guard let bodyStart = RemoteRequest.headerEnd(buffer) else { return }
+        let needBody = RemoteRequest.contentLength(buffer.prefix(bodyStart))
         if buffer.count - bodyStart < needBody { return }
 
         dispatched = true
@@ -457,27 +457,6 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {
         context.close(promise: nil)
-    }
-
-    private static func headerEnd(_ data: Data) -> Int? {
-        guard data.count >= 4 else { return nil }
-        let b = [UInt8](data)
-        var i = 0
-        while i + 4 <= b.count {
-            if b[i] == 13, b[i + 1] == 10, b[i + 2] == 13, b[i + 3] == 10 { return i + 4 }
-            i += 1
-        }
-        return nil
-    }
-
-    private static func contentLength(_ header: Data) -> Int {
-        for line in String(decoding: header, as: UTF8.self).split(separator: "\r\n") {
-            let kv = line.split(separator: ":", maxSplits: 1)
-            if kv.count == 2, kv[0].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" {
-                return Int(kv[1].trimmingCharacters(in: .whitespaces)) ?? 0
-            }
-        }
-        return 0
     }
 }
 #endif

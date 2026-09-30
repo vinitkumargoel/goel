@@ -4,12 +4,31 @@ public enum PathSafety {
 
     /// Strips directory parts to defeat `../` traversal and absolute paths in a hostile name.
     public static func sanitizedName(_ raw: String, fallback: String = "download") -> String {
-        let last = (raw as NSString).lastPathComponent
+        let last = (strippedUnsafeScalars(raw) as NSString).lastPathComponent
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if last.isEmpty || last == "." || last == ".." || last.hasPrefix(".") || last.contains("/") {
             return fallback
         }
         return clampLength(last)
+    }
+
+    /// `invoice\u{202E}fdp.exe` renders as `invoiceexe.pdf`: bidi overrides and other invisible
+    /// format/control scalars (NUL included) go. `\` becomes `_` — a separator on Windows shares and
+    /// a spoofing tool everywhere. ZWJ/ZWNJ stay: emoji sequences and several scripts need them.
+    static func strippedUnsafeScalars(_ raw: String) -> String {
+        var out = String.UnicodeScalarView()
+        for scalar in raw.unicodeScalars {
+            if scalar == "\\" { out.append("_"); continue }
+            switch scalar.properties.generalCategory {
+            case .control:
+                continue
+            case .format where scalar.value != 0x200C && scalar.value != 0x200D:
+                continue
+            default:
+                out.append(scalar)
+            }
+        }
+        return String(out)
     }
 
     /// macOS `NAME_MAX` is 255 UTF-8 bytes; 240 leaves room for a ` (12)` suffix.

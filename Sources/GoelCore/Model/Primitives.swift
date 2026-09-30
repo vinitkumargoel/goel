@@ -43,19 +43,22 @@ public enum DownloadError: Error, Codable, Sendable, Equatable, Hashable {
     case timedOut
     case unknown(String)
 
+    /// Localised at read time: the case (not the text) is what's persisted, so a language
+    /// switch re-renders old failures too.
     public var message: String {
         switch self {
-        case .network(let m): return "Network error: \(m)"
-        case .httpStatus(let code): return "Server returned HTTP \(code)"
+        case .network(let m): return L10n.t("Network error: %@", m)
+        case .httpStatus(let code): return L10n.t("Server returned HTTP %ld", code)
         case .diskFull(let needed, let available):
-            return "Not enough disk space (need \(needed.byteString), have \(available.byteString))"
-        case .checksumMismatch: return "Checksum mismatch — the file did not match its published hash"
-        case .rangeNotSupported: return "Server does not support resuming (no range support)"
-        case .remoteFileChanged: return "The remote file changed since the download started"
-        case .fileMissing: return "The local file is missing"
-        case .canceled: return "Canceled"
-        case .timedOut: return "Connection timed out"
-        case .unknown(let m): return m.isEmpty ? "Unknown error" : m
+            return L10n.t("Not enough disk space (need %@, have %@)",
+                          needed.byteString, available.byteString)
+        case .checksumMismatch: return L10n.t("Checksum mismatch — the file did not match its published hash")
+        case .rangeNotSupported: return L10n.t("Server does not support resuming (no range support)")
+        case .remoteFileChanged: return L10n.t("The remote file changed since the download started")
+        case .fileMissing: return L10n.t("The local file is missing")
+        case .canceled: return L10n.t("Canceled")
+        case .timedOut: return L10n.t("Connection timed out")
+        case .unknown(let m): return m.isEmpty ? L10n.t("Unknown error") : m
         }
     }
 }
@@ -223,11 +226,14 @@ public enum DownloadSource: Codable, Sendable, Hashable {
            url.pathExtension.lowercased() == "torrent",
            let scheme = url.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {
-            return .torrentFile(url)
+            return .torrentFile(strippingUserInfo(url))
         }
         if let url = URL(string: trimmed),
            let scheme = url.scheme?.lowercased() {
             if scheme == "http" || scheme == "https" {
+                // `https://user:pass@host/…` would be stored, exported and served by the portal
+                // verbatim; ``parseWithCredentials(_:)`` hands the secret back as a header instead.
+                let url = strippingUserInfo(url)
                 if url.pathExtension.lowercased() == "m3u8" { return .hlsStream(url) }
                 return .url(url)
             }
@@ -254,22 +260,61 @@ public enum DownloadSource: Codable, Sendable, Hashable {
         }
         return nil
     }
+
+    /// Like ``parse(_:)``, but an http(s) URL's inline `user:pass@` comes back as a Basic
+    /// `Authorization` value so a caller that can attach per-task headers keeps the download working.
+    public static func parseWithCredentials(_ line: String)
+        -> (source: DownloadSource, authorization: String?)? {
+        guard let source = parse(line) else { return nil }
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let user = comps.user, !user.isEmpty else { return (source, nil) }
+        let pair = "\(user):\(comps.password ?? "")"
+        return (source, "Basic " + Data(pair.utf8).base64EncodedString())
+    }
+
+    static func strippingUserInfo(_ url: URL) -> URL {
+        guard url.user != nil || url.password != nil,
+              var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        comps.user = nil
+        comps.password = nil
+        return comps.url ?? url
+    }
+
+    /// Query keys whose value is a bearer secret (presigned S3/GCS/Azure links, API tokens).
+    static let secretQueryKeys: Set<String> = [
+        "x-amz-signature", "x-amz-credential", "x-amz-security-token",
+        "x-goog-signature", "x-goog-credential", "sig", "signature", "token",
+        "access_token", "auth", "apikey", "api_key", "key", "password",
+    ]
+
+    /// What leaves the process (portal API, SSE, exports): no userinfo, and no query at all
+    /// when any parameter is a signature/token — the rest of a presigned query identifies it too.
+    public var redactedLocator: String { Self.redacted(locator) }
+
+    public static func redacted(_ locator: String) -> String {
+        guard var comps = URLComponents(string: locator),
+              let scheme = comps.scheme?.lowercased(), scheme != "magnet" else { return locator }
+        comps.user = nil
+        comps.password = nil
+        if let items = comps.queryItems,
+           items.contains(where: { secretQueryKeys.contains($0.name.lowercased()) }) {
+            comps.query = nil
+        }
+        return comps.string ?? locator
+    }
 }
 
 public extension Int64 {
+    /// Localised and decimal like Finder, via ``GoelFormat``; "—" for an unknown/empty size.
     var byteString: String {
-        let bytes = Double(self)
-        guard bytes > 0 else { return "—" }
-        let units = ["B", "KB", "MB", "GB", "TB"]
-        let exp = Swift.min(Int(log(bytes) / log(1024)), units.count - 1)
-        let value = bytes / pow(1024, Double(exp))
-        return String(format: exp == 0 ? "%.0f %@" : "%.2f %@", value, units[exp])
+        guard self > 0 else { return "—" }
+        return GoelFormat.bytes(self)
     }
 }
 
 public extension Double {
-    var speedString: String {
-        guard self > 0 else { return "—" }
-        return Int64(self).byteString + "/s"
-    }
+    var speedString: String { GoelFormat.rate(self) }
 }

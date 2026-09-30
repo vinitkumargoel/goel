@@ -13,6 +13,11 @@ DROPIN_DIR="/etc/systemd/system/goel.service.d"
 SERVICE_USER="goel"
 CLI_LINK="/usr/local/bin/goel"
 
+# A checksum from the same release proves nothing against whoever can replace release assets; a
+# signature under a key that lives only here does. Empty until releases are signed — then paste the
+# `RWS…` public key. GOEL_MINISIGN_PUBKEY (env) overrides it and makes verification mandatory.
+EMBEDDED_MINISIGN_PUBKEY=""
+
 DEPENDENCY_ALTERNATIVES="
 libssh2-1t64|libssh2-1
 libcurl4t64|libcurl4
@@ -190,6 +195,8 @@ fetch_tarball() {
        If that version has no Linux build for $ARCH, check what is published at
        https://github.com/$REPO/releases"
 
+    verify_signature "$url"
+
     # Hard failure, not a warning: whoever can tamper with the tarball can equally make the .sha256 fetch fail.
     step "Verifying checksum"
     if curl -fsSL "${url}.sha256" -o "$TARBALL.sha256" 2>/dev/null; then
@@ -214,6 +221,39 @@ fetch_tarball() {
        To install anyway, knowing the risk:
            curl -fsSL https://goel.vinitk.dev/install.sh | sudo GOEL_INSECURE=1 sh"
     fi
+}
+
+# Optional until releases are signed: with no key configured, or no .minisig published, the
+# checksum below is still the gate. Once a signature exists, a mismatch is always fatal.
+verify_signature() {
+    sig_url="$1.minisig"
+    pubkey="${GOEL_MINISIGN_PUBKEY:-$EMBEDDED_MINISIGN_PUBKEY}"
+    [ -n "$pubkey" ] || return 0
+    step "Verifying signature"
+    if ! curl -fsSL "$sig_url" -o "$TARBALL.minisig" 2>/dev/null; then
+        if [ -n "${GOEL_MINISIGN_PUBKEY:-}" ]; then
+            die "GOEL_MINISIGN_PUBKEY is set but v${VERSION} publishes no signature
+       ($sig_url could not be fetched). Refusing: you asked for a signed install."
+        fi
+        warn "no .minisig published for v${VERSION}; falling back to the checksum."
+        return 0
+    fi
+    if ! command -v minisign >/dev/null 2>&1; then
+        if [ -n "${GOEL_MINISIGN_PUBKEY:-}" ]; then
+            die "GOEL_MINISIGN_PUBKEY is set but 'minisign' is not installed.
+       Install it (apt install minisign) and re-run."
+        fi
+        warn "a signature is published but 'minisign' is not installed; falling back to"
+        warn "the checksum. Install minisign for a stronger check."
+        return 0
+    fi
+    # -P takes the key inline, so nothing from the release decides which key is trusted.
+    if ! minisign -Vm "$TARBALL" -x "$TARBALL.minisig" -P "$pubkey" >/dev/null 2>&1; then
+        die "signature verification FAILED — refusing to install.
+       The tarball does not match the signature for the configured public key.
+       Delete nothing and report this: https://github.com/$REPO/issues"
+    fi
+    say "    ${G}ok${N} ${D}signed by the configured key${N}"
 }
 
 # tar does NOT confine members to `-C`: a member named ../../etc/cron.d/x lands there.

@@ -101,6 +101,12 @@ let watchAutoStart = envBool("GOEL_WATCH_AUTOSTART", false)
 func presentSetting(_ key: String) -> String? {
     ProcessInfo.processInfo.environment[key] ?? fileConfig[key]
 }
+// The portal reads these from the process environment; outside systemd (no EnvironmentFile) the
+// config file would otherwise be silently ignored for them.
+for key in ["GOEL_PORTAL_ALLOWED_HOSTS", "GOEL_PORTAL_PROXY_SECRET"]
+where ProcessInfo.processInfo.environment[key] == nil {
+    if let value = fileConfig[key], !value.isEmpty { setenv(key, value, 0) }
+}
 let aggregationEnv = presentSetting("GOEL_AGGREGATION")
 let aggregationAdaptersEnv = presentSetting("GOEL_AGGREGATION_ADAPTERS")
 let aggregationStreamsRaw = env("GOEL_AGGREGATION_STREAMS", "")
@@ -185,6 +191,10 @@ Task {
             stderrLine("GoelDaemon: WARNING — portal is on the LAN over plain HTTP; sign-in and token cross the network unencrypted. Use a trusted network or a TLS reverse proxy (e.g. nginx/caddy).")
         }
         stderrLine("GoelDaemon: save dir \(saveDir) · db \(dbPath)")
+        // DNS-rebinding guard: behind a proxy that forwards the public Host, name it or it gets 421.
+        if RemoteHostPolicy.allowedHostsFromEnvironment.isEmpty && settings.remoteTrustedProxies.isEmpty {
+            stderrLine("GoelDaemon: NOTE — the portal answers only to IP addresses, localhost, .local and bare host names. Behind a reverse proxy that passes its public Host through, set GOEL_PORTAL_ALLOWED_HOSTS=<name> (or list the proxy in remoteTrustedProxies).")
+        }
         // Never print the bearer token to stderr: it lands in the systemd journal and container log drivers.
         if tokenEnv.isEmpty {
             let tokenFile = (dbDir as NSString).appendingPathComponent("portal-token")

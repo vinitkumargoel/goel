@@ -50,7 +50,7 @@ final class PortalRemediationTests: XCTestCase {
     }
 
     private func addRequest(_ body: String, headers: String = "") -> RemoteRequest {
-        request("POST /api/add?token=secret HTTP/1.1\r\nContent-Type: application/json\r\n"
+        request("POST /api/add HTTP/1.1\r\nAuthorization: Bearer secret\r\nContent-Type: application/json\r\n"
                 + headers + "\r\n" + body)
     }
 
@@ -74,9 +74,16 @@ final class PortalRemediationTests: XCTestCase {
     }
 
     func testAddStillAcceptsPublicLANAndMagnetSources() async throws {
+        // SEC-4: a private LAN literal is no longer a remote-add target — a token holder must not
+        // pivot into the router or NAS. The GUI still adds LAN URLs; this is the remote API only.
+        let lanBackend = FakeRemoteBackend()
+        let lan = str(await RemoteRouter(backend: lanBackend, token: "secret")
+            .handle(addRequest(#"{"url":"http://192.168.1.10/x.iso"}"#)))
+        XCTAssertTrue(lan.hasPrefix("HTTP/1.1 403"), lan)
+        XCTAssertTrue(lanBackend.added.isEmpty)
+
         let allowed = [
             "https://e/x.bin",
-            "http://192.168.1.10/x.iso",
             "sftp://nas/x.zip",
             "magnet:?xt=urn:btih:0000000000000000000000000000000000000000",
         ]
@@ -174,7 +181,7 @@ final class PortalRemediationTests: XCTestCase {
     func testOriginlessPOSTIsAllowed() async {
         let backend = FakeRemoteBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
-        let out = str(await router.handle(request("POST /api/pause-all?token=secret HTTP/1.1\r\n\r\n")))
+        let out = str(await router.handle(request("POST /api/pause-all HTTP/1.1\r\nAuthorization: Bearer secret\r\n\r\n")))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
         XCTAssertTrue(backend.pausedAll)
     }
@@ -396,7 +403,7 @@ final class PortalShellRemediationTests: XCTestCase {
 
     private func waitUntilServing(port: UInt16) async throws {
         for _ in 0..<50 {
-            if let head = await send("GET /api/config?token=t HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+            if let head = await send("GET /api/config HTTP/1.1\r\nAuthorization: Bearer t\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
                                      port: port), head.contains("HTTP/1.1") {
                 return
             }

@@ -26,10 +26,10 @@ public actor RemoteControlServer {
         self.manager = manager
     }
 
-    /// Capped so idle clients can't exhaust descriptors; the identifier set makes teardown exactly-once, since a double decrement erodes the cap.
-    private var openConnections = 0
-    private var liveConnections = Set<ObjectIdentifier>()
-    private static let maxConnections = 32
+    /// Capped overall and per peer so idle clients can't exhaust descriptors; the identifier map makes teardown exactly-once, since a double release erodes the cap.
+    private let gate = RemoteConnectionGate()
+    private var liveConnections: [ObjectIdentifier: String] = [:]
+    /// Absolute deadline for the whole request, not an idle timer: trickling a byte a second must not keep a slot.
     private static let receiveTimeout: UInt64 = 10 * 1_000_000_000
     /// Ceiling on one request (headers + body) so a client can't grow the accumulation buffer without bound.
     private static let maxRequestBytes = 2 * 1024 * 1024
@@ -44,6 +44,8 @@ public actor RemoteControlServer {
     public typealias StartFailure = RemotePortalStartFailure
 
     private var startFailure: StartFailure?
+
+    private let frameCache = RemoteEventFrameCache()
 
     private var router: RemoteRouter { RemoteRouter(backend: manager, config: routerConfig) }
 
@@ -113,14 +115,13 @@ public actor RemoteControlServer {
             parameters.requiredLocalEndpoint = NWEndpoint.hostPort(
                 host: .ipv4(.loopback), port: listenPort)
         }
-        let newListener: NWListener?
-        if exposeLAN {
-            newListener = try? NWListener(using: parameters, on: listenPort)
-        } else {
-            newListener = try? NWListener(using: parameters)
-        }
-        guard let newListener else {
-            GoelLog.remote.error("Remote server failed to bind", .count(Int(port), label: "port"))
+        let newListener: NWListener
+        do {
+            newListener = exposeLAN ? try NWListener(using: parameters, on: listenPort)
+                                    : try NWListener(using: parameters)
+        } catch {
+            GoelLog.remote.error("Remote server failed to bind", .count(Int(port), label: "port"),
+                                 .detail(String(describing: error)))
             startFailure = .bindFailed(port: port)
             return
         }
@@ -128,12 +129,19 @@ public actor RemoteControlServer {
             newListener.service = NWListener.Service(name: "GoelDownloader", type: "_http._tcp")
         }
         let portForLog = listenPort.rawValue
-        newListener.stateUpdateHandler = { state in
+        let startup = ListenerStartup()
+        let listenerID = ObjectIdentifier(newListener)
+        newListener.stateUpdateHandler = { [weak self] state in
             switch state {
+            case .ready:
+                startup.resolve(true)
             case .failed(let error):
+                // EADDRINUSE arrives here, asynchronously — after this start() already looked successful.
                 GoelLog.remote.error("Remote server listener failed",
                                      .count(Int(portForLog), label: "port"),
                                      .detail(String(describing: error)))
+                startup.resolve(false)
+                Task { await self?.listenerDied(listenerID, port: port) }
             case .waiting(let error):
                 GoelLog.remote.notice("Remote server waiting",
                                       .count(Int(portForLog), label: "port"),
@@ -152,6 +160,24 @@ public actor RemoteControlServer {
         self.boundExposeLAN = exposeLAN
         self.boundTLS = tlsKey
         self.startFailure = nil
+        // Wait for the verdict so a bind failure is this call's result, not a later surprise; a
+        // listener still `.waiting` after the grace period (no network yet) stays up.
+        if await startup.wait(timeout: 2) == false {
+            listenerDied(listenerID, port: port)
+        }
+    }
+
+    /// Clears the bound state so `boundState()` stops lying and the next apply rebinds.
+    private func listenerDied(_ id: ObjectIdentifier, port: UInt16) {
+        guard let current = listener, ObjectIdentifier(current) == id else { return }
+        current.stateUpdateHandler = nil
+        current.cancel()
+        listener = nil
+        boundPort = nil
+        boundExposeLAN = nil
+        boundTLS = nil
+        generation += 1
+        startFailure = .bindFailed(port: port)
     }
 
     private static func tlsParameters(identityPath: String) -> NWParameters? {
@@ -220,12 +246,12 @@ public actor RemoteControlServer {
 
     /// Arms an idle timeout so a client that connects and sends nothing can't hold a slot open forever.
     private func accept(_ connection: NWConnection) {
-        guard openConnections < Self.maxConnections else {
+        let client = Self.clientAddress(connection)
+        guard gate.tryAcquire(client: client) else {
             connection.cancel()
             return
         }
-        openConnections += 1
-        liveConnections.insert(ObjectIdentifier(connection))
+        liveConnections[ObjectIdentifier(connection)] = client
         let timeout = Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.receiveTimeout)
             if !Task.isCancelled {
@@ -234,8 +260,7 @@ public actor RemoteControlServer {
             }
         }
         connection.start(queue: DispatchQueue(label: "goel.remote-conn"))
-        readRequest(connection, buffer: Data(), timeout: timeout,
-                    client: Self.clientAddress(connection))
+        readRequest(connection, buffer: Data(), timeout: timeout, client: client)
     }
 
     /// The socket's own peer IP — the only address auth trusts, since unlike `X-Forwarded-For` a client can't choose it.
@@ -262,7 +287,8 @@ public actor RemoteControlServer {
                 connection.cancel()
                 Task { await self.connectionClosed(connection) }
             }
-            if error != nil || buffer.count > Self.maxRequestBytes { return abort() }
+            if error != nil || buffer.count > Self.maxRequestBytes
+                || RemoteRequest.headerTooLarge(buffer) { return abort() }
             guard let bodyStart = RemoteRequest.headerEnd(buffer) else {
                 if isComplete { return abort() }
                 return self.readRequest(connection, buffer: buffer, timeout: timeout, client: client)
@@ -279,6 +305,14 @@ public actor RemoteControlServer {
     }
 
     private func serve(_ connection: NWConnection, _ request: RemoteRequest, client: String) async {
+        // Every route, streams included: a rebound name must not reach even the login page.
+        guard RemoteHostPolicy.allows(hostHeader: request.headers["host"], client: client,
+                                      security: security) else {
+            _ = await send(connection, RemoteAuthService.misdirected())
+            connection.cancel()
+            await connectionClosed(connection)
+            return
+        }
         switch (request.method, request.path) {
         case ("GET", "/api/events"):
             await serveEvents(connection, request, client: client)
@@ -326,13 +360,13 @@ public actor RemoteControlServer {
         head += "X-Content-Type-Options: nosniff\r\n"
         head += "Connection: keep-alive\r\n\r\n"
         if await send(connection, Data(head.utf8)) {
+            var pacer = RemoteEventPacer()
             while generation == myGeneration, let manager {
-                guard let frame = router.eventFrame(for: await manager.taskSnapshot()) else {
-                    // Skip the tick rather than pushing an empty list, which would blank a still-running queue.
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    continue
+                // A nil frame (unencodable) is skipped rather than pushed as an empty list, which would blank a live queue.
+                let frame = frameCache.frame(for: await manager.taskSnapshot())
+                if let payload = RemoteEventPacer.payload(pacer.next(frame)) {
+                    guard await send(connection, payload) else { break }
                 }
-                guard await send(connection, frame) else { break }
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
             }
         }
@@ -341,8 +375,8 @@ public actor RemoteControlServer {
     }
 
     private func connectionClosed(_ connection: NWConnection) {
-        guard liveConnections.remove(ObjectIdentifier(connection)) != nil else { return }
-        openConnections = max(0, openConnections - 1)
+        guard let client = liveConnections.removeValue(forKey: ObjectIdentifier(connection)) else { return }
+        gate.release(client: client)
     }
 
     private func respond(to request: RemoteRequest, client: String) async -> Data {
@@ -372,7 +406,7 @@ public actor RemoteControlServer {
                     : RemoteRouter.response(status: "401 Unauthorized", type: "text/plain",
                                             body: Data("Not signed in\n".utf8))
             }
-            return await handleLogout(request)
+            return await handleLogout(request, client: client)
         default:
             if RemoteAuthService.shouldPromoteTokenToSession(
                 request, requireAuth: cfg.requireAuth,
@@ -380,7 +414,8 @@ public actor RemoteControlServer {
                 return RemoteRouter.response(
                     status: "200 OK", type: "text/html; charset=utf-8",
                     body: Data(RemoteRouter.page(config: cfg).utf8),
-                    extraHeaders: ["Set-Cookie": await sessionStore.issueSession()])
+                    extraHeaders: ["Set-Cookie": await sessionStore.issueSession(
+                        secure: secureCookie(request, client: client))])
             }
             if cfg.requireAuth, !authed, !tokenAuthed(request),
                request.method == "GET", !request.path.hasPrefix("/api") {
@@ -405,12 +440,18 @@ public actor RemoteControlServer {
         RemoteAuthService.tokenAuthed(request, token: routerConfig.token)
     }
 
-    private func handleLogin(_ request: RemoteRequest, client: String) async -> Data {
-        await sessionStore.handleLogin(request, client: client)
+    private func secureCookie(_ request: RemoteRequest, client: String) -> Bool {
+        RemoteAuthService.wantsSecureCookie(request, client: client, security: security)
     }
 
-    private func handleLogout(_ request: RemoteRequest) async -> Data {
-        let result = await sessionStore.handleLogout(request)
+    private func handleLogin(_ request: RemoteRequest, client: String) async -> Data {
+        await sessionStore.handleLogin(request, client: client,
+                                       secureCookie: secureCookie(request, client: client))
+    }
+
+    private func handleLogout(_ request: RemoteRequest, client: String) async -> Data {
+        let result = await sessionStore.handleLogout(
+            request, secureCookie: secureCookie(request, client: client))
         // Only a real sign-out needs the bump; bumping for a logout that dropped nothing turns a stray request into dead streams.
         if result.droppedSession { generation += 1 }
         return result.response
@@ -497,7 +538,8 @@ public actor RemoteControlServer {
         var cursor = start
         while cursor <= end, generation == myGeneration {
             let want = Int(min(Int64(512 * 1024), end - cursor + 1))
-            guard let chunk = try? handle.read(upToCount: want), !chunk.isEmpty else { break }
+            guard let chunk = RemoteStreamService.readChunk(handle, upTo: want, path: plan.path,
+                                                            offset: cursor) else { break }
             guard await send(connection, chunk) else { break }
             cursor += Int64(chunk.count)
         }
@@ -520,6 +562,38 @@ public actor RemoteControlServer {
 
     static func constantTimeEquals(_ a: String, _ b: String) -> Bool {
         RemoteRouter.constantTimeEquals(a, b)
+    }
+}
+
+/// First of `.ready` / `.failed` wins; a timeout answers nil. Resuming twice traps, hence the lock.
+private final class ListenerStartup: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Bool?
+    private var waiter: CheckedContinuation<Bool?, Never>?
+
+    func resolve(_ ok: Bool) {
+        lock.lock()
+        if result == nil { result = ok }
+        let pending = waiter
+        waiter = nil
+        lock.unlock()
+        pending?.resume(returning: ok)
+    }
+
+    func wait(timeout: TimeInterval) async -> Bool? {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool?, Never>) in
+            lock.lock()
+            if let result { lock.unlock(); cont.resume(returning: result); return }
+            waiter = cont
+            lock.unlock()
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [self] in
+                lock.lock()
+                let pending = waiter
+                waiter = nil
+                lock.unlock()
+                pending?.resume(returning: nil)
+            }
+        }
     }
 }
 
