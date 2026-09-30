@@ -75,16 +75,6 @@ extension HTTPEngine {
     }
 
     static func trashOrRemove(_ url: URL) throws {
-        let fm = FileManager.default
-        #if os(macOS)
-        do {
-            try RemoteTransferPrep.trashItem(url)   // one seam, so tests never touch ~/.Trash
-            return
-        } catch {
-            // Volumes without a Trash (network shares, some externals) still have to honour "delete".
-            guard fm.fileExists(atPath: url.path) else { return }
-        }
-        #endif
-        try fm.removeItem(at: url)
+        try RemoteTransferPrep.trashOrDelete(url)   // one seam, so tests never touch ~/.Trash
     }
 }

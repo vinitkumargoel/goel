@@ -143,16 +143,27 @@ enum RemoteTransferPrep {
     }
     #endif
 
-    /// The Trash keeps a mis-click recoverable; a volume without one (or Linux) falls back to unlinking.
-    static func trashOrDelete(_ url: URL) throws {
+    /// What "delete file" actually did, so the UI never claims "Moved to the Trash" for an unlink.
+    public enum TrashOutcome: Sendable, Equatable {
+        case trashed
+        case deleted
+    }
+
+    /// The Trash keeps a mis-click recoverable. Only a volume without one (network shares, some
+    /// externals) — or Linux — falls back to unlinking; any other refusal (permissions, TCC) is thrown,
+    /// never silently upgraded to a permanent delete.
+    @discardableResult
+    public static func trashOrDelete(_ url: URL) throws -> TrashOutcome {
         #if os(macOS)
         do {
             try trashItem(url)
-            return
-        } catch where FileManager.default.fileExists(atPath: url.path) {
+            return .trashed
+        } catch let error as CocoaError where error.code == .featureUnsupported
+                    && FileManager.default.fileExists(atPath: url.path) {
             // No Trash on this volume: delete below.
         }
         #endif
         try FileManager.default.removeItem(at: url)
+        return .deleted
     }
 }
