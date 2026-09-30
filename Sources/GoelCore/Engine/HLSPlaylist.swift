@@ -107,8 +107,9 @@ enum HLSParser {
             } else if line.hasPrefix("#EXT-X-KEY:") {
                 let attrs = attributes(after: "#EXT-X-KEY:", in: line)
                 // A malformed IV must not fall back to the sequence IV: every segment's first block would decrypt wrong.
-                if HLSKey.Method(playlistValue: attrs["METHOD"] ?? "NONE") != .none,
-                   let raw = attrs["IV"], hexToData(raw)?.count != 16 {
+                // AES-128 only: a SAMPLE-AES/DRM line is refused later with the real reason, not "bad playlist".
+                if HLSKey.Method(playlistValue: attrs["METHOD"] ?? "NONE") == .aes128,
+                   let raw = attrs["IV"], ivData(raw) == nil {
                     return nil
                 }
                 currentKey = parseKey(attrs, baseURL: baseURL)
@@ -189,9 +190,18 @@ enum HLSParser {
     }
 
     /// One file has one init header: a stream that switches maps (typically at a discontinuity) can't be
-    /// concatenated without decoding part of it against the wrong one.
+    /// concatenated without decoding part of it against the wrong one. Identity is the header's bytes —
+    /// (url, byteRange) — not its key: a key rotation re-states the same map. Segments with no map mixed
+    /// with mapped ones are a switch too (TS and fMP4 in one file).
     static func usesSingleInitMap(_ segments: [HLSSegment]) -> Bool {
-        Set(segments.compactMap(\.initMap)).count <= 1
+        let identities = segments.map { $0.initMap.map { InitMapIdentity(url: $0.url, byteRange: $0.byteRange) } }
+        guard let first = identities.first else { return true }
+        return identities.allSatisfy { $0 == first }
+    }
+
+    private struct InitMapIdentity: Equatable {
+        var url: URL
+        var byteRange: HLSByteRange?
     }
 
     static func selectVariant(_ variants: [HLSVariant], maxHeight: Int? = nil) -> HLSVariant? {
@@ -272,8 +282,19 @@ enum HLSParser {
         let method = HLSKey.Method(playlistValue: attrs["METHOD"] ?? "NONE")
         if method == .none { return nil }
         let url = attrs["URI"].flatMap { resolve($0, baseURL) }
-        let iv = attrs["IV"].flatMap(hexToData)
+        let iv = attrs["IV"].flatMap(ivData)
         return HLSKey(method: method, url: url, iv: iv)
+    }
+
+    /// The IV is a 128-bit hex INTEGER (RFC 8216 §4.3.2.4): packagers drop leading zeros, so a short one is
+    /// left-padded, never refused. Longer than 16 bytes or non-hex is malformed.
+    static func ivData(_ raw: String) -> Data? {
+        var hex = raw.trimmingCharacters(in: .whitespaces)
+        if hex.hasPrefix("0x") || hex.hasPrefix("0X") { hex = String(hex.dropFirst(2)) }
+        guard !hex.isEmpty else { return nil }
+        if hex.count % 2 == 1 { hex = "0" + hex }
+        guard let bytes = hexToData(hex), bytes.count <= 16 else { return nil }
+        return Data(repeating: 0, count: 16 - bytes.count) + bytes
     }
 
     /// Playlists are untrusted: an absolute `file:`/loopback/`169.254.169.254` URI must stay refused (SSRF).

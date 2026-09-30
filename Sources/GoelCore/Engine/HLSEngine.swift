@@ -130,24 +130,56 @@ actor HLSEngine: HLSConfigurable {
             return
         }
         emit(id, .statusChanged(.downloading))
+        tasks[id]?.status = .downloading
+        // One per job: every host a playlist names is resolved and screened once, then remembered.
+        let screen = SubresourceScreen(parent: playlistURL, check: subresourceCheck)
         do {
             try Task.checkCancellation()
-            let plan = try await resolveMediaPlaylist(playlistURL, maxHeight: maxHeight, task: task)
+            let plan = try await resolveMediaPlaylist(playlistURL, maxHeight: maxHeight, task: task, screen: screen)
             let limiter = RateLimiter(bytesPerSecond: taskCap, next: downloadPacer)
-            try await produce(id: id, task: task, plan: plan, concurrency: concurrency, limiter: limiter)
+            try await produce(id: id, task: task, plan: plan, concurrency: concurrency, limiter: limiter,
+                              screen: screen)
+            // Only a finished file is the user's to Trash on removal; anything short of it is scratch.
+            if jobTokens[id] == token { tasks[id]?.status = .completed }
             clearJob(id, token: token)
         } catch is CancellationError {
             // pause()/remove() cancelled the job; the manager owns the state.
         } catch {
             if Task.isCancelled { return }
-            let de = DownloadError(mapping: error)
-            hub.fail(id, de)
+            hub.fail(id, Self.failure(for: error, savePath: task.savePath))
             clearJob(id, token: token)
         }
     }
 
-    private func resolveMediaPlaylist(_ url: URL, maxHeight: Int, task: DownloadTask) async throws -> MediaPlan {
-        let text = try await fetchText(url, task: task)
+    /// A full disk must read as one — as ENOSPC, Cocoa's out-of-space, AVFoundation's or ffmpeg's text —
+    /// or the auto-retry keeps hammering a volume with no room.
+    static func failure(for error: Error, savePath: String) -> DownloadError {
+        if isDiskFull(error) {
+            return SegmentedTransfer.diskFull(at: URL(fileURLWithPath: savePath), needed: 0)
+        }
+        return DownloadError(mapping: error)
+    }
+
+    static func isDiskFull(_ error: Error) -> Bool {
+        if RemoteTransferPrep.isDiskFull(error) { return true }
+        if let de = error as? DownloadError, case .diskFull = de { return true }
+        #if canImport(AVFoundation)
+        if (error as NSError).domain == AVFoundationErrorDomain,
+           (error as NSError).code == AVError.Code.diskFull.rawValue { return true }
+        #endif
+        return (error as? DownloadError)?.message.localizedCaseInsensitiveContains("No space left on device") == true
+    }
+
+    /// Seam: the resolving screen hits DNS; tests swap in a verdict.
+    var subresourceCheck: SubresourceScreen.Check = { url, parent in
+        await NetworkGuard.isAllowedRedirectResolvingNames(url, from: parent)
+    }
+
+    func setSubresourceCheck(_ check: @escaping SubresourceScreen.Check) { subresourceCheck = check }
+
+    private func resolveMediaPlaylist(_ url: URL, maxHeight: Int, task: DownloadTask,
+                                      screen: SubresourceScreen) async throws -> MediaPlan {
+        let text = try await fetchText(url, task: task, screen: screen)
         switch HLSParser.parse(text, baseURL: url) {
         case .master(let variants):
             guard let variant = HLSParser.selectVariant(variants, maxHeight: maxHeight > 0 ? maxHeight : nil) else {
@@ -157,7 +189,7 @@ actor HLSEngine: HLSConfigurable {
             if variant.hasSeparateAudio, !HLSParser.declaresAudioCodec(variant.codecs) {
                 throw DownloadError.unknown("This stream delivers its audio as a separate track that this downloader can’t mux in — the result would be a silent video.")
             }
-            let mediaText = try await fetchText(variant.url, task: task)
+            let mediaText = try await fetchText(variant.url, task: task, screen: screen)
             guard HLSParser.isFinished(mediaText) else { throw Self.liveStreamRefusal }
             guard case .media(let segs, let initMap, _, let total) =
                     HLSParser.parse(mediaText, baseURL: variant.url) else {
@@ -176,7 +208,8 @@ actor HLSEngine: HLSConfigurable {
     }
 
     private nonisolated func produce(id: UUID, task: DownloadTask, plan: MediaPlan,
-                                      concurrency: Int, limiter: RateLimiter?) async throws {
+                                      concurrency: Int, limiter: RateLimiter?,
+                                      screen: SubresourceScreen) async throws {
         let segments = plan.segments
         guard !segments.isEmpty else { throw DownloadError.unknown("HLS playlist had no segments") }
         guard HLSParser.usesSingleInitMap(segments) else { throw Self.multipleInitMapsRefusal }
@@ -194,8 +227,10 @@ actor HLSEngine: HLSConfigurable {
 
         let keyCache = KeyCache()
         let progress = ProgressTracker(hub: hub, id: id, connections: concurrency)
+        // The map in force for the first segment: a later re-statement after a key rotation carries a newer key.
+        let initMap = segments.first?.initMap ?? plan.initMap
 
-        if let initMap = plan.initMap {
+        if let initMap {
             try Task.checkCancellation()
             let initFile = workDir.appendingPathComponent("init.mp4")
             if Self.fileSize(initFile) == nil {
@@ -203,7 +238,7 @@ actor HLSEngine: HLSConfigurable {
                 let data = try await fetchSegment(HLSSegment(url: initMap.url, duration: 0, sequence: 0,
                                                              key: initMap.key,
                                                              byteRange: initMap.byteRange),
-                                                  task: task, keyCache: keyCache,
+                                                  task: task, keyCache: keyCache, screen: screen,
                                                   requiresExplicitIV: true)
                 try data.write(to: initFile)
                 if let limiter { await limiter.pace(data.count) }
@@ -217,14 +252,14 @@ actor HLSEngine: HLSConfigurable {
                 let i = started; started += 1
                 group.addTask { try await self.downloadSegment(index: i, segment: segments[i],
                                                                task: task, workDir: workDir, keyCache: keyCache,
-                                                               progress: progress, limiter: limiter) }
+                                                               screen: screen, progress: progress, limiter: limiter) }
             }
             while started < segments.count {
                 try await group.next()
                 let i = started; started += 1
                 group.addTask { try await self.downloadSegment(index: i, segment: segments[i],
                                                                task: task, workDir: workDir, keyCache: keyCache,
-                                                               progress: progress, limiter: limiter) }
+                                                               screen: screen, progress: progress, limiter: limiter) }
             }
             try await group.waitForAll()
         }
@@ -232,7 +267,7 @@ actor HLSEngine: HLSConfigurable {
         try Task.checkCancellation()
 
         var parts: [URL] = []
-        if plan.initMap != nil { parts.append(workDir.appendingPathComponent("init.mp4")) }
+        if initMap != nil { parts.append(workDir.appendingPathComponent("init.mp4")) }
         for i in 0..<segments.count {
             parts.append(workDir.appendingPathComponent(Self.segmentName(i)))
         }
@@ -242,7 +277,7 @@ actor HLSEngine: HLSConfigurable {
         if FileManager.default.fileExists(atPath: destURL.path) {
             try FileManager.default.removeItem(at: destURL)
         }
-        if plan.initMap != nil {
+        if initMap != nil {
             try Self.concatenate(parts, to: destURL)
         } else {
             let tsURL = workDir.appendingPathComponent("combined.ts")
@@ -275,7 +310,8 @@ actor HLSEngine: HLSConfigurable {
 
     private nonisolated func downloadSegment(index: Int, segment: HLSSegment, task: DownloadTask,
                                              workDir: URL,
-                                             keyCache: KeyCache, progress: ProgressTracker,
+                                             keyCache: KeyCache, screen: SubresourceScreen,
+                                             progress: ProgressTracker,
                                              limiter: RateLimiter?) async throws {
         try Task.checkCancellation()
         let dest = workDir.appendingPathComponent(Self.segmentName(index))
@@ -283,7 +319,7 @@ actor HLSEngine: HLSConfigurable {
             await progress.add(existing)
             return
         }
-        let data = try await fetchSegment(segment, task: task, keyCache: keyCache)
+        let data = try await fetchSegment(segment, task: task, keyCache: keyCache, screen: screen)
         // Write to a .part then rename so an interrupted write never looks complete.
         let tmp = dest.appendingPathExtension("part")
         try? FileManager.default.removeItem(at: tmp)
@@ -296,9 +332,9 @@ actor HLSEngine: HLSConfigurable {
 
     /// `requiresExplicitIV`: the fMP4 init map has no sequence number to derive an IV from (RFC 8216 §4.3.2.5).
     private nonisolated func fetchSegment(_ segment: HLSSegment, task: DownloadTask,
-                                          keyCache: KeyCache,
+                                          keyCache: KeyCache, screen: SubresourceScreen,
                                           requiresExplicitIV: Bool = false) async throws -> Data {
-        let raw = try await fetchData(segment.url, task: task, range: segment.byteRange)
+        let raw = try await fetchData(segment.url, task: task, range: segment.byteRange, screen: screen)
         guard let key = segment.key else { return raw }
         switch key.method {
         case .none:
@@ -307,7 +343,9 @@ actor HLSEngine: HLSConfigurable {
             throw DownloadError.unknown("This stream uses \(method) encryption, which this downloader can’t decrypt")
         case .aes128:
             guard let keyURL = key.url else { throw DownloadError.unknown("HLS AES key has no URI") }
-            let keyData = try await keyCache.key(for: keyURL) { try await self.fetchData($0, task: task) }
+            let keyData = try await keyCache.key(for: keyURL) {
+                try await self.fetchData($0, task: task, screen: screen)
+            }
             let iv: Data
             if let explicit = key.iv {
                 iv = explicit
@@ -348,8 +386,10 @@ actor HLSEngine: HLSConfigurable {
         return request
     }
 
-    private nonisolated func fetchData(_ url: URL, task: DownloadTask,
-                                       range: HLSByteRange? = nil) async throws -> Data {
+    private nonisolated func fetchData(_ url: URL, task: DownloadTask, range: HLSByteRange? = nil,
+                                       screen: SubresourceScreen) async throws -> Data {
+        // The parser only screened the spelling; `127.0.0.1.nip.io` spells nothing internal.
+        guard await screen.allows(url) else { throw Self.internalSubresourceRefusal }
         let request = makeRequest(url, task: task, range: range)
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse {
@@ -364,8 +404,9 @@ actor HLSEngine: HLSConfigurable {
         return data
     }
 
-    private nonisolated func fetchText(_ url: URL, task: DownloadTask) async throws -> String {
-        let data = try await fetchData(url, task: task)
+    private nonisolated func fetchText(_ url: URL, task: DownloadTask,
+                                       screen: SubresourceScreen) async throws -> String {
+        let data = try await fetchData(url, task: task, screen: screen)
         // Past a few MB this is an error page or a hostile body, and decoding it to `String` doubles the cost.
         guard data.count <= Self.maxPlaylistBytes else {
             throw DownloadError.unknown("The HLS playlist is implausibly large (\(Int64(data.count).byteString)) — refusing to parse it")
@@ -381,6 +422,9 @@ actor HLSEngine: HLSConfigurable {
 
     static let multipleInitMapsRefusal = DownloadError.unknown(
         "This stream switches its fMP4 header part-way through (often at an ad break), so its pieces can’t be joined into one playable file.")
+
+    static let internalSubresourceRefusal = DownloadError.unknown(
+        "This stream points part of itself at an internal network address, which Goel° refuses to fetch.")
 
     static let liveStreamRefusal = DownloadError.unknown(
         "This is a live HLS stream (no #EXT-X-ENDLIST). Only finished (VOD) streams can be downloaded — the file would stop at whatever part had been published.")
@@ -606,6 +650,33 @@ actor HLSEngine: HLSConfigurable {
             hub.emit(id, .progress(bytesDownloaded: progress.bytes, bytesUploaded: 0,
                                    downloadSpeed: progress.speed, uploadSpeed: 0, connectionCount: connections))
         }
+    }
+}
+
+/// Resolving SSRF screen for a playlist's sub-resources, one verdict per scheme+host per job: a VOD
+/// names hundreds of segments on a handful of hosts, and each lookup blocks a thread.
+actor SubresourceScreen {
+    typealias Check = @Sendable (_ url: URL, _ parent: URL) async -> Bool
+
+    private let parent: URL
+    private let check: Check
+    private var verdicts: [String: Bool] = [:]
+
+    init(parent: URL, check: @escaping Check) {
+        self.parent = parent
+        self.check = check
+    }
+
+    func allows(_ url: URL) async -> Bool {
+        let key = "\(url.scheme?.lowercased() ?? "")://\(url.host?.lowercased() ?? "")"
+        if let known = verdicts[key] { return known }
+        let verdict = await check(url, parent)
+        if !verdict {
+            GoelLog.engineHLS.error("Refusing an HLS sub-resource that resolves to an internal address",
+                                    .state(url.scheme ?? "", label: "scheme"))
+        }
+        verdicts[key] = verdict
+        return verdict
     }
 }
 
