@@ -134,9 +134,14 @@ public struct RemoteRouter: Sendable {
                 }
                 network = parsed
             }
-            let sources = payload.url
-                .split(whereSeparator: \.isNewline)
-                .compactMap { DownloadSource.parse(String($0).trimmingCharacters(in: .whitespaces)) }
+            let lines = payload.url.split(whereSeparator: \.isNewline)
+                .map { String($0).trimmingCharacters(in: .whitespaces) }
+            // The parser strips `user:pass@`, so accepting it would queue a download that 401s. Nothing
+            // here can reach the saved-logins store, and a token holder should not write to it anyway.
+            if lines.contains(where: { DownloadSource.parseWithCredentials($0)?.authorization != nil }) {
+                return Self.badRequest(Self.inlineCredentialsRefusal)
+            }
+            let sources = lines.compactMap { DownloadSource.parse($0) }
             guard !sources.isEmpty else { return Self.badRequest() }
             // SSRF guard, by resolved address not spelling: no steering this host at loopback/metadata/LAN.
             let screened = await NetworkGuard.screen(
@@ -201,6 +206,9 @@ public struct RemoteRouter: Sendable {
             return Self.response(status: "404 Not Found", type: "text/plain", body: Data("Not found\n".utf8))
         }
     }
+
+    static let inlineCredentialsRefusal =
+        "Put the login in Goel°'s saved logins; inline user:password in links isn't accepted over the API."
 
     static let assetPrefix = "/assets/"
 
