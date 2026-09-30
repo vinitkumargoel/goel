@@ -42,6 +42,7 @@ export interface KeyLike {
   ctrlKey?: boolean
   altKey?: boolean
   defaultPrevented?: boolean
+  repeat?: boolean
   target: EventTarget | null
 }
 
@@ -81,7 +82,8 @@ export function resolveShortcut(e: KeyLike): ShortcutId | null {
     case 'K':
       return 'prev'
   }
-  if (!ownsActivationKeys(target)) return null
+  // Held keys auto-repeat: harmless for J/K, but Space would flip pause/resume and Delete re-ask.
+  if (!ownsActivationKeys(target) || e.repeat) return null
   switch (e.key) {
     case ' ':
       return 'toggle'

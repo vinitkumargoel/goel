@@ -66,6 +66,11 @@ export async function submitAdd(job: AddJob): Promise<AddSummary> {
 
   if (errors.length > 0 && summary.added === 0 && summary.refused === 0) throw errors[0]
 
+  if (summary.added === 0 && summary.refused === 0 && summary.failures.length === 0 && errors.length === 0) {
+    // e.g. an all-refused 400 envelope without per-file errors: never close silently.
+    summary.failures.push({ file: '', error: failureMessage(null) ?? '' })
+  }
+
   for (const e of errors) {
     // Null: a 403 or 401 the api layer already reported.
     const message = failureMessage(e)

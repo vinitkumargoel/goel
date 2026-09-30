@@ -29,12 +29,12 @@ export function useGlobalKeys(handlers: GlobalKeys) {
         onEscape()
         return
       }
+      if (!enabled) return
       // In a field ⌘/Ctrl+A still selects text; only an unfocused page selects the list.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a' && document.activeElement === document.body) {
         if (onSelectAll()) e.preventDefault()
         return
       }
-      if (!enabled) return
       const id = resolveShortcut(e)
       if (id && onShortcut(id)) e.preventDefault()
     }

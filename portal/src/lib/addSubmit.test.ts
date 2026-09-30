@@ -58,6 +58,13 @@ describe('submitAdd', () => {
     expect(out.failures[0]?.file).toBe('')
   })
 
+  it('explains an upload that queued nothing and named no file', async () => {
+    api.addTorrents.mockResolvedValue({ added: 0 })
+    const out = await submitAdd({ text: '', validLinks: 0, files: [torrent], options })
+    expect(out.failures).toHaveLength(1)
+    expect(out.failures[0]?.error).not.toBe('')
+  })
+
   it('rejects when nothing was queued at all', async () => {
     api.add.mockRejectedValue(new Error('down'))
     await expect(submitAdd({ text: 'https://a/x', validLinks: 1, files: [], options })).rejects.toThrow('down')

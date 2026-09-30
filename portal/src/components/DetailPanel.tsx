@@ -46,6 +46,8 @@ interface DetailPanelProps {
   onCyclePriority: (fileId: number, current: FilePriority) => void
   /** The shown download's last minute of rates, for the Progress tab's chart. */
   samples?: readonly SpeedSample[]
+  /** False while a dialog is stacked over the phone sheet: that dialog then owns Tab and Escape. */
+  trapFocus?: boolean
 }
 
 export function DetailPanel({
@@ -62,6 +64,7 @@ export function DetailPanel({
   onToggleFile,
   onCyclePriority,
   samples,
+  trapFocus = true,
 }: DetailPanelProps) {
   const { t } = useTranslation()
   const ref = useRef<HTMLElement>(null)
@@ -83,9 +86,10 @@ export function DetailPanel({
         aria-label={t('detail.label')}
         aria-hidden={open ? undefined : true}
         inert={!open}
+        tabIndex={sheet ? -1 : undefined}
         style={drag.offset > 0 ? { transform: `translateY(${drag.offset}px)` } : undefined}
       >
-        {sheet && <SheetFocus target={ref} onEscape={onClose} />}
+        {sheet && <SheetFocus target={ref} onEscape={onClose} trap={trapFocus} ready={detail != null} />}
         {phone && (
           <div className="grabber" title={t('detail.sheetHandle')} aria-hidden="true" {...drag.handlers}>
             <span />
@@ -119,11 +123,25 @@ export function DetailPanel({
 }
 
 /** Mounted only while the sheet is up, so the dialog-focus hook remembers the row that opened it. */
-function SheetFocus({ target, onEscape }: { target: RefObject<HTMLElement | null>; onEscape: () => void }) {
-  useDialogFocus(target, { onEscape })
+function SheetFocus({
+  target,
+  onEscape,
+  trap,
+  ready,
+}: {
+  target: RefObject<HTMLElement | null>
+  onEscape: () => void
+  trap: boolean
+  /** The download has loaded, so its Close button exists; until then the sheet itself takes focus. */
+  ready: boolean
+}) {
+  useDialogFocus(target, { onEscape, trap })
   useEffect(() => {
-    target.current?.querySelector<HTMLElement>('.dx')?.focus()
-  }, [target])
+    const root = target.current
+    const close = root?.querySelector<HTMLElement>('.dx')
+    if (close) close.focus()
+    else root?.focus()
+  }, [target, ready])
   return null
 }
 

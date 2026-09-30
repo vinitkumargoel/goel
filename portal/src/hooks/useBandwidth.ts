@@ -22,8 +22,8 @@ function visible(): boolean {
 
 /**
  * The daemon's bandwidth profiles: fetched on mount, then every 15s while the tab is visible (the
- * event stream carries only tasks). A 404 — a daemon older than the feature — or a body of the
- * wrong shape marks it `unsupported`, and it stays hidden without polling again.
+ * event stream carries only tasks). A 404 — a daemon older than the feature — marks it
+ * `unsupported`, and it stays hidden without polling again.
  */
 export function useBandwidth(): Bandwidth {
   const [status, setStatus] = useState<BandwidthStatus>('loading')
@@ -39,8 +39,8 @@ export function useBandwidth(): Bandwidth {
       const next: unknown = await api.bandwidth()
       if (epoch.current !== started) return
       if (!isBandwidthState(next)) {
-        unsupported.current = true
-        setStatus('unsupported')
+        // Not the documented shape (e.g. an intermediary's page): retry on the next tick.
+        setStatus((s) => (s === 'ready' ? s : 'error'))
         return
       }
       setState(next)
@@ -75,6 +75,8 @@ export function useBandwidth(): Bandwidth {
     epoch.current++
     try {
       const next: unknown = await api.updateBandwidth(body)
+      // A poll that started while the write was in flight may carry pre-write state: void it.
+      epoch.current++
       if (isBandwidthState(next)) {
         setState(next)
         setStatus('ready')

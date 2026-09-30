@@ -108,7 +108,6 @@ export function BandwidthCard({ bandwidth, canWrite, onToast }: BandwidthCardPro
               className={`btn${state.enabled ? '' : ' primary'}`}
               disabled={busy || enabledLocked}
               title={enabledLocked ? t('settings.bandwidth.managed') : undefined}
-              aria-pressed={state.enabled}
               onClick={() => void save({ enabled: !state.enabled })}
             >
               {state.enabled ? t('common.turnOff') : t('common.turnOn')}

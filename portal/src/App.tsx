@@ -364,6 +364,7 @@ export function App() {
               }
               onCyclePriority={cyclePriority}
               samples={detailId != null ? speeds.perTask.get(detailId) : undefined}
+              trapFocus={!modalOpen}
             />
           )}
         </div>

@@ -45,8 +45,9 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast }: H
   const [kind, setKind] = useState<KindFilter>('all')
   const id = useId()
 
-  const load = useCallback(async () => {
-    setState('loading')
+  /** `quiet` keeps the current rows on screen, so a reload after a removal doesn't drop focus. */
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setState('loading')
     try {
       setRows(await api.history())
       setState('ready')
@@ -66,7 +67,7 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast }: H
     try {
       await api.removeHistory(entryId)
       onRemoved()
-      await load()
+      await load(true)
     } catch (e) {
       const message = failureMessage(e)
       if (message) onWarn(message)

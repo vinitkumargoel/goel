@@ -52,6 +52,12 @@ describe('resolveShortcut', () => {
     expect(resolveShortcut({ key: 'j', target: button })).toBe('next')
   })
 
+  it('ignores auto-repeat for the activation keys only', () => {
+    expect(onBody(' ', { repeat: true })).toBeNull()
+    expect(onBody('Delete', { repeat: true })).toBeNull()
+    expect(onBody('j', { repeat: true })).toBe('next')
+  })
+
   it('takes Delete from a focused row', () => {
     const row = el('<div role="option" tabindex="0"></div>')
     expect(resolveShortcut({ key: 'Delete', target: row })).toBe('remove')
