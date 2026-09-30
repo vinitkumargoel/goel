@@ -6,7 +6,7 @@ import Crypto
 #endif
 @testable import GoelCore
 
-final class TorrentRemediationTests: XCTestCase {
+final class TorrentHardeningTests: XCTestCase {
 
     private var tempDir: URL!
 

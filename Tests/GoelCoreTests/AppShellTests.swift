@@ -1,7 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-final class AppShellRemediationTests: XCTestCase {
+final class AppShellTests: XCTestCase {
 
     private let saveDir = NSTemporaryDirectory()
 

@@ -1,7 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-final class CoreDataPathsRemediationTests: XCTestCase {
+final class CoreDataPathsTests: XCTestCase {
 
     private var tempDir: URL!
 

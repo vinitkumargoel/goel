@@ -1,7 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-final class HLSRemediationTests: XCTestCase {
+final class HLSHardeningTests: XCTestCase {
 
     private let base = URL(string: "https://cdn.example.com/video/index.m3u8")!
 

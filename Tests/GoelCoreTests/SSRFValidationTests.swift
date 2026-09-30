@@ -1,7 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-final class SSRFRemediationTests: XCTestCase {
+final class SSRFValidationTests: XCTestCase {
 
     private func url(_ s: String) -> URL { URL(string: s)! }
 

@@ -2,7 +2,7 @@
 #if !os(Linux)
 import XCTest
 
-final class BuildDistRemediationTests: XCTestCase {
+final class BuildDistributionTests: XCTestCase {
 
     private var repoRoot: URL {
         URL(fileURLWithPath: #filePath)

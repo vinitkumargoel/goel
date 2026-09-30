@@ -115,3 +115,10 @@ Vendor/ffmpeg/
 # ---- Claude Code ----
 # Agent scratch worktrees, created per-session.
 .claude/worktrees/
+
+# ---- Stray local scratch (TEST-6) ----
+# A design scratch page and a tool log that were once committed at the root.
+/visual.html
+/.hallmark/
+# Local tool output.
+/output/

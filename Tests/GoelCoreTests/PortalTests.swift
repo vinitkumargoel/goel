@@ -31,7 +31,7 @@ private final class FolderRefusingBackend: RemoteBackend, @unchecked Sendable {
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { false }
 }
 
-final class PortalRemediationTests: XCTestCase {
+final class PortalTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
@@ -366,7 +366,7 @@ final class PortalRemediationTests: XCTestCase {
 }
 
 #if !os(Linux)
-final class PortalShellRemediationTests: XCTestCase {
+final class PortalShellTests: XCTestCase {
 
     private func send(_ request: String, port: UInt16) async -> String? {
         await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in

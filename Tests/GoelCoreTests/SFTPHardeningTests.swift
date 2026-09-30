@@ -1,7 +1,7 @@
 import XCTest
 @testable import GoelCore
 
-final class SFTPRemediationTests: XCTestCase {
+final class SFTPHardeningTests: XCTestCase {
 
     /// An unreadable directory folded into an empty set skipped the prompt and truncated live files.
     func testOverwriteSplitRefusesAnUnavailableListing() {

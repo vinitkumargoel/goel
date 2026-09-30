@@ -2,7 +2,7 @@ import XCTest
 @testable import GoelCore
 
 /// Managed-policy trust boundary: a key is enforced if and only if it arrived forced.
-final class ManagedPolicyRemediationTests: XCTestCase {
+final class ManagedPolicyTests: XCTestCase {
 
     private static let MiB = 1024 * 1024
 

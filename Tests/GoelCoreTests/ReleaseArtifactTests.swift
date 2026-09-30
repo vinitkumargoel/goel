@@ -2,7 +2,7 @@
 #if !os(Linux)
 import XCTest
 
-final class ReleaseArtifactRemediationTests: XCTestCase {
+final class ReleaseArtifactTests: XCTestCase {
 
     private var repoRoot: URL {
         URL(fileURLWithPath: #filePath)
