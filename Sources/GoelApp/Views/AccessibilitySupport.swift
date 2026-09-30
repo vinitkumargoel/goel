@@ -132,7 +132,9 @@ extension SidebarFilter {
         case .completed: return L10n.t("Completed")
         case .seeding: return L10n.t("Seeding")
         case .failed: return L10n.t("Failed")
+        case .queued: return L10n.t("Queued")
         case .type(let fileType): return fileType.accessibilityName
+        case .tag(let name): return name
         }
     }
 }
@@ -146,6 +148,9 @@ extension FileType {
         case .app: return L10n.t("Apps")
         case .magnet: return L10n.t("Magnet links")
         case .doc: return L10n.t("Documents")
+        case .audio: return L10n.t("Audio")
+        case .image: return L10n.t("Images")
+        case .other: return L10n.t("Other")
         }
     }
 }
@@ -154,7 +159,7 @@ extension SortKey {
     /// Every name is a literal `L10n.t` key so the extractor sees it; `rawValue` is a storage id.
     var title: String {
         switch self {
-        case .index: return L10n.t("Row number")
+        case .index: return L10n.t("Queue order")
         case .name: return L10n.t("Name")
         case .size: return L10n.t("Size")
         case .status: return L10n.t("Status")

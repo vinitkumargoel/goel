@@ -257,6 +257,9 @@ struct GoelCommands: Commands {
                 .disabled(!s.hasResumable)
             Button(L10n.t("Pause All")) { viewModel.pauseAll() }
                 .disabled(!s.hasPausable)
+            // Off the list only; the files stay, and the toast offers Undo like Remove from List.
+            Button(L10n.t("Clear Completed")) { viewModel.clearCompleted() }
+                .disabled(!s.hasCompleted)
             Divider()
             selectionCommands
             Divider()
@@ -282,6 +285,21 @@ struct GoelCommands: Commands {
             Divider()
             Button(L10n.t("Command Palette…")) { CommandPaletteBus.toggle() }
                 .keyboardShortcut("k", modifiers: .command)
+            Divider()
+            sidebarShortcuts
+        }
+    }
+
+    /// ⌘1…⌘9 walk the sidebar's filters top to bottom, from the same list the sidebar draws.
+    @ViewBuilder
+    private var sidebarShortcuts: some View {
+        let filters = SidebarCatalog.shortcutFilters
+        ForEach(Array(filters.enumerated()), id: \.offset) { offset, filter in
+            Button(L10n.t("Show %@", filter.accessibilityName)) {
+                viewModel.closeServerBrowser()
+                viewModel.filter = filter
+            }
+            .keyboardShortcut(KeyEquivalent(Character(String(offset + 1))), modifiers: .command)
         }
     }
 

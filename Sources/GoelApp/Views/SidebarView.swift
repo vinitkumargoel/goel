@@ -10,22 +10,10 @@ struct SidebarView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                group(L10n.t("Library")) {
-                    item(L10n.t("All downloads"), "tray.full", .all)
-                }
-                group(L10n.t("Status")) {
-                    item(L10n.t("Active"), "arrow.down.circle", .active)
-                    item(L10n.t("Paused"), "pause.circle", .paused)
-                    item(L10n.t("Completed"), "checkmark.circle", .completed)
-                    item(L10n.t("Seeding"), "arrow.up.circle", .seeding)
-                    item(L10n.t("Failed"), "exclamationmark.triangle", .failed)
-                }
-                group(L10n.t("Type")) {
-                    item(L10n.t("Video"), "film", .type(.video))
-                    item(L10n.t("Disc images"), "opticaldisc", .type(.iso))
-                    item(L10n.t("Archives"), "doc.zipper", .type(.archive))
-                    item(L10n.t("Apps"), "app.badge", .type(.app))
-                }
+                group(L10n.t("Library")) { entries(SidebarCatalog.library) }
+                group(L10n.t("Status")) { entries(SidebarCatalog.status) }
+                group(L10n.t("Type")) { entries(SidebarCatalog.types) }
+                tagsGroup
                 MediaJobsSidebarGroup(center: vm.mediaJobs)
                 serversGroup
             }
@@ -42,6 +30,36 @@ struct SidebarView: View {
             }
         }
         .onChange(of: vm.servers.map(\.id)) { Task { await vm.refreshServerStatuses() } }
+    }
+
+    private func entries(_ list: [SidebarEntry]) -> some View {
+        ForEach(list) { entry in
+            item(entry.title, entry.symbol, entry.filter,
+                 shortcut: SidebarCatalog.shortcutFilters.firstIndex(of: entry.filter).map { $0 + 1 })
+        }
+    }
+
+    /// Only while some row carries a tag: an empty heading would advertise a feature with nothing in it.
+    /// Tags are created per download (Add Tags…), so there is no "+" here.
+    @ViewBuilder
+    private var tagsGroup: some View {
+        let tags = ListPresentation.tagCounts(vm.tasks)
+        if !tags.isEmpty {
+            group(L10n.t("Tags")) {
+                ForEach(tags, id: \.tag) { entry in
+                    item(entry.tag, nil, .tag(entry.tag), count: entry.count,
+                         dot: Self.tagColor(entry.tag))
+                }
+            }
+        }
+    }
+
+    private static let tagPalette: [KeyPath<ThemeColors, ThemeColors.Pair>] =
+        [\.accent, \.green, \.orange, \.red, \.yellow, \.purple, \.teal, \.indigo]
+
+    /// Stable per tag name, drawn from the theme so it follows Dracula and Nord like everything else.
+    static func tagColor(_ tag: String) -> Color {
+        ThemePalette.color(tagPalette[ListPresentation.tagColorSlot(tag, slots: tagPalette.count)])
     }
 
     @ViewBuilder
@@ -248,21 +266,37 @@ struct SidebarView: View {
         content()
     }
 
-    private func item(_ label: String, _ symbol: String, _ filter: SidebarFilter) -> some View {
+    /// - Parameters:
+    ///   - symbol: The row's glyph; a tag row passes nil and a colour `dot` instead.
+    ///   - count: Pass when already known (tags); otherwise it is counted from the filter.
+    ///   - shortcut: The ⌘-digit that selects this row, shown in the tooltip.
+    private func item(_ label: String, _ symbol: String?, _ filter: SidebarFilter,
+                      count: Int? = nil, dot: Color? = nil, shortcut: Int? = nil) -> some View {
         let selected = vm.filter == filter && vm.selectedServer == nil
+        let count = count ?? vm.count(for: filter)
         return Button {
             vm.closeServerBrowser()
             vm.filter = filter
         } label: {
             HStack(spacing: 9) {
-                Image(systemName: symbol)
-                    .font(.system(size: 13))
-                    .frame(width: 16)
+                Group {
+                    if let symbol {
+                        Image(systemName: symbol).font(.system(size: 13))
+                    } else if let dot {
+                        Circle()
+                            .fill(dot)
+                            .frame(width: 8, height: 8)
+                            // Keeps the dot visible on the selected row's accent fill.
+                            .overlay(Circle().stroke(selected ? Theme.onAccent.opacity(0.7) : .clear, lineWidth: 1))
+                    }
+                }
+                .frame(width: 16)
+                .a11yDecorative()
                 Text(label)
                     .scaledFont(size: 13)
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                Text("\(vm.count(for: filter))")
+                Text("\(count)")
                     .scaledFont(size: 11, weight: .semibold, monospacedDigit: true)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
@@ -281,7 +315,8 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .a11yGroup(label: label, value: L10n.t("%d downloads", vm.count(for: filter)),
+        .help(shortcut.map { ShortcutHint.help(label, "⌘\($0)") } ?? label)
+        .a11yGroup(label: label, value: L10n.t("%d downloads", count),
                    hint: L10n.t("Activate to filter the list."))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }

@@ -28,14 +28,8 @@ extension DownloadKind {
 extension DownloadTask {
 
     var fileType: FileType {
-        let lower = name.lowercased()
         if case .magnet = source, totalBytes == nil { return .magnet }
-        if lower.contains(".iso") { return .iso }
-        if lower.range(of: #"\.(mkv|mp4|avi|mov|webm)"#, options: .regularExpression) != nil { return .video }
-        if lower.range(of: #"\.(zip|gz|tar|7z|rar|dmg|bz2|xz)"#, options: .regularExpression) != nil { return .archive }
-        if lower.range(of: #"\.(app|xip|pkg|exe|deb|msi)"#, options: .regularExpression) != nil { return .app }
-        if kind == .torrent { return .video }
-        return .doc
+        return FileType.classify(fileName: name, isTorrent: kind == .torrent)
     }
 
     var isMediaFile: Bool {
@@ -100,6 +94,33 @@ extension DownloadTask {
         case .failed(let error):
             return error.message
         }
+    }
+
+    /// The list's 150 pt status column. The long forms above truncated there ("Seeding · ratio 2…"),
+    /// and the percent repeated what the row's bar already draws, so this keeps only what the bar
+    /// cannot say. ``statusDetailText`` stays the tooltip and the menu bar's line.
+    /// - Parameter queueRank: The row's place in the queue ("#3"), shown while it waits.
+    func statusCompactText(queueRank: Int? = nil) -> String {
+        switch status {
+        case .queued:
+            return queueRank.map { L10n.t("Queued · #%d", $0) } ?? L10n.t("Queued")
+        case .downloading:
+            if let eta = estimatedTimeRemaining, eta > 0 {
+                return L10n.t("%@ left", Self.etaString(eta))
+            }
+            return L10n.t("%d%%", Int((fractionCompleted * 100).rounded()))
+        case .seeding:
+            return L10n.t("Seeding %.2f×", shareRatio)
+        default:
+            return statusDetailText
+        }
+    }
+
+    /// How far a seeding torrent is toward its ratio target, for the status column's micro-bar;
+    /// nil when it seeds without a target, so no bar pretends there is one.
+    var seedTargetProgress: Double? {
+        guard status == .seeding else { return nil }
+        return seedRatioProgress
     }
 
     /// "1h 30m", "4m 5s", "12s" — abbreviated in the app's language ("1 Std., 30 Min." in German),

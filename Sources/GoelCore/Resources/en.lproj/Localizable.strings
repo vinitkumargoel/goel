@@ -32,6 +32,7 @@
 "%1$@: %2$@." = "%1$@: %2$@.";
 "%1$@: ↓ %2$@ · ↑ %3$@" = "%1$@: ↓ %2$@ · ↑ %3$@";
 "%1$d of %2$d · %3$@" = "%1$d of %2$d · %3$@";
+"%1$d · %2$@" = "%1$d · %2$@";
 "%1$d%% · %2$@ left" = "%1$d%% · %2$@ left";
 "%@ *" = "%@ *";
 "%@ elapsed" = "%@ elapsed";
@@ -59,6 +60,7 @@
 "%d cookie" = "%d cookie";
 "%d cookies" = "%d cookies";
 "%d custom" = "%d custom";
+"%d download" = "%d download";
 "%d downloads" = "%d downloads";
 "%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted." = "%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted.";
 "%d failed" = "%d failed";
@@ -285,8 +287,10 @@
 "Chrome, Edge, Brave & Firefox" = "Chrome, Edge, Brave & Firefox";
 "Chrome/Edge/Brave/Vivaldi/Arc: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox 128+: about:debugging → Load Temporary Add-on → the folder’s manifest.json (Firefox forgets it on quit)." = "Chrome/Edge/Brave/Vivaldi/Arc: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox 128+: about:debugging → Load Temporary Add-on → the folder’s manifest.json (Firefox forgets it on quit).";
 "Clear" = "Clear";
+"Clear Completed" = "Clear Completed";
 "Clear History" = "Clear History";
 "Clear History…" = "Clear History…";
+"Clear completed" = "Clear completed";
 "Clear filter" = "Clear filter";
 "Clear finished transfers" = "Clear finished transfers";
 "Clear pasted link" = "Clear pasted link";
@@ -448,6 +452,7 @@
 "Daily download window and what happens when the queue drains" = "Daily download window and what happens when the queue drains";
 "Daily transfer totals, last 14 days" = "Daily transfer totals, last 14 days";
 "Dangerous: physical NICs may bypass an active VPN tunnel." = "Dangerous: physical NICs may bypass an active VPN tunnel.";
+"Date Added" = "Date Added";
 "Date Modified" = "Date Modified";
 "Days" = "Days";
 "Default download folder" = "Default download folder";
@@ -541,6 +546,7 @@
 "Drag a .torrent or a link onto this window" = "Drag a .torrent or a link onto this window";
 "Drag a URL or **.torrent** file here" = "Drag a URL or **.torrent** file here";
 "Drag links or torrent files here to queue them." = "Drag links or torrent files here to queue them.";
+"Drag to reorder the queue" = "Drag to reorder the queue";
 "Drag to resize the detail panel" = "Drag to resize the detail panel";
 "Drag-save as a bookmark; clicking it sends the current page here." = "Drag-save as a bookmark; clicking it sends the current page here.";
 "Drop Basket" = "Drop Basket";
@@ -556,6 +562,8 @@
 "ETA" = "ETA";
 "ETag" = "ETag";
 "EXPENSIVE" = "EXPENSIVE";
+"Earlier this month" = "Earlier this month";
+"Earlier this week" = "Earlier this week";
 "Edit Label…" = "Edit Label…";
 "Edit Note…" = "Edit Note…";
 "Edit SFTP Server" = "Edit SFTP Server";
@@ -701,6 +709,7 @@
 "Grab links from a page" = "Grab links from a page";
 "Grid" = "Grid";
 "Group" = "Group";
+"Group by %@" = "Group by %@";
 "Group this download under a category. Leave empty to remove." = "Group this download under a category. Leave empty to remove.";
 "Guarantee, never: %@" = "Guarantee, never: %@";
 "HLS stream" = "HLS stream";
@@ -856,6 +865,10 @@
 "Move the broken database aside and start fresh?" = "Move the broken database aside and start fresh?";
 "Move the files of %d downloads to the Trash?" = "Move the files of %d downloads to the Trash?";
 "Move to" = "Move to";
+"Move to Bottom" = "Move to Bottom";
+"Move to Bottom of Queue" = "Move to Bottom of Queue";
+"Move to Top" = "Move to Top";
+"Move to Top of Queue" = "Move to Top of Queue";
 "Move to Trash" = "Move to Trash";
 "Move to Trash…" = "Move to Trash…";
 "Move “%@” to the Trash?" = "Move “%@” to the Trash?";
@@ -890,6 +903,7 @@
 "No adapters found" = "No adapters found";
 "No app is set up to open ssh:// links" = "No app is set up to open ssh:// links";
 "No capture toggle (Safari has no downloads API) and no signed-in downloads: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for either." = "No capture toggle (Safari has no downloads API) and no signed-in downloads: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for either.";
+"No completed downloads to clear" = "No completed downloads to clear";
 "No cookies were captured with this link. Re-copy it from the browser extension." = "No cookies were captured with this link. Re-copy it from the browser extension.";
 "No downloadable links found in that file" = "No downloadable links found in that file";
 "No downloadable links found on that page." = "No downloadable links found on that page.";
@@ -962,6 +976,7 @@
 "Offer to download http(s)/magnet links you copy." = "Offer to download http(s)/magnet links you copy.";
 "Offline" = "Offline";
 "Offline — %@" = "Offline — %@";
+"Older" = "Older";
 "Older backups are pruned automatically." = "Older backups are pruned automatically.";
 "Older ones are deleted." = "Older ones are deleted.";
 "On download added" = "On download added";
@@ -1097,7 +1112,9 @@
 "QR code for %@" = "QR code for %@";
 "Quality" = "Quality";
 "Queue every link on the pasteboard, one per line" = "Queue every link on the pasteboard, one per line";
+"Queue order" = "Queue order";
 "Queued" = "Queued";
+"Queued · #%d" = "Queued · #%d";
 "Quick Look" = "Quick Look";
 "Quit" = "Quit";
 "Quit Goel°" = "Quit Goel°";
@@ -1194,6 +1211,7 @@
 "Resume" = "Resume";
 "Resume %@" = "Resume %@";
 "Resume %d Selected" = "Resume %d Selected";
+"Resume All" = "Resume All";
 "Resume Selected" = "Resume Selected";
 "Resume everything paused or queued" = "Resume everything paused or queued";
 "Resume transfer of %@" = "Resume transfer of %@";
@@ -1217,7 +1235,6 @@
 "Rotated files older than this are deleted. 0 keeps them forever." = "Rotated files older than this are deleted. 0 keeps them forever.";
 "Rotated files to keep" = "Rotated files to keep";
 "Route traffic through a proxy server. Multi-path aggregation is disabled while a system or manual proxy is set." = "Route traffic through a proxy server. Multi-path aggregation is disabled while a system or manual proxy is set.";
-"Row number" = "Row number";
 "Run" = "Run";
 "Run a script on completion" = "Run a script on completion";
 "Run an external scanner on finished files. Optional, low priority on macOS." = "Run an external scanner on finished files. Optional, low priority on macOS.";
@@ -1247,6 +1264,7 @@
 "Search actions and settings" = "Search actions and settings";
 "Search actions and settings…" = "Search actions and settings…";
 "Search downloads" = "Search downloads";
+"Search downloads (host:example.com narrows to a site)" = "Search downloads (host:example.com narrows to a site)";
 "Search history by name or link" = "Search history by name or link";
 "Search name or link" = "Search name or link";
 "Search settings" = "Search settings";
@@ -1257,6 +1275,7 @@
 "Seed target" = "Seed target";
 "Seed until ratio" = "Seed until ratio";
 "Seeding" = "Seeding";
+"Seeding %.2f×" = "Seeding %.2f×";
 "Seeding indefinitely" = "Seeding indefinitely";
 "Seeding · ratio %.2f" = "Seeding · ratio %.2f";
 "Seeding · ratio %1$.2f / %2$.1f" = "Seeding · ratio %1$.2f / %2$.1f";
@@ -1309,6 +1328,7 @@
 "Setup progress" = "Setup progress";
 "Share ratio" = "Share ratio";
 "Show" = "Show";
+"Show %@" = "Show %@";
 "Show %@ in Finder" = "Show %@ in Finder";
 "Show Audit Folder" = "Show Audit Folder";
 "Show Drop Basket" = "Show Drop Basket";
@@ -1316,6 +1336,7 @@
 "Show Hidden Files" = "Show Hidden Files";
 "Show Host Key…" = "Show Host Key…";
 "Show Remote Folder" = "Show Remote Folder";
+"Show all downloads" = "Show all downloads";
 "Show details" = "Show details";
 "Show drop basket" = "Show drop basket";
 "Show in Finder" = "Show in Finder";
@@ -1510,6 +1531,7 @@
 "To" = "To";
 "To %@" = "To %@";
 "To · %@" = "To · %@";
+"Today" = "Today";
 "Today ↑" = "Today ↑";
 "Today ↓" = "Today ↓";
 "Toggle Detail Panel" = "Toggle Detail Panel";
@@ -1647,6 +1669,7 @@
 "Yes" = "Yes";
 "Yes (Accept-Ranges)" = "Yes (Accept-Ranges)";
 "Yest %@" = "Yest %@";
+"Yesterday" = "Yesterday";
 "You are a charity, school, university, or public research, safety or health body." = "You are a charity, school, university, or public research, safety or health body.";
 "You are a company, partnership or sole trader and Goel° is used for that business." = "You are a company, partnership or sole trader and Goel° is used for that business.";
 "You are a contractor or consultant using it in work you bill to a client." = "You are a contractor or consultant using it in work you bill to a client.";

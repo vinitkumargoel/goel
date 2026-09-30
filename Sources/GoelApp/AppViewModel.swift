@@ -12,7 +12,11 @@ enum SidebarFilter: Hashable {
     case seeding
     /// App-side only: `TaskListQuery.Filter` has no failed case, so `ListPresentation` matches it itself.
     case failed
+    /// Waiting for a slot. App-side like `failed`.
+    case queued
     case type(FileType)
+    /// Rows carrying this tag (or legacy label), compared case-insensitively.
+    case tag(String)
 }
 
 struct SFTPBrowserNavigationRequest: Equatable {
@@ -106,6 +110,20 @@ final class AppViewModel: ObservableObject {
     @Published var search: String = "" { didSet { recomputeVisible() } }
     @Published var sortKey: SortKey = .status { didSet { recomputeVisible() } }
     @Published var sortAscending: Bool = true { didSet { recomputeVisible() } }
+    /// Remembered across launches: grouping is a way of working, not a momentary view.
+    @Published var grouping: ListGrouping = AppViewModel.storedGrouping {
+        didSet {
+            UserDefaults.standard.set(grouping.rawValue, forKey: Self.groupingKey)
+            recomputeVisible()
+        }
+    }
+    /// `visibleTasks` split under the Group by headers; empty when not grouping.
+    @Published private(set) var visibleSections: [ListSection] = []
+    /// Each row's 1-based place in the queue — the "#" column and "Queued · #3".
+    @Published private(set) var queueRanks: [DownloadTask.ID: Int] = [:]
+    /// The rows a queue drag is carrying, set when the grip starts the drag. Drop targets read it
+    /// because a drop's payload can only be read asynchronously, after the drop has been accepted.
+    var queueDragIDs: [DownloadTask.ID] = []
     @Published var detailPanelVisible: Bool = true
     @Published var detailTab: DetailTab = .general
     @Published var isAddSheetPresented: Bool = false
@@ -527,15 +545,23 @@ final class AppViewModel: ObservableObject {
     }
 
     func recomputeVisible() {
-        let next = ListPresentation.visible(
+        let sorted = ListPresentation.visible(
             tasks: tasks,
             filter: filter,
             search: search,
             sortKey: sortKey,
             ascending: sortAscending
         )
+        // Ungrouped, the list draws `visibleTasks` directly; building a section too would only
+        // double the per-snapshot comparison below.
+        let sections = grouping == .none ? [] : ListPresentation.sections(sorted, by: grouping)
+        // Flattened from the sections, so arrow keys and ⇧-click ranges walk the rows as drawn.
+        let next = grouping == .none ? sorted : sections.flatMap(\.tasks)
         // An unchanged list must not republish: every row body would re-run for nothing.
         if next != visibleTasks { visibleTasks = next }
+        if sections != visibleSections { visibleSections = sections }
+        let ranks = QueueOrder.ranks(tasks)
+        if ranks != queueRanks { queueRanks = ranks }
         refreshCommandState()
     }
 

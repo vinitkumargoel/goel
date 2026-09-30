@@ -18,6 +18,8 @@ final class CommandState: ObservableObject {
         /// A selected row whose file is (still) on disk: Show in Finder / Move to Trash.
         var selectionHasData = false
         var hasCompletedVisible = false
+        /// Any finished row at all, filtered out or not: Clear Completed acts on the whole list.
+        var hasCompleted = false
         /// The download list is on screen (not the SFTP browser), so list commands apply.
         var listVisible = true
         var autoShutdown: AutoShutdownAction = .none
@@ -32,6 +34,7 @@ final class CommandState: ObservableObject {
             s.listVisible = listVisible
             s.autoShutdown = autoShutdown
             s.hasCompletedVisible = visible.contains { $0.status == .completed }
+            s.hasCompleted = tasks.contains { $0.status == .completed }
             let selected = listVisible ? visible.filter { selection.contains($0.id) } : []
             s.hasSelection = !selected.isEmpty
             s.selectionCanPause = selected.contains { $0.status.isActive }

@@ -57,4 +57,13 @@ final class CommandStateTests: XCTestCase {
         XCTAssertEqual(fired, 1)
         sink.cancel()
     }
+
+    func testClearCompletedLooksAtTheWholeQueueNotJustTheVisibleRows() {
+        let done = task(.completed)
+        let hidden = CommandState.Snapshot.make(tasks: [done, task(.paused)], visible: [], selection: [],
+                                                listVisible: true, autoShutdown: .none)
+        XCTAssertTrue(hidden.hasCompleted)
+        XCTAssertFalse(hidden.hasCompletedVisible)
+        XCTAssertFalse(snap([task(.downloading), task(.failed(.diskFull(needed: 100, available: 10)))]).hasCompleted)
+    }
 }

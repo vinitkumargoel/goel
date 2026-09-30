@@ -83,4 +83,55 @@ final class TaskDisplayTests: XCTestCase {
         t.status = .paused
         XCTAssertFalse(t.isFileMissing)
     }
+
+    // MARK: - Compact status column
+
+    private func seeding(uploaded: Int64, limit: Double?) -> DownloadTask {
+        var t = task("pack", source: .magnet("magnet:?xt=urn:btih:abc"), status: .seeding)
+        t.bytesDownloaded = 100
+        t.bytesUploaded = uploaded
+        t.seedRatioLimit = limit
+        return t
+    }
+
+    func testSeedingIsCompactInTheColumnAndFullInTheTooltip() {
+        let t = seeding(uploaded: 184, limit: 2)
+        XCTAssertEqual(t.statusCompactText(), L10n.t("Seeding %.2f×", 1.84))
+        XCTAssertEqual(t.statusDetailText, L10n.t("Seeding · ratio %1$.2f / %2$.1f", 1.84, 2.0),
+                       "the long form stays for the tooltip and VoiceOver")
+        XCTAssertLessThan(t.statusCompactText().count, t.statusDetailText.count)
+    }
+
+    func testSeedTargetProgressOnlyWhileSeedingTowardATarget() {
+        XCTAssertEqual(seeding(uploaded: 100, limit: 2).seedTargetProgress ?? -1, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(seeding(uploaded: 500, limit: 2).seedTargetProgress, 1, "capped at the target")
+        XCTAssertNil(seeding(uploaded: 100, limit: nil).seedTargetProgress, "no target, no bar")
+        XCTAssertNil(seeding(uploaded: 100, limit: 0).seedTargetProgress, "0 seeds forever: no target")
+        var paused = seeding(uploaded: 100, limit: 2)
+        paused.status = .paused
+        XCTAssertNil(paused.seedTargetProgress)
+    }
+
+    func testDownloadingShowsTimeLeftWithoutRepeatingTheBarsPercent() {
+        var t = task("big.bin", totalBytes: 1_000, status: .downloading)
+        t.bytesDownloaded = 400
+        t.downloadSpeed = 10  // 600 bytes left → 60 s
+        XCTAssertEqual(t.statusCompactText(), L10n.t("%@ left", DownloadTask.etaString(60)))
+        XCTAssertFalse(t.statusCompactText().contains("%"))
+        XCTAssertTrue(t.statusDetailText.contains("40%"), "the tooltip keeps the percent")
+
+        t.downloadSpeed = 0
+        XCTAssertEqual(t.statusCompactText(), "40%", "no rate yet: the percent is all there is to say")
+    }
+
+    func testQueuedRowSaysItsPlaceInLine() {
+        let t = task("a.bin", status: .queued)
+        XCTAssertEqual(t.statusCompactText(queueRank: 3), L10n.t("Queued · #%d", 3))
+        XCTAssertEqual(t.statusCompactText(), L10n.t("Queued"))
+    }
+
+    func testOtherStatesFallBackToTheFullText() {
+        let t = task("a.zip", status: .completed)
+        XCTAssertEqual(t.statusCompactText(queueRank: 4), t.statusDetailText)
+    }
 }
