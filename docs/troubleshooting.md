@@ -265,8 +265,10 @@ Everything else Linux-specific is in [linux.md](linux.md).
 
 ### "Not signed in" when calling the API
 
-The request carried no valid credential. Send `Authorization: Bearer <token>` or append
-`?token=<token>`. Browsers use the session cookie from `POST /login` instead. Note the
+The request carried no valid credential. Send `Authorization: Bearer <token>`; a
+`?token=<token>` query parameter is ignored on `/api` routes (it is accepted only on the
+pairing link `GET /` and on `/stream`). Browsers use the session cookie from `POST /login`
+instead. Note the
 token is compared in constant time, so a wrong token takes the same time as a right one —
 that is not the API being slow.
 

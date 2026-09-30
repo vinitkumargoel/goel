@@ -59,4 +59,28 @@
   //       -H 'content-type: application/json' \
   //       -d '{"company":"Test","email":"a@b.co","seats":"5","country":"UK","useCase":"other"}'
   // ──────────────────────────────────────────────────────────────────────────────
+
+  // ──────────────────────────────────────────────────────────────────────────────
+  // OPTIONAL — rate-limit the enquiry form per client IP.
+  //
+  // enquiry.js uses a Workers rate-limiting binding named ENQUIRY_LIMITER when one
+  // exists and answers 429 once a client exceeds it; without the binding the form
+  // still works, just unthrottled. It is left out of this file on purpose: a binding
+  // the account has not enabled would fail `wrangler deploy`. To turn it on, check
+  // that rate limiting is available on the account, then add this top-level key
+  // (namespace_id is any integer unique to this account's limiters):
+  //
+  //     "ratelimits": [
+  //       {
+  //         "name": "ENQUIRY_LIMITER",
+  //         "namespace_id": "1001",
+  //         "simple": { "limit": 5, "period": 60 }
+  //       }
+  //     ]
+  //
+  // `period` must be 10 or 60 (seconds). Older wrangler releases only accept the
+  // same object under "unsafe": { "bindings": [ { …, "type": "ratelimit" } ] } —
+  // check the docs for the installed version. Verify with six quick POSTs to
+  // /api/enquiry from one address: the sixth should return 429.
+  // ──────────────────────────────────────────────────────────────────────────────
 }

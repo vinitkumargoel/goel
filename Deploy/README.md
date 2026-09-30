@@ -312,6 +312,22 @@ sudo chmod 0644 /etc/goel/managed-policy.json
 A file that exists but does not parse is also refused and logged — the daemon
 still starts, but a typo will not silently cost you the whole policy.
 
+### Environment the daemon reads (not policy keys)
+
+Three settings are deliberately environment-only, because they are either secrets
+or trust anchors that should come from whoever provisions the machine. Put them
+in `/etc/goel/config` (the unit's `EnvironmentFile=`) or in your configuration
+management's equivalent:
+
+| Variable | Format | Purpose |
+|---|---|---|
+| `GOEL_PORTAL_ALLOWED_HOSTS` | `goel.example.com,*.corp.example` | Host names the portal answers to besides IPs, `localhost`, `.local` and bare names. Without it, a request through a reverse proxy that passes its public `Host` through gets `421 Misdirected Request` (the DNS-rebinding defence). Listing the proxy in `remoteTrustedProxies` works too. |
+| `GOEL_SSH_FINGERPRINTS` | `host[:port]=SHA256:<base64>`, comma-separated | Pinned SFTP host keys. The daemon has no one to confirm a first contact, so an unpinned SFTP host is refused before any credential is sent; the error quotes the presented key. Get the value with `ssh-keyscan -p <port> <host> \| ssh-keygen -lf -` over a network you trust. |
+| `GOEL_MINISIGN_PUBKEY` | `RWS…` | For `install.sh`, not the daemon: makes minisign verification of the release tarball mandatory (the install fails if the signature, or `minisign` itself, is missing). |
+
+See [docs/linux.md](../docs/linux.md#configuration) for the rest of
+`/etc/goel/config`.
+
 ---
 
 ## 4. The audit log

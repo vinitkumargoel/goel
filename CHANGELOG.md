@@ -9,6 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Audit remediation
+
+Fixes from a full-codebase audit, grouped by area.
+
+- **Security.** Remote adds refuse loopback, link-local, cloud-metadata **and private LAN**
+  targets by resolved address, and every redirect hop is resolved and screened too (a
+  public host can no longer 302 a download into `127.0.0.1` or the LAN). The portal checks
+  `Host` on every route and answers `421` to unknown names (DNS-rebinding defence;
+  `GOEL_PORTAL_ALLOWED_HOSTS` or a trusted proxy for reverse-proxy setups); `?token=` is
+  honoured only on `GET /` and `/stream`; cookies are `Secure` behind TLS or a trusted
+  proxy; header size and per-peer connection caps. Headless SFTP no longer trusts a new
+  host key on first use — it refuses before sending credentials unless
+  `GOEL_SSH_FINGERPRINTS` pins it. `install.sh` can verify a minisign signature
+  (`GOEL_MINISIGN_PUBKEY`). URL credentials are stripped, file names lose bidi/control
+  characters, completed downloads are quarantined, and the ffmpeg remux is limited to local
+  protocols. The app is no longer signed with yt-dlp's JIT and disable-library-validation
+  entitlements; only the bundled yt-dlp carries them.
+- **Reliability.** HTTP downloads write to `<name>.goelpart` and are renamed into place only
+  once verified; a new download never reuses a name whose partial is still being written.
+  Resume is validated with `If-Range` and `Content-Range`, cursors are fsynced before they
+  are saved, and a changed remote file restarts instead of splicing. The queue survives
+  unreadable rows (quarantined, not dropped) and a corrupt settings row (backed up first);
+  the database runs in WAL mode; engines shut down cleanly on quit. Failures say what went
+  wrong — disk full, HTTP status, TLS, host-key mismatch — instead of "network error".
+- **Engines.** BitTorrent: pause/remove during a `.torrent` fetch no longer leaves a zombie
+  torrent, shutdown saves resume data for all torrents at once, C++ exceptions never cross
+  the bridge, and a failed `.torrent` fetch reports its HTTP status. FTP/SFTP: pause during
+  the size probe stops the job, `poll()` replaces `select()`, and "remove with data" moves
+  the file to the Trash. HLS: cancellable remux, strict IV handling, per-job tokens, and
+  HLS jobs share the traffic profile's cap.
+- **User experience.** Safer delete dialogs, one drop path for window, sheet and basket, a
+  failure card with Retry / Copy Details / Show Folder, a disk-space hint in the Add sheet,
+  ⌘F focuses search, native toggles in menus, and removing from the list is undoable. The
+  VPAT now reports the dropdown role, list removal and text scaling as partially supported.
+- **Performance.** Leaner rate limiter and progress path, larger write buffers, an
+  equatable download row, cached SSE frames that skip unchanged state, and coalesced
+  database writes.
+- **Localization.** Whole-sentence keys, localized error strings and dialog buttons, and
+  locale-aware sizes, dates and durations. German is withdrawn from the language picker
+  until its translation passes 95% (it was at 1%); a saved German choice now shows English.
+  `Scripts/extract-l10n-keys.py --coverage <lang>` reports coverage and CI enforces the bar.
+- **Build and CI.** Every action pinned to a commit SHA, least-privilege permissions,
+  timeouts, SwiftPM caches, a warnings gate for `Sources/`, a code-coverage summary,
+  `npm audit`, shellcheck over every script, and Dependabot. Local builds prefer the
+  floor-targeted `Vendor/macos/<arch>` libraries and `GOEL_RELEASE=1` refuses Homebrew's.
+  A local or vendored ffmpeg needs a SHA-256 digest. A tag-only, approval-gated
+  `release.yml` skeleton builds, signs and notarizes release artifacts once secrets exist.
+
 ### Added
 
 - **`goel <url>` downloads and waits — the CLI is now a curl replacement.** Give `goel` a

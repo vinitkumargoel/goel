@@ -21,8 +21,14 @@ Three ways in, checked in this order:
    `Path=/`, with a `Max-Age` from the configured session length.
 2. **Open portal** — if `requireAuth` is off, everything passes. Only sane on a loopback
    bind.
-3. **Bearer token** — `Authorization: Bearer <token>`, or `?token=<token>` in the query
-   string. This is the path for scripts and the browser extension.
+3. **Bearer token** — `Authorization: Bearer <token>`. This is the path for scripts and the
+   browser extension.
+
+`?token=<token>` in the query string is honoured on exactly two requests, the ones where a
+browser cannot send a header: **`GET /`** (the pairing link, see below) and **`GET /stream`**
+(a `<video src>`). Everywhere else it is ignored and the request is treated as
+unauthenticated — a token in a URL leaks into shell history, proxy logs and `Referer`
+headers, so scripts must use the header.
 
 The token comparison is constant-time (it examines every byte regardless of where the
 first mismatch is), so response timing cannot be used to recover it prefix-by-prefix.
@@ -40,20 +46,46 @@ export GOEL="http://127.0.0.1:8899"
 export TOKEN="…"                     # Settings → Web Access
 
 curl -s -H "Authorization: Bearer $TOKEN" "$GOEL/api/tasks"
-curl -s "$GOEL/api/tasks?token=$TOKEN"       # equivalent
+# NOT "$GOEL/api/tasks?token=$TOKEN" — refused with 401 on every /api route.
 ```
 
 ### Failure modes
 
 | Situation | Response |
 |---|---|
-| No/wrong credential on `/api/*` | `401` — `Not signed in. Open / to log in, or pass ?token=<token>.` |
+| No/wrong credential on `/api/*` (including a `?token=` there) | `401` — `Not signed in. Open / to log in, or send Authorization: Bearer <token>.` |
+| `Host` header names a host the portal does not answer to | `421 Misdirected Request` — see [Host names](#host-names-dns-rebinding-defence) |
 | No/wrong credential on a non-`/api` `GET` | `302` redirect to `/login` |
 | Backend shutting down | `503 Service Unavailable` |
 | Any `POST` while read-only mode is on | `403` — `Read-only mode — changes are disabled from the web.` |
 | Missing or malformed `id`/`file` parameter | `400 Bad Request` |
 | `id` names a task that does not exist | `404 Not Found` |
 | Unknown method/path pair | `404 Not Found` |
+
+### Host names (DNS-rebinding defence)
+
+Every request, the login page and `/stream` included, is checked against its `Host` header
+before anything else. Without this a malicious page could rebind its own name to your
+machine's address and talk to the portal as a same-origin site. The portal answers to:
+
+- IP address literals (`192.168.1.20:8899`, `[::1]:8899`), `localhost` and `*.localhost`;
+- mDNS names (`*.local`, as Bonjour advertises it) and single-label LAN names (`nas`);
+- this machine's own host name;
+- any name listed in **`GOEL_PORTAL_ALLOWED_HOSTS`** — comma- or space-separated, exact
+  names or `*.suffix` wildcards, e.g. `GOEL_PORTAL_ALLOWED_HOSTS=goel.example.com,*.corp.example`;
+- anything at all when the TCP peer is a **trusted proxy** (Settings → Web Access →
+  trusted proxies, `remoteTrustedProxies` in managed policy; IPs or CIDRs), because the
+  proxy chose the `Host` itself.
+
+Anything else gets `421 Misdirected Request`. A request with no `Host` header at all
+(HTTP/1.0 scripts) is let through, since a rebinding browser always sends one.
+
+Behind a reverse proxy that passes the public `Host` through (the Caddy and Traefik
+default), either list that name in `GOEL_PORTAL_ALLOWED_HOSTS` or list the proxy's address
+in the trusted proxies. `GOEL_PORTAL_ALLOWED_HOSTS` is read from the environment of the app
+or daemon process at startup, like `GOEL_PORTAL_PROXY_SECRET`; on Linux put it in
+`/etc/goel/config` (see [linux.md](linux.md)). A trusted proxy is also the only peer whose
+`X-Forwarded-Proto: https` is believed when deciding to mark the session cookie `Secure`.
 
 ### Read-only mode
 
@@ -234,14 +266,28 @@ always present:
 > intended way to bound this is to bound the account, not to trust a check in the app.
 >
 > **Internal-address guard.** Every URL-bearing source is screened against loopback, the
-> link-local/cloud-metadata range and the unspecified address, **by resolved address** — a
-> hostname that resolves into those ranges is refused too, as are the integer, octal, hex
-> and IPv4-mapped-IPv6 spellings. Refused lines are counted in `refused`; if nothing in the
-> batch survives, the response is `403 Forbidden`. Private LAN ranges (`10/8`, `172.16/12`,
-> `192.168/16`) are deliberately allowed, since pulling from a NAS is the point. Note that
-> a screened URL is only screened at the point of adding: an allowed host that **redirects**
-> to an internal address is followed, and the child URIs inside an accepted HLS playlist are
-> checked for scheme but not for address.
+> link-local/cloud-metadata range, the unspecified address **and the private LAN ranges**
+> (`10/8`, `172.16/12`, `192.168/16`, CGNAT `100.64/10`, IPv6 ULA `fc00::/7`), **by resolved
+> address** — a hostname that
+> resolves into those ranges is refused too, as are the integer, octal, hex and
+> IPv4-mapped-IPv6 spellings, and a name that cannot be resolved for screening is refused
+> rather than waved through. Refused lines are counted in `refused`; if nothing in the batch
+> survives, the response is `403 Forbidden`. An authenticated portal session must not become
+> a way to probe or pull from other machines on your network.
+>
+> The private ranges can be reopened for specific hosts through a **private-target
+> allowlist** (exact host names, IPv4 literals or IPv4 CIDRs — a NAS, say). It never
+> unlocks loopback or link-local, and an allowlisted name that resolves to loopback is still
+> refused. The allowlist is implemented in `NetworkGuard.privateTargetAllowlist` but is **not
+> yet exposed** as a setting or environment variable, so today every LAN target added
+> through the API is refused; add LAN downloads from the app itself. Magnet links carry no
+> fetch target and are not screened. When a proxy that resolves names itself (SOCKS5) is
+> configured, name resolution is left to the proxy.
+>
+> The screen also applies after adding: every **redirect hop** is screened, by spelling and
+> then by resolved address, so an allowed host cannot 302 the download into loopback or
+> cloud metadata, nor from a public origin into a private range. Child URIs inside an HLS
+> playlist are screened by spelling against the playlist's host.
 
 #### `POST /api/history-remove?id=<uuid>`
 

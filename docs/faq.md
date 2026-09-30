@@ -138,7 +138,8 @@ media streaming still work.
 
 ### Can I script it?
 
-Yes. Pass `Authorization: Bearer <token>` or `?token=<token>` to the JSON API. See
+Yes. Send `Authorization: Bearer <token>` to the JSON API (a `?token=` query parameter is
+only accepted on the pairing link and `/stream`, never on `/api`). See
 [remote-api.md](remote-api.md) for all 14 routes.
 
 ---

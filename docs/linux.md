@@ -65,6 +65,18 @@ curl -fsSL https://goel.vinitk.dev/install.sh | sudo GOEL_PORT=9090 GOEL_LAN=tru
 | `GOEL_NO_START` | — | Install without enabling or starting the service |
 | `GOEL_SKIP_DEPS` | — | Don't touch `apt`; you are supplying the libraries |
 | `GOEL_INSECURE` | — | Install even if the release publishes no checksum |
+| `GOEL_MINISIGN_PUBKEY` | — | A minisign public key (`RWS…`). Makes signature verification **mandatory**: the install fails if the release has no `.minisig`, if `minisign` is not installed, or if the signature does not match |
+
+Every download is checked against the release's published `.sha256`. If the installer carries
+an embedded minisign key, or you pass `GOEL_MINISIGN_PUBKEY`, the tarball's `.minisig` is
+verified too (install `minisign` first: `sudo apt install minisign`). Without an explicit
+`GOEL_MINISIGN_PUBKEY` a missing signature or a missing `minisign` falls back to the checksum
+with a warning; a signature that is present and does not match is always fatal:
+
+```sh
+curl -fsSL https://goel.vinitk.dev/install.sh \
+  | sudo GOEL_MINISIGN_PUBKEY='RWS…' sh
+```
 
 Re-running the installer **upgrades in place**: it keeps `/etc/goel/config`, your queue and your
 downloads, and only replaces `/opt/goel`. Your password is not regenerated and not reprinted.
@@ -161,6 +173,46 @@ sync` if you changed a path.
 | `GOEL_AGGREGATION` | unset | Split downloads across interfaces. Unset = whatever the portal last saved |
 | `GOEL_AGGREGATION_ADAPTERS` | unset | Interfaces to split across, comma-separated. Empty = every eligible one |
 | `GOEL_AGGREGATION_STREAMS` | `2` | Connections opened per interface, 1–8 |
+| `GOEL_PORTAL_ALLOWED_HOSTS` | unset | Extra host names the portal answers to, comma-separated; `*.example.com` wildcards allowed. See [Behind a reverse proxy](#behind-a-reverse-proxy) |
+| `GOEL_SSH_FINGERPRINTS` | unset | Pinned SFTP host keys, `host[:port]=SHA256:base64`, comma-separated. See [SFTP host keys](#sftp-host-keys) |
+
+### Behind a reverse proxy
+
+The portal checks every request's `Host` header as a DNS-rebinding defence and answers
+`421 Misdirected Request` to a name it does not recognise. IP addresses, `localhost`, `.local`
+names, single-label names and the machine's own host name always work. A reverse proxy that
+passes the public name through (the Caddy and Traefik default) needs that name listed:
+
+```sh
+# /etc/goel/config
+GOEL_PORTAL_ALLOWED_HOSTS=goel.example.com
+```
+
+then `sudo systemctl restart goel`. Alternatively list the proxy's own address as a trusted
+proxy (portal → Settings → Web Access, or `remoteTrustedProxies` in
+`/etc/goel/managed-policy.json`); requests arriving from a trusted proxy are accepted under any host
+name, and only a trusted proxy's `X-Forwarded-Proto` is believed. The daemon prints a note at
+startup when neither is set. See [remote-api.md](remote-api.md#host-names-dns-rebinding-defence).
+
+### SFTP host keys
+
+The daemon has nobody to ask "do you trust this server's key?", so it never trusts a new SFTP
+host on first use: a host whose key has not been pinned is refused **before any credential is
+sent**, and the error quotes the key the server presented so you can check it. Pin keys in
+`GOEL_SSH_FINGERPRINTS`, one `host[:port]=SHA256:<base64>` entry per server (the port defaults
+to 22; the value is what `ssh-keygen -lf` prints, and 64 hex digits are also accepted):
+
+```sh
+# On a machine you trust, or on the server itself:
+ssh-keyscan -p 2222 nas.lan | ssh-keygen -lf -
+# /etc/goel/config
+GOEL_SSH_FINGERPRINTS=nas.lan:2222=SHA256:mVk1…,backup.example.com=SHA256:3fQ9…
+```
+
+then `sudo systemctl restart goel`. Pins are read from the environment and not stored, so
+changing the variable re-pins. Outside systemd (`run.sh`, Docker), export
+`GOEL_SSH_FINGERPRINTS` in the process environment; the config file alone is not enough for
+this key.
 
 ### Using more than one network interface
 
