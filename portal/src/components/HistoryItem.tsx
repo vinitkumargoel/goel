@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next'
 import { fmtSize, fmtWhen } from '../lib/format'
+import { historyFileURL } from '../lib/api'
 import { fileType, kindLabel } from '../lib/taskKind'
 import type { HistoryRow } from '../lib/types'
-import { FileTypeIcon, RetryIcon, TrashIcon } from './Icons'
+import { DownloadIcon, FileTypeIcon, RetryIcon, TrashIcon } from './Icons'
 
 interface HistoryItemProps {
   entry: HistoryRow
@@ -33,6 +34,16 @@ export function HistoryItem({ entry: e, canWrite, onReadd, onRemove }: HistoryIt
       </div>
       <div className="c r hide-sm hfolder">{folder}</div>
       <div className="hact">
+        {/* Reading, not a change: read-only sessions may save too. The server 404s a vanished file. */}
+        <a
+          className="mbtn"
+          href={historyFileURL(e.id)}
+          download
+          aria-label={t('history.saveNamed', { name: e.name })}
+          title={t('history.saveHint')}
+        >
+          <DownloadIcon />
+        </a>
         {canWrite && (
           <>
             <button

@@ -9,13 +9,15 @@ const HEADROOM = 1.15
 
 interface SpeedChartProps {
   samples: readonly SpeedSample[]
+  /** The General tab's strip: the lines only, the rates sit above it as figures. */
+  compact?: boolean
 }
 
 /**
  * The last minute of one download: ↓ as a filled accent area, ↑ as a teal line. Scales to the
  * panel's width (the viewBox stretches horizontally; strokes keep their width).
  */
-export function SpeedChart({ samples }: SpeedChartProps) {
+export function SpeedChart({ samples, compact = false }: SpeedChartProps) {
   const { t } = useTranslation()
   const peak = peakRate(samples)
   const scale = peak * HEADROOM
@@ -23,6 +25,23 @@ export function SpeedChart({ samples }: SpeedChartProps) {
   const up = samples.map((s) => s.up)
   const downPeak = Math.max(0, ...down)
   const upPeak = Math.max(0, ...up)
+
+  const label = t('chart.label', {
+    down: fmtSpeed(downPeak, '0 B/s'),
+    up: fmtSpeed(upPeak, '0 B/s'),
+  })
+
+  if (compact) {
+    return (
+      <figure className="schart compact">
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={label}>
+          <path className="schart-area" d={seriesPath(down, W, H, scale, true, HISTORY_LENGTH)} />
+          <path className="schart-down" d={seriesPath(down, W, H, scale, false, HISTORY_LENGTH)} />
+          <path className="schart-up" d={seriesPath(up, W, H, scale, false, HISTORY_LENGTH)} />
+        </svg>
+      </figure>
+    )
+  }
 
   return (
     <figure className="schart">
@@ -37,10 +56,7 @@ export function SpeedChart({ samples }: SpeedChartProps) {
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
         role="img"
-        aria-label={t('chart.label', {
-          down: fmtSpeed(downPeak, '0 B/s'),
-          up: fmtSpeed(upPeak, '0 B/s'),
-        })}
+        aria-label={label}
       >
         <line className="schart-grid" x1="0" x2={W} y1={H / 2} y2={H / 2} />
         <path className="schart-area" d={seriesPath(down, W, H, scale, true, HISTORY_LENGTH)} />

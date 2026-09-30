@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useDialogFocus } from '../hooks/useDialogFocus'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useSheetDrag } from '../hooks/useSheetDrag'
-import { streamURL } from '../lib/api'
+import { streamURL, zipURL } from '../lib/api'
 import { fileType, isActive, kindLabel } from '../lib/taskKind'
 import type { FilePriority, TaskDetail } from '../lib/types'
 import {
@@ -13,6 +13,7 @@ import {
   GeneralPane,
   PeersPane,
   ProgressPane,
+  tabLabelKey,
   type DetailTab,
 } from './DetailPanes'
 import {
@@ -66,6 +67,8 @@ export function DetailPanel({
   const ref = useRef<HTMLElement>(null)
   // ≤680px the panel is a bottom sheet: modal, focus-trapped, dismissed by Esc, the scrim or a drag.
   const phone = useMediaQuery('(max-width: 680px)')
+  // 681–920px the panel floats over the list; the scrim dims that list and closes the panel.
+  const overlay = useMediaQuery('(min-width: 681px) and (max-width: 920px)')
   const sheet = phone && open
   const drag = useSheetDrag(onClose)
 
@@ -73,6 +76,9 @@ export function DetailPanel({
     <>
       {phone && (
         <div className={`sheet-scrim${open ? ' open' : ''}`} onClick={onClose} aria-hidden="true" />
+      )}
+      {overlay && (
+        <div className={`panel-scrim${open ? ' open' : ''}`} onClick={onClose} aria-hidden="true" />
       )}
       <aside
         ref={ref}
@@ -160,6 +166,8 @@ function Loaded({
   const tabRefs = useRef(new Map<DetailTab, HTMLButtonElement>())
   const tabId = (name: DetailTab) => `${idBase}-tab-${name}`
   const panelId = `${idBase}-panel`
+  const zippable =
+    row.multiFile && detail.files.some((f) => f.priority !== 'skip' && f.progress >= 1)
 
   // Tablist keyboard model: arrows move and activate, Home/End jump to the ends.
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -178,7 +186,8 @@ function Loaded({
   }
 
   return (
-    <div>
+    // A flex column, so `.tbody` is bounded and scrolls instead of running under the status bar.
+    <div className="dload">
       <div className="dhead">
         <div className="dtop">
           <div className={`ftype ft-${type}`}>
@@ -225,11 +234,20 @@ function Loaded({
                 <StreamIcon />
                 {t('common.stream')}
               </button>
-              <a className="mbtn" href={streamURL(row.id)} download>
-                <DownloadIcon />
-                {t('common.download')}
-              </a>
+              {!row.multiFile && (
+                <a className="mbtn" href={streamURL(row.id, true)} download={row.name}>
+                  <DownloadIcon />
+                  {t('common.download')}
+                </a>
+              )}
             </>
+          )}
+
+          {zippable && (
+            <a className="mbtn" href={zipURL(row.id)} download title={t('detail.downloadAllHint')}>
+              <DownloadIcon />
+              {t('detail.downloadAll')}
+            </a>
           )}
 
           <button className="mbtn" onClick={() => onCopy(row.source)}>
@@ -288,7 +306,7 @@ function Loaded({
               className={name === tab ? 'on' : undefined}
               onClick={() => onTab(name)}
             >
-              {t(`detail.tabs.${name}`)}
+              {t(tabLabelKey(name, row.kind))}
             </button>
           ))}
         </div>
@@ -300,6 +318,7 @@ function Loaded({
           detail={detail}
           canWrite={canWrite}
           onCopy={onCopy}
+          onRetry={() => onAction(row.id, 'retry')}
           onToggleFile={onToggleFile}
           onCyclePriority={onCyclePriority}
         />
@@ -313,6 +332,7 @@ function Pane({
   detail,
   canWrite,
   onCopy,
+  onRetry,
   onToggleFile,
   onCyclePriority,
 }: {
@@ -320,12 +340,13 @@ function Pane({
   detail: TaskDetail
   canWrite: boolean
   onCopy: (text: string) => void
+  onRetry: () => void
   onToggleFile: (fileId: number, wasSkipped: boolean) => void
   onCyclePriority: (fileId: number, current: FilePriority) => void
 }) {
   switch (tab) {
     case 'general':
-      return <GeneralPane detail={detail} onCopy={onCopy} />
+      return <GeneralPane detail={detail} onCopy={onCopy} canWrite={canWrite} onRetry={onRetry} />
     case 'details':
       return <DetailsPane detail={detail} />
     case 'progress':

@@ -31,6 +31,8 @@ export interface TaskRow {
   conns: number
   /** Unix seconds, not milliseconds. */
   addedAt: number
+  /** Unix seconds; absent from daemons that predate it. */
+  completedAt?: number | null
   etaSeconds: number | null
   error: string | null
   source: string
@@ -139,6 +141,8 @@ export interface TorrentAddOptions {
   dir?: string
   priority?: 'low' | 'normal' | 'high'
   paused?: boolean
+  /** As `AddRequest.network`; left off for `auto`. */
+  network?: string
 }
 
 export interface AddRequest {

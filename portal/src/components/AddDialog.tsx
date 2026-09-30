@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDialogFocus } from '../hooks/useDialogFocus'
+import { saveDraft, type AddDraft } from '../lib/addDraft'
 import { submitAdd, type AddSummary } from '../lib/addSubmit'
 import { api, failureMessage } from '../lib/api'
 import { BOOT } from '../lib/boot'
@@ -20,15 +21,23 @@ interface AddDialogProps {
   onWarn: (message: string) => void
   /** Torrent files dropped on the window, which opened the dialog. */
   initialFiles?: readonly File[]
+  /** Links and choices typed before a sign-out cut them off, restored after signing back in. */
+  initialDraft?: AddDraft | null
 }
 
-export function AddDialog({ onClose, onAdded, onWarn, initialFiles = [] }: AddDialogProps) {
+export function AddDialog({
+  onClose,
+  onAdded,
+  onWarn,
+  initialFiles = [],
+  initialDraft = null,
+}: AddDialogProps) {
   const { t } = useTranslation()
-  const [url, setUrl] = useState('')
+  const [url, setUrl] = useState(initialDraft?.url ?? '')
   const [torrents, setTorrents] = useState<TorrentMerge>(() => mergeTorrents([], initialFiles))
-  const [folder, setFolder] = useState('')
-  const [priority, setPriority] = useState<'normal' | 'high' | 'low'>('normal')
-  const [paused, setPaused] = useState(false)
+  const [folder, setFolder] = useState(initialDraft?.folder ?? '')
+  const [priority, setPriority] = useState<'normal' | 'high' | 'low'>(initialDraft?.priority ?? 'normal')
+  const [paused, setPaused] = useState(initialDraft?.paused ?? false)
   const [net, setNet] = useState<NetworkState | null>(null)
   const [mode, setMode] = useState<NetMode>('auto')
   const [chosen, setChosen] = useState<string[]>([])
@@ -47,6 +56,11 @@ export function AddDialog({ onClose, onAdded, onWarn, initialFiles = [] }: AddDi
   useEffect(() => {
     urlRef.current?.focus()
   }, [])
+
+  // Kept as typed: an expired session reloads the page to sign in, and would otherwise lose it.
+  useEffect(() => {
+    saveDraft({ url, folder, priority, paused })
+  }, [url, folder, priority, paused])
 
   useEffect(() => {
     let cancelled = false
@@ -241,7 +255,7 @@ export function AddDialog({ onClose, onAdded, onWarn, initialFiles = [] }: AddDi
                 )}
               </div>
             </div>
-            <div className="fg" style={{ flex: '0 0 130px' }}>
+            <div className="fg fg-prio">
               <label className="flabel" htmlFor={`${id}-prio`}>
                 {t('addDialog.priority')}
               </label>

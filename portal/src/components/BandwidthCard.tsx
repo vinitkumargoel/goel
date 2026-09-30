@@ -11,6 +11,7 @@ import {
   type CapField,
   type RateUnit,
 } from '../lib/bandwidth'
+import { DirtyStrip, SavedTick, useSavedFlash } from './SettingsParts'
 
 interface Draft {
   name: string
@@ -25,18 +26,25 @@ interface BandwidthCardProps {
   bandwidth: Bandwidth
   canWrite: boolean
   onToast: (message: string, tone?: ToastTone) => void
+  /** Unsaved cap edits exist; Settings guards leaving while any card has some. */
+  onDirty?: (dirty: boolean) => void
 }
 
 /**
- * Settings → Bandwidth: the on/off switch and active profile save at once; cap edits wait for
- * Save. Hidden entirely for a daemon without the endpoint.
+ * Settings → Bandwidth: the on/off switch and active profile save at once (and say so beside
+ * themselves); cap edits wait in a strip with Save and Discard. Hidden for a daemon without it.
  */
-export function BandwidthCard({ bandwidth, canWrite, onToast }: BandwidthCardProps) {
+export function BandwidthCard({ bandwidth, canWrite, onToast, onDirty }: BandwidthCardProps) {
   const { t } = useTranslation()
   const { status, state, update } = bandwidth
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [enabledSaved, flashEnabled] = useSavedFlash()
+  const [profileSaved, flashProfile] = useSavedFlash()
+  const [capsSaved, flashCaps] = useSavedFlash()
+
+  useEffect(() => onDirty?.(dirty), [dirty, onDirty])
 
   // Adopt the server's caps as they arrive — but never over edits the user hasn't saved yet.
   useEffect(() => {
@@ -58,12 +66,12 @@ export function BandwidthCard({ bandwidth, canWrite, onToast }: BandwidthCardPro
   const selectedLocked = isLocked(state, 'selected')
   const managed = <span className="chip chip-d">{t('settings.bandwidth.managed')}</span>
 
-  async function save(body: BandwidthUpdate): Promise<boolean> {
+  async function save(body: BandwidthUpdate, flash: () => void): Promise<boolean> {
     setBusy(true)
     const error = await update(body)
     setBusy(false)
     if (error === null) {
-      onToast(t('settings.bandwidth.saved'))
+      flash()
       return true
     }
     if (error) onToast(error, 'warn')
@@ -81,7 +89,12 @@ export function BandwidthCard({ bandwidth, canWrite, onToast }: BandwidthCardPro
       }
       profiles.push({ name: d.name, downBytesPerSec: down, upBytesPerSec: up })
     }
-    if (await save({ profiles })) setDirty(false)
+    if (await save({ profiles }, flashCaps)) setDirty(false)
+  }
+
+  const discard = () => {
+    setDrafts(toDrafts(state.profiles))
+    setDirty(false)
   }
 
   const edit = (name: string, dir: 'down' | 'up', field: Partial<CapField>) => {
@@ -103,12 +116,13 @@ export function BandwidthCard({ bandwidth, canWrite, onToast }: BandwidthCardPro
           <div className="sdesc">{t('settings.bandwidth.desc')}</div>
         </div>
         <div className="sctl">
+          <SavedTick shown={enabledSaved} />
           {canWrite && (
             <button
               className={`btn${state.enabled ? '' : ' primary'}`}
               disabled={busy || enabledLocked}
               title={enabledLocked ? t('settings.bandwidth.managed') : undefined}
-              onClick={() => void save({ enabled: !state.enabled })}
+              onClick={() => void save({ enabled: !state.enabled }, flashEnabled)}
             >
               {state.enabled ? t('common.turnOff') : t('common.turnOn')}
             </button>
@@ -123,13 +137,14 @@ export function BandwidthCard({ bandwidth, canWrite, onToast }: BandwidthCardPro
           </label>
         </div>
         <div className="sctl">
+          <SavedTick shown={profileSaved} />
           <select
             id="bw-profile"
             className="finput"
             value={state.selected}
             disabled={!canWrite || busy || selectedLocked}
             title={selectedLocked ? t('settings.bandwidth.managed') : undefined}
-            onChange={(e) => void save({ selected: e.target.value })}
+            onChange={(e) => void save({ selected: e.target.value }, flashProfile)}
           >
             {state.profiles.map((p) => (
               <option key={p.name} value={p.name}>
@@ -144,6 +159,9 @@ export function BandwidthCard({ bandwidth, canWrite, onToast }: BandwidthCardPro
         <div className="sinfo">
           <div className="sname">{t('settings.bandwidth.capsName')}</div>
         </div>
+        <div className="sctl">
+          <SavedTick shown={capsSaved} />
+        </div>
       </div>
       <div className="bw-grid" role="group" aria-label={t('settings.bandwidth.capsName')}>
         <span aria-hidden="true" />
@@ -155,14 +173,7 @@ export function BandwidthCard({ bandwidth, canWrite, onToast }: BandwidthCardPro
       </div>
 
       {canWrite && (
-        <div className="srow">
-          <div className="sinfo" />
-          <div className="sctl">
-            <button className="btn primary" disabled={!dirty || busy} onClick={() => void saveCaps()}>
-              {t('common.save')}
-            </button>
-          </div>
-        </div>
+        <DirtyStrip dirty={dirty} busy={busy} onDiscard={discard} onSave={() => void saveCaps()} />
       )}
     </div>
   )

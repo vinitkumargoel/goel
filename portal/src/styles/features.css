@@ -44,9 +44,10 @@
    never fight the ≤920px grid there. */
 .content{container:lib/inline-size}
 @media(min-width:921px){
-  @container lib (max-width:900px){.lhead,.row{grid-template-columns:1fr 96px 150px 108px 72px}.lhead .hide-lg,.row .c.hide-lg{display:none}}
-  @container lib (max-width:700px){.lhead,.row{grid-template-columns:1fr 96px 150px 108px}.lhead .hide-md,.row .c.hide-md{display:none}}
-  @container lib (max-width:580px){.lhead,.row{grid-template-columns:1fr 96px 108px}.lhead .hide-sm,.row .c.hide-sm{display:none}.nstat{display:flex}}
+  @container lib (max-width:900px){.lhead,.row{grid-template-columns:minmax(220px,1fr) 96px 150px 108px 72px}.lhead .hide-lg,.row .c.hide-lg{display:none}}
+  /* Status and ETA fold into the name's second line well before the name is squeezed: at 1280px
+     with the panel open the list is ~706px, and five columns left the name about 115px. */
+  @container lib (max-width:760px){.lhead,.row{grid-template-columns:minmax(0,1fr) 96px 108px}.lhead .hide-sm,.row .c.hide-sm{display:none}.nstat{display:flex}}
   @container lib (max-width:470px){.lhead,.row{grid-template-columns:1fr 96px}.lhead .hide-xs,.row .c.hide-xs{display:none}}
 }
 .pmeta{display:flex;align-items:center;gap:6px;min-width:0}
@@ -130,6 +131,29 @@
 .bw-cap select.finput{width:auto;padding:6px 6px}
 .seg .sw.sw-auto{background:linear-gradient(135deg,var(--text) 0 50%,var(--bg-content) 50% 100%);border:1px solid var(--border-strong)}
 
+/* ── Detail panel: bounded body, General hero, failure card, file saves ── */
+.dload{display:flex;flex-direction:column;flex:1;min-height:0}
+.dload>.dhead,.dload>.tabs{flex:0 0 auto}
+.drates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px}
+.drate{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--bg-chip)}
+.drate .drk{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-faint)}
+.drate b{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.drate.down b{color:var(--green)}.drate.up b{color:var(--teal)}
+.schart.compact{margin:0 0 10px}.schart.compact svg{height:44px}
+.dfail{display:flex;align-items:flex-start;gap:10px;padding:11px 12px;margin:0 0 10px;border-radius:10px;background:var(--red-soft);border:1px solid color-mix(in srgb,var(--red) 35%,transparent)}
+.dfail>svg{width:17px;height:17px;flex:0 0 auto;color:var(--red);margin-top:1px}
+.dfail-body{flex:1;min-width:0}
+.dfail-t{font-size:12.5px;font-weight:600;color:var(--red)}
+.dfail-m{font-size:12px;line-height:1.45;color:var(--text);margin-top:2px;overflow-wrap:anywhere}
+.dfail .mbtn{flex:0 0 auto}
+.fdl,.fdl-gap{width:24px;height:24px;flex:0 0 24px}
+.fdl{display:grid;place-items:center;border-radius:6px;color:var(--text-dim);background:var(--bg-control)}
+.fdl:hover{background:var(--accent);color:var(--on-accent)}.fdl svg{width:12px;height:12px}
+.stext.err{color:var(--red)}
+/* 681–920px the panel overlays the list: a scrim says the list behind is not live, and closes it. */
+.panel-scrim{display:none}
+@media(min-width:681px) and (max-width:920px){.panel-scrim.open{display:block;position:absolute;inset:0;background:var(--scrim);z-index:34;animation:ti .2s}}
+
 /* ── Bottom sheet pieces (only rendered ≤680px) ───────────────────────── */
 .sheet-scrim{display:none}
 .grabber{display:flex;justify-content:center;align-items:center;height:24px;flex:0 0 24px;cursor:grab;touch-action:none}
@@ -151,6 +175,10 @@
 
   .fab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(52px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border:0;border-radius:50%;background:var(--accent);color:var(--on-accent);box-shadow:0 10px 28px rgba(0,0,0,.35);cursor:pointer;z-index:50}
   .fab:hover{background:var(--accent-press)}.fab svg{width:22px;height:22px}
+  /* Room to scroll the last row clear of the FAB. */
+  .rows{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+  /* Translucent over the list it covers read as clutter: the open drawer is opaque. */
+  .sidebar.open{background:var(--bg-modal);backdrop-filter:none;-webkit-backdrop-filter:none}
 
   .sheet-scrim.open{display:block;position:fixed;inset:0;background:var(--scrim);z-index:104}
   .detail.sheet{position:fixed;left:0;right:0;top:auto;bottom:0;width:100%;height:60vh;height:60dvh;flex-basis:auto;border-left:0;border-top:1px solid var(--border-strong);border-radius:16px 16px 0 0;background:var(--bg-modal);box-shadow:0 -12px 40px rgba(0,0,0,.4);z-index:105;overflow-y:auto;overscroll-behavior:contain;transition:transform .3s cubic-bezier(.3,.9,.3,1),opacity .25s}
@@ -175,6 +203,12 @@
   .bw-grid{grid-template-columns:1fr;gap:6px}
   .bw-grid .bw-h{display:none}
   .tdrop-lim{margin-left:0;width:100%}
+  .dfail{flex-wrap:wrap}
+}
+
+@media(max-width:480px){
+  .twocol{flex-direction:column;gap:12px}
+  .twocol .fg-prio{flex:1 1 auto}
 }
 
 @media (pointer:coarse){
@@ -183,3 +217,16 @@
   .rc-btn{height:28px}
   .msearch-cancel{height:40px}
 }
+
+/* Settings: grouped by reach, and pending edits held in a strip rather than a lone Save button. */
+.sgroup{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin:22px 2px 8px}
+.sgroup:first-of-type{margin-top:4px}
+.sgroup .chip{text-transform:none;letter-spacing:0}
+.saved-tick{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--green);opacity:0;transition:opacity .2s}
+.saved-tick.on{opacity:1}
+.saved-tick svg{width:12px;height:12px}
+.sapply{margin:0 2px 10px}
+.dirty-strip{position:sticky;bottom:0;z-index:2;display:flex;align-items:center;gap:8px;margin:4px -4px -4px;padding:10px 12px;border-radius:10px;background:var(--bg-modal);border:1px solid var(--border);box-shadow:0 -4px 16px rgba(0,0,0,.18)}
+.dirty-strip .dirty-dot{width:8px;height:8px;border-radius:50%;background:var(--orange);flex:none}
+.dirty-strip .dirty-t{flex:1;font-size:12.5px;font-weight:600}
+@media (prefers-reduced-motion:reduce){.saved-tick{transition:none}}

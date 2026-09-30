@@ -12,6 +12,7 @@ private final class UploadBackend: RemoteBackend, @unchecked Sendable {
                    .init(name: "Medium", downBytesPerSec: 5_000, upBytesPerSec: nil)])
     private(set) var bandwidthUpdates: [RemoteBandwidthUpdate] = []
     private(set) var torrents: [(data: Data, name: String, dir: String?, paused: Bool)] = []
+    private(set) var networks: [NetworkSelection?] = []
     var failNames: Set<String> = []
     var allowedFolders: Set<String>?
 
@@ -56,6 +57,14 @@ private final class UploadBackend: RemoteBackend, @unchecked Sendable {
         if failNames.contains(name) { throw RemoteTorrentUpload.Failure.rejected("engine said no") }
         torrents.append((data, name, saveDirectory, startPaused))
         return UUID()
+    }
+
+    func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
+                          priority: FilePriority, startPaused: Bool,
+                          network: NetworkSelection?) async throws -> UUID? {
+        networks.append(network)
+        return try await remoteAddTorrent(data, named: name, saveDirectory: saveDirectory,
+                                          priority: priority, startPaused: startPaused)
     }
 }
 
@@ -262,6 +271,25 @@ final class RemoteUploadRoutesTests: XCTestCase {
         XCTAssertEqual(backend.torrents.map(\.dir), ["/srv/media", "/srv/media"])
         XCTAssertEqual(backend.torrents.map(\.data), [torrent("1"), torrent("2")])
         XCTAssertTrue(backend.torrents.allSatisfy(\.paused))
+    }
+
+    /// The Add dialog's Network choice used to reach `/api/add` only; a .torrent silently ran on `auto`.
+    func testUploadCarriesTheNetworkChoiceAndRefusesAMalformedOne() async throws {
+        let backend = UploadBackend()
+        let router = RemoteRouter(backend: backend, token: "secret")
+        let out = await router.handle(upload([("file", "a.torrent", torrent("a"))],
+                                             fields: ["network": "aggregate"]))
+        XCTAssertTrue(str(out).hasPrefix("HTTP/1.1 200 OK"), str(out))
+        XCTAssertEqual(backend.networks, [NetworkSelection(spec: "aggregate")])
+
+        let none = await router.handle(upload([("file", "b.torrent", torrent("b"))]))
+        XCTAssertTrue(str(none).hasPrefix("HTTP/1.1 200 OK"))
+        XCTAssertEqual(backend.networks.last, .some(nil))
+
+        let bad = await router.handle(upload([("file", "c.torrent", torrent("c"))],
+                                             fields: ["network": "teleport:everywhere"]))
+        XCTAssertTrue(str(bad).hasPrefix("HTTP/1.1 400"), str(bad))
+        XCTAssertEqual(backend.torrents.count, 2)
     }
 
     func testUploadReportsPerFileFailuresAlongsideSuccesses() async throws {

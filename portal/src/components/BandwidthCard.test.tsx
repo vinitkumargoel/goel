@@ -24,8 +24,11 @@ function renderCard(over: Partial<Bandwidth> = {}, canWrite = true) {
     ...over,
   }
   const onToast = vi.fn()
-  const view = renderWithI18n(<BandwidthCard bandwidth={bandwidth} canWrite={canWrite} onToast={onToast} />)
-  return { ...view, bandwidth, onToast }
+  const onDirty = vi.fn()
+  const view = renderWithI18n(
+    <BandwidthCard bandwidth={bandwidth} canWrite={canWrite} onToast={onToast} onDirty={onDirty} />,
+  )
+  return { ...view, bandwidth, onToast, onDirty }
 }
 
 describe('BandwidthCard', () => {
@@ -43,20 +46,24 @@ describe('BandwidthCard', () => {
     expect(screen.getByLabelText('Upload cap for Low')).toHaveValue('')
   })
 
-  it('switches limits and the profile at once', async () => {
+  it('switches limits and the profile at once, confirming beside the control', async () => {
     const { bandwidth, onToast } = renderCard()
     await userEvent.click(screen.getByRole('button', { name: en.common.turnOff }))
     expect(bandwidth.update).toHaveBeenCalledWith({ enabled: false })
     await userEvent.selectOptions(screen.getByLabelText(en.settings.bandwidth.profileName), 'Low')
     expect(bandwidth.update).toHaveBeenCalledWith({ selected: 'Low' })
-    expect(onToast).toHaveBeenCalledWith(en.settings.bandwidth.saved)
+    expect(screen.getAllByText(en.settings.saved).length).toBeGreaterThan(0)
+    expect(onToast).not.toHaveBeenCalled()
   })
 
   it('saves edited caps as bytes per second, blank as unlimited', async () => {
-    const { bandwidth } = renderCard()
-    const save = screen.getByRole('button', { name: en.common.save })
-    expect(save).toBeDisabled()
+    const { bandwidth, onDirty } = renderCard()
+    // No edits, no strip: Save only exists while something is pending.
+    expect(screen.queryByRole('button', { name: en.common.save })).toBeNull()
     await userEvent.clear(screen.getByLabelText('Download cap for Low'))
+    expect(screen.getByText(en.settings.unsaved)).toBeInTheDocument()
+    expect(onDirty).toHaveBeenLastCalledWith(true)
+    const save = screen.getByRole('button', { name: en.common.save })
     await userEvent.type(screen.getByLabelText('Upload cap for Low'), '1.5')
     await userEvent.selectOptions(screen.getByLabelText('Unit for Upload cap for Low'), 'MB')
     await userEvent.click(save)
@@ -66,6 +73,19 @@ describe('BandwidthCard', () => {
         { name: 'Medium', downBytesPerSec: 2097152, upBytesPerSec: 512000 },
       ],
     })
+    expect(onDirty).toHaveBeenLastCalledWith(false)
+    expect(screen.queryByText(en.settings.unsaved)).toBeNull()
+  })
+
+  it('discards pending edits back to the saved caps', async () => {
+    const { bandwidth, onDirty } = renderCard()
+    const field = screen.getByLabelText('Download cap for Low')
+    await userEvent.clear(field)
+    await userEvent.type(field, '9')
+    await userEvent.click(screen.getByRole('button', { name: en.settings.discard }))
+    expect(field).toHaveValue('512')
+    expect(onDirty).toHaveBeenLastCalledWith(false)
+    expect(bandwidth.update).not.toHaveBeenCalled()
   })
 
   it('refuses a negative cap without posting', async () => {

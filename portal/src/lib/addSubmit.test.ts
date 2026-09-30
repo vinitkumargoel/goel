@@ -24,8 +24,22 @@ describe('submitAdd', () => {
       dir: '/srv/dl',
       priority: 'normal',
       paused: false,
+      network: options.network,
     })
     expect(out).toEqual({ added: 3, refused: 1, failures: [] })
+  })
+
+  it('carries the network choice to torrent uploads too', async () => {
+    await submitAdd({
+      text: '',
+      validLinks: 0,
+      files: [torrent],
+      options: { ...options, network: 'aggregate:en0,en1' },
+    })
+    expect(api.addTorrents).toHaveBeenCalledWith(
+      [torrent],
+      expect.objectContaining({ network: 'aggregate:en0,en1' }),
+    )
   })
 
   it('skips the link call when only files and unusable text are present', async () => {

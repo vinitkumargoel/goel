@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { fileURL, streamURL } from '../lib/api'
 import { useSpeedSeries } from '../lib/speedStore'
 import { SpeedChart } from './SpeedChart'
-import { fmtEta, fmtSize, fmtSpeed, pct } from '../lib/format'
+import { fmtAbsolute, fmtEta, fmtSize, fmtSpeed, IDLE_RATE, pct } from '../lib/format'
 import { kindLabel } from '../lib/taskKind'
-import type { FilePriority, TaskDetail } from '../lib/types'
-import { CheckIcon, CopyIcon } from './Icons'
+import type { FilePriority, StatusToken, TaskDetail, TaskKind } from '../lib/types'
+import { CheckIcon, CopyIcon, DownloadIcon, RetryIcon, WarnIcon } from './Icons'
 
 export type DetailTab = 'general' | 'details' | 'progress' | 'files' | 'peers'
 
@@ -16,6 +17,17 @@ export const DETAIL_TABS: readonly DetailTab[] = [
   'files',
   'peers',
 ]
+
+/** The last tab lists HTTP segments or torrent peers; only a torrent's are peers. */
+export function tabLabelKey(
+  tab: DetailTab,
+  kind: TaskKind,
+): 'detail.tabs.connections' | `detail.tabs.${DetailTab}` {
+  return tab === 'peers' && kind !== 'torrent' ? 'detail.tabs.connections' : `detail.tabs.${tab}`
+}
+
+/** Moving now, so live rates and the chart mean something; a finished or failed task shows neither. */
+const LIVE: ReadonlySet<StatusToken> = new Set<StatusToken>(['downloading', 'seeding', 'verifying', 'metadata'])
 
 function KV({ k, children }: { k: string; children: ReactNode }) {
   return (
@@ -38,11 +50,21 @@ function CopyableValue({ value, onCopy }: { value: string; onCopy: (text: string
   )
 }
 
-function Bar({ fraction, height, label }: { fraction: number; height?: number; label?: string }) {
+function Bar({
+  fraction,
+  height,
+  label,
+  failed = false,
+}: {
+  fraction: number
+  height?: number
+  label?: string
+  failed?: boolean
+}) {
   const { t } = useTranslation()
   return (
     <div
-      className="dpbar"
+      className={`dpbar${failed ? ' failed' : ''}`}
       style={height ? { height } : undefined}
       role="progressbar"
       aria-label={label ?? t('library.progress')}
@@ -58,14 +80,22 @@ function Bar({ fraction, height, label }: { fraction: number; height?: number; l
 interface PaneProps {
   detail: TaskDetail
   onCopy: (text: string) => void
+  canWrite?: boolean
+  onRetry?: () => void
 }
 
-export function GeneralPane({ detail, onCopy }: PaneProps) {
+export function GeneralPane({ detail, onCopy, canWrite = false, onRetry }: PaneProps) {
   const { t } = useTranslation()
   const row = detail.row
   const percent = pct(row.progress)
   const eta = fmtEta(row.etaSeconds)
   const isTorrent = row.kind === 'torrent'
+  const failed = row.statusToken === 'failed'
+  const live = LIVE.has(row.statusToken)
+  const sizeLine =
+    row.totalBytes != null
+      ? t('detail.general.sizeOf', { done: fmtSize(row.doneBytes), total: fmtSize(row.totalBytes) })
+      : fmtSize(row.doneBytes)
 
   return (
     <>
@@ -73,50 +103,83 @@ export function GeneralPane({ detail, onCopy }: PaneProps) {
         <div className="dptop">
           <span className="dpct">{percent.toFixed(0)}%</span>
           <span className="dpsz">
-            {fmtSize(row.doneBytes)} / {fmtSize(row.totalBytes)}
+            {sizeLine}
+            {live && eta && ` · ${t('detail.general.left', { eta })}`}
           </span>
         </div>
-        <Bar fraction={row.progress} />
+        <Bar fraction={row.progress} failed={failed} />
       </div>
 
-      {/* `row.error` is the daemon's own message — passed through, not localized here. */}
-      {row.statusToken === 'failed' && row.error && (
-        <div
-          style={{
-            background: 'var(--red-soft)',
-            color: 'var(--red)',
-            borderRadius: 9,
-            padding: 11,
-            fontSize: 12,
-            marginBottom: 8,
-            lineHeight: 1.45,
-          }}
-        >
-          ⚠ {row.error}
-        </div>
+      {failed && <FailureCard error={row.error} canRetry={canWrite && onRetry != null} onRetry={onRetry} />}
+
+      {live && (
+        <>
+          <div className="drates">
+            <div className="drate down">
+              <span className="drk">{t('chart.down')}</span>
+              <b>{fmtSpeed(row.downSpeed, IDLE_RATE)}</b>
+            </div>
+            <div className="drate up">
+              <span className="drk">{t('chart.up')}</span>
+              <b>{isTorrent || row.upSpeed > 0 ? fmtSpeed(row.upSpeed, IDLE_RATE) : '—'}</b>
+            </div>
+          </div>
+          <LiveSpeedChart id={row.id} compact />
+        </>
       )}
 
       <KV k={t('detail.general.savePath')}>
         <CopyableValue value={detail.savePath} onCopy={onCopy} />
       </KV>
-      <KV k={t('detail.general.downloaded')}>{fmtSize(row.doneBytes)}</KV>
-      {isTorrent && (
+      {row.addedAt > 0 && <KV k={t('detail.general.added')}>{fmtAbsolute(row.addedAt)}</KV>}
+      {row.completedAt != null && row.completedAt > 0 && (
+        <KV k={t('detail.general.finished')}>{fmtAbsolute(row.completedAt)}</KV>
+      )}
+      {isTorrent ? (
         <>
+          <KV k={t('detail.general.peers')}>
+            {t('detail.general.peersValue', { seeds: row.seeds ?? 0, peers: row.conns })}
+          </KV>
           <KV k={t('detail.general.uploaded')}>{fmtSize(row.upBytes)}</KV>
           <KV k={t('detail.general.shareRatio')}>{row.ratio.toFixed(2)}</KV>
         </>
+      ) : (
+        live && <KV k={t('detail.details.connections')}>{row.conns}</KV>
       )}
-      {eta && <KV k={t('detail.general.eta')}>{eta}</KV>}
-      <KV k={t('detail.general.speed')}>
-        {/* Non-breaking spaces: JSX collapses literal whitespace, merging the two rates. */}
-        ↓ {fmtSpeed(row.downSpeed)}
-        {isTorrent && <>{'  '}↑ {fmtSpeed(row.upSpeed)}</>}
-      </KV>
       <KV k={t('detail.general.protocol')}>{kindLabel(row.kind)}</KV>
       <KV k={t('detail.general.source')}>
         <CopyableValue value={row.source} onCopy={onCopy} />
       </KV>
     </>
+  )
+}
+
+/** The native FailureCard's counterpart: what went wrong, and the one action that might fix it. */
+function FailureCard({
+  error,
+  canRetry,
+  onRetry,
+}: {
+  error: string | null
+  canRetry: boolean
+  onRetry?: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="dfail" role="group" aria-label={t('detail.general.failedTitle')}>
+      <WarnIcon aria-hidden="true" />
+      <div className="dfail-body">
+        <div className="dfail-t">{t('detail.general.failedTitle')}</div>
+        {/* `row.error` is the daemon's own message — passed through, not localized here. */}
+        <div className="dfail-m">{error || t('detail.general.failedNoReason')}</div>
+      </div>
+      {canRetry && (
+        <button className="mbtn accent" onClick={onRetry}>
+          <RetryIcon />
+          {t('common.retry')}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -165,7 +228,7 @@ export function DetailsPane({ detail }: { detail: TaskDetail }) {
       <KV k={t('detail.details.server')}>{detail.server ?? '—'}</KV>
       <KV k={t('detail.details.mime')}>{detail.mimeType ?? '—'}</KV>
       <KV k={t('detail.details.connections')}>{row.conns}</KV>
-      <KV k={t('detail.details.segments')}>{row.conns}</KV>
+      <KV k={t('detail.details.segments')}>{detail.connections.length || '—'}</KV>
     </>
   )
 }
@@ -180,8 +243,8 @@ export function ProgressPane({ detail }: { detail: TaskDetail }) {
 }
 
 /** Subscribes on its own, so a sample redraws the chart and not the panel around it. */
-function LiveSpeedChart({ id }: { id: string }) {
-  return <SpeedChart samples={useSpeedSeries(id)} />
+function LiveSpeedChart({ id, compact = false }: { id: string; compact?: boolean }) {
+  return <SpeedChart samples={useSpeedSeries(id)} compact={compact} />
 }
 
 function ProgressBody({ detail }: { detail: TaskDetail }) {
@@ -267,6 +330,17 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
             </div>
           </div>
           <span className="fsz">{fmtSize(row.totalBytes)}</span>
+          {(row.statusToken === 'completed' || row.statusToken === 'seeding') && (
+            <a
+              className="fdl"
+              href={streamURL(row.id, true)}
+              download={row.name}
+              aria-label={t('detail.files.save', { name: row.name })}
+              title={t('detail.files.saveHint')}
+            >
+              <DownloadIcon />
+            </a>
+          )}
         </div>
         <p className="fhint" style={{ marginTop: 12 }}>
           {t('detail.files.singleFile')}
@@ -311,11 +385,28 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
             >
               {t(`task.priority.${f.priority}`)}
             </button>
+            {!skipped && f.progress >= 1 ? (
+              <a
+                className="fdl"
+                href={fileURL(row.id, f.id)}
+                download={baseName(f.name)}
+                aria-label={t('detail.files.save', { name: f.name })}
+                title={t('detail.files.saveHint')}
+              >
+                <DownloadIcon />
+              </a>
+            ) : (
+              <span className="fdl-gap" aria-hidden="true" />
+            )}
           </div>
         )
       })}
     </>
   )
+}
+
+function baseName(path: string): string {
+  return path.split('/').pop() || path
 }
 
 export function PeersPane({ detail }: { detail: TaskDetail }) {

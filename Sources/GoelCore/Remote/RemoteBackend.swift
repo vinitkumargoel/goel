@@ -16,6 +16,12 @@ public protocol RemoteBackend: AnyObject, Sendable {
     func remoteAdd(source: DownloadSource, saveDirectory: String?,
                    priority: FilePriority, startPaused: Bool) async
     func history(limit: Int) async -> [HistoryEntry]
+    /// One entry by id, for `/stream?history=`. The default looks only through what `/api/history`
+    /// lists, so a request costs no more than the list the portal already loaded.
+    func historyEntry(_ id: UUID) async -> HistoryEntry?
+    /// Folders a history download may sit in but never be served as a whole (the default save
+    /// folder, home). Empty = no such roots.
+    func remoteDownloadRoots() async -> [String]
     func removeHistoryEntry(_ id: UUID) async
     func clearHistory() async
     /// The default implementation returns `true` — a conformer that forgets this allows every folder.
@@ -47,10 +53,18 @@ public protocol RemoteBackend: AnyObject, Sendable {
     /// backend cannot say; throws ``RemoteTorrentUpload/Failure`` when it could not be queued at all.
     func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
                           priority: FilePriority, startPaused: Bool) async throws -> UUID?
+    /// As above, bound to `network` like `/api/add`; the default drops the choice for older conformers.
+    func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
+                          priority: FilePriority, startPaused: Bool,
+                          network: NetworkSelection?) async throws -> UUID?
 }
 
 public extension RemoteBackend {
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { true }
+    func historyEntry(_ id: UUID) async -> HistoryEntry? {
+        await history(limit: RemoteRouter.historyLimit).first { $0.id == id }
+    }
+    func remoteDownloadRoots() async -> [String] { [] }
     func remoteAddResolvesThroughProxy() async -> Bool { false }
     func folderListing(_ path: String?) async -> RemoteFolderListing? { nil }
     func createFolder(named name: String, in parent: String?) async -> String? { nil }
@@ -61,6 +75,12 @@ public extension RemoteBackend {
     func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
                           priority: FilePriority, startPaused: Bool) async throws -> UUID? {
         throw RemoteTorrentUpload.Failure.unsupported
+    }
+    func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
+                          priority: FilePriority, startPaused: Bool,
+                          network: NetworkSelection?) async throws -> UUID? {
+        try await remoteAddTorrent(data, named: name, saveDirectory: saveDirectory,
+                                   priority: priority, startPaused: startPaused)
     }
     @discardableResult
     func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
@@ -168,6 +188,10 @@ extension DownloadManager: RemoteBackend {
         return await Task.detached(priority: .userInitiated) {
             SaveFolderBrowser.canSave(into: folder, defaultFolder: defaultFolder)
         }.value
+    }
+
+    public func remoteDownloadRoots() async -> [String] {
+        [settings.defaultSaveDirectory, NSHomeDirectory()]
     }
 
     public func remoteAddResolvesThroughProxy() async -> Bool {

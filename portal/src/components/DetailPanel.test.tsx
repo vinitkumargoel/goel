@@ -7,7 +7,7 @@ import type { TaskDetail, TaskRow } from '../lib/types'
 import type { SpeedSample } from '../lib/speedHistory'
 import { speedStore } from '../lib/speedStore'
 import { DetailPanel } from './DetailPanel'
-import type { DetailTab } from './DetailPanes'
+import { DETAIL_TABS, type DetailTab } from './DetailPanes'
 
 const ROW: TaskRow = {
   id: 't1',
@@ -63,12 +63,16 @@ function phoneViewport() {
 
 interface PanelOptions {
   onClose?: () => void
+  onAction?: () => void
   tab?: DetailTab
   samples?: SpeedSample[]
 }
 
 /** `samples` go through the app's speed store, where the Progress chart reads them. */
-function renderPanel(detail: TaskDetail | null, { onClose = vi.fn(), tab = 'general', samples = [] }: PanelOptions = {}) {
+function renderPanel(
+  detail: TaskDetail | null,
+  { onClose = vi.fn(), onAction = vi.fn(), tab = 'general', samples = [] }: PanelOptions = {},
+) {
   for (const s of samples) {
     speedStore.record([{ ...ROW, downSpeed: s.down, upSpeed: s.up }])
   }
@@ -80,7 +84,7 @@ function renderPanel(detail: TaskDetail | null, { onClose = vi.fn(), tab = 'gene
       canWrite
       onTab={vi.fn()}
       onClose={onClose}
-      onAction={vi.fn()}
+      onAction={onAction}
       onRemove={vi.fn()}
       onMore={vi.fn()}
       onCopy={vi.fn()}
@@ -88,6 +92,15 @@ function renderPanel(detail: TaskDetail | null, { onClose = vi.fn(), tab = 'gene
       onCyclePriority={vi.fn()}
     />,
   )
+}
+
+const HTTP: TaskDetail = {
+  ...DETAIL,
+  row: { ...ROW, kind: 'http', multiFile: false, fileCount: 1, statusToken: 'downloading', status: 'Downloading' },
+  connections: [
+    { id: 's1', label: 'Segment 1', detail: '0–1 GB', down: 1, up: 0, progress: 0.5, adapterId: null, adapterLabel: null },
+    { id: 's2', label: 'Segment 2', detail: '1–2 GB', down: 1, up: 0, progress: 0.5, adapterId: null, adapterLabel: null },
+  ],
 }
 
 describe('DetailPanel', () => {
@@ -99,16 +112,22 @@ describe('DetailPanel', () => {
 
   it('renders every tab label from the catalogue, not a capitalized token', () => {
     renderPanel(DETAIL)
-    for (const label of Object.values(en.detail.tabs)) {
-      expect(screen.getByText(label)).toBeInTheDocument()
+    for (const tab of DETAIL_TABS) {
+      expect(screen.getByRole('tab', { name: en.detail.tabs[tab] })).toBeInTheDocument()
     }
+  })
+
+  it('names the last tab Connections unless the download is a torrent', () => {
+    renderPanel(HTTP)
+    expect(screen.getByRole('tab', { name: en.detail.tabs.connections })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: en.detail.tabs.peers })).toBeNull()
   })
 
   it('exposes the sections as a tablist with the current tab selected', () => {
     renderPanel(DETAIL)
     expect(screen.getByRole('tablist', { name: en.detail.tabsLabel })).toBeInTheDocument()
     const tabs = screen.getAllByRole('tab')
-    expect(tabs).toHaveLength(Object.keys(en.detail.tabs).length)
+    expect(tabs).toHaveLength(DETAIL_TABS.length)
     const general = screen.getByRole('tab', { name: en.detail.tabs.general })
     expect(general).toHaveAttribute('aria-selected', 'true')
     expect(general).toHaveAttribute('tabindex', '0')
@@ -177,14 +196,59 @@ describe('DetailPanel', () => {
   it('renders the general pane key labels from the catalogue', () => {
     renderPanel(DETAIL)
     expect(screen.getByText(en.detail.general.savePath)).toBeInTheDocument()
-    expect(screen.getByText(en.detail.general.downloaded)).toBeInTheDocument()
+    expect(screen.getByText(en.detail.general.added)).toBeInTheDocument()
     expect(screen.getByText(en.detail.general.protocol)).toBeInTheDocument()
+    expect(screen.getByText('12 seeds · 30 peers')).toBeInTheDocument()
   })
 
-  it('keeps the two speed rates separated by non-breaking space', () => {
-    const { container } = renderPanel(DETAIL)
-    // U+00A0, not a plain space: HTML would collapse the latter and merge the rates.
-    expect(container.textContent).toContain('\u00a0\u00a0')
+  it('leads General with live rates and a compact chart only while the download moves', () => {
+    renderPanel({ ...DETAIL, row: { ...ROW, statusToken: 'downloading', downSpeed: 2048, upSpeed: 1024 } })
+    expect(screen.getByText('2.0 KB/s')).toBeInTheDocument()
+    expect(screen.getByText('1.0 KB/s')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /download peak/ })).toBeInTheDocument()
+  })
+
+  it('shows no rates for a paused download', () => {
+    renderPanel(DETAIL)
+    expect(screen.queryByRole('img', { name: /download peak/ })).toBeNull()
+  })
+
+  it('explains a failure and retries it from the card', async () => {
+    const onAction = vi.fn()
+    renderPanel(
+      { ...DETAIL, row: { ...ROW, statusToken: 'failed', status: 'Failed', error: '421 too many users' } },
+      { onAction },
+    )
+    const card = screen.getByRole('group', { name: en.detail.general.failedTitle })
+    expect(card).toHaveTextContent('421 too many users')
+    const retries = screen.getAllByRole('button', { name: en.common.retry })
+    await userEvent.click(retries[retries.length - 1]!)
+    expect(onAction).toHaveBeenCalledWith('t1', 'retry')
+  })
+
+  it('counts segments from the segment list, not the connection count', () => {
+    renderPanel({ ...HTTP, row: { ...HTTP.row, conns: 8 } }, { tab: 'details' })
+    const segments = screen.getByText(en.detail.details.segments).parentElement!
+    expect(segments).toHaveTextContent('2')
+    expect(segments).not.toHaveTextContent('8')
+  })
+
+  it('offers a zip of the finished files and a save link per finished file', () => {
+    renderPanel(
+      {
+        ...DETAIL,
+        files: [
+          { id: 0, name: 'Show/a.mkv', size: 10, done: 10, progress: 1, priority: 'normal' },
+          { id: 1, name: 'Show/b.mkv', size: 10, done: 2, progress: 0.2, priority: 'normal' },
+        ],
+      },
+      { tab: 'files' },
+    )
+    expect(screen.getByRole('link', { name: en.detail.downloadAll })).toHaveAttribute('href', '/stream?id=t1&zip=1')
+    const save = screen.getByRole('link', { name: 'Save Show/a.mkv to this device' })
+    expect(save).toHaveAttribute('href', '/stream?id=t1&file=0')
+    expect(save).toHaveAttribute('download', 'a.mkv')
+    expect(screen.queryByRole('link', { name: 'Save Show/b.mkv to this device' })).toBeNull()
   })
 
   it('draws the live speed chart atop the Progress tab', () => {

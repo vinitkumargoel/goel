@@ -91,6 +91,13 @@ enum RemoteTorrentSpool {
 extension DownloadManager {
     public func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
                                  priority: FilePriority, startPaused: Bool) async throws -> UUID? {
+        try await remoteAddTorrent(data, named: name, saveDirectory: saveDirectory,
+                                   priority: priority, startPaused: startPaused, network: nil)
+    }
+
+    public func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
+                                 priority: FilePriority, startPaused: Bool,
+                                 network: NetworkSelection?) async throws -> UUID? {
         guard let directory = spoolDirectory else {
             throw RemoteTorrentUpload.Failure.couldNotSave
         }
@@ -107,7 +114,8 @@ extension DownloadManager {
         }
         let source = DownloadSource.torrentFile(file)
         let task = add(source: source, saveDirectory: remoteSaveDirectory(saveDirectory),
-                       priority: priority, startPaused: startPaused, suggestedName: name)
+                       priority: priority, startPaused: startPaused, suggestedName: name,
+                       network: network)
         // Deduplicated onto an existing task: our copy is nobody's source.
         if task.source != source { RemoteTorrentSpool.discard(source, directory: directory) }
         return task.id

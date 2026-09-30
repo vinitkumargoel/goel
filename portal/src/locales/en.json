@@ -125,7 +125,8 @@
     "moreActions": "More actions for {{name}}",
     "colEta": "ETA",
     "colAdded": "Added",
-    "actionNamed": "{{action}} {{name}}"
+    "actionNamed": "{{action}} {{name}}",
+    "rowLabelFailed": "{{name}}, {{kind}}, failed: {{error}}"
   },
 
   "menu": {
@@ -133,7 +134,8 @@
     "forceRecheck": "Force recheck",
     "removeFromList": "Remove from list",
     "removeWithData": "Remove with data",
-    "removeMany": "Remove {{count}}"
+    "removeMany": "Remove {{count}}",
+    "saveToDevice": "Save to this device"
   },
 
   "bulk": {
@@ -190,7 +192,8 @@
       "remove_other": "Couldn’t remove {{count}} downloads — {{reason}}"
     },
     "torrentFailed_one": "{{count}} torrent file refused — {{file}}: {{error}}",
-    "torrentFailed_other": "{{count}} torrent files refused, e.g. {{file}}: {{error}}"
+    "torrentFailed_other": "{{count}} torrent files refused, e.g. {{file}}: {{error}}",
+    "draftRestored": "Restored the links you hadn’t added yet"
   },
 
   "history": {
@@ -212,7 +215,9 @@
       "yesterday": "Yesterday",
       "week": "This week",
       "older": "Older"
-    }
+    },
+    "saveNamed": "Save {{name}} to this device",
+    "saveHint": "Save to this device"
   },
 
   "detail": {
@@ -227,17 +232,24 @@
       "details": "Details",
       "progress": "Progress",
       "files": "Files",
-      "peers": "Peers"
+      "peers": "Peers",
+      "connections": "Connections"
     },
     "general": {
       "savePath": "Save path",
       "downloaded": "Downloaded",
       "uploaded": "Uploaded",
       "shareRatio": "Share ratio",
-      "eta": "ETA",
-      "speed": "Speed",
       "protocol": "Protocol",
-      "source": "Source"
+      "source": "Source",
+      "sizeOf": "{{done}} of {{total}}",
+      "left": "{{eta}} left",
+      "added": "Added",
+      "finished": "Finished",
+      "peers": "Peers",
+      "peersValue": "{{seeds}} seeds · {{peers}} peers",
+      "failedTitle": "Download failed",
+      "failedNoReason": "The server didn’t say why."
     },
     "details": {
       "infoHash": "Info hash",
@@ -259,7 +271,9 @@
     "files": {
       "singleFile": "Single-file download.",
       "download": "Download {{name}}",
-      "priority": "Priority for {{name}}: {{priority}}"
+      "priority": "Priority for {{name}}: {{priority}}",
+      "save": "Save {{name}} to this device",
+      "saveHint": "Save to this device"
     },
     "peers": {
       "summary": "{{seeds}} seeds · {{peers}} peers",
@@ -271,7 +285,9 @@
       "connections_other": "{{count}} connections",
       "segmentHint": "Segment data appears while downloading."
     },
-    "sheetHandle": "Drag down to close"
+    "sheetHandle": "Drag down to close",
+    "downloadAll": "Download all",
+    "downloadAllHint": "Every finished file, as one .zip"
   },
 
   "addDialog": {
@@ -337,7 +353,7 @@
   },
 
   "settings": {
-    "subtitle": "These apply to your browser. Server options (port, sign-in, password) are managed in the desktop app under Settings → Web Access.",
+    "subtitle": "Some settings apply only to this browser; the rest change the server, and so every browser and app connected to it. Port, sign-in and password are managed in the desktop app under Settings → Web Access.",
     "theme": {
       "name": "Web theme",
       "desc": "Independent of the desktop app — this choice is remembered in <bold>this browser</bold> only. Auto follows your device’s light or dark setting.",
@@ -353,15 +369,16 @@
       "descFull": "This session can add, remove, and manage downloads."
     },
     "desktop": {
-      "name": "Managed on the desktop",
+      "name": "Managed on the server",
       "chip": "Desktop",
-      "desc": "Port, sign-in username/password, LAN access, read-only, and session length live in the app (Settings → Web Access). A native folder picker, Reveal in Finder, clipboard capture, and notifications also stay on the Mac running Goel°."
+      "desc": "Port, sign-in username/password, LAN access, read-only, and session length live in the app (Settings → Web Access). A native folder picker, Reveal in Finder, clipboard capture, and notifications also stay on the Mac running Goel°.",
+      "chipLinux": "Server",
+      "descLinux": "Port, sign-in username/password, LAN access, read-only and session length are set on the server: run <cmd>goel config set …</cmd> or edit <path>/etc/goel/config</path>, then restart the service. Folder pickers and notifications also stay on the server."
     },
     "signOut": {
       "desc": "End this browser session."
     },
     "network": {
-      "saved": "Network settings saved",
       "readError": "Could not read the network configuration.",
       "loading": "Loading network…",
       "splitName": "Split downloads across interfaces",
@@ -393,11 +410,25 @@
       "unitKB": "KB/s",
       "unitMB": "MB/s",
       "noCap": "no cap",
-      "saved": "Bandwidth settings saved",
       "invalid": "Caps must be zero or more — or blank for no cap",
       "loading": "Loading bandwidth…",
       "readError": "Could not read the bandwidth settings.",
       "managed": "Managed by your organization"
+    },
+    "saved": "Saved",
+    "unsaved": "Unsaved changes",
+    "discard": "Discard",
+    "subtitleLinux": "Some settings apply only to this browser; the rest change the server, and so every browser connected to it. Port, sign-in and password are managed on the server with goel config.",
+    "group": {
+      "browser": "This browser",
+      "server": "Server",
+      "serverNamed": "Server · {{host}}",
+      "everyClient": "Affects every client"
+    },
+    "leave": {
+      "title": "Leave with unsaved changes?",
+      "body": "Your edits to the server settings have not been saved and will be lost.",
+      "confirm": "Leave without saving"
     }
   },
 

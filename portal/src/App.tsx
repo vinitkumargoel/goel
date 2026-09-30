@@ -22,6 +22,8 @@ import { useMenus } from './hooks/useMenus'
 import { useNow } from './hooks/useNow'
 import { useSearchFocus } from './hooks/useSearchFocus'
 import { useAppKeys } from './hooks/useAppKeys'
+import { useBackToClose } from './hooks/useBackToClose'
+import { useMediaQuery } from './hooks/useMediaQuery'
 import { useStableCallback } from './hooks/useStableCallback'
 import { useTaskActions } from './hooks/useTaskActions'
 import { useTasks } from './hooks/useTasks'
@@ -31,8 +33,9 @@ import { setRefusalHandler } from './lib/api'
 import { BOOT } from './lib/boot'
 import { copyText } from './lib/clipboard'
 import { countFilters, filterTasks } from './lib/filters'
+import { formatRoute, loadSort, parseRoute, saveSort } from './lib/route'
 import { EMPTY_SELECTION, selectionReducer } from './lib/selection'
-import { nextSort, sortTasks, UNSORTED, type SortKey, type SortState } from './lib/sort'
+import { nextSort, sortTasks, type SortKey, type SortState } from './lib/sort'
 import type { RowAction } from './lib/taskKind'
 
 const PANEL_BREAKPOINT = 920
@@ -48,13 +51,19 @@ function rowElement(id: string): HTMLElement | undefined {
 
 export function App() {
   const { t } = useTranslation()
-  const [view, setView] = useState<View>('library')
-  const [filter, setFilter] = useState<Filter>('all')
+  // The address bar is the source of truth at load: a bookmark or a reload lands where it left.
+  const [initial] = useState(() => parseRoute(location.hash))
+  const [view, setView] = useState<View>(initial.view)
+  const [filter, setFilter] = useState<Filter>(initial.filter)
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<SortState>(UNSORTED)
-  const [selection, select] = useReducer(selectionReducer, EMPTY_SELECTION)
+  const [sort, setSort] = useState<SortState>(loadSort)
+  const [selection, select] = useReducer(selectionReducer, EMPTY_SELECTION, (empty) =>
+    initial.task ? selectionReducer(empty, { type: 'single', id: initial.task }) : empty,
+  )
   const [tab, setTab] = useState<DetailTab>('general')
-  const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > PANEL_BREAKPOINT)
+  const [panelOpen, setPanelOpen] = useState(
+    () => window.innerWidth > PANEL_BREAKPOINT || initial.task != null,
+  )
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [menu, setMenu] = useState<AppMenu | null>(null)
   const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null)
@@ -97,6 +106,8 @@ export function App() {
     wide.addEventListener('change', onChange)
     return () => wide.removeEventListener('change', onChange)
   }, [])
+
+  useEffect(() => saveSort(sort), [sort])
 
   const counts = useMemo(() => countFilters(tasks), [tasks])
 
@@ -182,10 +193,33 @@ export function App() {
     toast,
   )
 
-  const selectView = useCallback((next: View) => {
-    setView(next)
-    setSidebarOpen(false)
-  }, [])
+  // Settings reports unsaved server edits; leaving would drop them, so ask first.
+  const [settingsDirty, setSettingsDirty] = useState(false)
+  const settingsDirtyRef = useRef(false)
+  settingsDirtyRef.current = settingsDirty
+  const selectView = useCallback(
+    (next: View) => {
+      const go = () => {
+        setView(next)
+        setSidebarOpen(false)
+      }
+      if (next === 'settings' || !settingsDirtyRef.current) return go()
+      setConfirmReq({
+        title: t('settings.leave.title'),
+        body: t('settings.leave.body'),
+        confirmLabel: t('settings.leave.confirm'),
+        onConfirm: go,
+      })
+    },
+    [t],
+  )
+
+  useEffect(() => {
+    if (!settingsDirty) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [settingsDirty])
 
   // Stable, like every handler handed to LibraryView: a fresh identity would re-render each memoised row.
   const openDetail = useStableCallback((id: string) => {
@@ -230,6 +264,7 @@ export function App() {
     removeMany,
     openAdd,
     focusSearch: () => {
+      if (view === 'settings' && settingsDirtyRef.current) return selectView('library')
       setView('library')
       focusSearch()
     },
@@ -251,6 +286,36 @@ export function App() {
     setPanelOpen(false)
     if (detailId != null) rowElement(detailId)?.focus()
   }, [detailId])
+
+  // Mirrored with replaceState: switching views is not a step Back should retrace.
+  const selectedLead = lead != null && selection.ids.has(lead) ? lead : null
+  useEffect(() => {
+    const hash = formatRoute({ view, filter, task: view === 'library' ? selectedLead : null })
+    if (location.hash !== hash) history.replaceState(history.state, '', hash)
+  }, [view, filter, selectedLead])
+
+  // A hand-edited address (or a pasted link) re-routes without a reload.
+  useEffect(() => {
+    const onHash = () => {
+      const r = parseRoute(location.hash)
+      setView(r.view)
+      setFilter(r.filter)
+      if (r.task) {
+        select({ type: 'single', id: r.task })
+        setPanelOpen(true)
+      }
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  // Back closes whatever layer is on top rather than leaving the portal.
+  const narrow = useMediaQuery(`(max-width: ${PANEL_BREAKPOINT}px)`)
+  useBackToClose(view === 'library' && panelOpen && narrow, closePanel)
+  useBackToClose(sidebarOpen, () => setSidebarOpen(false))
+  useBackToClose(addOpen, closeAdd)
+  useBackToClose(helpOpen, () => setHelpOpen(false))
+  useBackToClose(confirmReq != null, () => setConfirmReq(null))
 
   return (
     <>
@@ -343,6 +408,7 @@ export function App() {
                 canWrite={canWrite}
                 onToast={toast}
                 bandwidth={bandwidth}
+                onDirtyChange={setSettingsDirty}
               />
             )}
           </main>

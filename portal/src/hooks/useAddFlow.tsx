@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AddDialog } from '../components/AddDialog'
+import { clearDraft, loadDraft, type AddDraft } from '../lib/addDraft'
 import type { AddSummary } from '../lib/addSubmit'
 import { api, failureMessage } from '../lib/api'
 import type { ToastTone } from './useToasts'
@@ -24,12 +25,30 @@ export function useAddFlow({ canWrite, toast, refresh, onQueued }: Deps) {
   const [open, setOpen] = useState(false)
   /** Torrent files dropped on the window; the dialog opens pre-filled with them. */
   const [dropped, setDropped] = useState<File[]>([])
+  /** What the dialog held when a 401 cut it off; it reopens with it once, after signing back in. */
+  const [draft, setDraft] = useState<AddDraft | null>(null)
   const warn = useCallback((message: string) => toast(message, 'warn'), [toast])
+
+  useEffect(() => {
+    const saved = loadDraft()
+    if (!saved) return
+    if (!canWrite) {
+      clearDraft()
+      return
+    }
+    setDraft(saved)
+    setOpen(true)
+    toast(t('toast.draftRestored'))
+    // Once, at load: a later open starts from a clean dialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const openAdd = useCallback(() => setOpen(true), [])
   const closeAdd = useCallback(() => {
     setOpen(false)
     setDropped([])
+    setDraft(null)
+    clearDraft()
   }, [])
 
   useWindowTorrentDrop(canWrite && !open, (files) => {
@@ -77,7 +96,15 @@ export function useAddFlow({ canWrite, toast, refresh, onQueued }: Deps) {
         if (e.target === e.currentTarget) closeAdd()
       }}
     >
-      {open && <AddDialog onClose={closeAdd} onWarn={warn} onAdded={onAdded} initialFiles={dropped} />}
+      {open && (
+        <AddDialog
+          onClose={closeAdd}
+          onWarn={warn}
+          onAdded={onAdded}
+          initialFiles={dropped}
+          initialDraft={draft}
+        />
+      )}
     </div>
   )
 

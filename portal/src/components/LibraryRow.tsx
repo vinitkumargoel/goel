@@ -50,7 +50,11 @@ export const LibraryRow = memo(function LibraryRow({
   const whole = Math.round(percent)
   const type = fileType(task)
   const action = rowAction(task.statusToken)
-  const statusText = `${task.status}${task.statusToken === 'downloading' ? ` · ${whole}%` : ''}`
+  const failure = task.statusToken === 'failed' && task.error ? task.error : null
+  // The reason is what the user needs from a failed row; `task.error` is the daemon's own wording.
+  const statusText = failure
+    ? `${task.status} — ${failure}`
+    : `${task.status}${task.statusToken === 'downloading' ? ` · ${whole}%` : ''}`
   const eta = fmtEta(task.etaSeconds)
 
   const id = task.id
@@ -71,12 +75,16 @@ export const LibraryRow = memo(function LibraryRow({
       aria-selected={selected}
       aria-keyshortcuts="Space Enter Control+Space Meta+Space"
       aria-describedby={describedBy}
-      aria-label={t('library.rowLabel', {
-        name: task.name,
-        kind: kindLabel(task.kind),
-        status: task.status,
-        percent: whole,
-      })}
+      aria-label={
+        failure
+          ? t('library.rowLabelFailed', { name: task.name, kind: kindLabel(task.kind), error: failure })
+          : t('library.rowLabel', {
+              name: task.name,
+              kind: kindLabel(task.kind),
+              status: task.status,
+              percent: whole,
+            })
+      }
       tabIndex={focusable ? 0 : -1}
       className={`row${selected ? ' sel' : ''}`}
       onClick={(e) => onClick(task.id, { shift: e.shiftKey, toggle: e.metaKey || e.ctrlKey })}
@@ -131,11 +139,13 @@ export const LibraryRow = memo(function LibraryRow({
           {phone ? (
             <div className="pmeta">
               <span className={`sdot st-${task.statusToken}`} />
-              <span className="stext">
+              <span className={`stext${failure ? ' err' : ''}`}>
                 {[
                   task.statusToken === 'downloading'
                     ? fmtProgressSize(task.doneBytes, task.totalBytes)
-                    : task.status,
+                    : failure
+                      ? statusText
+                      : task.status,
                   task.downSpeed > 0 ? fmtSpeed(task.downSpeed) : null,
                   eta,
                 ]
@@ -147,7 +157,7 @@ export const LibraryRow = memo(function LibraryRow({
             // Only shown once the Status column is gone, so colour is never the only status cue.
             <div className="nstat">
               <span className={`sdot st-${task.statusToken}`} />
-              <span className="stext">
+              <span className={`stext${failure ? ' err' : ''}`} title={failure ?? undefined}>
                 {statusText}
                 {task.downSpeed > 0 && ` · ${fmtSpeed(task.downSpeed)}`}
               </span>
@@ -190,7 +200,9 @@ export const LibraryRow = memo(function LibraryRow({
       <div className="c hide-sm">
         <div className="scell">
           <span className={`sdot st-${task.statusToken}`} />
-          <span className="stext">{statusText}</span>
+          <span className={`stext${failure ? ' err' : ''}`} title={failure ?? undefined}>
+            {statusText}
+          </span>
         </div>
       </div>
 

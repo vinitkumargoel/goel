@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { eligibleFor } from '../components/BulkBar'
 import type { MenuEntry, MenuState } from '../components/ContextMenu'
 import {
+  DownloadIcon,
   FileIcon,
   KeyboardIcon,
   LinkIcon,
@@ -16,6 +17,7 @@ import {
 } from '../components/Icons'
 import { api, failureMessage, streamURL } from '../lib/api'
 import { BOOT } from '../lib/boot'
+import { canSave, saveToDevice, saveURL } from '../lib/saveFile'
 import type { SelectionAction } from '../lib/selection'
 import { rowAction, type RowAction } from '../lib/taskKind'
 import type { TaskRow } from '../lib/types'
@@ -133,6 +135,14 @@ export function useMenus(deps: Deps) {
       icon: <LinkIcon />,
       action: () => deps.copy(task.source),
     })
+    if (canSave(task)) {
+      entries.push({
+        key: 'save',
+        label: t('menu.saveToDevice'),
+        icon: <DownloadIcon />,
+        action: () => saveToDevice(saveURL(task), task.multiFile ? '' : task.name),
+      })
+    }
     if (task.streamable) {
       entries.push({
         key: 'stream',

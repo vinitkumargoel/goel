@@ -42,6 +42,7 @@ export async function submitAdd(job: AddJob): Promise<AddSummary> {
           dir: job.options.folder || undefined,
           priority: job.options.priority,
           paused: job.options.paused,
+          network: job.options.network,
         })
       : Promise.resolve(null),
   ])

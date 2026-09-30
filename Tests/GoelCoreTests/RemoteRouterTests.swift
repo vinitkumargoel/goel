@@ -4,6 +4,9 @@ import XCTest
 final class FakeRemoteBackend: RemoteBackend, @unchecked Sendable {
     var tasks: [DownloadTask]
     var historyEntries: [HistoryEntry] = []
+    /// nil allows every folder, like the protocol default.
+    var allowedFolder: ((String) -> Bool)?
+    var downloadRoots: [String] = []
     private(set) var pausedAll = false
     private(set) var resumedAll = false
     private(set) var paused: [UUID] = []
@@ -84,7 +87,9 @@ final class FakeRemoteBackend: RemoteBackend, @unchecked Sendable {
         return ((parent ?? folderDefault) as NSString).appendingPathComponent(name)
     }
 
-    func history(limit: Int) async -> [HistoryEntry] { historyEntries }
+    func history(limit: Int) async -> [HistoryEntry] { Array(historyEntries.prefix(limit)) }
+    func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { allowedFolder?(folder) ?? true }
+    func remoteDownloadRoots() async -> [String] { downloadRoots }
     func removeHistoryEntry(_ id: UUID) async { historyEntries.removeAll { $0.id == id } }
     func clearHistory() async { clearedHistory = true }
 }

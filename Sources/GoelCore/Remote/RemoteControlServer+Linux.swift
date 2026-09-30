@@ -16,6 +16,7 @@ public actor RemoteControlServer {
     private var security = RemotePortalSecurity()
     /// Bumping this is what winds down every live SSE / streaming loop.
     private var generation = 0
+    private let archiveSlots = RemoteUploadSlots(limit: RemoteStreamService.archiveLimit)
 
     private var group: MultiThreadedEventLoopGroup?
     private var channel: Channel?
@@ -293,15 +294,29 @@ public actor RemoteControlServer {
         guard router.authorize(request, sessionAuthed: await portalAuthed(request, client: client)) else {
             return await reject("401 Unauthorized", "Not signed in")
         }
-        guard let manager,
-              let id = request.query["id"].flatMap(UUID.init(uuidString:)),
-              let task = await manager.task(id) else {
+        guard let manager else {
             return await reject("404 Not Found", "No such download")
         }
-        guard let plan = Self.streamPlan(for: task) else {
-            return await reject("409 Conflict", "Not streamable yet — finish the download or enable sequential mode")
+        // Archives are the costly requests (a walk, then reads and a CRC over every byte): a few at once.
+        if RemoteStreamService.mayBuildArchive(request.query) {
+            guard archiveSlots.tryAcquire(ObjectIdentifier(sink)) else {
+                return await reject("503 Service Unavailable", "Too many archive downloads at once — try again shortly")
+            }
         }
-        guard let handle = FileHandle(forReadingAtPath: plan.path) else {
+        defer { archiveSlots.release(ObjectIdentifier(sink)) }
+        let plan: StreamPlan
+        let attachmentName: String?
+        switch await RemoteStreamService.resolve(query: request.query, backend: manager) {
+        case .refused(let status, let message):
+            return await reject(status, message)
+        case .zip(let entries, let name):
+            return await serveZip(sink, entries: entries, name: name)
+        case .file(let filePlan, let name):
+            plan = filePlan
+            attachmentName = name
+            archiveSlots.release(ObjectIdentifier(sink))
+        }
+        guard let handle = RemoteServedFile.open(plan) else {
             return await reject("404 Not Found", "File missing on disk")
         }
         defer { try? handle.close() }
@@ -313,6 +328,9 @@ public actor RemoteControlServer {
             head += "Content-Type: \(Self.mimeType(forPath: plan.path))\r\n"
             head += "Content-Length: 0\r\n"
             head += "Accept-Ranges: bytes\r\n"
+            if let attachmentName {
+                head += "Content-Disposition: \(RemoteStreamService.contentDisposition(attachmentName))\r\n"
+            }
             head += "Cache-Control: no-store\r\n"
             head += "X-Content-Type-Options: nosniff\r\n"
             head += "Connection: close\r\n\r\n"
@@ -347,6 +365,9 @@ public actor RemoteControlServer {
         if status.hasPrefix("206") {
             head += "Content-Range: bytes \(start)-\(end)/\(plan.totalBytes)\r\n"
         }
+        if let attachmentName {
+            head += "Content-Disposition: \(RemoteStreamService.contentDisposition(attachmentName))\r\n"
+        }
         head += "Cache-Control: no-store\r\n"
         head += "X-Content-Type-Options: nosniff\r\n"
         head += "Connection: close\r\n\r\n"
@@ -360,6 +381,19 @@ public actor RemoteControlServer {
                                                             offset: cursor) else { break }
             guard await sink.send(chunk) else { break }
             cursor += Int64(chunk.count)
+        }
+        sink.close()
+    }
+
+    /// Chunk by chunk like a file: an archive of a season pack is tens of gigabytes.
+    private func serveZip(_ sink: ChannelSink, entries: [RemoteZipStream.Entry], name: String) async {
+        let zip = RemoteZipPump(entries: entries)
+        let myGeneration = generation
+        guard await sink.send(RemoteStreamService.zipHead(name: name, length: zip.contentLength)) else {
+            sink.close(); return
+        }
+        while generation == myGeneration, let chunk = await zip.next() {
+            guard await sink.send(chunk) else { break }
         }
         sink.close()
     }

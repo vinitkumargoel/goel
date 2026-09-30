@@ -76,6 +76,14 @@ extension RemoteRouter {
         }
         let priority = Self.priority(text("priority"))
         let paused = truthy(text("paused"))
+        // As `/api/add`: a malformed spec is refused, not silently downgraded to `auto`.
+        var network: NetworkSelection?
+        if let raw = text("network")?.trimmingCharacters(in: .whitespaces), !raw.isEmpty {
+            guard let parsed = NetworkSelection(spec: raw) else {
+                return badRequest("Unknown network choice.")
+            }
+            network = parsed
+        }
 
         var ids: [String] = []
         var added = 0
@@ -94,7 +102,8 @@ extension RemoteRouter {
             do {
                 let id = try await backend.remoteAddTorrent(part.body, named: name,
                                                             saveDirectory: saveDirectory,
-                                                            priority: priority, startPaused: paused)
+                                                            priority: priority, startPaused: paused,
+                                                            network: network)
                 added += 1
                 if let id { ids.append(id.uuidString) }
             } catch let failure as RemoteTorrentUpload.Failure {

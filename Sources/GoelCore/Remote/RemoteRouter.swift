@@ -1,6 +1,8 @@
 import Foundation
 
 public struct RemoteRouter: Sendable {
+    /// How much history `/api/history` lists, and so how far `/stream?history=` looks.
+    static let historyLimit = 500
 
     public struct Config: Sendable {
         public var token: String
@@ -81,7 +83,7 @@ public struct RemoteRouter: Sendable {
             return Self.json(TaskDetail(task))
 
         case ("GET", "/api/history"):
-            let rows = await backend.history(limit: 500).map(HistoryRow.init)
+            let rows = await backend.history(limit: Self.historyLimit).map(HistoryRow.init)
             return Self.json(rows)
 
         case ("POST", "/api/pause-all"):
@@ -431,6 +433,7 @@ public struct RemoteRouter: Sendable {
         var seeds: Int?
         var conns: Int
         var addedAt: Double
+        var completedAt: Double?
         var etaSeconds: Double?
         var error: String?
         var source: String
@@ -454,6 +457,7 @@ public struct RemoteRouter: Sendable {
             seeds = task.seedCount
             conns = task.connectionCount
             addedAt = task.addedAt.timeIntervalSince1970
+            completedAt = task.completedAt?.timeIntervalSince1970
             etaSeconds = task.estimatedTimeRemaining
             error = RemoteRouter.errorMessage(task.status)
             source = task.source.redactedLocator

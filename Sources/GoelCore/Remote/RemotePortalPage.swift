@@ -63,10 +63,27 @@ extension RemoteRouter {
             "username": config.username,
             "readOnly": config.readOnly,
             "requireAuth": config.requireAuth,
+            // Which settings copy is true: a Linux daemon has no desktop app to defer to.
+            "host": serverPlatform,
+            "hostname": serverHostName,
         ]
         let data = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
         return (String(data: data, encoding: .utf8) ?? "{}")
             .replacingOccurrences(of: "<", with: "\\u003c")
+    }
+
+    #if os(Linux)
+    static let serverPlatform = "linux"
+    #else
+    static let serverPlatform = "mac"
+    #endif
+
+    /// `gethostname`, not `ProcessInfo.hostName`: the latter can block on a DNS lookup per page load.
+    static var serverHostName: String {
+        var buffer = [CChar](repeating: 0, count: 256)
+        guard gethostname(&buffer, buffer.count) == 0 else { return "" }
+        let name = buffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
+        return name.hasSuffix(".local") ? String(name.dropLast(".local".count)) : name
     }
 
     private static func htmlEscape(_ s: String) -> String {

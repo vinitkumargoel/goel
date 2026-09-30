@@ -4,6 +4,9 @@ export interface BootConfig {
   username: string
   readOnly: boolean
   requireAuth: boolean
+  /** Which machine serves the portal: Settings words its "managed elsewhere" copy by it. */
+  host: 'mac' | 'linux'
+  hostname: string
 }
 
 const FALLBACK: BootConfig = {
@@ -11,6 +14,8 @@ const FALLBACK: BootConfig = {
   username: 'admin',
   readOnly: false,
   requireAuth: true,
+  host: 'mac',
+  hostname: '',
 }
 
 /** `readOnly` is UI chrome only — the server, not this default, enforces the 403. */
@@ -32,6 +37,8 @@ export function readBoot(): BootConfig {
     username: typeof b.username === 'string' ? b.username : FALLBACK.username,
     readOnly: b.readOnly === true,
     requireAuth: b.requireAuth !== false,
+    host: b.host === 'linux' ? 'linux' : 'mac',
+    hostname: typeof b.hostname === 'string' ? b.hostname : '',
   }
 }
 

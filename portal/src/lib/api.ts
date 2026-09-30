@@ -177,6 +177,7 @@ export const api = {
     if (options.dir) form.append('dir', options.dir)
     if (options.priority) form.append('priority', options.priority)
     if (options.paused) form.append('paused', '1')
+    if (options.network && options.network !== 'auto') form.append('network', options.network)
     const r = await request('/api/add-torrent', { method: 'POST', body: form }, { jsonErrors: true })
     return (await r.json()) as TorrentAddResult
   },
@@ -191,6 +192,22 @@ export const api = {
   },
 }
 
-export function streamURL(id: string): string {
-  return `/stream?id=${encodeURIComponent(id)}`
+/** `download` asks for `Content-Disposition: attachment`, so the browser saves rather than plays. */
+export function streamURL(id: string, download = false): string {
+  return `/stream?id=${encodeURIComponent(id)}${download ? '&dl=1' : ''}`
+}
+
+/** One finished file of a multi-file download, by its `FileRow.id`. */
+export function fileURL(id: string, fileId: number): string {
+  return `/stream?id=${encodeURIComponent(id)}&file=${fileId}`
+}
+
+/** Every finished file of a download as one stored .zip, streamed as it is read. */
+export function zipURL(id: string): string {
+  return `/stream?id=${encodeURIComponent(id)}&zip=1`
+}
+
+/** A History entry's file (or its folder, zipped) — it may have left the queue long ago. */
+export function historyFileURL(id: string): string {
+  return `/stream?history=${encodeURIComponent(id)}`
 }
