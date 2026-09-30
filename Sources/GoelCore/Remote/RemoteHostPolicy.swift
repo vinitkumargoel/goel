@@ -25,19 +25,41 @@ public enum RemoteHostPolicy {
 
     public static func allows(hostHeader: String?, client: String,
                               security: RemotePortalSecurity) -> Bool {
+        allows(headers: hostHeader.map { ["host": $0] } ?? [:], client: client, security: security)
+    }
+
+    /// `headers` keys are lower-case, as ``RemoteRequest`` stores them.
+    public static func allows(headers: [String: String], client: String,
+                              security: RemotePortalSecurity) -> Bool {
         // No Host = not a browser (HTTP/1.0 scripts); rebinding always arrives with one.
-        guard let raw = hostHeader?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else {
+        guard let raw = headers["host"]?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else {
             return true
         }
+        if nameAllowed(raw, security: security) { return true }
+        // A peer address alone is no proof: a loopback-listed proxy also relays a rebound local
+        // browser. The proxy must show the shared secret, or forward a Host we would accept anyway.
+        guard IPMatcher.matches(client, any: security.sso.trustedProxies) else { return false }
+        let secret = security.sso.sharedSecret
+        if !secret.isEmpty,
+           let presented = headers[TrustedIdentityHeaderPolicy.sharedSecretHeader],
+           RemoteRouter.constantTimeEquals(presented, secret) {
+            return true
+        }
+        guard let forwarded = headers["x-forwarded-host"]?
+                .split(separator: ",").first?.trimmingCharacters(in: .whitespaces),
+              !forwarded.isEmpty else { return false }
+        return nameAllowed(forwarded, security: security)
+    }
+
+    /// Names a rebinding attacker cannot choose, plus the configured ones.
+    static func nameAllowed(_ raw: String, security: RemotePortalSecurity) -> Bool {
         guard let host = hostName(fromHeader: raw) else { return false }
         if isAddressLiteral(host) { return true }
         if host == "localhost" || host.hasSuffix(".localhost") { return true }
         // mDNS (Bonjour advertises the portal) and bare LAN names never come from public DNS.
         if host.hasSuffix(".local") || !host.contains(".") { return true }
         if machineNames.contains(host) { return true }
-        if security.allowedHosts.contains(where: { matches(host, pattern: $0) }) { return true }
-        // A listed proxy chose the Host itself; the browser never talked to us directly.
-        return IPMatcher.matches(client, any: security.sso.trustedProxies)
+        return security.allowedHosts.contains(where: { matches(host, pattern: $0) })
     }
 
     /// Lower-cased name without port, brackets or trailing dot; nil for a malformed header.
@@ -45,10 +67,17 @@ public enum RemoteHostPolicy {
         var value = raw.lowercased()
         if value.hasPrefix("[") {
             guard let close = value.firstIndex(of: "]") else { return nil }
+            // Only `:port` may follow the bracket — `[::1].evil.com` is a name, not a literal.
+            let rest = value[value.index(after: close)...]
+            if !rest.isEmpty {
+                guard rest.first == ":", isPort(rest.dropFirst()) else { return nil }
+            }
             value = String(value[value.index(after: value.startIndex)..<close])
+            guard isAddressLiteral(value) else { return nil }
         } else if let colon = value.lastIndex(of: ":") {
             // Only one colon is legal outside brackets: host:port.
-            guard value.filter({ $0 == ":" }).count == 1 else { return nil }
+            guard value.filter({ $0 == ":" }).count == 1,
+                  isPort(value[value.index(after: colon)...]) else { return nil }
             value = String(value[..<colon])
         }
         if value.hasSuffix(".") { value.removeLast() }
@@ -56,6 +85,10 @@ public enum RemoteHostPolicy {
               value.unicodeScalars.allSatisfy({ $0.isASCII && !CharacterSet.controlCharacters.contains($0) })
         else { return nil }
         return value
+    }
+
+    private static func isPort(_ text: Substring) -> Bool {
+        !text.isEmpty && text.count <= 5 && text.allSatisfy(\.isASCII) && text.allSatisfy(\.isNumber)
     }
 
     static func isAddressLiteral(_ host: String) -> Bool {

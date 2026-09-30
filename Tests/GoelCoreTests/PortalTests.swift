@@ -128,6 +128,19 @@ final class PortalTests: XCTestCase {
         XCTAssertTrue(backend.added.isEmpty, "a refused folder must not add anything")
     }
 
+    /// integration#4: the parser strips userinfo, so a silently accepted link would just 401 later.
+    func testAddRefusesInlineCredentialsWithAClearError() async {
+        for target in ["https://alice:pw@e/x.bin", "http://alice:pw@e/x.bin", "https://alice@e/x.bin"] {
+            let backend = FakeRemoteBackend()
+            let router = RemoteRouter(backend: backend, token: "secret")
+            let body = #"{"url":"https://e/ok.bin\n\#(target)"}"#
+            let out = str(await router.handle(addRequest(body)))
+            XCTAssertTrue(out.hasPrefix("HTTP/1.1 400"), out)
+            XCTAssertTrue(out.contains("saved logins"), out)
+            XCTAssertTrue(backend.added.isEmpty, "\(target): nothing from the batch may be queued")
+        }
+    }
+
     func testAddWithNoFolderIsUnaffectedByTheWritabilityCheck() async {
         let backend = FolderRefusingBackend()
         let router = RemoteRouter(backend: backend, token: "secret")
@@ -192,9 +205,21 @@ final class PortalTests: XCTestCase {
         let router = RemoteRouter(backend: backend, config: config)
         let out = str(await router.handle(request(
             "POST /api/pause-all HTTP/1.1\r\nHost: 127.0.0.1:8899\r\n"
-            + "X-Forwarded-Host: goel.example.com\r\nOrigin: https://goel.example.com\r\n\r\n")))
+            + "X-Forwarded-Host: goel.example.com\r\nOrigin: https://goel.example.com\r\n\r\n"),
+            fromTrustedProxy: true))
         XCTAssertTrue(out.hasPrefix("HTTP/1.1 200 OK"), out)
         XCTAssertTrue(backend.pausedAll)
+    }
+
+    func testForwardedHostFromAnUnlistedPeerIsIgnored() async {
+        let backend = FakeRemoteBackend()
+        let config = RemoteRouter.Config(token: "", requireAuth: false)
+        let router = RemoteRouter(backend: backend, config: config)
+        let out = str(await router.handle(request(
+            "POST /api/pause-all HTTP/1.1\r\nHost: 127.0.0.1:8899\r\n"
+            + "X-Forwarded-Host: evil.test\r\nOrigin: https://evil.test\r\n\r\n")))
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 403"), out)
+        XCTAssertFalse(backend.pausedAll, "a self-asserted X-Forwarded-Host must not satisfy the Origin check")
     }
 
     func testOriginMatchingIgnoresSchemeButNotPort() {

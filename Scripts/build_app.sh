@@ -440,9 +440,14 @@ if [ -n "${CODESIGN_IDENTITY:-}" ]; then
   fi
   echo "    signed & verified."
 
-  # The yt-dlp-only entitlements must never reach the main process.
-  if codesign -d --entitlements - "$APP/Contents/MacOS/$APP_NAME" 2>/dev/null \
-       | grep -qE 'allow-jit|allow-unsigned-executable-memory|disable-library-validation'; then
+  # The yt-dlp-only entitlements must never reach the main process. Captured first: under
+  # pipefail, `grep -q` quitting early SIGPIPEs codesign and the match reads as "no match".
+  if ! main_entitlements=$(codesign -d --entitlements - "$APP/Contents/MacOS/$APP_NAME" 2>/dev/null); then
+    echo "error: could not read the entitlements of $APP_NAME to check them." >&2
+    exit 1
+  fi
+  if grep -qE 'allow-jit|allow-unsigned-executable-memory|disable-library-validation' \
+       <<<"$main_entitlements"; then
     echo "error: $APP_NAME was signed with yt-dlp's JIT / library-validation entitlements." >&2
     echo "       Those belong in $YTDLP_ENTITLEMENTS and on yt-dlp alone." >&2
     exit 1

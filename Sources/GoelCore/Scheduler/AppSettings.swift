@@ -224,6 +224,10 @@ public struct AppSettings: Codable, Sendable, Hashable {
     /// Empty means "trust nobody", which disables header SSO; entries are literal IPs or IPv4 CIDR blocks.
     public var remoteTrustedProxies: [String]
 
+    /// Extra `Host` names the portal answers to (`goel.home`, `mymac.tailnet.ts.net`) on top of
+    /// `GOEL_PORTAL_ALLOWED_HOSTS`; `*.suffix` allowed. Normalised by ``validated()``.
+    public var remoteAllowedHostNames: [String]
+
     /// Local only — never uploaded or exported, and ``AuditLog`` redacts to host.
     public var auditLogEnabled: Bool
 
@@ -336,6 +340,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         remoteTrustedHeaderAuthEnabled: Bool = false,
         remoteTrustedHeaderName: String = "X-Forwarded-User",
         remoteTrustedProxies: [String] = [],
+        remoteAllowedHostNames: [String] = [],
         auditLogEnabled: Bool = false,
         auditLogDirectory: String = "",
         auditLogRetentionDays: Int = 90,
@@ -442,6 +447,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.remoteTrustedHeaderAuthEnabled = remoteTrustedHeaderAuthEnabled
         self.remoteTrustedHeaderName = remoteTrustedHeaderName
         self.remoteTrustedProxies = remoteTrustedProxies
+        self.remoteAllowedHostNames = remoteAllowedHostNames
         self.auditLogEnabled = auditLogEnabled
         self.auditLogDirectory = auditLogDirectory
         self.auditLogRetentionDays = auditLogRetentionDays
@@ -484,6 +490,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         case remoteTLSEnabled, remoteTLSIdentityPath
         case remoteLoginMaxAttempts, remoteLoginBackoffSeconds
         case remoteTrustedHeaderAuthEnabled, remoteTrustedHeaderName, remoteTrustedProxies
+        case remoteAllowedHostNames
         case auditLogEnabled, auditLogDirectory
         case auditLogRetentionDays, auditLogKeepFiles, auditLogMaxFileMegabytes
     }
@@ -592,6 +599,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         remoteTrustedHeaderAuthEnabled = try c.decodeIfPresent(Bool.self, forKey: .remoteTrustedHeaderAuthEnabled) ?? false
         remoteTrustedHeaderName = try c.decodeIfPresent(String.self, forKey: .remoteTrustedHeaderName) ?? "X-Forwarded-User"
         remoteTrustedProxies = try c.decodeIfPresent([String].self, forKey: .remoteTrustedProxies) ?? []
+        remoteAllowedHostNames = try c.decodeIfPresent([String].self, forKey: .remoteAllowedHostNames) ?? []
         auditLogEnabled = try c.decodeIfPresent(Bool.self, forKey: .auditLogEnabled) ?? false
         auditLogDirectory = try c.decodeIfPresent(String.self, forKey: .auditLogDirectory) ?? ""
         auditLogRetentionDays = try c.decodeIfPresent(Int.self, forKey: .auditLogRetentionDays) ?? 90

@@ -25,6 +25,7 @@ public extension AppSettings {
         s.remoteSessionMinutes = s.remoteSessionMinutes.clamped(to: 5...43_200)
         s.remoteLoginMaxAttempts = s.remoteLoginMaxAttempts.clamped(to: 1...100)
         s.remoteLoginBackoffSeconds = s.remoteLoginBackoffSeconds.clamped(to: 1...3600, fallback: 5)
+        s.remoteAllowedHostNames = Self.normalizedHostNames(s.remoteAllowedHostNames)
         s.auditLogRetentionDays = s.auditLogRetentionDays.clamped(to: 0...3650)
         s.auditLogKeepFiles = s.auditLogKeepFiles.clamped(to: 0...1000)
         s.auditLogMaxFileMegabytes = s.auditLogMaxFileMegabytes.clamped(to: 1...1024)
@@ -37,6 +38,33 @@ public extension AppSettings {
         // An unknown action (a typo, an import, a newer build) must never be carried around as a live value.
         s.autoShutdownAction = s.autoShutdown.rawValue
         return s
+    }
+
+    static let maxAllowedHostNames = 32
+
+    /// People paste URLs: `https://Goel.Home:8899/` must become `goel.home`, or the Host check never matches.
+    /// Anything that still is not a plain name (or `*.suffix`) is dropped rather than half-trusted.
+    static func normalizedHostNames(_ raw: [String]) -> [String] {
+        var out: [String] = []
+        for entry in raw {
+            var name = entry.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if let scheme = name.range(of: "://") { name = String(name[scheme.upperBound...]) }
+            if let slash = name.firstIndex(of: "/") { name = String(name[..<slash]) }
+            if let at = name.lastIndex(of: "@") { name = String(name[name.index(after: at)...]) }
+            // IP literals always pass the Host check, so a bracketed v6 entry is simply dropped below.
+            if name.filter({ $0 == ":" }).count == 1, let colon = name.firstIndex(of: ":") {
+                name = String(name[..<colon])
+            }
+            if name.hasSuffix(".") { name.removeLast() }
+            let body = name.hasPrefix("*.") ? String(name.dropFirst(2)) : name
+            let legal = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789.-")
+            guard !body.isEmpty, body.count <= 253, !body.hasPrefix("."),
+                  body.unicodeScalars.allSatisfy(legal.contains),
+                  !out.contains(name) else { continue }
+            out.append(name)
+            if out.count == maxAllowedHostNames { break }
+        }
+        return out
     }
 
     private static func supportedLanguageName(_ stored: String) -> String {

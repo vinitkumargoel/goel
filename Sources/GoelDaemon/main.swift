@@ -101,9 +101,11 @@ let watchAutoStart = envBool("GOEL_WATCH_AUTOSTART", false)
 func presentSetting(_ key: String) -> String? {
     ProcessInfo.processInfo.environment[key] ?? fileConfig[key]
 }
-// The portal reads these from the process environment; outside systemd (no EnvironmentFile) the
-// config file would otherwise be silently ignored for them.
-for key in ["GOEL_PORTAL_ALLOWED_HOSTS", "GOEL_PORTAL_PROXY_SECRET"]
+// GoelCore reads these from the process environment; outside systemd (no EnvironmentFile) the
+// config file would otherwise be silently ignored for them. Must run before first use: the
+// private-target allowlist is read once, on NetworkGuard's first touch.
+for key in ["GOEL_PORTAL_ALLOWED_HOSTS", "GOEL_PORTAL_PROXY_SECRET",
+            "GOEL_SSH_FINGERPRINTS", "GOEL_PRIVATE_TARGET_ALLOWLIST"]
 where ProcessInfo.processInfo.environment[key] == nil {
     if let value = fileConfig[key], !value.isEmpty { setenv(key, value, 0) }
 }
@@ -177,6 +179,20 @@ Task {
         await manager.updateSettings(settings)
         _ = await manager.setDefaultSaveDirectory(saveDir)
 
+        // Nothing else drains the manager's notices here (the app shows them as toasts), so they
+        // would pile up unseen: log each after every snapshot instead.
+        Task {
+            for await _ in await manager.updates() {
+                for notice in await manager.takeNotices() {
+                    if notice.isError {
+                        GoelLog.scheduler.error("Daemon notice", .detail(notice.message))
+                    } else {
+                        GoelLog.scheduler.notice("Daemon notice", .detail(notice.message))
+                    }
+                }
+            }
+        }
+
         let remote = RemoteAccess()
         retainer.remote = remote
         await remote.apply(settings: settings, backend: manager)
@@ -192,8 +208,11 @@ Task {
         }
         stderrLine("GoelDaemon: save dir \(saveDir) · db \(dbPath)")
         // DNS-rebinding guard: behind a proxy that forwards the public Host, name it or it gets 421.
-        if RemoteHostPolicy.allowedHostsFromEnvironment.isEmpty && settings.remoteTrustedProxies.isEmpty {
-            stderrLine("GoelDaemon: NOTE — the portal answers only to IP addresses, localhost, .local and bare host names. Behind a reverse proxy that passes its public Host through, set GOEL_PORTAL_ALLOWED_HOSTS=<name> (or list the proxy in remoteTrustedProxies).")
+        if RemoteHostPolicy.allowedHostsFromEnvironment.isEmpty && settings.remoteAllowedHostNames.isEmpty {
+            stderrLine("GoelDaemon: NOTE — the portal answers only to IP addresses, localhost, .local and bare host names. Behind a reverse proxy (or on a Tailscale *.ts.net name), set GOEL_PORTAL_ALLOWED_HOSTS=<name>, or have a listed trusted proxy send X-Goel-Proxy-Secret.")
+        }
+        if !NetworkGuard.privateTargetAllowlist.isEmpty {
+            stderrLine("GoelDaemon: remote adds may reach \(NetworkGuard.privateTargetAllowlist.count) allowlisted LAN target(s) (GOEL_PRIVATE_TARGET_ALLOWLIST)")
         }
         // Never print the bearer token to stderr: it lands in the systemd journal and container log drivers.
         if tokenEnv.isEmpty {

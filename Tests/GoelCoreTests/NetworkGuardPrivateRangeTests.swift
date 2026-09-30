@@ -50,6 +50,25 @@ final class NetworkGuardPrivateRangeTests: XCTestCase {
         }
     }
 
+    func testTrailingDotSpellingsAreStillLoopback() {
+        for host in ["localhost.", "LOCALHOST.", "127.0.0.1.", "app.localhost.", "[::1]", "0.0.0.0."] {
+            XCTAssertTrue(NetworkGuard.isLoopbackOrUnspecified(host), host)
+        }
+        XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "169.254.169.254."), .linkLocal)
+        for target in ["http://localhost./f", "http://127.0.0.1./f", "http://192.168.1.10./f"] {
+            XCTAssertFalse(NetworkGuard.isAllowedRemoteAddTarget(url(target)), target)
+            XCTAssertFalse(NetworkGuard.isAllowedSubresource(url(target), of: url("https://cdn.example/")),
+                           target)
+        }
+    }
+
+    func testAllowlistParsesTheEnvironmentForm() {
+        XCTAssertEqual(NetworkGuard.parseAllowlist(" NAS.lan., 192.168.1.0/24 ,,10.0.0.9 "),
+                       ["nas.lan", "192.168.1.0/24", "10.0.0.9"])
+        NetworkGuard.privateTargetAllowlist = NetworkGuard.parseAllowlist("nas.lan")
+        XCTAssertTrue(NetworkGuard.isAllowlistedPrivate("NAS.lan."))
+    }
+
     func testRemoteAddRefusesPrivateRangesButAllowlistUnlocksThem() {
         for target in ["http://192.168.1.10/f", "http://10.0.0.5/f", "http://[fd00::1]/f",
                        "http://100.64.1.1/f", "http://[64:ff9b::7f00:1]/f"] {

@@ -26,6 +26,12 @@ final class RemotePortalHardeningTests: XCTestCase {
             ("127.0.0.1.nip.io:8899", false),
             ("corp.example.evil.test", false),
             ("a:b:c", false),
+            ("[::1].evil.com", false),
+            ("[::1]evil.com:80", false),
+            ("[evil.com]:80", false),
+            ("[::1]:88a", false),
+            ("localhost.:8899", true),
+            ("127.0.0.1.:8899", true),
         ]
         for (host, expected) in table {
             XCTAssertEqual(RemoteHostPolicy.allows(hostHeader: host, client: "192.168.1.50",
@@ -33,13 +39,31 @@ final class RemotePortalHardeningTests: XCTestCase {
         }
     }
 
-    func testTrustedProxyPeerMayUseAnyHost() {
+    func testTrustedProxyPeerNeedsSecretOrAnAcceptableForwardedHost() {
+        let security = RemotePortalSecurity(
+            sso: TrustedIdentityHeaderPolicy(trustedProxies: ["10.0.0.0/8", "127.0.0.1"],
+                                             sharedSecret: "s3cret"),
+            allowedHosts: ["goel.public.example"])
+        func allows(_ headers: [String: String], from client: String = "10.1.2.3") -> Bool {
+            RemoteHostPolicy.allows(headers: headers, client: client, security: security)
+        }
+        // A rebound local browser relayed by a loopback proxy carries neither proof.
+        XCTAssertFalse(allows(["host": "evil.example"], from: "127.0.0.1"))
+        XCTAssertFalse(allows(["host": "evil.example", "x-goel-proxy-secret": "wrong"]))
+        XCTAssertTrue(allows(["host": "evil.example", "x-goel-proxy-secret": "s3cret"]))
+        XCTAssertTrue(allows(["host": "internal:1", "x-forwarded-host": "goel.public.example"]))
+        XCTAssertFalse(allows(["host": "internal.example", "x-forwarded-host": "evil.example"]))
+        XCTAssertFalse(allows(["host": "evil.example", "x-goel-proxy-secret": "s3cret"], from: "192.168.0.9"),
+                       "the secret means nothing from an unlisted peer")
+        XCTAssertTrue(allows(["host": "goel.public.example"], from: "192.168.0.9"))
+    }
+
+    func testEmptyProxySecretIsNeverAMatch() {
         let security = RemotePortalSecurity(
             sso: TrustedIdentityHeaderPolicy(trustedProxies: ["10.0.0.0/8"]), allowedHosts: [])
-        XCTAssertTrue(RemoteHostPolicy.allows(hostHeader: "goel.public.example", client: "10.1.2.3",
-                                              security: security))
-        XCTAssertFalse(RemoteHostPolicy.allows(hostHeader: "goel.public.example", client: "192.168.0.9",
-                                               security: security))
+        XCTAssertFalse(RemoteHostPolicy.allows(
+            headers: ["host": "goel.public.example", "x-goel-proxy-secret": ""],
+            client: "10.1.2.3", security: security))
     }
 
     func testAllowedHostsParseFromACommaList() {

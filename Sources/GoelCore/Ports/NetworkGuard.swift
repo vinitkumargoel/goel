@@ -107,12 +107,20 @@ public enum NetworkGuard {
         get { allowlistBox.get() }
         set { allowlistBox.set(newValue) }
     }
-    private static let allowlistBox = LockedBox<[String]>([])
+    private static let allowlistBox = LockedBox<[String]>(
+        parseAllowlist(ProcessInfo.processInfo.environment["GOEL_PRIVATE_TARGET_ALLOWLIST"] ?? ""))
+
+    /// `GOEL_PRIVATE_TARGET_ALLOWLIST=nas.lan,192.168.1.0/24` — read once at startup (app and daemon).
+    static func parseAllowlist(_ raw: String) -> [String] {
+        raw.split(whereSeparator: { $0 == "," || $0.isWhitespace })
+            .map { bareHost(String($0)) }
+            .filter { !$0.isEmpty }
+    }
 
     static func isAllowlistedPrivate(_ host: String) -> Bool {
         let patterns = privateTargetAllowlist
         guard !patterns.isEmpty else { return false }
-        let bare = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        let bare = bareHost(host)
         if patterns.contains(where: { $0.lowercased() == bare }) { return true }
         return IPMatcher.matches(bare, any: patterns)
     }
@@ -237,8 +245,16 @@ public enum NetworkGuard {
         }
     }
 
+    /// Lower-cased, unbracketed, one trailing dot dropped: `localhost.` and `127.0.0.1.` are the same
+    /// host to the resolver, so a screen that compares spellings must see them the same way.
+    static func bareHost(_ host: String) -> String {
+        var h = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if h.hasSuffix(".") { h.removeLast() }
+        return h
+    }
+
     static func isLoopbackOrUnspecified(_ host: String) -> Bool {
-        let h = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        let h = bareHost(host)
         if h == "localhost" || h.hasSuffix(".localhost") { return true }
         switch addressClass(ofLiteral: h) {
         case .loopback, .unspecified: return true
@@ -261,7 +277,7 @@ public enum NetworkGuard {
 
     /// Judge the address a literal *means*, never its text: `::ffff:7f00:1` is 127.0.0.1.
     static func addressClass(ofLiteral host: String) -> AddressClass? {
-        var text = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        var text = bareHost(host)
         // Drop an IPv6 zone index (`fe80::1%en0`) — `inet_pton` rejects the whole string with it attached.
         if let percent = text.firstIndex(of: "%") { text = String(text[..<percent]) }
         guard !text.isEmpty else { return nil }

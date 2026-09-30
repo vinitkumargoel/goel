@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes — read before updating
+
+- **The web portal answers only to names it knows.** Requests whose `Host` is not an IP
+  address, `localhost`, a `.local` / bare LAN name or this machine's own name get
+  `421 Misdirected Request` (DNS-rebinding defence). If you open the portal by another name —
+  a Tailscale `mymac.tailnet.ts.net`, a `goel.home` from Pi-hole/Caddy, a public reverse-proxy
+  name — add it under **Settings → Web Access → Extra host names** (new
+  `remoteAllowedHostNames` setting, also a managed-policy key), or set
+  `GOEL_PORTAL_ALLOWED_HOSTS` for the daemon. Both lists are combined; `*.example.com`
+  matches subdomains.
+- **Listing a reverse proxy under trusted proxies no longer waives the `Host` check by
+  itself.** The proxy must also send `X-Goel-Proxy-Secret: $GOEL_PORTAL_PROXY_SECRET`, or
+  forward an `X-Forwarded-Host` that is itself allowed. `X-Forwarded-Host` is believed for
+  the cross-site `Origin` check only from a listed proxy.
+- **`?token=` works only on `GET /` (the pairing link) and `/stream`.** Scripts calling
+  `/api/*` with `?token=` now get `401`; send `Authorization: Bearer <token>` instead.
+- **Headless SFTP needs pinned host keys.** The daemon refuses an unpinned SFTP server
+  before sending credentials; pin it in `GOEL_SSH_FINGERPRINTS` (the daemon now also reads
+  this from its config file).
+- **Interrupted downloads resume automatically at launch**, SFTP included, rather than
+  waiting for you to press Resume.
+- **Remote adds refuse LAN targets.** `/api/add`, the portal and the extension refuse
+  private-range addresses (and names that resolve to them) unless listed in
+  `GOEL_PRIVATE_TARGET_ALLOWLIST` (comma-separated host names, IPs or IPv4 CIDRs; read from
+  the environment or the daemon's config file at startup). Loopback and link-local are never
+  allowed. LAN URLs typed into the app itself are unaffected.
+- **Portal save folders exclude protected locations.** System folders (`/etc`, `/usr`,
+  `/System`, `/Library`, `/var`, …), anything hidden (a dot folder) and `~/Library` can no
+  longer be chosen or browsed from the portal or `/api/add`. Home, external volumes, `/tmp`
+  and your default download folder stay available.
+- **Inline `user:password@` in links moved to saved logins.** The app stores it in saved
+  logins (sent over HTTPS only) instead of keeping it in the link; `/api/add` refuses such
+  links with `400` — save the login in Goel° first.
+- **Delete moves completed files to the Trash** instead of unlinking them; partial
+  downloads are still removed.
+- **Redirects keep `Authorization`/`Cookie` only within one origin** (same scheme, host and
+  port, or an `http`→`https` upgrade on default ports).
+- **`install.sh`**: with a minisign key configured (embedded or `GOEL_MINISIGN_PUBKEY`), a
+  missing `.minisig` or a missing `minisign` now stops the install; `GOEL_INSECURE=1`
+  (environment only) downgrades those to a warning.
+
 ### Audit remediation
 
 Fixes from a full-codebase audit, grouped by area.
