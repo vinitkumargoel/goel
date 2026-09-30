@@ -127,6 +127,8 @@ struct RootView: View {
             guard !isOnboardingPresented else { return }
             isCommandPalettePresented.toggle()
         }
+        // A crash or force-quit mid-preview leaves SFTP Quick Look copies in $TMPDIR.
+        .task(priority: .background) { QuickLookPresenter.sweepStaleTemps() }
     }
 
     /// Hit-testing stays disabled here, or this overlay swallows the drag before `.onDrop` sees it.
@@ -165,11 +167,7 @@ struct RootView: View {
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         collectDroppedURLs(providers) { urls in
-            guard !urls.isEmpty else { return }
-            let raw = urls.map(\.absoluteString).joined(separator: "\n")
-            Task { @MainActor in
-                vm.add(rawLines: raw, saveDirectory: nil, priority: .normal)
-            }
+            Task { @MainActor in InboundDrop.route(urls, into: vm) }
         }
     }
 

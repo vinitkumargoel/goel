@@ -70,28 +70,19 @@ private struct DropBasketView: View {
         .padding(2)
     }
 
+    /// URLs go through `InboundDrop` like every other drop target; plain text (a selection dragged
+    /// out of a page) has no URL form, so it is parsed as pasted lines.
     private func handle(_ providers: [NSItemProvider]) -> Bool {
-        var accepted = false
-        for provider in providers {
-            if provider.canLoadObject(ofClass: URL.self) {
-                accepted = true
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    guard let url else { return }
-                    Task { @MainActor in
-                        // A drop is an explicit user action — queue directly.
-                        guard var payload = ExternalAdd.payload(from: url) else {
-                            // The basket already highlighted as if it took this; say why it didn't.
-                            AppViewModel.shared?.toastNow(
-                                L10n.t("The drop basket takes links and .torrent files — “%@” is neither",
-                                       url.lastPathComponent),
-                                isError: true)
-                            return
-                        }
-                        payload.needsConfirmation = false
-                        ExternalAdd.post(payload)
-                    }
-                }
-            } else if provider.canLoadObject(ofClass: NSString.self) {
+        let urlProviders = providers.filter { $0.canLoadObject(ofClass: URL.self) }
+        let textProviders = providers.filter {
+            !$0.canLoadObject(ofClass: URL.self) && $0.canLoadObject(ofClass: NSString.self)
+        }
+        var accepted = collectDroppedURLs(urlProviders) { urls in
+            // A drop is an explicit user action — queue directly.
+            Task { @MainActor in InboundDrop.route(urls, into: AppViewModel.shared) }
+        }
+        for provider in textProviders {
+            if provider.canLoadObject(ofClass: NSString.self) {
                 accepted = true
                 _ = provider.loadObject(ofClass: NSString.self) { text, _ in
                     guard let text = text as? String, !text.isEmpty else { return }

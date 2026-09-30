@@ -24,7 +24,7 @@ struct DetailPanelView: View {
 
             Picker("", selection: $vm.detailTab) {
                 ForEach(DetailTab.allCases) { tab in
-                    Text(L10n.t(tab.rawValue)).tag(tab)
+                    Text(tab.title).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
@@ -117,14 +117,7 @@ struct DetailPanelView: View {
                     A11y.eta(task.estimatedTimeRemaining)))
 
             if case .failed(let error) = task.status {
-                Text("⚠ \(error.message)")
-                    .scaledFont(size: 11.5)
-                    .foregroundStyle(Theme.red)
-                    .multilineTextAlignment(.center)
-                    .padding(10)
-                    .frame(maxWidth: .infinity)
-                    .background(Theme.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
-                    .accessibilityLabel(L10n.t("Download failed. %@", error.message))
+                FailureCard(task: task, error: error, vm: vm)
             }
         }
         .padding(.horizontal, 16)
@@ -133,7 +126,7 @@ struct DetailPanelView: View {
     }
 
     private func sizeAndETA(for task: DownloadTask) -> String {
-        if let eta = task.etaText { return "\(task.sizeProgressText) · \(eta)" }
+        if let eta = task.etaText { return L10n.t("%1$@ · %2$@", task.sizeProgressText, eta) }
         return task.sizeProgressText
     }
 
@@ -176,7 +169,7 @@ struct DetailPanelView: View {
                                  String(CookieHeader.count(in: $0)), cookieSource.displayName)
                       } ?? L10n.t("Not loaded — re-import from %@", cookieSource.displayName))
             }
-            KVRow(key: L10n.t("Priority"), value: L10n.t(task.priority.displayName))
+            KVRow(key: L10n.t("Priority"), value: task.priority.title)
             KVRow(key: L10n.t("Added"), value: task.addedString)
             KVRow(key: L10n.t("Save path"), value: task.savePath, copyable: true)
             KVRow(key: L10n.t("Source"), value: task.sourceLocator, copyable: true)

@@ -609,7 +609,7 @@ struct SFTPBrowserView: View {
         guard entry.size < previewByteCap else { vm.toastNow(L10n.t("Too large to preview")); return }
         let safe = PathSafety.sanitizedName(entry.name)
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GoelQL-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(QuickLookPresenter.tempPrefix + UUID().uuidString, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let tmp = dir.appendingPathComponent(safe)
         let remote = SFTPBrowserModel.join(model.path, entry.name)
@@ -627,7 +627,7 @@ struct SFTPBrowserView: View {
                     await MainActor.run { vm.toastNow(L10n.t("Too large to preview")) }
                     return
                 }
-                await MainActor.run { QuickLookPresenter.shared.present(tmp) }
+                await MainActor.run { QuickLookPresenter.shared.present(tmp, ownedDirectory: dir) }
             } catch {
                 try? FileManager.default.removeItem(at: dir)
                 let message = cap.underLimit ? L10n.t("Couldn’t preview “%@”", entry.name) : L10n.t("Too large to preview")

@@ -111,10 +111,7 @@ struct RSSPane: View {
             }
             ForEach(vm.settings.rssFeeds) { feed in
                 SetRow(name: feed.url,
-                       desc: (feed.titlePattern.isEmpty
-                           ? L10n.t("Every item")
-                           : L10n.t("Titles containing “%@”", feed.titlePattern))
-                           + (feed.startPaused ? L10n.t(" · added paused") : "")) {
+                       desc: feedSummary(feed)) {
                     HStack(spacing: 10) {
                         SettingSwitch(isOn: feedEnabledBinding(feed.id))
                         Button {
@@ -145,6 +142,16 @@ struct RSSPane: View {
                 Button(L10n.t("Add Feed")) { addFeed() }
                     .disabled(URL(string: newURL.trimmingCharacters(in: .whitespaces))?.host == nil)
             }
+        }
+    }
+
+    /// One whole-sentence key per variant, so a translation never glues fragments together.
+    private func feedSummary(_ feed: RSSFeed) -> String {
+        switch (feed.titlePattern.isEmpty, feed.startPaused) {
+        case (true, false): return L10n.t("Every item")
+        case (true, true): return L10n.t("Every item · added paused")
+        case (false, false): return L10n.t("Titles containing “%@”", feed.titlePattern)
+        case (false, true): return L10n.t("Titles containing “%@” · added paused", feed.titlePattern)
         }
     }
 

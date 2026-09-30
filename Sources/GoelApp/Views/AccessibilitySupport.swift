@@ -144,8 +144,52 @@ extension FileType {
 }
 
 extension SortKey {
-    var accessibilityName: String {
-        self == .index ? L10n.t("Row number") : L10n.t(rawValue)
+    /// Every name is a literal `L10n.t` key so the extractor sees it; `rawValue` is a storage id.
+    var title: String {
+        switch self {
+        case .index: return L10n.t("Row number")
+        case .name: return L10n.t("Name")
+        case .size: return L10n.t("Size")
+        case .status: return L10n.t("Status")
+        case .added: return L10n.t("Added")
+        case .downloadSpeed: return L10n.t("Download speed")
+        case .uploadSpeed: return L10n.t("Upload speed")
+        }
+    }
+
+    /// The compact column header; "↓ Speed" and "#" are keys too, so a translation can change them.
+    var columnTitle: String {
+        switch self {
+        case .index: return L10n.t("#")
+        case .downloadSpeed: return L10n.t("↓ Speed")
+        case .uploadSpeed: return L10n.t("↑ Speed")
+        default: return title
+        }
+    }
+
+    var accessibilityName: String { title }
+}
+
+extension DetailTab {
+    var title: String {
+        switch self {
+        case .general: return L10n.t("General")
+        case .details: return L10n.t("Details")
+        case .progress: return L10n.t("Progress")
+        case .files: return L10n.t("Files")
+        case .connections: return L10n.t("Connections")
+        }
+    }
+}
+
+extension FilePriority {
+    var title: String {
+        switch self {
+        case .skip: return L10n.t("Skip")
+        case .low: return L10n.t("Low")
+        case .normal: return L10n.t("Normal")
+        case .high: return L10n.t("High")
+        }
     }
 }
 
