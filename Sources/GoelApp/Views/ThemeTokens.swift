@@ -45,6 +45,8 @@ struct IconButton: View {
     let help: String
     var size: CGFloat = 11
     var tint: Color? = nil
+    /// VoiceOver label when the tooltip alone is too terse ("Cancel" vs "Cancel transfer of x").
+    var spokenLabel: String? = nil
     let action: () -> Void
 
     @State private var hovered = false
@@ -61,7 +63,7 @@ struct IconButton: View {
         .foregroundStyle(tint ?? Color.secondary)
         .onHover { hovered = $0 }
         .help(help)
-        .accessibilityLabel(help)
+        .accessibilityLabel(spokenLabel ?? help)
     }
 }
 
@@ -71,11 +73,14 @@ struct TintedPillButtonStyle: ButtonStyle {
     var tint: Color = Theme.accent
     var ink: Color? = nil
     var prominent = false
+    /// Stretch to share a row equally with sibling pills.
+    var fillWidth = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaledFont(size: Theme.TextSize.body, weight: .semibold)
-            .padding(.horizontal, Theme.Space.m)
+            .frame(maxWidth: fillWidth ? .infinity : nil)
+            .padding(.horizontal, fillWidth ? Theme.Space.xs : Theme.Space.m)
             .frame(minHeight: 28)
             .background(prominent ? tint : tint.opacity(0.14),
                         in: RoundedRectangle(cornerRadius: Theme.Radius.control))

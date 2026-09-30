@@ -23,17 +23,11 @@ struct DetailPanelView: View {
             header(for: task)
             Divider()
 
-            Picker("", selection: $vm.detailTab) {
-                ForEach(DetailTab.allCases) { tab in
-                    Text(tab.title).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .controlSize(.small)
-            .labelsHidden()
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .accessibilityLabel(L10n.t("Detail section"))
+            // Five segments truncate ("Connecti…") below ~360 pt, so the picker becomes a menu there.
+            DetailTabPicker(selection: $vm.detailTab, segmentedMinWidth: 336)
+                .controlSize(.small)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
             Divider()
 
             ScrollView {
@@ -69,10 +63,7 @@ struct DetailPanelView: View {
         HStack(spacing: 11) {
             FileTypeIcon(type: task.fileType, size: 38)
             VStack(alignment: .leading, spacing: 3) {
-                Text(task.name)
-                    .scaledFont(size: 13.5, weight: .semibold)
-                    .lineLimit(2)
-                    .accessibilityAddTraits(.isHeader)
+                DetailTitle(name: task.name)
                 HStack(spacing: 7) {
                     KindBadge(task: task)
                     DetailStatusPill(task: task)
@@ -95,8 +86,8 @@ struct DetailPanelView: View {
                     Text("\(task.percentComplete)%")
                         .scaledFont(size: 30, weight: .bold, monospacedDigit: true)
                     Text(L10n.t("complete"))
-                        .scaledFont(size: 10.5)
-                        .foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.top, 4)
@@ -111,7 +102,7 @@ struct DetailPanelView: View {
             }
 
             Text(sizeAndETA(for: task))
-                .scaledFont(size: 11.5, monospacedDigit: true)
+                .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(A11y.sentence(
                     L10n.t("%1$@ of %2$@", A11y.bytes(task.bytesDownloaded), A11y.bytes(task.totalBytes)),
@@ -194,5 +185,48 @@ struct DetailPanelView: View {
                 .padding(.horizontal, 30)
             Spacer(minLength: 0)
         }
+    }
+}
+
+/// The download's name as the panel heading. Middle truncation keeps the extension visible,
+/// and the name can be selected and copied.
+struct DetailTitle: View {
+    let name: String
+
+    var body: some View {
+        Text(name)
+            .scaledFont(size: Theme.TextSize.title, weight: .semibold)
+            .lineLimit(2)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+            .help(name)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Segmented while there is room for every tab label, a pop-up menu otherwise.
+struct DetailTabPicker: View {
+    @Binding var selection: DetailTab
+    /// Below this width the segmented labels truncate.
+    let segmentedMinWidth: CGFloat
+    var segmentedMaxWidth: CGFloat? = nil
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            picker.pickerStyle(.segmented)
+                .frame(minWidth: segmentedMinWidth, maxWidth: segmentedMaxWidth ?? .infinity)
+            picker.pickerStyle(.menu)
+                .fixedSize()
+        }
+        .accessibilityLabel(L10n.t("Detail section"))
+    }
+
+    private var picker: some View {
+        Picker("", selection: $selection) {
+            ForEach(DetailTab.allCases) { tab in
+                Text(tab.title).tag(tab)
+            }
+        }
+        .labelsHidden()
     }
 }

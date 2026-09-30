@@ -6,6 +6,9 @@ struct ProgressRing: View {
     var tint: Color = Theme.accent
     var lineWidth: CGFloat = 11
 
+    /// Reduce Motion drops both the sweep and the glow: the ring updates on every telemetry tick.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         ZStack {
             Circle()
@@ -15,8 +18,8 @@ struct ProgressRing: View {
                 .trim(from: 0, to: max(0.004, min(1, fraction)))
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .shadow(color: tint.opacity(0.45), radius: 4)
-                .animation(.easeInOut(duration: 0.4), value: fraction)
+                .shadow(color: reduceMotion ? .clear : tint.opacity(0.45), radius: reduceMotion ? 0 : 4)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: fraction)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L10n.t("Progress"))
@@ -100,7 +103,7 @@ struct DetailStatusPill: View {
         HStack(spacing: 5) {
             Circle().fill(task.statusColor).frame(width: 6, height: 6)
             Text(task.status.displayName)
-                .scaledFont(size: 11.5)
+                .scaledFont(size: Theme.TextSize.meta)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -138,17 +141,8 @@ struct DetailActionButtons: View {
                         prominent: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
-                .scaledFont(size: 11.5, weight: .medium)
-                .frame(maxWidth: fill ? .infinity : nil)
-                .padding(.horizontal, fill ? 4 : 10)
-                .frame(height: 28)
-                .background(prominent ? Theme.accent.opacity(0.16) : Color.primary.opacity(0.06),
-                            in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.hairline))
-                .foregroundStyle(prominent ? Theme.accent : Color.primary)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TintedPillButtonStyle(tint: prominent ? Theme.accent : Color.primary, fillWidth: fill))
         .a11yButton(spoken)
     }
 }

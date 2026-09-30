@@ -11,23 +11,21 @@ struct KVRow: View {
 
     var body: some View {
         HStack(alignment: .top) {
-            Text(key).scaledFont(size: 12).foregroundStyle(.secondary)
+            Text(key).scaledFont(size: Theme.TextSize.body).foregroundStyle(.secondary)
             Spacer(minLength: 12)
             Text(value)
-                .scaledFont(size: 12)
+                .scaledFont(size: Theme.TextSize.body)
                 .foregroundStyle(valueColor)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
                 .truncationMode(.middle)
             if copyable {
-                Button {
+                // 22 pt target with a hover fill and a tooltip ("Copy save path"); the bare 10 pt glyph had neither.
+                IconButton(symbol: "doc.on.doc", help: L10n.t("Copy %@", L10n.midSentence(L10n.t(key))),
+                           size: 10) {
                     vm.copyToPasteboard(value)
-                } label: {
-                    Image(systemName: "doc.on.doc").font(.system(size: 10))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .a11yButton(L10n.t("Copy %@", L10n.midSentence(L10n.t(key))))
+                .padding(.vertical, -4)
             }
         }
         .accessibilityElement(children: .contain)
@@ -42,8 +40,9 @@ struct SectionLabel: View {
     let text: String
     var body: some View {
         Text(text.uppercased())
-            .scaledFont(size: 10.5, weight: .bold)
-            .foregroundStyle(.tertiary)
+            .scaledFont(size: Theme.TextSize.caption, weight: .bold)
+            // Section names carry information: secondary, not tertiary.
+            .foregroundStyle(.secondary)
             .padding(.top, 16)
             .padding(.bottom, 8)
             .accessibilityLabel(text)
@@ -344,8 +343,8 @@ struct FilesTab: View {
                 fileRow(name: task.name, fraction: task.fractionCompleted,
                         size: task.totalBytes ?? 0, wanted: true, fileID: nil, priority: .normal)
                 Text(L10n.t("Single-file HTTP download — the one-file case of the unified multi-file model."))
-                    .scaledFont(size: 11.5)
-                    .foregroundStyle(.tertiary)
+                    .scaledFont(size: Theme.TextSize.meta)
+                    .foregroundStyle(.secondary)
             }
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -477,8 +476,8 @@ struct ConnectionsTab: View {
                 Text("↓").frame(width: 50, alignment: .trailing)
                 Text(trailing).frame(width: 56, alignment: .trailing)
             }
-            .scaledFont(size: 10.5, weight: .semibold)
-            .foregroundStyle(.tertiary)
+            .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
+            .foregroundStyle(.secondary)
             .padding(.vertical, 6)
             .a11yDecorative()
             Divider()
@@ -501,7 +500,7 @@ struct ConnectionsTab: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(label).scaledFont(size: 11.5).lineLimit(1).truncationMode(.middle)
                     if let subtitle, !subtitle.isEmpty, subtitle != "peer" {
-                        Text(subtitle).scaledFont(size: 10).foregroundStyle(.tertiary)
+                        Text(subtitle).scaledFont(size: Theme.TextSize.caption).foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.tail)
                     }
                 }
