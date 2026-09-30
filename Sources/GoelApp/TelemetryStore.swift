@@ -62,6 +62,8 @@ final class TelemetryStore: ObservableObject {
     private var sftpRings: [UUID: SpeedRing<Double>] = [:]
     /// The combined read-out (downloads plus SFTP) the status bar prints, one point per history tick.
     private var globalRing = SpeedRing<SpeedSample>(capacity: TelemetryStore.globalHistoryCap)
+    /// When each global point was taken. Idle ticks are skipped, so the point count is not a duration.
+    private var globalTimes = SpeedRing<Date>(capacity: TelemetryStore.globalHistoryCap)
 
     func displaySpeed(for task: DownloadTask) -> SpeedSample {
         displayedTaskSpeed[task.id] ?? SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
@@ -74,6 +76,12 @@ final class TelemetryStore: ObservableObject {
     func recentGlobalHistory(_ count: Int) -> [SpeedSample] { Array(globalRing.elements.suffix(count)) }
     var trackedTaskCount: Int { taskRings.count }
 
+    /// How long ago the oldest global point was taken; nil until there are two points to span.
+    func globalHistorySpan(now: Date = Date()) -> TimeInterval? {
+        guard globalTimes.count >= 2, let oldest = globalTimes.elements.first else { return nil }
+        return max(0, now.timeIntervalSince(oldest))
+    }
+
     /// Idle means nothing moving and every read-out already at rest: the sample can be skipped.
     var isAtRest: Bool {
         displayedCombinedSpeed == .zero && globalRing.elements.allSatisfy { $0 == .zero }
@@ -81,7 +89,7 @@ final class TelemetryStore: ObservableObject {
 
     /// One tick. Rows that left the queue are pruned only when the id set actually shrank,
     /// detected by a count mismatch instead of building a `Set` of every id twice a second.
-    func sample(tasks: [DownloadTask], combined: SpeedSample, recordHistory: Bool) {
+    func sample(tasks: [DownloadTask], combined: SpeedSample, recordHistory: Bool, now: Date = Date()) {
         if combined != displayedCombinedSpeed { displayedCombinedSpeed = combined }
         var next = displayedTaskSpeed
         var changed = false
@@ -103,6 +111,7 @@ final class TelemetryStore: ObservableObject {
         if changed { displayedTaskSpeed = next }
         if recordHistory {
             globalRing.append(combined)
+            globalTimes.append(now)
             historyRevision &+= 1
         }
     }

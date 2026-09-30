@@ -47,6 +47,7 @@ struct GlobalSpeedHistoryPopover: View {
 
     var body: some View {
         let history = telemetry.globalHistory
+        let span = telemetry.globalHistorySpan()
         let peak = max(SpeedHistoryWindow.peakDown(history), SpeedHistoryWindow.peakUp(history))
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             Text(L10n.t("Speed · last 5 min"))
@@ -67,7 +68,7 @@ struct GlobalSpeedHistoryPopover: View {
                 }
                 .frame(height: 120)
                 HStack {
-                    Text(axisStart(history))
+                    Text(Self.axisStart(span: span))
                     Spacer()
                     Text(L10n.t("now"))
                 }
@@ -76,7 +77,7 @@ struct GlobalSpeedHistoryPopover: View {
                 .a11yDecorative()
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(L10n.t("Speed graph, last %d seconds", history.count))
+            .accessibilityLabel(L10n.t("Speed graph, last %d seconds", Int((span ?? 0).rounded())))
             .accessibilityValue(A11y.sentence(
                 L10n.t("peak download %@", A11y.speed(SpeedHistoryWindow.peakDown(history))),
                 L10n.t("peak upload %@", A11y.speed(SpeedHistoryWindow.peakUp(history)))))
@@ -85,9 +86,11 @@ struct GlobalSpeedHistoryPopover: View {
         .frame(width: 360)
     }
 
-    private func axisStart(_ history: [SpeedSample]) -> String {
-        history.count < 2 ? "" : L10n.t("%@ ago", DisplayFormat.duration(TimeInterval(history.count),
-                                                                         locale: DisplayFormat.appLocale))
+    /// From the oldest point's own time: idle stretches are not sampled, so a point count would
+    /// understate how far back the graph reaches.
+    static func axisStart(span: TimeInterval?) -> String {
+        guard let span else { return "" }
+        return L10n.t("%@ ago", DisplayFormat.duration(span.rounded(), locale: DisplayFormat.appLocale))
     }
 
     private func legend(_ direction: SpeedDirection, _ history: [SpeedSample]) -> some View {

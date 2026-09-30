@@ -53,6 +53,25 @@ final class TelemetryStoreTests: XCTestCase {
         XCTAssertEqual(store.recentGlobalHistory(60).first?.down, Double(TelemetryStore.globalHistoryCap - 40))
     }
 
+    /// Idle ticks are skipped, so three points can span far more than three seconds.
+    func testTheGraphsAxisReflectsRealElapsedTimeNotThePointCount() {
+        let store = TelemetryStore()
+        let start = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        XCTAssertNil(store.globalHistorySpan(now: start))
+        store.sample(tasks: [], combined: SpeedSample(down: 5, up: 0), recordHistory: true, now: start)
+        XCTAssertNil(store.globalHistorySpan(now: start), "one point spans nothing")
+        store.sample(tasks: [], combined: SpeedSample(down: 5, up: 0), recordHistory: true,
+                     now: start.addingTimeInterval(1))
+        // An idle stretch: no ticks recorded for two minutes.
+        store.sample(tasks: [], combined: SpeedSample(down: 5, up: 0), recordHistory: true,
+                     now: start.addingTimeInterval(121))
+        XCTAssertEqual(store.globalHistory.count, 3)
+        XCTAssertEqual(store.globalHistorySpan(now: start.addingTimeInterval(121)), 121)
+        XCTAssertEqual(GlobalSpeedHistoryPopover.axisStart(span: nil), "")
+        XCTAssertNotEqual(GlobalSpeedHistoryPopover.axisStart(span: 121),
+                          GlobalSpeedHistoryPopover.axisStart(span: 3))
+    }
+
     func testHistoryWindowTakesTheNewestPointsAndReportsPeaks() {
         let samples = (0..<90).map { SpeedSample(down: Double($0), up: Double(90 - $0)) }
         let tail = SpeedHistoryWindow.tail(samples, count: 60)
