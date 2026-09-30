@@ -43,6 +43,19 @@ export function fmtWhen(unixSeconds: number): string {
   return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`
 }
 
+/** For narrow rows: a time today, "Sep 29" this year, then with the year. `fmtAbsolute` goes in the tooltip. */
+export function fmtShortWhen(unixSeconds: number, nowMs: number = Date.now()): string {
+  const d = new Date(unixSeconds * 1000)
+  const now = new Date(nowMs)
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
+  return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
 export function pct(fraction: number): number {
   return fraction * 100
 }

@@ -5,13 +5,32 @@ import en from '../locales/en.json'
 import { renderWithI18n } from '../test/renderWithI18n'
 import { StatusBar } from './StatusBar'
 
-const base = { live: true, loaded: true, active: 4, downSpeed: 0, upSpeed: 0, readOnly: false }
+const queue = { active: 4, queued: 0, paused: 1, seeding: 0, failed: 2 }
+const base = { live: true, loaded: true, queue, downSpeed: 0, readOnly: false }
 
 describe('StatusBar', () => {
   it('shows Live and the active count', () => {
     renderWithI18n(<StatusBar {...base} />)
     expect(screen.getByRole('status')).toHaveTextContent(en.statusbar.live)
     expect(screen.getByText('4 active')).toBeInTheDocument()
+  })
+
+  it('summarises only the non-empty queue states, always keeping active', () => {
+    renderWithI18n(<StatusBar {...base} queue={{ ...queue, active: 0 }} />)
+    expect(screen.getByText('0 active')).toBeInTheDocument()
+    expect(screen.getByText('1 paused')).toBeInTheDocument()
+    expect(screen.getByText('2 failed')).toBeInTheDocument()
+    expect(screen.queryByText(/queued|seeding/)).toBeNull()
+  })
+
+  it('makes each summary figure a shortcut to its filter', async () => {
+    const onFilter = vi.fn()
+    renderWithI18n(<StatusBar {...base} onFilter={onFilter} />)
+    const failed = screen.getByRole('button', { name: '2 failed' })
+    expect(failed).toHaveClass('bad')
+    await userEvent.click(failed)
+    await userEvent.click(screen.getByRole('button', { name: '4 active' }))
+    expect(onFilter.mock.calls).toEqual([['failed'], ['active']])
   })
 
   it('warns that data may be stale once the stream drops', () => {

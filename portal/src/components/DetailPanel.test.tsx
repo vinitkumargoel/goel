@@ -104,10 +104,44 @@ const HTTP: TaskDetail = {
 }
 
 describe('DetailPanel', () => {
-  it('renders the empty state from the catalogue', () => {
-    renderPanel(null)
-    expect(screen.getByText(en.detail.emptyTitle)).toBeInTheDocument()
-    expect(screen.getByText(en.detail.emptyBody)).toBeInTheDocument()
+  it('shows the overview it is given when nothing is selected', () => {
+    renderWithI18n(
+      <DetailPanel
+        detail={null}
+        overview={<p>queue overview</p>}
+        open
+        tab="general"
+        canWrite
+        onTab={vi.fn()}
+        onClose={vi.fn()}
+        onAction={vi.fn()}
+        onRemove={vi.fn()}
+        onMore={vi.fn()}
+        onCopy={vi.fn()}
+        onToggleFile={vi.fn()}
+        onCyclePriority={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('queue overview')).toBeInTheDocument()
+  })
+
+  it('puts the primary action first in a footer, then copy, remove and more', async () => {
+    const onAction = vi.fn()
+    renderPanel(DETAIL, { onAction })
+    const footer = screen.getByRole('group', { name: en.detail.actions })
+    const buttons = [...footer.querySelectorAll('button')]
+    expect(buttons[0]).toHaveClass('dprimary')
+    expect(buttons[0]).toHaveAccessibleName(/Resume/)
+    expect(buttons).toHaveLength(4)
+    await userEvent.click(buttons[0]!)
+    expect(onAction).toHaveBeenCalledWith('t1', 'resume')
+  })
+
+  it('breaks a long title at separators and keeps the full name as its tooltip', () => {
+    renderPanel({ ...DETAIL, row: { ...ROW, name: 'Some.Show.S01E01.1080p' } })
+    const title = screen.getByRole('heading', { level: 2 })
+    expect(title).toHaveAttribute('title', 'Some.Show.S01E01.1080p')
+    expect(title.querySelectorAll('wbr').length).toBeGreaterThan(0)
   })
 
   it('renders every tab label from the catalogue, not a capitalized token', () => {
@@ -244,7 +278,10 @@ describe('DetailPanel', () => {
       },
       { tab: 'files' },
     )
-    expect(screen.getByRole('link', { name: en.detail.downloadAll })).toHaveAttribute('href', '/stream?id=t1&zip=1')
+    expect(screen.getByRole('link', { name: en.detail.files.saveFinished_one })).toHaveAttribute(
+      'href',
+      '/stream?id=t1&zip=1',
+    )
     const save = screen.getByRole('link', { name: 'Save Show/a.mkv to this device' })
     expect(save).toHaveAttribute('href', '/stream?id=t1&file=0')
     expect(save).toHaveAttribute('download', 'a.mkv')

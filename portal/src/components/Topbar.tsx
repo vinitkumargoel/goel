@@ -32,6 +32,8 @@ interface TopbarProps {
   onMobileSearch: (open: boolean) => void
   downSpeed: number
   upSpeed: number
+  /** Library only: History and Settings have their own search, and two fields side by side confused. */
+  showSearch?: boolean
   showPanelToggle: boolean
   panelOpen: boolean
   onTogglePanel: () => void
@@ -53,6 +55,7 @@ export function Topbar({
   onMobileSearch,
   downSpeed,
   upSpeed,
+  showSearch = true,
   showPanelToggle,
   panelOpen,
   onTogglePanel,
@@ -88,7 +91,7 @@ export function Topbar({
         Goel° <span className="sub">{t('topbar.web')}</span>
       </div>
 
-      <div className="search">
+      <div className="search" hidden={!showSearch}>
         <SearchIcon />
         <input
           ref={searchRef}
@@ -119,6 +122,7 @@ export function Topbar({
       {/* Only shown ≤680px, where the inline field is hidden. */}
       <button
         ref={searchToggle}
+        hidden={!showSearch}
         className="ico search-toggle"
         onClick={() => onMobileSearch(true)}
         aria-label={t('topbar.openSearch')}
@@ -142,7 +146,7 @@ export function Topbar({
       )}
 
       <button
-        className={`ico${panelOpen ? ' active' : ''}`}
+        className={`ico panel-toggle${panelOpen ? ' active' : ''}`}
         style={showPanelToggle ? undefined : { display: 'none' }}
         onClick={onTogglePanel}
         title={t('topbar.detailPanel')}

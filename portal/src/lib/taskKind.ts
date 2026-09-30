@@ -25,17 +25,31 @@ export function kindBadge(kind: string): string {
   return KIND_BADGE[kind as TaskKind] ?? kind.toUpperCase()
 }
 
-export type FileType = 'iso' | 'video' | 'archive' | 'app' | 'magnet' | 'doc'
+/** The native app's `FileType` cases, in its sidebar order; `magnet` is a transient state, not a kind. */
+export type FileType = 'video' | 'audio' | 'image' | 'iso' | 'archive' | 'app' | 'doc' | 'magnet' | 'other'
+
+/**
+ * Mirrors the native `FileType.classify` rule list, first match wins, so the Mac and the portal file
+ * a download under the same Type. The original four match the extension anywhere ("release.iso.zip"
+ * stays a disc image); the newer ones must end the name or a dotted segment.
+ */
+const TYPE_RULES: ReadonlyArray<readonly [FileType, RegExp]> = [
+  ['iso', /\.iso/],
+  ['video', /\.(mkv|mp4|avi|mov|webm|m4v|wmv|flv|mpe?g)/],
+  ['audio', /\.(mp3|m4a|m4b|aac|flac|wav|ogg|oga|opus|wma|aiff?|alac|ape)(?![a-z0-9])/],
+  ['image', /\.(jpe?g|png|gif|heic|heif|webp|tiff?|bmp|svg|avif|psd|raw|cr2|nef|dng)(?![a-z0-9])/],
+  ['archive', /\.(zip|gz|tar|7z|rar|dmg|bz2|xz|zst)/],
+  ['app', /\.(app|xip|pkg|exe|deb|msi)/],
+  ['doc', /\.(pdf|txt|md|rtf|docx?|xlsx?|pptx?|odt|ods|odp|pages|numbers|key|epub|mobi|csv|json|xml|html?)(?![a-z0-9])/],
+]
 
 export function fileType(task: Pick<TaskRow, 'name' | 'kind'> & { statusToken: StatusToken | '' }): FileType {
-  const n = task.name.toLowerCase()
   if (task.statusToken === 'metadata') return 'magnet'
-  if (/\.iso($|\?)/.test(n)) return 'iso'
-  if (task.kind === 'torrent' && /\.(mkv|mp4|avi|mov)/.test(n)) return 'video'
-  if (/\.(mkv|mp4|avi|mov|m3u8|webm)/.test(n) || task.kind === 'hls') return 'video'
-  if (/\.(zip|gz|tar|7z|rar|dmg|zst|xz)/.test(n)) return 'archive'
-  if (/\.(app|xip|pkg|exe|dmg)/.test(n)) return 'app'
-  return 'doc'
+  if (task.kind === 'hls') return 'video'
+  const n = task.name.toLowerCase()
+  for (const [type, rule] of TYPE_RULES) if (rule.test(n)) return type
+  // A torrent with no recognisable extension is almost always a video release (a season pack).
+  return task.kind === 'torrent' ? 'video' : 'other'
 }
 
 const ACTIVE: ReadonlySet<StatusToken> = new Set<StatusToken>([

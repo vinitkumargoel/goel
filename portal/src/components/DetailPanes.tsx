@@ -1,12 +1,14 @@
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { fileURL, streamURL } from '../lib/api'
+import { fileURL, streamURL, zipURL } from '../lib/api'
+import { commonDir, fileLabels, splitTail } from '../lib/names'
+import { pieceRuns, piecesHave } from '../lib/pieces'
 import { useSpeedSeries } from '../lib/speedStore'
 import { SpeedChart } from './SpeedChart'
 import { fmtAbsolute, fmtEta, fmtSize, fmtSpeed, IDLE_RATE, pct } from '../lib/format'
 import { kindLabel } from '../lib/taskKind'
 import type { FilePriority, StatusToken, TaskDetail, TaskKind } from '../lib/types'
-import { CheckIcon, CopyIcon, DownloadIcon, RetryIcon, WarnIcon } from './Icons'
+import { CheckIcon, CopyIcon, DownloadIcon, FolderIcon, RetryIcon, WarnIcon } from './Icons'
 
 export type DetailTab = 'general' | 'details' | 'progress' | 'files' | 'peers'
 
@@ -252,14 +254,43 @@ function ProgressBody({ detail }: { detail: TaskDetail }) {
   const row = detail.row
 
   if (row.kind === 'torrent' && detail.pieces.length > 0) {
+    const total = detail.pieces.length
+    const have = piecesHave(detail.pieces)
     return (
       <>
-        <div className="slbl">{t('detail.progress.pieceMap', { count: detail.pieces.length })}</div>
-        <div className="pieces">
-          {detail.pieces.map((v, i) => (
-            // Index keys are correct here: a fixed-length positional array, never reordered.
-            <span key={i} className={v >= 1 ? 'f' : v > 0 ? 'p' : ''} />
-          ))}
+        <div className="slbl">{t('detail.progress.pieceMap', { count: total })}</div>
+        {/* One strip, one column per bucket (runs merged): the standard piece bar. A grid of
+            720 cells overflowed the panel. */}
+        <svg
+          className="pstrip"
+          viewBox={`0 0 ${total} 1`}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={t('detail.progress.pieceStrip', { have, total })}
+        >
+          {pieceRuns(detail.pieces).map((r) =>
+            r.state === 'missing' ? null : (
+              <rect
+                key={r.start}
+                className={`ps-${r.state}`}
+                x={r.start}
+                y={0}
+                width={r.length}
+                height={1}
+              />
+            ),
+          )}
+        </svg>
+        <div className="plegend" aria-hidden="true">
+          <span>
+            <i className="ps-have" /> {t('detail.progress.have', { count: have })}
+          </span>
+          <span>
+            <i className="ps-partial" /> {t('detail.progress.partial')}
+          </span>
+          <span>
+            <i className="ps-missing" /> {t('detail.progress.missing')}
+          </span>
         </div>
       </>
     )
@@ -330,7 +361,8 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
             </div>
           </div>
           <span className="fsz">{fmtSize(row.totalBytes)}</span>
-          {(row.statusToken === 'completed' || row.statusToken === 'seeding') && (
+          <span aria-hidden="true" />
+          {row.statusToken === 'completed' || row.statusToken === 'seeding' ? (
             <a
               className="fdl"
               href={streamURL(row.id, true)}
@@ -340,6 +372,8 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
             >
               <DownloadIcon />
             </a>
+          ) : (
+            <span className="fdl-gap" aria-hidden="true" />
           )}
         </div>
         <p className="fhint" style={{ marginTop: 12 }}>
@@ -349,56 +383,100 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
     )
   }
 
+  // Season packs repeat one folder on every row, cutting off the part that differs: say it once.
+  const shared = commonDir(detail.files.map((f) => f.name))
+  const labels = fileLabels(
+    detail.files.map((f) => f.name),
+    shared,
+  )
+  const finished = detail.files.filter((f) => f.priority !== 'skip' && f.progress >= 1).length
+
   return (
     <>
-      {detail.files.map((f) => {
+      {(shared || (row.multiFile && finished > 0)) && (
+        <div className="fhead">
+          {shared && (
+            <span className="fdir" title={shared}>
+              <FolderIcon aria-hidden="true" />
+              <span className="ell">{shared.replace(/\/$/, '').split('/').join(' / ')}</span>
+            </span>
+          )}
+          {row.multiFile && finished > 0 && (
+            <a
+              className="linkbtn fzip"
+              href={zipURL(row.id)}
+              download
+              title={t('detail.downloadAllHint')}
+            >
+              {t('detail.files.saveFinished', { count: finished })}
+            </a>
+          )}
+        </div>
+      )}
+      {detail.files.map((f, i) => {
         const skipped = f.priority === 'skip'
+        const { dir, label } = labels[i]!
+        const { head, tail } = splitTail(label)
+        // A subfolder is named once, above its first file, rather than on every row.
+        const heading = dir !== '' && dir !== labels[i - 1]?.dir
         return (
-          <div className="frow" key={f.id}>
-            <button
-              type="button"
-              role="checkbox"
-              aria-checked={!skipped}
-              aria-label={t('detail.files.download', { name: f.name })}
-              className={`fchk${skipped ? '' : ' on'}`}
-              disabled={!canWrite}
-              onClick={() => onToggleFile(f.id, skipped)}
-            >
-              <CheckIcon />
-            </button>
-            <div className="finfo">
-              <div className="fname">{f.name}</div>
-              <div className="fbar">
-                <i style={{ width: `${pct(f.progress).toFixed(0)}%` }} />
+          <Fragment key={f.id}>
+            {heading && (
+              <div className="fsub" title={shared + dir}>
+                <FolderIcon aria-hidden="true" />
+                <span className="ell">{dir.split('/').join(' / ')}</span>
               </div>
-            </div>
-            <span className="fsz">{fmtSize(f.size)}</span>
-            <button
-              type="button"
-              className={`fprio${f.priority === 'high' ? ' high' : ''}`}
-              disabled={!canWrite}
-              aria-label={t('detail.files.priority', {
-                name: f.name,
-                priority: t(`task.priority.${f.priority}`),
-              })}
-              onClick={() => onCyclePriority(f.id, f.priority)}
-            >
-              {t(`task.priority.${f.priority}`)}
-            </button>
-            {!skipped && f.progress >= 1 ? (
-              <a
-                className="fdl"
-                href={fileURL(row.id, f.id)}
-                download={baseName(f.name)}
-                aria-label={t('detail.files.save', { name: f.name })}
-                title={t('detail.files.saveHint')}
-              >
-                <DownloadIcon />
-              </a>
-            ) : (
-              <span className="fdl-gap" aria-hidden="true" />
             )}
-          </div>
+            <div className="frow">
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={!skipped}
+                aria-label={t('detail.files.download', { name: f.name })}
+                className={`fchk${skipped ? '' : ' on'}`}
+                disabled={!canWrite}
+                onClick={() => onToggleFile(f.id, skipped)}
+              >
+                <CheckIcon />
+              </button>
+              <div className="finfo">
+                {/* Middle ellipsis: the head truncates, the tail (episode, extension) stays whole. */}
+                <div className={`fname${skipped ? ' skipped' : ''}`} title={f.name}>
+                  <span className="fhead-t">{head}</span>
+                  {tail && <span className="ftail">{tail}</span>}
+                </div>
+                <div className="fbar">
+                  <i style={{ width: `${pct(f.progress).toFixed(0)}%` }} />
+                </div>
+              </div>
+              <span className="fsz">{fmtSize(f.size)}</span>
+              <button
+                type="button"
+                className={`fprio ${f.priority}`}
+                disabled={!canWrite}
+                aria-label={t('detail.files.priority', {
+                  name: f.name,
+                  priority: t(`task.priority.${f.priority}`),
+                })}
+                onClick={() => onCyclePriority(f.id, f.priority)}
+              >
+                {t(`task.priority.${f.priority}`)}
+              </button>
+              {!skipped && f.progress >= 1 ? (
+                <a
+                  className="fdl"
+                  href={fileURL(row.id, f.id)}
+                  download={baseName(f.name)}
+                  aria-label={t('detail.files.save', { name: f.name })}
+                  title={t('detail.files.saveHint')}
+                >
+                  <DownloadIcon />
+                </a>
+              ) : (
+                <span className="fdl-gap" aria-hidden="true" />
+              )}
+            </div>
+          </Fragment>
         )
       })}
     </>
@@ -418,7 +496,10 @@ export function PeersPane({ detail }: { detail: TaskDetail }) {
     return (
       <>
         <div className="slbl">
-          {t('detail.peers.summary', { seeds: row.seeds ?? 0, peers: row.conns })}
+          {t('detail.peers.summary', {
+            seeds: row.seeds ?? 0,
+            peers: row.conns,
+          })}
         </div>
         <div className="crow h">
           <span>{t('detail.peers.colPeer')}</span>

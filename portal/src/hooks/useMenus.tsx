@@ -172,7 +172,8 @@ export function useMenus(deps: Deps) {
     return entries
   }
 
-  const openRowMenu = useStableCallback((id: string, x: number, y: number) => {
+  /** `above` opens the menu upward from `y`, for a trigger at the bottom of the window. */
+  const openRowMenu = useStableCallback((id: string, x: number, y: number, above?: boolean) => {
     const task = deps.tasks.find((t) => t.id === id)
     if (!task) return
     const inSelection = deps.selectedIds.has(id)
@@ -180,10 +181,10 @@ export function useMenus(deps: Deps) {
 
     const group = inSelection ? deps.selectedVisible : []
     if (group.length >= 2 && group.some((r) => r.id === id)) {
-      deps.openMenu({ x, y, entries: bulkEntries(group), label: t('bulk.selected', { count: group.length }) })
+      deps.openMenu({ x, y, above, entries: bulkEntries(group), label: t('bulk.selected', { count: group.length }) })
       return
     }
-    deps.openMenu({ x, y, entries: singleEntries(task), label: task.name })
+    deps.openMenu({ x, y, above, entries: singleEntries(task), label: task.name })
   })
 
   /** The account menu under the topbar's user button. */

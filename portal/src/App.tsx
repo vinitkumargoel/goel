@@ -7,6 +7,7 @@ import { DetailPanel } from './components/DetailPanel'
 import type { DetailTab } from './components/DetailPanes'
 import { HistoryView } from './components/HistoryView'
 import { LibraryView } from './components/LibraryView'
+import { QueueOverview } from './components/QueueOverview'
 import { isStale, ReconnectBanner } from './components/ReconnectBanner'
 import { SettingsView } from './components/SettingsView'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
@@ -32,7 +33,8 @@ import { useToasts } from './hooks/useToasts'
 import { setRefusalHandler } from './lib/api'
 import { BOOT } from './lib/boot'
 import { copyText } from './lib/clipboard'
-import { countFilters, filterTasks } from './lib/filters'
+import { countFilters, filterTasks, type Filter as LibraryFilter } from './lib/filters'
+import { loadPanelAutoHide, panelVisible, savePanelAutoHide } from './lib/prefs'
 import { formatRoute, loadSort, parseRoute, saveSort } from './lib/route'
 import { EMPTY_SELECTION, selectionReducer } from './lib/selection'
 import { nextSort, sortTasks, type SortKey, type SortState } from './lib/sort'
@@ -64,6 +66,11 @@ export function App() {
   const [panelOpen, setPanelOpen] = useState(
     () => window.innerWidth > PANEL_BREAKPOINT || initial.task != null,
   )
+  const [panelAutoHide, setPanelAutoHideState] = useState(loadPanelAutoHide)
+  const setPanelAutoHide = useCallback((on: boolean) => {
+    setPanelAutoHideState(on)
+    savePanelAutoHide(on)
+  }, [])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [menu, setMenu] = useState<AppMenu | null>(null)
   const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null)
@@ -127,10 +134,13 @@ export function App() {
   const detailId =
     lead != null && selection.ids.has(lead) && visible.some((task) => task.id === lead) ? lead : null
 
+  // Auto-hide only takes the panel away while nothing is selected; the toggle still closes it.
+  const panelShown = panelVisible(panelOpen, panelAutoHide, detailId != null)
+
   const { detail, setFilePriority, cyclePriority } = useDetail(
     detailId,
     tasks,
-    view === 'library' && panelOpen,
+    view === 'library' && panelShown,
     warn,
   )
 
@@ -276,6 +286,21 @@ export function App() {
 
   const onSort = useCallback((key: SortKey) => setSort((s) => nextSort(s, key)), [])
 
+  /** The status bar's and the overview's figures jump to that sidebar filter. */
+  const goToFilter = useCallback(
+    (f: LibraryFilter) => {
+      setFilter(f)
+      selectView('library')
+    },
+    [selectView],
+  )
+
+  // With auto-hide hiding it, the toggle means "show me the overview": that takes auto-hide off.
+  const togglePanel = useCallback(() => {
+    if (!panelShown && panelOpen && panelAutoHide) return setPanelAutoHide(false)
+    setPanelOpen((p) => !p)
+  }, [panelShown, panelOpen, panelAutoHide, setPanelAutoHide])
+
   const clearSearch = useCallback(() => {
     setSearch('')
     setFilter('all')
@@ -311,7 +336,7 @@ export function App() {
 
   // Back closes whatever layer is on top rather than leaving the portal.
   const narrow = useMediaQuery(`(max-width: ${PANEL_BREAKPOINT}px)`)
-  useBackToClose(view === 'library' && panelOpen && narrow, closePanel)
+  useBackToClose(view === 'library' && panelShown && narrow, closePanel)
   useBackToClose(sidebarOpen, () => setSidebarOpen(false))
   useBackToClose(addOpen, closeAdd)
   useBackToClose(helpOpen, () => setHelpOpen(false))
@@ -328,9 +353,10 @@ export function App() {
           onMobileSearch={setMobileSearch}
           downSpeed={totals.down}
           upSpeed={totals.up}
+          showSearch={view === 'library'}
           showPanelToggle={view === 'library'}
-          panelOpen={panelOpen}
-          onTogglePanel={() => setPanelOpen((p) => !p)}
+          panelOpen={panelShown}
+          onTogglePanel={togglePanel}
           onAdd={openAdd}
           onToggleSidebar={() => setSidebarOpen((s) => !s)}
           onUserMenu={openUserMenu}
@@ -348,27 +374,13 @@ export function App() {
             filter={filter}
             counts={counts}
             open={sidebarOpen}
-            onSelectFilter={(f) => {
-              setFilter(f)
-              selectView('library')
-            }}
+            onSelectFilter={goToFilter}
             onSelectView={selectView}
             onClose={() => setSidebarOpen(false)}
             returnFocusTo={hamburgerRef}
           />
 
           <main className="content">
-            {/* Also shown for one row: it is where touch screen-reader users reach a row's actions. */}
-            {view === 'library' && selectedVisible.length > 0 && (
-              <BulkBar
-                selected={selectedVisible}
-                canWrite={canWrite}
-                onAction={(action, ids) => void runBulk(action, ids)}
-                onCopyLinks={(sources) => copy(sources.join('\n'))}
-                onRemove={removeMany}
-                onClear={() => select({ type: 'clear' })}
-              />
-            )}
             {view === 'library' && (
               <LibraryView
                 tasks={visible}
@@ -390,6 +402,18 @@ export function App() {
                 onClearSearch={clearSearch}
                 onAdd={openAdd}
                 onRetry={refresh}
+                bulk={
+                  selectedVisible.length >= 2 ? (
+                    <BulkBar
+                      selected={selectedVisible}
+                      canWrite={canWrite}
+                      onAction={(action, ids) => void runBulk(action, ids)}
+                      onCopyLinks={(sources) => copy(sources.join('\n'))}
+                      onRemove={removeMany}
+                      onClear={() => select({ type: 'clear' })}
+                    />
+                  ) : undefined
+                }
               />
             )}
             {view === 'history' && (
@@ -409,6 +433,8 @@ export function App() {
                 onToast={toast}
                 bandwidth={bandwidth}
                 onDirtyChange={setSettingsDirty}
+                panelAutoHide={panelAutoHide}
+                onPanelAutoHide={setPanelAutoHide}
               />
             )}
           </main>
@@ -416,20 +442,34 @@ export function App() {
           {view === 'library' && (
             <DetailPanel
               detail={detail}
-              open={panelOpen}
+              open={panelShown}
               tab={tab}
               canWrite={canWrite}
               onTab={setTab}
               onClose={closePanel}
               onAction={onRowAction}
-              onRemove={(id, at) => openMenu({ x: at.x, y: at.y + 4, entries: removeEntries(id) })}
-              onMore={(id, at) => openRowMenu(id, at.x, at.y)}
+              onRemove={(id, at) => openMenu({ x: at.x, y: at.y, above: true, entries: removeEntries(id) })}
+              onMore={(id, at) => openRowMenu(id, at.x, at.y, true)}
               onCopy={copy}
               onToggleFile={(fileId, wasSkipped) =>
                 void setFilePriority(fileId, wasSkipped ? 'normal' : 'skip')
               }
               onCyclePriority={cyclePriority}
               trapFocus={!modalOpen}
+              overview={
+                detailId == null ? (
+                  <QueueOverview
+                    tasks={tasks}
+                    counts={counts}
+                    down={totals.down}
+                    up={totals.up}
+                    bandwidth={bandwidth.status === 'unsupported' ? null : bandwidth.state}
+                    autoHide={panelAutoHide}
+                    onAutoHide={setPanelAutoHide}
+                    onFilter={goToFilter}
+                  />
+                ) : undefined
+              }
             />
           )}
         </div>
@@ -437,10 +477,10 @@ export function App() {
         <StatusBar
           live={live}
           loaded={loaded}
-          active={counts.active}
+          queue={counts}
           downSpeed={totals.down}
-          upSpeed={totals.up}
           readOnly={BOOT.readOnly}
+          onFilter={goToFilter}
           onPauseAll={pauseAll}
           onResumeAll={resumeAll}
           bandwidth={bandwidth.status === 'unsupported' ? null : bandwidth.state}

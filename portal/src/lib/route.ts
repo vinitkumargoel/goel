@@ -12,7 +12,8 @@ export interface Route {
 }
 
 const FILTERS: ReadonlySet<string> = new Set<Filter>([
-  'all', 'active', 'paused', 'completed', 'seeding', 'failed', 'video', 'iso', 'archive', 'app',
+  'all', 'active', 'queued', 'paused', 'completed', 'seeding', 'failed',
+  'video', 'audio', 'image', 'iso', 'archive', 'app', 'doc', 'other',
 ])
 
 export const HOME: Route = { view: 'library', filter: 'all', task: null }

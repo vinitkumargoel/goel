@@ -7,16 +7,20 @@ import { ChevronDownIcon } from './Icons'
 interface BandwidthPillProps {
   state: BandwidthState
   canWrite: boolean
+  /** A phone's status bar: just the profile name, which "Profile: …" truncated to "Profile: Wor…". */
+  compact?: boolean
   menuOpen: boolean
   onOpen: (anchor: DOMRect) => void
 }
 
 /** "Profile: Medium ▾", or "Unlimited" while limits are off. Plain text for a read-only session. */
-export function BandwidthPill({ state, canWrite, menuOpen, onOpen }: BandwidthPillProps) {
+export function BandwidthPill({ state, canWrite, compact = false, menuOpen, onOpen }: BandwidthPillProps) {
   const { t } = useTranslation()
-  const label = state.enabled
-    ? t('statusbar.profile', { name: state.selected })
-    : t('statusbar.unlimited')
+  const label = !state.enabled
+    ? t('statusbar.unlimited')
+    : compact
+      ? state.selected
+      : t('statusbar.profile', { name: state.selected })
 
   if (!canWrite) return <span className="bw-pill ro">{label}</span>
 
@@ -26,7 +30,7 @@ export function BandwidthPill({ state, canWrite, menuOpen, onOpen }: BandwidthPi
       className={`bw-pill${state.enabled ? ' on' : ''}`}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
-      title={t('statusbar.bandwidthMenu')}
+      title={compact && state.enabled ? t('statusbar.profile', { name: state.selected }) : t('statusbar.bandwidthMenu')}
       onClick={(e) => onOpen(e.currentTarget.getBoundingClientRect())}
     >
       <span className="bw-l">{label}</span>

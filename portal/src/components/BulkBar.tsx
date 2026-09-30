@@ -18,9 +18,10 @@ export function eligibleFor(selected: readonly TaskRow[], action: RowAction): st
 }
 
 /**
- * Shown for any selection, including a single row: it is how keyboard and touch screen-reader
- * users reach a row's actions, since a listbox option cannot contain buttons. Every action fans
- * out to the existing per-id endpoints; a button only appears when a selected row can take it.
+ * Shown for a selection of two or more, in the column header's slot. A single row's actions live in
+ * the detail panel (Enter opens it) and the row menu (Shift+F10), both keyboard and screen-reader
+ * reachable. Every action fans out to the existing per-id endpoints; a button only appears when a
+ * selected row can take it.
  */
 export function BulkBar({ selected, canWrite, onAction, onCopyLinks, onRemove, onClear }: BulkBarProps) {
   const { t } = useTranslation()

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDialogFocus } from '../hooks/useDialogFocus'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import { saveDraft, type AddDraft } from '../lib/addDraft'
 import { submitAdd, type AddSummary } from '../lib/addSubmit'
 import { api, failureMessage } from '../lib/api'
@@ -14,6 +15,8 @@ import { LinkIssues } from './LinkIssues'
 import { TorrentDropZone } from './TorrentDropZone'
 
 type NetMode = 'auto' | 'split' | 'single'
+
+const PRIORITIES = ['low', 'normal', 'high'] as const
 
 interface AddDialogProps {
   onClose: () => void
@@ -52,6 +55,9 @@ export function AddDialog({
   // The folder picker stacks its own modal on top; while it's open, Tab and Escape belong to it.
   useDialogFocus(modalRef, { trap: !picking, onEscape: onClose })
   const links = summarizeLinks(url)
+  // A phone gets a full-height sheet: priority as a thumb-sized segmented control, not a select.
+  const phone = useMediaQuery('(max-width: 680px)')
+  const count = links.valid + torrents.files.length
 
   useEffect(() => {
     urlRef.current?.focus()
@@ -163,7 +169,7 @@ export function AddDialog({
         />
       )}
       <div
-        className="modal"
+        className="modal add"
         ref={modalRef}
         role="dialog"
         aria-modal="true"
@@ -256,19 +262,59 @@ export function AddDialog({
               </div>
             </div>
             <div className="fg fg-prio">
-              <label className="flabel" htmlFor={`${id}-prio`}>
-                {t('addDialog.priority')}
-              </label>
-              <select
-                id={`${id}-prio`}
-                className="finput"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as 'normal' | 'high' | 'low')}
-              >
-                <option value="normal">{t('task.priority.normal')}</option>
-                <option value="high">{t('task.priority.high')}</option>
-                <option value="low">{t('task.priority.low')}</option>
-              </select>
+              {phone ? (
+                <>
+                  <div className="flabel" id={`${id}-prio`}>
+                    {t('addDialog.priority')}
+                  </div>
+                  <div
+                    className="seg prio-seg"
+                    role="radiogroup"
+                    aria-labelledby={`${id}-prio`}
+                    onKeyDown={(e) => {
+                      const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1
+                        : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1
+                        : 0
+                      if (!step) return
+                      e.preventDefault()
+                      const next = PRIORITIES[(PRIORITIES.indexOf(priority) + step + 3) % 3]!
+                      setPriority(next)
+                      e.currentTarget.querySelector<HTMLElement>(`[data-p="${next}"]`)?.focus()
+                    }}
+                  >
+                    {PRIORITIES.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        role="radio"
+                        data-p={p}
+                        aria-checked={priority === p}
+                        tabIndex={priority === p ? 0 : -1}
+                        className={priority === p ? 'on' : undefined}
+                        onClick={() => setPriority(p)}
+                      >
+                        {t(`task.priority.${p}`)}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label className="flabel" htmlFor={`${id}-prio`}>
+                    {t('addDialog.priority')}
+                  </label>
+                  <select
+                    id={`${id}-prio`}
+                    className="finput"
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value as 'normal' | 'high' | 'low')}
+                  >
+                    <option value="normal">{t('task.priority.normal')}</option>
+                    <option value="high">{t('task.priority.high')}</option>
+                    <option value="low">{t('task.priority.low')}</option>
+                  </select>
+                </>
+              )}
             </div>
           </div>
 
@@ -364,7 +410,11 @@ export function AddDialog({
             {t('common.cancel')}
           </button>
           <button className="btn primary" onClick={submit} disabled={busy}>
-            {busy ? t('addDialog.adding') : t('addDialog.submit')}
+            {busy
+              ? t('addDialog.adding')
+              : count > 1
+                ? t('addDialog.submitCount', { count })
+                : t('addDialog.submit')}
           </button>
         </div>
       </div>

@@ -24,13 +24,25 @@ interface SettingsViewProps {
   bandwidth?: Bandwidth
   /** Some server card holds edits nobody saved; App asks before leaving the page. */
   onDirtyChange?: (dirty: boolean) => void
+  /** Hide the detail panel while nothing is selected (else it shows the queue overview). */
+  panelAutoHide?: boolean
+  onPanelAutoHide?: (on: boolean) => void
 }
 
 /**
  * Two groups, because they differ in reach: "This browser" changes only this tab's look and
  * session; "Server" changes the daemon, and so every client signed in to it.
  */
-export function SettingsView({ theme, onTheme, canWrite, onToast, bandwidth, onDirtyChange }: SettingsViewProps) {
+export function SettingsView({
+  theme,
+  onTheme,
+  canWrite,
+  onToast,
+  bandwidth,
+  onDirtyChange,
+  panelAutoHide,
+  onPanelAutoHide,
+}: SettingsViewProps) {
   const { t } = useTranslation()
   const [bandwidthDirty, setBandwidthDirty] = useState(false)
   const [networkDirty, setNetworkDirty] = useState(false)
@@ -48,7 +60,7 @@ export function SettingsView({ theme, onTheme, canWrite, onToast, bandwidth, onD
 
   return (
     <div className="view">
-      <div className="pad">
+      <div className="pad spad">
         <div className="ph">{t('common.settings')}</div>
         <div className="psub">{linux ? t('settings.subtitleLinux') : t('settings.subtitle')}</div>
 
@@ -63,7 +75,7 @@ export function SettingsView({ theme, onTheme, canWrite, onToast, bandwidth, onD
               </div>
             </div>
           </div>
-          <div className="seg">
+          <div className="seg themes">
             <button
               className={theme === AUTO_THEME ? 'on' : ''}
               aria-pressed={theme === AUTO_THEME}
@@ -86,6 +98,24 @@ export function SettingsView({ theme, onTheme, canWrite, onToast, bandwidth, onD
             ))}
           </div>
         </div>
+
+        {onPanelAutoHide && (
+          <div className="card pd">
+            <label className="srow" style={{ cursor: 'pointer' }}>
+              <div className="sinfo">
+                <div className="sname">{t('settings.panel.name')}</div>
+                <div className="sdesc">{t('settings.panel.desc')}</div>
+              </div>
+              <div className="sctl">
+                <input
+                  type="checkbox"
+                  checked={panelAutoHide ?? false}
+                  onChange={(e) => onPanelAutoHide(e.target.checked)}
+                />
+              </div>
+            </label>
+          </div>
+        )}
 
         <div className="card pd">
           <div className="srow">

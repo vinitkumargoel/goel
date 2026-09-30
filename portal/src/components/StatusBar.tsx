@@ -1,16 +1,26 @@
+import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import type { BandwidthState } from '../lib/bandwidth'
+import type { Filter } from '../lib/filters'
 import { fmtSpeed, IDLE_RATE } from '../lib/format'
 import { BandwidthPill } from './BandwidthPill'
-import { ArrowDownIcon, ArrowUpIcon, PauseIcon, PlayIcon } from './Icons'
+import { ArrowDownIcon, PauseIcon, PlayIcon } from './Icons'
+
+export type QueueCounts = Record<'active' | 'queued' | 'paused' | 'seeding' | 'failed', number>
+
+/** Active always shows, so the summary never reads empty; the rest only when there is something to say. */
+const QUEUE_KEYS = ['active', 'queued', 'paused', 'seeding', 'failed'] as const
 
 interface StatusBarProps {
   live: boolean
   loaded: boolean
-  active: number
+  queue: QueueCounts
+  /** Only drawn ≤680px, where the topbar hides its rates; upload has no room there (the overview has it). */
   downSpeed: number
-  upSpeed: number
   readOnly: boolean
+  /** Makes each summary figure a shortcut to that sidebar filter. */
+  onFilter?: (filter: Filter) => void
   onPauseAll?: () => void
   onResumeAll?: () => void
   /** Null hides the pill: not loaded yet, or a daemon without the feature. */
@@ -23,10 +33,10 @@ interface StatusBarProps {
 export function StatusBar({
   live,
   loaded,
-  active,
+  queue,
   downSpeed,
-  upSpeed,
   readOnly,
+  onFilter,
   onPauseAll,
   onResumeAll,
   bandwidth = null,
@@ -34,7 +44,9 @@ export function StatusBar({
   onBandwidthMenu,
 }: StatusBarProps) {
   const { t } = useTranslation()
+  const phone = useMediaQuery('(max-width: 680px)')
   const conn = live ? 'live' : loaded ? 'reconnecting' : 'connecting'
+  const shown = QUEUE_KEYS.filter((key) => key === 'active' || queue[key] > 0)
 
   return (
     <footer className="statusbar">
@@ -42,7 +54,28 @@ export function StatusBar({
         <span className="cdot" aria-hidden="true" />
         <span className="ctext">{t(`statusbar.${conn}`)}</span>
       </span>
-      <span className="sb-dim sb-active">{t('statusbar.active', { count: active })}</span>
+      <span className="sb-queue">
+        {shown.map((key, i) => {
+          const label = t(`statusbar.${key}`, { count: queue[key] })
+          const cls = `sbq${key === 'failed' ? ' bad' : ''}`
+          return (
+            <Fragment key={key}>
+              {i > 0 && (
+                <span className="sbq-sep" aria-hidden="true">
+                  ·
+                </span>
+              )}
+              {onFilter ? (
+                <button type="button" className={cls} onClick={() => onFilter(key)} title={t('statusbar.showFilter')}>
+                  {label}
+                </button>
+              ) : (
+                <span className={cls}>{label}</span>
+              )}
+            </Fragment>
+          )
+        })}
+      </span>
       <div className="sp" />
       {/* Cosmetic only — the server, not this flag, refuses a read-only session's POST. */}
       {!readOnly && onPauseAll && onResumeAll && (
@@ -63,20 +96,18 @@ export function StatusBar({
         <BandwidthPill
           state={bandwidth}
           canWrite={!readOnly}
+          compact={phone}
           menuOpen={bandwidthMenuOpen}
           onOpen={onBandwidthMenu}
         />
       )}
-      <span className="stat down">
-        <ArrowDownIcon aria-hidden="true" />
-        <span className="sr-only">{t('statusbar.downSpeed')}</span>
-        <b>{fmtSpeed(downSpeed, IDLE_RATE)}</b>
-      </span>
-      <span className="stat up">
-        <ArrowUpIcon aria-hidden="true" />
-        <span className="sr-only">{t('statusbar.upSpeed')}</span>
-        <b>{fmtSpeed(upSpeed, IDLE_RATE)}</b>
-      </span>
+      {phone && (
+        <span className="stat down">
+          <ArrowDownIcon aria-hidden="true" />
+          <span className="sr-only">{t('statusbar.downSpeed')}</span>
+          <b>{fmtSpeed(downSpeed, IDLE_RATE)}</b>
+        </span>
+      )}
       {readOnly && <span className="chip chip-ro">{t('statusbar.readOnly')}</span>}
     </footer>
   )

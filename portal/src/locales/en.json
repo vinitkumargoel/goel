@@ -22,15 +22,14 @@
     "turnOn": "Turn on",
     "close": "Close"
   },
-
   "status": {
     "active": "Active",
     "paused": "Paused",
     "completed": "Completed",
     "seeding": "Seeding",
-    "failed": "Failed"
+    "failed": "Failed",
+    "queued": "Queued"
   },
-
   "task": {
     "priority": {
       "low": "Low",
@@ -39,12 +38,10 @@
       "skip": "Skip"
     }
   },
-
   "adapter": {
     "noAddress": "no address",
     "metered": "Metered"
   },
-
   "topbar": {
     "menu": "Menu",
     "web": "WEB",
@@ -56,23 +53,27 @@
     "addDownload": "Add download",
     "speedTrend": "Total speed over the last minute"
   },
-
   "sidebar": {
     "library": "Library",
     "allDownloads": "All downloads",
     "status": "Status",
     "tools": "Tools",
     "navLabel": "Library and tools",
-    "type": "Type"
+    "type": "Type",
+    "allTypes_one": "Show {{count}} more type",
+    "allTypes_other": "Show {{count}} more types",
+    "fewerTypes": "Show fewer types"
   },
-
   "fileType": {
     "video": "Video",
+    "audio": "Audio",
+    "image": "Images",
     "iso": "Disc images",
     "archive": "Archives",
-    "app": "Apps"
+    "app": "Apps",
+    "doc": "Documents",
+    "other": "Other"
   },
-
   "statusbar": {
     "downloads_one": "{{count}} download",
     "downloads_other": "{{count}} downloads",
@@ -82,7 +83,6 @@
     "active_one": "{{count}} active",
     "active_other": "{{count}} active",
     "downSpeed": "Download speed",
-    "upSpeed": "Upload speed",
     "readOnly": "Read-only",
     "allControls": "All downloads",
     "pauseAll": "Pause all",
@@ -95,17 +95,29 @@
     "unlimitedToggle": "Unlimited — no caps",
     "bandwidthSet": "Bandwidth profile: {{name}}",
     "bandwidthOff": "Bandwidth: unlimited",
-    "all": "All"
+    "all": "All",
+    "queued_one": "{{count}} queued",
+    "queued_other": "{{count}} queued",
+    "paused_one": "{{count}} paused",
+    "paused_other": "{{count}} paused",
+    "seeding_one": "{{count}} seeding",
+    "seeding_other": "{{count}} seeding",
+    "failed_one": "{{count}} failed",
+    "failed_other": "{{count}} failed",
+    "showFilter": "Show these downloads"
   },
-
   "library": {
     "readOnlyBanner": "Read-only mode — viewing & streaming only. Changes are disabled by the host.",
     "colName": "Name",
     "colSize": "Size",
     "colStatus": "Status",
+    "colEta": "ETA",
     "colSpeed": "Speed",
     "sortedAscending": "{{label}}, sorted ascending",
     "sortedDescending": "{{label}}, sorted descending",
+    "sortBy": "Sort by",
+    "sortNone": "Added order",
+    "sortFlip": "Reverse sort order",
     "actionsHint": "Shift+F10 for actions",
     "loadErrorTitle": "Couldn’t load downloads",
     "loadErrorBody": "The server didn’t answer. It may be restarting.",
@@ -123,12 +135,11 @@
     "rowLabel": "{{name}}, {{kind}}, {{status}}, {{percent}}%",
     "progress": "Progress",
     "moreActions": "More actions for {{name}}",
-    "colEta": "ETA",
     "colAdded": "Added",
     "actionNamed": "{{action}} {{name}}",
-    "rowLabelFailed": "{{name}}, {{kind}}, failed: {{error}}"
+    "rowLabelFailed": "{{name}}, {{kind}}, failed: {{error}}",
+    "left": "{{eta}} left"
   },
-
   "menu": {
     "copySourceLink": "Copy source link",
     "forceRecheck": "Force recheck",
@@ -137,7 +148,6 @@
     "removeMany": "Remove {{count}}",
     "saveToDevice": "Save to this device"
   },
-
   "bulk": {
     "toolbar": "Selection actions",
     "selected_one": "{{count}} selected",
@@ -151,14 +161,12 @@
     "copyLinks": "Copy links",
     "clear": "Clear selection"
   },
-
   "confirm": {
     "removeDataTitle": "Remove with data?",
     "removeManyTitle_one": "Remove {{count}} download?",
     "removeManyTitle_other": "Remove {{count}} downloads?",
     "removeManyBody": "They leave the list. Files already on disk stay where they are."
   },
-
   "toast": {
     "copied": "Copied",
     "copyFailed": "Couldn’t copy — select the text manually",
@@ -195,7 +203,6 @@
     "torrentFailed_other": "{{count}} torrent files refused, e.g. {{file}}: {{error}}",
     "draftRestored": "Restored the links you hadn’t added yet"
   },
-
   "history": {
     "subtitle": "Completed & removed downloads. Re-queue any of them in one click.",
     "loadError": "Could not load history.",
@@ -217,12 +224,11 @@
       "older": "Older"
     },
     "saveNamed": "Save {{name}} to this device",
-    "saveHint": "Save to this device"
+    "saveHint": "Save to this device",
+    "summary_one": "{{count}} item · {{size}}",
+    "summary_other": "{{count}} items · {{size}}"
   },
-
   "detail": {
-    "emptyTitle": "No download selected",
-    "emptyBody": "Pick a download to see its files, peers, progress and options.",
     "closePanel": "Close panel",
     "label": "Download details",
     "moreActions": "More actions",
@@ -266,14 +272,21 @@
       "pieceMap": "Piece map · {{count}} buckets",
       "segments_one": "{{count}} segment",
       "segments_other": "{{count}} segments",
-      "hint": "Live piece/segment data appears here while the transfer runs."
+      "hint": "Live piece/segment data appears here while the transfer runs.",
+      "pieceStrip": "{{have}} of {{total}} pieces complete",
+      "have_one": "{{count}} complete",
+      "have_other": "{{count}} complete",
+      "partial": "In progress",
+      "missing": "Missing"
     },
     "files": {
       "singleFile": "Single-file download.",
       "download": "Download {{name}}",
       "priority": "Priority for {{name}}: {{priority}}",
       "save": "Save {{name}} to this device",
-      "saveHint": "Save to this device"
+      "saveHint": "Save to this device",
+      "saveFinished_one": "Save the finished file (.zip)",
+      "saveFinished_other": "Save {{count}} finished files (.zip)"
     },
     "peers": {
       "summary": "{{seeds}} seeds · {{peers}} peers",
@@ -287,9 +300,9 @@
     },
     "sheetHandle": "Drag down to close",
     "downloadAll": "Download all",
-    "downloadAllHint": "Every finished file, as one .zip"
+    "downloadAllHint": "Every finished file, as one .zip",
+    "actions": "Download actions"
   },
-
   "addDialog": {
     "title": "Add download",
     "urlLabel": "URL, magnet, FTP or SFTP link",
@@ -329,9 +342,10 @@
       "tooMany": "Only {{max}} torrent files at a time — {{name}} was left out",
       "duplicate": "{{name}} is already in the list",
       "totalTooLarge": "{{name}} would take the upload past 25 MB"
-    }
+    },
+    "submitCount_one": "Add {{count}} download",
+    "submitCount_other": "Add {{count}} downloads"
   },
-
   "folderPicker": {
     "title": "Choose a folder",
     "computer": "Computer",
@@ -351,7 +365,6 @@
     "noWritePermission": "No permission to write here",
     "usePick": "Use this folder"
   },
-
   "settings": {
     "subtitle": "Some settings apply only to this browser; the rest change the server, and so every browser and app connected to it. Port, sign-in and password are managed in the desktop app under Settings → Web Access.",
     "theme": {
@@ -429,9 +442,12 @@
       "title": "Leave with unsaved changes?",
       "body": "Your edits to the server settings have not been saved and will be lost.",
       "confirm": "Leave without saving"
+    },
+    "panel": {
+      "name": "Hide the detail panel when nothing is selected",
+      "desc": "Off, it shows the queue overview — combined speed, what’s left and when it will be done. Remembered in this browser."
     }
   },
-
   "api": {
     "unreachable": "Could not reach the server",
     "notSignedIn": "Not signed in",
@@ -440,7 +456,6 @@
     "actionFailed": "That didn’t work — try again",
     "tooLarge": "Those files are too large to upload together (25 MB at most)"
   },
-
   "format": {
     "today": "Today {{time}}",
     "justNow": "just now",
@@ -451,14 +466,12 @@
     "daysAgo_one": "{{count}}d ago",
     "daysAgo_other": "{{count}}d ago"
   },
-
   "reconnect": {
     "lost": "Connection lost — showing data from {{age}} ago",
     "retrying": "Retrying…",
     "retryNow": "Retry now",
     "announce": "Connection lost — the list may be out of date. Retrying."
   },
-
   "chart": {
     "label": "Speed over the last minute: download peak {{down}}, upload peak {{up}}",
     "peak": "Peak {{rate}}",
@@ -467,7 +480,6 @@
     "down": "Download",
     "up": "Upload"
   },
-
   "shortcuts": {
     "title": "Keyboard shortcuts",
     "navigation": "Navigation",
@@ -486,5 +498,33 @@
     "menuItem": "Keyboard shortcuts",
     "hint": "{{label}} ({{key}})",
     "or": "or"
+  },
+  "overview": {
+    "title": "Queue overview",
+    "tilesLabel": "Filter the queue",
+    "tile": {
+      "active": "active",
+      "queued": "queued",
+      "completed": "done",
+      "failed": "failed"
+    },
+    "show": {
+      "active_one": "Show {{count}} active download",
+      "active_other": "Show {{count}} active downloads",
+      "queued_one": "Show {{count}} queued download",
+      "queued_other": "Show {{count}} queued downloads",
+      "completed_one": "Show {{count}} completed download",
+      "completed_other": "Show {{count}} completed downloads",
+      "failed_one": "Show {{count}} failed download",
+      "failed_other": "Show {{count}} failed downloads"
+    },
+    "remaining": "Remaining",
+    "doneAt": "done ≈ {{time}}",
+    "stalled": "not moving",
+    "nothingLeft": "Nothing left to download",
+    "unknownSize_one": "{{count}} download of unknown size isn’t counted yet.",
+    "unknownSize_other": "{{count}} downloads of unknown size aren’t counted yet.",
+    "bandwidth": "Bandwidth",
+    "autoHide": "Hide this panel when nothing is selected"
   }
 }

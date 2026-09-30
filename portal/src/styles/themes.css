@@ -3,7 +3,7 @@
    white on the dark themes' pastel accents reads at 2.0-2.4:1. --text-faint clears 4.5:1 on --bg-content. */
 html[data-theme="frost-light"]{
   --bg-app:#dfe3ee;--bg-window:#eef0f4;--bg-bar:rgba(250,250,252,.82);--bg-sidebar:rgba(238,240,244,.86);--bg-content:#fbfcfe;--bg-panel:rgba(245,246,250,.82);
-  --bg-row-alt:rgba(0,0,0,.022);--bg-row-hover:rgba(0,0,0,.045);--bg-row-sel:rgba(63,88,214,.14);
+  --bg-row-alt:rgba(0,0,0,.022);--bg-row-hover:rgba(0,0,0,.045);--bg-row-sel:rgba(63,88,214,.2);
   --bg-input:rgba(0,0,0,.05);--bg-chip:rgba(0,0,0,.06);--bg-control:rgba(0,0,0,.05);--bg-control-active:rgba(0,0,0,.1);--track:rgba(0,0,0,.1);--bg-modal:#f6f7fa;
   --text:#1a1c22;--text-dim:#5a616f;--text-faint:#646b7a;--border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);--seg-empty:rgba(0,0,0,.08);--scrim:rgba(0,0,0,.32);
   --accent:#3F58D6;--on-accent:#fff;--on-red:#fff;--accent-press:#2E45B8;--accent-soft:rgba(63,88,214,.18);--green:#158A3C;--orange:#A85800;--red:#CE0E0E;--red-soft:rgba(206,14,14,.12);--yellow:#8A6D00;--purple:#7A3FD0;--teal:#0E7490;--indigo:#3F58D6;color-scheme:light}

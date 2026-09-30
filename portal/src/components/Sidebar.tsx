@@ -1,9 +1,11 @@
-import { useEffect, useRef, type ComponentType, type RefObject, type SVGProps } from 'react'
+import { useEffect, useRef, useState, type ComponentType, type RefObject, type SVGProps } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { TYPE_FILTERS, type Filter, type FilterCounts, type TypeFilter } from '../lib/filters'
 import {
   ActiveIcon,
+  ChevronDownIcon,
+  ClockIcon,
   CompletedIcon,
   FailedIcon,
   FileTypeIcon,
@@ -19,11 +21,18 @@ export type { Filter, FilterCounts }
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>
 
-type StatusKey = 'status.active' | 'status.paused' | 'status.completed' | 'status.seeding' | 'status.failed'
+type StatusKey =
+  | 'status.active'
+  | 'status.queued'
+  | 'status.paused'
+  | 'status.completed'
+  | 'status.seeding'
+  | 'status.failed'
 
 /** `labelKey` rather than `label`: the module is evaluated before i18n has a language. */
 const FILTERS: ReadonlyArray<{ key: Filter; labelKey: StatusKey; icon: Icon }> = [
   { key: 'active', labelKey: 'status.active', icon: ActiveIcon },
+  { key: 'queued', labelKey: 'status.queued', icon: ClockIcon },
   { key: 'paused', labelKey: 'status.paused', icon: PausedIcon },
   { key: 'completed', labelKey: 'status.completed', icon: CompletedIcon },
   { key: 'seeding', labelKey: 'status.seeding', icon: SeedingIcon },
@@ -31,12 +40,10 @@ const FILTERS: ReadonlyArray<{ key: Filter; labelKey: StatusKey; icon: Icon }> =
 ]
 
 /** One component per type, so the Type group can share `libraryItem` with the status group. */
-const TYPE_ICONS: Record<TypeFilter, Icon> = {
-  video: (p) => <FileTypeIcon {...p} type="video" ink="currentColor" />,
-  iso: (p) => <FileTypeIcon {...p} type="iso" ink="currentColor" />,
-  archive: (p) => <FileTypeIcon {...p} type="archive" ink="currentColor" />,
-  app: (p) => <FileTypeIcon {...p} type="app" ink="currentColor" />,
-}
+const typeIcon =
+  (type: TypeFilter): Icon =>
+  (p) => <FileTypeIcon {...p} type={type} ink="currentColor" />
+const TYPE_ICONS = Object.fromEntries(TYPE_FILTERS.map((k) => [k, typeIcon(k)])) as Record<TypeFilter, Icon>
 
 interface SidebarProps {
   view: View
@@ -84,19 +91,28 @@ export function Sidebar({
     }
   }, [open, drawer, returnFocusTo])
 
+  // Types nobody has queued are noise: they fold away until asked for (the current one stays).
+  const [allTypes, setAllTypes] = useState(false)
+  const shownTypes = TYPE_FILTERS.filter((k) => allTypes || counts[k] > 0 || filter === k)
+  const hiddenTypes = TYPE_FILTERS.length - shownTypes.length
+
   const libraryItem = (key: Filter, label: string, Icon: Icon) => {
     const current = view === 'library' && filter === key
+    const n = counts[key]
+    // Something failed: the count turns red so the sidebar itself says so.
+    const bad = key === 'failed' && n > 0
     return (
       <button
         type="button"
         key={key}
         className={`s-item${current ? ' active' : ''}`}
         aria-current={current ? 'page' : undefined}
+        title={label}
         onClick={() => onSelectFilter(key)}
       >
         <Icon aria-hidden="true" />
         <span className="l">{label}</span>
-        <span className="ct">{counts[key]}</span>
+        <span className={`ct${bad ? ' bad' : ''}${n === 0 ? ' zero' : ''}`}>{n}</span>
       </button>
     )
   }
@@ -106,6 +122,7 @@ export function Sidebar({
       type="button"
       className={`s-item${view === key ? ' active' : ''}`}
       aria-current={view === key ? 'page' : undefined}
+      title={label}
       onClick={() => onSelectView(key)}
     >
       <Icon aria-hidden="true" />
@@ -130,7 +147,21 @@ export function Sidebar({
         {FILTERS.map((f) => libraryItem(f.key, t(f.labelKey), f.icon))}
 
         <div className="s-lbl">{t('sidebar.type')}</div>
-        {TYPE_FILTERS.map((key) => libraryItem(key, t(`fileType.${key}`), TYPE_ICONS[key]))}
+        {shownTypes.map((key) => libraryItem(key, t(`fileType.${key}`), TYPE_ICONS[key]))}
+        {(hiddenTypes > 0 || allTypes) && (
+          <button
+            type="button"
+            className="s-item s-more"
+            aria-expanded={allTypes}
+            title={allTypes ? t('sidebar.fewerTypes') : t('sidebar.allTypes', { count: hiddenTypes })}
+            onClick={() => setAllTypes((a) => !a)}
+          >
+            <ChevronDownIcon aria-hidden="true" style={allTypes ? { transform: 'rotate(180deg)' } : undefined} />
+            <span className="l">
+              {allTypes ? t('sidebar.fewerTypes') : t('sidebar.allTypes', { count: hiddenTypes })}
+            </span>
+          </button>
+        )}
 
         <div className="s-lbl">{t('sidebar.tools')}</div>
         {viewItem('history', t('common.history'), HistoryIcon)}

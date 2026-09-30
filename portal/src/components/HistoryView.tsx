@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import { api, failureMessage } from '../lib/api'
+import { fmtSize } from '../lib/format'
 import { filterHistory, groupHistory, historyCSV, type KindFilter } from '../lib/historyTools'
 import { KIND_LABEL } from '../lib/taskKind'
 import type { HistoryRow, TaskKind } from '../lib/types'
@@ -44,6 +46,7 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast }: H
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<KindFilter>('all')
   const id = useId()
+  const compact = useMediaQuery('(max-width: 680px)')
 
   /** `quiet` keeps the current rows on screen, so a reload after a removal doesn't drop focus. */
   const load = useCallback(async (quiet = false) => {
@@ -62,6 +65,7 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast }: H
 
   const shown = useMemo(() => filterHistory(rows, query, kind), [rows, query, kind])
   const groups = useMemo(() => groupHistory(shown), [shown])
+  const shownBytes = useMemo(() => shown.reduce((n, e) => n + (e.totalBytes ?? 0), 0), [shown])
 
   async function remove(entryId: string) {
     try {
@@ -82,7 +86,7 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast }: H
 
   return (
     <div className="view">
-      <div className="pad">
+      <div className="pad hpad">
         <div className="ph">{t('common.history')}</div>
         <div className="psub">{t('history.subtitle')}</div>
 
@@ -119,6 +123,9 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast }: H
               {t('history.exportCsv')}
             </button>
           </div>
+        )}
+        {state === 'ready' && shown.length > 0 && (
+          <p className="hsum">{t('history.summary', { count: shown.length, size: fmtSize(shownBytes) })}</p>
         )}
 
         <div className="card hcard">
@@ -158,6 +165,7 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast }: H
                       key={e.id}
                       entry={e}
                       canWrite={canWrite}
+                      compact={compact}
                       onReadd={(source) => void onReadd(source)}
                       onRemove={(entryId) => void remove(entryId)}
                     />

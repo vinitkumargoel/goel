@@ -199,6 +199,15 @@ export function PanelIcon(props: IconProps) {
   )
 }
 
+export function ClockIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...props}>
+      <circle cx="12" cy="12" r="9" {...stroke} />
+      <path d="M12 7v5l3 2" {...stroke} />
+    </svg>
+  )
+}
+
 export function ChevronDownIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...props}>
@@ -353,7 +362,30 @@ export function FileTypeIcon({
           <path d="M5 8h4M15 8h4" {...tile} />
         </svg>
       )
+    case 'audio':
+      return (
+        <svg viewBox="0 0 24 24" {...props}>
+          <path d="M9 18V5l11-2v13" {...tile} />
+          <circle cx="6.5" cy="18" r="2.5" {...tile} />
+          <circle cx="17.5" cy="16" r="2.5" {...tile} />
+        </svg>
+      )
+    case 'image':
+      return (
+        <svg viewBox="0 0 24 24" {...props}>
+          <rect x="3" y="4" width="18" height="16" rx="2" {...tile} />
+          <circle cx="9" cy="10" r="1.8" fill={ink} />
+          <path d="M3 17l5-5 4 4 3-3 6 6" {...tile} />
+        </svg>
+      )
     case 'doc':
+      return (
+        <svg viewBox="0 0 24 24" {...props}>
+          <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z" {...tile} />
+          <path d="M9 12h6M9 16h6" {...tile} strokeLinecap="round" />
+        </svg>
+      )
+    case 'other':
       return (
         <svg viewBox="0 0 24 24" {...props}>
           <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z" {...tile} />

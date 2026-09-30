@@ -51,11 +51,15 @@ export const LibraryRow = memo(function LibraryRow({
   const type = fileType(task)
   const action = rowAction(task.statusToken)
   const failure = task.statusToken === 'failed' && task.error ? task.error : null
+  const eta = fmtEta(task.etaSeconds)
+  const downloading = task.statusToken === 'downloading'
   // The reason is what the user needs from a failed row; `task.error` is the daemon's own wording.
+  // A running row says when, not how far: the bar under the name already shows the percentage.
   const statusText = failure
     ? `${task.status} — ${failure}`
-    : `${task.status}${task.statusToken === 'downloading' ? ` · ${whole}%` : ''}`
-  const eta = fmtEta(task.etaSeconds)
+    : downloading
+      ? `${task.status} · ${eta ? t('library.left', { eta }) : `${whole}%`}`
+      : task.status
 
   const id = task.id
   // Stable, or React detaches and re-attaches the ref on every render of the row.
@@ -154,14 +158,19 @@ export const LibraryRow = memo(function LibraryRow({
               </span>
             </div>
           ) : (
-            // Only shown once the Status column is gone, so colour is never the only status cue.
-            <div className="nstat">
-              <span className={`sdot st-${task.statusToken}`} />
-              <span className={`stext${failure ? ' err' : ''}`} title={failure ?? undefined}>
-                {statusText}
-                {task.downSpeed > 0 && ` · ${fmtSpeed(task.downSpeed)}`}
-              </span>
-            </div>
+            <>
+              {downloading && (
+                <div className="nsize">{fmtProgressSize(task.doneBytes, task.totalBytes)}</div>
+              )}
+              {/* Only shown once the Status column is gone, so colour is never the only status cue. */}
+              <div className="nstat">
+                <span className={`sdot st-${task.statusToken}`} />
+                <span className={`stext${failure ? ' err' : ''}`} title={failure ?? undefined}>
+                  {statusText}
+                  {task.downSpeed > 0 && ` · ${fmtSpeed(task.downSpeed)}`}
+                </span>
+              </div>
+            </>
           )}
         </div>
 
@@ -197,7 +206,7 @@ export const LibraryRow = memo(function LibraryRow({
 
       <div className="c r">{fmtSize(task.totalBytes)}</div>
 
-      <div className="c hide-sm">
+      <div className="c status hide-sm">
         <div className="scell">
           <span className={`sdot st-${task.statusToken}`} />
           <span className={`stext${failure ? ' err' : ''}`} title={failure ?? undefined}>
@@ -211,8 +220,6 @@ export const LibraryRow = memo(function LibraryRow({
         {task.downSpeed > 0 && <div>{fmtSpeed(task.downSpeed)}</div>}
         {task.upSpeed > 0 && <div className="uspd">↑ {fmtSpeed(task.upSpeed)}</div>}
       </div>
-
-      <div className="c r eta hide-sm hide-md">{eta ?? '—'}</div>
 
       <div className="c added hide-lg" title={task.addedAt ? fmtAbsolute(task.addedAt) : undefined}>
         {task.addedAt ? fmtAgo(task.addedAt, now) : '—'}

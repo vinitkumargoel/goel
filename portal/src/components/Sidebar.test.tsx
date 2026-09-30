@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithI18n } from '../test/renderWithI18n'
@@ -8,6 +9,7 @@ import { Sidebar, type FilterCounts } from './Sidebar'
 const COUNTS: FilterCounts = {
   all: 7,
   active: 2,
+  queued: 0,
   paused: 1,
   completed: 3,
   seeding: 1,
@@ -16,6 +18,10 @@ const COUNTS: FilterCounts = {
   iso: 2,
   archive: 0,
   app: 0,
+  audio: 0,
+  image: 0,
+  doc: 0,
+  other: 0,
 }
 
 function renderSidebar() {
@@ -60,12 +66,38 @@ describe('Sidebar', () => {
     expect(screen.getByText('3')).toBeInTheDocument()
   })
 
-  it('renders the Type group from the catalogue', () => {
+  it('renders the Type group from the catalogue, folding away empty types', async () => {
     renderSidebar()
     expect(screen.getByText(en.sidebar.type)).toBeInTheDocument()
+    expect(screen.getByText(en.fileType.video)).toBeInTheDocument()
+    expect(screen.getByText(en.fileType.iso)).toBeInTheDocument()
+    expect(screen.queryByText(en.fileType.audio)).toBeNull()
+    const more = screen.getByRole('button', { name: 'Show 6 more types' })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(more)
     for (const label of Object.values(en.fileType)) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
+    expect(screen.getByRole('button', { name: en.sidebar.fewerTypes })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('offers Queued and flags failures in red only when there are some', () => {
+    const { unmount } = renderSidebar()
+    expect(screen.getByRole('button', { name: new RegExp(en.status.queued) })).toBeInTheDocument()
+    expect(document.querySelector('.ct.bad')).toBeNull()
+    unmount()
+    renderWithI18n(
+      <Sidebar
+        view="library"
+        filter="all"
+        counts={{ ...COUNTS, failed: 2 }}
+        open={false}
+        onSelectFilter={vi.fn()}
+        onSelectView={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(document.querySelector('.ct.bad')).toHaveTextContent('2')
   })
 
   it('makes every item a real button and marks the current filter', () => {

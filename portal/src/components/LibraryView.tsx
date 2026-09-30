@@ -1,4 +1,13 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
+import {
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useNow } from '../hooks/useNow'
@@ -38,6 +47,11 @@ interface LibraryViewProps {
   onClearSearch: () => void
   onAdd: () => void
   onRetry?: () => void
+  /**
+   * The selection toolbar. It takes the column header's slot rather than pushing the rows down, so
+   * a click never moves the row under the pointer.
+   */
+  bulk?: ReactNode
 }
 
 export function LibraryView({
@@ -60,6 +74,7 @@ export function LibraryView({
   onClearSearch,
   onAdd,
   onRetry,
+  bulk,
 }: LibraryViewProps) {
   const { t } = useTranslation()
   const rowEls = useRef(new Map<string, HTMLDivElement>())
@@ -183,46 +198,46 @@ export function LibraryView({
       {readOnly && <div className="ro-banner">{t('library.readOnlyBanner')}</div>}
 
       {/* Plain headers, not role=columnheader: the list is a listbox, not a grid, so the sort
-          state lives in each button's name. hide-* must match the cells in LibraryRow AND
-          portal.css's ≤1200/≤920px grids, or a label loses its column. */}
-      <div className="lhead">
-        <SortHeader sortKey="name" sort={sort} onSort={onSort} label={t('library.colName')} />
-        <SortHeader
-          sortKey="size"
-          sort={sort}
-          onSort={onSort}
-          label={t('library.colSize')}
-          className="r"
-        />
-        <SortHeader
-          sortKey="status"
-          sort={sort}
-          onSort={onSort}
-          label={t('library.colStatus')}
-          className="hide-sm"
-        />
-        <SortHeader
-          sortKey="speed"
-          sort={sort}
-          onSort={onSort}
-          label={t('library.colSpeed')}
-          className="r hide-xs"
-        />
-        <SortHeader
-          sortKey="eta"
-          sort={sort}
-          onSort={onSort}
-          label={t('library.colEta')}
-          className="r hide-sm hide-md"
-        />
-        <SortHeader
-          sortKey="added"
-          sort={sort}
-          onSort={onSort}
-          label={t('library.colAdded')}
-          className="hide-lg"
-        />
-      </div>
+          state lives in each button's name. hide-* must match the cells in LibraryRow AND the
+          ≤920px grid in portal.css and the list-width grids in features.css, or a label loses its
+          column. */}
+      {bulk ? (
+        // The bulk bar takes the header's slot; sorting stays reachable beside it.
+        <div className="lbulk">
+          {bulk}
+          <SortPicker sort={sort} onSort={onSort} />
+        </div>
+      ) : (
+        <div className="lhead">
+          <SortHeader sortKey="name" sort={sort} onSort={onSort} label={t('library.colName')} />
+          <SortHeader
+            sortKey="size"
+            sort={sort}
+            onSort={onSort}
+            label={t('library.colSize')}
+            className="r"
+          />
+          {/* ETA lives in the Status column now, so it is that column's second sort. */}
+          <div className="hide-sm lhead-pair">
+            <SortHeader sortKey="status" sort={sort} onSort={onSort} label={t('library.colStatus')} />
+            <SortHeader sortKey="eta" sort={sort} onSort={onSort} label={t('library.colEta')} />
+          </div>
+          <SortHeader
+            sortKey="speed"
+            sort={sort}
+            onSort={onSort}
+            label={t('library.colSpeed')}
+            className="r hide-xs"
+          />
+          <SortHeader
+            sortKey="added"
+            sort={sort}
+            onSort={onSort}
+            label={t('library.colAdded')}
+            className="hide-lg"
+          />
+        </div>
+      )}
 
       {state ? (
         <div className="rows" ref={emptyRef} tabIndex={-1}>
@@ -281,6 +296,56 @@ interface SortHeaderProps {
   label: string
   className?: string
   onSort: (key: SortKey) => void
+}
+
+const SORT_KEYS: readonly SortKey[] = ['name', 'size', 'status', 'eta', 'speed', 'added']
+const SORT_LABEL = {
+  name: 'library.colName',
+  size: 'library.colSize',
+  status: 'library.colStatus',
+  eta: 'library.colEta',
+  speed: 'library.colSpeed',
+  added: 'library.colAdded',
+} as const
+
+/** The header's sort as one compact control, for when the bulk bar has the header's slot. */
+function SortPicker({ sort, onSort }: Pick<SortHeaderProps, 'sort' | 'onSort'>) {
+  const { t } = useTranslation()
+  const id = useId()
+  return (
+    <div className="sortpick">
+      <label htmlFor={id} className="sr-only">
+        {t('library.sortBy')}
+      </label>
+      <select id={id} value={sort.key ?? ''} onChange={(e) => onSort(e.target.value as SortKey)}>
+        {sort.key == null && (
+          <option value="" disabled>
+            {t('library.sortNone')}
+          </option>
+        )}
+        {SORT_KEYS.map((key) => (
+          <option key={key} value={key}>
+            {t(SORT_LABEL[key])}
+          </option>
+        ))}
+      </select>
+      {sort.key != null && (
+        <button
+          type="button"
+          className="sorth"
+          title={t('library.sortFlip')}
+          aria-label={t(sort.dir === 'asc' ? 'library.sortedAscending' : 'library.sortedDescending', {
+            label: t(SORT_LABEL[sort.key]),
+          })}
+          onClick={() => onSort(sort.key!)}
+        >
+          <span className="sarrow" aria-hidden="true">
+            {sort.dir === 'asc' ? '▲' : '▼'}
+          </span>
+        </button>
+      )}
+    </div>
+  )
 }
 
 function SortHeader({ sortKey, sort, label, className, onSort }: SortHeaderProps) {

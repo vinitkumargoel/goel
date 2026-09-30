@@ -38,8 +38,10 @@ const TASKS = [
 ]
 
 describe('matchesFilter', () => {
-  it('treats queued as active', () => {
-    expect(matchesFilter(TASKS[2]!, 'active')).toBe(true)
+  it('files queued under Queued, not Active', () => {
+    expect(matchesFilter(TASKS[2]!, 'active')).toBe(false)
+    expect(matchesFilter(TASKS[2]!, 'queued')).toBe(true)
+    expect(matchesFilter(TASKS[0]!, 'queued')).toBe(false)
   })
 
   it('classifies the Type group with fileType()', () => {
@@ -54,15 +56,20 @@ describe('countFilters', () => {
   it('counts statuses and types independently', () => {
     expect(countFilters(TASKS)).toEqual({
       all: 6,
-      active: 2,
+      active: 1,
+      queued: 1,
       paused: 1,
       completed: 1,
       seeding: 1,
       failed: 1,
       video: 2,
+      audio: 0,
+      image: 0,
       iso: 1,
       archive: 1,
       app: 1,
+      doc: 1,
+      other: 0,
     })
   })
 })

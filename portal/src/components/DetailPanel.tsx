@@ -1,10 +1,13 @@
-import { useEffect, useId, useRef, type KeyboardEvent, type RefObject } from 'react'
+import { Fragment, useEffect, useId, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDialogFocus } from '../hooks/useDialogFocus'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useSheetDrag } from '../hooks/useSheetDrag'
-import { streamURL, zipURL } from '../lib/api'
-import { fileType, isActive, kindLabel } from '../lib/taskKind'
+import { streamURL } from '../lib/api'
+import { fmtEta } from '../lib/format'
+import { breakRuns } from '../lib/names'
+import { canSave, saveURL } from '../lib/saveFile'
+import { fileType, kindBadge, kindLabel, rowAction } from '../lib/taskKind'
 import type { FilePriority, TaskDetail } from '../lib/types'
 import {
   DETAIL_TABS,
@@ -19,7 +22,6 @@ import {
 import {
   CloseIcon,
   DownloadIcon,
-  FileIcon,
   FileTypeIcon,
   LinkIcon,
   MoreIcon,
@@ -38,14 +40,17 @@ interface DetailPanelProps {
   onTab: (tab: DetailTab) => void
   onClose: () => void
   onAction: (id: string, action: 'pause' | 'resume' | 'retry') => void
+  /** Anchored above the footer button: the menu opens upward, over the panel. */
   onRemove: (id: string, anchor: { x: number; y: number }) => void
-  /** Opens the same menu a row's right-click or "⋯" opens, anchored under the button. */
+  /** Opens the same menu a row's right-click or "⋯" opens, above the footer button. */
   onMore: (id: string, anchor: { x: number; y: number }) => void
   onCopy: (text: string) => void
   onToggleFile: (fileId: number, wasSkipped: boolean) => void
   onCyclePriority: (fileId: number, current: FilePriority) => void
   /** False while a dialog is stacked over the phone sheet: that dialog then owns Tab and Escape. */
   trapFocus?: boolean
+  /** Shown with nothing selected, in place of an empty state: the queue at a glance. */
+  overview?: ReactNode
 }
 
 export function DetailPanel({
@@ -62,6 +67,7 @@ export function DetailPanel({
   onToggleFile,
   onCyclePriority,
   trapFocus = true,
+  overview,
 }: DetailPanelProps) {
   const { t } = useTranslation()
   const ref = useRef<HTMLElement>(null)
@@ -111,12 +117,12 @@ export function DetailPanel({
             onToggleFile={onToggleFile}
             onCyclePriority={onCyclePriority}
           />
+        ) : overview ? (
+          <div className="tbody">{overview}</div>
         ) : (
-          <div className="empty" style={{ padding: '40px 26px' }}>
-            <FileIcon />
-            <h4>{t('detail.emptyTitle')}</h4>
-            <p>{t('detail.emptyBody')}</p>
-          </div>
+          <p className="fhint" role="status" style={{ padding: '24px 20px' }}>
+            {t('common.loading')}
+          </p>
         )}
       </aside>
     </>
@@ -158,7 +164,7 @@ function Loaded({
   onCopy,
   onToggleFile,
   onCyclePriority,
-}: Omit<DetailPanelProps, 'open' | 'detail'> & { detail: TaskDetail }) {
+}: Omit<DetailPanelProps, 'open' | 'detail' | 'overview'> & { detail: TaskDetail }) {
   const { t } = useTranslation()
   const row = detail.row
   const type = fileType(row)
@@ -166,8 +172,8 @@ function Loaded({
   const tabRefs = useRef(new Map<DetailTab, HTMLButtonElement>())
   const tabId = (name: DetailTab) => `${idBase}-tab-${name}`
   const panelId = `${idBase}-panel`
-  const zippable =
-    row.multiFile && detail.files.some((f) => f.priority !== 'skip' && f.progress >= 1)
+  const action = canWrite ? rowAction(row.statusToken) : null
+  const eta = row.statusToken === 'downloading' ? fmtEta(row.etaSeconds) : null
 
   // Tablist keyboard model: arrows move and activate, Home/End jump to the ends.
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -194,91 +200,28 @@ function Loaded({
             <FileTypeIcon type={type} ink="currentColor" />
           </div>
           <div style={{ minWidth: 0 }}>
-            <div className="dname">{row.name}</div>
-            {/* `row.status` is server-rendered copy; the daemon owns its wording. */}
+            <h2 className="dname" title={row.name}>
+              {breakRuns(row.name).map((run, i) => (
+                <Fragment key={i}>
+                  {run}
+                  <wbr />
+                </Fragment>
+              ))}
+            </h2>
             <div className="dsub">
-              {row.status} · {kindLabel(row.kind)}
+              <span className={`kb kb-${row.kind}`} title={kindLabel(row.kind)}>
+                {kindBadge(row.kind)}
+              </span>
+              <span className={`dpill${row.statusToken === 'failed' ? ' bad' : ''}`}>
+                <span className={`sdot st-${row.statusToken}`} aria-hidden="true" />
+                {/* `row.status` is server-rendered copy; the daemon owns its wording. */}
+                {row.status}
+                {eta && ` · ${t('library.left', { eta })}`}
+              </span>
             </div>
           </div>
           <button className="dx" onClick={onClose} aria-label={t('detail.closePanel')}>
             <CloseIcon />
-          </button>
-        </div>
-
-        <div className="dact">
-          {canWrite && isActive(row.statusToken) && (
-            <button className="mbtn" onClick={() => onAction(row.id, 'pause')}>
-              <PauseIcon />
-              {t('common.pause')}
-            </button>
-          )}
-          {canWrite && row.statusToken === 'paused' && (
-            <button className="mbtn accent" onClick={() => onAction(row.id, 'resume')}>
-              <PlayIcon />
-              {t('common.resume')}
-            </button>
-          )}
-          {canWrite && row.statusToken === 'failed' && (
-            <button className="mbtn accent" onClick={() => onAction(row.id, 'retry')}>
-              <RetryIcon />
-              {t('common.retry')}
-            </button>
-          )}
-
-          {row.streamable && (
-            <>
-              <button
-                className="mbtn"
-                onClick={() => window.open(streamURL(row.id), '_blank', 'noopener,noreferrer')}
-              >
-                <StreamIcon />
-                {t('common.stream')}
-              </button>
-              {!row.multiFile && (
-                <a className="mbtn" href={streamURL(row.id, true)} download={row.name}>
-                  <DownloadIcon />
-                  {t('common.download')}
-                </a>
-              )}
-            </>
-          )}
-
-          {zippable && (
-            <a className="mbtn" href={zipURL(row.id)} download title={t('detail.downloadAllHint')}>
-              <DownloadIcon />
-              {t('detail.downloadAll')}
-            </a>
-          )}
-
-          <button className="mbtn" onClick={() => onCopy(row.source)}>
-            <LinkIcon />
-            {t('common.copyLink')}
-          </button>
-
-          {canWrite && (
-            <button
-              className="mbtn danger"
-              aria-haspopup="menu"
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect()
-                onRemove(row.id, { x: r.left, y: r.bottom })
-              }}
-            >
-              <TrashIcon />
-              {t('common.remove')}
-            </button>
-          )}
-
-          <button
-            className="mbtn"
-            aria-haspopup="menu"
-            aria-label={t('detail.moreActions')}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect()
-              onMore(row.id, { x: r.left, y: r.bottom + 4 })
-            }}
-          >
-            <MoreIcon />
           </button>
         </div>
       </div>
@@ -322,6 +265,75 @@ function Loaded({
           onToggleFile={onToggleFile}
           onCyclePriority={onCyclePriority}
         />
+      </div>
+
+      {/* Pinned under the scrolling body, where the native panel keeps its buttons: the one thing
+          to do now fills the row and is always the accent; the rest are icons (Stream and single
+          file saves while running live in ⋯, with every other row action). */}
+      <div className="dfoot" role="group" aria-label={t('detail.actions')}>
+        {action ? (
+          <button className="mbtn accent dprimary" onClick={() => onAction(row.id, action)}>
+            {action === 'pause' ? <PauseIcon /> : action === 'retry' ? <RetryIcon /> : <PlayIcon />}
+            {t(`common.${action}`)}
+          </button>
+        ) : canSave(row) ? (
+          <a
+            className="mbtn accent dprimary"
+            href={saveURL(row)}
+            download={row.multiFile ? '' : row.name}
+            title={row.multiFile ? t('detail.downloadAllHint') : undefined}
+          >
+            <DownloadIcon />
+            {row.multiFile ? t('detail.downloadAll') : t('menu.saveToDevice')}
+          </a>
+        ) : row.streamable ? (
+          <button
+            className="mbtn accent dprimary"
+            onClick={() => window.open(streamURL(row.id), '_blank', 'noopener,noreferrer')}
+          >
+            <StreamIcon />
+            {t('common.stream')}
+          </button>
+        ) : (
+          <span className="dprimary-gap" />
+        )}
+
+        <button
+          className="mbtn icon"
+          onClick={() => onCopy(row.source)}
+          aria-label={t('common.copyLink')}
+          title={t('common.copyLink')}
+        >
+          <LinkIcon />
+        </button>
+
+        {canWrite && (
+          <button
+            className="mbtn icon danger"
+            aria-haspopup="menu"
+            aria-label={t('common.remove')}
+            title={t('common.remove')}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect()
+              onRemove(row.id, { x: r.left, y: r.top - 6 })
+            }}
+          >
+            <TrashIcon />
+          </button>
+        )}
+
+        <button
+          className="mbtn icon"
+          aria-haspopup="menu"
+          aria-label={t('detail.moreActions')}
+          title={t('detail.moreActions')}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect()
+            onMore(row.id, { x: r.left, y: r.top - 6 })
+          }}
+        >
+          <MoreIcon />
+        </button>
       </div>
     </div>
   )

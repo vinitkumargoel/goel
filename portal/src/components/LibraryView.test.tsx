@@ -1,6 +1,7 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ReactNode } from 'react'
 import { renderWithI18n } from '../test/renderWithI18n'
 import en from '../locales/en.json'
 import { UNSORTED, type SortState } from '../lib/sort'
@@ -44,6 +45,7 @@ interface Options {
   readOnly?: boolean
   selectedIds?: string[]
   sort?: SortState
+  bulk?: ReactNode
 }
 
 function renderLibrary(over: Options = {}) {
@@ -68,6 +70,7 @@ function renderLibrary(over: Options = {}) {
       sort={over.sort ?? UNSORTED}
       canWrite={over.canWrite ?? true}
       readOnly={over.readOnly ?? false}
+      bulk={over.bulk}
       {...handlers}
     />,
   )
@@ -316,22 +319,45 @@ describe('LibraryView', () => {
   })
 })
 
-describe('LibraryView — ETA and Added columns', () => {
-  it('sorts by ETA and Added from their headers', async () => {
+describe('LibraryView — Status and Added columns', () => {
+  it('sorts by ETA from the Status column, and by Added from its header', async () => {
     const { handlers } = renderLibrary({ tasks: [task()] })
+    expect(document.querySelector('.c.eta')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: en.library.colEta }))
     expect(handlers.onSort).toHaveBeenCalledWith('eta')
     await userEvent.click(screen.getByRole('button', { name: en.library.colAdded }))
     expect(handlers.onSort).toHaveBeenCalledWith('added')
   })
 
-  it('shows the ETA, a dash when unknown, and a relative Added time with the absolute one in its title', () => {
+  it('marks a stored ETA sort on its header', () => {
+    renderLibrary({ tasks: [task()], sort: { key: 'eta', dir: 'desc' } })
+    expect(screen.getByRole('button', { name: 'ETA, sorted descending' })).toBeInTheDocument()
+  })
+
+  it('keeps sorting reachable while the bulk bar holds the header slot', async () => {
+    const { handlers } = renderLibrary({
+      tasks: TWO,
+      sort: { key: 'eta', dir: 'asc' },
+      bulk: <div role="toolbar" aria-label="bulk" />,
+    })
+    expect(screen.queryByRole('button', { name: en.library.colName })).toBeNull()
+    const picker = screen.getByRole('combobox', { name: en.library.sortBy })
+    expect(picker).toHaveValue('eta')
+    await userEvent.selectOptions(picker, 'size')
+    expect(handlers.onSort).toHaveBeenCalledWith('size')
+    await userEvent.click(screen.getByRole('button', { name: 'ETA, sorted ascending' }))
+    expect(handlers.onSort).toHaveBeenLastCalledWith('eta')
+  })
+
+  it('folds the ETA into Status, and shows a relative Added time with the absolute one in its title', () => {
     const addedAt = Math.floor(Date.now() / 1000) - 2 * 3600
     const { container } = renderLibrary({
       tasks: [task({ id: 'a', etaSeconds: 600, addedAt }), task({ id: 'b', etaSeconds: null })],
     })
-    const etas = [...container.querySelectorAll('.c.eta')].map((el) => el.textContent)
-    expect(etas).toEqual(['10m', '—'])
+    expect(container.querySelector('.c.eta')).toBeNull()
+    const status = [...container.querySelectorAll('.c.status')].map((el) => el.textContent)
+    expect(status[0]).toContain('Downloading · 10m left')
+    expect(status[1]).toContain('Downloading · 42%')
     const added = container.querySelector<HTMLElement>('.c.added')!
     expect(added).toHaveTextContent('2h ago')
     expect(added.title).not.toBe('')
