@@ -62,7 +62,8 @@ final class RecordingEngine: DownloadEngine, @unchecked Sendable {
 }
 
 struct FailingScanner: FileScanning {
-    func scan(path: String, executablePath: String, argumentTemplate: String) async -> Bool { false }
+    var result: ScanResult = .error("the scanner set in Settings can’t be run")
+    func scan(path: String, executablePath: String, argumentTemplate: String) async -> ScanResult { result }
 }
 
 final class DownloadManagerLifecycleTests: XCTestCase {
@@ -216,6 +217,8 @@ final class DownloadManagerLifecycleTests: XCTestCase {
         let manager = DownloadManager(httpEngine: http, torrentEngine: RecordingEngine(kind: .torrent),
                                       store: store)
         await manager.restore()
+        let restoreTrash = TestTrash.install()
+        defer { restoreTrash() }
 
         await manager.remove(done.id, deleteData: true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: path),
@@ -231,7 +234,8 @@ final class DownloadManagerLifecycleTests: XCTestCase {
                                       torrentEngine: RecordingEngine(kind: .torrent))
         let task = await manager.add(source: url("https://example.test/locked.bin"), saveDirectory: dir,
                                      startPaused: true, suggestedName: "locked.bin")
-        FileManager.default.createFile(atPath: task.savePath, contents: Data("x".utf8))
+        // The partial: an unfinished download's `savePath` may be the user's own file and is never touched.
+        FileManager.default.createFile(atPath: task.savePath + ".goelpart", contents: Data("x".utf8))
         // A read-only folder: the file can't be unlinked, like a locked share.
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir)
         await manager.remove(task.id, deleteData: true)

@@ -60,14 +60,17 @@ extension DownloadManager {
                !runningSlots.contains(id) {
                 return
             }
+            let previous = tasks[i].status
             tasks[i].status = status
+            // The engine found work to do after all (recheck, new files selected): its next `.seeding` is real.
+            if status == .downloading { seededFromStart.remove(id) }
             // Speeds are meter-derived, so without this the last average lingers on a non-transferring phase.
             switch status {
             case .downloading, .seeding: break
             default:
                 clearLiveRates(id)
             }
-            handleStatusTransition(id, status)
+            handleStatusTransition(id, status, previous: previous)
 
         case .finished:
             break   // the subsequent .statusChanged carries the terminal/seeding state
@@ -77,9 +80,10 @@ extension DownloadManager {
             if tasks[i].status == .paused, !runningSlots.contains(id) {
                 return
             }
+            let previous = tasks[i].status
             tasks[i].status = .failed(error)
             clearLiveRates(id)
-            handleStatusTransition(id, .failed(error))
+            handleStatusTransition(id, .failed(error), previous: previous)
 
         case let .resumeDataUpdated(data):
             tasks[i].resumeData = data
@@ -124,7 +128,7 @@ extension DownloadManager {
         }
     }
 
-    private func handleStatusTransition(_ id: UUID, _ status: DownloadStatus) {
+    private func handleStatusTransition(_ id: UUID, _ status: DownloadStatus, previous: DownloadStatus) {
         switch status {
         case .completed, .failed:
             runningSlots.remove(id)
@@ -151,7 +155,9 @@ extension DownloadManager {
         case .seeding:
             runningSlots.remove(id)
             // Must happen here: a seeding task never reaches `.completed`, so the cleanup would never run.
-            if let i = index(of: id) {
+            // Only for a download finishing now — not a relaunch picking a finished torrent back up.
+            if let i = index(of: id),
+               previous != .seeding, !seededFromStart.contains(id) {
                 markQuarantined(tasks[i])
                 deleteSourceTorrentIfRequested(tasks[i])
             }

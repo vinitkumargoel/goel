@@ -16,8 +16,16 @@ public protocol FolderWatching: Sendable {
     func stop() async
 }
 
+/// A scanner that couldn't run (timeout, launch failure, killed) is not a detection: collapsing the two
+/// made every download look infected whenever the scanner broke.
+public enum ScanResult: Sendable, Equatable {
+    case clean
+    case infected
+    case error(String)
+}
+
 public protocol FileScanning: Sendable {
-    func scan(path: String, executablePath: String, argumentTemplate: String) async -> Bool
+    func scan(path: String, executablePath: String, argumentTemplate: String) async -> ScanResult
 }
 
 /// A class, not a struct: `PowerManager.deinit` releases the IOKit assertion, so a dropped copy kills keep-awake.
@@ -53,7 +61,7 @@ public final class SystemFolderWatch: FolderWatching {
 public struct ProcessFileScan: FileScanning {
     public init() {}
 
-    public func scan(path: String, executablePath: String, argumentTemplate: String) async -> Bool {
+    public func scan(path: String, executablePath: String, argumentTemplate: String) async -> ScanResult {
         await AntivirusScanner.scan(
             path: path, executablePath: executablePath, argumentTemplate: argumentTemplate
         )

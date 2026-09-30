@@ -28,7 +28,9 @@ extension DownloadManager {
     }
 
     /// Memory is committed BEFORE the loop, or an overlapping tick writes back a stale ledger.
-    func runAutomation(feeds: [AutomationCore.FeedFetch] = []) async {
+    /// `inlineLogins` maps a feed item's dedup key to its raw link when that link carries `user:pass@`.
+    func runAutomation(feeds: [AutomationCore.FeedFetch] = [],
+                       inlineLogins: [String: String] = [:]) async {
         let projection = tasks.map { task in
             AutomationCore.TaskPhase(
                 id: task.id,
@@ -66,6 +68,8 @@ extension DownloadManager {
             case .activateProfile(let name):
                 await setActiveProfile(name)
             case .add(let source, let startPaused):
+                // Adopted only for what is actually added, not on every poll of every item.
+                if let raw = inlineLogins[source.dedupKey] { adoptInlineCredentials(raw) }
                 add(source: source, startPaused: startPaused)
             }
         }
@@ -152,6 +156,7 @@ extension DownloadManager {
 
     func pollFeeds() async {
         var fetches: [AutomationCore.FeedFetch] = []
+        var inlineLogins: [String: String] = [:]
         let proxy = Self.proxySpec(from: settings)
         for feed in settings.rssFeeds where feed.enabled {
             guard let url = URL(string: feed.url),
@@ -167,14 +172,16 @@ extension DownloadManager {
                 if !pattern.isEmpty,
                    !item.title.localizedCaseInsensitiveContains(pattern) { continue }
                 guard let locator = item.enclosureURL ?? item.link,
-                      let source = DownloadSource.parse(locator) else { continue }
+                      let parsed = DownloadSource.parseWithCredentials(locator) else { continue }
+                let source = parsed.source
+                if parsed.authorization != nil { inlineLogins[source.dedupKey] = locator }
                 let key = "\(feed.id.uuidString)|\(item.guid ?? locator)"
                 candidates.append(.init(key: key, source: source, dedupKey: source.dedupKey))
             }
             candidates.isEmpty ? () : fetches.append(.init(startPaused: feed.startPaused,
                                                            candidates: candidates))
         }
-        await runAutomation(feeds: fetches)
+        await runAutomation(feeds: fetches, inlineLogins: inlineLogins)
     }
 }
 

@@ -40,6 +40,7 @@ extension DownloadManager {
                   tasks[i].hasMetadata,
                   tasks[i].fractionCompleted >= 1.0 {
             tasks[i].status = .seeding
+            seededFromStart.insert(id)
         } else {
             tasks[i].status = .downloading
         }

@@ -49,6 +49,9 @@ public actor DownloadManager {
 
     var fileReconcileTask: Task<Void, Never>?
 
+    /// The launch-time payload sweep, which runs after the first publish rather than before it.
+    var initialReconcile: Task<Void, Never>?
+
     var scheduleTask: Task<Void, Never>?
 
     var scheduleWindowOpen = true
@@ -81,6 +84,16 @@ public actor DownloadManager {
 
     var pendingNotices: [UserNotice] = []
 
+    /// One "settings aren't being saved" notice a minute, however many changes are blocked.
+    var lastBlockedSettingsNotice = Date.distantPast
+
+    /// Torrents the scheduler found already complete: their `.seeding` is a relaunch, not a download
+    /// finishing, so they are not re-quarantined (which would also re-flag files the user cleared).
+    var seededFromStart: Set<UUID> = []
+
+    /// Where inline `user:pass@` logins go — the same per-host store the HTTP engine reads.
+    let credentialStore: any CredentialManaging
+
     /// Resume-data-only changes are coalesced per task — see ``noteResumeDataChanged(_:)``.
     var resumeDirty: Set<UUID> = []
     var lastResumeFlush: [UUID: Date] = [:]
@@ -109,7 +122,8 @@ public actor DownloadManager {
         store: PersistenceStore? = nil,
         power: any PowerControlling = SystemPowerControl(),
         folderWatch: any FolderWatching = SystemFolderWatch(),
-        scanner: any FileScanning = ProcessFileScan()
+        scanner: any FileScanning = ProcessFileScan(),
+        credentials: any CredentialManaging = KeychainCredentialStore()
     ) {
         self.httpEngine = httpEngine
         self.torrentEngine = torrentEngine
@@ -126,6 +140,7 @@ public actor DownloadManager {
         self.power = power
         self.folderWatch = folderWatch
         self.scanner = scanner
+        self.credentialStore = credentials
         if let store {
             let handler = PersistenceErrorHandler()
             self.persistErrorHandler = handler
@@ -141,7 +156,8 @@ public actor DownloadManager {
         store: PersistenceStore? = nil,
         power: any PowerControlling = SystemPowerControl(),
         folderWatch: any FolderWatching = SystemFolderWatch(),
-        scanner: any FileScanning = ProcessFileScan()
+        scanner: any FileScanning = ProcessFileScan(),
+        credentials: any CredentialManaging = KeychainCredentialStore()
     ) {
         self.httpEngine = HTTPEngine(profile: settings.effectiveProfile)
         self.torrentEngine = TorrentEngine(
@@ -166,6 +182,7 @@ public actor DownloadManager {
         self.power = power
         self.folderWatch = folderWatch
         self.scanner = scanner
+        self.credentialStore = credentials
         if let store {
             let handler = PersistenceErrorHandler()
             self.persistErrorHandler = handler
@@ -227,9 +244,9 @@ public actor DownloadManager {
         // Only rows normalisation changed, and in one transaction: 2,000 commits at launch is seconds of churn.
         let changed = zip(loaded, normalized).compactMap { $0 == $1 ? nil : $1 }
         if !changed.isEmpty { pipeline?.enqueue(.saveTasks(changed)) }
-
-        // Off-actor stat sweep: marks missing payloads, never drops them.
-        await reconcileCompletedFiles()
+        // First paint must not wait on a stat of every payload: one hung SMB share would hold the window empty.
+        publish()
+        initialReconcile = Task { [weak self] in await self?.reconcileCompletedFiles() }
 
         await applyEngineConfigs()
         await updateWatchFolder()
@@ -515,7 +532,7 @@ public actor DownloadManager {
         guard settings.autoRetryEnabled, settings.autoRetryMaxAttempts > 0 else { return }
         guard let i = index(of: id), case .failed(let error) = tasks[i].status else { return }
         // Retrying against a full disk only fails again and churns the volume; the user must free space.
-        if case .diskFull = error { return }
+        if Self.isDiskFull(error) { return }
         let attempt = tasks[i].retryAttempt ?? 0
         guard attempt < settings.autoRetryMaxAttempts else { return }
         let next = attempt + 1
@@ -530,6 +547,18 @@ public actor DownloadManager {
         }
     }
 
+    /// Not every engine maps ENOSPC to `.diskFull` (HLS/ffmpeg and libtorrent report text), so match that too.
+    static func isDiskFull(_ error: DownloadError) -> Bool {
+        let text: String
+        switch error {
+        case .diskFull: return true
+        case .network(let message), .unknown(let message): text = message.lowercased()
+        default: return false
+        }
+        return text.contains("enospc") || text.contains("no space left")
+            || text.contains("not enough disk space") || text.contains("disk is full")
+    }
+
     /// Recheck `.failed`: the user may have removed, resumed or retried it while the timer waited.
     private func performAutoRetry(_ id: DownloadTask.ID) async {
         autoRetryTasks[id] = nil
@@ -541,46 +570,6 @@ public actor DownloadManager {
         persist(tasks[i])
         publish()
         schedule()
-    }
-
-    public func remove(_ id: DownloadTask.ID, deleteData: Bool) async {
-        guard let task = task(id) else { return }
-        if engineStarted.contains(id) {
-            await engine(for: task.source).remove(id, deleteData: deleteData)
-        }
-        clearLocalState(id, removeFromList: true)
-        persistRemoval(id)
-        updatePowerAssertion()
-        publish()
-        schedule()
-        if deleteData { await removeLeftoverPayload(task) }
-    }
-
-    /// The engine only deletes what it still tracks — a row restored at launch was never handed to it — and
-    /// its own failure is reported on a stream whose consumer is already gone. So the manager sweeps what's
-    /// left and says so when the bytes are still on disk.
-    func removeLeftoverPayload(_ task: DownloadTask) async {
-        let dir = (task.saveDirectory as NSString).standardizingPath
-        let target = (task.savePath as NSString).standardizingPath
-        // Never the folder itself: a degenerate name would otherwise turn "delete file" into "delete Downloads".
-        guard task.isSavePathContained, target != dir, !task.name.isEmpty,
-              task.name != ".", task.name != ".." else { return }
-        let paths = [task.savePath, task.savePath + ".goelpart"]
-        let stranded = await Task.detached(priority: .utility) { () -> [String] in
-            let fm = FileManager()
-            var left: [String] = []
-            for path in paths where fm.fileExists(atPath: path) {
-                do {
-                    try fm.removeItem(atPath: path)
-                } catch {
-                    if fm.fileExists(atPath: path) { left.append(path) }
-                }
-            }
-            return left
-        }.value
-        guard !stranded.isEmpty else { return }
-        postNotice(L10n.t("Removed “%@” from the list, but its file is still on disk.", task.name),
-                   taskID: task.id)
     }
 
     public func shutdown() async {
@@ -605,6 +594,8 @@ public actor DownloadManager {
         redownloadTask = nil
         fileReconcileTask?.cancel()
         fileReconcileTask = nil
+        initialReconcile?.cancel()
+        initialReconcile = nil
         let folderWatch = self.folderWatch
         await folderWatch.stop()
         power.setPreventSleep(false)
@@ -850,45 +841,6 @@ public actor DownloadManager {
         await refreshEngineCopy(id)
     }
 
-    public enum RenameResult: Sendable, Equatable {
-        case renamed(String)
-        case unchanged
-        case notFound
-        case unsupported
-        case active
-        case ioError(String)
-    }
-
-    @discardableResult
-    public func rename(_ id: DownloadTask.ID, to newName: String) async -> RenameResult {
-        guard let i = index(of: id) else { return .notFound }
-        let task = tasks[i]
-        guard task.kind != .torrent else { return .unsupported }
-        guard !task.status.isActive else { return .active }
-        let sanitized = PathSafety.sanitizedName(newName, fallback: task.name)
-        guard sanitized != task.name else { return .unchanged }
-        let fm = FileManager.default
-        let dir = task.saveDirectory
-        let finalName = PathSafety.uniqueName(base: sanitized, in: dir)
-        let oldPath = (dir as NSString).appendingPathComponent(task.name)
-        let newPath = (dir as NSString).appendingPathComponent(finalName)
-        if fm.fileExists(atPath: oldPath) {
-            do { try fm.moveItem(atPath: oldPath, toPath: newPath) }
-            catch { return .ioError(error.localizedDescription) }
-        }
-        // The in-progress sibling moves with it, or resume starts the new name from zero.
-        let oldPart = oldPath + ".goelpart", newPart = newPath + ".goelpart"
-        if fm.fileExists(atPath: oldPart), !fm.fileExists(atPath: newPart) {
-            do { try fm.moveItem(atPath: oldPart, toPath: newPart) }
-            catch { return .ioError(error.localizedDescription) }
-        }
-        tasks[i].name = finalName
-        persist(tasks[i])
-        publish()
-        await refreshEngineCopy(id)
-        return .renamed(finalName)
-    }
-
     static func normalizeTags(_ raw: [String]) -> [String] {
         var seen = Set<String>()
         var out: [String] = []
@@ -954,6 +906,8 @@ public actor DownloadManager {
                                                            defaultDirectory: settings.defaultSaveDirectory)
             // Untrusted input may repeat a task id; `taskIndex` keys on it, so the loser becomes a zombie row.
             guard index(of: task.id) == nil else { continue }
+            // A local `.torrent` path in a shared backup points at the importer's disk, not the author's.
+            if case .torrentFile(let url) = task.source, url.isFileURL { continue }
             guard dedupIndex[task.source.dedupKey] == nil else { continue }
             let t = Self.normalizeRestored(task)
             appendTask(t)
@@ -1010,6 +964,10 @@ public actor DownloadManager {
         safe.btWatchFolderPath = current.btWatchFolderPath
         safe.btWatchStartWithoutConfirmation = current.btWatchStartWithoutConfirmation
         safe.updateFeedURL = current.updateFeedURL
+        // Silently switching off the audit trail, arming a shutdown or deleting .torrent files is not a preference to adopt.
+        safe.auditLogEnabled = current.auditLogEnabled
+        safe.autoShutdownAction = current.autoShutdownAction
+        safe.btAutoDeleteTorrent = current.btAutoDeleteTorrent
         return safe
     }
 
@@ -1109,6 +1067,7 @@ public actor DownloadManager {
         speedMeters[id] = nil
         resumeDirty.remove(id)
         lastResumeFlush[id] = nil
+        seededFromStart.remove(id)
         if removeFromList, let i = index(of: id) {
             removeTask(at: i)
         }

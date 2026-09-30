@@ -48,12 +48,13 @@ final class FakeScanner: FileScanning, @unchecked Sendable {
     typealias Call = (path: String, executablePath: String, argumentTemplate: String)
 
     private let lock = NSLock()
-    private let result: Bool
+    private let result: ScanResult
     private var _calls: [Call] = []
 
-    init(result: Bool = true) { self.result = result }
+    init(result: Bool = true) { self.result = result ? .clean : .infected }
+    init(verdict: ScanResult) { self.result = verdict }
 
-    func scan(path: String, executablePath: String, argumentTemplate: String) async -> Bool {
+    func scan(path: String, executablePath: String, argumentTemplate: String) async -> ScanResult {
         lock.lock(); _calls.append((path, executablePath, argumentTemplate)); lock.unlock()
         return result
     }

@@ -36,16 +36,23 @@ extension DownloadManager {
             let changed = Self.remoteResourceChanged(
                 oldETag: candidate.remoteInfo?.etag, oldSize: candidate.totalBytes,
                 newETag: validators.etag, newSize: validators.size)
-            guard changed else { continue }
-            guard let i = index(of: candidate.id),
-                  tasks[i].status == .completed,
-                  tasks[i].remoteInfo?.etag == candidate.remoteInfo?.etag,
-                  tasks[i].totalBytes == candidate.totalBytes else { continue }
+            guard changed, isUnchangedSince(candidate) else { continue }
+            // The engine keeps its own cursor (`refresh` never clears one), so it is dropped explicitly.
+            await resetEngineState(candidate.id)
+            guard isUnchangedSince(candidate), let i = index(of: candidate.id) else { continue }
             requeueForRedownload(at: i)
         }
     }
 
-    /// Must clear the resume cursor, else the refetch resumes against the changed bytes.
+    private func isUnchangedSince(_ candidate: DownloadTask) -> Bool {
+        guard let i = index(of: candidate.id) else { return false }
+        return tasks[i].status == .completed
+            && tasks[i].remoteInfo?.etag == candidate.remoteInfo?.etag
+            && tasks[i].totalBytes == candidate.totalBytes
+    }
+
+    /// Must clear the resume cursor, else the refetch resumes against the changed bytes. The engine's copy
+    /// is gone by now (``resetEngineState(_:)``), so the next promotion `add`s from scratch.
     private func requeueForRedownload(at i: Int) {
         tasks[i].status = .queued
         tasks[i].bytesDownloaded = 0

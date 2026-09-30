@@ -10,23 +10,41 @@ public enum Quarantine {
 
     public static let agentName = "Goel°"
 
-    /// Directories are marked recursively (multi-file torrents, auto-extract output). Best effort:
-    /// a failure is logged, never fatal — the file is already on disk either way.
-    public static func mark(_ url: URL, sourceURL: URL?, referrer: URL?) {
+    /// Directories are marked recursively (multi-file torrents, auto-extract output). Best effort: returns
+    /// how many items couldn't be flagged, so the caller can say so once rather than per file.
+    /// A top-level symlink is skipped: setting the attribute follows it, onto a file outside the payload.
+    @discardableResult
+    public static func mark(_ url: URL, sourceURL: URL?, referrer: URL?) -> Int {
         #if os(macOS)
+        guard !isSymbolicLink(url) else { return 0 }
         var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { return }
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { return 0 }
         let properties = quarantineProperties(sourceURL: sourceURL, referrer: referrer)
-        markOne(url, properties)
+        var failed = markOne(url, properties) ? 0 : 1
         guard isDir.boolValue,
               let walker = FileManager.default.enumerator(
-                  at: url, includingPropertiesForKeys: [.isSymbolicLinkKey], options: []) else { return }
+                  at: url, includingPropertiesForKeys: [.isSymbolicLinkKey], options: []) else { return failed }
         for case let child as URL in walker {
             // Setting the attribute follows a link, which would tag a file outside the payload.
             if (try? child.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true { continue }
-            markOne(child, properties)
+            if !markOne(child, properties) { failed += 1 }
         }
+        return failed
+        #else
+        return 0
         #endif
+    }
+
+    /// A real folder (not a link to one): marking it means a walk, which callers keep off their actor.
+    public static func isDirectoryTree(_ url: URL) -> Bool {
+        guard !isSymbolicLink(url) else { return false }
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+    }
+
+    static func isSymbolicLink(_ url: URL) -> Bool {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType)
+            == .typeSymbolicLink
     }
 
     /// Userinfo is stripped: the xattr is world-readable metadata and must not carry a password.
@@ -51,15 +69,17 @@ public enum Quarantine {
         return props
     }
 
-    private static func markOne(_ url: URL, _ properties: [String: Any]) {
+    private static func markOne(_ url: URL, _ properties: [String: Any]) -> Bool {
         var target = url
         var values = URLResourceValues()
         values.quarantineProperties = properties
         do {
             try target.setResourceValues(values)
+            return true
         } catch {
             GoelLog.scheduler.error("Couldn’t set the quarantine flag", .path(url.path),
                                     .detail(String(describing: error)))
+            return false
         }
     }
     #endif

@@ -65,12 +65,11 @@ extension DownloadManager {
             changed = true
         }
         if newlyMissing.count == 1, let name = newlyMissing.first {
-            postNotice(L10n.t("Can’t find the file for “%@” — it may have been moved or deleted. It stays in your list.", name),
-                       isError: false)
+            // An error, so a busy toast queue never drops it first.
+            postNotice(L10n.t("Can’t find the file for “%@” — it may have been moved or deleted. It stays in your list.", name))
         } else if newlyMissing.count > 1 {
             postNotice(L10n.t("Can’t find the files for %d completed downloads — they may have been moved or deleted. They stay in your list.",
-                              newlyMissing.count),
-                       isError: false)
+                              newlyMissing.count))
         }
         return changed
     }
@@ -93,6 +92,11 @@ extension DownloadManager {
     }
 
     func dropTaskLocally(_ id: DownloadTask.ID) {
+        // The engine's copy (and cursor) would otherwise outlive the row; never its data — the user re-added it.
+        if engineStarted.contains(id), let task = task(id) {
+            let engine = engine(for: task.source)
+            Task { await engine.remove(id, deleteData: false) }
+        }
         clearLocalState(id, removeFromList: true)
         persistRemoval(id)
     }

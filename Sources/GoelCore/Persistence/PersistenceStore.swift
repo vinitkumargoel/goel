@@ -205,7 +205,8 @@ public final class PersistenceStore: @unchecked Sendable {
 
     /// Copies the raw settings row, byte for byte, to `settings_backup` — run before defaults may be
     /// written over a row we failed to decode (portal token, password hash, feeds, proxy, folders).
-    /// Returns false when there was no row to back up.
+    /// An existing backup is kept: a second failure would otherwise replace the original with a copy
+    /// of the defaults-era row. Returns false when there was no row to back up (or one is already kept).
     @discardableResult
     public func backupSettingsRow() throws -> Bool {
         try dbQueue.write { db in
@@ -214,9 +215,22 @@ public final class PersistenceStore: @unchecked Sendable {
             ) else { return false }
             let data: Data = row["data"]
             try db.execute(
-                sql: "INSERT OR REPLACE INTO settings_backup (key, savedAt, data) VALUES (?, ?, ?)",
+                sql: "INSERT OR IGNORE INTO settings_backup (key, savedAt, data) VALUES (?, ?, ?)",
                 arguments: [Self.settingsKey, Date().timeIntervalSinceReferenceDate, data])
-            return true
+            return db.changesCount > 0
+        }
+    }
+
+    /// The kept backup decoded, for "restore my old settings". Throws when it is still unreadable.
+    public func decodeSettingsBackup() throws -> AppSettings? {
+        guard let data = try loadSettingsBackup() else { return nil }
+        return try decoder.decode(AppSettings.self, from: data)
+    }
+
+    /// Dropped once the backup has been adopted, so a later failure can keep a fresh one.
+    public func clearSettingsBackup() throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM settings_backup WHERE key = ?", arguments: [Self.settingsKey])
         }
     }
 

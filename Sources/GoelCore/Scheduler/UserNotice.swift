@@ -39,7 +39,9 @@ extension DownloadManager {
         }
         pendingNotices.append(UserNotice(message: message, taskID: taskID, isError: isError))
         if pendingNotices.count > Self.maxPendingNotices {
-            pendingNotices.removeFirst(pendingNotices.count - Self.maxPendingNotices)
+            let dropped = pendingNotices.count - Self.maxPendingNotices
+            pendingNotices.removeFirst(dropped)
+            GoelLog.scheduler.error("Dropped undelivered user notices", .count(dropped, label: "dropped"))
         }
         publish()
     }

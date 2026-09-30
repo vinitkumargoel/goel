@@ -79,10 +79,35 @@ extension DownloadManager {
     func persistSettings() {
         guard !settingsLoadFailed else {
             GoelLog.persistence.error("Settings not saved — the stored row couldn’t be read or backed up")
+            // Every blocked change is otherwise silent; once a minute is enough to be seen without nagging.
+            let now = Date()
+            if now.timeIntervalSince(lastBlockedSettingsNotice) >= 60 {
+                lastBlockedSettingsNotice = now
+                postNotice(L10n.t("This settings change applies now but won’t be saved: your saved settings couldn’t be read or backed up. Restart Goel° to try again."))
+            }
             return
         }
         // The user's own choice, never the managed overlay: writing forced values back makes an administrator's policy survive removal of the profile that imposed it.
         pipeline?.enqueue(.saveSettings(storedSettings))
+    }
+
+    public enum SettingsBackupError: Error, Equatable {
+        case noStore
+        case noBackup
+    }
+
+    /// Adopts the settings row kept aside when the saved one couldn't be read. Throws when there is none or it
+    /// still won't decode; on success the backup is dropped and settings persist again.
+    public func restoreSettingsBackup() async throws {
+        guard let store else { throw SettingsBackupError.noStore }
+        guard let restored = try store.decodeSettingsBackup() else { throw SettingsBackupError.noBackup }
+        settingsLoadFailed = false
+        await updateSettings(restored)
+        do {
+            try store.clearSettingsBackup()
+        } catch {
+            GoelLog.persistence.error("Couldn’t drop the adopted settings backup", .detail(String(describing: error)))
+        }
     }
 
     func persistRemoval(_ id: DownloadTask.ID) {

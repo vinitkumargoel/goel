@@ -81,6 +81,7 @@ final class FileReconcileTests: XCTestCase {
             httpEngine: MockTorrentEngine(), torrentEngine: MockTorrentEngine(),
             settings: AppSettings(), store: store)
         await manager.restore()
+        await manager.settleInitialReconcile()
 
         let present2 = await manager.task(present.id)
         let gone2 = await manager.task(gone.id)

@@ -113,13 +113,41 @@ extension DownloadManager {
         return f
     }()
 
-    /// Gatekeeper only checks what carries `com.apple.quarantine`. Synchronous on purpose: it must land
-    /// before the completion is published, so nothing (auto-open, extract, scripts) sees an unmarked file.
-    func markQuarantined(_ task: DownloadTask) {
-        guard task.isSavePathContained else { return }
-        Quarantine.mark(URL(fileURLWithPath: task.savePath),
-                        sourceURL: Self.quarantineSourceURL(task.source),
-                        referrer: task.referer.flatMap { URL(string: $0) })
+    /// Gatekeeper only checks what carries `com.apple.quarantine`. A single file is flagged inline, so the flag
+    /// lands before the completion is published (auto-open, extract, scripts never see it unmarked). A folder
+    /// means a walk of the whole tree, which runs off the actor; `thenFinishCompletion` resumes after it.
+    func markQuarantined(_ task: DownloadTask, thenFinishCompletion: Bool = false) {
+        guard task.isSavePathContained else {
+            if thenFinishCompletion { finishCompletion(task) }
+            return
+        }
+        let url = URL(fileURLWithPath: task.savePath)
+        let source = Self.quarantineSourceURL(task.source)
+        let referrer = task.referer.flatMap { URL(string: $0) }
+        guard Quarantine.isDirectoryTree(url) else {
+            noteQuarantineFailures(Quarantine.mark(url, sourceURL: source, referrer: referrer), task: task)
+            if thenFinishCompletion { finishCompletion(task) }
+            return
+        }
+        Task.detached(priority: .utility) { [weak self] in
+            let failed = Quarantine.mark(url, sourceURL: source, referrer: referrer)
+            await self?.afterQuarantineWalk(task, failed: failed, thenFinishCompletion: thenFinishCompletion)
+        }
+    }
+
+    private func afterQuarantineWalk(_ task: DownloadTask, failed: Int, thenFinishCompletion: Bool) {
+        noteQuarantineFailures(failed, task: task)
+        // The row may have been removed during the walk: nothing left to scan or act on.
+        guard thenFinishCompletion, index(of: task.id) != nil else { return }
+        finishCompletion(task)
+    }
+
+    /// One notice per download, however many files refused the flag.
+    private func noteQuarantineFailures(_ failed: Int, task: DownloadTask) {
+        guard failed > 0 else { return }
+        postNotice(L10n.t("Couldn’t mark %1$d item(s) in “%2$@” as downloaded from the internet, so macOS won’t check them before they open.",
+                          failed, task.name),
+                   taskID: task.id)
     }
 
     static func quarantineSourceURL(_ source: DownloadSource) -> URL? {
@@ -130,9 +158,12 @@ extension DownloadManager {
         }
     }
 
-    /// Multi-file torrents are scanned per file: a scanner handed a folder can pass having read none of it.
     func onDownloadCompleted(_ task: DownloadTask) {
-        markQuarantined(task)
+        markQuarantined(task, thenFinishCompletion: true)
+    }
+
+    /// Multi-file torrents are scanned per file: a scanner handed a folder can pass having read none of it.
+    private func finishCompletion(_ task: DownloadTask) {
         if settings.antivirusEnabled {
             let id = task.id
             let executable = settings.antivirusExecutablePath
@@ -146,30 +177,27 @@ extension DownloadManager {
                 deleteSourceTorrentIfRequested(task)
                 return
             }
-            // A scanner that can't run is not a detection: its `false` becomes "error", not "flagged", or every
-            // download looks infected. Either way it fails closed — nothing unscanned reaches extract or the script.
-            let runnable = ProcessSafety.isSafeExecutable(executable.trimmingCharacters(in: .whitespacesAndNewlines))
-            if !runnable {
-                GoelLog.scheduler.error(
-                    "Antivirus is enabled but the configured scanner cannot be run", .path(executable))
-            }
             let name = task.name
             Task.detached { [weak self] in
-                var passed = true
+                // Either way it fails closed — nothing unscanned or flagged reaches extract or the script.
+                var outcome = ScanResult.clean
                 for path in paths {
-                    if await scanner.scan(path: path, executablePath: executable,
-                                          argumentTemplate: template) { continue }
-                    GoelLog.scheduler.error("Antivirus scan flagged or failed", .path(path))
-                    passed = false
-                    break
+                    outcome = await scanner.scan(path: path, executablePath: executable,
+                                                 argumentTemplate: template)
+                    guard outcome == .clean else {
+                        GoelLog.scheduler.error("Antivirus scan flagged or failed", .path(path))
+                        break
+                    }
                 }
-                if !passed, !runnable {
-                    await self?.recordScanError(id, name: name)
-                    return
+                switch outcome {
+                case .clean:
+                    await self?.recordScanVerdict(id, passed: true)
+                    await self?.runPostDownloadActions(task)
+                case .infected:
+                    await self?.recordScanVerdict(id, passed: false)
+                case .error(let reason):
+                    await self?.recordScanError(id, name: name, reason: reason)
                 }
-                await self?.recordScanVerdict(id, passed: passed)
-                // Only a *clean* file reaches auto-extract / post-download actions, else a malicious archive unpacks before the scanner vetoes it.
-                if passed { await self?.runPostDownloadActions(task) }
             }
         } else {
             runPostDownloadActions(task)
@@ -190,10 +218,10 @@ extension DownloadManager {
         _ = mutateTask(id) { $0.scanVerdict = passed ? "clean" : "flagged" }
     }
 
-    func recordScanError(_ id: UUID, name: String) {
+    /// A scanner that couldn't run or finish is not a detection: "error", or every download looks infected.
+    func recordScanError(_ id: UUID, name: String, reason: String) {
         _ = mutateTask(id) { $0.scanVerdict = "error" }
-        postNotice(L10n.t("“%@” wasn’t scanned: the antivirus scanner set in Settings can’t be run.", name),
-                   taskID: id)
+        postNotice(L10n.t("“%1$@” wasn’t scanned: %2$@.", name, reason), taskID: id)
     }
 
     /// A user script goes through the same `FileScanning` port so it inherits the blocklist and the timeout.
@@ -213,9 +241,9 @@ extension DownloadManager {
             let name = task.name, id = task.id
             Task.detached { [weak self] in
                 // A failing script never fails the task, but one that is missing, non-executable, ProcessSafety-vetoed or non-zero must not look like it ran.
-                let ok = await scanner.scan(path: path, executablePath: executable,
-                                            argumentTemplate: template)
-                if !ok {
+                let ran = await scanner.scan(path: path, executablePath: executable,
+                                             argumentTemplate: template)
+                if ran != .clean {
                     GoelLog.scheduler.error(
                         "Post-download script failed or could not be launched", .path(executable))
                     await self?.postNotice(

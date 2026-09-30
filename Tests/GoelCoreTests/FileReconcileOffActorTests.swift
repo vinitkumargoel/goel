@@ -112,6 +112,7 @@ final class FileReconcileOffActorTests: XCTestCase {
 
         let manager = makeManager(store: store)
         await manager.restore()
+        await manager.settleInitialReconcile()
         try FileManager.default.removeItem(atPath: gonePath)
 
         _ = await manager.takeNotices()

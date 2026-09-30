@@ -380,6 +380,7 @@
 "Couldn’t load quality options. %@" = "Couldn’t load quality options. %@";
 "Couldn’t load the metalink file: %@" = "Couldn’t load the metalink file: %@";
 "Couldn’t locate Application Support" = "Couldn’t locate Application Support";
+"Couldn’t mark %1$d item(s) in “%2$@” as downloaded from the internet, so macOS won’t check them before they open." = "Couldn’t mark %1$d item(s) in “%2$@” as downloaded from the internet, so macOS won’t check them before they open.";
 "Couldn’t move the database aside: %@" = "Couldn’t move the database aside: %@";
 "Couldn’t move “%1$@” back: %2$@" = "Couldn’t move “%1$@” back: %2$@";
 "Couldn’t move “%1$@” to “%2$@”" = "Couldn’t move “%1$@” to “%2$@”";
@@ -403,6 +404,7 @@
 "Couldn’t rename “%@”" = "Couldn’t rename “%@”";
 "Couldn’t rename: %@" = "Couldn’t rename: %@";
 "Couldn’t save the login for %@ to your Keychain" = "Couldn’t save the login for %@ to your Keychain";
+"Couldn’t save the login for %@ — the server may refuse the download." = "Couldn’t save the login for %@ — the server may refuse the download.";
 "Couldn’t save your servers to disk: %@" = "Couldn’t save your servers to disk: %@";
 "Couldn’t shut this Mac down" = "Couldn’t shut this Mac down";
 "Couldn’t start yt-dlp." = "Couldn’t start yt-dlp.";
@@ -452,6 +454,7 @@
 "Diagnostics are only ever sent by you, by hand, from Settings ▸ Advanced." = "Diagnostics are only ever sent by you, by hand, from Settings ▸ Advanced.";
 "Diagnostics copied — paste it into your bug report" = "Diagnostics copied — paste it into your bug report";
 "Diagnostics saved" = "Diagnostics saved";
+"Didn’t save the login in the link for %@: Goel° only sends logins over HTTPS." = "Didn’t save the login in the link for %@: Goel° only sends logins over HTTPS.";
 "Disable" = "Disable";
 "Disabled" = "Disabled";
 "Disc images" = "Disc images";
@@ -1116,6 +1119,7 @@
 "Removed “%@” from the list" = "Removed “%@” from the list";
 "Removed “%@” from the list, but its file is still on disk" = "Removed “%@” from the list, but its file is still on disk";
 "Removed “%@” from the list, but its file is still on disk." = "Removed “%@” from the list, but its file is still on disk.";
+"Removed “%@” from the list. Its files weren’t loaded, so they were left on disk." = "Removed “%@” from the list. Its files weren’t loaded, so they were left on disk.";
 "Rename" = "Rename";
 "Rename %d Selected…" = "Rename %d Selected…";
 "Rename %d downloads" = "Rename %d downloads";
@@ -1425,6 +1429,7 @@
 "The source file is missing." = "The source file is missing.";
 "The stored username and password are deleted from your Keychain." = "The stored username and password are deleted from your Keychain.";
 "The system proxy isn’t applied to the torrent swarm — choose a manual SOCKS5 proxy to route peers through it." = "The system proxy isn’t applied to the torrent swarm — choose a manual SOCKS5 proxy to route peers through it.";
+"The torrent wasn’t loaded, so its files were left on disk." = "The torrent wasn’t loaded, so its files were left on disk.";
 "The update feed didn’t contain a release." = "The update feed didn’t contain a release.";
 "The update feed gave a version this app can’t read." = "The update feed gave a version this app can’t read.";
 "Theme" = "Theme";
@@ -1448,6 +1453,7 @@
 "This server is misconfigured." = "This server is misconfigured.";
 "This server's saved secret couldn't be read from your Keychain." = "This server's saved secret couldn't be read from your Keychain.";
 "This server’s address can’t be opened in Terminal" = "This server’s address can’t be opened in Terminal";
+"This settings change applies now but won’t be saved: your saved settings couldn’t be read or backed up. Restart Goel° to try again." = "This settings change applies now but won’t be saved: your saved settings couldn’t be read or backed up. Restart Goel° to try again.";
 "This transfer can’t be retried." = "This transfer can’t be retried.";
 "Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile." = "Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile.";
 "Three switchable speed and connection profiles" = "Three switchable speed and connection profiles";
@@ -1665,6 +1671,10 @@
 "server" = "server";
 "soon" = "soon";
 "terabytes" = "terabytes";
+"the scanner couldn’t be started: %@" = "the scanner couldn’t be started: %@";
+"the scanner set in Settings can’t be run" = "the scanner set in Settings can’t be run";
+"the scanner stopped unexpectedly" = "the scanner stopped unexpectedly";
+"the scanner took longer than 5 minutes and was stopped" = "the scanner took longer than 5 minutes and was stopped";
 "this Mac" = "this Mac";
 "uid %1$@ · gid %2$@" = "uid %1$@ · gid %2$@";
 "unknown size" = "unknown size";
@@ -1685,13 +1695,14 @@
 "yt-dlp isn’t available, so Goel° can’t list what’s in that playlist." = "yt-dlp isn’t available, so Goel° can’t list what’s in that playlist.";
 "yt-dlp isn’t available, so Goel° can’t resolve that page." = "yt-dlp isn’t available, so Goel° can’t resolve that page.";
 "~%@ left" = "~%@ left";
+"“%1$@” wasn’t scanned: %2$@." = "“%1$@” wasn’t scanned: %2$@.";
 "“%@” already exists here." = "“%@” already exists here.";
+"“%@” already exists in that folder." = "“%@” already exists in that folder.";
 "“%@” has a name Goel can’t handle safely." = "“%@” has a name Goel can’t handle safely.";
 "“%@” is a folder on the server now — nothing was uploaded." = "“%@” is a folder on the server now — nothing was uploaded.";
 "“%@” is still transferring. It will stop and be removed from the list." = "“%@” is still transferring. It will stop and be removed from the list.";
 "“%@” is too large to drag out of the browser." = "“%@” is too large to drag out of the browser.";
 "“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk" = "“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk";
-"“%@” wasn’t scanned: the antivirus scanner set in Settings can’t be run." = "“%@” wasn’t scanned: the antivirus scanner set in Settings can’t be run.";
 "“%@” will stop transferring and be removed from the list." = "“%@” will stop transferring and be removed from the list.";
 "•••••• (unchanged)" = "•••••• (unchanged)";
 "↑ Speed" = "↑ Speed";
