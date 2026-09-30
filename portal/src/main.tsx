@@ -6,6 +6,7 @@ import i18n from './i18n'
 import { applyTheme, initialTheme } from './lib/theme'
 import './styles/themes.css'
 import './styles/portal.css'
+import './styles/features.css'
 
 /** The QR deep link carries the API token in the URL; the server already exchanged it for a cookie, so drop it before it reaches a bookmark or screenshot. */
 try {

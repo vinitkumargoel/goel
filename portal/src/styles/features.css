@@ -1,0 +1,185 @@
+/* Styles for the topbar search overlay, speed charts, status-bar controls, reconnect banner,
+   shortcuts sheet, history tools, torrent drop zone and bandwidth card. Loaded after portal.css:
+   base rules here only name new classes (or add properties portal.css's media queries never set),
+   so they can't undo a breakpoint rule there. Colours come from themes.css variables only. */
+
+/* ── Topbar ───────────────────────────────────────────────────────────── */
+.topbar{position:relative}
+.search-toggle{display:none}
+.msearch{position:absolute;inset:0;display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--bg-window);z-index:2}
+.msearch .search{display:flex;flex:1;max-width:none}
+.msearch-cancel{height:34px;padding:0 10px;flex:0 0 auto}
+.spark{width:60px;height:18px;overflow:visible}
+.spark-area{fill:var(--green);opacity:.18}
+.spark-line{fill:none;stroke:var(--green);stroke-width:1.5;vector-effect:non-scaling-stroke}
+
+/* ── Status bar ───────────────────────────────────────────────────────── */
+.sb-seg{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;background:var(--bg-control)}
+.sb-seg button{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border:0;background:none;color:var(--text-dim);font-size:11px;font-weight:600;cursor:pointer}
+.sb-seg button+button{border-left:1px solid var(--border)}
+.sb-seg button:hover{background:var(--bg-control-active);color:var(--text)}
+.sb-seg button:focus-visible{outline-offset:-2px}
+.sb-seg svg{width:10px;height:10px}
+.bw-pill{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px 0 10px;border:1px solid var(--border);border-radius:12px;background:var(--bg-control);color:var(--text-dim);font-size:11px;font-weight:600;cursor:pointer;max-width:200px}
+.bw-pill.on{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.bw-pill:hover{background:var(--bg-control-active)}.bw-pill svg{width:11px;height:11px;flex:0 0 auto}
+.bw-pill.ro{cursor:default}.bw-pill.ro:hover{background:var(--bg-control)}
+.bw-l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── Reconnect banner: always mounted (its live region must exist), collapsed when idle ── */
+.reconnect{flex:0 0 auto;display:flex;align-items:center;gap:12px;height:0;overflow:hidden;padding:0 16px;font-size:12px}
+.reconnect.show{height:32px;flex-basis:32px;background:color-mix(in srgb,var(--orange) 14%,var(--bg-bar));border-bottom:1px solid color-mix(in srgb,var(--orange) 35%,transparent);color:var(--text)}
+.rc-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.rc-dim{color:var(--orange);font-weight:600}
+.rc-btn{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border:0;border-radius:7px;background:var(--bg-control);color:var(--text);font-size:11.5px;font-weight:600;cursor:pointer;flex:0 0 auto}
+.rc-btn:hover{background:var(--bg-control-active)}.rc-btn svg{width:12px;height:12px}
+/* Stale data: the rates stop reading as live. */
+.stale .c.dspd,.stale .stats,.stale .statusbar .stat,.stale .cd,.stale .cu{opacity:.5}
+
+/* ── Library columns ──────────────────────────────────────────────────── */
+.row .c.eta{color:var(--text-dim)}
+.row .c.added{color:var(--text-faint);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The viewport breakpoints (portal.css) can't see the detail panel eating the list's width, so
+   above 920px the list also sheds Added, then ETA, by its own width. Scoped to >920px so these
+   never fight the ≤920px grid there. */
+.content{container:lib/inline-size}
+@media(min-width:921px){
+  @container lib (max-width:900px){.lhead,.row{grid-template-columns:1fr 96px 150px 108px 72px}.lhead .hide-lg,.row .c.hide-lg{display:none}}
+  @container lib (max-width:700px){.lhead,.row{grid-template-columns:1fr 96px 150px 108px}.lhead .hide-md,.row .c.hide-md{display:none}}
+  @container lib (max-width:580px){.lhead,.row{grid-template-columns:1fr 96px 108px}.lhead .hide-sm,.row .c.hide-sm{display:none}.nstat{display:flex}}
+  @container lib (max-width:470px){.lhead,.row{grid-template-columns:1fr 96px}.lhead .hide-xs,.row .c.hide-xs{display:none}}
+}
+.pmeta{display:flex;align-items:center;gap:6px;min-width:0}
+.pbtn{width:40px;height:40px;flex:0 0 40px;border-radius:50%;border:0;cursor:pointer;display:grid;place-items:center;background:var(--bg-control);color:var(--text)}
+.pbtn:hover,.pbtn:active{background:var(--accent);color:var(--on-accent)}.pbtn svg{width:15px;height:15px}
+.fab{display:none}
+
+/* ── Menus: radio items, detail lines, kbd hints, disabled ────────────── */
+.mi.two{align-items:flex-start}
+.mdetail{display:block;font-size:11px;color:var(--text-dim);margin-top:2px;font-variant-numeric:tabular-nums}
+.mi:hover .mdetail,.mi:focus .mdetail{color:var(--on-accent)}
+.mcheck{width:14px;height:14px;flex:0 0 14px;border-radius:50%;border:1.5px solid var(--border-strong);margin-top:1px}
+.mcheck.on{border-color:var(--accent);background:radial-gradient(circle,var(--accent) 0 3.5px,transparent 4px)}
+.mi:hover .mcheck.on,.mi:focus .mcheck.on{border-color:var(--on-accent);background:radial-gradient(circle,var(--on-accent) 0 3.5px,transparent 4px)}
+.mi[aria-disabled="true"]{opacity:.5;cursor:default}
+.mi[aria-disabled="true"]:hover{background:none;color:var(--text)}
+.mi[aria-disabled="true"]:hover .mdetail{color:var(--text-dim)}
+.kbd{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border:1px solid var(--border-strong);border-bottom-width:2px;border-radius:5px;background:var(--bg-chip);color:var(--text-dim);font:600 10.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
+.mi .kbd{margin-left:12px}
+.mi:hover .kbd,.mi:focus .kbd{color:var(--on-accent);border-color:color-mix(in srgb,var(--on-accent) 45%,transparent);background:transparent}
+
+/* ── Speed chart (Progress tab) ───────────────────────────────────────── */
+.schart{margin:0 0 14px}
+.schart-top{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-dim);margin-bottom:6px;gap:8px}
+.schart-legend{display:inline-flex;align-items:center;gap:6px}
+.schart-legend i{display:inline-block;width:10px;height:3px;border-radius:2px}
+.schart-legend i+i,.schart-legend i:not(:first-child){margin-left:6px}
+.lg-down{background:var(--accent)}.lg-up{background:var(--teal)}
+.schart-peak{font-variant-numeric:tabular-nums;font-weight:600;color:var(--text)}
+.schart svg{width:100%;height:120px;border-radius:8px;background:var(--bg-chip)}
+.schart-grid{stroke:var(--border);stroke-dasharray:3 4;vector-effect:non-scaling-stroke}
+.schart-area{fill:var(--accent);opacity:.22}
+.schart-down{fill:none;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.schart-up{fill:none;stroke:var(--teal);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.schart-axis{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-faint);margin-top:4px}
+
+/* ── Shortcuts sheet ──────────────────────────────────────────────────── */
+.modal.kmodal{width:480px}
+.kgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 22px}
+.kcol .slbl{margin-top:0}
+.kcol dl{margin:0}
+.krow{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+.krow:last-child{border-bottom:0}
+.krow dt{flex:0 0 auto;display:inline-flex;align-items:center;gap:3px;min-width:74px}
+.krow dd{margin:0;color:var(--text-dim)}
+.kplus{font-size:10px;color:var(--text-faint)}
+
+/* ── History tools ────────────────────────────────────────────────────── */
+.htools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.htools .hsearch{flex:1 1 220px;max-width:none}
+.finput.hkind{width:auto;padding:0 10px;height:34px}
+.hcard{padding:0 16px 6px}
+.hgroup+.hgroup{margin-top:4px}
+.hghead{position:sticky;top:0;z-index:1;margin:0 -16px;padding:10px 16px 6px;background:var(--bg-modal);font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-faint);border-bottom:1px solid var(--border)}
+.hgroup:first-child .hghead{border-radius:13px 13px 0 0}
+.hlist{list-style:none;margin:0;padding:0}
+
+/* ── Add dialog: drop zone, chips, flagged lines ──────────────────────── */
+.tdrop-wrap{margin-top:12px}
+.tdrop{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 14px;border:1.5px dashed var(--border-strong);border-radius:10px;font-size:12px;color:var(--text-dim);transition:border-color .15s,background .15s}
+.tdrop.over{border-color:var(--accent);background:var(--accent-soft)}
+.tdrop>svg{width:16px;height:16px;flex:0 0 auto}
+.tdrop-lim{margin-left:auto;font-size:11px;color:var(--text-faint)}
+.linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.tchips{list-style:none;display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0;padding:0}
+.tchip{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:2px 2px 2px 10px;border-radius:999px;background:var(--bg-chip);font-size:11.5px}
+.tchip-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+.tchip-s{color:var(--text-dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+.tchip-x{width:22px;height:22px;flex:0 0 auto;border:0;border-radius:50%;background:none;color:var(--text-dim);cursor:pointer;display:grid;place-items:center}
+.tchip-x:hover{background:var(--bg-control-active);color:var(--text)}.tchip-x svg{width:10px;height:10px}
+.badlines{list-style:none;margin:4px 0 0;padding:0}
+.badline{display:flex;align-items:center;gap:6px;color:var(--orange);font-size:11.5px}
+.badline-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+/* ── Settings: bandwidth + Auto theme swatch ──────────────────────────── */
+.bw-grid{display:grid;grid-template-columns:minmax(70px,1fr) auto auto;align-items:center;gap:8px 12px;padding:0 2px 12px}
+.bw-h{font-size:11px;font-weight:600;color:var(--text-dim)}
+.bw-name{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bw-cap{display:inline-flex;gap:4px}
+.bw-cap input.finput{width:84px;padding:6px 8px}
+.bw-cap select.finput{width:auto;padding:6px 6px}
+.seg .sw.sw-auto{background:linear-gradient(135deg,var(--text) 0 50%,var(--bg-content) 50% 100%);border:1px solid var(--border-strong)}
+
+/* ── Bottom sheet pieces (only rendered ≤680px) ───────────────────────── */
+.sheet-scrim{display:none}
+.grabber{display:flex;justify-content:center;align-items:center;height:24px;flex:0 0 24px;cursor:grab;touch-action:none}
+.grabber span{width:38px;height:5px;border-radius:3px;background:var(--border-strong)}
+
+@media(max-width:1200px){.kgrid{gap:4px 16px}}
+
+@media(max-width:680px){
+  .search-toggle{display:grid}
+  .add-btn{display:none}
+  .stats .spark{display:none}
+
+  /* Card rows: icon · name/badge, bar and a meta line, the action at the right edge. */
+  .row{grid-template-columns:1fr;min-height:72px;padding:10px 12px}
+  .row .c:not(.ncell){display:none}
+  .lhead{grid-template-columns:1fr}.lhead>div:not(:first-child){display:none}
+  .row .ncell{gap:12px}
+  .nstat{display:none}
+
+  .fab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(52px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border:0;border-radius:50%;background:var(--accent);color:var(--on-accent);box-shadow:0 10px 28px rgba(0,0,0,.35);cursor:pointer;z-index:50}
+  .fab:hover{background:var(--accent-press)}.fab svg{width:22px;height:22px}
+
+  .sheet-scrim.open{display:block;position:fixed;inset:0;background:var(--scrim);z-index:104}
+  .detail.sheet{position:fixed;left:0;right:0;top:auto;bottom:0;width:100%;height:60vh;height:60dvh;flex-basis:auto;border-left:0;border-top:1px solid var(--border-strong);border-radius:16px 16px 0 0;background:var(--bg-modal);box-shadow:0 -12px 40px rgba(0,0,0,.4);z-index:105;overflow-y:auto;overscroll-behavior:contain;transition:transform .3s cubic-bezier(.3,.9,.3,1),opacity .25s}
+  .detail.sheet.hidden{transform:translateY(100%);margin-right:0}
+  .detail.sheet.dragging{transition:none}
+  .detail.sheet .dhead{padding-top:4px}
+
+  /* The closed off-canvas sidebar's shadow would otherwise bleed in at the left edge. */
+  .sidebar:not(.open){box-shadow:none}
+
+  /* Too narrow for everything: the dot carries the state (the banner explains a drop), the
+     text stays for screen readers, and upload makes way for the controls. */
+  .statusbar{gap:8px;padding:0 10px}
+  .statusbar .sb-active,.statusbar .stat.up{display:none}
+  .conn .ctext{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .sb-seg button [aria-hidden="true"]:not(svg){display:none}
+  .bw-pill{max-width:120px}
+  .reconnect.show{padding:0 10px;gap:8px}
+
+  .kgrid{grid-template-columns:1fr}
+  .htools .mbtn{flex:0 0 auto}
+  .bw-grid{grid-template-columns:1fr;gap:6px}
+  .bw-grid .bw-h{display:none}
+  .tdrop-lim{margin-left:0;width:100%}
+}
+
+@media (pointer:coarse){
+  .sb-seg button{min-width:40px}
+  .tchip-x{width:32px;height:32px}
+  .rc-btn{height:28px}
+  .msearch-cancel{height:40px}
+}
