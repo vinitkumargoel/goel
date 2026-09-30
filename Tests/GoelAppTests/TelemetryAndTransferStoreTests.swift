@@ -38,6 +38,33 @@ final class TelemetryStoreTests: XCTestCase {
         XCTAssertEqual(store.taskHistory(a).map(\.down), [10, 11])
     }
 
+    /// The status bar graphs the combined read-out (SFTP included), five minutes deep.
+    func testGlobalHistoryKeepsFiveMinutesOfTheCombinedSpeed() {
+        let store = TelemetryStore()
+        let a = UUID()
+        for n in 0..<(TelemetryStore.globalHistoryCap + 20) {
+            store.sample(tasks: [task(a, down: 1)],
+                         combined: SpeedSample(down: Double(n), up: 2), recordHistory: true)
+        }
+        XCTAssertEqual(TelemetryStore.globalHistoryCap, 300)
+        XCTAssertEqual(store.globalHistory.count, 300)
+        XCTAssertEqual(store.globalHistory.last?.down, Double(TelemetryStore.globalHistoryCap + 19))
+        XCTAssertEqual(store.recentGlobalHistory(60).count, 60)
+        XCTAssertEqual(store.recentGlobalHistory(60).first?.down, Double(TelemetryStore.globalHistoryCap - 40))
+    }
+
+    func testHistoryWindowTakesTheNewestPointsAndReportsPeaks() {
+        let samples = (0..<90).map { SpeedSample(down: Double($0), up: Double(90 - $0)) }
+        let tail = SpeedHistoryWindow.tail(samples, count: 60)
+        XCTAssertEqual(tail.count, 60)
+        XCTAssertEqual(tail.first?.down, 30)
+        XCTAssertEqual(SpeedHistoryWindow.peakDown(tail), 89)
+        XCTAssertEqual(SpeedHistoryWindow.peakUp(tail), 60)
+        XCTAssertEqual(SpeedHistoryWindow.tail(samples, count: 0), [])
+        XCTAssertEqual(SpeedHistoryWindow.average([2, 4]), 3)
+        XCTAssertEqual(SpeedHistoryWindow.average([]), 0)
+    }
+
     func testAnUnchangedTickPublishesNothing() {
         let store = TelemetryStore()
         let a = UUID()

@@ -24,6 +24,7 @@
 "%1$@ results, %2$@ selected" = "%1$@ results, %2$@ selected";
 "%1$@ · %2$@" = "%1$@ · %2$@";
 "%1$@ · %2$@ · %3$d ms" = "%1$@ · %2$@ · %3$d ms";
+"%1$@ — %2$@" = "%1$@ — %2$@";
 "%1$@ — SHA-256:\n%2$@" = "%1$@ — SHA-256:\n%2$@";
 "%1$@, %2$@" = "%1$@, %2$@";
 "%1$@, sorted %2$@" = "%1$@, sorted %2$@";
@@ -34,6 +35,7 @@
 "%1$d of %2$d · %3$@" = "%1$d of %2$d · %3$@";
 "%1$d%% · %2$@ left" = "%1$d%% · %2$@ left";
 "%@ *" = "%@ *";
+"%@ ago" = "%@ ago";
 "%@ elapsed" = "%@ elapsed";
 "%@ free" = "%@ free";
 "%@ host key SHA-256 fingerprint" = "%@ host key SHA-256 fingerprint";
@@ -128,6 +130,7 @@
 "Activate to open." = "Activate to open.";
 "Activate to reverse the order." = "Activate to reverse the order.";
 "Activate to select." = "Activate to select.";
+"Activate to show the last 5 minutes." = "Activate to show the last 5 minutes.";
 "Activate to sort by this column." = "Activate to sort by this column.";
 "Activate to turn the speed limit on or off." = "Activate to turn the speed limit on or off.";
 "Active" = "Active";
@@ -510,6 +513,7 @@
 "Don't seed on battery" = "Don't seed on battery";
 "Done" = "Done";
 "Down" = "Down";
+"Download" = "Download";
 "Download %@" = "Download %@";
 "Download %d Items" = "Download %d Items";
 "Download Again" = "Download Again";
@@ -525,6 +529,7 @@
 "Download progress" = "Download progress";
 "Download queue" = "Download queue";
 "Download speed" = "Download speed";
+"Download speed history" = "Download speed history";
 "Download subtitles" = "Download subtitles";
 "Download this video only" = "Download this video only";
 "Download to Downloads" = "Download to Downloads";
@@ -573,6 +578,8 @@
 "EXPENSIVE" = "EXPENSIVE";
 "Edit Label…" = "Edit Label…";
 "Edit Note…" = "Edit Note…";
+"Edit Profile" = "Edit Profile";
+"Edit Profile…" = "Edit Profile…";
 "Edit SFTP Server" = "Edit SFTP Server";
 "Edit Tags…" = "Edit Tags…";
 "Edit server" = "Edit server";
@@ -1405,8 +1412,10 @@
 "Speed graph, last %d seconds" = "Speed graph, last %d seconds";
 "Speed limit off · Unlimited" = "Speed limit off · Unlimited";
 "Speed limit on · %@" = "Speed limit on · %@";
+"Speed over the last 5 minutes" = "Speed over the last 5 minutes";
 "Speed profile" = "Speed profile";
 "Speed · last %ds" = "Speed · last %ds";
+"Speed · last 5 min" = "Speed · last 5 min";
 "Split large HTTP downloads across selected adapters using byte ranges. Default off." = "Split large HTTP downloads across selected adapters using byte ranges. Default off.";
 "Start" = "Start";
 "Start All" = "Start All";
@@ -1616,6 +1625,7 @@
 "Upload limit removed" = "Upload limit removed";
 "Upload limited to %@" = "Upload limited to %@";
 "Upload speed" = "Upload speed";
+"Upload speed history" = "Upload speed history";
 "Upload to %@" = "Upload to %@";
 "Uploaded" = "Uploaded";
 "Uploaded today" = "Uploaded today";
@@ -1730,6 +1740,8 @@
 "descending" = "descending";
 "done" = "done";
 "download" = "download";
+"download limit %@" = "download limit %@";
+"download unlimited" = "download unlimited";
 "downloaded %@" = "downloaded %@";
 "e.g. Episode #" = "e.g. Episode #";
 "e.g. Movies, Linux ISOs" = "e.g. Movies, Linux ISOs";
@@ -1756,9 +1768,14 @@
 "no Application Support folder" = "no Application Support folder";
 "no progress for %@ · ffmpeg may be stuck" = "no progress for %@ · ffmpeg may be stuck";
 "no sound — merged with an audio track" = "no sound — merged with an audio track";
+"now" = "now";
+"now %1$@, peak %2$@, average %3$@" = "now %1$@, peak %2$@, average %3$@";
 "password" = "password";
+"peak %1$@ · avg %2$@" = "peak %1$@ · avg %2$@";
 "peak %@" = "peak %@";
+"peak %@ in the last minute" = "peak %@ in the last minute";
 "peak download %@" = "peak download %@";
+"peak upload %@" = "peak upload %@";
 "ratio %.1f · %d%%" = "ratio %.1f · %d%%";
 "re-encoded" = "re-encoded";
 "read" = "read";
@@ -1773,9 +1790,12 @@
 "this Mac" = "this Mac";
 "uid %1$@ · gid %2$@" = "uid %1$@ · gid %2$@";
 "unknown size" = "unknown size";
+"unlimited" = "unlimited";
 "untitled folder" = "untitled folder";
 "upload" = "upload";
 "upload %@" = "upload %@";
+"upload limit %@" = "upload limit %@";
+"upload unlimited" = "upload unlimited";
 "uploaded %@" = "uploaded %@";
 "user" = "user";
 "write" = "write";
@@ -1808,5 +1828,6 @@
 "•••••• (unchanged)" = "•••••• (unchanged)";
 "↑ 0 B/s" = "↑ 0 B/s";
 "↑ Speed" = "↑ Speed";
+"↓ %1$@, ↑ %2$@" = "↓ %1$@, ↑ %2$@";
 "↓ Speed" = "↓ Speed";
 "⬆︎ Parent folder" = "⬆︎ Parent folder";

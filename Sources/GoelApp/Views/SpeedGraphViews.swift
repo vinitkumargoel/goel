@@ -4,10 +4,13 @@ import GoelCore
 struct SparklineView: View {
     let values: [Double]
     var tint: Color = Theme.accent
+    /// The value drawn at full height. Pass one shared peak when two series overlay each other,
+    /// or each would be scaled to itself and a trickle would look as tall as the main stream.
+    var scalePeak: Double? = nil
 
     var body: some View {
         GeometryReader { geo in
-            let peak = max(values.max() ?? 0, 1)
+            let peak = max(scalePeak ?? values.max() ?? 0, 1)
             let points = Self.points(values: values, peak: peak, in: geo.size)
             ZStack {
                 if points.count > 1 {
@@ -50,18 +53,32 @@ struct SparklineView: View {
 
 struct TaskSpeedGraph: View {
     let taskID: DownloadTask.ID
+    /// Seconds of history drawn: one ring point per second.
+    var window: Int = 60
+    var height: CGFloat = 44
     @EnvironmentObject private var telemetry: TelemetryStore
 
     var body: some View {
-        let history = telemetry.taskHistory(taskID)
+        let history = SpeedHistoryWindow.tail(telemetry.taskHistory(taskID), count: window)
         if history.count > 2 {
+            let peak = SpeedHistoryWindow.peakDown(history)
             VStack(alignment: .leading, spacing: 4) {
-                SectionLabel(text: L10n.t("Speed · last %ds", history.count))
-                ZStack {
-                    SparklineView(values: history.map(\.down), tint: Theme.accent)
-                    SparklineView(values: history.map(\.up), tint: Theme.teal)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(L10n.t("Speed · last %ds", window).uppercased())
+                        .scaledFont(size: Theme.TextSize.caption, weight: .bold)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Text(L10n.t("peak %@", peak.speedString))
+                        .scaledFont(size: Theme.TextSize.caption, monospacedDigit: true)
+                        .foregroundStyle(.secondary)
                 }
-                .frame(height: 44)
+                let scale = max(peak, SpeedHistoryWindow.peakUp(history))
+                ZStack {
+                    SparklineView(values: history.map(\.down), tint: Theme.green, scalePeak: scale)
+                    SparklineView(values: history.map(\.up), tint: Theme.teal, scalePeak: scale)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: height)
             }
             // `.updatesFrequently` below stops VoiceOver caching a stale value.
             .a11yGroup(
@@ -69,9 +86,24 @@ struct TaskSpeedGraph: View {
                 value: A11y.sentence(
                     L10n.t("Download %@", A11y.speed(history.last?.down ?? 0)),
                     L10n.t("upload %@", A11y.speed(history.last?.up ?? 0)),
-                    L10n.t("peak download %@", A11y.speed(history.map(\.down).max() ?? 0))))
+                    L10n.t("peak download %@", A11y.speed(peak))))
             .accessibilityAddTraits(.updatesFrequently)
         }
+    }
+}
+
+/// The slice of a 1 Hz speed ring a graph draws, and the numbers printed beside it.
+enum SpeedHistoryWindow {
+    static func tail(_ samples: [SpeedSample], count: Int) -> [SpeedSample] {
+        guard count > 0 else { return [] }
+        return samples.count > count ? Array(samples.suffix(count)) : samples
+    }
+
+    static func peakDown(_ samples: [SpeedSample]) -> Double { samples.map(\.down).max() ?? 0 }
+    static func peakUp(_ samples: [SpeedSample]) -> Double { samples.map(\.up).max() ?? 0 }
+
+    static func average(_ values: [Double]) -> Double {
+        values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
     }
 }
 

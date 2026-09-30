@@ -49,6 +49,8 @@ struct SpeedRing<Element> {
 final class TelemetryStore: ObservableObject {
 
     static let historyCap = 120
+    /// The status bar's popover graph spans five minutes; one point a second.
+    static let globalHistoryCap = 300
 
     /// Menu bar and status bar read this, not the live sums, or the labels flicker.
     @Published private(set) var displayedCombinedSpeed = SpeedSample.zero
@@ -58,7 +60,8 @@ final class TelemetryStore: ObservableObject {
 
     private var taskRings: [DownloadTask.ID: SpeedRing<SpeedSample>] = [:]
     private var sftpRings: [UUID: SpeedRing<Double>] = [:]
-    private var globalRing = SpeedRing<SpeedSample>(capacity: TelemetryStore.historyCap)
+    /// The combined read-out (downloads plus SFTP) the status bar prints, one point per history tick.
+    private var globalRing = SpeedRing<SpeedSample>(capacity: TelemetryStore.globalHistoryCap)
 
     func displaySpeed(for task: DownloadTask) -> SpeedSample {
         displayedTaskSpeed[task.id] ?? SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
@@ -67,6 +70,8 @@ final class TelemetryStore: ObservableObject {
     func taskHistory(_ id: DownloadTask.ID) -> [SpeedSample] { taskRings[id]?.elements ?? [] }
     func sftpHistory(_ id: UUID) -> [Double] { sftpRings[id]?.elements ?? [] }
     var globalHistory: [SpeedSample] { globalRing.elements }
+    /// The newest `count` points, oldest first: the status bar's inline sparkline shows a minute.
+    func recentGlobalHistory(_ count: Int) -> [SpeedSample] { Array(globalRing.elements.suffix(count)) }
     var trackedTaskCount: Int { taskRings.count }
 
     /// Idle means nothing moving and every read-out already at rest: the sample can be skipped.
@@ -80,11 +85,8 @@ final class TelemetryStore: ObservableObject {
         if combined != displayedCombinedSpeed { displayedCombinedSpeed = combined }
         var next = displayedTaskSpeed
         var changed = false
-        var total = SpeedSample.zero
         for task in tasks {
             let speed = SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
-            total.down += speed.down
-            total.up += speed.up
             if next[task.id] != speed {
                 next[task.id] = speed
                 changed = true
@@ -100,7 +102,7 @@ final class TelemetryStore: ObservableObject {
         }
         if changed { displayedTaskSpeed = next }
         if recordHistory {
-            globalRing.append(total)
+            globalRing.append(combined)
             historyRevision &+= 1
         }
     }
