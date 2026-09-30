@@ -14,6 +14,18 @@ public enum RemoteStreamService {
         }
     }
 
+    /// ``streamPlan(for:)``'s verdict without touching the disk — for listings. A finished file that
+    /// has since vanished shows as streamable and `/stream` answers 404, which is the honest place.
+    public static func isStreamableHint(_ task: DownloadTask) -> Bool {
+        if task.status.hasData { return true }
+        guard task.sequentialDownload == true, !task.isMultiFile,
+              task.status == .downloading || task.status == .verifying,
+              let total = task.totalBytes, total > 0 else { return false }
+        return task.bytesDownloaded - sequentialMargin > 0
+    }
+
+    static let sequentialMargin: Int64 = 8 * 1024 * 1024
+
     public static func streamPlan(for task: DownloadTask) -> StreamPlan? {
         if task.status.hasData {
             // `primaryFilePath` rejects a path escaping the save directory — this is streamed out, so traversal = file read.
@@ -29,10 +41,28 @@ public enum RemoteStreamService {
         guard task.sequentialDownload == true, !task.isMultiFile,
               task.status == .downloading || task.status == .verifying,
               let total = task.totalBytes, total > 0 else { return nil }
-        let margin: Int64 = 8 * 1024 * 1024
-        let available = max(0, task.bytesDownloaded - margin)
+        let available = max(0, task.bytesDownloaded - sequentialMargin)
         guard available > 0 else { return nil }
         return StreamPlan(path: task.savePath, totalBytes: total, availableBytes: available)
+    }
+
+    /// nil ends the body. A read error is not EOF: the client was promised Content-Length bytes and
+    /// gets a truncated stream, so the operator must at least see why.
+    static func readChunk(_ handle: FileHandle, upTo count: Int, path: String,
+                          offset: Int64) -> Data? {
+        do {
+            guard let chunk = try handle.read(upToCount: count), !chunk.isEmpty else {
+                GoelLog.remote.notice("Stream ended before the promised length (file shrank?)",
+                                      .path(path), .bytes(offset, label: "offset"))
+                return nil
+            }
+            return chunk
+        } catch {
+            GoelLog.remote.error("Stream read failed; the client gets a truncated body",
+                                 .path(path), .bytes(offset, label: "offset"),
+                                 .detail(String(describing: error)))
+            return nil
+        }
     }
 
     public static func parseByteRange(_ header: String, available: Int64) -> (Int64, Int64)? {

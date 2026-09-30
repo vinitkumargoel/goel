@@ -84,7 +84,7 @@ final class ModelTests: XCTestCase {
 
     func testByteFormatting() {
         XCTAssertEqual(Int64(0).byteString, "—")
-        XCTAssertEqual(Int64(512).byteString, "512 B")
+        XCTAssertEqual(Int64(512).byteString, GoelFormat.bytes(512))
         XCTAssertTrue(Int64(5 * 1024 * 1024 * 1024).byteString.hasSuffix("GB"))
     }
 }

@@ -37,6 +37,34 @@ public final class RedirectSanitizer: NSObject, URLSessionTaskDelegate, @uncheck
                            willPerformHTTPRedirection response: HTTPURLResponse,
                            newRequest request: URLRequest,
                            completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(Self.followed(request, originalURL: task.originalRequest?.url))
+        let original = task.originalRequest?.url
+        guard let next = Self.followed(request, originalURL: original), let url = next.url else {
+            completionHandler(nil)
+            return
+        }
+        Self.resolveThenFollow(next, url: url, originalURL: original,
+                               completionHandler: completionHandler)
+    }
+
+    /// The spelling screen already passed; this one resolves the hop's name (`127.0.0.1.nip.io`).
+    /// getaddrinfo blocks, so the verdict arrives on a detached task — URLSession waits for it.
+    static func resolveThenFollow(_ next: URLRequest, url: URL, originalURL: URL?,
+                                  completionHandler: @escaping (URLRequest?) -> Void) {
+        let reply = UncheckedHandler(completionHandler)
+        Task.detached {
+            let allowed = await NetworkGuard.isAllowedRedirectResolvingNames(url, from: originalURL)
+            if !allowed {
+                GoelLog.remote.error("Refusing a redirect hop that resolves to an internal address",
+                                     .state(url.scheme ?? "", label: "scheme"))
+            }
+            reply.call(allowed ? next : nil)
+        }
+    }
+
+    /// URLSession's completion handler predates Sendable; it is documented callable from any thread.
+    private struct UncheckedHandler: @unchecked Sendable {
+        let body: (URLRequest?) -> Void
+        init(_ body: @escaping (URLRequest?) -> Void) { self.body = body }
+        func call(_ request: URLRequest?) { body(request) }
     }
 }

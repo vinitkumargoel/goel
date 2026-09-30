@@ -22,7 +22,7 @@ final class RemoteServerRestartTests: XCTestCase {
             conn.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    let req = "GET /api/config?token=t HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+                    let req = "GET /api/config HTTP/1.1\r\nAuthorization: Bearer t\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
                     conn.send(content: Data(req.utf8), completion: .contentProcessed { _ in
                         conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, _ in
                             let line = data.flatMap { String(decoding: $0, as: UTF8.self).split(separator: "\r\n").first.map(String.init) }
@@ -126,7 +126,7 @@ final class RemoteServerRestartTests: XCTestCase {
                 }
             }
             let body = Data(#"{"url":"magnet:?xt=urn:btih:0000000000000000000000000000000000000000"}"#.utf8)
-            let head = "POST /api/add?token=t HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            let head = "POST /api/add HTTP/1.1\r\nAuthorization: Bearer t\r\nHost: 127.0.0.1\r\n"
                 + "Content-Type: application/json\r\nContent-Length: \(body.count)\r\n"
                 + "Connection: close\r\n\r\n"
             conn.stateUpdateHandler = { state in

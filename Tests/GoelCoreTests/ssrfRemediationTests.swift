@@ -35,13 +35,14 @@ final class SSRFRemediationTests: XCTestCase {
         }
     }
 
-    /// A guard that refuses everything is not a guard: public and private LAN targets must still work.
+    /// A guard that refuses everything is not a guard: public targets must still work. Private LAN
+    /// ranges are refused for *remote* adds (SEC-4) — the GUI never runs this screen.
     func testOrdinaryTargetsAreStillAccepted() {
+        for lan in ["http://192.168.1.10/feed", "http://10.0.0.5/x", "http://172.16.4.4/x"] {
+            XCTAssertFalse(NetworkGuard.isAllowedRemoteAddTarget(url(lan)), lan)
+        }
         let allowed = [
             "https://example.com/x",
-            "http://192.168.1.10/feed",
-            "http://10.0.0.5/x",
-            "http://172.16.4.4/x",
             "http://[2606:4700::1111]/x",
             "http://0x-mirror.example.com/x",
             "http://127-mirror.example.com/x",
@@ -65,7 +66,7 @@ final class SSRFRemediationTests: XCTestCase {
         XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "::ffff:a9fe:a9fe"), .linkLocal)
         XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "fe80::1%en0"), .linkLocal)
         XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "8.8.8.8"), .other)
-        XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "192.168.0.1"), .other)
+        XCTAssertEqual(NetworkGuard.addressClass(ofLiteral: "192.168.0.1"), .privateNetwork)
         XCTAssertNil(NetworkGuard.addressClass(ofLiteral: "example.com"))
         XCTAssertNil(NetworkGuard.addressClass(ofLiteral: "0x-mirror.example.com"))
         XCTAssertNil(NetworkGuard.addressClass(ofLiteral: ""))

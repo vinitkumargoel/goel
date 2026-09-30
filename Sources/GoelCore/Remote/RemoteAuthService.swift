@@ -9,6 +9,18 @@ public enum RemoteAuthService {
                               body: Data(), extraHeaders: ["Location": location])
     }
 
+    /// 421: the name the browser used is not one this portal answers to (see ``RemoteHostPolicy``).
+    public static func misdirected() -> Data {
+        RemoteRouter.response(
+            status: "421 Misdirected Request", type: "text/plain",
+            body: Data("""
+                This portal does not answer to that host name. Open it by IP address, localhost or \
+                its .local name — or, behind a reverse proxy, list the public name in \
+                GOEL_PORTAL_ALLOWED_HOSTS or the proxy's address in the trusted proxies.
+
+                """.utf8))
+    }
+
     public static func htmlResponse(_ html: String) -> Data {
         RemoteRouter.response(status: "200 OK", type: "text/html; charset=utf-8", body: Data(html.utf8))
     }
@@ -40,8 +52,29 @@ public enum RemoteAuthService {
         guard !token.isEmpty else { return false }
         if let header = request.headers["authorization"],
            RemoteRouter.constantTimeEquals(header, "Bearer \(token)") { return true }
-        if let query = request.query["token"] { return RemoteRouter.constantTimeEquals(query, token) }
+        if queryTokenAllowed(request), let query = request.query["token"] {
+            return RemoteRouter.constantTimeEquals(query, token)
+        }
         return false
+    }
+
+    /// A URL token leaks to history, proxies and shell logs, so it is honoured only where no header
+    /// can be sent: the pairing link (`GET /`, promoted to a cookie) and `<video src=/stream?…>`.
+    /// Scripts use `Authorization: Bearer`.
+    public static func queryTokenAllowed(_ request: RemoteRequest) -> Bool {
+        request.method == "GET" && (request.path == "/" || request.path == "/stream")
+    }
+
+    /// `Secure` whenever the browser reached us over TLS — our own, or a trusted proxy's
+    /// (`X-Forwarded-Proto` is believed only from a listed proxy peer, never from anyone).
+    public static func wantsSecureCookie(_ request: RemoteRequest, client: String,
+                                         security: RemotePortalSecurity) -> Bool {
+        if security.tlsEnabled { return true }
+        guard let proto = request.headers["x-forwarded-proto"]?
+                .split(separator: ",").first?
+                .trimmingCharacters(in: .whitespaces).lowercased(),
+              proto == "https" else { return false }
+        return IPMatcher.matches(client, any: security.sso.trustedProxies)
     }
 
     /// A token authenticates only that one page load, so promotion is limited to `GET /` — widening it weakens auth.
@@ -266,14 +299,18 @@ public struct RemotePortalSecurity: Sendable, Equatable {
     public var sso: TrustedIdentityHeaderPolicy
     public var tlsEnabled: Bool
     public var tlsIdentityPath: String
+    /// Extra `Host` names the portal answers to (a reverse proxy's public name); see ``RemoteHostPolicy``.
+    public var allowedHosts: [String]
 
     public init(throttle: RemoteLoginThrottle = RemoteLoginThrottle(),
                 sso: TrustedIdentityHeaderPolicy = TrustedIdentityHeaderPolicy(),
-                tlsEnabled: Bool = false, tlsIdentityPath: String = "") {
+                tlsEnabled: Bool = false, tlsIdentityPath: String = "",
+                allowedHosts: [String] = RemoteHostPolicy.allowedHostsFromEnvironment) {
         self.throttle = throttle
         self.sso = sso
         self.tlsEnabled = tlsEnabled
         self.tlsIdentityPath = tlsIdentityPath
+        self.allowedHosts = allowedHosts
     }
 
     public init(settings: AppSettings) {
@@ -336,7 +373,8 @@ public actor RemoteSessionStore {
     }
 
     /// `client` must be the socket peer address, never a header; the throttle is checked before the password so a flood costs no PBKDF2.
-    public func handleLogin(_ request: RemoteRequest, client: String = "") async -> Data {
+    public func handleLogin(_ request: RemoteRequest, client: String = "",
+                            secureCookie: Bool = false) async -> Data {
         let now = Date()
         if case .blocked(let retryAfter) = throttle.check(client, now: now) {
             return RemoteAuthService.jsonError(
@@ -373,7 +411,7 @@ public actor RemoteSessionStore {
             throttle.recordSuccess(client)
             return RemoteRouter.response(status: "200 OK", type: "application/json",
                                          body: Data("{\"ok\":true}".utf8),
-                                         extraHeaders: ["Set-Cookie": issueSession()])
+                                         extraHeaders: ["Set-Cookie": issueSession(secure: secureCookie)])
         }
 
         let penalty = throttle.recordFailure(client, now: Date())
@@ -397,17 +435,22 @@ public actor RemoteSessionStore {
     }
 
     /// Also reached by an authenticated token deep-link with no password, on purpose: the token *is* the credential.
-    public func issueSession() -> String {
+    /// `secure` must be true whenever the browser is on TLS: without it a later plain-http request
+    /// (a typo, a mixed setup) carries the session in cleartext.
+    public func issueSession(secure: Bool = false) -> String {
         pruneSessions()
         let sid = RemotePassword.randomHex(bytes: 32)
         sessions[sid] = Date().addingTimeInterval(TimeInterval(sessionSeconds))
         return "goel_session=\(sid); Path=/; HttpOnly; SameSite=Strict; Max-Age=\(sessionSeconds)"
+            + (secure ? "; Secure" : "")
     }
 
-    public func handleLogout(_ request: RemoteRequest) -> (response: Data, droppedSession: Bool) {
+    public func handleLogout(_ request: RemoteRequest,
+                             secureCookie: Bool = false) -> (response: Data, droppedSession: Bool) {
         var dropped = false
         if let sid = request.cookie("goel_session") { dropped = sessions.removeValue(forKey: sid) != nil }
         let cookie = "goel_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
+            + (secureCookie ? "; Secure" : "")
         return (RemoteRouter.response(status: "200 OK", type: "application/json",
                                       body: Data("{\"ok\":true}".utf8),
                                       extraHeaders: ["Set-Cookie": cookie]), dropped)
