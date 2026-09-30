@@ -37,6 +37,16 @@ public protocol RemoteBackend: AnyObject, Sendable {
     /// Reach is bounded by the server uid, not by a root of ours.
     func folderListing(_ path: String?) async -> RemoteFolderListing?
     func createFolder(named name: String, in parent: String?) async -> String?
+
+    /// nil = this backend has no speed limiter to expose; the route answers 404.
+    func bandwidthState() async -> RemoteBandwidthState?
+    /// Called only after the router validated `update` against ``bandwidthState()``.
+    func updateBandwidth(_ update: RemoteBandwidthUpdate) async -> RemoteBandwidthState?
+
+    /// Queues an uploaded .torrent (already screened by the router). Returns the task's ID, or nil when the
+    /// backend cannot say; throws ``RemoteTorrentUpload/Failure`` when it could not be queued at all.
+    func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
+                          priority: FilePriority, startPaused: Bool) async throws -> UUID?
 }
 
 public extension RemoteBackend {
@@ -46,6 +56,12 @@ public extension RemoteBackend {
     func createFolder(named name: String, in parent: String?) async -> String? { nil }
     func networkState() async -> RemoteNetworkState { RemoteNetworkState() }
     func updateAggregation(enabled: Bool?, adapterIds: [String]?, streams: Int?) async {}
+    func bandwidthState() async -> RemoteBandwidthState? { nil }
+    func updateBandwidth(_ update: RemoteBandwidthUpdate) async -> RemoteBandwidthState? { nil }
+    func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
+                          priority: FilePriority, startPaused: Bool) async throws -> UUID? {
+        throw RemoteTorrentUpload.Failure.unsupported
+    }
     @discardableResult
     func remoteAdd(source: DownloadSource, saveDirectory: String?, priority: FilePriority,
                    startPaused: Bool, network: NetworkSelection?) async -> UUID? {

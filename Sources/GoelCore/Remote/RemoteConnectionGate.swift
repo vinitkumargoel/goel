@@ -48,3 +48,33 @@ final class RemoteConnectionGate: @unchecked Sendable {
         key == "::1" || key.hasPrefix("127.")
     }
 }
+
+/// Caps how many connections may buffer a large (torrent-upload) body at once. The body arrives
+/// before the router can check credentials, so without this every open slot could hold ~25 MB.
+final class RemoteUploadSlots: @unchecked Sendable {
+    static let defaultLimit = 3
+
+    private let lock = NSLock()
+    private let limit: Int
+    private var holders: Set<ObjectIdentifier> = []
+
+    init(limit: Int = defaultLimit) {
+        self.limit = limit
+    }
+
+    func tryAcquire(_ holder: ObjectIdentifier) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if holders.contains(holder) { return true }
+        guard holders.count < limit else { return false }
+        holders.insert(holder)
+        return true
+    }
+
+    /// Idempotent: a holder that never acquired, or already released, is a no-op.
+    func release(_ holder: ObjectIdentifier) {
+        lock.lock(); defer { lock.unlock() }
+        holders.remove(holder)
+    }
+
+    var inUse: Int { lock.lock(); defer { lock.unlock() }; return holders.count }
+}

@@ -407,8 +407,12 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
     private var buffer = Data()
     private var dispatched = false
     private var idleTask: Scheduled<Void>?
-    private static let maxRequestBytes = 2 * 1024 * 1024
     private static let idleTimeout = TimeAmount.seconds(15)
+    /// A torrent upload may take longer than `idleTimeout`; re-armed once, when its headers arrive.
+    private static let uploadTimeout = TimeAmount.seconds(120)
+    private var extended = false
+    /// Process-wide: one server per daemon, and the cap is about memory, not about a listener.
+    private static let uploadSlots = RemoteUploadSlots()
 
     init(server: RemoteControlServer, gate: RemoteConnectionGate) {
         self.server = server
@@ -429,6 +433,7 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
 
     func channelInactive(context: ChannelHandlerContext) {
         idleTask?.cancel()
+        Self.uploadSlots.release(ObjectIdentifier(self))
         if let client = acquiredFor { gate.release(client: client); acquiredFor = nil }
         context.fireChannelInactive()
     }
@@ -440,12 +445,25 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
         if let bytes = incoming.readBytes(length: incoming.readableBytes) {
             buffer.append(contentsOf: bytes)
         }
-        if buffer.count > Self.maxRequestBytes || RemoteRequest.headerTooLarge(buffer) {
+        if RemoteRequest.exceedsLimit(buffer) {
             context.close(promise: nil); return
         }
         guard let bodyStart = RemoteRequest.headerEnd(buffer) else { return }
         let needBody = RemoteRequest.contentLength(buffer.prefix(bodyStart))
-        if buffer.count - bodyStart < needBody { return }
+        if buffer.count - bodyStart < needBody {
+            if !extended, RemoteRequest.isTorrentUpload(header: buffer.prefix(bodyStart)) {
+                guard Self.uploadSlots.tryAcquire(ObjectIdentifier(self)) else {
+                    context.close(promise: nil); return
+                }
+                extended = true
+                idleTask?.cancel()
+                let channel = context.channel
+                idleTask = context.eventLoop.scheduleTask(in: Self.uploadTimeout) { [weak self] in
+                    if self?.dispatched != true { channel.close(promise: nil) }
+                }
+            }
+            return
+        }
 
         dispatched = true
         idleTask?.cancel()

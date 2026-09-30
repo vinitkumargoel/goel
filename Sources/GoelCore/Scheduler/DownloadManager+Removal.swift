@@ -35,6 +35,9 @@ extension DownloadManager {
         let latest = self.task(id) ?? task
         clearLocalState(id, removeFromList: true)
         persistRemoval(id)
+        // A portal upload's spooled .torrent is only this task's; nothing else ever cleans it up.
+        let source = task.source
+        Task.detached(priority: .utility) { RemoteTorrentSpool.discard(source) }
         updatePowerAssertion()
         publish()
         schedule()
