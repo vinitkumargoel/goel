@@ -148,12 +148,50 @@ extension RemoteRequest {
     /// Whether `buffer` has outgrown what this connection may buffer. Before the header block is
     /// complete only the general ceiling applies; after, the route's.
     static func exceedsLimit(_ buffer: Data) -> Bool {
-        guard let end = headerEnd(buffer) else {
-            return buffer.count > generalMaxRequestBytes || headerTooLarge(buffer)
+        var reader = RemoteRequestReader()
+        return reader.append(buffer) == .reject
+    }
+}
+
+/// Accumulates one request off the socket. The header block's decisions (upload or not, the ceiling, the
+/// declared length) are made once, when it completes, and the buffer is appended in place: a 25 MB upload
+/// re-copied or re-parsed per 64 KB chunk is quadratic work any unauthenticated client can ask for.
+struct RemoteRequestReader {
+    enum Step: Equatable {
+        /// More bytes are needed.
+        case needMore
+        /// `buffer` holds the whole request.
+        case complete
+        /// Over a ceiling, or a header block too large: drop the connection.
+        case reject
+    }
+
+    private(set) var buffer = Data()
+    /// Offset of the body once the header block is in.
+    private(set) var bodyStart: Int?
+    /// Whether the header block declares a multipart upload to ``RemoteTorrentUpload/path``.
+    private(set) var isTorrentUpload = false
+    private var limit = RemoteRequest.generalMaxRequestBytes
+    private var declaredBody = 0
+
+    mutating func append(_ chunk: Data) -> Step {
+        buffer.append(chunk)
+        guard let start = bodyStart ?? locateHeaderEnd() else {
+            return buffer.count > RemoteRequest.generalMaxRequestBytes || RemoteRequest.headerTooLarge(buffer)
+                ? .reject : .needMore
         }
-        let limit = maxRequestBytes(header: buffer.prefix(end))
         // A declared length past the limit is refused now, not after buffering it.
-        if contentLength(buffer.prefix(end)) > limit - end { return true }
-        return buffer.count > limit
+        if declaredBody > limit - start || buffer.count > limit { return .reject }
+        return buffer.count - start < declaredBody ? .needMore : .complete
+    }
+
+    private mutating func locateHeaderEnd() -> Int? {
+        guard let end = RemoteRequest.headerEnd(buffer) else { return nil }
+        let header = buffer.prefix(end)
+        bodyStart = end
+        isTorrentUpload = RemoteRequest.isTorrentUpload(header: header)
+        limit = isTorrentUpload ? RemoteTorrentUpload.maxRequestBytes : RemoteRequest.generalMaxRequestBytes
+        declaredBody = RemoteRequest.contentLength(header)
+        return end
     }
 }

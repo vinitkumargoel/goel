@@ -404,7 +404,8 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
     private let server: RemoteControlServer
     private let gate: RemoteConnectionGate
     private var acquiredFor: String?
-    private var buffer = Data()
+    /// Appends in place and decides upload/limit/length once, when the header block completes.
+    private var reader = RemoteRequestReader()
     private var dispatched = false
     private var idleTask: Scheduled<Void>?
     private static let idleTimeout = TimeAmount.seconds(15)
@@ -442,16 +443,12 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
         // After dispatch the sink owns the socket; without this a duplex client grows `buffer` unbounded.
         if dispatched { return }
         var incoming = unwrapInboundIn(data)
-        if let bytes = incoming.readBytes(length: incoming.readableBytes) {
-            buffer.append(contentsOf: bytes)
-        }
-        if RemoteRequest.exceedsLimit(buffer) {
+        let chunk = incoming.readBytes(length: incoming.readableBytes).map { Data($0) } ?? Data()
+        switch reader.append(chunk) {
+        case .reject:
             context.close(promise: nil); return
-        }
-        guard let bodyStart = RemoteRequest.headerEnd(buffer) else { return }
-        let needBody = RemoteRequest.contentLength(buffer.prefix(bodyStart))
-        if buffer.count - bodyStart < needBody {
-            if !extended, RemoteRequest.isTorrentUpload(header: buffer.prefix(bodyStart)) {
+        case .needMore:
+            if !extended, reader.isTorrentUpload {
                 guard Self.uploadSlots.tryAcquire(ObjectIdentifier(self)) else {
                     context.close(promise: nil); return
                 }
@@ -463,12 +460,14 @@ final class RequestAccumulator: ChannelInboundHandler, @unchecked Sendable {
                 }
             }
             return
+        case .complete:
+            break
         }
 
         dispatched = true
         idleTask?.cancel()
-        let requestData = buffer
-        buffer = Data()
+        let requestData = reader.buffer
+        reader = RemoteRequestReader()
         let sink = ChannelSink(context.channel)
         let server = self.server
         // Kernel peer address, never a header: the throttle and trusted-proxy check key off this.

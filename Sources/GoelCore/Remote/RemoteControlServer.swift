@@ -1,6 +1,7 @@
 #if !os(Linux)
 import Foundation
 import Network
+import os
 #if canImport(Security)
 import Security
 #endif
@@ -255,7 +256,7 @@ public actor RemoteControlServer {
         liveConnections[ObjectIdentifier(connection)] = client
         let timeout = armDeadline(connection, nanoseconds: Self.receiveTimeout)
         connection.start(queue: DispatchQueue(label: "goel.remote-conn"))
-        readRequest(connection, buffer: Data(), timeout: timeout, client: client)
+        readRequest(connection, reader: RequestReadBox(), timeout: timeout, client: client)
     }
 
     private nonisolated func armDeadline(_ connection: NWConnection, nanoseconds: UInt64) -> Task<Void, Never> {
@@ -280,41 +281,39 @@ public actor RemoteControlServer {
     }
 
     /// Read until a COMPLETE request arrives: a single `receive` sees a POST body in a later segment as truncated → 400.
-    private nonisolated func readRequest(_ connection: NWConnection, buffer: Data,
+    /// One reader per connection, appended in place: receive callbacks are serialised on the connection's queue.
+    private nonisolated func readRequest(_ connection: NWConnection, reader: RequestReadBox,
                                          timeout: Task<Void, Never>, client: String,
                                          extended: Bool = false) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] chunk, _, isComplete, error in
             guard let self else { return }
-            var buffer = buffer
-            if let chunk, !chunk.isEmpty { buffer.append(chunk) }
-
             func abort() {
                 timeout.cancel()
                 connection.cancel()
                 Task { await self.connectionClosed(connection) }
             }
-            if error != nil || RemoteRequest.exceedsLimit(buffer) { return abort() }
-            guard let bodyStart = RemoteRequest.headerEnd(buffer) else {
-                if isComplete { return abort() }
-                return self.readRequest(connection, buffer: buffer, timeout: timeout, client: client)
-            }
-            let needBody = RemoteRequest.contentLength(buffer.prefix(bodyStart))
-            if buffer.count - bodyStart < needBody {
+            guard error == nil else { return abort() }
+            let (step, isTorrentUpload) = reader.append(chunk ?? Data())
+            switch step {
+            case .reject:
+                return abort()
+            case .needMore:
                 if isComplete { return abort() }
                 // Once, when an upload's headers are in: swap the short deadline for the upload one.
-                if !extended, RemoteRequest.isTorrentUpload(header: buffer.prefix(bodyStart)) {
+                if !extended, isTorrentUpload {
                     guard self.uploadSlots.tryAcquire(ObjectIdentifier(connection)) else { return abort() }
                     timeout.cancel()
                     let longer = self.armDeadline(connection, nanoseconds: Self.uploadReceiveTimeout)
-                    return self.readRequest(connection, buffer: buffer, timeout: longer,
+                    return self.readRequest(connection, reader: reader, timeout: longer,
                                             client: client, extended: true)
                 }
-                return self.readRequest(connection, buffer: buffer, timeout: timeout,
+                return self.readRequest(connection, reader: reader, timeout: timeout,
                                         client: client, extended: extended)
+            case .complete:
+                timeout.cancel()
+                let data = reader.take()
+                Task { await self.serve(connection, RemoteRequest(raw: data), client: client) }
             }
-            timeout.cancel()
-            let data = buffer
-            Task { await self.serve(connection, RemoteRequest(raw: data), client: client) }
         }
     }
 
@@ -627,6 +626,27 @@ private final class OneShotResume: @unchecked Sendable {
         fired = true
         lock.unlock()
         if first { cont.resume() }
+    }
+}
+
+/// Owns a connection's ``RemoteRequestReader`` so each chunk appends in place instead of copying the buffer.
+/// Receive callbacks are already serialised on the connection's queue; the lock only makes that Sendable.
+private struct RequestReadBox: Sendable {
+    private let state = OSAllocatedUnfairLock(initialState: RemoteRequestReader())
+
+    func append(_ chunk: Data) -> (step: RemoteRequestReader.Step, isTorrentUpload: Bool) {
+        state.withLock { reader in
+            let step = reader.append(chunk)
+            return (step, reader.isTorrentUpload)
+        }
+    }
+
+    /// Hands the finished request over and drops this connection's copy.
+    func take() -> Data {
+        state.withLock { reader in
+            defer { reader = RemoteRequestReader() }
+            return reader.buffer
+        }
     }
 }
 #endif
