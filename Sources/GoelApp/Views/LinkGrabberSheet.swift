@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import GoelCore
 
 struct LinkGrabberSheet: View {
@@ -11,6 +12,9 @@ struct LinkGrabberSheet: View {
     @State private var links: [GrabbedLink] = []
     @State private var selected: Set<String> = []
     @State private var categoryFilter: GrabbedLink.Category?
+    @State private var pastedFromClipboard = false
+    /// What the prefill put in the field; typing anything else retires the "Pasted" note.
+    @State private var clipboardPrefill: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,8 +29,22 @@ struct LinkGrabberSheet: View {
                         .font(.system(size: 12, design: .monospaced))
                         .onSubmit(fetch)
                         .accessibilityLabel(L10n.t("Page URL"))
+                        .onChange(of: pageText) { _, text in
+                            if text != clipboardPrefill { pastedFromClipboard = false }
+                        }
                     Button(isFetching ? L10n.t("Fetching…") : L10n.t("Fetch")) { fetch() }
                         .disabled(isFetching || pageText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                if pastedFromClipboard {
+                    HStack(spacing: 6) {
+                        Label(L10n.t("Pasted from clipboard"), systemImage: "doc.on.clipboard")
+                            .scaledFont(size: Theme.TextSize.caption)
+                            .foregroundStyle(.secondary)
+                        IconButton(symbol: "xmark", help: L10n.t("Clear pasted link"), size: 9) {
+                            pageText = ""
+                            pastedFromClipboard = false
+                        }
+                    }
                 }
                 if let fetchError {
                     Label(fetchError, systemImage: "exclamationmark.triangle.fill")
@@ -63,6 +81,16 @@ struct LinkGrabberSheet: View {
             .padding(14)
         }
         .frame(width: 620)
+        .onAppear(perform: prefillFromClipboard)
+    }
+
+    private func prefillFromClipboard() {
+        guard pageText.isEmpty,
+              let clip = NSPasteboard.general.string(forType: .string),
+              let url = LinkGrabberPrefill.pageURL(fromClipboard: clip) else { return }
+        clipboardPrefill = url
+        pageText = url
+        pastedFromClipboard = true
     }
 
     private var visibleLinks: [GrabbedLink] {
@@ -256,6 +284,24 @@ enum LinkExtractor {
         guard !ext.isEmpty else { return nil }
         for (extensions, category) in extensionCategories where extensions.contains(ext) {
             return category
+        }
+        return nil
+    }
+}
+
+/// The first web link on the clipboard, for the grabber's page field; nil when there is none.
+enum LinkGrabberPrefill {
+    /// A pasted essay isn't worth scanning token by token.
+    private static let maxScanned = 20_000
+
+    static func pageURL(fromClipboard text: String) -> String? {
+        let tokens = text.prefix(maxScanned).split(whereSeparator: { $0.isWhitespace })
+        for token in tokens {
+            let candidate = String(token)
+            guard let url = URL(string: candidate),
+                  ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                  let host = url.host, !host.isEmpty else { continue }
+            return candidate
         }
         return nil
     }

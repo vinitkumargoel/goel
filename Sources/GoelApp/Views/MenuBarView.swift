@@ -29,23 +29,36 @@ struct MenuBarView: View {
 
     private static let maxListedRows = 8
 
+    /// `.failed` is terminal, so `listedTasks` never shows one; this section is where they surface.
+    private var attention: MenuBarAttention { MenuBarAttention(tasks: vm.tasks) }
+
     private var activeTransfers: [SFTPTransfer] {
         // Paused rows stay listed: the menu bar is where a resume is most reachable.
         vm.sftpTransfers.filter { $0.occupiesDestination }
     }
 
     var body: some View {
+        let attention = self.attention
         VStack(spacing: 0) {
-            header
+            header(failures: attention.total)
             Divider()
             // The window's blocking card is invisible in menu-bar-only mode, yet the countdown still fires.
             MenuBarCountdownSection(countdown: vm.autoShutdownCountdown)
-            if listedTasks.isEmpty && activeTransfers.isEmpty && vm.mediaLiveCount == 0 {
+            if listedTasks.isEmpty && activeTransfers.isEmpty && vm.mediaLiveCount == 0
+                && attention.shown.isEmpty {
                 emptyState
             } else {
                 ScrollView {
                     // Not a `LazyVStack`: asked for the zero height measured below it would build no rows and stay zero.
                     VStack(spacing: 0) {
+                        if !attention.shown.isEmpty {
+                            sectionLabel(L10n.t("Needs attention"))
+                            ForEach(attention.shown) { task in
+                                MenuBarFailedRow(task: task, vm: vm)
+                                Divider()
+                            }
+                            if !listedTasks.isEmpty { sectionLabel(L10n.t("In progress")) }
+                        }
                         ForEach(listedTasks) { task in
                             MenuBarDownloadRow(task: task, vm: vm)
                             Divider()
@@ -105,13 +118,23 @@ struct MenuBarView: View {
         .accessibilityAddTraits(.isHeader)
     }
 
-    private var header: some View {
+    private func header(failures: Int) -> some View {
         let count = listedTasks.count + activeTransfers.count + vm.mediaLiveCount
         return HStack(spacing: 12) {
             Text(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads · %d", count))
                 .scaledFont(size: 13, weight: .semibold)
                 .accessibilityLabel(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads, %d in progress", count))
                 .accessibilityAddTraits(.isHeader)
+            if failures > 0 {
+                Text("\(failures)")
+                    .scaledFont(size: Theme.TextSize.caption, weight: .bold, monospacedDigit: true)
+                    .padding(.horizontal, 6)
+                    .frame(minWidth: 18, minHeight: 16)
+                    .background(Theme.red, in: Capsule())
+                    .foregroundStyle(Theme.onRed)
+                    .help(L10n.t("%d failed", failures))
+                    .accessibilityLabel(L10n.t("%d failed", failures))
+            }
             Spacer(minLength: 0)
             speedStat(symbol: "arrow.down", value: telemetry.displayedCombinedSpeed.down, color: Theme.green)
             speedStat(symbol: "arrow.up", value: telemetry.displayedCombinedSpeed.up, color: Theme.teal)
@@ -142,7 +165,7 @@ struct MenuBarView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
                 .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onAccent)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -277,6 +300,56 @@ private struct MenuBarDownloadRow: View {
         if speed.down > 0 { return (speed.down.speedString, Theme.green) }
         if speed.up > 0 { return (speed.up.speedString, Theme.teal) }
         return nil
+    }
+}
+
+/// A failed download: the reason in red and a Retry, so the popover doesn't claim "No active
+/// downloads" while one sits broken.
+private struct MenuBarFailedRow: View {
+    let task: DownloadTask
+    let vm: AppViewModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            FileTypeIcon(type: task.fileType, size: 30)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(task.name)
+                    .scaledFont(size: 12, weight: .medium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if case .failed(let error) = task.status {
+                    Label(error.message, systemImage: "exclamationmark.triangle.fill")
+                        .scaledFont(size: 10.5)
+                        .foregroundStyle(Theme.red)
+                        .lineLimit(2)
+                        .help(A11y.sentence(error.message, FailureAdvice.hint(for: error)))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .a11yGroup(label: A11y.sentence(task.name, task.accessibilityStatusName))
+            Button(L10n.t("Retry")) { vm.retry(task.id) }
+                .buttonStyle(TintedPillButtonStyle(tint: Theme.red))
+                .a11yButton(L10n.t("Retry %@", task.name))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .contentShape(Rectangle())
+    }
+}
+
+/// Which failures the menu bar lists: the newest few, plus how many there are in all.
+struct MenuBarAttention {
+    static let limit = 3
+
+    let shown: [DownloadTask]
+    let total: Int
+
+    init(tasks: [DownloadTask], limit: Int = Self.limit) {
+        let failed = tasks.filter {
+            if case .failed = $0.status { return true } else { return false }
+        }
+        total = failed.count
+        shown = Array(failed.sorted { $0.addedAt > $1.addedAt }.prefix(limit))
     }
 }
 

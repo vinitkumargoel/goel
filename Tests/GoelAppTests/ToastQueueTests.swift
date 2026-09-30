@@ -108,4 +108,60 @@ final class ToastQueueTests: XCTestCase {
         try await Task.sleep(nanoseconds: UInt64((ToastQueue.busyDwell + 0.6) * 1_000_000_000))
         XCTAssertEqual(queue.current?.message, "two")
     }
+
+    // MARK: Hover hold
+
+    private func wait(_ seconds: TimeInterval) async throws {
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    }
+
+    func testErrorsStayAboutSixSeconds() {
+        XCTAssertEqual(Toast(message: "a", isError: true, action: nil).dwell, 6, accuracy: 0.01)
+        XCTAssertEqual(Toast(message: "a", isError: false, action: nil).dwell, 2.4, accuracy: 0.01)
+    }
+
+    /// `timeScale` 0.05 turns the 2.4 s dwell into 120 ms and the 2 s release grace into 100 ms.
+    func testAHeldToastDoesNotExpire() async throws {
+        let queue = ToastQueue(autoAdvance: true, announce: { _ in }, timeScale: 0.05)
+        queue.show("one")
+        queue.hold()
+        try await wait(0.3)
+        XCTAssertEqual(queue.current?.message, "one", "hovering pauses the countdown")
+        queue.release()
+        try await wait(0.3)
+        XCTAssertNil(queue.current, "letting go restarts it")
+    }
+
+    func testReleaseGivesAtLeastAShortGrace() async throws {
+        let queue = ToastQueue(autoAdvance: true, announce: { _ in }, timeScale: 0.05)
+        queue.show("one")
+        try await wait(0.1)
+        queue.hold()
+        try await wait(0.2)
+        queue.release()
+        // About 20 ms of dwell was left; the 100 ms grace outlasts it.
+        try await wait(0.04)
+        XCTAssertEqual(queue.current?.message, "one")
+        try await wait(0.15)
+        XCTAssertNil(queue.current)
+    }
+
+    func testAWaitingToastDoesNotCutAHeldOneShort() async throws {
+        let queue = ToastQueue(autoAdvance: true, announce: { _ in }, timeScale: 0.05)
+        queue.show("one")
+        queue.hold()
+        queue.show("two")
+        try await wait(0.3)
+        XCTAssertEqual(queue.current?.message, "one")
+        queue.release()
+        try await wait(0.17)
+        XCTAssertEqual(queue.current?.message, "two")
+    }
+
+    func testReleaseWithoutHoldIsHarmless() {
+        let queue = ToastQueue(autoAdvance: false)
+        queue.show("one")
+        queue.release()
+        XCTAssertEqual(queue.current?.message, "one")
+    }
 }

@@ -30,9 +30,19 @@ enum DisplayFormat {
         return absoluteFormatter(locale).string(from: date)
     }
 
+    /// The list's Added column: "14:03" today, "Yest 14:02", then "12 Mar" (or "Mar 12"), and
+    /// the year only once it differs. The tooltip carries the full ``relativeDateTime``.
     static func compactDateTime(_ date: Date, locale: Locale, now: Date = Date()) -> String {
-        let sameDay = Calendar.current.isDate(date, inSameDayAs: now)
-        return (sameDay ? compactTimeFormatter(locale) : compactDateFormatter(locale)).string(from: date)
+        let calendar = Calendar.current
+        if calendar.isDate(date, inSameDayAs: now) {
+            return compactTimeFormatter(locale).string(from: date)
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return L10n.t("Yest %@", compactTimeFormatter(locale).string(from: date))
+        }
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
+        return (sameYear ? compactDateFormatter(locale) : compactYearDateFormatter(locale)).string(from: date)
     }
 
     // MARK: - Cache
@@ -43,6 +53,7 @@ enum DisplayFormat {
     private static var absoluteCache: [String: DateFormatter] = [:]
     private static var compactTimeCache: [String: DateFormatter] = [:]
     private static var compactDateCache: [String: DateFormatter] = [:]
+    private static var compactYearDateCache: [String: DateFormatter] = [:]
 
     private static func cacheKey(_ locale: Locale) -> String {
         // The autoupdating locale's identifier stays the same while its preferences change, so
@@ -99,8 +110,16 @@ enum DisplayFormat {
         cached(&compactDateCache, key: cacheKey(locale)) {
             let f = DateFormatter()
             f.locale = locale
-            f.dateStyle = .short
-            f.timeStyle = .none
+            f.setLocalizedDateFormatFromTemplate("dMMM")
+            return f
+        }
+    }
+
+    private static func compactYearDateFormatter(_ locale: Locale) -> DateFormatter {
+        cached(&compactYearDateCache, key: cacheKey(locale)) {
+            let f = DateFormatter()
+            f.locale = locale
+            f.setLocalizedDateFormatFromTemplate("dMMMyy")
             return f
         }
     }
@@ -123,6 +142,7 @@ enum DisplayFormat {
         absoluteCache = [:]
         compactTimeCache = [:]
         compactDateCache = [:]
+        compactYearDateCache = [:]
         lock.unlock()
     }
 

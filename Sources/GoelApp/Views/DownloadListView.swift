@@ -13,6 +13,13 @@ struct DownloadListView: View {
     /// ⌘A and the arrow keys went to an empty text field until the user clicked a row.
     @FocusState private var listFocused: Bool
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Grows the fixed columns with the text size, the same factor `scaledFont` applies.
+    @ScaledMetric(relativeTo: .body) private var widthScale: CGFloat = 100
+
+    private var columns: DownloadColumns { DownloadColumns(scale: widthScale / 100) }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -21,22 +28,25 @@ struct DownloadListView: View {
                 emptyState
             } else {
                 let context = DownloadRow.Context(vm: vm)
+                let columns = self.columns
+                let focused = listFocused
                 let selectionSummary = DownloadRow.SelectionSummary(vm.selection.count > 1 ? vm.selectedTasks : [])
                 ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(vm.visibleTasks.enumerated()), id: \.element.id) { index, task in
                             let isSelected = vm.isSelected(task.id)
-                            DownloadRow(
+                            HoverTrackingRow(row: DownloadRow(
                                 task: task,
                                 displayIndex: index + 1,
                                 isSelected: isSelected,
+                                listFocused: focused,
                                 speed: telemetry.displaySpeed(for: task),
                                 selectionSummary: isSelected ? selectionSummary : nil,
                                 context: context,
+                                columns: columns,
                                 vm: vm
-                            )
-                            .equatable()
+                            ))
                             .id(task.id)
                             Divider()
                         }
@@ -49,7 +59,10 @@ struct DownloadListView: View {
                 }
                 .onChange(of: vm.selectedTask?.id) { _, id in
                     guard let id else { return }
-                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id, anchor: .center) }
+                    // Reduce Motion jumps instead of gliding.
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+                        proxy.scrollTo(id, anchor: .center)
+                    }
                 }
                 }
             }
@@ -116,14 +129,17 @@ struct DownloadListView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 0) {
-            headerCol(.index, width: 30, alignment: .center)
+        let columns = self.columns
+        return HStack(spacing: 0) {
+            headerCol(.index, width: columns.index, alignment: .center)
             headerCol(.name, width: nil, alignment: .leading)
-            headerCol(.size, width: 84, alignment: .trailing)
-            headerCol(.status, width: 130, alignment: .leading)
-            headerCol(.added, width: 104, alignment: .leading)
-            headerCol(.downloadSpeed, width: 84, alignment: .trailing)
-            headerCol(.uploadSpeed, width: 84, alignment: .trailing)
+            headerCol(.size, width: columns.size, alignment: .trailing)
+            headerCol(.status, width: columns.status, alignment: .leading)
+            headerCol(.added, width: columns.added, alignment: .leading)
+            // One column for both directions; it sorts by download speed. The toolbar's Sort
+            // menu can still pick upload speed, and the chevron shows here then too.
+            headerCol(.downloadSpeed, width: columns.speed, alignment: .trailing,
+                      title: L10n.t("Speed"), alsoSortedBy: [.uploadSpeed])
         }
         .padding(.horizontal, 12)
         .frame(height: 28)
@@ -132,14 +148,16 @@ struct DownloadListView: View {
     }
 
     @ViewBuilder
-    private func headerCol(_ key: SortKey, width: CGFloat?, alignment: Alignment) -> some View {
-        let isSortKey = vm.sortKey == key
+    private func headerCol(_ key: SortKey, width: CGFloat?, alignment: Alignment,
+                           title: String? = nil, alsoSortedBy: [SortKey] = []) -> some View {
+        let isSortKey = vm.sortKey == key || alsoSortedBy.contains(vm.sortKey)
         Button {
             vm.toggleSort(key)
         } label: {
             HStack(spacing: 3) {
                 if alignment == .trailing { Spacer(minLength: 0) }
-                Text(key.columnTitle)
+                Text(title ?? key.columnTitle)
+                    .lineLimit(1)
                 if isSortKey {
                     Image(systemName: vm.sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8, weight: .bold))
@@ -153,7 +171,7 @@ struct DownloadListView: View {
         .frame(width: width, alignment: alignment)
         .frame(maxWidth: width == nil ? .infinity : nil)
         .padding(.horizontal, 6)
-        .a11yButton(key.title,
+        .a11yButton(title ?? key.title,
                     hint: isSortKey
                         ? L10n.t("Currently sorting %@. Activate to reverse.",
                                  vm.sortAscending ? L10n.t("ascending") : L10n.t("descending"))
@@ -164,8 +182,11 @@ struct DownloadListView: View {
     }
 
     private var emptyState: some View {
-        EmptyStateView(systemImage: "tray", title: L10n.t("No downloads match"),
-                       subtitle: L10n.t("Try a different filter or search term."))
+        let narrowed = vm.filter != .all || !vm.search.isEmpty
+        return EmptyStateView(systemImage: "tray", title: L10n.t("No downloads match"),
+                              subtitle: L10n.t("Try a different filter or search term."),
+                              actionTitle: narrowed ? L10n.t("Clear search and filter") : nil,
+                              action: narrowed ? { vm.search = ""; vm.filter = .all } : nil)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -177,10 +198,15 @@ struct DownloadRow: View, Equatable {
     let task: DownloadTask
     let displayIndex: Int
     let isSelected: Bool
+    /// Selection is dimmer while focus is elsewhere (the search field), so it's clear where arrows go.
+    let listFocused: Bool
+    /// Set by ``HoverTrackingRow``; a value, so `.equatable()` still decides every redraw.
+    var isHovered = false
     let speed: SpeedSample
     /// Non-nil only for a selected row; `count > 1` means the context menu acts on the selection.
     let selectionSummary: SelectionSummary?
     let context: Context
+    let columns: DownloadColumns
     let vm: AppViewModel
 
     @Environment(\.quickLookAction) private var quickLook
@@ -189,9 +215,12 @@ struct DownloadRow: View, Equatable {
         lhs.task == rhs.task
             && lhs.displayIndex == rhs.displayIndex
             && lhs.isSelected == rhs.isSelected
+            && lhs.listFocused == rhs.listFocused
+            && lhs.isHovered == rhs.isHovered
             && lhs.speed == rhs.speed
             && lhs.selectionSummary == rhs.selectionSummary
             && lhs.context == rhs.context
+            && lhs.columns == rhs.columns
             && lhs.vm === rhs.vm
     }
 
@@ -241,7 +270,7 @@ struct DownloadRow: View, Equatable {
             Text("\(displayIndex)")
                 .scaledFont(size: 11.5, monospacedDigit: true)
                 .foregroundStyle(.tertiary)
-                .frame(width: 30)
+                .frame(width: columns.index)
                 .padding(.horizontal, 6)
 
             nameCell
@@ -250,46 +279,31 @@ struct DownloadRow: View, Equatable {
 
             Text(task.totalBytes?.byteString ?? "—")
                 .scaledFont(size: 12.5, monospacedDigit: true)
-                .frame(width: 84, alignment: .trailing)
+                .frame(width: columns.size, alignment: .trailing)
                 .padding(.horizontal, 6)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 6) {
-                Circle().fill(task.statusColor).frame(width: 7, height: 7)
-                    .a11yDecorative()
-                Text(task.statusDetailText)
-                    .scaledFont(size: 11.5)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            // The column truncates a failure to a few words; the tooltip carries all of it.
-            .help(failureTooltip ?? "")
-            .frame(width: 130, alignment: .leading)
-            .padding(.horizontal, 6)
+            statusCell
+                // The whole message is on the name's second line; the tooltip adds the advice.
+                .help(failureTooltip ?? "")
+                .frame(width: columns.status, alignment: .leading)
+                .padding(.horizontal, 6)
 
             Text(task.addedColumnString)
                 .scaledFont(size: 11.5)
                 .lineLimit(1)
                 .foregroundStyle(.secondary)
                 .help(task.addedString)
-                .frame(width: 104, alignment: .leading)
+                .frame(width: columns.added, alignment: .leading)
                 .padding(.horizontal, 6)
 
-            Text(speed.down.speedString)
-                .frame(width: 84, alignment: .trailing)
+            speedCell
+                .frame(width: columns.speed, alignment: .trailing)
                 .padding(.horizontal, 6)
-                .scaledFont(size: 12.5, weight: .medium, monospacedDigit: true)
-                .foregroundStyle(speed.down > 0 ? Theme.green : Color.secondary)
-
-            Text(speed.up.speedString)
-                .frame(width: 84, alignment: .trailing)
-                .padding(.horizontal, 6)
-                .scaledFont(size: 12.5, monospacedDigit: true)
-                .foregroundStyle(speed.up > 0 ? Theme.teal : Color.secondary)
         }
         .padding(.horizontal, 12)
         .frame(minHeight: 50)
-        .background(isSelected ? Theme.accent.opacity(0.22) : (displayIndex.isMultiple(of: 2) ? Theme.rowAlt : Color.clear))
+        .background(rowBackground)
         // Label is identity only: folding in the ticking percent makes VoiceOver re-speak the row every second.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(A11y.sentence(task.name,
@@ -324,6 +338,50 @@ struct DownloadRow: View, Equatable {
         }
     }
 
+    private var rowBackground: Color {
+        if isSelected { return Theme.accent.opacity(listFocused ? 0.22 : 0.12) }
+        if isHovered { return Theme.rowHover }
+        return displayIndex.isMultiple(of: 2) ? Theme.rowAlt : Color.clear
+    }
+
+    /// A failure reads "Failed" in red with a glyph, not just a red dot, so it survives
+    /// "Differentiate without colour".
+    @ViewBuilder
+    private var statusCell: some View {
+        if isFailed {
+            Label(L10n.t("Failed"), systemImage: "exclamationmark.triangle.fill")
+                .scaledFont(size: 11.5, weight: .semibold)
+                .foregroundStyle(Theme.red)
+                .lineLimit(1)
+        } else {
+            HStack(spacing: 6) {
+                Circle().fill(task.statusColor).frame(width: 7, height: 7)
+                    .a11yDecorative()
+                Text(task.statusDetailText)
+                    .scaledFont(size: 11.5)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var speedCell: some View {
+        let text = SpeedCellText(speed: speed, isTorrent: task.kind == .torrent)
+        return VStack(alignment: .trailing, spacing: 1) {
+            if let down = text.down {
+                Text(down)
+                    .scaledFont(size: 12.5, weight: .medium, monospacedDigit: true)
+                    .foregroundStyle(Theme.green)
+            }
+            if let up = text.up {
+                Text(up)
+                    .scaledFont(size: text.down == nil ? 12.5 : 11, monospacedDigit: true)
+                    .foregroundStyle(speed.up >= 1 ? Theme.teal : Color.secondary)
+            }
+        }
+        .lineLimit(1)
+    }
+
     private func primaryStateAction() {
         switch task.status {
         case .completed: task.isFileMissing ? vm.locateMissingFile(task) : vm.revealInFinder(task)
@@ -345,8 +403,18 @@ struct DownloadRow: View, Equatable {
                         .truncationMode(.middle)
                     KindBadge(task: task)
                 }
-                MiniProgressBar(task: task)
-                    .frame(maxWidth: 340)
+                if case .failed(let error) = task.status {
+                    // A bar that will never move says nothing; the reason does.
+                    Label(error.message, systemImage: "exclamationmark.triangle.fill")
+                        .scaledFont(size: 11)
+                        .foregroundStyle(Theme.red)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(failureTooltip ?? "")
+                } else {
+                    MiniProgressBar(task: task)
+                        .frame(maxWidth: 340)
+                }
             }
         }
     }
@@ -572,6 +640,39 @@ struct DownloadRow: View, Equatable {
     private var isMagnet: Bool {
         if case .magnet = task.source { return true }
         return false
+    }
+}
+
+/// The list's fixed column widths, scaled with the text size. A value, so rows compare it.
+struct DownloadColumns: Equatable {
+    var index: CGFloat = 30
+    var size: CGFloat = 84
+    var status: CGFloat = 150
+    var added: CGFloat = 96
+    var speed: CGFloat = 92
+
+    init(scale: CGFloat = 1) {
+        let s = scale.isFinite && scale > 0 ? scale : 1
+        index = (index * s).rounded()
+        size = (size * s).rounded()
+        status = (status * s).rounded()
+        added = (added * s).rounded()
+        speed = (speed * s).rounded()
+    }
+}
+
+/// Owns the hover state so ``DownloadRow`` stays a pure value: only the hovered row's
+/// equality changes when the pointer moves.
+private struct HoverTrackingRow: View {
+    let row: DownloadRow
+    @State private var hovered = false
+
+    var body: some View {
+        var shown = row
+        shown.isHovered = hovered
+        return shown
+            .equatable()
+            .onHover { hovered = $0 }
     }
 }
 

@@ -13,19 +13,26 @@ struct ToastOverlay: View {
                     Image(systemName: toast.isError ? "xmark.octagon.fill" : "checkmark.circle.fill")
                         .foregroundStyle(toast.isError ? Theme.red : Theme.green)
                         .a11yDecorative()
-                    Text(toast.message).scaledFont(size: 12.5)
+                    Text(toast.message).scaledFont(size: Theme.TextSize.body)
                     if let action = toast.action {
                         Button(action.title) { queue.performAction() }
                             .buttonStyle(.borderless)
-                            .scaledFont(size: 12.5, weight: .semibold)
+                            .scaledFont(size: Theme.TextSize.body, weight: .semibold)
                             .foregroundStyle(Theme.accent)
                     }
+                    IconButton(symbol: "xmark", help: L10n.t("Dismiss"), size: 9.5) {
+                        queue.dismiss(toast.id)
+                    }
+                    .padding(.trailing, -6)
                 }
-                .padding(.horizontal, 15)
-                .padding(.vertical, 9)
+                .padding(.leading, 15)
+                .padding(.trailing, 12)
+                .padding(.vertical, 7)
                 .background(.regularMaterial, in: Capsule())
                 .overlay(Capsule().stroke(Theme.hairline))
                 .shadow(radius: 12, y: 6)
+                // Reading (or reaching for the button) must not race the timer.
+                .onHover { inside in inside ? queue.hold() : queue.release() }
                 .padding(.bottom, bottomPadding)
                 .transition(.opacity)
                 .accessibilityElement(children: .contain)
@@ -33,6 +40,7 @@ struct ToastOverlay: View {
                 .id(toast.id)
             }
         }
+        // A plain fade: fine under Reduce Motion, which only rules out movement.
         .animation(.easeInOut(duration: 0.15), value: queue.current)
     }
 }

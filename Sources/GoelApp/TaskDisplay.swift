@@ -105,8 +105,8 @@ extension DownloadTask {
     /// order and the 12/24-hour clock all follow the locale instead of a fixed English pattern.
     var addedString: String { Self.addedString(for: addedAt) }
 
-    /// The list's 104-pt column: "Yesterday at 11:45 PM" doesn't fit, so today is a time and
-    /// anything older a short date. The detail panel and the tooltip keep the full form.
+    /// The list's narrow column: "Yesterday at 11:45 PM" doesn't fit, so it is "Yest 23:45" or
+    /// "12 Mar". The detail panel and the tooltip keep the full form.
     var addedColumnString: String { DisplayFormat.compactDateTime(addedAt, locale: DisplayFormat.appLocale) }
 
     static func addedString(for date: Date, locale: Locale = DisplayFormat.appLocale) -> String {
@@ -132,6 +132,29 @@ extension DownloadKind {
         case .hls: return "play.rectangle"
         case .ftp: return "server.rack"
         case .sftp: return "lock.rectangle.on.rectangle"
+        }
+    }
+}
+
+/// The list's one Speed column: ↓ on top, ↑ under it only while something is uploading (or a
+/// torrent is downloading, where the upload rate is part of the story). Idle is blank, not "—".
+struct SpeedCellText: Equatable {
+    let down: String?
+    let up: String?
+
+    var isEmpty: Bool { down == nil && up == nil }
+
+    init(speed: SpeedSample, isTorrent: Bool) {
+        let downloading = speed.down >= 1
+        let uploading = speed.up >= 1
+        down = downloading ? "↓ " + speed.down.speedString : nil
+        if uploading {
+            up = "↑ " + speed.up.speedString
+        } else if isTorrent && downloading {
+            // Not `byteString`: the formatter spells zero as "Zero KB".
+            up = L10n.t("↑ 0 B/s")
+        } else {
+            up = nil
         }
     }
 }

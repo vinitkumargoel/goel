@@ -61,6 +61,7 @@
 "%d custom" = "%d custom";
 "%d downloads" = "%d downloads";
 "%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted." = "%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted.";
+"%d failed" = "%d failed";
 "%d file" = "%d file";
 "%d files" = "%d files";
 "%d folder" = "%d folder";
@@ -79,6 +80,7 @@
 "%d parallel segments" = "%d parallel segments";
 "%d peers" = "%d peers";
 "%d percent" = "%d percent";
+"%d points" = "%d points";
 "%d queued" = "%d queued";
 "%d seeds" = "%d seeds";
 "%d selected" = "%d selected";
@@ -285,7 +287,9 @@
 "Clear History…" = "Clear History…";
 "Clear filter" = "Clear filter";
 "Clear finished transfers" = "Clear finished transfers";
+"Clear pasted link" = "Clear pasted link";
 "Clear search" = "Clear search";
+"Clear search and filter" = "Clear search and filter";
 "Clear the download history?" = "Clear the download history?";
 "Clear the pasted text" = "Clear the pasted text";
 "Cleared finished transfers" = "Cleared finished transfers";
@@ -458,6 +462,7 @@
 "Deleting “%@”…" = "Deleting “%@”…";
 "Deselect All" = "Deselect All";
 "Detail panel" = "Detail panel";
+"Detail panel height" = "Detail panel height";
 "Detail section" = "Detail section";
 "Details" = "Details";
 "Diagnostics" = "Diagnostics";
@@ -533,6 +538,7 @@
 "Drag a .torrent or a link onto this window" = "Drag a .torrent or a link onto this window";
 "Drag a URL or **.torrent** file here" = "Drag a URL or **.torrent** file here";
 "Drag links or torrent files here to queue them." = "Drag links or torrent files here to queue them.";
+"Drag to resize the detail panel" = "Drag to resize the detail panel";
 "Drag-save as a bookmark; clicking it sends the current page here." = "Drag-save as a bookmark; clicking it sends the current page here.";
 "Drop Basket" = "Drop Basket";
 "Drop Basket · ⌘⇧B" = "Drop Basket · ⌘⇧B";
@@ -746,6 +752,7 @@
 "In 1 Hour" = "In 1 Hour";
 "In 1 second." = "In 1 second.";
 "In 4 Hours" = "In 4 Hours";
+"In progress" = "In progress";
 "In progress, length unknown" = "In progress, length unknown";
 "In your browser: DevTools ▸ Network ▸ the download request ▸ copy the Cookie request header." = "In your browser: DevTools ▸ Network ▸ the download request ▸ copy the Cookie request header.";
 "Include auto-captions" = "Include auto-captions";
@@ -806,6 +813,7 @@
 "Listing what’s in this playlist" = "Listing what’s in this playlist";
 "Listing what’s in this playlist…" = "Listing what’s in this playlist…";
 "Live throughput" = "Live throughput";
+"Loading downloads" = "Loading downloads";
 "Loading folder" = "Loading folder";
 "Loading history" = "Loading history";
 "Loading information" = "Loading information";
@@ -864,6 +872,7 @@
 "Need at least two eligible adapters. Enable expensive networks if using a phone hotspot." = "Need at least two eligible adapters. Enable expensive networks if using a phone hotspot.";
 "Needs %1$@ · %2$@ free" = "Needs %1$@ · %2$@ free";
 "Needs %1$@, %2$@ free" = "Needs %1$@, %2$@ free";
+"Needs attention" = "Needs attention";
 "Network" = "Network";
 "Network adapter" = "Network adapter";
 "Network awareness" = "Network awareness";
@@ -1352,6 +1361,7 @@
 "Sorting by file type, already chosen" = "Sorting by file type, already chosen";
 "Source" = "Source";
 "Source: %@" = "Source: %@";
+"Speed" = "Speed";
 "Speed Limit" = "Speed Limit";
 "Speed graph, last %d seconds" = "Speed graph, last %d seconds";
 "Speed limit off · Unlimited" = "Speed limit off · Unlimited";
@@ -1631,6 +1641,7 @@
 "Wrong username or password" = "Wrong username or password";
 "Yes" = "Yes";
 "Yes (Accept-Ranges)" = "Yes (Accept-Ranges)";
+"Yest %@" = "Yest %@";
 "You are a charity, school, university, or public research, safety or health body." = "You are a charity, school, university, or public research, safety or health body.";
 "You are a company, partnership or sole trader and Goel° is used for that business." = "You are a company, partnership or sole trader and Goel° is used for that business.";
 "You are a contractor or consultant using it in work you bill to a client." = "You are a contractor or consultant using it in work you bill to a client.";
@@ -1739,6 +1750,7 @@
 "“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk" = "“%@” isn’t there any more — it was moved, deleted, or is on a disconnected disk";
 "“%@” will stop transferring and be removed from the list." = "“%@” will stop transferring and be removed from the list.";
 "•••••• (unchanged)" = "•••••• (unchanged)";
+"↑ 0 B/s" = "↑ 0 B/s";
 "↑ Speed" = "↑ Speed";
 "↓ Speed" = "↓ Speed";
 "⬆︎ Parent folder" = "⬆︎ Parent folder";

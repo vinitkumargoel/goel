@@ -74,6 +74,10 @@ final class AppViewModel: ObservableObject {
 
     @Published var persistenceWarning: String?
 
+    /// True until the first snapshot from disk lands, so the window shows placeholder rows
+    /// instead of flashing the first-run screen over a queue that is still loading.
+    @Published private(set) var isRestoring = true
+
     @Published private(set) var networkAdapters: [NetworkAdapter] = []
 
     @Published private(set) var aggregationInactiveReason: AggregationPolicy.SinglePathReason?
@@ -512,6 +516,7 @@ final class AppViewModel: ObservableObject {
         }
         if !hasConsumedFirstSnapshot {
             hasConsumedFirstSnapshot = true
+            isRestoring = false
             installNotificationHandlers()
         }
         pump(snapshot)

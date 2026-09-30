@@ -5,6 +5,12 @@ import GoelCore
 struct RootView: View {
     @EnvironmentObject private var vm: AppViewModel
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The bottom detail panel's height, dragged by its top edge.
+    @AppStorage("detailBottomPanelHeight") private var bottomPanelHeight: Double = DetailPanelHeight.standard
+    /// The height when the current drag began; nil between drags.
+    @State private var dragStartHeight: Double?
 
     @State private var isDropTargeted = false
 
@@ -44,6 +50,10 @@ struct RootView: View {
                                         client: vm.sftpClient(for: server))
                             .id("\(server.id)-\(vm.browserGeneration)")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if vm.tasks.isEmpty && vm.isRestoring {
+                        // The queue loads asynchronously; the first-run screen would flash here.
+                        RestoringPlaceholderList()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if vm.tasks.isEmpty {
                         DownloadsEmptyState()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -51,10 +61,10 @@ struct RootView: View {
                         DownloadListView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         if showDetail && vm.detailPanelPosition == .bottom {
-                            Divider()
+                            bottomPanelHandle
                             DetailBottomPanel()
-                                .frame(height: 300)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                                .frame(height: DetailPanelHeight.clamped(bottomPanelHeight))
+                                .transition(panelTransition(.bottom))
                         }
                     }
                 }
@@ -63,12 +73,12 @@ struct RootView: View {
                     Divider()
                     DetailPanelView()
                         .frame(width: 340)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .transition(panelTransition(.trailing))
                 }
             }
-            .animation(.easeInOut(duration: 0.14), value: vm.detailPanelVisible)
-            .animation(.easeInOut(duration: 0.14), value: vm.detailPanelPosition)
-            .animation(.easeInOut(duration: 0.14), value: showDetail)
+            .animation(panelAnimation, value: vm.detailPanelVisible)
+            .animation(panelAnimation, value: vm.detailPanelPosition)
+            .animation(panelAnimation, value: showDetail)
             Divider()
             StatusBarView()
         }
@@ -137,6 +147,46 @@ struct RootView: View {
         .task(priority: .background) { QuickLookPresenter.sweepStaleTemps() }
     }
 
+    /// Under Reduce Motion panels fade in place instead of sliding.
+    private func panelTransition(_ edge: Edge) -> AnyTransition {
+        reduceMotion ? .opacity : .move(edge: edge).combined(with: .opacity)
+    }
+
+    private var panelAnimation: Animation? {
+        reduceMotion ? nil : .easeInOut(duration: 0.14)
+    }
+
+    /// The divider above the bottom panel doubles as its resize grip.
+    private var bottomPanelHandle: some View {
+        Divider()
+            .overlay {
+                Color.clear
+                    .frame(height: 9)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .onChanged { value in
+                                let start = dragStartHeight ?? DetailPanelHeight.clamped(bottomPanelHeight)
+                                dragStartHeight = start
+                                // Dragging up makes the panel taller.
+                                bottomPanelHeight = DetailPanelHeight.clamped(start - value.translation.height)
+                            }
+                            .onEnded { _ in dragStartHeight = nil }
+                    )
+                    .accessibilityElement()
+                    .accessibilityLabel(L10n.t("Detail panel height"))
+                    .accessibilityValue(L10n.t("%d points", Int(DetailPanelHeight.clamped(bottomPanelHeight))))
+                    .accessibilityAdjustableAction { direction in
+                        let step = direction == .increment ? DetailPanelHeight.step : -DetailPanelHeight.step
+                        bottomPanelHeight = DetailPanelHeight.clamped(bottomPanelHeight + step)
+                    }
+                    .help(L10n.t("Drag to resize the detail panel"))
+            }
+    }
+
     /// Hit-testing stays disabled here, or this overlay swallows the drag before `.onDrop` sees it.
     @ViewBuilder
     private var dropOverlay: some View {
@@ -194,14 +244,7 @@ struct RootView: View {
                     .controlSize(.small)
             }
             if let dismiss {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .a11yButton(L10n.t("Dismiss warning"))
+                IconButton(symbol: "xmark", help: L10n.t("Dismiss warning"), size: 10, action: dismiss)
             }
         }
         .padding(.horizontal, 14)
@@ -224,14 +267,9 @@ struct RootView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .accessibilityLabel(L10n.t("Add copied link to downloads"))
-            Button {
+            IconButton(symbol: "xmark", help: L10n.t("Dismiss copied link suggestion"), size: 10) {
                 vm.dismissClipboardSuggestion()
-            } label: {
-                Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .a11yButton(L10n.t("Dismiss copied link suggestion"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -249,3 +287,47 @@ struct RootView: View {
     }
 }
 
+/// Where the bottom detail panel's height may go, in points.
+enum DetailPanelHeight {
+    static let standard: Double = 300
+    static let range: ClosedRange<Double> = 220...480
+    /// One VoiceOver increment.
+    static let step: Double = 20
+
+    static func clamped(_ height: Double) -> Double {
+        guard height.isFinite else { return standard }
+        return min(max(height, range.lowerBound), range.upperBound)
+    }
+}
+
+/// Grey bars in the shape of the queue while it restores from disk.
+private struct RestoringPlaceholderList: View {
+    private static let names = ["ubuntu-24.04.1-desktop-amd64.iso", "project-backup.tar.zst",
+                                "Cosmos.S01E04.2160p.mkv", "imagenet-mini-dataset.zip"]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(Self.names.enumerated()), id: \.offset) { _, name in
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .frame(width: 26, height: 26)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(name).scaledFont(size: 12.5, weight: .medium)
+                        Text("62% · 3m left").scaledFont(size: Theme.TextSize.meta)
+                    }
+                    Spacer()
+                    Text("4.7 GB").scaledFont(size: Theme.TextSize.meta)
+                }
+                .padding(.horizontal, 24)
+                .frame(minHeight: 50)
+                Divider()
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 29)
+        .redacted(reason: .placeholder)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.t("Loading downloads"))
+    }
+}

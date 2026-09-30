@@ -19,7 +19,7 @@ struct Toast: Identifiable, Equatable {
     /// with a button stays long enough to reach it.
     var dwell: TimeInterval {
         if action != nil { return 8 }
-        return isError ? 5 : 2.4
+        return isError ? 6 : 2.4
     }
 }
 
@@ -38,15 +38,28 @@ final class ToastQueue: ObservableObject {
     /// With others waiting, a plain confirmation yields after this long instead of its full dwell.
     static let busyDwell: TimeInterval = 1.2
 
+    /// While the pointer rests on it, the visible toast never expires.
+    static let releaseGrace: TimeInterval = 2
+
     private let autoAdvance: Bool
+    /// Multiplies every dwell; tests shrink it so timing runs in milliseconds.
+    private let timeScale: Double
     private var generation = 0
+    private var isHeld = false
+    /// When the visible toast is due to leave.
+    private var expiresAt: Date?
+    /// Unscaled seconds the visible toast had left when the hold began.
+    private var heldRemaining: TimeInterval?
     /// Here, not in the overlay: the main window and Settings both draw one, and VoiceOver
     /// heard every toast twice.
     private let announce: @MainActor (String) -> Void
 
-    init(autoAdvance: Bool = true, announce: @escaping @MainActor (String) -> Void = { A11yAnnouncer.announce($0) }) {
+    init(autoAdvance: Bool = true,
+         announce: @escaping @MainActor (String) -> Void = { A11yAnnouncer.announce($0) },
+         timeScale: Double = 1) {
         self.autoAdvance = autoAdvance
         self.announce = announce
+        self.timeScale = timeScale
     }
 
     /// Returns the toast's id so its poster can retire it (⌘Z retires an Undo toast); nil when deduplicated.
@@ -69,7 +82,7 @@ final class ToastQueue: ObservableObject {
         pending.append(toast)
         trimPending()
         // A confirmation that's been up long enough makes way for what's waiting.
-        if autoAdvance, let shown = current, shown.action == nil, !shown.isError {
+        if autoAdvance, !isHeld, let shown = current, shown.action == nil, !shown.isError {
             scheduleExpiry(of: shown, after: Self.busyDwell)
         }
         return toast.id
@@ -87,11 +100,34 @@ final class ToastQueue: ObservableObject {
     /// The visible toast's time is up (or the user dismissed it): the next one takes its place.
     func advance() {
         generation &+= 1
+        // The held capsule is gone; its replacement is a new view that re-reports hover itself.
+        isHeld = false
+        heldRemaining = nil
         if pending.isEmpty {
             current = nil
         } else {
             present(pending.removeFirst())
         }
+    }
+
+    /// Pauses the visible toast's countdown (pointer or focus is on it).
+    func hold() {
+        guard !isHeld else { return }
+        isHeld = true
+        heldRemaining = expiresAt.map { max(0, $0.timeIntervalSinceNow) / timeScale }
+        // Invalidates the pending expiry.
+        generation &+= 1
+    }
+
+    /// Restarts the countdown with what was left, but never less than ``releaseGrace``.
+    func release() {
+        guard isHeld else { return }
+        isHeld = false
+        guard let toast = current else { return }
+        let left = heldRemaining ?? toast.dwell
+        heldRemaining = nil
+        generation &+= 1
+        scheduleExpiry(of: toast, after: max(left, Self.releaseGrace))
     }
 
     /// Runs the button and retires the toast, so a second click can't fire it twice.
@@ -110,10 +146,17 @@ final class ToastQueue: ObservableObject {
     }
 
     private func scheduleExpiry(of toast: Toast, after seconds: TimeInterval) {
+        let scaled = seconds * timeScale
+        guard !isHeld else {
+            // A toast that arrives under the pointer starts its full time once the pointer leaves.
+            heldRemaining = seconds
+            return
+        }
+        expiresAt = Date().addingTimeInterval(scaled)
         guard autoAdvance else { return }
         let expected = generation
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(scaled * 1_000_000_000))
             guard let self, self.generation == expected, self.current?.id == toast.id else { return }
             self.advance()
         }
