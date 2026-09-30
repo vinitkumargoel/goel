@@ -31,6 +31,8 @@ struct AddDownloadSheet: View {
     /// The text the clipboard put in the box; the "Pasted from clipboard" note shows while it's unchanged.
     @State private var pastedText: String?
     @State private var showAdvanced = false
+    /// Latched from ``AppViewModel/addSheetRevealsAdvanced`` when the sheet opens.
+    @State private var revealAdvanced = false
 
     @State private var cookieSource: CookieSource = .none
 
@@ -40,11 +42,14 @@ struct AddDownloadSheet: View {
     var capturedCookies: String? = nil
 
     @State private var chosenFormat: MediaFormat?
+    @State private var pageListsFormats = false
 
     @State private var startSelection: String = "now"
 
-    @State private var saveSelection: String = ("~/Downloads" as NSString).expandingTildeInPath
-    @State private var previousSaveSelection: String = ("~/Downloads" as NSString).expandingTildeInPath
+    /// Starts on the user's own rule (nil folder): a hard-coded ~/Downloads here used to override
+    /// "Sort by type" from onboarding for every download added through this sheet.
+    @State private var saveSelection: String = SaveOption.automatic
+    @State private var previousSaveSelection: String = SaveOption.automatic
     @State private var customFolder: String?
 
     /// Free space on the chosen folder's volume; refreshed when the folder changes, not per frame.
@@ -60,9 +65,10 @@ struct AddDownloadSheet: View {
 
     private var saveOptions: [Dropdown<String>.Item] {
         var options: [Dropdown<String>.Item] = [
+            .option(SaveOption.automatic, defaultFolderLabel),
+            .separator,
             .option(downloadsPath, "~/Downloads"),
             .option(moviesPath, "~/Movies"),
-            .option(SaveOption.automatic, L10n.t("Automatic (by type)")),
         ]
         if let customFolder, customFolder != downloadsPath, customFolder != moviesPath {
             options.append(.option(customFolder, (customFolder as NSString).abbreviatingWithTildeInPath))
@@ -70,6 +76,17 @@ struct AddDownloadSheet: View {
         options.append(.separator)
         options.append(.option(SaveOption.choose, L10n.t("Choose folder…")))
         return options
+    }
+
+    /// Names the rule Settings › General sets, so "Default" never hides where files will land.
+    private var defaultFolderLabel: String {
+        switch vm.settings.defaultFolderRule {
+        case "byType", "automatic": return L10n.t("Default: sorted by type")
+        case "bySource": return L10n.t("Default: sorted by source")
+        default:
+            return L10n.t("Default: %@",
+                          (vm.settings.defaultSaveDirectory as NSString).abbreviatingWithTildeInPath)
+        }
     }
 
     var body: some View {
@@ -99,6 +116,7 @@ struct AddDownloadSheet: View {
         }
         .frame(width: 560)
         .onAppear(perform: autoPasteFromClipboard)
+        .onChange(of: vm.addSheetPrefill) { _, new in if new != nil { consumePrefill() } }
         // Without this cancel the yt-dlp subprocess keeps running headless after the sheet closes.
         .onDisappear { resolveTask?.cancel() }
     }
@@ -231,7 +249,7 @@ struct AddDownloadSheet: View {
             }
             .task(id: diskSpaceFolder(for: preview)) { await refreshFreeSpace(in: diskSpaceFolder(for: preview)) }
             .onAppear {
-                showAdvanced = AddSheetInput.advancedHasContent(
+                showAdvanced = revealAdvanced || AddSheetInput.advancedHasContent(
                     checksum: checksumText, mirrors: mirrorsText, cookieSource: cookieSource,
                     hasCapturedCookies: capturedCookies != nil)
             }
@@ -330,6 +348,14 @@ struct AddDownloadSheet: View {
                         handleSaveSelection(newValue)
                     }
                     .frame(maxWidth: .infinity)
+                    if saveSelection == SaveOption.automatic {
+                        Text(L10n.t("→ %@", (diskSpaceFolder(for: preview) as NSString).abbreviatingWithTildeInPath))
+                            .scaledFont(size: Theme.TextSize.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .accessibilityLabel(L10n.t("Saves to %@", diskSpaceFolder(for: preview)))
+                    }
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.t("Priority")).scaledFont(size: Theme.TextSize.body, weight: .semibold).foregroundStyle(.secondary)
@@ -366,7 +392,9 @@ struct AddDownloadSheet: View {
                 if case .url(let pageURL) = preview.source,
                    !preview.source.looksLikeDownloadableFile,
                    resolvedPageURL == nil {
-                    MediaFormatPicker(pageURL: pageURL) { chosenFormat = $0 }
+                    MediaFormatPicker(pageURL: pageURL, onListed: { pageListsFormats = $0 }) {
+                        chosenFormat = $0
+                    }
                 }
             }
         }
@@ -417,9 +445,8 @@ struct AddDownloadSheet: View {
     /// The folder whose volume the space check asks about: the one "Automatic" really resolves
     /// to for this download (a `Video` subfolder may be a link onto another disk).
     private func diskSpaceFolder(for preview: DownloadPreview) -> String {
-        resolvedSaveDirectory ?? DiskSpaceCheck.automaticFolder(for: preview.source,
-                                                                suggestedName: preview.suggestedName,
-                                                                settings: vm.settings)
+        DiskSpaceCheck.folder(chosen: resolvedSaveDirectory, for: preview.source,
+                              suggestedName: preview.suggestedName, settings: vm.settings)
     }
 
     private func refreshFreeSpace(in folder: String) async {
@@ -525,10 +552,23 @@ struct AddDownloadSheet: View {
         }
     }
 
+    /// A handed-over page already said what it wants; go straight to resolving its formats. Also
+    /// runs when a page arrives while the sheet is open on its first step: it replaces what was there.
+    private func consumePrefill() {
+        guard let prefill = vm.addSheetPrefill, phase == .input else { return }
+        vm.addSheetPrefill = nil
+        text = prefill
+        pastedText = nil
+        DispatchQueue.main.async { continueTapped() }
+    }
+
     private func autoPasteFromClipboard() {
-        if text.isEmpty, let prefill = vm.addSheetPrefill {
-            vm.addSheetPrefill = nil
-            text = prefill
+        if vm.addSheetRevealsAdvanced {
+            vm.addSheetRevealsAdvanced = false
+            revealAdvanced = true
+        }
+        if text.isEmpty, vm.addSheetPrefill != nil {
+            consumePrefill()
             return
         }
         guard text.isEmpty,
@@ -569,6 +609,7 @@ struct AddDownloadSheet: View {
         checksumText = ""
         mirrorsText = ""
         chosenFormat = nil
+        pageListsFormats = false
         resolvedPageURL = nil
         ytDlpError = nil
     }
@@ -603,16 +644,17 @@ struct AddDownloadSheet: View {
             + ScheduledStartOption.presets.map { .option($0.id, $0.label) }
     }
 
-    /// A picked-but-unresolved page must be resolved with that format id first, or the HTML gets queued.
+    /// A video page must be resolved through yt-dlp first, or its HTML gets queued. That holds for
+    /// "Best available" too (no format picked, no `-f`) once yt-dlp has listed formats for the page.
     private func start(_ preview: DownloadPreview) {
-        if let chosenFormat, resolvedPageURL == nil, case .url = preview.source {
-            resolveThenCommit(preview, formatSelector: chosenFormat.id)
+        if resolvedPageURL == nil, case .url = preview.source, chosenFormat != nil || pageListsFormats {
+            resolveThenCommit(preview, formatSelector: chosenFormat?.id)
         } else {
             commit(preview)
         }
     }
 
-    private func resolveThenCommit(_ preview: DownloadPreview, formatSelector: String) {
+    private func resolveThenCommit(_ preview: DownloadPreview, formatSelector: String?) {
         guard case .url(let pageURL) = preview.source else { return commit(preview) }
         ytDlpError = nil
         resolveTask?.cancel()
@@ -663,10 +705,8 @@ struct AddDownloadSheet: View {
     /// The inner Task is untracked on purpose: the sheet closes next line, yt-dlp's watchdog bounds it.
     private func fetchSubtitlesIfWanted(for preview: DownloadPreview) {
         guard vm.settings.subtitleDownloadEnabled, let pageURL = resolvedPageURL else { return }
-        guard let directory = subtitleDestination else {
-            vm.toastNow(L10n.t("Subtitles skipped — pick a folder under “Save to” so they land beside the video"))
-            return
-        }
+        let directory = DiskSpaceCheck.folder(chosen: resolvedSaveDirectory, for: preview.source,
+                                              suggestedName: preview.suggestedName, settings: vm.settings)
         let base = (preview.suggestedName as NSString).deletingPathExtension
         let langs = vm.settings.subtitleLanguages
         let auto = vm.settings.subtitleIncludeAutoGenerated
@@ -676,22 +716,15 @@ struct AddDownloadSheet: View {
                 languages: langs, includeAuto: auto)
             switch outcome {
             case .downloaded(let n):
-                vm.toastNow(n == 1 ? L10n.t("Downloaded %d subtitle file", n) : L10n.t("Downloaded %d subtitle files", n))
+                vm.toastSuccess(n == 1 ? L10n.t("Downloaded %d subtitle file", n) : L10n.t("Downloaded %d subtitle files", n))
             case .none:
                 break
             case .failed(let msg):
-                vm.toastNow(L10n.t("Subtitles: %@", msg))
+                vm.toastError(L10n.t("Subtitles: %@", msg))
             }
         }
     }
 
-    private var subtitleDestination: String? {
-        if let resolvedSaveDirectory { return resolvedSaveDirectory }
-        switch vm.settings.defaultFolderRule {
-        case "byType", "automatic", "bySource": return nil
-        default: return vm.settings.defaultSaveDirectory
-        }
-    }
 
     /// Callers must never read ``pastedCookies`` directly — only this sanitised value leaves the sheet.
     private var cookieHeaderToAttach: String? {

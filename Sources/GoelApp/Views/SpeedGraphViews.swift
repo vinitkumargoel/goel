@@ -179,7 +179,7 @@ struct StatsView: View {
                                      entry.totals.down.byteString, entry.totals.up.byteString))
                     Text(String(entry.day.suffix(2)))
                         .scaledFont(size: 8.5)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .a11yGroup(

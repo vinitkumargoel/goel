@@ -426,48 +426,92 @@ struct IndeterminateBar: View {
     }
 }
 
+/// What a row's leading button does. One glyph used to mean four things in the same grey; now the
+/// action decides the tint, a failure gets a word, and a finished file gets no button at all
+/// (double-click and Return already open it) unless the file went missing.
+enum RowStateAction: Equatable {
+    case pause, resume, retry, locate
+
+    /// Nil: nothing worth a button (a completed download whose file is still there).
+    init?(task: DownloadTask) {
+        switch task.status {
+        case .completed:
+            guard task.isFileMissing else { return nil }
+            self = .locate
+        case .failed: self = .retry
+        case .paused, .queued: self = .resume
+        default: self = .pause
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .pause: return "pause.fill"
+        case .resume: return "play.fill"
+        case .retry: return "arrow.clockwise"
+        case .locate: return "magnifyingglass"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .pause: return L10n.t("Pause")
+        case .resume: return L10n.t("Resume")
+        case .retry: return L10n.t("Retry")
+        case .locate: return L10n.t("Locate File…")
+        }
+    }
+}
+
 /// `vm` is a plain reference, not observed — observing re-renders every row on each publish.
 struct StateButton: View {
     let task: DownloadTask
     let vm: AppViewModel
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .scaledFont(size: Theme.TextSize.caption, weight: .bold)
-                .frame(width: 24, height: 24)
-                .background(Circle().fill(Color.primary.opacity(0.08)))
-                .contentShape(Circle())
+        if let action = RowStateAction(task: task) {
+            if action == .retry {
+                Button { perform(action) } label: {
+                    Label(action.title, systemImage: action.symbol)
+                        .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .background(Capsule().fill(Theme.red.opacity(0.16)))
+                        .foregroundStyle(Theme.red)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(action.title)
+                .a11yButton(L10n.t("%1$@ %2$@", action.title, task.name))
+            } else {
+                Button { perform(action) } label: {
+                    Image(systemName: action.symbol)
+                        .scaledFont(size: Theme.TextSize.caption, weight: .bold)
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(fill(action)))
+                        .foregroundStyle(action == .resume ? Theme.accent : Color.primary)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(action.title)
+                .a11yButton(L10n.t("%1$@ %2$@", action.title, task.name))
+            }
+        } else {
+            // Keeps names in line with the rows that do have a button.
+            Color.clear.frame(width: 24, height: 24).a11yDecorative()
         }
-        .buttonStyle(.plain)
-        .help(helpText)
-        .a11yButton(L10n.t("%1$@ %2$@", L10n.t(task.accessibilityStateActionName), task.name))
     }
 
-    private var symbol: String {
-        switch task.status {
-        case .completed: return "folder"
-        case .failed: return "arrow.clockwise"
-        case .paused, .queued: return "play.fill"
-        default: return "pause.fill"
-        }
+    private func fill(_ action: RowStateAction) -> Color {
+        action == .resume ? Theme.accent.opacity(0.18) : Color.primary.opacity(0.08)
     }
 
-    private var helpText: String {
-        switch task.status {
-        case .completed: return L10n.t("Open folder")
-        case .failed: return L10n.t("Retry")
-        case .paused, .queued: return L10n.t("Resume")
-        default: return L10n.t("Pause")
-        }
-    }
-
-    private func action() {
-        switch task.status {
-        case .completed: vm.revealInFinder(task)
-        case .failed: vm.retry(task.id)
-        case .paused, .queued: vm.resume(task.id)
-        default: vm.pause(task.id)
+    private func perform(_ action: RowStateAction) {
+        switch action {
+        case .locate: vm.locateMissingFile(task)
+        case .retry: vm.retry(task.id)
+        case .resume: vm.resume(task.id)
+        case .pause: vm.pause(task.id)
         }
     }
 }

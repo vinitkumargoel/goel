@@ -26,7 +26,9 @@
 "%1$@ · %2$@ · %3$d ms" = "%1$@ · %2$@ · %3$d ms";
 "%1$@ · avg %2$@" = "%1$@ · avg %2$@";
 "%1$@ — %2$@" = "%1$@ — %2$@";
+"%1$@ — %2$@; %3$@" = "%1$@ — %2$@; %3$@";
 "%1$@ — SHA-256:\n%2$@" = "%1$@ — SHA-256:\n%2$@";
+"%1$@ › %2$@" = "%1$@ › %2$@";
 "%1$@, %2$@" = "%1$@, %2$@";
 "%1$@, sorted %2$@" = "%1$@, sorted %2$@";
 "%1$@. %2$@" = "%1$@. %2$@";
@@ -34,6 +36,7 @@
 "%1$@: %2$@." = "%1$@: %2$@.";
 "%1$@: ↓ %2$@ · ↑ %3$@" = "%1$@: ↓ %2$@ · ↑ %3$@";
 "%1$d of %2$d · %3$@" = "%1$d of %2$d · %3$@";
+"%1$d selected · %2$@" = "%1$d selected · %2$@";
 "%1$d · %2$@" = "%1$d · %2$@";
 "%1$d%% · %2$@ left" = "%1$d%% · %2$@ left";
 "%@ *" = "%@ *";
@@ -45,8 +48,8 @@
 "%@ mismatch" = "%@ mismatch";
 "%@ pending" = "%@ pending";
 "%@ per second" = "%@ per second";
+"%@ queue profile" = "%@ queue profile";
 "%@ ship translations today." = "%@ ship translations today.";
-"%@ speed profile" = "%@ speed profile";
 "%@ verified" = "%@ verified";
 "%@ was already there and wasn’t sent again" = "%@ was already there and wasn’t sent again";
 "%@ — copy, instant" = "%@ — copy, instant";
@@ -82,6 +85,8 @@
 "%d media job in progress" = "%d media job in progress";
 "%d media jobs in progress" = "%d media jobs in progress";
 "%d milliseconds" = "%d milliseconds";
+"%d more downloads" = "%d more downloads";
+"%d more in Goel°" = "%d more in Goel°";
 "%d more waiting" = "%d more waiting";
 "%d option" = "%d option";
 "%d options" = "%d options";
@@ -226,7 +231,6 @@
 "Auto-retry failed downloads" = "Auto-retry failed downloads";
 "Automate with AppleScript" = "Automate with AppleScript";
 "Automatic" = "Automatic";
-"Automatic (by type)" = "Automatic (by type)";
 "Automatic action cancelled — downloads started again" = "Automatic action cancelled — downloads started again";
 "Automatic — by file type" = "Automatic — by file type";
 "Automatic — by source site" = "Automatic — by source site";
@@ -246,6 +250,7 @@
 "BitTorrent over UDP for better congestion control." = "BitTorrent over UDP for better congestion control.";
 "Bookmarklet" = "Bookmarklet";
 "Bought a commercial licence? You can note the details here so they travel with the install for your own audit or asset records. Goel° never reads these fields, never checks them, and never sends them anywhere — leaving them blank changes nothing." = "Bought a commercial licence? You can note the details here so they travel with the install for your own audit or asset records. Goel° never reads these fields, never checks them, and never sends them anywhere — leaving them blank changes nothing.";
+"Browse this SFTP server" = "Browse this SFTP server";
 "Browser" = "Browser";
 "Browser Extension" = "Browser Extension";
 "Browser Integration" = "Browser Integration";
@@ -282,6 +287,7 @@
 "Check feeds every" = "Check feeds every";
 "Check for Updates…" = "Check for Updates…";
 "Check for updates automatically" = "Check for updates automatically";
+"Check it on the server:" = "Check it on the server:";
 "Check path diversity" = "Check path diversity";
 "Check your internet connection, then retry." = "Check your internet connection, then retry.";
 "Checking" = "Checking";
@@ -293,6 +299,7 @@
 "Choose Folder…" = "Choose Folder…";
 "Choose a file exported by aria2, JDownloader, IDM, a browser, etc." = "Choose a file exported by aria2, JDownloader, IDM, a browser, etc.";
 "Choose a folder for %d downloads." = "Choose a folder for %d downloads.";
+"Choose a quality for the copied video page" = "Choose a quality for the copied video page";
 "Choose an SSH private key (for example id_ed25519 — not the .pub file)." = "Choose an SSH private key (for example id_ed25519 — not the .pub file).";
 "Choose another folder…" = "Choose another folder…";
 "Choose automatically, by type, by source URL, or fixed." = "Choose automatically, by type, by source URL, or fixed.";
@@ -300,6 +307,7 @@
 "Choose files or folders to upload to %@" = "Choose files or folders to upload to %@";
 "Choose fixed download folder" = "Choose fixed download folder";
 "Choose folder…" = "Choose folder…";
+"Choose quality…" = "Choose quality…";
 "Choose watched torrent folder" = "Choose watched torrent folder";
 "Choose where Goel° saves finished downloads." = "Choose where Goel° saves finished downloads.";
 "Choose where to save “%@”" = "Choose where to save “%@”";
@@ -345,6 +353,7 @@
 "Connect" = "Connect";
 "Connect Wi‑Fi, Ethernet, or a phone hotspot, then refresh." = "Connect Wi‑Fi, Ethernet, or a phone hotspot, then refresh.";
 "Connect and Remember" = "Connect and Remember";
+"Connect to %@" = "Connect to %@";
 "Connected as %1$@ · %2$d ms" = "Connected as %1$@ · %2$d ms";
 "Connected successfully" = "Connected successfully";
 "Connection failed" = "Connection failed";
@@ -374,6 +383,7 @@
 "Cookies attached · retrying" = "Cookies attached · retrying";
 "Copied" = "Copied";
 "Copied %@" = "Copied %@";
+"Copied a video page" = "Copied a video page";
 "Copied link detected" = "Copied link detected";
 "Copied to clipboard" = "Copied to clipboard";
 "Copied “%1$@” to the destination, but the original couldn’t be deleted — delete it by hand. %2$@" = "Copied “%1$@” to the destination, but the original couldn’t be deleted — delete it by hand. %2$@";
@@ -383,6 +393,7 @@
 "Copy %d Items" = "Copy %d Items";
 "Copy %d Source Links" = "Copy %d Source Links";
 "Copy Bookmarklet" = "Copy Bookmarklet";
+"Copy Command" = "Copy Command";
 "Copy Details" = "Copy Details";
 "Copy Example" = "Copy Example";
 "Copy Fingerprint" = "Copy Fingerprint";
@@ -394,6 +405,7 @@
 "Copy Path" = "Copy Path";
 "Copy Remote Path" = "Copy Remote Path";
 "Copy SFTP Address" = "Copy SFTP Address";
+"Copy Source Link" = "Copy Source Link";
 "Copy Stream Link" = "Copy Stream Link";
 "Copy Tracker URL" = "Copy Tracker URL";
 "Copy a link, download it" = "Copy a link, download it";
@@ -483,6 +495,9 @@
 "Days" = "Days";
 "Default download folder" = "Default download folder";
 "Default torrent client" = "Default torrent client";
+"Default: %@" = "Default: %@";
+"Default: sorted by source" = "Default: sorted by source";
+"Default: sorted by type" = "Default: sorted by type";
 "Delete" = "Delete";
 "Delete %d Items" = "Delete %d Items";
 "Delete %d items?" = "Delete %d items?";
@@ -727,7 +742,6 @@
 "Goel downloads. Downloading at %1$@, uploading at %2$@." = "Goel downloads. Downloading at %1$@, uploading at %2$@.";
 "Goel downloads. Idle." = "Goel downloads. Idle.";
 "Goel has a key pinned for this server. It couldn’t read the server’s current key to compare: %@" = "Goel has a key pinned for this server. It couldn’t read the server’s current key to compare: %@";
-"Goel has never connected to this server, so it can't tell whether the machine answering is yours. Compare the fingerprint below with the one the server reports for its own host key, then decide.\n\nGoel remembers the key you accept and refuses to connect if it changes." = "Goel has never connected to this server, so it can't tell whether the machine answering is yours. Compare the fingerprint below with the one the server reports for its own host key, then decide.\n\nGoel remembers the key you accept and refuses to connect if it changes.";
 "Goel hasn’t pinned a key for this server yet — it will ask you to confirm the one below the first time it connects. Compare it with the fingerprint the server reports for its own host key." = "Goel hasn’t pinned a key for this server yet — it will ask you to confirm the one below the first time it connects. Compare it with the fingerprint the server reports for its own host key.";
 "Goel hasn’t pinned a key for this server yet, and couldn’t read the server’s current key: %@" = "Goel hasn’t pinned a key for this server yet, and couldn’t read the server’s current key: %@";
 "Goel takes links and .torrent files — %d of the dropped files are neither" = "Goel takes links and .torrent files — %d of the dropped files are neither";
@@ -739,6 +753,7 @@
 "Goel° commercial licence enquiry" = "Goel° commercial licence enquiry";
 "Goel° couldn’t open %1$@ (%2$@). It will be renamed, not deleted, so nothing is lost; the next launch starts with an empty list." = "Goel° couldn’t open %1$@ (%2$@). It will be renamed, not deleted, so nothing is lost; the next launch starts with an empty list.";
 "Goel° download manager" = "Goel° download manager";
+"Goel° has never connected to this server, so it can't tell whether the machine answering is yours. Compare the fingerprint below with the one the server reports for its own host key, then decide.\n\nGoel° remembers the key you accept and refuses to connect if it changes." = "Goel° has never connected to this server, so it can't tell whether the machine answering is yours. Compare the fingerprint below with the one the server reports for its own host key, then decide.\n\nGoel° remembers the key you accept and refuses to connect if it changes.";
 "Goel° resumes only if the new link serves the same file — same size and the same ETag or Last-Modified date. Otherwise it starts again from the beginning, so a changed file is never mixed with the old bytes." = "Goel° resumes only if the new link serves the same file — same size and the same ETag or Last-Modified date. Otherwise it starts again from the beginning, so a changed file is never mixed with the old bytes.";
 "Goel° stops checking it. Downloads it already queued are not touched." = "Goel° stops checking it. Downloads it already queued are not touched.";
 "Goel° — Sign in" = "Goel° — Sign in";
@@ -773,6 +788,7 @@
 "Hold downloads while on a personal hotspot; resume automatically after." = "Hold downloads while on a personal hotspot; resume automatically after.";
 "Hold downloads while the connection is constrained." = "Hold downloads while the connection is constrained.";
 "Hold every active transfer" = "Hold every active transfer";
+"Hold the selected downloads" = "Hold the selected downloads";
 "Home" = "Home";
 "Host" = "Host";
 "Host key SHA-256 fingerprint" = "Host key SHA-256 fingerprint";
@@ -812,7 +828,6 @@
 "Install Helper" = "Install Helper";
 "Install the browser messaging helper" = "Install the browser messaging helper";
 "Integrations" = "Integrations";
-"Is this really %@?" = "Is this really %@?";
 "It changes %1$d setting: %2$@." = "It changes %1$d setting: %2$@.";
 "It changes %1$d settings, including %2$@." = "It changes %1$d settings, including %2$@.";
 "It changes %1$d settings: %2$@." = "It changes %1$d settings: %2$@.";
@@ -873,6 +888,7 @@
 "Loading statistics" = "Loading statistics";
 "Local, on-disk record of what was downloaded" = "Local, on-disk record of what was downloaded";
 "Locate %@" = "Locate %@";
+"Locate File…" = "Locate File…";
 "Locate…" = "Locate…";
 "Login" = "Login";
 "Login removed" = "Login removed";
@@ -963,6 +979,7 @@
 "No downloads found in the metalink" = "No downloads found in the metalink";
 "No downloads match" = "No downloads match";
 "No downloads match “%@”" = "No downloads match “%@”";
+"No failed downloads" = "No failed downloads";
 "No feature gating — paying unlocks nothing, because nothing is locked." = "No feature gating — paying unlocks nothing, because nothing is locked.";
 "No feeds yet — add one below." = "No feeds yet — add one below.";
 "No folder chosen — nothing is being watched." = "No folder chosen — nothing is being watched.";
@@ -1063,6 +1080,7 @@
 "Opens a small floating window that accepts dragged links and torrent files. Activating again closes it." = "Opens a small floating window that accepts dragged links and torrent files. Activating again closes it.";
 "Opens an ssh session in your terminal, outside Goel’s host-key pinning." = "Opens an ssh session in your terminal, outside Goel’s host-key pinning.";
 "Opens the folder to point your browser's “Load unpacked” at." = "Opens the folder to point your browser's “Load unpacked” at.";
+"Opens the main window with them listed." = "Opens the main window with them listed.";
 "Opens the main window's add sheet." = "Opens the main window's add sheet.";
 "Opens this folder in the SFTP browser." = "Opens this folder in the SFTP browser.";
 "Optional. Leave empty to use the copy included with Goel°. Enables Convert / Extract-audio on finished media." = "Optional. Leave empty to use the copy included with Goel°. Enables Convert / Extract-audio on finished media.";
@@ -1086,6 +1104,7 @@
 "Paste URLs from File…" = "Paste URLs from File…";
 "Paste a URL, magnet, or .m3u8 stream" = "Paste a URL, magnet, or .m3u8 stream";
 "Paste a link" = "Paste a link";
+"Paste a link — Advanced options will be open on the next step" = "Paste a link — Advanced options will be open on the next step";
 "Paste one link per line to add several at once." = "Paste one link per line to add several at once.";
 "Paste several lines to add them all at once (batch). Patterns expand too: file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts." = "Paste several lines to add them all at once (batch). Patterns expand too: file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts.";
 "Paste the Cookie request header from your browser's developer tools." = "Paste the Cookie request header from your browser's developer tools.";
@@ -1099,7 +1118,7 @@
 "Pause All" = "Pause All";
 "Pause All Downloads" = "Pause All Downloads";
 "Pause Selected" = "Pause Selected";
-"Pause all" = "Pause all";
+"Pause Selected (%d)" = "Pause Selected (%d)";
 "Pause all downloads" = "Pause all downloads";
 "Pause downloads below battery threshold" = "Pause downloads below battery threshold";
 "Pause in Low Data Mode" = "Pause in Low Data Mode";
@@ -1154,7 +1173,6 @@
 "Priority" = "Priority";
 "Priority for %@" = "Priority for %@";
 "Private key" = "Private key";
-"Profile" = "Profile";
 "Profile default (%.1f×)" = "Profile default (%.1f×)";
 "Profile inside the window" = "Profile inside the window";
 "Progress" = "Progress";
@@ -1174,6 +1192,7 @@
 "Quality" = "Quality";
 "Queue every link on the pasteboard, one per line" = "Queue every link on the pasteboard, one per line";
 "Queue order" = "Queue order";
+"Queue profile" = "Queue profile";
 "Queued" = "Queued";
 "Queued · #%d" = "Queued · #%d";
 "Quick Look" = "Quick Look";
@@ -1274,6 +1293,8 @@
 "Resume %d Selected" = "Resume %d Selected";
 "Resume All" = "Resume All";
 "Resume Selected" = "Resume Selected";
+"Resume Selected (%d)" = "Resume Selected (%d)";
+"Resume all downloads" = "Resume all downloads";
 "Resume everything paused or queued" = "Resume everything paused or queued";
 "Resume transfer of %@" = "Resume transfer of %@";
 "Resumed" = "Resumed";
@@ -1282,11 +1303,15 @@
 "Retry %@" = "Retry %@";
 "Retry %@ now" = "Retry %@ now";
 "Retry %d Selected" = "Retry %d Selected";
+"Retry All Failed" = "Retry All Failed";
+"Retry Selected (%d)" = "Retry Selected (%d)";
 "Retry count" = "Retry count";
 "Retry in %@" = "Retry in %@";
 "Retry interval" = "Retry interval";
 "Retry loading quality options" = "Retry loading quality options";
 "Retry transfer of %@" = "Retry transfer of %@";
+"Retrying %d downloads" = "Retrying %d downloads";
+"Retrying 1 download" = "Retrying 1 download";
 "Retrying “%1$@” at %2$@" = "Retrying “%1$@” at %2$@";
 "Reuse cookies for protected downloads." = "Reuse cookies for protected downloads.";
 "Reveal" = "Reveal";
@@ -1319,6 +1344,7 @@
 "Save to" = "Save to";
 "Saved — ignored reserved header: %@" = "Saved — ignored reserved header: %@";
 "Saved — ignored reserved headers: %@" = "Saved — ignored reserved headers: %@";
+"Saves to %@" = "Saves to %@";
 "Scan finished files" = "Scan finished files";
 "Scan from your phone" = "Scan from your phone";
 "Scanner" = "Scanner";
@@ -1406,6 +1432,7 @@
 "Show details" = "Show details";
 "Show drop basket" = "Show drop basket";
 "Show in Finder" = "Show in Finder";
+"Show in Goel°" = "Show in Goel°";
 "Show in menu bar" = "Show in menu bar";
 "Show or hide the Drop Basket" = "Show or hide the Drop Basket";
 "Show password" = "Show password";
@@ -1458,18 +1485,18 @@
 "Speed limit off · Unlimited" = "Speed limit off · Unlimited";
 "Speed limit on · %@" = "Speed limit on · %@";
 "Speed over the last 5 minutes" = "Speed over the last 5 minutes";
-"Speed profile" = "Speed profile";
 "Speed · last %ds" = "Speed · last %ds";
 "Speed · last 5 min" = "Speed · last 5 min";
+"Speed: Unlimited" = "Speed: Unlimited";
 "Split large HTTP downloads across selected adapters using byte ranges. Default off." = "Split large HTTP downloads across selected adapters using byte ranges. Default off.";
 "Start" = "Start";
 "Start All" = "Start All";
 "Start All Downloads" = "Start All Downloads";
 "Start Goel° when you log in." = "Start Goel° when you log in.";
-"Start all" = "Start all";
-"Start all downloads" = "Start all downloads";
 "Start download" = "Start download";
 "Start folder" = "Start folder";
+"Start the selected downloads" = "Start the selected downloads";
+"Start these before everything else waiting" = "Start these before everything else waiting";
 "Start using Goel°" = "Start using Goel°";
 "Start watched torrents without confirmation" = "Start watched torrents without confirmation";
 "Started" = "Started";
@@ -1489,7 +1516,6 @@
 "Stored in your Keychain. Sent as HTTP Basic auth when a download matches the host." = "Stored in your Keychain. Sent as HTTP Basic auth when a download matches the host.";
 "Streams per adapter" = "Streams per adapter";
 "Subtitle languages" = "Subtitle languages";
-"Subtitles skipped — pick a folder under “Save to” so they land beside the video" = "Subtitles skipped — pick a folder under “Save to” so they land beside the video";
 "Subtitles: %@" = "Subtitles: %@";
 "Suggestion: %@" = "Suggestion: %@";
 "Support report" = "Support report";
@@ -1507,6 +1533,7 @@
 "Tags for “%@”" = "Tags for “%@”";
 "Tags updated" = "Tags updated";
 "Tag…" = "Tag…";
+"Take finished rows off the list — files stay on disk" = "Take finished rows off the list — files stay on disk";
 "Technical detail" = "Technical detail";
 "Test" = "Test";
 "Test Connection" = "Test Connection";
@@ -1527,6 +1554,7 @@
 "That page is too large to scan." = "That page is too large to scan.";
 "That playlist doesn’t list any downloadable items." = "That playlist doesn’t list any downloadable items.";
 "That server no longer exists." = "That server no longer exists.";
+"The URLs or magnets, one per line" = "The URLs or magnets, one per line";
 "The built-in player can’t open %@ — opening your default player" = "The built-in player can’t open %@ — opening your default player";
 "The bundled extension folder is only available in the packaged app, not a dev build." = "The bundled extension folder is only available in the packaged app, not a dev build.";
 "The bundled extension is only in the packaged app, not a dev build" = "The bundled extension is only in the packaged app, not a dev build";
@@ -1640,6 +1668,8 @@
 "Try a different filter or search term." = "Try a different filter or search term.";
 "Try a different word, or clear the search to see every pane." = "Try a different word, or clear the search to see every pane.";
 "Try again" = "Try again";
+"Try every failed download again" = "Try every failed download again";
+"Try the failed ones again" = "Try the failed ones again";
 "Try to connect with these settings" = "Try to connect with these settings";
 "Try “rss”, “mirror”, “watch folder”, or “cookies”." = "Try “rss”, “mirror”, “watch folder”, or “cookies”.";
 "Turn on Include expensive networks to use this adapter." = "Turn on Include expensive networks to use this adapter.";
@@ -1690,6 +1720,7 @@
 "Using Goel° at work?" = "Using Goel° at work?";
 "Using all eligible" = "Using all eligible";
 "VPN policy blocks multi-path" = "VPN policy blocks multi-path";
+"Verify %@ before connecting" = "Verify %@ before connecting";
 "Verify a checksum" = "Verify a checksum";
 "Verifying" = "Verifying";
 "Verifying (%@)…" = "Verifying (%@)…";
@@ -1830,8 +1861,13 @@
 "re-encoded" = "re-encoded";
 "read" = "read";
 "seed to %@×" = "seed to %@×";
+"seed to ratio %@" = "seed to ratio %@";
+"seed without limit" = "seed without limit";
 "server" = "server";
 "soon" = "soon";
+"speed cap %@" = "speed cap %@";
+"speed cap %@ (off)" = "speed cap %@ (off)";
+"speed limit off" = "speed limit off";
 "terabytes" = "terabytes";
 "the scanner couldn’t be started: %@" = "the scanner couldn’t be started: %@";
 "the scanner set in Settings can’t be run" = "the scanner set in Settings can’t be run";
@@ -1842,6 +1878,8 @@
 "unknown size" = "unknown size";
 "unlimited" = "unlimited";
 "untitled folder" = "untitled folder";
+"up to %1$d downloads at once, %2$@" = "up to %1$d downloads at once, %2$@";
+"up to %d downloads at once" = "up to %d downloads at once";
 "upload" = "upload";
 "upload %@" = "upload %@";
 "upload limit %@" = "upload limit %@";
@@ -1878,6 +1916,8 @@
 "•••••• (unchanged)" = "•••••• (unchanged)";
 "↑ 0 B/s" = "↑ 0 B/s";
 "↑ Speed" = "↑ Speed";
+"→ %@" = "→ %@";
 "↓ %1$@, ↑ %2$@" = "↓ %1$@, ↑ %2$@";
 "↓ Speed" = "↓ Speed";
+"✓ Matches the %@ key you already trust in ~/.ssh/known_hosts." = "✓ Matches the %@ key you already trust in ~/.ssh/known_hosts.";
 "⬆︎ Parent folder" = "⬆︎ Parent folder";

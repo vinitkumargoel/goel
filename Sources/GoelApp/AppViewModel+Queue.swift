@@ -46,7 +46,7 @@ extension AppViewModel {
     /// same Undo toast brings the rows back.
     func clearCompleted() {
         let done = tasks.filter { $0.status == .completed }.map(\.id)
-        guard !done.isEmpty else { toastNow(L10n.t("No completed downloads to clear")); return }
+        guard !done.isEmpty else { toastWarning(L10n.t("No completed downloads to clear")); return }
         removeFromList(done)
     }
 }

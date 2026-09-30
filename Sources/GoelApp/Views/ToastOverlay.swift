@@ -91,6 +91,7 @@ private struct ToastCapsule: View {
         switch kind {
         case .success: return "checkmark.circle.fill"
         case .error: return "xmark.octagon.fill"
+        case .warning: return "exclamationmark.triangle.fill"
         case .info: return "info.circle.fill"
         }
     }
@@ -99,6 +100,7 @@ private struct ToastCapsule: View {
         switch kind {
         case .success: return Theme.green
         case .error: return Theme.red
+        case .warning: return Theme.orange
         case .info: return Theme.accent
         }
     }

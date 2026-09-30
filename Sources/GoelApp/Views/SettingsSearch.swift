@@ -163,6 +163,26 @@ enum SettingsSearch {
         index(for: L10n.currentLanguage).panes(matching: query)
     }
 
+    /// Individual rows, not whole panes, for the command palette: "sleep" should land on
+    /// "Prevent sleep during active downloads", not on a list of three panes. Sentences (pane
+    /// subtitles) are left out; each row carries its localized title.
+    static func rows(matching query: String, limit: Int = 6,
+                     localize: (String) -> String = { L10n.t($0) }) -> [(pane: SettingsView.Pane, title: String)] {
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines).count >= minimumHighlightLength else { return [] }
+        let tokens = tokens(query)
+        var out: [(SettingsView.Pane, String)] = []
+        for pane in SettingsView.Pane.Group.allCases.flatMap(\.panes) {
+            for key in pane.searchKeywords where !key.hasSuffix(".") {
+                let title = localize(key)
+                guard matches(folded: fold(title), tokens: tokens) || matches(folded: fold(key), tokens: tokens)
+                else { continue }
+                out.append((pane, title))
+                if out.count == limit { return out }
+            }
+        }
+        return out
+    }
+
     /// Builds a throwaway index with `localize`; for tests and one-off lookups.
     static func panes(matching query: String, localize: (String) -> String) -> [SettingsView.Pane] {
         Index(localize: localize).panes(matching: query)

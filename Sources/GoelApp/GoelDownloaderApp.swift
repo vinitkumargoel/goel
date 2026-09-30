@@ -387,9 +387,9 @@ struct GoelCommands: Commands {
         let body = viewModel.tasks.map(\.source.locator).joined(separator: "\n")
         do {
             try body.write(to: url, atomically: true, encoding: .utf8)
-            viewModel.toastNow(L10n.t("Download list exported"))
+            viewModel.toastSuccess(L10n.t("Download list exported"))
         } catch {
-            viewModel.toastNow(L10n.t("Export failed"))
+            viewModel.toastError(L10n.t("Export failed"))
         }
     }
 
@@ -403,13 +403,13 @@ struct GoelCommands: Commands {
             message: L10n.t("Choose a file exported by aria2, JDownloader, IDM, a browser, etc.")
         ) else { return }
         guard let data = try? Data(contentsOf: url) else {
-            viewModel.toastNow(L10n.t("Couldn’t read that file"))
+            viewModel.toastError(L10n.t("Couldn’t read that file"))
             return
         }
         let text = String(decoding: data, as: UTF8.self)
         let locators = ForeignImportParser.extractLocators(from: text)
         guard !locators.isEmpty else {
-            viewModel.toastNow(L10n.t("No downloadable links found in that file"))
+            viewModel.toastWarning(L10n.t("No downloadable links found in that file"))
             return
         }
         // `add` reports what it queued and what it skipped; a second "Imported N" toast here
@@ -427,7 +427,7 @@ struct GoelCommands: Commands {
     private func readTextFile() -> String? {
         guard let url = FilePicker.openFile(types: [.plainText, .text]) else { return nil }
         guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
-            viewModel.toastNow(L10n.t("Couldn’t read that file"))
+            viewModel.toastError(L10n.t("Couldn’t read that file"))
             return nil
         }
         return contents

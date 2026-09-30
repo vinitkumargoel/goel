@@ -219,7 +219,7 @@ final class ToastQueueTests: XCTestCase {
 
     func testIsErrorInitialiserMapsToKinds() {
         XCTAssertEqual(Toast(message: "a", isError: true, action: nil).kind, .error)
-        XCTAssertEqual(Toast(message: "a", isError: false, action: nil).kind, .success)
+        XCTAssertEqual(Toast(message: "a", isError: false, action: nil).kind, .info)
     }
 
     func testPendingCountFeedsTheWaitingChip() {
@@ -263,5 +263,21 @@ final class ToastQueueTests: XCTestCase {
         let queue = ToastQueue(autoAdvance: false, announce: { _ in }, isVoiceOverRunning: { true })
         queue.show("Removed “a”", action: Toast.Action(title: "Undo") {})
         XCTAssertNil(queue.countdown)
+    }
+
+    /// A refusal reads longer than a confirmation and shorter than a failure, and is spoken like any toast.
+    func testWarningsDwellBetweenInfoAndErrorAndAreAnnounced() {
+        let info = Toast(message: "a", kind: .info, action: nil)
+        let warning = Toast(message: "a", kind: .warning, action: nil)
+        let error = Toast(message: "a", kind: .error, action: nil)
+        XCTAssertGreaterThan(warning.dwell, info.dwell)
+        XCTAssertLessThan(warning.dwell, error.dwell)
+        XCTAssertFalse(warning.isError)
+
+        var spoken: [String] = []
+        let queue = ToastQueue(autoAdvance: false, announce: { spoken.append($0) })
+        queue.show("Nothing to pause", kind: .warning)
+        XCTAssertEqual(queue.current?.kind, .warning)
+        XCTAssertEqual(spoken, ["Nothing to pause"])
     }
 }

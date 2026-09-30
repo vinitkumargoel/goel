@@ -47,7 +47,7 @@ extension AppViewModel {
         let safeName = PathSafety.sanitizedName(entry.name)
         // `downloadToFile` truncate-creates, so an existing local file dies silently; without a listing, refuse rather than guess.
         guard let listed = try? FileManager.default.contentsOfDirectory(atPath: localDir.path) else {
-            toastNow(L10n.t("Couldn’t read “%1$@”, so “%2$@” wasn’t downloaded.",
+            toastError(L10n.t("Couldn’t read “%1$@”, so “%2$@” wasn’t downloaded.",
                             localDir.lastPathComponent, entry.name))
             return
         }
@@ -60,7 +60,7 @@ extension AppViewModel {
         let localName = SFTPBrowserPaths.uniqueName(safeName, existing: existingNames)
         let destination = localDir.appendingPathComponent(localName)
         guard SFTPBrowserModel.isContained(destination, in: localDir) else {
-            toastNow(L10n.t("Refusing to write “%@” outside the chosen folder.", entry.name)); return
+            toastWarning(L10n.t("Refusing to write “%@” outside the chosen folder.", entry.name)); return
         }
         let remoteSource = SFTPBrowserPaths.join(remoteDir, entry.name)
         let cancel = CancelFlag()
@@ -108,7 +108,7 @@ extension AppViewModel {
         sftpFolderBytes[id] = nil
         sftpRemoteCopyPlans[id] = nil
         sftpTransfers.removeAll { $0.id == id }
-        toastNow(L10n.t("Transfer cancelled"))
+        toastSuccess(L10n.t("Transfer cancelled"))
     }
 
     /// The abort travels through the same cancel flag; `sftpPauseIntents` tells the
@@ -132,7 +132,7 @@ extension AppViewModel {
     func retrySFTPTransfer(_ id: UUID) {
         guard let i = sftpTransfers.firstIndex(where: { $0.id == id }), !sftpTransfers[i].isActive else { return }
         let t = sftpTransfers[i]
-        guard let connection = server(t.connectionID) else { toastNow(L10n.t("That server no longer exists.")); return }
+        guard let connection = server(t.connectionID) else { toastWarning(L10n.t("That server no longer exists.")); return }
         // Resolve before flipping the row live: a refused Keychain read must leave the row failed, not "running".
         guard let client = sftpClientReportingFailure(for: connection) else { return }
         // Marked waiting *before* the preflight, so this row reserves its destination against a transfer started meanwhile.
@@ -233,7 +233,7 @@ extension AppViewModel {
         let dropped = Set(sftpTransfers.lazy.filter { !$0.occupiesDestination }.map(\.id))
         sftpTransfers.removeAll { dropped.contains($0.id) }
         for id in dropped { sftpRemoteCopyPlans[id] = nil }
-        if sftpTransfers.count != before { toastNow(L10n.t("Cleared finished transfers")) }
+        if sftpTransfers.count != before { toastSuccess(L10n.t("Cleared finished transfers")) }
     }
 
     func sftpTransfers(for connectionID: UUID) -> [SFTPTransfer] {
@@ -246,7 +246,7 @@ extension AppViewModel {
         for url in items {
             guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]),
                   let isDirectory = values.isDirectory else {
-                toastNow(L10n.t("Couldn’t read “%@” — nothing was uploaded.", url.lastPathComponent))
+                toastError(L10n.t("Couldn’t read “%@” — nothing was uploaded.", url.lastPathComponent))
                 return
             }
             isDirectories.append(isDirectory)
@@ -269,7 +269,7 @@ extension AppViewModel {
               let split = SFTPOverwritePlan.split(names: items.map(\.lastPathComponent),
                                                   against: listing) else {
             let place = remoteDir == "." ? L10n.t("Home") : remoteDir
-            toastNow(L10n.t("Couldn’t check what’s already in %@ — nothing was uploaded.", place)
+            toastError(L10n.t("Couldn’t check what’s already in %@ — nothing was uploaded.", place)
                      + (listingDetail.map { " \($0)" } ?? ""))
             return
         }

@@ -132,7 +132,7 @@ struct AggregationSettingsPane: View {
             HStack {
                 Text(L10n.t("ADAPTERS"))
                     .scaledFont(size: Theme.TextSize.caption, weight: .bold)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text(selectionCaption)
                     .scaledFont(size: Theme.TextSize.meta)
@@ -193,7 +193,7 @@ struct AggregationSettingsPane: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(L10n.t("OPTIONS"))
                 .scaledFont(size: Theme.TextSize.caption, weight: .bold)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
             SetRow(name: L10n.t("Include expensive networks"),
@@ -233,7 +233,7 @@ struct AggregationSettingsPane: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.t("HOW IT WORKS"))
                 .scaledFont(size: Theme.TextSize.caption, weight: .bold)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
             tipRow(icon: "arrow.triangle.branch",
                    text: L10n.t("Ranged HTTP segments bind to different adapters (not OS link aggregation)."))
             tipRow(icon: "wifi.exclamationmark",
@@ -303,7 +303,7 @@ private struct AdapterRow: View {
                             .foregroundStyle(.primary)
                         Text(adapter.bsdName)
                             .scaledFont(size: Theme.TextSize.caption, design: .monospaced)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                     }
                     Text(subtitle)
                         .scaledFont(size: Theme.TextSize.meta)

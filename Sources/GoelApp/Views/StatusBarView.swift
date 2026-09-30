@@ -14,8 +14,9 @@ struct StatusBarView: View {
             stat(.down, speed: telemetry.displayedCombinedSpeed.down)
             stat(.up, speed: telemetry.displayedCombinedSpeed.up)
             if !activeTransfers.isEmpty { transfersIndicator }
+            selectionEcho
             Spacer()
-            Text(L10n.t("Profile")).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.tertiary)
+            Text(L10n.t("Queue profile")).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
                 .a11yDecorative()
             profilePicker
         }
@@ -26,6 +27,19 @@ struct StatusBarView: View {
     }
 
     private var activeTransfers: [SFTPTransfer] { vm.sftpTransfers.filter { $0.isActive } }
+
+    /// With the panel closed (or several rows picked) nothing else confirms what is selected.
+    @ViewBuilder
+    private var selectionEcho: some View {
+        let selected = vm.selectedTasks
+        if !selected.isEmpty, !vm.detailPanelVisible || selected.count > 1 {
+            let bytes = selected.reduce(Int64(0)) { $0 + ($1.totalBytes ?? $1.bytesDownloaded) }
+            Text(SelectionAggregate.statusLine(count: selected.count, totalBytes: bytes))
+                .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
 
     private var transfersIndicator: some View {
         Button { showTransfers.toggle() } label: {
@@ -159,14 +173,15 @@ struct StatusBarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(SpeedProfileText.summary(profile))
+                .help(SpeedProfileText.queueSummary(profile, limitEnabled: vm.settings.speedLimitEnabled))
                 .contextMenu {
                     Button(L10n.t("Edit Profile…")) { editProfile(profile.name) }
                         .disabled(profile.name != vm.settings.selectedProfileName
                                   && vm.managedPolicy.isLocked(.selectedProfileName))
                 }
-                .accessibilityLabel(L10n.t("%@ speed profile", profile.name))
-                .accessibilityValue(SpeedProfileText.spokenLimits(profile))
+                .accessibilityLabel(L10n.t("%@ queue profile", profile.name))
+                .accessibilityValue(SpeedProfileText.spokenQueueSummary(
+                    profile, limitEnabled: vm.settings.speedLimitEnabled))
                 .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
                 .accessibilityAction(named: L10n.t("Edit Profile")) { editProfile(profile.name) }
             }
@@ -174,7 +189,7 @@ struct StatusBarView: View {
         .padding(2)
         .background(RoundedRectangle(cornerRadius: Theme.Radius.field).fill(Color.primary.opacity(0.06)))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(L10n.t("Speed profile"))
+        .accessibilityLabel(L10n.t("Queue profile"))
     }
 }
 

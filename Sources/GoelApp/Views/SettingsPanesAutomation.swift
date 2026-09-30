@@ -122,7 +122,7 @@ struct RSSPane: View {
                                 destructive: true
                             ) {
                                 vm.update { $0.rssFeeds.removeAll { $0.id == feed.id } }
-                                vm.toastNow(L10n.t("Feed removed"))
+                                vm.toastSuccess(L10n.t("Feed removed"))
                             }
                         } label: {
                             Image(systemName: "trash")
@@ -184,7 +184,7 @@ struct RSSPane: View {
         newURL = ""
         newPattern = ""
         newStartPaused = false
-        vm.toastNow(L10n.t("Feed added"))
+        vm.toastSuccess(L10n.t("Feed added"))
     }
 }
 
@@ -290,7 +290,7 @@ struct RemoteAccessPane: View {
                                 destructive: true
                             ) {
                                 vm.update { $0.remoteToken = Self.newToken() }
-                                vm.toastNow(L10n.t("New API token generated"))
+                                vm.toastSuccess(L10n.t("New API token generated"))
                             }
                         }
                         .accessibilityLabel(L10n.t("Regenerate API token"))
@@ -582,7 +582,7 @@ struct CredentialsSection: View {
                             return
                         }
                         refresh()
-                        vm.toastNow(L10n.t("Login removed"))
+                        vm.toastSuccess(L10n.t("Login removed"))
                     }
                 } label: {
                     Image(systemName: "trash")

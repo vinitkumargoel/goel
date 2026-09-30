@@ -85,7 +85,7 @@ extension AppViewModel {
         if let going = server(id) { dropPooledConnections(for: going, and: nil) }
         SFTPBrowserLocationStore.shared.removePath(for: id)
         reloadServers()
-        toastNow(L10n.t("Server removed"))
+        toastSuccess(L10n.t("Server removed"))
     }
 
     func selectServer(_ id: SFTPConnection.ID) {
@@ -95,7 +95,7 @@ extension AppViewModel {
 
     func revealSFTPTransfer(_ transfer: SFTPTransfer) {
         guard server(transfer.connectionID) != nil else {
-            toastNow(L10n.t("Server is no longer available"))
+            toastWarning(L10n.t("Server is no longer available"))
             return
         }
         sftpBrowserNavigation = SFTPBrowserNavigationRequest(
@@ -246,10 +246,10 @@ extension AppViewModel {
         ) { [weak self] in
             guard let self else { return }
             guard HostKeyStore.shared.reset(host: host, port: port) else {
-                self.toastNow(L10n.t("Couldn’t clear the saved host key for %@", host))
+                self.toastError(L10n.t("Couldn’t clear the saved host key for %@", host))
                 return
             }
-            self.toastNow(L10n.t("Host key forgotten — you’ll be asked to confirm it next connection"))
+            self.toastSuccess(L10n.t("Host key forgotten — you’ll be asked to confirm it next connection"))
         }
     }
 
@@ -271,12 +271,12 @@ extension AppViewModel {
     /// This leaves Goel: the external client uses its own `known_hosts`, not our pinned key.
     func openServerInTerminal(_ connection: SFTPConnection) {
         guard let url = sshURL(for: connection) else {
-            toastNow(L10n.t("This server’s address can’t be opened in Terminal"))
+            toastWarning(L10n.t("This server’s address can’t be opened in Terminal"))
             return
         }
         #if canImport(AppKit)
         guard NSWorkspace.shared.open(url) else {
-            toastNow(L10n.t("No app is set up to open ssh:// links"))
+            toastWarning(L10n.t("No app is set up to open ssh:// links"))
             return
         }
         #endif

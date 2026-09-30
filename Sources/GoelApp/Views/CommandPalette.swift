@@ -18,10 +18,13 @@ final class SettingsRoute: ObservableObject {
 
     /// ``SettingsView`` must clear this after switching, or the same pane twice won't navigate.
     @Published var requestedPane: SettingsView.Pane?
+    /// A row title to search for once the pane is shown, so the row lights up (palette row results).
+    var requestedHighlight: String?
 
     private init() {}
 
-    func request(_ pane: SettingsView.Pane) {
+    func request(_ pane: SettingsView.Pane, highlight: String? = nil) {
+        requestedHighlight = highlight
         requestedPane = pane
     }
 }
@@ -29,6 +32,8 @@ final class SettingsRoute: ObservableObject {
 struct PaletteCommand: Identifiable {
 
     enum Group: String {
+        case selection = "Selection"
+        case task = "In your list"
         case add = "Add"
         case downloads = "Downloads"
         case view = "View"
@@ -186,7 +191,9 @@ struct CommandPalette: View {
     private var matches: [PaletteCommand] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !needle.isEmpty else { return commands }
-        return commands
+        // Downloads and single settings rows only join once something is typed: listed up front
+        // they would bury the commands.
+        return (commands + taskCommands(needle) + settingsRowCommands(needle))
             .compactMap { command -> (PaletteCommand, Int)? in
                 guard let score = Self.score(command, needle) else { return nil }
                 return (command, score)
@@ -213,7 +220,77 @@ struct CommandPalette: View {
     }
 
     private var commands: [PaletteCommand] {
-        addCommands + downloadCommands + viewCommands + settingsCommands + discoverCommands
+        selectionCommands + addCommands + downloadCommands + viewCommands + settingsCommands + discoverCommands
+    }
+
+    /// Acts on what is selected in the list, named with the count so it is clear what will run.
+    private var selectionCommands: [PaletteCommand] {
+        let selected = vm.selectedServer == nil ? vm.selectedTasks : []
+        guard !selected.isEmpty else { return [] }
+        let count = selected.count
+        var list: [PaletteCommand] = []
+        if selected.contains(where: { $0.status.isActive }) {
+            list.append(PaletteCommand(id: "sel.pause", title: L10n.t("Pause Selected (%d)", count),
+                                       subtitle: L10n.t("Hold the selected downloads"),
+                                       symbol: "pause.fill", group: .selection, shortcut: "⌘P",
+                                       keywords: ["pause", "stop", "hold"]) { vm.pauseSelected() })
+        }
+        if selected.contains(where: { $0.status == .paused || $0.status == .queued }) {
+            list.append(PaletteCommand(id: "sel.resume", title: L10n.t("Resume Selected (%d)", count),
+                                       subtitle: L10n.t("Start the selected downloads"),
+                                       symbol: "play.fill", group: .selection, shortcut: "⌥⌘P",
+                                       keywords: ["resume", "start"]) { vm.resumeSelected() })
+        }
+        if selected.contains(where: { $0.status.isFailed }) {
+            list.append(PaletteCommand(id: "sel.retry", title: L10n.t("Retry Selected (%d)", count),
+                                       subtitle: L10n.t("Try the failed ones again"),
+                                       symbol: "arrow.clockwise", group: .selection, shortcut: "⌘R",
+                                       keywords: ["retry", "again", "failed"]) { vm.retrySelected() })
+        }
+        if let first = selected.first(where: { $0.status.hasData }) {
+            list.append(PaletteCommand(id: "sel.reveal", title: L10n.t("Show in Finder"),
+                                       subtitle: first.name,
+                                       symbol: "folder", group: .selection,
+                                       keywords: ["finder", "reveal", "folder"]) { vm.revealInFinder(first) })
+        }
+        list.append(PaletteCommand(id: "sel.copy", title: count == 1 ? L10n.t("Copy Source Link")
+                                                                   : L10n.t("Copy %d Source Links", count),
+                                   subtitle: L10n.t("The URLs or magnets, one per line"),
+                                   symbol: "link", group: .selection,
+                                   keywords: ["copy", "url", "link", "magnet"]) {
+            vm.copyToPasteboard(selected.map(\.sourceLocator).joined(separator: "\n"))
+        })
+        list.append(PaletteCommand(id: "sel.top", title: L10n.t("Move to Top of Queue"),
+                                   subtitle: L10n.t("Start these before everything else waiting"),
+                                   symbol: "arrow.up.to.line", group: .selection,
+                                   keywords: ["queue", "first", "priority", "top"]) {
+            vm.moveInQueue(selected.map(\.id), to: .top)
+        })
+        return list
+    }
+
+    /// Downloads whose name contains the query: running one jumps to its row.
+    private func taskCommands(_ needle: String) -> [PaletteCommand] {
+        vm.tasks
+            .filter { $0.name.lowercased().contains(needle) }
+            .prefix(8)
+            .map { task in
+                PaletteCommand(id: "task.\(task.id.uuidString)", title: task.name,
+                               subtitle: task.statusDetailText,
+                               symbol: task.fileType.symbol, group: .task) { vm.reveal(task.id) }
+            }
+    }
+
+    /// One settings row, opened in its pane with the row highlighted.
+    private func settingsRowCommands(_ needle: String) -> [PaletteCommand] {
+        SettingsSearch.rows(matching: needle).map { row in
+            PaletteCommand(id: "row.\(row.pane.id).\(row.title)", title: row.title,
+                           subtitle: L10n.t("%1$@ › %2$@", row.pane.group.title, L10n.t(row.pane.rawValue)),
+                           symbol: row.pane.symbol, group: .settings) {
+                SettingsRoute.shared.request(row.pane, highlight: row.title)
+                openSettings()
+            }
+        }
     }
 
     private var addCommands: [PaletteCommand] {
@@ -230,7 +307,7 @@ struct CommandPalette: View {
                            keywords: ["paste", "batch", "bulk"]) {
                 guard let text = NSPasteboard.general.string(forType: .string),
                       !text.isEmpty else {
-                    vm.toastNow(L10n.t("Nothing on the clipboard"))
+                    vm.toastWarning(L10n.t("Nothing on the clipboard"))
                     return
                 }
                 vm.add(rawLines: text, saveDirectory: nil, priority: .normal)
@@ -260,6 +337,14 @@ struct CommandPalette: View {
                            subtitle: L10n.t("Hold every active transfer"),
                            symbol: "pause.fill", group: .downloads,
                            keywords: ["stop", "hold"]) { vm.pauseAll() },
+            PaletteCommand(id: "dl.retryFailed", title: L10n.t("Retry All Failed"),
+                           subtitle: L10n.t("Try every failed download again"),
+                           symbol: "arrow.clockwise", group: .downloads,
+                           keywords: ["retry", "failed", "error", "again"]) { vm.retryAllFailed() },
+            PaletteCommand(id: "dl.clearCompleted", title: L10n.t("Clear Completed"),
+                           subtitle: L10n.t("Take finished rows off the list — files stay on disk"),
+                           symbol: "checkmark.circle", group: .downloads,
+                           keywords: ["clear", "completed", "finished", "tidy", "clean"]) { vm.clearCompleted() },
             PaletteCommand(id: "dl.snail", title: L10n.t("Toggle Speed Limit"),
                            subtitle: L10n.t("Switch between Unlimited and the active traffic profile"),
                            symbol: "tortoise", group: .downloads,
@@ -275,6 +360,14 @@ struct CommandPalette: View {
                 symbol: "speedometer", group: .downloads,
                 keywords: ["profile", "limit", "speed", profile.name])
             { vm.setProfile(profile.name) })
+        }
+        for server in vm.servers {
+            list.append(PaletteCommand(
+                id: "dl.server.\(server.id)", title: L10n.t("Connect to %@", server.label),
+                subtitle: L10n.t("Browse this SFTP server"),
+                symbol: "server.rack", group: .downloads,
+                keywords: ["sftp", "server", "ssh", "connect", server.label])
+            { vm.selectServer(server.id) })
         }
         list.append(contentsOf: [
             PaletteCommand(id: "dl.stats", title: L10n.t("Statistics…"),
@@ -334,19 +427,19 @@ struct CommandPalette: View {
                            subtitle: L10n.t("Add sheet ▸ Mirrors — segments spread across alternate URLs and fail over"),
                            symbol: "arrow.triangle.branch", group: .discover,
                            keywords: ["mirror", "metalink", "failover", "alternate", "redundant"]) {
-                vm.isAddSheetPresented = true
+                openAddWithAdvanced()
             },
             PaletteCommand(id: "find.checksum", title: L10n.t("Verify a checksum"),
                            subtitle: L10n.t("Add sheet ▸ Checksum — MD5/SHA-1/SHA-256, checked when the download finishes"),
                            symbol: "checkmark.seal", group: .discover,
                            keywords: ["checksum", "hash", "sha256", "md5", "integrity", "verify"]) {
-                vm.isAddSheetPresented = true
+                openAddWithAdvanced()
             },
             PaletteCommand(id: "find.cookies", title: L10n.t("Sign-in cookies for a download"),
                            subtitle: L10n.t("Add sheet ▸ Sign-in cookies — for files behind a login"),
                            symbol: "person.badge.key", group: .discover,
                            keywords: ["cookie", "login", "session", "auth", "paywall"]) {
-                vm.isAddSheetPresented = true
+                openAddWithAdvanced()
             },
             PaletteCommand(id: "find.filePriority", title: L10n.t("Per-file priority in a torrent"),
                            subtitle: L10n.t("Select a torrent, then the detail panel's Files tab — skip, low, normal, high"),
@@ -355,7 +448,7 @@ struct CommandPalette: View {
                 vm.detailPanelVisible = true
                 vm.detailTab = .files
                 if vm.selectedTask == nil {
-                    vm.toastNow(L10n.t("Select a torrent to set per-file priority"))
+                    vm.toastWarning(L10n.t("Select a torrent to set per-file priority"))
                 }
             },
             PaletteCommand(id: "find.applescript", title: L10n.t("Automate with AppleScript"),
@@ -363,9 +456,16 @@ struct CommandPalette: View {
                            symbol: "applescript", group: .discover,
                            keywords: ["applescript", "automation", "script", "shortcuts", "osascript"]) {
                 vm.copyToPasteboard(Self.appleScriptExample)
-                vm.toastNow(L10n.t("AppleScript example copied"))
+                vm.toastSuccess(L10n.t("AppleScript example copied"))
             },
         ]
+    }
+
+    /// These fields live on the review step, so say what to do first and have them open there.
+    private func openAddWithAdvanced() {
+        vm.addSheetRevealsAdvanced = true
+        vm.isAddSheetPresented = true
+        vm.toastNow(L10n.t("Paste a link — Advanced options will be open on the next step"))
     }
 
     private static let appleScriptExample = """

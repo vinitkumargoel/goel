@@ -119,7 +119,7 @@ struct DetailsTab: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Text(L10n.t("idle")).scaledFont(size: Theme.TextSize.micro).foregroundStyle(.tertiary)
+                    Text(L10n.t("idle")).scaledFont(size: Theme.TextSize.micro).foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 6)
                 Divider()
@@ -183,7 +183,7 @@ struct TrackerRow: View {
                     .lineLimit(1).truncationMode(.middle)
                 if !tracker.message.isEmpty {
                     Text(tracker.message)
-                        .scaledFont(size: Theme.TextSize.micro).foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.micro).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.tail)
                 }
             }

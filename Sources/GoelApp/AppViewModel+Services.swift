@@ -41,7 +41,7 @@ extension AppViewModel {
             id = taskID
         }
         guard let task = tasks.first(where: { $0.id == id }) else {
-            toastNow(L10n.t("That download is no longer in your list"))
+            toastWarning(L10n.t("That download is no longer in your list"))
             return
         }
         selectedServer = nil
@@ -164,6 +164,6 @@ extension AppViewModel {
         }
         let manager = self.manager
         Task { await manager.reconcileCompletedFiles() }
-        toastNow(L10n.t("Found “%@”", task.name))
+        toastSuccess(L10n.t("Found “%@”", task.name))
     }
 }

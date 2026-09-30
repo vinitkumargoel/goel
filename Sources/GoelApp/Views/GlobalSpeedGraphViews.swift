@@ -73,7 +73,7 @@ struct GlobalSpeedHistoryPopover: View {
                     Text(L10n.t("now"))
                 }
                 .scaledFont(size: Theme.TextSize.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .a11yDecorative()
             }
             .accessibilityElement(children: .ignore)

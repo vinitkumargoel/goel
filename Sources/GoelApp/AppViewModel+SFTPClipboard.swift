@@ -11,7 +11,7 @@ extension AppViewModel {
         sftpClipboard = SFTPClipboard(operation: operation, connectionID: connection.id,
                                       directory: directory, items: safe)
         let noun = safe.count == 1 ? "“\(safe[0].name)”" : L10n.t("%d items", safe.count)
-        toastNow(operation == .cut ? L10n.t("Cut %@", noun) : L10n.t("Copied %@", noun))
+        toastSuccess(operation == .cut ? L10n.t("Cut %@", noun) : L10n.t("Copied %@", noun))
     }
 
     func clearSFTPClipboard() { sftpClipboard = nil }
@@ -25,7 +25,7 @@ extension AppViewModel {
         guard let clip = sftpClipboard, !clip.isEmpty else { return }
         guard !clip.isSelfMove(toConnection: connection.id, directory: directory) else { return }
         guard let source = server(clip.connectionID) else {
-            toastNow(L10n.t("The server those items came from is no longer set up.")); return
+            toastWarning(L10n.t("The server those items came from is no longer set up.")); return
         }
         // Resolve clients once per paste, not per item: otherwise one Keychain prompt per item.
         guard let sourceClient = sftpClientReportingFailure(for: source) else { return }
@@ -40,7 +40,7 @@ extension AppViewModel {
         let sameServer = clip.connectionID == connection.id
         for entry in clip.items {
             guard !clip.wouldRecurse(entry, intoConnection: connection.id, directory: directory) else {
-                toastNow(L10n.t("Can’t paste “%@” inside itself.", entry.name))
+                toastWarning(L10n.t("Can’t paste “%@” inside itself.", entry.name))
                 continue
             }
             startRemoteCopy(entry: entry, clip: clip,

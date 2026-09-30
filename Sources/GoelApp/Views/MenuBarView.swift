@@ -17,19 +17,9 @@ struct MenuBarView: View {
 
     @State private var measuredListHeight: CGFloat = 0
 
-    private var activeTasks: [DownloadTask] {
-        vm.tasks.filter { $0.status.isActive }
-    }
+    private var queue: MenuBarQueue { MenuBarQueue(tasks: vm.tasks) }
 
-    private var listedTasks: [DownloadTask] {
-        let active = vm.tasks.filter { $0.status.isActive }
-        let pending = vm.tasks.filter { !$0.status.isActive && !$0.status.isTerminal }
-        return Array((active + pending).prefix(Self.maxListedRows))
-    }
-
-    private static let maxListedRows = 8
-
-    /// `.failed` is terminal, so `listedTasks` never shows one; this section is where they surface.
+    /// `.failed` is terminal, so `MenuBarQueue` never lists one; this section is where they surface.
     private var attention: MenuBarAttention { MenuBarAttention(tasks: vm.tasks) }
 
     private var activeTransfers: [SFTPTransfer] {
@@ -42,8 +32,10 @@ struct MenuBarView: View {
     var body: some View {
         let attention = self.attention
         let justFinished = self.justFinished
+        let queue = self.queue
+        let listedTasks = queue.listed
         VStack(spacing: 0) {
-            header(failures: attention.total)
+            header(queued: queue.total, failures: attention.total)
             Divider()
             // The window's blocking card is invisible in menu-bar-only mode, yet the countdown still fires.
             MenuBarCountdownSection(countdown: vm.autoShutdownCountdown)
@@ -57,13 +49,17 @@ struct MenuBarView: View {
                         if !attention.shown.isEmpty {
                             sectionLabel(L10n.t("Needs attention"))
                             ForEach(attention.shown) { task in
-                                MenuBarFailedRow(task: task, vm: vm)
+                                MenuBarFailedRow(task: task, vm: vm, onOpen: { open(task) })
                                 Divider()
                             }
                             if !listedTasks.isEmpty { sectionLabel(L10n.t("In progress")) }
                         }
                         ForEach(listedTasks) { task in
-                            MenuBarDownloadRow(task: task, vm: vm)
+                            MenuBarDownloadRow(task: task, vm: vm, onOpen: { open(task) })
+                            Divider()
+                        }
+                        if queue.hiddenCount > 0 {
+                            moreRow(queue)
                             Divider()
                         }
                         if !activeTransfers.isEmpty {
@@ -86,7 +82,7 @@ struct MenuBarView: View {
                         if !justFinished.isEmpty {
                             sectionLabel(L10n.t("Just finished"))
                             ForEach(justFinished) { task in
-                                MenuBarFinishedRow(task: task, vm: vm)
+                                MenuBarFinishedRow(task: task, vm: vm, onOpen: { open(task) })
                                 Divider()
                             }
                         }
@@ -128,8 +124,36 @@ struct MenuBarView: View {
         .accessibilityAddTraits(.isHeader)
     }
 
-    private func header(failures: Int) -> some View {
-        let count = listedTasks.count + activeTransfers.count + vm.mediaLiveCount
+    /// Rows past the cap still count and still get a way in: the header used to report only the
+    /// eight drawn, so twelve downloads read "Downloads · 8".
+    private func moreRow(_ queue: MenuBarQueue) -> some View {
+        Button {
+            vm.showFilter(queue.hiddenFilter)
+            activateMainWindow()
+        } label: {
+            HStack(spacing: 4) {
+                Text(L10n.t("%d more in Goel°", queue.hiddenCount))
+                    .scaledFont(size: Theme.TextSize.meta, weight: .semibold)
+                Image(systemName: "chevron.right").scaledFont(size: 9, weight: .bold)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Theme.accent)
+            .padding(.horizontal, 14)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .a11yButton(L10n.t("%d more downloads", queue.hiddenCount),
+                    hint: L10n.t("Opens the main window with them listed."))
+    }
+
+    private func open(_ task: DownloadTask) {
+        vm.reveal(task.id)
+        activateMainWindow()
+    }
+
+    private func header(queued: Int, failures: Int) -> some View {
+        let count = queued + activeTransfers.count + vm.mediaLiveCount
         return HStack(spacing: 12) {
             Text(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads · %d", count))
                 .scaledFont(size: Theme.TextSize.title, weight: .semibold)
@@ -184,15 +208,7 @@ struct MenuBarView: View {
             .a11yButton(L10n.t("Add download"), hint: L10n.t("Opens the main window's add sheet."))
 
             HStack(spacing: 0) {
-                Button(action: pauseOrResumeAll) {
-                    Label(activeTasks.isEmpty ? L10n.t("Start all") : L10n.t("Pause all"),
-                          systemImage: activeTasks.isEmpty ? "play.fill" : "pause.fill")
-                        .scaledFont(size: Theme.TextSize.meta)
-                        .foregroundStyle(.secondary)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .a11yButton(activeTasks.isEmpty ? L10n.t("Start all downloads") : L10n.t("Pause all downloads"))
+                MenuBarPauseAllButton(state: vm.commandState, vm: vm)
                 Spacer(minLength: 0)
                 Button(action: openApp) {
                     HStack(spacing: 4) {
@@ -216,10 +232,6 @@ struct MenuBarView: View {
     }
 
     private func openApp() { activateMainWindow() }
-
-    private func pauseOrResumeAll() {
-        if activeTasks.isEmpty { vm.resumeAll() } else { vm.pauseAll() }
-    }
 
     private func activateMainWindow() {
         MainWindowPresenter.register { openWindow(id: MainWindowID.value) }
@@ -264,10 +276,35 @@ private struct ListHeightKey: PreferenceKey {
     }
 }
 
+/// The toolbar's Pause All / Resume All, same state and wording. Observes ``CommandState`` itself:
+/// a nested ObservableObject read through the view model never invalidates.
+private struct MenuBarPauseAllButton: View {
+    @ObservedObject var state: CommandState
+    let vm: AppViewModel
+
+    var body: some View {
+        let snapshot = state.snapshot
+        let pausing = snapshot.pauseAllPauses
+        Button {
+            if pausing { vm.pauseAll() } else { vm.resumeAll() }
+        } label: {
+            Label(pausing ? L10n.t("Pause All") : L10n.t("Resume All"),
+                  systemImage: pausing ? "pause.fill" : "play.fill")
+                .scaledFont(size: Theme.TextSize.meta)
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!snapshot.pauseAllEnabled)
+        .a11yButton(pausing ? L10n.t("Pause all downloads") : L10n.t("Resume all downloads"))
+    }
+}
+
 private struct MenuBarDownloadRow: View {
     @EnvironmentObject private var telemetry: TelemetryStore
     let task: DownloadTask
     let vm: AppViewModel
+    let onOpen: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -296,11 +333,15 @@ private struct MenuBarDownloadRow: View {
                     }
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
+            .help(L10n.t("Show in Goel°"))
             .a11yGroup(label: A11y.sentence(task.compactDisplayName,
                                             task.accessibilityKindName,
                                             task.accessibilityStatusName),
                        value: task.accessibilityProgressValue)
             .accessibilityAddTraits(.updatesFrequently)
+            .accessibilityAction(named: L10n.t("Show in Goel°"), onOpen)
             StateButton(task: task, vm: vm)
         }
         .padding(.horizontal, 14)
@@ -321,6 +362,7 @@ private struct MenuBarDownloadRow: View {
 private struct MenuBarFailedRow: View {
     let task: DownloadTask
     let vm: AppViewModel
+    let onOpen: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -339,7 +381,10 @@ private struct MenuBarFailedRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
             .a11yGroup(label: A11y.sentence(task.compactDisplayName, task.accessibilityStatusName))
+            .accessibilityAction(named: L10n.t("Show in Goel°"), onOpen)
             Button(L10n.t("Retry")) { vm.retry(task.id) }
                 .buttonStyle(TintedPillButtonStyle(tint: Theme.red))
                 .a11yButton(L10n.t("Retry %@", task.name))
@@ -354,6 +399,7 @@ private struct MenuBarFailedRow: View {
 private struct MenuBarFinishedRow: View {
     let task: DownloadTask
     let vm: AppViewModel
+    let onOpen: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -373,7 +419,10 @@ private struct MenuBarFinishedRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
             .accessibilityElement(children: .combine)
+            .accessibilityAction(named: L10n.t("Show in Goel°"), onOpen)
             IconButton(symbol: "magnifyingglass", help: L10n.t("Show in Finder"), size: 11,
                        spokenLabel: L10n.t("Show %@ in Finder", task.name)) {
                 vm.revealInFinder(task)
@@ -427,12 +476,12 @@ private struct MenuBarSpeedControls: View {
 
             Spacer(minLength: 0)
 
-            Picker(L10n.t("Speed profile"), selection: Binding(
+            Picker(L10n.t("Queue profile"), selection: Binding(
                 get: { vm.settings.selectedProfileName },
                 set: { vm.setProfile($0) })) {
                 ForEach(settings.profiles) { profile in
                     Text(profile.name)
-                        .help(SpeedProfileText.summary(profile))
+                        .help(SpeedProfileText.queueSummary(profile, limitEnabled: settings.speedLimitEnabled))
                         .tag(profile.name)
                 }
             }
@@ -441,9 +490,32 @@ private struct MenuBarSpeedControls: View {
             .controlSize(.small)
             .fixedSize()
             .disabled(profileLocked)
-            .help(SpeedProfileText.summary(settings.selectedProfile))
-            .accessibilityValue(SpeedProfileText.spokenLimits(settings.selectedProfile))
+            .help(SpeedProfileText.queueSummary(settings.selectedProfile, limitEnabled: settings.speedLimitEnabled))
+            .accessibilityValue(SpeedProfileText.spokenQueueSummary(
+                settings.selectedProfile, limitEnabled: settings.speedLimitEnabled))
         }
+    }
+}
+
+/// What "In progress" lists: running rows first, then waiting ones, capped so the popover stays
+/// short — but counted in full, so the header and the "N more" row tell the truth.
+struct MenuBarQueue {
+    static let maxListedRows = 8
+
+    let listed: [DownloadTask]
+    let total: Int
+    /// Where "N more" lands: Active when every hidden row is running, else the whole list.
+    let hiddenFilter: SidebarFilter
+
+    var hiddenCount: Int { total - listed.count }
+
+    init(tasks: [DownloadTask], limit: Int = Self.maxListedRows) {
+        let active = tasks.filter { $0.status.isActive }
+        let pending = tasks.filter { !$0.status.isActive && !$0.status.isTerminal }
+        let all = active + pending
+        listed = Array(all.prefix(max(0, limit)))
+        total = all.count
+        hiddenFilter = all.dropFirst(listed.count).allSatisfy { $0.status.isActive } ? .active : .all
     }
 }
 

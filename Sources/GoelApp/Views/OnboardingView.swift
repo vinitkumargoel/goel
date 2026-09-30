@@ -311,7 +311,7 @@ struct OnboardingView: View {
             Text(L10n.t("A few other ways in"))
                 .scaledFont(size: Theme.TextSize.caption, weight: .bold)
                 .accessibilityAddTraits(.isHeader)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .padding(.top, 2)
 
             OnboardingRow(symbol: "tray.and.arrow.down",

@@ -10,11 +10,17 @@ struct MediaFormatPicker: View {
 
     var preloadedFormats: [MediaFormat]?
 
+    /// Whether yt-dlp listed formats for the page: with the default "Best available" row the caller
+    /// sees no selection, yet must still resolve through yt-dlp instead of saving the page's HTML.
+    var onListed: (Bool) -> Void
+
     init(pageURL: URL,
          preloadedFormats: [MediaFormat]? = nil,
+         onListed: @escaping (Bool) -> Void = { _ in },
          onSelect: @escaping (MediaFormat?) -> Void) {
         self.pageURL = pageURL
         self.preloadedFormats = preloadedFormats
+        self.onListed = onListed
         self.onSelect = onSelect
     }
 
@@ -49,7 +55,11 @@ struct MediaFormatPicker: View {
             }
         }
         .task(id: pageURL) { await load() }
-        .onDisappear { loadTask?.cancel() }
+        .onChange(of: phase) { _, newPhase in onListed(newPhase == .loaded && !formats.isEmpty) }
+        .onDisappear {
+            loadTask?.cancel()
+            onListed(false)
+        }
     }
 
     private var header: some View {
@@ -63,7 +73,7 @@ struct MediaFormatPicker: View {
                      ? L10n.t("%d option", visibleFormats.count)
                      : L10n.t("%d options", visibleFormats.count))
                     .scaledFont(size: Theme.TextSize.micro)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             if case .failed = phase {
                 Button(L10n.t("Retry")) { Task { await load(force: true) } }
@@ -137,7 +147,7 @@ struct MediaFormatPicker: View {
                 if let trailing {
                     Text(trailing)
                         .scaledFont(size: Theme.TextSize.caption, design: .monospaced)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.vertical, 5)
@@ -306,7 +316,7 @@ struct PlaylistChecklistView: View {
                      ? L10n.t("%d item", expansion.items.count)
                      : L10n.t("%d items", expansion.items.count))
                     .scaledFont(size: Theme.TextSize.micro)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -327,7 +337,7 @@ struct PlaylistChecklistView: View {
                         .accessibilityLabel(L10n.t("%1$@. %2$@", String(item.index), item.title))
                         Text("\(item.index).")
                             .scaledFont(size: Theme.TextSize.micro, design: .monospaced)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                             .a11yDecorative()
                         Text(item.title)
                             .scaledFont(size: Theme.TextSize.meta)
@@ -339,7 +349,7 @@ struct PlaylistChecklistView: View {
                         if let duration = item.durationText {
                             Text(duration)
                                 .scaledFont(size: Theme.TextSize.micro, design: .monospaced)
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(.secondary)
                                 .accessibilityLabel(L10n.t("Duration %@", duration))
                         }
                     }

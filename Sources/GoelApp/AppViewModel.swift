@@ -283,8 +283,15 @@ final class AppViewModel: ObservableObject {
     @Published var clipboardSuggestion: String?
     /// Where ``clipboardSuggestion`` came from, so the banner doesn't call a browser send a copied link.
     @Published var suggestionIsFromBrowser = false
-    /// Consumed by the Add sheet when it appears; set for a page a browser sent for its video.
-    var addSheetPrefill: String?
+    /// The suggestion is a video page for yt-dlp, not a file: accepting it opens the Add sheet's
+    /// quality step instead of queueing the page's HTML.
+    @Published var suggestionIsMediaPage = false
+    /// Consumed by the Add sheet when it appears, or at once if it is already open; set for a page
+    /// a browser sent, or a copied video page, for its video. Published so an open sheet sees it.
+    @Published var addSheetPrefill: String?
+    /// Consumed by the Add sheet: the palette's "Where is…" checksum/mirrors/cookies entries open
+    /// the review step with Advanced options already expanded instead of at a dead end.
+    var addSheetRevealsAdvanced = false
 
     let manager: DownloadManager
     private var updatesTask: Task<Void, Never>?
@@ -612,7 +619,7 @@ final class AppViewModel: ObservableObject {
             importMetalink(metalink, saveDirectory: saveDirectory, priority: priority)
         }
         guard !sources.isEmpty else {
-            if metalinks.isEmpty { toastNow(L10n.t("Enter a URL or magnet link first")) }
+            if metalinks.isEmpty { toastWarning(L10n.t("Enter a URL or magnet link first")) }
             return
         }
         let existingKeys = Set(tasks.map(\.source.dedupKey))
@@ -622,8 +629,14 @@ final class AppViewModel: ObservableObject {
         }
         let skipped = sources.count - fresh.count
         guard !fresh.isEmpty else {
-            toastNow(sources.count == 1 ? L10n.t("Already in your list")
-                                        : L10n.t("All %d are already in your list", sources.count))
+            if sources.count == 1, let existing = tasks.first(where: { $0.source.dedupKey == sources[0].dedupKey }) {
+                let id = existing.id
+                toastWarning(L10n.t("Already in your list"),
+                             action: Toast.Action(title: L10n.t("Show")) { [weak self] in self?.reveal(id) })
+            } else {
+                toastWarning(sources.count == 1 ? L10n.t("Already in your list")
+                                                : L10n.t("All %d are already in your list", sources.count))
+            }
             return
         }
         // Never apply one checksum to every download in a batch.
@@ -639,10 +652,10 @@ final class AppViewModel: ObservableObject {
             }
         }
         if skipped > 0 {
-            toastNow(L10n.t("Added %1$@ · skipped %2$@ already in your list",
+            toastSuccess(L10n.t("Added %1$@ · skipped %2$@ already in your list",
                             String(fresh.count), String(skipped)))
         } else {
-            toastNow(fresh.count > 1 ? L10n.t("Added %d downloads to queue", fresh.count) : L10n.t("Added to queue"))
+            toastSuccess(fresh.count > 1 ? L10n.t("Added %d downloads to queue", fresh.count) : L10n.t("Added to queue"))
         }
         filter = .all
     }
@@ -673,7 +686,7 @@ final class AppViewModel: ObservableObject {
                 }
                 let files = MetalinkParser.parse(data)
                 guard !files.isEmpty else {
-                    toastNow(L10n.t("No downloads found in the metalink"))
+                    toastWarning(L10n.t("No downloads found in the metalink"))
                     return
                 }
                 var added = 0
@@ -690,7 +703,8 @@ final class AppViewModel: ObservableObject {
                     added += 1
                 }
                 toastNow(added > 0 ? L10n.t("Added %d from metalink", added)
-                                   : L10n.t("Metalink contents already in your list"))
+                                   : L10n.t("Metalink contents already in your list"),
+                         kind: added > 0 ? .success : .warning)
                 filter = .all
             } catch {
                 toastNow(L10n.t("Couldn’t load the metalink file: %@", Self.fetchFailureMessage(error)),
@@ -714,8 +728,10 @@ final class AppViewModel: ObservableObject {
                  mirrors: [String]? = nil, deselectedFileIDs: [Int]? = nil,
                  cookieHeader: String? = nil, cookieSource: CookieSource? = nil,
                  cookieHost: String? = nil, inlineLoginLine: String? = nil) {
-        guard existingDuplicate(of: preview.source) == nil else {
-            toastNow(L10n.t("Already in your list"))
+        if let duplicate = existingDuplicate(of: preview.source) {
+            let id = duplicate.id
+            toastWarning(L10n.t("Already in your list"),
+                         action: Toast.Action(title: L10n.t("Show")) { [weak self] in self?.reveal(id) })
             filter = .all
             return
         }
@@ -747,7 +763,7 @@ final class AppViewModel: ObservableObject {
             let formatter = RelativeDateTimeFormatter()
             toastNow(L10n.t("Will start %@", formatter.localizedString(for: startAt, relativeTo: Date())))
         } else {
-            toastNow(L10n.t("Added to queue"))
+            toastSuccess(L10n.t("Added to queue"))
         }
         filter = .all
     }
@@ -760,20 +776,33 @@ final class AppViewModel: ObservableObject {
         )
         guard case .needsConfirmation(let payload) = disposition,
               let raw = payload.lines else { return }
-        let link = raw
+        let lines = raw
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { Self.parseSource($0)?.looksLikeDownloadableFile == true }
+        var link = lines.first { Self.parseSource($0)?.looksLikeDownloadableFile == true }
+        var isMediaPage = false
+        if link == nil, YtDlpResolver.isAvailable,
+           let page = lines.first(where: { URL(string: $0).map(MediaPageLink.isLikelyVideoPage) ?? false }) {
+            link = page
+            isMediaPage = true
+        }
         guard let link, link != lastClipboardHandled, let source = Self.parseSource(link) else { return }
         if tasks.contains(where: { $0.source.dedupKey == source.dedupKey }) { return }
         lastClipboardHandled = link
         suggestionIsFromBrowser = false
+        suggestionIsMediaPage = isMediaPage
         clipboardSuggestion = link
     }
 
     func acceptClipboardSuggestion() {
         guard let link = clipboardSuggestion else { return }
         clipboardSuggestion = nil
+        if suggestionIsMediaPage {
+            // Only the Add sheet runs yt-dlp; queueing the page itself would save its HTML.
+            addSheetPrefill = link
+            isAddSheetPresented = true
+            return
+        }
         add(rawLines: link, saveDirectory: nil, priority: .normal)
     }
 
@@ -791,7 +820,7 @@ final class AppViewModel: ObservableObject {
         }
         if let torrent = payload.torrentFile {
             Task { await manager.add(source: .torrentFile(torrent)) }
-            toastNow(L10n.t("Added to queue"))
+            toastSuccess(L10n.t("Added to queue"))
             return
         }
         guard let lines = payload.lines else { return }
@@ -803,6 +832,7 @@ final class AppViewModel: ObservableObject {
         if payload.needsConfirmation {
             if let first = parsedSources(in: lines).first {
                 suggestionIsFromBrowser = true
+                suggestionIsMediaPage = false
                 clipboardSuggestion = first.locator
             }
         } else {
@@ -880,15 +910,15 @@ final class AppViewModel: ObservableObject {
 
     /// Only claims success when there was something to act on.
     func pauseAll() {
-        guard commandState.snapshot.hasPausable else { toastNow(L10n.t("Nothing to pause")); return }
+        guard commandState.snapshot.hasPausable else { toastWarning(L10n.t("Nothing to pause")); return }
         Task { await manager.pauseAll() }
-        toastNow(L10n.t("Paused all downloads"))
+        toastSuccess(L10n.t("Paused all downloads"))
     }
 
     func resumeAll() {
-        guard commandState.snapshot.hasResumable else { toastNow(L10n.t("Nothing to resume")); return }
+        guard commandState.snapshot.hasResumable else { toastWarning(L10n.t("Nothing to resume")); return }
         Task { await manager.resumeAll() }
-        toastNow(L10n.t("Resumed all downloads"))
+        toastSuccess(L10n.t("Resumed all downloads"))
     }
 
     func setProfile(_ name: String) {
@@ -901,7 +931,7 @@ final class AppViewModel: ObservableObject {
         let newValue = !settings.speedLimitEnabled
         Task {
             settings = await manager.setSpeedLimitEnabled(newValue)
-            toastNow(newValue ? L10n.t("Speed limit on · %@", settings.selectedProfileName)
+            toastSuccess(newValue ? L10n.t("Speed limit on · %@", settings.selectedProfileName)
                               : L10n.t("Speed limit off · Unlimited"))
         }
     }
@@ -1042,11 +1072,11 @@ final class AppViewModel: ObservableObject {
             case let .available(version, url):
                 self.offerUpdate(version: version, url: url)
             case let .upToDate(current):
-                self.toastNow(L10n.t("Up to date — version %@", current))
+                self.toastSuccess(L10n.t("Up to date — version %@", current))
             case .notConfigured:
-                self.toastNow(L10n.t("Set an update feed URL in Settings → Advanced first"))
+                self.toastWarning(L10n.t("Set an update feed URL in Settings → Advanced first"))
             case let .failed(message):
-                self.toastNow(L10n.t("Update check failed: %@", message))
+                self.toastError(L10n.t("Update check failed: %@", message))
             }
         }
     }
@@ -1124,7 +1154,7 @@ final class AppViewModel: ObservableObject {
         #if canImport(AppKit)
         NSWorkspace.shared.activateFileViewerSelecting([url])
         #endif
-        toastNow(L10n.t("Revealed in Finder"))
+        toastSuccess(L10n.t("Revealed in Finder"))
     }
 
     func copyToPasteboard(_ string: String) {
@@ -1132,7 +1162,7 @@ final class AppViewModel: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(string, forType: .string)
         #endif
-        toastNow(L10n.t("Copied to clipboard"))
+        toastSuccess(L10n.t("Copied to clipboard"))
     }
 
     private func pump(_ snapshot: [DownloadTask]) {
@@ -1256,12 +1286,12 @@ final class AppViewModel: ObservableObject {
 
     func deleteHistoryEntry(_ id: UUID) {
         Task { await manager.removeHistoryEntry(id) }
-        toastNow(L10n.t("Entry removed"))
+        toastSuccess(L10n.t("Entry removed"))
     }
 
     func clearHistory() {
         Task { await manager.clearHistory() }
-        toastNow(L10n.t("History cleared"))
+        toastSuccess(L10n.t("History cleared"))
     }
 
     func exportHistoryCSV(_ entries: [HistoryEntry], to url: URL) {
@@ -1278,9 +1308,9 @@ final class AppViewModel: ObservableObject {
         }
         do {
             try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
-            toastNow(L10n.t("History exported"))
+            toastSuccess(L10n.t("History exported"))
         } catch {
-            toastNow(L10n.t("Export failed"))
+            toastError(L10n.t("Export failed"))
         }
     }
 
@@ -1291,7 +1321,7 @@ final class AppViewModel: ObservableObject {
             formatter.unitsStyle = .full
             toastNow(L10n.t("Will start %@", formatter.localizedString(for: date, relativeTo: Date())))
         } else {
-            toastNow(L10n.t("Scheduled start cancelled"))
+            toastSuccess(L10n.t("Scheduled start cancelled"))
         }
     }
 
@@ -1300,9 +1330,9 @@ final class AppViewModel: ObservableObject {
             do {
                 let data = try await manager.exportEnvelope()
                 try data.write(to: url)
-                toastNow(L10n.t("Backup exported"))
+                toastSuccess(L10n.t("Backup exported"))
             } catch {
-                toastNow(L10n.t("Export failed"))
+                toastError(L10n.t("Export failed"))
             }
         }
     }
@@ -1313,11 +1343,11 @@ final class AppViewModel: ObservableObject {
         do {
             data = try Data(contentsOf: url)
         } catch {
-            toastNow(L10n.t("Import failed — couldn’t read that file"))
+            toastError(L10n.t("Import failed — couldn’t read that file"))
             return
         }
         guard let incoming = Self.backupSettings(in: data) else {
-            toastNow(L10n.t("Import failed — not a valid backup file"))
+            toastError(L10n.t("Import failed — not a valid backup file"))
             return
         }
         requestConfirm(
@@ -1337,9 +1367,10 @@ final class AppViewModel: ObservableObject {
                 settings = await manager.currentSettings
                 toastNow(added > 0 ? (added == 1 ? L10n.t("Imported %d download", added)
                                                  : L10n.t("Imported %d downloads", added))
-                                   : L10n.t("Nothing new to import"))
+                                   : L10n.t("Nothing new to import"),
+                         kind: added > 0 ? .success : .warning)
             } catch {
-                toastNow(L10n.t("Import failed — not a valid backup file"))
+                toastError(L10n.t("Import failed — not a valid backup file"))
             }
         }
     }
@@ -1400,33 +1431,33 @@ final class AppViewModel: ObservableObject {
 
     func setSequential(_ sequential: Bool, task id: DownloadTask.ID) {
         Task { await manager.setSequential(sequential, task: id) }
-        toastNow(sequential ? L10n.t("Sequential download on") : L10n.t("Sequential download off"))
+        toastSuccess(sequential ? L10n.t("Sequential download on") : L10n.t("Sequential download off"))
     }
 
     func setTaskSpeedLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) {
         Task { await manager.setTaskSpeedLimit(bytesPerSec, task: id) }
         if let bytesPerSec, bytesPerSec > 0 {
-            toastNow(L10n.t("Limited to %@ — applies on next start", Double(bytesPerSec).speedString))
+            toastSuccess(L10n.t("Limited to %@ — applies on next start", Double(bytesPerSec).speedString))
         } else {
-            toastNow(L10n.t("Per-download limit removed"))
+            toastSuccess(L10n.t("Per-download limit removed"))
         }
     }
 
     func setTaskUploadLimit(_ bytesPerSec: Int64?, task id: DownloadTask.ID) {
         Task { await manager.setTaskUploadLimit(bytesPerSec, task: id) }
         if let bytesPerSec, bytesPerSec > 0 {
-            toastNow(L10n.t("Upload limited to %@", Double(bytesPerSec).speedString))
+            toastSuccess(L10n.t("Upload limited to %@", Double(bytesPerSec).speedString))
         } else {
-            toastNow(L10n.t("Upload limit removed"))
+            toastSuccess(L10n.t("Upload limit removed"))
         }
     }
 
     func setSeedRatioLimit(_ ratio: Double?, task id: DownloadTask.ID) {
         Task { await manager.setSeedRatioLimit(ratio, task: id) }
         if let ratio, ratio > 0 {
-            toastNow(L10n.t("Will stop seeding at ratio %.1f", ratio))
+            toastSuccess(L10n.t("Will stop seeding at ratio %.1f", ratio))
         } else {
-            toastNow(L10n.t("Seeding indefinitely"))
+            toastSuccess(L10n.t("Seeding indefinitely"))
         }
     }
 
@@ -1442,7 +1473,7 @@ final class AppViewModel: ObservableObject {
 
     func setLabel(_ label: String?, task id: DownloadTask.ID) {
         Task { await manager.setLabel(label, task: id) }
-        toastNow(label.map { L10n.t("Labelled “%@”", $0) } ?? L10n.t("Label removed"))
+        toastSuccess(label.map { L10n.t("Labelled “%@”", $0) } ?? L10n.t("Label removed"))
     }
 
     @MainActor
@@ -1480,12 +1511,12 @@ final class AppViewModel: ObservableObject {
             let result = await manager.rename(task.id, to: newName)
             await MainActor.run {
                 switch result {
-                case .renamed(let name): toastNow(L10n.t("Renamed to “%@”", name))
+                case .renamed(let name): toastSuccess(L10n.t("Renamed to “%@”", name))
                 case .unchanged: break
-                case .notFound: toastNow(L10n.t("That download no longer exists"))
-                case .unsupported: toastNow(L10n.t("Torrents can’t be renamed here"))
-                case .active: toastNow(L10n.t("Pause the download before renaming"))
-                case .ioError(let msg): toastNow(L10n.t("Couldn’t rename: %@", msg))
+                case .notFound: toastWarning(L10n.t("That download no longer exists"))
+                case .unsupported: toastWarning(L10n.t("Torrents can’t be renamed here"))
+                case .active: toastWarning(L10n.t("Pause the download before renaming"))
+                case .ioError(let msg): toastError(L10n.t("Couldn’t rename: %@", msg))
                 }
             }
         }
@@ -1493,7 +1524,7 @@ final class AppViewModel: ObservableObject {
 
     func promptForBatchRename(tasks: [DownloadTask]) {
         let eligible = tasks.filter { $0.kind != .torrent && !$0.status.isActive }
-        guard !eligible.isEmpty else { toastNow(L10n.t("Nothing eligible to rename")); return }
+        guard !eligible.isEmpty else { toastWarning(L10n.t("Nothing eligible to rename")); return }
         guard let raw = Self.promptText(
             title: L10n.t("Rename %d downloads", eligible.count),
             message: L10n.t("Use “#” for a running number. The original extension is kept if you omit one."),
@@ -1513,10 +1544,10 @@ final class AppViewModel: ObservableObject {
             }
             _ = await MainActor.run {
                 if failed == 0 {
-                    toastNow(renamed == 1 ? L10n.t("Renamed %d download", renamed)
+                    toastSuccess(renamed == 1 ? L10n.t("Renamed %d download", renamed)
                                           : L10n.t("Renamed %d downloads", renamed))
                 } else {
-                    toastNow(L10n.t("Renamed %1$@, %2$@ couldn’t be renamed",
+                    toastWarning(L10n.t("Renamed %1$@, %2$@ couldn’t be renamed",
                                     String(renamed), String(failed)))
                 }
             }
@@ -1531,7 +1562,7 @@ final class AppViewModel: ObservableObject {
             placeholder: "e.g. work, urgent, linux") else { return }
         let tags = PromptParsing.tags(from: value)
         Task { await manager.setTags(tags, task: task.id) }
-        toastNow(tags.isEmpty ? L10n.t("Tags cleared") : L10n.t("Tags updated"))
+        toastSuccess(tags.isEmpty ? L10n.t("Tags cleared") : L10n.t("Tags updated"))
     }
 
     func promptForNote(task: DownloadTask) {
@@ -1551,7 +1582,7 @@ final class AppViewModel: ObservableObject {
         alert.addButton(withTitle: L10n.t("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         Task { await manager.setNote(text.string, task: task.id) }
-        toastNow(text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L10n.t("Note removed") : L10n.t("Note saved"))
+        toastSuccess(text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L10n.t("Note removed") : L10n.t("Note saved"))
     }
 
     func promptForRequestOptions(task: DownloadTask) {
@@ -1595,10 +1626,10 @@ final class AppViewModel: ObservableObject {
                                                           headers: headers, task: task.id)
             await MainActor.run {
                 if dropped.isEmpty {
-                    toastNow(L10n.t("Request options saved"))
+                    toastSuccess(L10n.t("Request options saved"))
                 } else {
                     let list = dropped.joined(separator: ", ")
-                    toastNow(dropped.count == 1
+                    toastWarning(dropped.count == 1
                              ? L10n.t("Saved — ignored reserved header: %@", list)
                              : L10n.t("Saved — ignored reserved headers: %@", list))
                 }
@@ -1628,7 +1659,7 @@ final class AppViewModel: ObservableObject {
         let manager = self.manager
         Task {
             guard let url = await manager.auditLogDirectory() else {
-                _ = await MainActor.run { self.toastNow(L10n.t("Audit log is off — nothing written yet")) }
+                _ = await MainActor.run { self.toastWarning(L10n.t("Audit log is off — nothing written yet")) }
                 return
             }
             _ = await MainActor.run { NSWorkspace.shared.open(url) }

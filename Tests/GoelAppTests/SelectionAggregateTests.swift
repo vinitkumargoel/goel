@@ -71,4 +71,10 @@ final class SelectionAggregateTests: XCTestCase {
                                  task("b", total: 20, done: 0, status: .queued)])
         XCTAssertEqual(summary.subtitle, Int64(30).byteString)
     }
+
+    func testStatusLineNamesCountAndSize() {
+        XCTAssertEqual(SelectionAggregate.statusLine(count: 1, totalBytes: 0), "1 selected")
+        XCTAssertEqual(SelectionAggregate.statusLine(count: 3, totalBytes: 2048),
+                       "3 selected · \(Int64(2048).byteString)")
+    }
 }

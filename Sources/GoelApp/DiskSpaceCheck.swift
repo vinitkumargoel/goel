@@ -19,6 +19,13 @@ enum DiskSpaceCheck {
     /// Where a download added with "Automatic" will land, for the free-space preview. Mirrors
     /// `DownloadManager.defaultDirectory(for:)`, which GoelCore keeps private; a change to the
     /// folder rules there must be repeated here.
+    /// Where this download lands: the folder picked in the sheet, else the user's rule. Subtitles
+    /// go here too, so they sit beside the video whichever way the folder was decided.
+    static func folder(chosen: String?, for source: DownloadSource, suggestedName: String,
+                       settings: AppSettings) -> String {
+        chosen ?? automaticFolder(for: source, suggestedName: suggestedName, settings: settings)
+    }
+
     static func automaticFolder(for source: DownloadSource, suggestedName: String,
                                 settings: AppSettings) -> String {
         let base = settings.defaultSaveDirectory

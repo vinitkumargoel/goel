@@ -75,7 +75,7 @@ struct LicensePane: View {
                         DiagnosticsBundle.hostAppVersion, DiagnosticsBundle.hostBuildNumber)
                  + " · © 2026 Vinit Kumar Goel")
                 .scaledFont(size: Theme.TextSize.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

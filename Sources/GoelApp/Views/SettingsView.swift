@@ -84,12 +84,15 @@ struct SettingsView: View {
         // Clear the request once consumed, or asking for the same pane twice never fires onChange again.
         .onChange(of: route.requestedPane) { _, requested in
             guard let requested else { return }
-            searchText = ""
+            searchText = route.requestedHighlight ?? ""
+            route.requestedHighlight = nil
             selection = requested
             route.requestedPane = nil
         }
         .onAppear {
             if let requested = route.requestedPane {
+                searchText = route.requestedHighlight ?? ""
+                route.requestedHighlight = nil
                 selection = requested
                 route.requestedPane = nil
             }
@@ -206,7 +209,7 @@ struct SettingsView: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(Color.primary.opacity(0.08), in: Capsule())
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
             }
         } icon: {
@@ -721,14 +724,14 @@ struct SettingsView: View {
 
     private func copyDiagnostics() {
         vm.copyToPasteboard(makeDiagnostics().plainText)
-        vm.toastNow(L10n.t("Diagnostics copied — paste it into your bug report"))
+        vm.toastSuccess(L10n.t("Diagnostics copied — paste it into your bug report"))
     }
 
     private func exportDiagnostics() {
         guard let url = FilePicker.save(name: "Goel-diagnostics.json", type: .json) else { return }
         do {
             try makeDiagnostics().jsonData().write(to: url, options: .atomic)
-            vm.toastNow(L10n.t("Diagnostics saved"))
+            vm.toastSuccess(L10n.t("Diagnostics saved"))
         } catch {
             vm.settingsMessage(L10n.t("Export Failed"),
                                L10n.t("Couldn’t write the diagnostics report to that location."))

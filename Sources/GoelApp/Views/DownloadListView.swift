@@ -133,9 +133,9 @@ struct DownloadListView: View {
         switch press.key {
         case .upArrow, .downArrow:
             guard !press.modifiers.contains(.command) else { return .ignored }
-            return moved(vm.moveSelection(by: press.key == .downArrow ? 1 : -1, extending: extending))
+            return vm.moveSelection(by: press.key == .downArrow ? 1 : -1, extending: extending) ? .handled : .ignored
         case .home, .end:
-            return moved(vm.selectEdge(last: press.key == .end, extending: extending))
+            return vm.selectEdge(last: press.key == .end, extending: extending) ? .handled : .ignored
         case .space:
             guard let task = vm.selectedTask, task.status.hasData else { return .ignored }
             quickLookItem = URL(fileURLWithPath: task.savePath)
@@ -162,12 +162,6 @@ struct DownloadListView: View {
             if extending { vm.selectNone() } else { vm.selectAll() }
             return .handled
         }
-    }
-
-    private func moved(_ didMove: Bool) -> KeyPress.Result {
-        guard didMove else { return .ignored }
-        if !vm.detailPanelVisible { vm.detailPanelVisible = true }
-        return .handled
     }
 
     private var header: some View {
@@ -333,8 +327,8 @@ struct DownloadRow: View, Equatable {
                 .foregroundStyle(.secondary)
 
             statusCell
-                // The whole message is on the name's second line; the tooltip adds the advice.
-                // Otherwise the tooltip is the long form the compact cell leaves out.
+                // For a failure the tooltip adds the advice to the reason shown in the cell;
+                // otherwise it is the long form the compact cell leaves out.
                 .help(failureTooltip ?? task.statusDetailText)
                 .frame(width: columns.status, alignment: .leading)
                 .padding(.horizontal, 6)
@@ -384,7 +378,6 @@ struct DownloadRow: View, Equatable {
             } else {
                 vm.selectOnly(task.id)
             }
-            if !vm.detailPanelVisible { vm.detailPanelVisible = true }
         }
         .contextMenu { contextMenu }
         .onDrag {
@@ -403,11 +396,20 @@ struct DownloadRow: View, Equatable {
     /// "Differentiate without colour".
     @ViewBuilder
     private var statusCell: some View {
-        if isFailed {
-            Label(L10n.t("Failed"), systemImage: "exclamationmark.triangle.fill")
-                .scaledFont(size: Theme.TextSize.meta, weight: .semibold)
-                .foregroundStyle(Theme.red)
-                .lineLimit(1)
+        if case .failed(let error) = task.status {
+            // The reason lives here, two lines deep, instead of squeezed under a narrow name.
+            VStack(alignment: .leading, spacing: 1) {
+                Label(L10n.t("Failed"), systemImage: "exclamationmark.triangle.fill")
+                    .scaledFont(size: Theme.TextSize.meta, weight: .semibold)
+                    .foregroundStyle(Theme.red)
+                    .lineLimit(1)
+                Text(error.message)
+                    .scaledFont(size: Theme.TextSize.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         } else {
             HStack(spacing: 6) {
                 Circle().fill(task.statusColor).frame(width: 7, height: 7)
@@ -442,7 +444,7 @@ struct DownloadRow: View, Equatable {
         } else {
             Text("\(queueRank ?? displayIndex)")
                 .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -494,18 +496,9 @@ struct DownloadRow: View, Equatable {
                         .truncationMode(.middle)
                     KindBadge(task: task)
                 }
-                if case .failed(let error) = task.status {
-                    // A bar that will never move says nothing; the reason does.
-                    Label(error.message, systemImage: "exclamationmark.triangle.fill")
-                        .scaledFont(size: Theme.TextSize.meta)
-                        .foregroundStyle(Theme.red)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .help(failureTooltip ?? "")
-                } else {
-                    MiniProgressBar(task: task)
-                        .frame(maxWidth: 340)
-                }
+                // A failed row keeps its (red) track: how far it got before the reason in Status.
+                MiniProgressBar(task: task)
+                    .frame(maxWidth: 340)
             }
         }
     }

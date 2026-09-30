@@ -9,10 +9,11 @@ struct Toast: Identifiable, Equatable {
         let perform: @MainActor () -> Void
     }
 
-    /// What the leading glyph says: done (green check), failed (red octagon), or just so you
-    /// know (accent info circle) — a notice that nothing went wrong must not read as success.
+    /// What the leading glyph says: done (green check), failed (red octagon), a refusal or
+    /// caveat (orange triangle), or just so you know (accent info circle). Info is the default:
+    /// "Already in your list" used to wear the same green check as a finished action.
     enum Kind: Equatable {
-        case success, error, info
+        case success, error, warning, info
     }
 
     let id = UUID()
@@ -29,7 +30,7 @@ struct Toast: Identifiable, Equatable {
     }
 
     init(message: String, isError: Bool, action: Action?) {
-        self.init(message: message, kind: isError ? .error : .success, action: action)
+        self.init(message: message, kind: isError ? .error : .info, action: action)
     }
 
     static func == (lhs: Toast, rhs: Toast) -> Bool { lhs.id == rhs.id }
@@ -38,7 +39,12 @@ struct Toast: Identifiable, Equatable {
     /// with a button stays long enough to reach it.
     var dwell: TimeInterval {
         if action != nil { return 8 }
-        return isError ? 6 : 2.4
+        switch kind {
+        case .error: return 6
+        // A refusal says why nothing happened: a beat longer than a confirmation to read it.
+        case .warning: return 4
+        case .success, .info: return 2.4
+        }
     }
 }
 
@@ -93,7 +99,7 @@ final class ToastQueue: ObservableObject {
     /// Returns the toast's id so its poster can retire it (⌘Z retires an Undo toast); nil when deduplicated.
     @discardableResult
     func show(_ message: String, isError: Bool = false, action: Toast.Action? = nil) -> Toast.ID? {
-        show(message, kind: isError ? .error : .success, action: action)
+        show(message, kind: isError ? .error : .info, action: action)
     }
 
     @discardableResult
@@ -183,7 +189,9 @@ final class ToastQueue: ObservableObject {
         heldRemaining = nil
         current = toast
         announce(toast.message)
-        let dwell = pending.isEmpty || toast.action != nil || toast.isError ? toast.dwell : Self.busyDwell
+        // A refusal isn't cut short by a queue behind it either: it explains why nothing happened.
+        let keepsFullTime = toast.action != nil || toast.isError || toast.kind == .warning
+        let dwell = pending.isEmpty || keepsFullTime ? toast.dwell : Self.busyDwell
         scheduleExpiry(of: toast, after: dwell)
     }
 
@@ -251,5 +259,23 @@ extension AppViewModel {
     @discardableResult
     func toastNow(_ message: String, kind: Toast.Kind, action: Toast.Action? = nil) -> Toast.ID? {
         toasts.show(message, kind: kind, action: action)
+    }
+
+    /// An action that actually finished: the only toasts that earn the green check.
+    @discardableResult
+    func toastSuccess(_ message: String, action: Toast.Action? = nil) -> Toast.ID? {
+        toasts.show(message, kind: .success, action: action)
+    }
+
+    /// Something really went wrong (I/O, parse, network): red, longer dwell, kept over the rest.
+    @discardableResult
+    func toastError(_ message: String, action: Toast.Action? = nil) -> Toast.ID? {
+        toasts.show(message, kind: .error, action: action)
+    }
+
+    /// Nothing broke, but what was asked didn't (fully) happen: a refusal, a no-op, a caveat.
+    @discardableResult
+    func toastWarning(_ message: String, action: Toast.Action? = nil) -> Toast.ID? {
+        toasts.show(message, kind: .warning, action: action)
     }
 }

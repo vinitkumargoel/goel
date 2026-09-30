@@ -24,6 +24,11 @@ final class CommandState: ObservableObject {
         var listVisible = true
         var autoShutdown: AutoShutdownAction = .none
 
+        /// The one Pause All / Resume All button's mode, shared by the toolbar and the menu bar so
+        /// they never offer opposite actions: pause while anything runs or waits, else resume.
+        var pauseAllPauses: Bool { hasPausable || !hasResumable }
+        var pauseAllEnabled: Bool { hasPausable || hasResumable }
+
         static func make(tasks: [DownloadTask], visible: [DownloadTask],
                          selection: Set<DownloadTask.ID>, listVisible: Bool,
                          autoShutdown: AutoShutdownAction) -> Snapshot {

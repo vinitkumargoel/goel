@@ -25,6 +25,12 @@ struct SelectionAggregate {
 
     static let previewLimit = 3
 
+    /// "3 selected · 4.7 GB": the status bar's echo of the selection, so it reads without the panel.
+    static func statusLine(count: Int, totalBytes: Int64) -> String {
+        totalBytes > 0 ? L10n.t("%1$d selected · %2$@", count, totalBytes.byteString)
+                       : L10n.t("%d selected", count)
+    }
+
     init(tasks: [DownloadTask], speed: (DownloadTask) -> SpeedSample) {
         count = tasks.count
         var bytes: Int64 = 0

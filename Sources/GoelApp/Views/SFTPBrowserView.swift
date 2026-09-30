@@ -128,7 +128,7 @@ struct SFTPBrowserView: View {
                 newFolderName = ""
                 Task {
                     if await model.makeDirectory(named: name) {
-                        vm.toastNow(L10n.t("Folder created"))
+                        vm.toastSuccess(L10n.t("Folder created"))
                     } else if !name.isEmpty {
                         showFailure(L10n.t("Couldn’t create the folder “%@”", name))
                     }
@@ -144,7 +144,7 @@ struct SFTPBrowserView: View {
                 if let entry = pendingDelete {
                     Task {
                         if await model.delete(entry) {
-                            vm.toastNow(L10n.t("Deleted “%@”", entry.name))
+                            vm.toastSuccess(L10n.t("Deleted “%@”", entry.name))
                         } else {
                             showFailure(L10n.t("Couldn’t delete “%@”", entry.name))
                         }
@@ -167,7 +167,7 @@ struct SFTPBrowserView: View {
                     let newName = renameText
                     Task {
                         if await model.rename(entry, to: newName) {
-                            vm.toastNow(L10n.t("Renamed"))
+                            vm.toastSuccess(L10n.t("Renamed"))
                         } else if newName.trimmingCharacters(in: .whitespacesAndNewlines) != entry.name {
                             // Confirming the prefilled name unchanged is a no-op, not a failure.
                             showFailure(L10n.t("Couldn’t rename “%@”", entry.name))
@@ -370,7 +370,7 @@ struct SFTPBrowserView: View {
             if !searchText.isEmpty {
                 Text("\(visibleEntries.count)")
                     .scaledFont(size: Theme.TextSize.caption, weight: .medium, monospacedDigit: true)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .accessibilityLabel(L10n.t("%d matches", visibleEntries.count))
                 IconButton(symbol: "xmark", help: L10n.t("Clear filter"), size: 9.5) { searchText = "" }
             }
@@ -559,7 +559,7 @@ struct SFTPBrowserView: View {
     private func applyPermissions(_ entry: SFTPEntry, _ mode: UInt32) {
         Task {
             if await model.setPermissions(entry, mode: mode) {
-                vm.toastNow(L10n.t("Permissions updated"))
+                vm.toastSuccess(L10n.t("Permissions updated"))
                 entryInfo = await model.info(for: entry)
             } else {
                 showFailure(L10n.t("Couldn’t change permissions for “%@”", entry.name))
@@ -574,7 +574,7 @@ struct SFTPBrowserView: View {
 
     private func downloadTargets(_ entries: [SFTPEntry]) {
         let items = entries.filter { SFTPBrowserPaths.isSafeChildName($0.name) }
-        guard !items.isEmpty else { vm.toastNow(L10n.t("Select items to download")); return }
+        guard !items.isEmpty else { vm.toastWarning(L10n.t("Select items to download")); return }
         let dir = downloadsDir()
         for item in items {
             vm.startDownload(item, from: model.connection, remoteDir: model.path, toLocalDir: dir)
@@ -600,7 +600,7 @@ struct SFTPBrowserView: View {
                         ? L10n.t("Deleted %1$d of %2$d items — %3$@", result.deleted, entries.count, failure)
                         : failure
                 } else {
-                    vm.toastNow(L10n.t("Deleted %d items", result.deleted))
+                    vm.toastSuccess(L10n.t("Deleted %d items", result.deleted))
                 }
             }
         }
@@ -643,7 +643,7 @@ struct SFTPBrowserView: View {
     private func copyToPasteboard(_ string: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(string, forType: .string)
-        vm.toastNow(L10n.t("Copied"))
+        vm.toastSuccess(L10n.t("Copied"))
     }
 
     private func remotePath(_ entry: SFTPEntry) -> String { SFTPBrowserModel.join(model.path, entry.name) }
@@ -661,7 +661,7 @@ struct SFTPBrowserView: View {
                 Button(L10n.t("⬆︎ Parent folder")) {
                     Task {
                         if await model.move(entry, toDirectory: SFTPBrowserModel.parent(of: model.path)) {
-                            vm.toastNow(L10n.t("Moved “%@”", entry.name))
+                            vm.toastSuccess(L10n.t("Moved “%@”", entry.name))
                         } else {
                             showFailure(L10n.t("Couldn’t move “%@” to the parent folder", entry.name))
                         }
@@ -680,7 +680,7 @@ struct SFTPBrowserView: View {
                     Button(folder.name) {
                         Task {
                             if await model.move(entry, toDirectory: SFTPBrowserModel.join(model.path, folder.name)) {
-                                vm.toastNow(L10n.t("Moved to “%@”", folder.name))
+                                vm.toastSuccess(L10n.t("Moved to “%@”", folder.name))
                             } else {
                                 showFailure(L10n.t("Couldn’t move “%1$@” to “%2$@”", entry.name, folder.name))
                             }

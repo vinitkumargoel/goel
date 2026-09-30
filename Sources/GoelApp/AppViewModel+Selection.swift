@@ -62,6 +62,25 @@ extension AppViewModel {
         selectionAnchor = completed.first?.id
     }
 
+    /// Brings one download into view and selects it: from the menu bar, a toast's Show, or the
+    /// command palette. Only widens the list when the current filter or search hides the row.
+    func reveal(_ id: DownloadTask.ID) {
+        guard tasks.contains(where: { $0.id == id }) else { return }
+        closeServerBrowser()
+        if !visibleTasks.contains(where: { $0.id == id }) {
+            search = ""
+            filter = .all
+        }
+        selectOnly(id)
+    }
+
+    /// Shows the list under one filter with nothing hidden by search, e.g. "4 more" in the menu bar.
+    func showFilter(_ newFilter: SidebarFilter) {
+        closeServerBrowser()
+        search = ""
+        filter = newFilter
+    }
+
     func selectNone() {
         selection = []
         primarySelection = nil
@@ -117,6 +136,15 @@ extension AppViewModel {
             confirmTitle: L10n.t("Move to Trash"),
             destructive: true
         ) { [weak self] in self?.removeSelected(deleteData: true) }
+    }
+
+    /// The palette's "Retry All Failed": one command instead of hunting failures down by filter.
+    func retryAllFailed() {
+        let failed = tasks.filter { $0.status.isFailed }
+        guard !failed.isEmpty else { toastWarning(L10n.t("No failed downloads")); return }
+        for task in failed { retry(task.id) }
+        toastSuccess(failed.count == 1 ? L10n.t("Retrying 1 download")
+                                       : L10n.t("Retrying %d downloads", failed.count))
     }
 
     func retrySelected() {

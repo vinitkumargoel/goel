@@ -66,4 +66,12 @@ final class CommandStateTests: XCTestCase {
         XCTAssertFalse(hidden.hasCompletedVisible)
         XCTAssertFalse(snap([task(.downloading), task(.failed(.diskFull(needed: 100, available: 10)))]).hasCompleted)
     }
+
+    /// The toolbar and the menu bar read this one value, so they can't offer opposite actions.
+    func testPauseAllModeIsSharedAndResumesOnlyWhenNothingRuns() {
+        XCTAssertTrue(snap([task(.seeding)]).pauseAllPauses)
+        XCTAssertTrue(snap([task(.downloading), task(.paused)]).pauseAllPauses)
+        XCTAssertFalse(snap([task(.paused)]).pauseAllPauses)
+        XCTAssertFalse(snap([task(.completed)]).pauseAllEnabled)
+    }
 }

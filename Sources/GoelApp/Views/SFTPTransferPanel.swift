@@ -73,7 +73,7 @@ struct SFTPTransferPanel: View {
                 .accessibilityAddTraits(.isHeader)
             Text(countSummary)
                 .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
             Spacer(minLength: 8)
             if aggregateSpeed > 0 {
                 SpeedStat(symbol: aggregateGlyph, speed: aggregateSpeed, color: Theme.accent, size: 11)
@@ -305,7 +305,7 @@ struct SFTPTransferInspector: View {
                 Spacer()
                 if let remaining = transfer.remainingBytes {
                     Text(L10n.t("%@ left", remaining.byteString))
-                        .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true).foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true).foregroundStyle(.secondary)
                 }
             }
         }
@@ -336,12 +336,12 @@ struct SFTPTransferInspector: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(L10n.t("Throughput"))
-                    .scaledFont(size: Theme.TextSize.caption, weight: .bold).foregroundStyle(.tertiary)
+                    .scaledFont(size: Theme.TextSize.caption, weight: .bold).foregroundStyle(.secondary)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if history.count > 1 {
                     Text(L10n.t("last %ds", history.count))
-                        .scaledFont(size: Theme.TextSize.micro, monospacedDigit: true).foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.micro, monospacedDigit: true).foregroundStyle(.secondary)
                 }
             }
             HStack(alignment: .top, spacing: 14) {
@@ -373,7 +373,7 @@ struct SFTPTransferInspector: View {
                 .frame(maxWidth: .infinity)
                 .overlay(
                     Text(transfer.isActive ? L10n.t("Measuring…") : L10n.t("No throughput recorded"))
-                        .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.tertiary))
+                        .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary))
                 .a11yDecorative()
         }
     }
@@ -399,7 +399,7 @@ struct SFTPTransferInspector: View {
                          tint: Color = .primary, spoken: String? = nil) -> some View {
         HStack(spacing: 6) {
             Text(label)
-                .scaledFont(size: Theme.TextSize.micro, weight: .semibold).foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.micro, weight: .semibold).foregroundStyle(.secondary)
             Spacer(minLength: 4)
             Text(value)
                 .scaledFont(size: Theme.TextSize.meta, weight: .semibold, monospacedDigit: true)
@@ -461,7 +461,7 @@ struct SFTPTransferInspector: View {
     private func routeEnd(title: String, path: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .scaledFont(size: Theme.TextSize.micro, weight: .bold).foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.micro, weight: .bold).foregroundStyle(.secondary)
             Text(path)
                 .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                 .foregroundStyle(.secondary)
@@ -498,7 +498,7 @@ struct SFTPTransferInspector: View {
     private func factRow(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(label)
-                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
                 .frame(width: 58, alignment: .trailing)
             Text(value)
                 .scaledFont(size: Theme.TextSize.meta)
@@ -597,7 +597,7 @@ struct SFTPTransferInspector: View {
     private func copy(_ string: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(string, forType: .string)
-        vm.toastNow(L10n.t("Copied"))
+        vm.toastSuccess(L10n.t("Copied"))
     }
 }
 

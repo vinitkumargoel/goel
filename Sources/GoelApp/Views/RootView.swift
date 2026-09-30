@@ -232,10 +232,12 @@ struct RootView: View {
 
     private func clipboardBanner(_ link: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: vm.suggestionIsFromBrowser ? "safari.fill" : "doc.on.clipboard.fill")
+            Image(systemName: vm.suggestionIsMediaPage ? "play.rectangle.fill"
+                  : vm.suggestionIsFromBrowser ? "safari.fill" : "doc.on.clipboard.fill")
                 .foregroundStyle(Theme.accent)
                 .a11yDecorative()
-            Text(vm.suggestionIsFromBrowser ? L10n.t("Link from your browser") : L10n.t("Copied link detected"))
+            Text(vm.suggestionIsMediaPage ? L10n.t("Copied a video page")
+                 : vm.suggestionIsFromBrowser ? L10n.t("Link from your browser") : L10n.t("Copied link detected"))
                 .scaledFont(size: Theme.TextSize.body, weight: .semibold)
             Text(link)
                 .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
@@ -243,10 +245,14 @@ struct RootView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
-            Button(L10n.t("Add")) { vm.acceptClipboardSuggestion() }
+            Button(vm.suggestionIsMediaPage ? L10n.t("Choose quality…") : L10n.t("Add")) {
+                vm.acceptClipboardSuggestion()
+            }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .accessibilityLabel(vm.suggestionIsFromBrowser
+                .accessibilityLabel(vm.suggestionIsMediaPage
+                                    ? L10n.t("Choose a quality for the copied video page")
+                                    : vm.suggestionIsFromBrowser
                                     ? L10n.t("Add the link from your browser to downloads")
                                     : L10n.t("Add copied link to downloads"))
             IconButton(symbol: "xmark", help: L10n.t("Dismiss copied link suggestion"), size: 10) {

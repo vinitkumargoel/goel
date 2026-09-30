@@ -169,7 +169,7 @@ struct AppToolbar: View {
     /// Disabled, not hidden, when there is nothing to do, so the toolbar doesn't shift.
     private var pauseResumeAllButton: some View {
         let state = vm.commandState.snapshot
-        let pausing = state.hasPausable || !state.hasResumable
+        let pausing = state.pauseAllPauses
         let title = pausing ? L10n.t("Pause All") : L10n.t("Resume All")
         return Button {
             if pausing { vm.pauseAll() } else { vm.resumeAll() }
@@ -178,7 +178,7 @@ struct AppToolbar: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
-        .disabled(!state.hasPausable && !state.hasResumable)
+        .disabled(!state.pauseAllEnabled)
         .help(title)
         .a11yButton(title)
     }

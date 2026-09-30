@@ -60,4 +60,16 @@ final class DiskSpaceCheckTests: XCTestCase {
         XCTAssertEqual(DiskSpaceCheck.automaticFolder(for: video, suggestedName: "movie.mkv", settings: settings),
                        "/Volumes/Data/Downloads")
     }
+
+    /// With the sheet left on "Default", subtitles must still get a folder (the rule's), not be skipped.
+    func testFolderPrefersThePickedOneElseFollowsTheRule() {
+        var settings = AppSettings()
+        settings.defaultSaveDirectory = "/Volumes/Data/Downloads"
+        settings.defaultFolderRule = "byType"
+        let video = DownloadSource.url(URL(string: "https://e.test/movie.mkv")!)
+        XCTAssertEqual(DiskSpaceCheck.folder(chosen: nil, for: video, suggestedName: "movie.mkv", settings: settings),
+                       "/Volumes/Data/Downloads/Video")
+        XCTAssertEqual(DiskSpaceCheck.folder(chosen: "/tmp/x", for: video, suggestedName: "movie.mkv", settings: settings),
+                       "/tmp/x")
+    }
 }

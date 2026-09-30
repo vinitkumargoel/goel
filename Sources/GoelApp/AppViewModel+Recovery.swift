@@ -10,7 +10,7 @@ extension AppViewModel {
         let result = await manager.replaceSource(task.id, with: raw)
         switch result {
         case .replaced(let keepsPartial):
-            toastNow(keepsPartial
+            toastSuccess(keepsPartial
                      ? L10n.t("Link updated · resuming if the file is unchanged")
                      : L10n.t("Link updated"))
             return nil
@@ -37,7 +37,7 @@ extension AppViewModel {
             await manager.setCookies(header, host: task.sourceHost, source: .manual, task: task.id)
             if retry, task.status.isFailed { await manager.retry(task.id) }
         }
-        toastNow(retry ? L10n.t("Cookies attached · retrying") : L10n.t("Cookies attached"))
+        toastSuccess(retry ? L10n.t("Cookies attached · retrying") : L10n.t("Cookies attached"))
     }
 
     func changeFolder(of task: DownloadTask, to directory: String) {
@@ -70,11 +70,11 @@ extension AppViewModel {
                 if await manager.relocate(task.id, to: directory) == .moved { moved += 1 } else { skipped += 1 }
             }
             if skipped == 0 {
-                toastNow(moved == 1 ? L10n.t("Moved %d download", moved) : L10n.t("Moved %d downloads", moved))
+                toastSuccess(moved == 1 ? L10n.t("Moved %d download", moved) : L10n.t("Moved %d downloads", moved))
             } else {
                 toastNow(L10n.t("Moved %1$@, %2$@ couldn’t move (running, finished, or a file is in the way)",
                                 String(moved), String(skipped)),
-                         isError: moved == 0)
+                         kind: moved == 0 ? .error : .warning)
             }
         }
     }
@@ -95,7 +95,7 @@ extension AppViewModel {
                 await manager.setTags(task.allTags + added, task: task.id)
             }
         }
-        toastNow(L10n.t("Tagged %d downloads", targets.count))
+        toastSuccess(L10n.t("Tagged %d downloads", targets.count))
     }
 
     static func relocationMessage(_ result: DownloadManager.Relocation, name: String) -> String {

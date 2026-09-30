@@ -163,7 +163,7 @@ struct LinkGrabberSheet: View {
                         Spacer(minLength: 8)
                         Text(link.category.label)
                             .scaledFont(size: Theme.TextSize.micro)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
                     .padding(.horizontal, 8)

@@ -21,7 +21,7 @@ struct SectionHeader: View {
     var body: some View {
         Text(text.uppercased())
             .scaledFont(size: Theme.TextSize.caption, weight: .bold)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .padding(.top, 16)
             .padding(.bottom, 4)
             .accessibilityLabel(text)
