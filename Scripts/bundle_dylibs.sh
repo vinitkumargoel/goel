@@ -37,6 +37,20 @@ deps_of() {
   done
 }
 
+# Floor-targeted libs built by Scripts/macos/build-deps.sh already carry `@rpath/…` install names, so
+# deps_of never sees them: resolve those against the prefix's lib/ and copy them too.
+rpath_deps_of() {
+  [ -n "$VENDOR_PREFIX" ] || return 0
+  otool -L "$1" | tail -n +2 | awk '{print $1}' | while read -r dep; do
+    case "$dep" in
+      @rpath/*.dylib)
+        local candidate="$VENDOR_PREFIX/lib/${dep#@rpath/}"
+        [ -f "$candidate" ] && echo "$candidate"
+        ;;
+    esac
+  done
+}
+
 # Returns 0 only if newly copied — the fixed-point loop below depends on that.
 vendor_one() {
   local dep="$1" base
@@ -50,13 +64,13 @@ vendor_one() {
 }
 
 echo "==> Vendoring dylib closure into $FRAMEWORKS"
-for dep in $(deps_of "$EXE"); do vendor_one "$dep" || true; done
+for dep in $(deps_of "$EXE") $(rpath_deps_of "$EXE"); do vendor_one "$dep" || true; done
 changed=1
 while [ "$changed" = 1 ]; do
   changed=0
   for f in "$FRAMEWORKS"/*.dylib; do
     [ -e "$f" ] || continue
-    for dep in $(deps_of "$f"); do
+    for dep in $(deps_of "$f") $(rpath_deps_of "$f"); do
       if vendor_one "$dep"; then changed=1; fi
     done
   done
@@ -177,7 +191,17 @@ if [ -n "$remaining" ]; then
   echo "$remaining" >&2
   exit 1
 fi
-echo "    OK — no build-machine paths remain. Frameworks:"
+# A clean path list says nothing about presence: an `@rpath` dylib that was never copied only fails at
+# launch, in dyld, with "Library not loaded". Every one must be in Frameworks/.
+missing=""
+for dep in $(echo "$leftover" | awk '$1 ~ /^@rpath\/.*\.dylib$/ {print $1}' | sort -u); do
+  [ -f "$FRAMEWORKS/${dep#@rpath/}" ] || missing="$missing $dep"
+done
+if [ -n "$missing" ]; then
+  echo "error: linked but not bundled in $FRAMEWORKS:$missing" >&2
+  exit 1
+fi
+echo "    OK — no build-machine paths remain, every @rpath dylib is bundled. Frameworks:"
 # shellcheck disable=SC2012  # display only; names are our own dylibs
 ls -1 "$FRAMEWORKS" | sed 's/^/      /'
 
