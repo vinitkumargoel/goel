@@ -28,7 +28,10 @@ enum AntivirusScanner {
             process.terminationHandler = { gate.complete($0.terminationStatus == 0) }
             do {
                 try process.run()
-                Task.detached { try? await Task.sleep(for: timeout); gate.timeoutKill() }
+                gate.arm(Task.detached {
+                    guard (try? await Task.sleep(for: timeout)) != nil else { return }
+                    gate.timeoutKill()
+                })
             } catch {
                 // The termination handler never fires on a launch failure, so resume here.
                 process.terminationHandler = nil
@@ -42,6 +45,7 @@ enum AntivirusScanner {
 private final class ScanGate: @unchecked Sendable {
     private let lock = NSLock()
     private var finished = false
+    private var timer: Task<Void, Never>?
     private let process: Process
     private let continuation: CheckedContinuation<Bool, Never>
 
@@ -50,10 +54,23 @@ private final class ScanGate: @unchecked Sendable {
         self.continuation = continuation
     }
 
+    /// Every scan otherwise leaves a 300 s sleeper behind.
+    func arm(_ timeout: Task<Void, Never>) {
+        lock.lock()
+        let done = finished
+        if !done { timer = timeout }
+        lock.unlock()
+        if done { timeout.cancel() }   // the scanner already exited
+    }
+
     func complete(_ passed: Bool) {
-        lock.lock(); defer { lock.unlock() }
-        guard !finished else { return }
+        lock.lock()
+        guard !finished else { lock.unlock(); return }
         finished = true
+        let pending = timer
+        timer = nil
+        lock.unlock()
+        pending?.cancel()
         continuation.resume(returning: passed)
     }
 
