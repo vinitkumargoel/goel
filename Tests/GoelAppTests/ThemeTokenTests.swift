@@ -74,6 +74,52 @@ final class ThemeTokenTests: XCTestCase {
         XCTAssertGreaterThan(Theme.rowAltAlpha(high), Theme.rowAltAlpha(normal))
     }
 
+    func testControlFillsAreStrongerUnderIncreasedContrast() {
+        for isDark in [false, true] {
+            let normal = AppearanceVariant(isDark: isDark, isHighContrast: false)
+            let high = AppearanceVariant(isDark: isDark, isHighContrast: true)
+            XCTAssertGreaterThan(Theme.fillRestAlpha(high), Theme.fillRestAlpha(normal))
+            XCTAssertGreaterThan(Theme.fillHoverAlpha(high), Theme.fillHoverAlpha(normal))
+            XCTAssertGreaterThan(Theme.rowHoverAlpha(high), Theme.rowHoverAlpha(normal))
+        }
+    }
+
+    func testControlFillsKeepTheirOrderingInEveryVariant() {
+        for isDark in [false, true] {
+            for isHighContrast in [false, true] {
+                let variant = AppearanceVariant(isDark: isDark, isHighContrast: isHighContrast)
+                XCTAssertLessThan(Theme.fillRestAlpha(variant), Theme.fillHoverAlpha(variant),
+                                  "hover must read stronger than rest")
+                XCTAssertLessThan(Theme.rowHoverAlpha(variant), Theme.fillHoverAlpha(variant))
+            }
+        }
+    }
+
+    func testControlFillsMatchTheOldOpacitiesWithoutIncreasedContrast() {
+        let normal = AppearanceVariant(isDark: false, isHighContrast: false)
+        XCTAssertEqual(Theme.fillRestAlpha(normal), 0.06)
+        XCTAssertEqual(Theme.fillHoverAlpha(normal), 0.10)
+        XCTAssertEqual(Theme.rowHoverAlpha(normal), 0.05)
+    }
+
+    // MARK: Type and radius scales
+
+    func testTextSizesAscend() {
+        let scale = [Theme.TextSize.micro, Theme.TextSize.caption, Theme.TextSize.meta,
+                     Theme.TextSize.body, Theme.TextSize.title, Theme.TextSize.sheet]
+        XCTAssertEqual(Theme.TextSize.micro, 10)
+        XCTAssertEqual(scale, scale.sorted())
+        XCTAssertEqual(Set(scale).count, scale.count, "no two text tokens share a size")
+    }
+
+    func testRadiiAscend() {
+        let scale = [Theme.Radius.chip, Theme.Radius.control, Theme.Radius.field,
+                     Theme.Radius.card, Theme.Radius.sheet]
+        XCTAssertEqual(Theme.Radius.field, 8)
+        XCTAssertEqual(scale, scale.sorted())
+        XCTAssertEqual(Set(scale).count, scale.count, "no two radius tokens share a value")
+    }
+
     // MARK: File tile cache
 
     func testTheTileCacheMatchesAFreshComputationForEveryTypeAndTheme() {

@@ -5,6 +5,8 @@ import SwiftUI
 /// app's text-size setting reaches it.
 extension Theme {
     enum TextSize {
+        /// Glyph-sized text: axis ticks, tiny counters, inline hints under a control.
+        static let micro: CGFloat = 10
         /// Uppercase section labels, badges.
         static let caption: CGFloat = 10.5
         /// Secondary row text: status, dates, byte counts.
@@ -20,6 +22,8 @@ extension Theme {
     enum Radius {
         static let chip: CGFloat = 4
         static let control: CGFloat = 7
+        /// Text fields, drop wells and inset list rows.
+        static let field: CGFloat = 8
         static let card: CGFloat = 10
         static let sheet: CGFloat = 14
     }
@@ -32,10 +36,23 @@ extension Theme {
         static let xl: CGFloat = 20
     }
 
-    /// Resting and hovered fills for plain controls and rows.
-    static let fillRest = Color.primary.opacity(0.06)
-    static let fillHover = Color.primary.opacity(0.10)
-    static let rowHover = Color.primary.opacity(0.05)
+    /// Resting and hovered fills for plain controls and rows. Like `rowAlt` and `hairline`, they
+    /// strengthen under Increase Contrast, where a 5–10% wash is hard to see at all.
+    static let fillRest = Color.primaryInk { fillRestAlpha($0) }
+    static let fillHover = Color.primaryInk { fillHoverAlpha($0) }
+    static let rowHover = Color.primaryInk { rowHoverAlpha($0) }
+
+    static func fillRestAlpha(_ variant: AppearanceVariant) -> CGFloat {
+        variant.isHighContrast ? 0.14 : 0.06
+    }
+
+    static func fillHoverAlpha(_ variant: AppearanceVariant) -> CGFloat {
+        variant.isHighContrast ? 0.24 : 0.10
+    }
+
+    static func rowHoverAlpha(_ variant: AppearanceVariant) -> CGFloat {
+        variant.isHighContrast ? 0.12 : 0.05
+    }
 }
 
 /// A small glyph button with a 22 pt hit target, a hover fill and a tooltip that
@@ -54,7 +71,7 @@ struct IconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: size, weight: .semibold))
+                .scaledFont(size: size, weight: .semibold)
                 .frame(width: 22, height: 22)
                 .background(Circle().fill(hovered ? Theme.fillHover : Color.clear))
                 .contentShape(Rectangle())
