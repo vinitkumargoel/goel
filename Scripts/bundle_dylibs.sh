@@ -17,18 +17,31 @@ VENDOR_PREFIX="${GOEL_BREW_PREFIX:-}"
 case "$VENDOR_PREFIX" in
   /opt/homebrew|/usr/local) VENDOR_PREFIX="" ;;
 esac
+# A worktree's Vendor/ is often a symlink to the main checkout's. Libraries built there carry
+# install names under the PHYSICAL path, so matching only the logical prefix misses them and they
+# ship as absolute build-machine paths that crash at launch. Match both spellings.
+VENDOR_PREFIX_REAL=""
+if [ -n "$VENDOR_PREFIX" ] && [ -d "$VENDOR_PREFIX" ]; then
+  VENDOR_PREFIX_REAL="$(cd "$VENDOR_PREFIX" && pwd -P)"
+  [ "$VENDOR_PREFIX_REAL" = "$VENDOR_PREFIX" ] && VENDOR_PREFIX_REAL=""
+fi
+
+# Guarded on non-empty: an unset prefix leaves the pattern `/*`, matching /usr/lib too.
+under_vendor_prefix() {
+  if [ -n "$VENDOR_PREFIX" ]; then
+    case "$1" in "$VENDOR_PREFIX"/*) return 0 ;; esac
+  fi
+  if [ -n "$VENDOR_PREFIX_REAL" ]; then
+    case "$1" in "$VENDOR_PREFIX_REAL"/*) return 0 ;; esac
+  fi
+  return 1
+}
 
 is_vendorable() {
   case "$1" in
     /opt/homebrew/*|/usr/local/Cellar/*|/usr/local/opt/*) return 0 ;;
   esac
-  # Guarded on non-empty: an unset prefix leaves the pattern `/*`, matching /usr/lib too.
-  if [ -n "$VENDOR_PREFIX" ]; then
-    case "$1" in
-      "$VENDOR_PREFIX"/*) return 0 ;;
-    esac
-  fi
-  return 1
+  under_vendor_prefix "$1"
 }
 
 deps_of() {
@@ -108,11 +121,7 @@ delete_stale_rpaths() {
     case "$rp" in
       /opt/homebrew/*|/usr/local/*|*/Xcode.app/*) stale=0 ;;
     esac
-    if [ -n "$VENDOR_PREFIX" ]; then
-      case "$rp" in
-        "$VENDOR_PREFIX"/*) stale=0 ;;
-      esac
-    fi
+    under_vendor_prefix "$rp" && stale=0
     [ "$stale" = 0 ] || continue
     install_name_tool -delete_rpath "$rp" "$file" 2>/dev/null \
       && echo "    - $rp ($(basename "$file"))" || true
@@ -183,9 +192,11 @@ leftover="$(
 )"
 remaining="$(echo "$leftover" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)' || true)"
 # -F, not -E: the prefix is a filesystem path and a `+` or `.` in it would be read as regex.
-if [ -n "$VENDOR_PREFIX" ]; then
-  remaining="$remaining$(echo "$leftover" | grep -F "$VENDOR_PREFIX" || true)"
-fi
+# Name-based checks only catch prefixes we know about. The real invariant is simpler: a shipped
+# Mach-O may load only system libraries or paths relative to the bundle. Anything else absolute is a
+# build-machine path, whatever directory it came from.
+remaining="$remaining$(echo "$leftover" | awk '/^[[:space:]]/{print $1}' \
+  | grep -E '^/' | grep -vE '^/(System/Library|usr/lib)/' || true)"
 if [ -n "$remaining" ]; then
   echo "error: build-machine paths still present after bundling:" >&2
   echo "$remaining" >&2
