@@ -7,7 +7,9 @@ struct DetailPanelView: View {
 
     var body: some View {
         Group {
-            if let task = vm.selectedTask {
+            if vm.selectedTasks.count > 1 {
+                MultiSelectionPanel()
+            } else if let task = vm.selectedTask {
                 content(for: task)
             } else {
                 emptyState

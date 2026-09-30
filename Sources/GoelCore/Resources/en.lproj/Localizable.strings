@@ -62,8 +62,10 @@
 "%d cookie" = "%d cookie";
 "%d cookies" = "%d cookies";
 "%d custom" = "%d custom";
+"%d done" = "%d done";
 "%d downloads" = "%d downloads";
 "%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted." = "%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted.";
+"%d downloads selected" = "%d downloads selected";
 "%d failed" = "%d failed";
 "%d file" = "%d file";
 "%d files" = "%d files";
@@ -286,6 +288,7 @@
 "Choose Another…" = "Choose Another…";
 "Choose Folder…" = "Choose Folder…";
 "Choose a file exported by aria2, JDownloader, IDM, a browser, etc." = "Choose a file exported by aria2, JDownloader, IDM, a browser, etc.";
+"Choose a folder for %d downloads." = "Choose a folder for %d downloads.";
 "Choose an SSH private key (for example id_ed25519 — not the .pub file)." = "Choose an SSH private key (for example id_ed25519 — not the .pub file).";
 "Choose another folder…" = "Choose another folder…";
 "Choose automatically, by type, by source URL, or fixed." = "Choose automatically, by type, by source URL, or fixed.";
@@ -319,6 +322,7 @@
 "Close info" = "Close info";
 "Close player" = "Close player";
 "Combine Wi-Fi and Ethernet on one download" = "Combine Wi-Fi and Ethernet on one download";
+"Combined progress" = "Combined progress";
 "Comma-separated IPs/CIDRs. Checked against the kernel-supplied peer address. EMPTY MEANS TRUST NOBODY — the header is ignored until you list one." = "Comma-separated IPs/CIDRs. Checked against the kernel-supplied peer address. EMPTY MEANS TRUST NOBODY — the header is ignored until you list one.";
 "Comma-separated codes, e.g. “en, es”." = "Comma-separated codes, e.g. “en, es”.";
 "Comma-separated. Each download keeps the tags it already has." = "Comma-separated. Each download keeps the tags it already has.";
@@ -880,16 +884,19 @@
 "Modified" = "Modified";
 "More actions" = "More actions";
 "More actions for %@" = "More actions for %@";
+"Move %d selected downloads" = "Move %d selected downloads";
 "Move & Retry" = "Move & Retry";
 "Move Aside" = "Move Aside";
 "Move Back" = "Move Back";
 "Move Detail Panel" = "Move Detail Panel";
+"Move Here" = "Move Here";
 "Move the Broken Database Aside…" = "Move the Broken Database Aside…";
 "Move the broken database aside and start fresh?" = "Move the broken database aside and start fresh?";
 "Move the files of %d downloads to the Trash?" = "Move the files of %d downloads to the Trash?";
 "Move to" = "Move to";
 "Move to Trash" = "Move to Trash";
 "Move to Trash…" = "Move to Trash…";
+"Move to…" = "Move to…";
 "Move “%@” to a folder with more room. The part already downloaded moves with it." = "Move “%@” to a folder with more room. The part already downloaded moves with it.";
 "Move “%@” to the Trash?" = "Move “%@” to the Trash?";
 "Moved %1$@, %2$@ couldn’t move (running, finished, or a file is in the way)" = "Moved %1$@, %2$@ couldn’t move (running, finished, or a file is in the way)";
@@ -1469,6 +1476,7 @@
 "Tags cleared" = "Tags cleared";
 "Tags for “%@”" = "Tags for “%@”";
 "Tags updated" = "Tags updated";
+"Tag…" = "Tag…";
 "Technical detail" = "Technical detail";
 "Test" = "Test";
 "Test Connection" = "Test Connection";
