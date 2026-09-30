@@ -74,6 +74,10 @@ final class RemovalBatch {
     var isUndone = false
     /// Undo waits for this: `reinsert` skips an id the manager still lists.
     var work: Task<Void, Never>?
+    /// Keeps a removed portal upload's .torrent on disk while this record (and so its Undo) exists.
+    let hold: RemovalHold
+
+    init(hold: RemovalHold) { self.hold = hold }
 }
 
 @MainActor
@@ -99,7 +103,7 @@ extension AppViewModel {
         if let primary = primarySelection, wanted.contains(primary) { primarySelection = nextPrimary }
         if let anchor = selectionAnchor, wanted.contains(anchor) { selectionAnchor = nextPrimary }
 
-        let batch = RemovalBatch()
+        let batch = RemovalBatch(hold: RemovalHold(manager: self.manager))
         if !deleteData {
             // A list removal can't turn out differently from what it says, so its Undo shows with the removal.
             present(RemovalReport.make(names: targets.map(\.name),
@@ -111,7 +115,8 @@ extension AppViewModel {
             var outcomes: [RemovalOutcome] = []
             for target in targets {
                 let latest = await manager.task(target.id) ?? target
-                guard let outcome = await manager.removeAndReport(target.id, deleteData: deleteData) else { continue }
+                guard let outcome = await manager.removeAndReport(target.id, deleteData: deleteData,
+                                                                  hold: batch.hold) else { continue }
                 batch.removed.append(latest)
                 outcomes.append(outcome)
             }

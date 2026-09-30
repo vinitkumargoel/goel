@@ -67,13 +67,23 @@ enum RemoteTorrentSpool {
         return file
     }
 
-    /// Deletes a spooled upload once its task is gone; anything outside the spool is left alone.
-    static func discard(_ source: DownloadSource, directory: URL? = defaultDirectory()) {
-        guard case .torrentFile(let url) = source, url.isFileURL, let directory,
+    /// The file name of a source that is one of our spooled uploads; nil for anything else.
+    static func spoolName(_ source: DownloadSource, in directory: URL) -> String? {
+        guard case .torrentFile(let url) = source, url.isFileURL,
               url.pathExtension == "torrent",
               url.deletingLastPathComponent().standardizedFileURL.path
                 == directory.standardizedFileURL.path,
-              PathSafety.isContained(url.path, within: directory.path) else { return }
+              PathSafety.isContained(url.path, within: directory.path) else { return nil }
+        return url.lastPathComponent
+    }
+
+    static func isSpooled(_ source: DownloadSource, in directory: URL) -> Bool {
+        spoolName(source, in: directory) != nil
+    }
+
+    /// Deletes a spooled upload once its task is gone; anything outside the spool is left alone.
+    static func discard(_ source: DownloadSource, directory: URL? = defaultDirectory()) {
+        guard let directory, isSpooled(source, in: directory), case .torrentFile(let url) = source else { return }
         try? FileManager.default.removeItem(at: url)
     }
 }
@@ -81,7 +91,7 @@ enum RemoteTorrentSpool {
 extension DownloadManager {
     public func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
                                  priority: FilePriority, startPaused: Bool) async throws -> UUID? {
-        guard let directory = RemoteTorrentSpool.defaultDirectory() else {
+        guard let directory = spoolDirectory else {
             throw RemoteTorrentUpload.Failure.couldNotSave
         }
         // Off the actor: a slow disk must not stall every download's bookkeeping.

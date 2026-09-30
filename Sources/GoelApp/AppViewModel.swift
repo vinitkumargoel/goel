@@ -409,6 +409,10 @@ final class AppViewModel: ObservableObject {
         guard !didStart else { return }
         didStart = true
         await manager.restore()
+        if !isStoreEphemeral {
+            let manager = self.manager
+            Task.detached(priority: .utility) { await manager.sweepOrphanedSpool() }
+        }
         // Subscribed straight after restore so the list paints before the monitors below come up.
         let stream = await manager.updates()
         settings = await manager.currentSettings

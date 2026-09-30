@@ -110,6 +110,15 @@ public actor DownloadManager {
 
     let pipeline: PersistencePipeline?
 
+    /// Where portal uploads are spooled; see ``RemoteTorrentSpool``.
+    var spoolDirectory: URL? = RemoteTorrentSpool.defaultDirectory()
+
+    /// Spooled .torrent sources of removed rows that an Undo can still bring back, per ``RemovalHold``.
+    var spoolHolds: [UUID: [DownloadSource]] = [:]
+
+    /// Set once ``restore()`` has loaded the saved queue: until then no spool file can be called orphaned.
+    var restoredQueue = false
+
     let persistErrorHandler: PersistenceErrorHandler?
 
     public init(
@@ -248,6 +257,7 @@ public actor DownloadManager {
         // First paint must not wait on a stat of every payload: one hung SMB share would hold the window empty.
         publish()
         initialReconcile = Task { [weak self] in await self?.reconcileCompletedFiles() }
+        restoredQueue = true
 
         await applyEngineConfigs()
         await updateWatchFolder()
@@ -290,12 +300,16 @@ public actor DownloadManager {
         }
     }
 
-    public func removeHistoryEntry(_ id: UUID) {
+    public func removeHistoryEntry(_ id: UUID) async {
+        let sources = historySources([id])
         persistHistoryRemoval(id)
+        await discardOrphanedSpools(sources, ignoringHistory: [id])
     }
 
-    public func clearHistory() {
+    public func clearHistory() async {
+        let sources = historySources(nil)
         persistHistoryClear()
+        await discardOrphanedSpools(sources, ignoringAllHistory: true)
     }
 
     public func task(_ id: DownloadTask.ID) -> DownloadTask? {

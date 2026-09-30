@@ -23,8 +23,11 @@ extension DownloadManager {
 
     /// Returns nil when no such task exists. Only the torrent engine is asked to delete data: for every other
     /// kind the manager does it, because only it knows which of the paths are the download's (see ``payloadPlan``).
+    /// Pass a `hold` when the removal can be undone: a spooled .torrent then survives until the hold goes,
+    /// since ``reinsert(_:)`` brings the row back with the same source.
     @discardableResult
-    public func removeAndReport(_ id: DownloadTask.ID, deleteData: Bool) async -> RemovalOutcome? {
+    public func removeAndReport(_ id: DownloadTask.ID, deleteData: Bool,
+                                hold: RemovalHold? = nil) async -> RemovalOutcome? {
         guard let task = task(id) else { return nil }
         let engineDeletes = task.kind == .torrent
         let handedToEngine = engineStarted.contains(id)
@@ -35,12 +38,13 @@ extension DownloadManager {
         let latest = self.task(id) ?? task
         clearLocalState(id, removeFromList: true)
         persistRemoval(id)
-        // A portal upload's spooled .torrent is only this task's; nothing else ever cleans it up.
-        let source = task.source
-        Task.detached(priority: .utility) { RemoteTorrentSpool.discard(source) }
+        // Before any await: a snapshot published without the row and without the hold would read as orphaned.
+        if let hold { holdSpool(task.source, under: hold) }
         updatePowerAssertion()
         publish()
         schedule()
+        // A portal upload's spooled .torrent is only this task's; nothing else ever cleans it up.
+        if hold == nil { await discardOrphanedSpools([task.source]) }
         guard deleteData else { return .nothingToDelete }
         if engineDeletes {
             return handedToEngine ? await reportLoadedTorrent(latest) : await reportUnloadedTorrent(latest)
