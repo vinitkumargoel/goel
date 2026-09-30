@@ -204,11 +204,14 @@ systemd, non-Debian distributions, and building from source.
 > [Releases](https://github.com/vinitkumargoel/goel/releases) — this section is only for
 > building the app yourself.
 
-You need Homebrew **only to build** — the resulting `.app` is self-contained.
+The native libraries are needed **only to build** — the resulting `.app` is self-contained.
 
 ```bash
-# 1. Native libraries the engines link against
-brew install libtorrent-rasterbar openssl@3 libssh2 boost
+# 1. Native libraries the engines link against, built against the macOS 14 floor
+#    into Vendor/macos/<arch>, which Package.swift then uses automatically.
+#    (`brew install libtorrent-rasterbar openssl@3 libssh2 boost` also works for a quick
+#    local build, but its bottles target your macOS, so it cannot make a release.)
+Scripts/macos/build-deps.sh
 
 # 2. Debug build / run
 swift build
@@ -228,7 +231,8 @@ CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 NOTARY_PROFILE="your-notarytool-keychain-profile" \
 Scripts/build_app.sh
 ```
-This signs with hardened runtime + the entitlements in `Scripts/Goel.entitlements`, submits to Apple's
+This signs with hardened runtime + the minimal entitlements in `Scripts/Goel.entitlements` (the bundled
+yt-dlp alone gets `Scripts/YtDlp.entitlements`), submits to Apple's
 notary service, and staples the ticket — which is what lets a downloaded app open without warnings.
 `GOEL_RELEASE=1` is what makes a release a release: without it the script produces a local build and
 emits **no** distributable archive, because an Apple Development signature is valid for signing and
