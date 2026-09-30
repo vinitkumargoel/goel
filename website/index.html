@@ -91,7 +91,7 @@
         { "@type": "Question", "name": "Do I need Homebrew or any libraries?",
           "acceptedAnswer": { "@type": "Answer", "text": "No. Every native library — libtorrent, libssh2, libcurl, OpenSSL — is bundled inside the app. Download the .dmg, drag to Applications, done." } },
         { "@type": "Question", "name": "Which Macs does it run on?",
-          "acceptedAnswer": { "@type": "Answer", "text": "macOS 14 (Sonoma) or later, Apple Silicon and Intel. One caveat on the current downloads: the 1.0.0 and 1.0.1 archives were built before the deployment-target gate existed, and the OpenSSL and libtorrent libraries vendored into them need a newer macOS than the app advertises, so they will not launch between Sonoma and macOS 26. The gate runs on every build and every disk image from 1.0.4 onward. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time." } },
+          "acceptedAnswer": { "@type": "Answer", "text": "macOS 14 (Sonoma) or later, Apple Silicon and Intel. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time. The 1.0.0 and 1.0.1 downloads quit on launch below macOS 26 — fixed from 1.0.4, see the changelog at https://github.com/vinitkumargoel/goel/blob/main/CHANGELOG.md." } },
         { "@type": "Question", "name": "Is it free?",
           "acceptedAnswer": { "@type": "Answer", "text": "Free for personal use — individuals, students, hobby projects and home labs, with every feature and no time limit. Charities, schools and public bodies are free too, under the licence's Noncommercial Organizations clause. Using it in the course of a business, by a contractor in billable work, or on a managed corporate fleet needs a paid licence. The licence is PolyForm Noncommercial 1.0.0; see https://goel.vinitk.dev/commercial for the eligibility table and pricing." } },
         { "@type": "Question", "name": "Can it download from video sites?",
@@ -219,6 +219,52 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
 .fact:last-child { border-right: none; }
 .fact b { display: block; font-family: var(--font-mono); font-size: var(--text-xl); font-weight: 600; }
 .fact span { font-size: 0.72rem; font-family: var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-ink-faint); }
+
+/* trust strip — one muted row under the facts, wraps rather than scrolls */
+.trust {
+  list-style: none; display: flex; flex-wrap: wrap; justify-content: center;
+  gap: var(--space-xs) var(--space-lg); margin: var(--space-md) auto 0; max-width: 900px;
+  font-size: var(--text-sm); color: var(--color-ink-soft);
+}
+.trust li { display: inline-flex; align-items: center; gap: 7px; }
+.trust svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.trust a { text-decoration: none; }
+.trust a:hover { color: var(--color-ink); text-decoration: underline; text-underline-offset: 3px; }
+
+/* download microcopy + the Linux one-liner under the hero buttons */
+.dl-meta {
+  margin-top: var(--space-sm); font-family: var(--font-mono); font-size: 0.75rem;
+  color: var(--color-ink-faint); display: flex; justify-content: center; flex-wrap: wrap;
+}
+.dl-meta span + span::before { content: "·"; margin: 0 0.6em; }
+.linux-cta {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm); margin-top: var(--space-md);
+}
+.linux-label { font-size: var(--text-sm); color: var(--color-ink-soft); }
+.linux-cmd {
+  font-family: var(--font-mono); font-size: 0.8rem; color: var(--color-ink-soft);
+  background: var(--color-paper-2); border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm); padding: 6px 12px; min-width: 0; max-width: 100%;
+  overflow-wrap: anywhere; text-align: left;
+}
+.linux-cmd .p { color: var(--color-accent); user-select: none; }
+.copy-cmd {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font-family: var(--font-mono); font-size: 0.8rem; color: var(--color-ink-soft);
+  border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); padding: 6px 12px;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.copy-cmd:hover { border-color: var(--color-ink-faint); color: var(--color-ink); }
+.copy-cmd[data-done="1"] { color: var(--color-good); border-color: color-mix(in oklab, var(--color-good) 45%, transparent); }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* phone-only still of the real app, framed like a window; opens the live demo */
+.app-still { display: none; }
+.app-stage { scroll-margin-top: calc(var(--nav-h) + 16px); }
 
 /* ---------- the living app ---------- */
 /* full-bleed at load, shrinks into the column on scroll (see scroll choreography JS) */
@@ -629,6 +675,17 @@ section[id], header[id] { scroll-margin-top: calc(var(--nav-h) + 16px); }
 /* Small print that qualifies a claim above it — kept at AA contrast (ink-faint). */
 .fine { margin-top: 10px; font-size: 0.78rem; line-height: 1.5; color: var(--color-ink-faint); }
 
+/* real screenshots beside the live demos */
+.shot { margin-top: var(--space-lg); }
+.shot img {
+  display: block; width: 100%; height: auto; border-radius: var(--radius-md);
+  border: 1px solid var(--color-line-strong); box-shadow: var(--shadow-panel);
+  background: var(--color-app-bg);
+}
+.shot figcaption { margin-top: var(--space-xs); font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-ink-faint); }
+.shot-sm { max-width: 360px; }
+.shot-wide { max-width: 900px; margin: var(--space-xl) auto 0; text-align: center; }
+
 /* Goel° Web — browser window with live portal */
 .web-head { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--space-xl); align-items: end; }
 .bw {
@@ -723,9 +780,10 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
 .hero h1 { animation: rise 0.7s var(--ease-out) backwards; }
 .hero p.sub { animation: rise 0.7s var(--ease-out) 0.08s backwards; }
 .hero-ctas { animation: rise 0.7s var(--ease-out) 0.16s backwards; }
+.dl-meta, .linux-cta, .app-still { animation: rise 0.7s var(--ease-out) 0.2s backwards; }
 .hero-note { animation: rise 0.7s var(--ease-out) 0.24s backwards; }
 .app-shrink { animation: rise 0.9s var(--ease-out) 0.3s backwards; }
-.facts { animation: rise 0.8s var(--ease-out) 0.5s backwards; }
+.facts, .trust { animation: rise 0.8s var(--ease-out) 0.5s backwards; }
 .nav { transition: box-shadow var(--dur-med) var(--ease-out); }
 .nav.scrolled { box-shadow: var(--shadow-nav); }
 @keyframes drift { to { background-position: 42px 28px; } }
@@ -753,7 +811,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .rv, .slice-grid.rv .slice-copy, .slice-grid.rv .panel-wrap, .slice-grid.rv .ticks li, .grid.rv .cellf { opacity: 1; transform: none; transition: none; }
-  .hero h1, .hero p.sub, .hero-ctas, .hero-note, .app-shrink, .facts, .dither, .faq details[open] p { animation: none; }
+  .hero h1, .hero p.sub, .hero-ctas, .dl-meta, .linux-cta, .app-still, .hero-note, .app-shrink, .facts, .trust, .dither, .faq details[open] p { animation: none; }
   .term .cur { animation: none; }
   /* the simulation itself starts paused (see startSim) — kill the tweens too, so
      a resumed demo steps rather than glides */
@@ -789,6 +847,26 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
   .wp-search, .wp-user, .wp-tag { display: none; }
   /* wrapping beats a hidden tail: pre-wrap breaks visually only */
   .slice p.install-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* a still of the real app leads; the simulation opens on request — by the
+     JS class, or by :target when scripts are off */
+  .linux-cmd { font-size: 0.72rem; }
+  .app-still { display: block; margin: var(--space-xl) auto 0; text-decoration: none; max-width: 560px; }
+  .app-still img {
+    display: block; width: 100%; height: auto; border-radius: var(--radius-md);
+    border: 1px solid var(--color-line-strong); box-shadow: var(--shadow-app);
+    background: var(--color-app-bg);
+  }
+  .app-still-cta {
+    display: inline-block; margin-top: var(--space-md); font-family: var(--font-mono);
+    font-size: 0.75rem; letter-spacing: 0.06em; color: var(--color-accent);
+    border: 1px solid color-mix(in oklab, var(--color-accent) 35%, transparent);
+    border-radius: 999px; padding: 6px 14px; background: var(--color-accent-soft);
+  }
+  .app-still:focus-visible { outline-offset: 6px; border-radius: var(--radius-md); }
+  .app-stage, .hero-note { display: none; }
+  .hero.demo-open .app-stage, .app-stage:target { display: block; }
+  .hero.demo-open .hero-note, .hero:has(#live-demo:target) .hero-note { display: flex; }
+  .hero.demo-open .app-still, .hero:has(#live-demo:target) .app-still { display: none; }
 }
 @media (max-width: 640px) {
   .fact { flex-basis: 50%; border-top: 1px solid var(--color-line); }
@@ -865,7 +943,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <a class="keep" href="/commercial">Commercial</a>
       <a class="keep" href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">GitHub</a>
     </div>
-    <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener"><span class="t-full">Download for macOS</span><span class="t-short">Download</span> ↓</a>
+    <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases/latest" target="_blank" rel="noopener"><span class="t-full">Download for macOS</span><span class="t-short">Download</span> ↓</a>
   </div>
 </nav>
 
@@ -874,14 +952,38 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
     <h1>One queue for <span class="hl">everything</span> you download.</h1>
     <p class="sub">HTTP, FTP, SFTP, BitTorrent and HLS in a single native macOS app. Self-contained, source-available, Homebrew-free — and headless on Linux.</p>
     <div class="hero-ctas">
-      <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Download for macOS ↓</a>
+      <!-- The release page, not the .dmg itself: asset names carry the version and
+           the architecture (Goel-Downloader-<v>-macos-arm64.dmg, see RELEASE.md §11),
+           so there is no stable releases/latest/download/<name> URL to point at. -->
+      <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases/latest" target="_blank" rel="noopener">Download for macOS ↓</a>
       <a class="btn btn-ghost" href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">View on GitHub</a>
     </div>
+    <!-- VERSION: keep in step with "softwareVersion" in the JSON-LD above and
+         "Current version" in llms.txt — the site has no build step to share it. -->
+    <p class="dl-meta"><span>v1.0.4</span><span>macOS 14+</span><span>Apple Silicon build</span></p>
+    <div class="linux-cta">
+      <span class="linux-label">Linux server?</span>
+      <code class="linux-cmd"><span class="p" aria-hidden="true">$ </span>curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh</code>
+      <button class="copy-cmd" id="heroCopy" type="button" data-cmd="curl -fsSL https://goel.vinitk.dev/install.sh | sudo sh" aria-label="Copy the Linux install command">⧉ <span id="heroCopyLabel">Copy</span></button>
+      <span class="sr-only" id="heroCopyStatus" role="status"></span>
+    </div>
+
+    <!-- Phones get a still of the real app first; the simulation needs ~480px
+         and a sideways drag, so it opens on request (#live-demo, no JS needed). -->
+    <a class="app-still" href="#live-demo">
+      <picture>
+        <source type="image/avif" srcset="assets/shot-app-720.avif 720w, assets/shot-app-1080.avif 1080w" sizes="calc(100vw - 48px)">
+        <source type="image/webp" srcset="assets/shot-app-720.webp 720w, assets/shot-app-1080.webp 1080w" sizes="calc(100vw - 48px)">
+        <img src="assets/shot-app-720.jpg" srcset="assets/shot-app-720.jpg 720w, assets/shot-app-1080.jpg 1080w" sizes="calc(100vw - 48px)" width="720" height="382" loading="lazy" decoding="async" alt="Goel° on macOS: one queue holding HTTP, BitTorrent, SFTP, HLS and FTP downloads, with a detail panel showing a download at 62 percent.">
+      </picture>
+      <span class="app-still-cta">Tap to try the live demo ↓</span>
+    </a>
+
     <p class="hero-note">▼ live demo · real UI · mock data — click around
       <button class="demo-toggle" id="demoToggle" type="button">⏸ Pause demo</button>
     </p>
 
-    <div class="app-stage">
+    <div class="app-stage" id="live-demo">
       <div class="app-shrink" id="appShrink" data-live="hero">
         <div class="app-scroll">
           <div class="app" id="app1" role="group" aria-label="Interactive demo of the Goel download manager"></div>
@@ -903,6 +1005,16 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       <div class="fact"><b data-n="2">2</b><span>platforms</span></div>
       <div class="fact"><b>FREE</b><span>for personal use</span></div>
     </div>
+
+    <!-- Only claims that hold for the builds actually on the Releases page. Not
+         "notarized": 1.0.0/1.0.1 are ad-hoc signed; add it once a notarized
+         release is published. No live star count: connect-src is 'self'. -->
+    <ul class="trust" aria-label="Trust and transparency">
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 2 4 14M12 2l-1.5 12M2.5 5.5h12M1.5 10.5h12"/></svg><a href="https://github.com/vinitkumargoel/goel/releases/latest" target="_blank" rel="noopener">SHA-256 digest on every release file</a></li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4 1.5 8l4 4M10.5 4l4 4-4 4"/></svg><a href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">Source available (PolyForm Noncommercial)</a></li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2l12 12M6.3 3.4A7 7 0 0 1 8 3.2c3.6 0 6 3.4 6.5 4.8-.2.6-.8 1.6-1.7 2.6M10 12.4c-.6.2-1.3.4-2 .4-3.6 0-6-3.4-6.5-4.8.3-.8 1-2 2.1-3"/></svg><a href="/privacy">No telemetry</a></li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/></svg><a href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">Star on GitHub</a></li>
+    </ul>
   </div>
 </header>
 
@@ -1067,6 +1179,14 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
         <li>Quick Look finished files with Space</li>
         <li>Four themes — Frost Light/Dark, Dracula, Nord</li>
       </ul>
+      <figure class="shot shot-sm">
+        <picture>
+          <source type="image/avif" srcset="assets/shot-menubar-520.avif">
+          <source type="image/webp" srcset="assets/shot-menubar-520.webp">
+          <img src="assets/shot-menubar-520.jpg" width="520" height="430" loading="lazy" decoding="async" alt="The Goel° menu-bar extra open on macOS: combined speed in the menu bar, four active downloads with progress and speed, an Add download button, Pause all and Open Goel°.">
+        </picture>
+        <figcaption>The real menu-bar extra, screenshotted on macOS.</figcaption>
+      </figure>
     </div>
     <div class="panel-wrap">
       <div class="dither"></div>
@@ -1141,6 +1261,14 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
       </div>
       <div class="wp-foot"><span id="w-count">— downloads</span><span>Signed in · admin</span></div>
     </div>
+    <figure class="shot shot-wide rv">
+      <picture>
+        <source type="image/avif" srcset="assets/shot-portal-800.avif 800w, assets/shot-portal-1400.avif 1400w" sizes="(max-width: 948px) calc(100vw - 48px), 900px">
+        <source type="image/webp" srcset="assets/shot-portal-800.webp 800w, assets/shot-portal-1400.webp 1400w" sizes="(max-width: 948px) calc(100vw - 48px), 900px">
+        <img src="assets/shot-portal-800.jpg" srcset="assets/shot-portal-800.jpg 800w, assets/shot-portal-1400.jpg 1400w" sizes="(max-width: 948px) calc(100vw - 48px), 900px" width="800" height="503" loading="lazy" decoding="async" alt="The real Goel° Web portal in a browser: library and status sidebar, the download queue with protocol badges and speeds, and a detail panel with pause, copy-link and remove actions.">
+      </picture>
+      <figcaption>And the real thing: Goel° Web, screenshotted. The demo above is modelled on it.</figcaption>
+    </figure>
   </div>
 </section>
 
@@ -1211,7 +1339,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
     </div>
     <div>
       <details><summary>Do I need Homebrew or any libraries?</summary><p>No. Every native library — libtorrent, libssh2, libcurl, OpenSSL — is bundled inside the app. Download the .dmg, drag to Applications, done.</p></details>
-      <details><summary>Which Macs does it run on?</summary><p>macOS 14 (Sonoma) or later, Apple Silicon and Intel. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time.</p><p class="fine">One caveat on the downloads currently published: the <span class="mono">1.0.0</span> and <span class="mono">1.0.1</span> archives were built before the deployment-target gate existed, and the OpenSSL and libtorrent libraries vendored into them declare a minimum of macOS 26 even though the app advertises 14. macOS refuses an over-targeted library before the app starts, so those two builds quit on launch on a Mac between Sonoma and macOS 26. The gate now runs on every build <em>and</em> every disk image, so no later release can carry the mismatch.</p></details>
+      <details><summary>Which Macs does it run on?</summary><p>macOS 14 (Sonoma) or later, Apple Silicon and Intel. A notarized release just opens; for an un-notarized build — a beta, say — right-click the app → Open the first time.</p><p class="fine">The <span class="mono">1.0.0</span> and <span class="mono">1.0.1</span> downloads quit on launch below macOS 26 — fixed from 1.0.4, see the <a href="https://github.com/vinitkumargoel/goel/blob/main/CHANGELOG.md" target="_blank" rel="noopener">changelog</a>.</p></details>
       <details><summary>Is it free?</summary><p>Free for personal use — individuals, students, hobby projects and home labs, with every feature and no time limit. Charities, schools and public bodies are free too, under the licence's <em>Noncommercial Organizations</em> clause. Using it in the course of a business, by a contractor in billable work, or on a managed corporate fleet needs a paid licence. The licence is <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial 1.0.0</a>; see <a href="/commercial">commercial licensing</a> for the eligibility table and pricing.</p></details>
       <details><summary>Can it download from video sites?</summary><p>Official releases bundle yt-dlp: the “Resolve Media” button turns a video-site page into a direct download. Finished (VOD) HLS streams save to a clean .mp4, unencrypted or AES-128. Live streams, DRM-protected streams and renditions that carry their audio as a separate track are refused with a stated reason, rather than saved as a truncated or silent file.</p></details>
       <details><summary>Does it really run on Linux?</summary><p>Yes — the same engine ships as GoelDaemon, a headless service driven entirely from the built-in web portal. Prebuilt for x86_64; build from source for ARM64. The tarball bundles the Swift runtime, but unlike the Mac app it expects a handful of system libraries from your package manager — libtorrent, libssh2, libcurl, OpenSSL, Boost and ffmpeg. One apt line, in the README.</p></details>
@@ -1225,7 +1353,7 @@ footer { border-top: 1px solid var(--color-line); padding: var(--space-xl) 0; }
     <h2>Stop juggling download apps.</h2>
     <p>One queue. Five protocols. Zero dependencies.</p>
     <div class="hero-ctas">
-      <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases" target="_blank" rel="noopener">Download for macOS ↓</a>
+      <a class="btn btn-accent" href="https://github.com/vinitkumargoel/goel/releases/latest" target="_blank" rel="noopener">Download for macOS ↓</a>
       <a class="btn btn-ghost" href="https://github.com/vinitkumargoel/goel" target="_blank" rel="noopener">View on GitHub</a>
     </div>
   </div>
@@ -1899,6 +2027,52 @@ const io = new IntersectionObserver(es => es.forEach(e => {
   io.unobserve(e.target);
 }), { threshold: 0.15 });
 document.querySelectorAll(".rv").forEach(el => io.observe(el));
+
+/* phones: the still opens the simulation. The class outlives the #live-demo
+   hash, so following a nav link afterwards doesn't fold the demo away again.
+   The stage was display:none when first measured, so measure it now. */
+const heroEl = document.querySelector(".hero");
+function openDemo() {
+  if (heroEl.classList.contains("demo-open")) return;
+  heroEl.classList.add("demo-open");
+  measureShrink();
+}
+document.querySelector(".app-still").addEventListener("click", openDemo);
+if (location.hash === "#live-demo") openDemo();
+
+/* Linux one-liner copy. execCommand is the fallback for non-secure contexts,
+   where navigator.clipboard is undefined. The visible label changes, and the
+   polite status region says it for screen readers. */
+(() => {
+  const btn = document.getElementById("heroCopy");
+  const label = document.getElementById("heroCopyLabel");
+  const status = document.getElementById("heroCopyStatus");
+  let timer;
+  const done = ok => {
+    label.textContent = ok ? "Copied" : "Select it manually";
+    status.textContent = ok ? "Copied to clipboard" : "Couldn't copy — select the command manually";
+    btn.setAttribute("data-done", ok ? "1" : "0");
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      label.textContent = "Copy"; status.textContent = ""; btn.removeAttribute("data-done");
+    }, 2200);
+  };
+  btn.addEventListener("click", () => {
+    const text = btn.dataset.cmd;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
+      return;
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly", "");
+    ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    done(ok);
+  });
+})();
 </script>
 </body>
 </html>

@@ -42,6 +42,13 @@
 /assets/*.jpg
   Cache-Control: public, max-age=86400
 
+# The screenshot set (shot-*) ships each image as AVIF, WebP and JPEG.
+/assets/*.avif
+  Cache-Control: public, max-age=86400
+
+/assets/*.webp
+  Cache-Control: public, max-age=86400
+
 # HTML must revalidate, or a release ships to browsers that never ask again.
 /*.html
   Cache-Control: public, max-age=0, must-revalidate
