@@ -24,34 +24,6 @@ struct ProgressRing: View {
     }
 }
 
-@MainActor
-final class ThroughputSampler: ObservableObject {
-    @Published private(set) var samples: [Double]
-    private let capacity: Int
-    private var currentID: AnyHashable?
-
-    init(capacity: Int = 44) {
-        self.capacity = capacity
-        self.samples = []
-    }
-
-    func record(_ value: Double, id: AnyHashable) {
-        if id != currentID {
-            currentID = id
-            samples = []
-        }
-        samples.append(value)
-        if samples.count > capacity { samples.removeFirst(samples.count - capacity) }
-    }
-
-    /// Guard is a no-op once samples exist for this identity — else it clobbers a live session.
-    func seed(_ values: [Double], id: AnyHashable) {
-        guard id != currentID || samples.isEmpty else { return }
-        currentID = id
-        samples = Array(values.suffix(capacity))
-    }
-}
-
 struct ThroughputGraph: View {
     let samples: [Double]
     var color: Color = Theme.green

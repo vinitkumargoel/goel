@@ -50,10 +50,10 @@ struct SparklineView: View {
 
 struct TaskSpeedGraph: View {
     let taskID: DownloadTask.ID
-    @EnvironmentObject private var vm: AppViewModel
+    @EnvironmentObject private var telemetry: TelemetryStore
 
     var body: some View {
-        let history = vm.taskSpeedHistory[taskID] ?? []
+        let history = telemetry.taskHistory(taskID)
         if history.count > 2 {
             VStack(alignment: .leading, spacing: 4) {
                 SectionLabel(text: L10n.t("Speed · last %ds", history.count))

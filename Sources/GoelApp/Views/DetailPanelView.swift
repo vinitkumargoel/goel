@@ -3,6 +3,7 @@ import GoelCore
 
 struct DetailPanelView: View {
     @EnvironmentObject private var vm: AppViewModel
+    @EnvironmentObject private var telemetry: TelemetryStore
 
     var body: some View {
         Group {
@@ -105,8 +106,8 @@ struct DetailPanelView: View {
             .accessibilityValue(task.accessibilityProgressValue)
 
             HStack(spacing: 22) {
-                DetailSpeedStat(symbol: "arrow.down", speed: vm.displaySpeed(for: task).down, color: Theme.green, size: 13)
-                DetailSpeedStat(symbol: "arrow.up", speed: vm.displaySpeed(for: task).up, color: Theme.teal, size: 13)
+                DetailSpeedStat(symbol: "arrow.down", speed: telemetry.displaySpeed(for: task).down, color: Theme.green, size: 13)
+                DetailSpeedStat(symbol: "arrow.up", speed: telemetry.displaySpeed(for: task).up, color: Theme.teal, size: 13)
             }
 
             Text(sizeAndETA(for: task))

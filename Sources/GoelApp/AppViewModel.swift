@@ -48,7 +48,7 @@ enum DetailTab: String, CaseIterable, Identifiable {
 @MainActor
 final class AppViewModel: ObservableObject {
 
-    @Published private(set) var tasks: [DownloadTask] = []
+    @Published var tasks: [DownloadTask] = []
     @Published private(set) var settings = AppSettings() {
         didSet {
             let selected = AppTheme(settingsValue: settings.theme)
@@ -59,6 +59,7 @@ final class AppViewModel: ObservableObject {
             if L10n.currentLanguage != settings.language {
                 L10n.currentLanguage = settings.language
             }
+            if settings.autoShutdown != oldValue.autoShutdown { refreshCommandState() }
         }
     }
 
@@ -82,7 +83,7 @@ final class AppViewModel: ObservableObject {
         )
     }
 
-    @Published var selection: Set<DownloadTask.ID> = []
+    @Published var selection: Set<DownloadTask.ID> = [] { didSet { refreshCommandState() } }
 
     @Published var primarySelection: DownloadTask.ID?
 
@@ -112,7 +113,11 @@ final class AppViewModel: ObservableObject {
 
     @Published var servers: [SFTPConnection] = []
 
-    @Published var selectedServer: SFTPConnection.ID?
+    /// Set when the saved-servers file exists but can't be read: an empty sidebar would
+    /// otherwise look like "no servers" until the user tried to save one.
+    @Published var serverStoreWarning: String?
+
+    @Published var selectedServer: SFTPConnection.ID? { didSet { refreshCommandState() } }
 
     @Published var sftpBrowserNavigation: SFTPBrowserNavigationRequest?
 
@@ -132,7 +137,13 @@ final class AppViewModel: ObservableObject {
 
     func bumpBrowserGeneration() { browserGeneration &+= 1 }
 
-    @Published var sftpTransfers: [SFTPTransfer] = []
+    /// Lives in its own store: progress ticks must not redraw every view observing the model.
+    let sftpStore = SFTPTransferStore()
+
+    var sftpTransfers: [SFTPTransfer] {
+        get { sftpStore.transfers }
+        set { sftpStore.transfers = newValue }
+    }
 
     @Published var sftpClipboard: SFTPClipboard?
 
@@ -150,30 +161,29 @@ final class AppViewModel: ObservableObject {
     /// Per-file, not a running total: concurrent uploads complete out of order.
     var sftpFolderBytes: [UUID: [Int: Int64]] = [:]
 
-    struct SpeedSample: Equatable {
-        var down: Double
-        var up: Double
-    }
+    /// Speed read-outs and history rings; views that show numbers observe this directly.
+    let telemetry = TelemetryStore()
 
-    @Published private(set) var globalSpeedHistory: [SpeedSample] = []
+    /// What the menu bar enables; the commands observe this, never the whole model.
+    let commandState = CommandState()
 
-    /// Menu bar and status bar read this, not the live sums, or the labels flicker.
-    @Published private(set) var displayedCombinedSpeed = SpeedSample(down: 0, up: 0)
+    /// FIFO toasts, observed only by the overlays that draw them.
+    let toasts = ToastQueue()
 
-    private(set) var taskSpeedHistory: [DownloadTask.ID: [SpeedSample]] = [:]
+    /// Set by the main window so "Remove from List" lands on Edit ▸ Undo.
+    weak var undoManager: UndoManager?
 
-    /// One ring per SFTP transfer, filled by the same sampler on the same cadence as
-    /// ``taskSpeedHistory``, so the transfer inspector's graph and a download's graph
-    /// share a time base. Single channel: a transfer only moves bytes one way.
-    @Published private(set) var sftpSpeedHistory: [UUID: [Double]] = [:]
+    /// Rows removed from the list but not yet from the queue: Undo brings them back untouched
+    /// (same id, resume data and status) until the grace period commits the removal.
+    var pendingRemovals: [UUID: PendingRemoval] = [:]
+    var pendingRemovalIDs: Set<DownloadTask.ID> = []
 
-    @Published private(set) var displayedTaskSpeed: [DownloadTask.ID: SpeedSample] = [:]
+    /// Browser captures being handed to the manager right now; a second drain must skip them.
+    var spoolFilesInFlight: Set<URL> = []
 
-    func displaySpeed(for task: DownloadTask) -> SpeedSample {
-        displayedTaskSpeed[task.id] ?? SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
-    }
+    /// Where `https://user:pass@…` logins go (the per-host Keychain logins the engine sends).
+    let credentialStore: any CredentialManaging
 
-    private static let speedHistoryCap = 120
     /// Labels refresh at this rate; history rings take every other tick to hold their time span.
     private static let speedRefreshNanos: UInt64 = 500_000_000
     private static let speedPersistEveryTicks = 20
@@ -208,10 +218,6 @@ final class AppViewModel: ObservableObject {
     func toggleDetailPanelPosition() {
         detailPanelPosition = detailPanelPosition == .right ? .bottom : .right
     }
-
-    @Published var toast: String?
-    /// Styles the current toast as a failure (red mark, longer dwell).
-    @Published var toastIsError = false
 
     @Published var confirmRequest: ConfirmRequest?
 
@@ -256,8 +262,13 @@ final class AppViewModel: ObservableObject {
 
     @Published var clipboardSuggestion: String?
 
-    private let manager: DownloadManager
+    let manager: DownloadManager
     private var updatesTask: Task<Void, Never>?
+    /// Set synchronously on entry: `start()` suspends several times before `updatesTask` exists,
+    /// and a second `.task` run in that window used to install every monitor twice.
+    private var didStart = false
+    private var externalAddObserver: NSObjectProtocol?
+    private var lastWarningPoll = Date.distantPast
 
     /// Not derived from the queue — idle is not absent. `updatesTask` is set last in `start()`.
     var runningEngineKinds: Set<DownloadKind> {
@@ -283,10 +294,20 @@ final class AppViewModel: ObservableObject {
 
     private var hasAutoSelected = false
 
-    /// Stops an earlier toast's timer clearing a later toast with identical text.
-    private var toastGeneration = 0
-
     private var reducerState = ReducerState()
+
+    /// The one-minute grace before an automatic quit, sleep or shutdown.
+    private(set) lazy var autoShutdownCountdown = AutoShutdownCountdown { [weak self] intent in
+        self?.system.perform(intent)
+    }
+
+    /// The database couldn't be opened; the banner offers to move it aside.
+    @Published var databaseRecovery: DatabaseRecovery?
+
+    struct DatabaseRecovery: Equatable {
+        let path: String
+        let reason: String
+    }
 
     private let fileProgress = FileProgressPublisher()
 
@@ -297,38 +318,66 @@ final class AppViewModel: ObservableObject {
     /// Weak: scripting must never keep a discarded view model alive.
     static private(set) weak var shared: AppViewModel?
 
-    init(system: SystemActions = LiveSystemActions()) {
-        let (store, warning) = Self.makeStore()
-        self.manager = DownloadManager(store: store)
-        self.persistenceWarning = warning
-        self.servers = SFTPConnectionStore.shared.load()
+    init(system: SystemActions = LiveSystemActions(),
+         credentialStore: any CredentialManaging = KeychainCredentialStore()) {
+        let opened = Self.makeStore()
+        self.manager = DownloadManager(store: opened.store)
+        self.persistenceWarning = opened.warning
+        self.databaseRecovery = opened.recovery
         self.system = system
+        self.credentialStore = credentialStore
         Self.shared = self
     }
 
-    private static func makeStore() -> (PersistenceStore?, String?) {
+    struct OpenedStore {
+        var store: PersistenceStore?
+        var warning: String?
+        var recovery: DatabaseRecovery?
+    }
+
+    private static func makeStore() -> OpenedStore {
         let fm = FileManager.default
         guard let dir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return (try? PersistenceStore(),
-                    L10n.t("Using temporary storage — downloads won’t survive relaunch."))
+            return OpenedStore(store: try? PersistenceStore(),
+                               warning: L10n.t("Using temporary storage — downloads won’t survive relaunch."))
         }
         let appDir = dir.appendingPathComponent("GoelDownloader", isDirectory: true)
+        let path = appDir.appendingPathComponent("queue.sqlite").path
         do {
             try fm.createDirectory(at: appDir, withIntermediateDirectories: true)
-            let store = try PersistenceStore(path: appDir.appendingPathComponent("queue.sqlite").path)
-            return (store, nil)
+            return OpenedStore(store: try PersistenceStore(path: path))
         } catch {
-            return (try? PersistenceStore(),
-                    L10n.t("Couldn’t open the database — downloads won’t survive relaunch."))
+            // The reason is what tells "locked by another copy" from "corrupt" from "newer version".
+            GoelLog.persistence.error("Couldn't open the download database", .detail(String(describing: error)))
+            let fallback: PersistenceStore?
+            do {
+                fallback = try PersistenceStore()
+            } catch let fallbackError {
+                GoelLog.persistence.error("Couldn't open even a temporary database",
+                                          .detail(String(describing: fallbackError)))
+                fallback = nil
+            }
+            let reason = error.localizedDescription
+            let warning = fallback == nil
+                ? L10n.t("Couldn’t open the database (%@) — nothing you add will be saved.", reason)
+                : L10n.t("Couldn’t open the database (%@) — downloads won’t survive relaunch.", reason)
+            return OpenedStore(store: fallback, warning: warning,
+                               recovery: DatabaseRecovery(path: path, reason: reason))
         }
     }
 
     func start() async {
-        guard updatesTask == nil else { return }
+        guard !didStart else { return }
+        didStart = true
         await manager.restore()
+        // Subscribed straight after restore so the list paints before the monitors below come up.
+        let stream = await manager.updates()
         settings = await manager.currentSettings
         ActiveWorkGate.shared.menuBarVisible = settings.menuBarExtraEnabled
+        startConsuming(stream)
         syncMediaJobCenter()
+        installNotificationHandlers()
+        loadServersInBackground()
         loadPersistedSpeedHistory(await manager.loadSpeedHistory())
         let monitor = ClipboardMonitor(isEnabled: settings.clipboardMonitorEnabled) { [weak self] text in
             self?.handleClipboardChange(text)
@@ -353,29 +402,31 @@ final class AppViewModel: ObservableObject {
         }
         netMonitor.start(queue: DispatchQueue(label: "goel.network-path"))
         pathMonitor = netMonitor
+        // `queue: .main` delivers on the main thread, which is what `assumeIsolated` asserts.
         networkChangeObserver = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("com.apple.system.config.network_change"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshAggregationState()
+            MainActor.assumeIsolated { self?.refreshAggregationState() }
         }
-        await refreshAggregationState()
+        refreshAggregationState()
         startSpeedSampler()
         appActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            let manager = self.manager
-            Task { await manager.reconcileCompletedFiles() }
-            // A launch-only policy read would be dodged by never quitting the app.
-            self.refreshManagedPolicy()
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let manager = self.manager
+                Task { await manager.reconcileCompletedFiles() }
+                // A launch-only policy read would be dodged by never quitting the app.
+                self.refreshManagedPolicy()
+            }
         }
         appTerminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            self.persistSpeedHistory()
+            MainActor.assumeIsolated { self?.persistSpeedHistory() }
         }
         applyRemoteAccess()
         SparkleUpdaterService.shared.startIfConfigured()
@@ -391,7 +442,8 @@ final class AppViewModel: ObservableObject {
                 }
             }
         }
-        NotificationCenter.default.addObserver(
+        // Kept, so the observer can be removed; an anonymous token outlives nothing but leaks.
+        externalAddObserver = NotificationCenter.default.addObserver(
             forName: ExternalAdd.notification, object: nil, queue: .main
         ) { [weak self] note in
             guard let box = note.object as? ExternalAdd.PayloadBox else { return }
@@ -405,46 +457,70 @@ final class AppViewModel: ObservableObject {
             NotificationService.requestAuthorization()
         }
         if let warning = await manager.currentPersistenceWarning { persistenceWarning = warning }
-        let stream = await manager.updates()
+    }
+
+    /// Persistence warnings are rare; asking the actor on every 10 Hz snapshot was a wasted hop.
+    private static let warningPollInterval: TimeInterval = 2
+
+    private func startConsuming(_ stream: AsyncStream<[DownloadTask]>) {
         let manager = self.manager
         updatesTask = Task { [weak self] in
             for await snapshot in stream {
                 guard let self else { return }
-                let warning = await manager.currentPersistenceWarning
-                await MainActor.run {
-                    if self.tasks != snapshot {
-                        self.tasks = snapshot
-                        self.recomputeVisible()
+                self.consume(snapshot)
+                // Notices are posted with a publish, so the snapshot that follows is the moment to collect them.
+                let notices = await manager.takeNotices()
+                for notice in notices { self.toastNow(notice.message, isError: notice.isError) }
+                let now = Date()
+                if now.timeIntervalSince(self.lastWarningPoll) >= Self.warningPollInterval {
+                    self.lastWarningPoll = now
+                    if let warning = await manager.currentPersistenceWarning,
+                       warning != self.persistenceWarning {
+                        self.persistenceWarning = warning
                     }
-                    // Exactly once at launch, so "Select none" sticks instead of snapping back.
-                    if self.primarySelection == nil && !self.hasAutoSelected {
-                        if let first = self.visibleTasks.first?.id {
-                            self.hasAutoSelected = true
-                            self.primarySelection = first
-                            self.selection = [first]
-                            self.selectionAnchor = first
-                        }
-                    }
-                    self.pump(snapshot)
-                    self.fileProgress.update(with: snapshot) { [weak self] id in
-                        self?.pause(id)
-                    }
-                    self.refreshDockProgress()
-                    if let warning { self.persistenceWarning = warning }
                 }
             }
         }
     }
 
-    private func recomputeVisible() {
-        visibleTasks = ListPresentation.visible(
+    private func consume(_ snapshot: [DownloadTask]) {
+        // Snapshots arrive only on change, so comparing the whole array first was pure cost.
+        tasks = pendingRemovalIDs.isEmpty
+            ? snapshot : snapshot.filter { !pendingRemovalIDs.contains($0.id) }
+        recomputeVisible()
+        // Exactly once at launch, so "Select none" sticks instead of snapping back.
+        if primarySelection == nil && !hasAutoSelected, let first = visibleTasks.first?.id {
+            hasAutoSelected = true
+            primarySelection = first
+            selection = [first]
+            selectionAnchor = first
+        }
+        pump(snapshot)
+        fileProgress.update(with: tasks) { [weak self] id in
+            self?.pause(id)
+        }
+        refreshDockProgress()
+    }
+
+    func recomputeVisible() {
+        let next = ListPresentation.visible(
             tasks: tasks,
             filter: filter,
             search: search,
             sortKey: sortKey,
             ascending: sortAscending
         )
+        // An unchanged list must not republish: every row body would re-run for nothing.
+        if next != visibleTasks { visibleTasks = next }
+        refreshCommandState()
     }
+
+    func refreshCommandState() {
+        commandState.apply(.make(tasks: tasks, visible: visibleTasks, selection: selection,
+                                 listVisible: selectedServer == nil,
+                                 autoShutdown: settings.autoShutdown))
+    }
+
 
     func count(for filter: SidebarFilter) -> Int {
         ListPresentation.count(tasks: tasks, filter: filter)
@@ -472,7 +548,8 @@ final class AppViewModel: ObservableObject {
 
     func add(rawLines: String, saveDirectory: String?, priority: FilePriority,
              expectedChecksum: Checksum? = nil) {
-        var sources = Self.expandedLines(rawLines).compactMap(Self.parseSource)
+        adoptInlineCredentials(in: rawLines, policy: .replace)
+        var sources = InboundAdd.parseSources(from: rawLines)
         let metalinks = sources.filter(Self.isMetalink)
         sources.removeAll(where: Self.isMetalink)
         for case .url(let metalink) in metalinks {
@@ -495,7 +572,10 @@ final class AppViewModel: ObservableObject {
         }
         // Never apply one checksum to every download in a batch.
         let checksum = fresh.count == 1 ? expectedChecksum : nil
+        let reAdded = Set(fresh.map(\.dedupKey))
         Task {
+            // A row still inside its Undo window would swallow the add as a duplicate.
+            await commitPendingRemovals(matching: reAdded)
             for source in fresh {
                 await manager.add(source: source, saveDirectory: saveDirectory,
                                   priority: priority, expectedChecksum: checksum)
@@ -510,13 +590,6 @@ final class AppViewModel: ObservableObject {
         filter = .all
     }
 
-    /// Batch shorthand expansion is capped, or a hostile range floods the queue.
-    static func expandedLines(_ raw: String) -> [String] {
-        raw.split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .flatMap { BatchExpander.expand($0) }
-    }
 
     func existingDuplicate(of source: DownloadSource) -> DownloadTask? {
         tasks.first { $0.source.dedupKey == source.dedupKey }
@@ -527,13 +600,20 @@ final class AppViewModel: ObservableObject {
         return ["metalink", "meta4"].contains(url.pathExtension.lowercased())
     }
 
+    /// Metalinks are small XML files; anything bigger is refused before it's parsed.
+    static let metalinkByteCap = 5_000_000
+
     private func importMetalink(_ url: URL, saveDirectory: String?, priority: FilePriority) {
+        let proxy = Self.proxySpec(from: settings)
+        let agent = Self.updateUserAgent(from: settings)
         Task { @MainActor in
             do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                guard let http = response as? HTTPURLResponse,
-                      (200..<300).contains(http.statusCode),
-                      data.count <= 5_000_000 else { throw URLError(.badServerResponse) }
+                // Through NetworkGuard: the configured proxy and User-Agent, bounded redirects, no link-local.
+                let data = try await NetworkGuard.fetchChecked(url: url, proxy: proxy, userAgent: agent)
+                guard data.count <= Self.metalinkByteCap else {
+                    toastNow(L10n.t("That metalink file is too large to be a download list"), isError: true)
+                    return
+                }
                 let files = MetalinkParser.parse(data)
                 guard !files.isEmpty else {
                     toastNow(L10n.t("No downloads found in the metalink"))
@@ -556,7 +636,8 @@ final class AppViewModel: ObservableObject {
                                    : L10n.t("Metalink contents already in your list"))
                 filter = .all
             } catch {
-                toastNow(L10n.t("Couldn’t load the metalink file"))
+                toastNow(L10n.t("Couldn’t load the metalink file: %@", String(describing: error)),
+                         isError: true)
             }
         }
     }
@@ -566,6 +647,8 @@ final class AppViewModel: ObservableObject {
     }
 
     func resolveMetadata(for line: String, saveDirectory: String?) async -> DownloadPreview? {
+        // Before the probe: a login-protected file answers 401 to a probe without its login.
+        adoptInlineCredentials(in: line, policy: .replace, announce: false)
         guard let source = Self.parseSource(line) else { return nil }
         return await manager.resolveMetadata(for: source, saveDirectory: saveDirectory)
     }
@@ -658,21 +741,42 @@ final class AppViewModel: ObservableObject {
     }
 
     /// No confirmation: only local processes can write the spool, and the host already validated it.
+    /// Each file is deleted only after its download is in the queue (or it was refused on purpose).
     private func drainBrowserSpool() {
-        // Re-validate the scheme: auto-add must never open an authenticated sftp:/ftp: connection.
-        let captures = BrowserSpool.drainCaptures().filter {
-            DownloadSource.parse($0.locator)?.isBrowserCaptureSafe == true
-        }
-        guard !captures.isEmpty else { return }
+        let pending = BrowserSpool.pendingCaptures().filter { !spoolFilesInFlight.contains($0.file) }
+        guard !pending.isEmpty else { return }
         let proxyResolves = NetworkGuard.usesRemoteDNS(Self.proxySpec(from: settings))
+        let portalPort = settings.remoteAccessEnabled ? settings.remotePort : nil
         // One add per capture: batching would flatten distinct cookie scopes into one and leak them.
-        for capture in captures {
-            guard let source = DownloadSource.parse(capture.locator) else { continue }
+        for spooled in pending {
+            let capture = spooled.capture
+            // Re-validate the scheme: auto-add must never open an authenticated sftp:/ftp: connection.
+            guard let source = DownloadSource.parse(capture.locator), source.isBrowserCaptureSafe else {
+                BrowserSpool.reject(spooled.file, reason: "unsupported scheme")
+                continue
+            }
+            spoolFilesInFlight.insert(spooled.file)
             Task {
-                // Re-screen against RESOLVED addresses: `localtest.me` is loopback hidden behind DNS.
-                if let target = source.fetchTargetURL,
-                   await NetworkGuard.isAllowedRemoteAddTargetResolvingNames(
-                       target, resolvedByProxy: proxyResolves) == false { return }
+                defer { spoolFilesInFlight.remove(spooled.file) }
+                // Re-screen RESOLVED addresses (`localtest.me` is loopback behind DNS). Private LAN
+                // targets pass: the user clicked this link in their own browser.
+                if let target = source.fetchTargetURL {
+                    let verdict = await BrowserCaptureScreen.verdict(target, portalPort: portalPort,
+                                                                     resolvedByProxy: proxyResolves)
+                    if case .refused(let why) = verdict {
+                        GoelLog.app.error("Refused a browser capture", .detail(why))
+                        toastNow(L10n.t("Refused a link from the browser — it points at this Mac’s own services or a link-local address"),
+                                 isError: true)
+                        BrowserSpool.acknowledge(spooled.file)
+                        return
+                    }
+                }
+                if let authorization = capture.authorization, let host = source.fetchTargetURL?.host,
+                   let found = InlineCredentials.decode(authorization: authorization, host: host.lowercased(),
+                                                        isTLS: source.fetchTargetURL?.scheme?.lowercased() == "https") {
+                    // A page can put any userinfo in a link: it may add a login, never replace one.
+                    InlineCredentials.adopt(found, into: credentialStore, policy: .keepExisting)
+                }
                 let task = await manager.add(source: source, priority: .normal,
                                              cookieHeader: capture.cookieHeader,
                                              cookieSource: capture.cookieHeader == nil ? CookieSource.none : .browser,
@@ -680,6 +784,7 @@ final class AppViewModel: ObservableObject {
                 if let referer = capture.referer {
                     await manager.setRequestOptions(referer: referer, headers: nil, task: task.id)
                 }
+                BrowserSpool.acknowledge(spooled.file)
             }
         }
     }
@@ -694,12 +799,16 @@ final class AppViewModel: ObservableObject {
     /// here, where the terminate reply is still being held back, not from that observer.
     func shutdownCore() async {
         persistSpeedHistory()
+        // Rows still inside their Undo window leave for good now, not resurrect next launch.
+        await commitAllPendingRemovals()
+        // Includes the engines' own shutdown (torrent resume data), bounded by the manager's deadline.
         await manager.shutdown()
     }
 
     func pause(_ id: DownloadTask.ID) { Task { await manager.pause(id) } }
     func resume(_ id: DownloadTask.ID) { Task { await manager.resume(id) } }
     func remove(_ id: DownloadTask.ID, deleteData: Bool) {
+        guard deleteData else { return removeFromList([id]) }
         let name = tasks.first { $0.id == id }?.name
         // Must run BEFORE the snapshot drops the task, or selection lands on the raw-first row.
         let nextPrimary = visibleNeighbor(after: id)
@@ -708,8 +817,7 @@ final class AppViewModel: ObservableObject {
         if primarySelection == id { primarySelection = nextPrimary }
         if selectionAnchor == id { selectionAnchor = nextPrimary }
         Task {
-            await manager.remove(id, deleteData: deleteData)
-            guard deleteData else { return toastNow(L10n.t("Removed from list")) }
+            await manager.remove(id, deleteData: true)
             // Claiming the delete before it happened is how a file the engine could not remove
             // still produced a "Deleted files" toast.
             if let savePath, FileManager.default.fileExists(atPath: savePath) {
@@ -717,16 +825,16 @@ final class AppViewModel: ObservableObject {
                             ?? L10n.t("Removed from the list, but the file is still on disk"),
                          isError: true)
             } else {
-                toastNow(name.map { L10n.t("Deleted files for “%@”", $0) } ?? L10n.t("Removed with data"))
+                toastNow(name.map { L10n.t("Moved “%@” to the Trash", $0) }
+                            ?? L10n.t("Moved the file to the Trash"))
             }
         }
     }
 
-    /// Batch sibling of `remove`. It lives here, and drains the removals itself, so the whole
-    /// batch reports once: routed through `remove` each task would post its own toast into the
-    /// single toast slot, where one task's late success would overwrite another's failure.
+    /// Batch sibling of `remove`: the whole batch reports once, not one toast per task.
     func removeSelected(deleteData: Bool) {
         let targets = selectedTasks
+        guard deleteData else { return removeFromList(targets.map(\.id)) }
         guard targets.count > 1 else {
             if let only = targets.first { remove(only.id, deleteData: deleteData) }
             return
@@ -740,10 +848,7 @@ final class AppViewModel: ObservableObject {
         if let primary = primarySelection, doomed.contains(primary) { primarySelection = nextPrimary }
         if let anchor = selectionAnchor, doomed.contains(anchor) { selectionAnchor = nextPrimary }
         Task {
-            for id in ids { await manager.remove(id, deleteData: deleteData) }
-            guard deleteData else {
-                return toastNow(L10n.t("Removed %d downloads from the list", ids.count))
-            }
+            for id in ids { await manager.remove(id, deleteData: true) }
             // Off the main actor: select-all-then-delete is one `stat` per row, and this runs
             // on the actor that also draws the window.
             let stranded = await Task.detached {
@@ -754,7 +859,7 @@ final class AppViewModel: ObservableObject {
                                        ids.count, stranded),
                                 isError: true)
             }
-            toastNow(L10n.t("Deleted files for %d downloads", ids.count))
+            toastNow(L10n.t("Moved the files of %d downloads to the Trash", ids.count))
         }
     }
 
@@ -763,8 +868,18 @@ final class AppViewModel: ObservableObject {
         Task { await manager.retry(id) }
     }
 
-    func pauseAll() { Task { await manager.pauseAll() }; toastNow(L10n.t("Paused all downloads")) }
-    func resumeAll() { Task { await manager.resumeAll() }; toastNow(L10n.t("Resumed all downloads")) }
+    /// Only claims success when there was something to act on.
+    func pauseAll() {
+        guard commandState.snapshot.hasPausable else { return toastNow(L10n.t("Nothing to pause")) }
+        Task { await manager.pauseAll() }
+        toastNow(L10n.t("Paused all downloads"))
+    }
+
+    func resumeAll() {
+        guard commandState.snapshot.hasResumable else { return toastNow(L10n.t("Nothing to resume")) }
+        Task { await manager.resumeAll() }
+        toastNow(L10n.t("Resumed all downloads"))
+    }
 
     func setProfile(_ name: String) {
         Task {
@@ -926,13 +1041,13 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    private static func proxySpec(from settings: AppSettings) -> NetworkGuard.ProxySpec {
+    static func proxySpec(from settings: AppSettings) -> NetworkGuard.ProxySpec {
         NetworkGuard.ProxySpec(mode: settings.proxyMode, type: settings.proxyType,
                                host: settings.proxyHost, port: settings.proxyPort)
     }
 
     /// An empty User-Agent is not "no preference" — several hosts refuse it.
-    private static func updateUserAgent(from settings: AppSettings) -> String {
+    static func updateUserAgent(from settings: AppSettings) -> String {
         let trimmed = settings.userAgent.trimmingCharacters(in: .whitespaces)
         return trimmed.isEmpty ? "GoelDownloader/1.0 (macOS)" : trimmed
     }
@@ -1017,16 +1132,46 @@ final class AppViewModel: ObservableObject {
                                 onFailed: settings.notifyOnFailed,
                                 onlyWhenInactive: settings.notifyOnlyWhenInactive),
             isAppActive: NSApp.isActive,
-            autoShutdownAction: settings.autoShutdownAction)
-        let output = SnapshotReducer.reduce(reducerState, snapshot, env)
+            shutdown: settings.autoShutdown)
+        let previous = reducerState
+        let output = SnapshotReducer.reduce(previous, snapshot, env)
         reducerState = output.state
         refreshActiveWorkGate()
-        // Drain before the banners: it may terminate the app.
         if let intent = output.drainIntent {
-            update { $0.autoShutdownAction = "none" }   // one-shot: never fire twice
-            system.perform(intent)
+            update { $0.autoShutdown = .none }   // one-shot: never fire twice
+            // A minute's grace with Cancel; the action itself runs when the countdown ends.
+            autoShutdownCountdown.begin(intent)
+        } else if autoShutdownCountdown.isCounting, reducerState.lastHadActiveWork {
+            // New work started during the countdown: the queue isn't finished after all.
+            autoShutdownCountdown.cancel()
+            toastNow(L10n.t("Automatic action cancelled — downloads started again"))
         }
-        system.post(output.notifications, sound: settings.notificationSound)
+        postNotifications(output.notifications, previous: previous, snapshot: snapshot)
+    }
+
+    /// Completion banners go out per task (Show in Finder / Open, one banner per download);
+    /// the rest go through the generic path.
+    private func postNotifications(_ notifications: [AppNotification], previous: ReducerState,
+                                   snapshot: [DownloadTask]) {
+        guard !notifications.isEmpty else { return }
+        let sound = settings.notificationSound
+        guard let notifier = system as? CompletionNotifying else {
+            return system.post(notifications, sound: sound)
+        }
+        var finished = snapshot.filter {
+            $0.status == .completed && previous.lastStatuses[$0.id] != .completed
+        }
+        var others: [AppNotification] = []
+        for notification in notifications {
+            if case .completed(let name) = notification,
+               let index = finished.firstIndex(where: { $0.name == name }) {
+                let task = finished.remove(at: index)
+                notifier.postCompleted(taskID: task.id, name: name, sound: sound)
+            } else {
+                others.append(notification)
+            }
+        }
+        if !others.isEmpty { system.post(others, sound: sound) }
     }
 
     private func startSpeedSampler() {
@@ -1041,33 +1186,16 @@ final class AppViewModel: ObservableObject {
     }
 
     private func takeSpeedSample() {
-        // Skip when fully idle, or the @Published writes re-render the whole app twice a second.
+        // Byte counts that arrived since the last tick are announced now, in one redraw.
+        defer { sftpStore.flushProgress() }
+        // Skip when fully idle, or the writes re-render the speed read-outs twice a second for nothing.
         let hasActive = tasks.contains { $0.status.isActive } || sftpTransfers.contains { $0.isActive }
-        if !hasActive,
-           globalSpeedHistory.allSatisfy({ $0 == SpeedSample(down: 0, up: 0) }),
-           displayedCombinedSpeed == SpeedSample(down: 0, up: 0) {
-            return
-        }
+        if !hasActive, telemetry.isAtRest { return }
         speedSampleTick &+= 1
         let recordHistory = speedSampleTick.isMultiple(of: 2)
-        let nextCombined = SpeedSample(down: combinedDownloadSpeed, up: combinedUploadSpeed)
-        if nextCombined != displayedCombinedSpeed { displayedCombinedSpeed = nextCombined }
-        var sample = SpeedSample(down: 0, up: 0)
-        var nextTaskSpeed = displayedTaskSpeed
-        for task in tasks {
-            sample.down += task.downloadSpeed
-            sample.up += task.uploadSpeed
-            nextTaskSpeed[task.id] = SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
-            guard recordHistory, task.status.isActive else { continue }
-            var history = taskSpeedHistory[task.id] ?? []
-            history.append(SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed))
-            if history.count > Self.speedHistoryCap { history.removeFirst() }
-            taskSpeedHistory[task.id] = history
-        }
-        let known = Set(tasks.map(\.id))
-        taskSpeedHistory = taskSpeedHistory.filter { known.contains($0.key) }
-        nextTaskSpeed = nextTaskSpeed.filter { known.contains($0.key) }
-        if nextTaskSpeed != displayedTaskSpeed { displayedTaskSpeed = nextTaskSpeed }
+        telemetry.sample(tasks: tasks,
+                         combined: SpeedSample(down: combinedDownloadSpeed, up: combinedUploadSpeed),
+                         recordHistory: recordHistory)
         // SFTP rows read their speed here too, at the same cadence as download rows.
         let now = Date()
         var nextTransfers = sftpTransfers
@@ -1084,38 +1212,14 @@ final class AppViewModel: ObservableObject {
             }
         }
         if sftpChanged { sftpTransfers = nextTransfers }
-        if recordHistory {
-            recordSFTPSpeedHistory(nextTransfers)
-            globalSpeedHistory.append(sample)
-            if globalSpeedHistory.count > Self.speedHistoryCap { globalSpeedHistory.removeFirst() }
-        }
+        if recordHistory { telemetry.recordSFTP(nextTransfers) }
         if speedSampleTick.isMultiple(of: Self.speedPersistEveryTicks) {
             persistSpeedHistory()
         }
     }
 
-    /// Only rows that still own a transfer extend their ring: a finished row must keep
-    /// the shape it ended on instead of decaying into a flat line while it sits in the list.
-    /// Rings for rows that left the list are dropped, or a long session leaks one per transfer.
-    private func recordSFTPSpeedHistory(_ transfers: [SFTPTransfer]) {
-        var history = sftpSpeedHistory
-        for transfer in transfers where transfer.occupiesDestination {
-            var ring = history[transfer.id] ?? []
-            ring.append(transfer.sampledSpeed ?? 0)
-            if ring.count > Self.speedHistoryCap { ring.removeFirst() }
-            history[transfer.id] = ring
-        }
-        let known = Set(transfers.map(\.id))
-        history = history.filter { known.contains($0.key) }
-        if history != sftpSpeedHistory { sftpSpeedHistory = history }
-    }
-
     private func persistSpeedHistory() {
-        var out: [String: [SpeedHistoryPoint]] = [:]
-        for task in tasks where !task.status.isTerminal {
-            guard let samples = taskSpeedHistory[task.id], !samples.isEmpty else { continue }
-            out[task.id.uuidString] = samples.map { SpeedHistoryPoint(down: $0.down, up: $0.up) }
-        }
+        let out = telemetry.persistableHistory(for: tasks)
         guard out != lastPersistedSpeedHistory else { return }
         lastPersistedSpeedHistory = out
         let manager = self.manager
@@ -1125,12 +1229,7 @@ final class AppViewModel: ObservableObject {
     private func loadPersistedSpeedHistory(_ saved: [String: [SpeedHistoryPoint]]) {
         lastPersistedSpeedHistory = saved
         guard !saved.isEmpty else { return }
-        var restored: [DownloadTask.ID: [SpeedSample]] = [:]
-        for (idString, points) in saved {
-            guard let id = UUID(uuidString: idString) else { continue }
-            restored[id] = points.map { SpeedSample(down: $0.down, up: $0.up) }
-        }
-        taskSpeedHistory = restored
+        telemetry.restoreTaskHistory(saved)
     }
 
     func fetchStats() async -> TransferStats {
@@ -1522,7 +1621,7 @@ final class AppViewModel: ObservableObject {
                 await MainActor.run { self.toastNow(L10n.t("Audit log is off — nothing written yet")) }
                 return
             }
-            await MainActor.run { NSWorkspace.shared.open(url) }
+            _ = await MainActor.run { NSWorkspace.shared.open(url) }
         }
     }
 
@@ -1606,19 +1705,9 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    func toastNow(_ message: String, isError: Bool = false) {
-        toastGeneration &+= 1
-        let generation = toastGeneration
-        toast = message
-        toastIsError = isError
-        Task {
-            // Failures linger longer: a missed error is worse than a missed confirmation.
-            try? await Task.sleep(nanoseconds: isError ? 5_000_000_000 : 2_400_000_000)
-            if toastGeneration == generation { toast = nil }
-        }
-    }
-
-    func localized(_ key: String) -> String {
-        L10n.string(key, language: settings.language)
+    /// Queued, never overwriting: see ``ToastQueue``.
+    func toastNow(_ message: String, isError: Bool = false, action: Toast.Action? = nil) {
+        toasts.show(message, isError: isError, action: action)
     }
 }
+

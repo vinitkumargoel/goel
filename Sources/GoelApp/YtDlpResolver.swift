@@ -43,14 +43,15 @@ enum YtDlpResolver {
         let result: ToolRun
         do {
             result = try await run(["-j", "--no-playlist", "--no-warnings",
-                                    "-f", formatSelector ?? "b", url.absoluteString],
+                                    "-f", formatSelector ?? "b", "--", url.absoluteString],
                                    timeoutSeconds: 45)
         } catch LaunchFailure.notInstalled {
             return .failed(L10n.t("yt-dlp isn’t available, so Goel° can’t resolve that page."))
         } catch {
-            return .failed(L10n.t("Couldn’t start yt-dlp."))
+            return .failed(launchFailureMessage(error))
         }
         if Task.isCancelled { return .cancelled }
+        if result.timedOut { return .failed(timeoutMessage(seconds: 45)) }
         guard result.status == 0 else {
             return .failed(message(from: result.stderr,
                                    fallback: L10n.t("yt-dlp couldn’t resolve that page.")))
@@ -97,7 +98,8 @@ enum YtDlpResolver {
 
         var args = ["--skip-download", "--no-playlist", "--no-warnings", "--write-subs"]
         if includeAuto { args.append("--write-auto-subs") }
-        args += ["--sub-langs", langArg, "-o", template, pageURL.absoluteString]
+        // `--` ends option parsing, so a URL can never be read as a flag.
+        args += ["--sub-langs", langArg, "-o", template, "--", pageURL.absoluteString]
 
         // yt-dlp exits 0 even when a video has no subtitles, so count only what this run added.
         let fm = FileManager.default
@@ -112,9 +114,10 @@ enum YtDlpResolver {
         do { try process.run() } catch {
             return .failed(L10n.t("Couldn’t launch yt-dlp: %@", error.localizedDescription))
         }
+        let timedOut = TimeoutFlag()
         let watchdog = Task {
             try? await Task.sleep(nanoseconds: 90_000_000_000)
-            if process.isRunning { process.terminate() }
+            if process.isRunning { timedOut.set(); process.terminate() }
         }
         let errData: Data = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
@@ -130,6 +133,7 @@ enum YtDlpResolver {
         watchdog.cancel()
         // Must precede the status guard: a cancelled run's terminated process exits non-zero.
         if Task.isCancelled { return .none }
+        if timedOut.isSet { return .failed(timeoutMessage(seconds: 90)) }
         guard process.terminationStatus == 0 else {
             let msg = String(data: errData, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -147,11 +151,33 @@ enum YtDlpResolver {
         var stdout: Data
         var stderr: Data
         var status: Int32
+        /// The watchdog killed it: the non-zero status then says nothing about the page.
+        var timedOut = false
     }
 
-    private enum LaunchFailure: Error {
+    enum LaunchFailure: Error {
         case notInstalled
         case couldNotLaunch(String)
+    }
+
+    /// Written by the watchdog task, read once the process has exited.
+    private final class TimeoutFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        func set() { lock.lock(); value = true; lock.unlock() }
+        var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    }
+
+    /// Gatekeeper quarantine and a missing +x bit both land here; only the reason tells them apart.
+    static func launchFailureMessage(_ error: Error) -> String {
+        if case LaunchFailure.couldNotLaunch(let why) = error {
+            return L10n.t("Couldn’t start yt-dlp: %@", why)
+        }
+        return L10n.t("Couldn’t start yt-dlp.")
+    }
+
+    static func timeoutMessage(seconds: Int) -> String {
+        L10n.t("yt-dlp didn’t answer within %d seconds and was stopped.", seconds)
     }
 
     /// Both pipes must drain concurrently or a large listing deadlocks on a full pipe.
@@ -168,9 +194,10 @@ enum YtDlpResolver {
         } catch {
             throw LaunchFailure.couldNotLaunch(error.localizedDescription)
         }
+        let timedOut = TimeoutFlag()
         let watchdog = Task {
             try? await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
-            if process.isRunning { process.terminate() }
+            if process.isRunning { timedOut.set(); process.terminate() }
         }
         let errHandle = errPipe.fileHandleForReading
         let errTask = Task.detached { errHandle.readDataToEndOfFile() }
@@ -187,7 +214,8 @@ enum YtDlpResolver {
         }
         let errData = await errTask.value
         watchdog.cancel()
-        return ToolRun(stdout: outData, stderr: errData, status: process.terminationStatus)
+        return ToolRun(stdout: outData, stderr: errData, status: process.terminationStatus,
+                       timedOut: timedOut.isSet)
     }
 
     private static func message(from stderr: Data, fallback: String) -> String {
@@ -212,15 +240,16 @@ enum YtDlpResolver {
         }
         let result: ToolRun
         do {
-            result = try await run(["-F", "--no-playlist", "--no-warnings", url.absoluteString],
+            result = try await run(["-F", "--no-playlist", "--no-warnings", "--", url.absoluteString],
                                    timeoutSeconds: 45)
         } catch LaunchFailure.notInstalled {
             return .failed(L10n.t("yt-dlp isn’t available, so Goel° can’t list the available qualities."))
         } catch {
-            return .failed(L10n.t("Couldn’t start yt-dlp."))
+            return .failed(launchFailureMessage(error))
         }
         // Must precede the status guard: a cancelled run's terminated process exits non-zero.
         if Task.isCancelled { return .formats([]) }
+        if result.timedOut { return .failed(timeoutMessage(seconds: 45)) }
         guard result.status == 0 else {
             return .failed(message(from: result.stderr,
                                    fallback: L10n.t("yt-dlp couldn’t read that page.")))
@@ -247,14 +276,15 @@ enum YtDlpResolver {
         }
         let result: ToolRun
         do {
-            result = try await run(["--flat-playlist", "-J", "--no-warnings", url.absoluteString],
+            result = try await run(["--flat-playlist", "-J", "--no-warnings", "--", url.absoluteString],
                                    timeoutSeconds: 240)
         } catch LaunchFailure.notInstalled {
             return .failed(L10n.t("yt-dlp isn’t available, so Goel° can’t list what’s in that playlist."))
         } catch {
-            return .failed(L10n.t("Couldn’t start yt-dlp."))
+            return .failed(launchFailureMessage(error))
         }
         if Task.isCancelled { return .notAPlaylist }
+        if result.timedOut { return .failed(timeoutMessage(seconds: 240)) }
         guard result.status == 0 else {
             return .failed(message(from: result.stderr,
                                    fallback: L10n.t("yt-dlp couldn’t read that playlist.")))

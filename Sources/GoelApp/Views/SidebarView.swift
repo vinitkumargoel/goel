@@ -4,6 +4,8 @@ import GoelCore
 
 struct SidebarView: View {
     @EnvironmentObject private var vm: AppViewModel
+    /// Observed for the per-server "transferring" dot.
+    @EnvironmentObject private var sftpStore: SFTPTransferStore
 
     var body: some View {
         ScrollView {

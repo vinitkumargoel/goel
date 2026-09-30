@@ -95,10 +95,7 @@ struct SettingsView: View {
                 route.requestedPane = nil
             }
         }
-        .overlay(alignment: .bottom) { settingsToast }
-        .onChange(of: vm.toast) { _, message in
-            if let message { A11yAnnouncer.announce(message) }
-        }
+        .overlay(alignment: .bottom) { ToastOverlay(queue: vm.toasts, bottomPadding: 24) }
         .alert(vm.settingsAlert?.title ?? "",
                isPresented: Binding(get: { vm.settingsAlert != nil },
                                     set: { if !$0 { vm.settingsAlert = nil } }),
@@ -116,25 +113,6 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder
-    private var settingsToast: some View {
-        if let toast = vm.toast {
-            HStack(spacing: 9) {
-                Image(systemName: vm.toastIsError ? "xmark.octagon.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(vm.toastIsError ? Theme.red : Theme.green)
-                    .a11yDecorative()
-                Text(toast).scaledFont(size: 12.5)
-            }
-            .a11yGroup(label: toast)
-            .padding(.horizontal, 15)
-            .padding(.vertical, 9)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().stroke(Theme.hairline))
-            .shadow(radius: 12, y: 6)
-            .padding(.bottom, 24)
-            .transition(.opacity)
-        }
-    }
 
     @ViewBuilder
     private var paneContent: some View {

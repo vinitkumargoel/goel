@@ -71,4 +71,16 @@ final class TaskDisplayTests: XCTestCase {
         XCTAssertEqual(task("a", source: .url(URL(string: "ftp://h/x.bin")!)).kindBadge, "FTP")
         XCTAssertEqual(task("a", source: .url(URL(string: "sftp://h/x.bin")!)).kindBadge, "SFTP")
     }
+
+    func testACompletedRowWhoseFileIsGoneSaysSo() {
+        var t = task("a.zip", status: .completed)
+        XCTAssertFalse(t.isFileMissing)
+        XCTAssertEqual(t.statusDetailText, L10n.t("Completed"))
+        t.fileMissing = true
+        XCTAssertTrue(t.isFileMissing)
+        XCTAssertEqual(t.statusDetailText, L10n.t("File missing"))
+        // Only a finished row can be "missing"; a flag left on a requeued row means nothing.
+        t.status = .paused
+        XCTAssertFalse(t.isFileMissing)
+    }
 }

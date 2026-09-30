@@ -64,7 +64,7 @@ enum InboundDrop {
                 ExternalAdd.post(lines: plan.linkLines)
             }
         }
-        // Last, so the single toast slot ends on the part of the drop that was refused.
+        // Last, so the toast queue ends on the part of the drop that was refused.
         if let message = unsupportedMessage(for: plan.unsupportedFiles) {
             vm?.toastNow(message, isError: true)
         }

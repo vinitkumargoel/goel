@@ -166,12 +166,11 @@ struct LinkGrabberSheet: View {
         Task { @MainActor in
             defer { isFetching = false }
             do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                guard let http = response as? HTTPURLResponse,
-                      (200..<300).contains(http.statusCode) else {
-                    fetchError = L10n.t("The page couldn’t be loaded.")
-                    return
-                }
+                // Through NetworkGuard: the user's proxy and User-Agent, bounded redirects, no link-local.
+                let data = try await NetworkGuard.fetchChecked(
+                    url: url, proxy: AppViewModel.proxySpec(from: vm.settings),
+                    userAgent: AppViewModel.updateUserAgent(from: vm.settings))
+                // Checked before decoding: a page this big is no link list worth scanning.
                 guard data.count <= 8_000_000 else {
                     fetchError = L10n.t("That page is too large to scan.")
                     return
@@ -181,8 +180,9 @@ struct LinkGrabberSheet: View {
                 links = LinkExtractor.extract(from: html, baseURL: url)
                 if links.isEmpty { fetchError = L10n.t("No downloadable links found on that page.") }
             } catch {
-                fetchError = L10n.t("The page couldn’t be loaded.")
+                fetchError = L10n.t("The page couldn’t be loaded: %@", String(describing: error))
             }
+
         }
     }
 

@@ -3,6 +3,7 @@ import GoelCore
 
 struct DetailBottomPanel: View {
     @EnvironmentObject private var vm: AppViewModel
+    @EnvironmentObject private var telemetry: TelemetryStore
 
     var body: some View {
         Group {
@@ -27,7 +28,7 @@ struct DetailBottomPanel: View {
     }
 
     private func downSamples(for task: DownloadTask, cap: Int = 60) -> [Double] {
-        let pts = vm.taskSpeedHistory[task.id]?.map(\.down) ?? []
+        let pts = telemetry.taskHistory(task.id).map(\.down)
         return pts.count > cap ? Array(pts.suffix(cap)) : pts
     }
 
@@ -78,7 +79,7 @@ struct DetailBottomPanel: View {
                     .frame(height: 46)
                 VStack(alignment: .leading, spacing: 2) {
                     DetailSpeedStat(symbol: "arrow.down",
-                                    speed: vm.displaySpeed(for: task).down,
+                                    speed: telemetry.displaySpeed(for: task).down,
                                     color: Theme.green, size: 16)
                     Text(L10n.t("last 60s")).scaledFont(size: 10).foregroundStyle(.tertiary)
                 }
@@ -89,7 +90,7 @@ struct DetailBottomPanel: View {
 
             HStack(alignment: .top, spacing: 16) {
                 telStat(L10n.t("Up")) {
-                    DetailSpeedStat(symbol: "arrow.up", speed: vm.displaySpeed(for: task).up, color: Theme.teal, size: 12)
+                    DetailSpeedStat(symbol: "arrow.up", speed: telemetry.displaySpeed(for: task).up, color: Theme.teal, size: 12)
                 }
                 telStat(L10n.t("ETA")) {
                     Text(task.etaText ?? "—")

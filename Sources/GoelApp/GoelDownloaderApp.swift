@@ -13,6 +13,8 @@ struct GoelDownloaderApp: App {
         WindowGroup(id: MainWindowID.value) {
             RootView()
                 .environmentObject(viewModel)
+                .environmentObject(viewModel.telemetry)
+                .environmentObject(viewModel.sftpStore)
                 .frame(minWidth: 1040, minHeight: 620)
                 .preferredColorScheme(viewModel.preferredColorScheme)
                 .task {
@@ -22,11 +24,13 @@ struct GoelDownloaderApp: App {
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
-        .commands { GoelCommands(viewModel: viewModel) }
+        .commands { GoelCommands(viewModel: viewModel, state: viewModel.commandState) }
 
         Settings {
             SettingsView()
                 .environmentObject(viewModel)
+                .environmentObject(viewModel.telemetry)
+                .environmentObject(viewModel.sftpStore)
                 .preferredColorScheme(viewModel.preferredColorScheme)
                 .frame(width: 760, height: 560)
         }
@@ -34,9 +38,11 @@ struct GoelDownloaderApp: App {
         MenuBarExtra(isInserted: menuBarInserted) {
             MenuBarView()
                 .environmentObject(viewModel)
+                .environmentObject(viewModel.telemetry)
+                .environmentObject(viewModel.sftpStore)
                 .preferredColorScheme(viewModel.preferredColorScheme)
         } label: {
-            MenuBarSpeedLabel(vm: viewModel)
+            MenuBarSpeedLabel(telemetry: viewModel.telemetry)
         }
         .menuBarExtraStyle(.window)
     }
@@ -77,6 +83,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         // Closes the trust-on-first-use hole for the GUI: with an approver installed `SFTPClient` waits for the user before authenticating (GoelCore's nil default suits the headless daemon).
         HostKeyTrust.shared.approver = HostKeyApprovalPresenter.shared
+
+        // Before any banner: a click that launches the app goes to whatever delegate is set by now.
+        MainActor.assumeIsolated { NotificationService.install() }
 
         memoryRelief.start()
 
@@ -166,8 +175,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 }
 
+/// Menu shortcuts are claimed before the focused view sees the key. These let a text field keep
+/// the keys that mean something while typing (⌘⌫ deletes to line start, ⇧⌘V pastes as plain text).
+@MainActor
+enum TextEditingFocus {
+    static var isEditingText: Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder as? NSTextView else { return false }
+        return responder.isEditable
+    }
+
+    /// True when the key went to the text field instead of the command.
+    static func forward(_ selector: Selector) -> Bool {
+        guard isEditingText else { return false }
+        NSApp.sendAction(selector, to: nil, from: nil)
+        return true
+    }
+}
+
 struct GoelCommands: Commands {
-    @ObservedObject var viewModel: AppViewModel
+    /// Not observed: the menus rebuild from ``CommandState`` alone, not on every snapshot.
+    let viewModel: AppViewModel
+    @ObservedObject var state: CommandState
+
+    private var s: CommandState.Snapshot { state.snapshot }
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
@@ -180,7 +210,10 @@ struct GoelCommands: Commands {
             Button(L10n.t("Grab Links from Page…")) { viewModel.isLinkGrabberPresented = true }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             Divider()
-            Button(L10n.t("Paste URLs from Clipboard")) { pasteFromClipboard() }
+            Button(L10n.t("Paste URLs from Clipboard")) {
+                guard !TextEditingFocus.forward(#selector(NSTextView.pasteAsPlainText(_:))) else { return }
+                pasteFromClipboard()
+            }
                 .keyboardShortcut("v", modifiers: [.command, .shift])
             Button(L10n.t("Paste URLs from File…")) { pasteFromFile() }
             Divider()
@@ -193,15 +226,26 @@ struct GoelCommands: Commands {
         }
         // Sits with the standard Select All (⌘A), which the app delegate answers for the queue.
         CommandGroup(after: .pasteboard) {
-            Button(L10n.t("Deselect All")) { viewModel.selectNone() }
+            Button(L10n.t("Deselect All")) {
+                guard !TextEditingFocus.isEditingText else { return }
+                viewModel.selectNone()
+            }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
-                .disabled(viewModel.selection.isEmpty)
+                .disabled(!s.hasSelection)
             Button(L10n.t("Select Completed")) { viewModel.selectCompleted() }
-                .disabled(viewModel.visibleTasks.allSatisfy { $0.status != .completed })
+                .disabled(!s.hasCompletedVisible)
+        }
+        CommandGroup(after: .textEditing) {
+            Button(L10n.t("Find…")) { FocusBus.requestSearchFocus() }
+                .keyboardShortcut("f", modifiers: .command)
         }
         CommandMenu(L10n.t("Downloads")) {
             Button(L10n.t("Start All")) { viewModel.resumeAll() }
+                .disabled(!s.hasResumable)
             Button(L10n.t("Pause All")) { viewModel.pauseAll() }
+                .disabled(!s.hasPausable)
+            Divider()
+            selectionCommands
             Divider()
             Button(L10n.t("Statistics…")) { viewModel.isStatsPresented = true }
                 .keyboardShortcut("y", modifiers: .command)
@@ -209,10 +253,10 @@ struct GoelCommands: Commands {
                 .keyboardShortcut("y", modifiers: [.command, .shift])
             Divider()
             Picker(L10n.t("When Downloads Finish"), selection: autoShutdownBinding) {
-                Text(L10n.t("Do Nothing")).tag("none")
-                Text(L10n.t("Quit Goel°")).tag("quit")
-                Text(L10n.t("Sleep")).tag("sleep")
-                Text(L10n.t("Shut Down")).tag("shutdown")
+                Text(L10n.t("Do Nothing")).tag(AutoShutdownAction.none)
+                Text(L10n.t("Quit Goel°")).tag(AutoShutdownAction.quit)
+                Text(L10n.t("Sleep")).tag(AutoShutdownAction.sleep)
+                Text(L10n.t("Shut Down")).tag(AutoShutdownAction.shutdown)
             }
         }
         CommandGroup(after: .sidebar) {
@@ -226,6 +270,39 @@ struct GoelCommands: Commands {
             Button(L10n.t("Command Palette…")) { CommandPaletteBus.toggle() }
                 .keyboardShortcut("k", modifiers: .command)
         }
+    }
+
+    /// The keyboard path to what the row context menu offers. Delete (without ⌘) is handled by
+    /// the list itself, so it only fires while the list has focus.
+    @ViewBuilder
+    private var selectionCommands: some View {
+        Button(L10n.t("Pause Selected")) { viewModel.pauseSelected() }
+            .keyboardShortcut("p", modifiers: .command)
+            .disabled(!s.selectionCanPause)
+        Button(L10n.t("Resume Selected")) { viewModel.resumeSelected() }
+            .keyboardShortcut("p", modifiers: [.command, .option])
+            .disabled(!s.selectionCanResume)
+        Button(L10n.t("Show in Finder")) {
+            if let task = viewModel.selectedTasks.first(where: { $0.status.hasData }) {
+                viewModel.revealInFinder(task)
+            }
+        }
+            .keyboardShortcut("r", modifiers: .command)
+            .disabled(!s.selectionHasData)
+        Button(L10n.t("Copy Link")) {
+            viewModel.copyToPasteboard(viewModel.selectedTasks.map(\.sourceLocator).joined(separator: "\n"))
+        }
+            .keyboardShortcut("c", modifiers: [.command, .shift])
+            .disabled(!s.hasSelection)
+        Divider()
+        Button(L10n.t("Remove from List")) { viewModel.removeSelected(deleteData: false) }
+            .disabled(!s.hasSelection)
+        Button(L10n.t("Move to Trash…")) {
+            guard !TextEditingFocus.forward(#selector(NSResponder.deleteToBeginningOfLine(_:))) else { return }
+            viewModel.confirmMoveSelectionToTrash()
+        }
+            .keyboardShortcut(.delete, modifiers: .command)
+            .disabled(!s.selectionHasData)
     }
 
     /// Credits are supplied explicitly: a source build has no `NSHumanReadableCopyright`, so the panel would otherwise omit the licence.
@@ -243,12 +320,12 @@ struct GoelCommands: Commands {
         ])
     }
 
-    private var autoShutdownBinding: Binding<String> {
+    private var autoShutdownBinding: Binding<AutoShutdownAction> {
         Binding(
-            get: { viewModel.settings.autoShutdownAction },
+            get: { s.autoShutdown },
             set: { newValue in
-                guard newValue != viewModel.settings.autoShutdownAction else { return }
-                viewModel.update { $0.autoShutdownAction = newValue }
+                guard newValue != viewModel.settings.autoShutdown else { return }
+                viewModel.update { $0.autoShutdown = newValue }
             }
         )
     }
@@ -303,11 +380,11 @@ struct GoelCommands: Commands {
             viewModel.toastNow(L10n.t("No downloadable links found in that file"))
             return
         }
+        // `add` reports what it queued and what it skipped; a second "Imported N" toast here
+        // used to overwrite "All N are already in your list" before anyone could read it.
         viewModel.add(rawLines: locators.joined(separator: "\n"), saveDirectory: nil, priority: .normal)
-        viewModel.toastNow(locators.count == 1
-                           ? L10n.t("Imported %d link", locators.count)
-                           : L10n.t("Imported %d links", locators.count))
     }
+
 
     private func cycleTheme() {
         let all = AppTheme.allCases

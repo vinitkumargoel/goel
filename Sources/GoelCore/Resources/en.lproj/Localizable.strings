@@ -7,8 +7,6 @@
    To add a language: copy this file to <code>.lproj/Localizable.strings and translate the
    right-hand side of each line. Untranslated keys fall back to English automatically. */
 
-" and %d more item" = " and %d more item";
-" and %d more items" = " and %d more items";
 "#" = "#";
 "%" = "%";
 "%1$@ %2$@" = "%1$@ %2$@";
@@ -204,6 +202,7 @@
 "Automate with AppleScript" = "Automate with AppleScript";
 "Automatic" = "Automatic";
 "Automatic (by type)" = "Automatic (by type)";
+"Automatic action cancelled — downloads started again" = "Automatic action cancelled — downloads started again";
 "Automatic — by file type" = "Automatic — by file type";
 "Automatic — by source site" = "Automatic — by source site";
 "Automatically re-queue a failed download and try again, with an exponential backoff between attempts." = "Automatically re-queue a failed download and try again, with an exponential backoff between attempts.";
@@ -233,9 +232,11 @@
 "Cancel %@" = "Cancel %@";
 "Cancel Scheduled Start" = "Cancel Scheduled Start";
 "Cancel delete" = "Cancel delete";
-"Cancel this %@?" = "Cancel this %@?";
 "Cancel this conversion" = "Cancel this conversion";
+"Cancel this copy?" = "Cancel this copy?";
+"Cancel this download?" = "Cancel this download?";
 "Cancel this job" = "Cancel this job";
+"Cancel this upload?" = "Cancel this upload?";
 "Cancel transfer of %@" = "Cancel transfer of %@";
 "Canceled" = "Canceled";
 "Cancelled" = "Cancelled";
@@ -365,6 +366,7 @@
 "Could not reach the server" = "Could not reach the server";
 "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app." = "Couldn't open Safari's extension settings. Open Safari ▸ Settings ▸ Extensions manually — the extension only registers from the installed app.";
 "Couldn’t change permissions for “%@”" = "Couldn’t change permissions for “%@”";
+"Couldn’t check what the server already has — nothing was overwritten. Try again." = "Couldn’t check what the server already has — nothing was overwritten. Try again.";
 "Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@" = "Couldn’t check what’s already in %1$@ — nothing was uploaded. %2$@";
 "Couldn’t check what’s already in %@ — nothing was uploaded." = "Couldn’t check what’s already in %@ — nothing was uploaded.";
 "Couldn’t clear the saved host key for %@" = "Couldn’t clear the saved host key for %@";
@@ -376,27 +378,35 @@
 "Couldn’t launch yt-dlp: %@" = "Couldn’t launch yt-dlp: %@";
 "Couldn’t list the playlist. %@" = "Couldn’t list the playlist. %@";
 "Couldn’t load quality options. %@" = "Couldn’t load quality options. %@";
-"Couldn’t load the metalink file" = "Couldn’t load the metalink file";
+"Couldn’t load the metalink file: %@" = "Couldn’t load the metalink file: %@";
 "Couldn’t locate Application Support" = "Couldn’t locate Application Support";
+"Couldn’t move the database aside: %@" = "Couldn’t move the database aside: %@";
+"Couldn’t move “%1$@” back: %2$@" = "Couldn’t move “%1$@” back: %2$@";
 "Couldn’t move “%1$@” to “%2$@”" = "Couldn’t move “%1$@” to “%2$@”";
 "Couldn’t move “%@” to the parent folder" = "Couldn’t move “%@” to the parent folder";
-"Couldn’t open the database — downloads won’t survive relaunch." = "Couldn’t open the database — downloads won’t survive relaunch.";
+"Couldn’t open the database (%@) — downloads won’t survive relaunch." = "Couldn’t open the database (%@) — downloads won’t survive relaunch.";
+"Couldn’t open the database (%@) — nothing you add will be saved." = "Couldn’t open the database (%@) — nothing you add will be saved.";
 "Couldn’t preview “%@”" = "Couldn’t preview “%@”";
 "Couldn’t put this Mac to sleep" = "Couldn’t put this Mac to sleep";
 "Couldn’t reach the destination server." = "Couldn’t reach the destination server.";
 "Couldn’t reach the source server." = "Couldn’t reach the source server.";
 "Couldn’t reach the update feed." = "Couldn’t reach the update feed.";
 "Couldn’t read that file" = "Couldn’t read that file";
+"Couldn’t read the partial “%@” on this Mac — it was kept. Try again." = "Couldn’t read the partial “%@” on this Mac — it was kept. Try again.";
 "Couldn’t read your download history — the saved database may be unreadable." = "Couldn’t read your download history — the saved database may be unreadable.";
-"Couldn’t read “%1$@”%2$@ inside “%3$@” — nothing was uploaded." = "Couldn’t read “%1$@”%2$@ inside “%3$@” — nothing was uploaded.";
+"Couldn’t read “%1$@” and %2$d more items inside “%3$@” — nothing was uploaded." = "Couldn’t read “%1$@” and %2$d more items inside “%3$@” — nothing was uploaded.";
+"Couldn’t read “%1$@” and 1 more item inside “%2$@” — nothing was uploaded." = "Couldn’t read “%1$@” and 1 more item inside “%2$@” — nothing was uploaded.";
+"Couldn’t read “%1$@” inside “%2$@” — nothing was uploaded." = "Couldn’t read “%1$@” inside “%2$@” — nothing was uploaded.";
 "Couldn’t read “%1$@”, so “%2$@” wasn’t downloaded." = "Couldn’t read “%1$@”, so “%2$@” wasn’t downloaded.";
 "Couldn’t read “%@” — nothing was downloaded." = "Couldn’t read “%@” — nothing was downloaded.";
 "Couldn’t read “%@” — nothing was uploaded." = "Couldn’t read “%@” — nothing was uploaded.";
 "Couldn’t rename “%@”" = "Couldn’t rename “%@”";
 "Couldn’t rename: %@" = "Couldn’t rename: %@";
+"Couldn’t save the login for %@ to your Keychain" = "Couldn’t save the login for %@ to your Keychain";
 "Couldn’t save your servers to disk: %@" = "Couldn’t save your servers to disk: %@";
 "Couldn’t shut this Mac down" = "Couldn’t shut this Mac down";
 "Couldn’t start yt-dlp." = "Couldn’t start yt-dlp.";
+"Couldn’t start yt-dlp: %@" = "Couldn’t start yt-dlp: %@";
 "Couldn’t unpack “%@” — the archive may be damaged." = "Couldn’t unpack “%@” — the archive may be damaged.";
 "Couldn’t unpack “%@”: the extractor didn’t start." = "Couldn’t unpack “%@”: the extractor didn’t start.";
 "Couldn’t work out where to save “%@”." = "Couldn’t work out where to save “%@”.";
@@ -430,8 +440,6 @@
 "Delete “%@”?" = "Delete “%@”?";
 "Deleted %1$d of %2$d items — %3$@" = "Deleted %1$d of %2$d items — %3$@";
 "Deleted %d items" = "Deleted %d items";
-"Deleted files for %d downloads" = "Deleted files for %d downloads";
-"Deleted files for “%@”" = "Deleted files for “%@”";
 "Deleted “%@”" = "Deleted “%@”";
 "Deleting “%1$@” (%2$d of %3$d)…" = "Deleting “%1$@” (%2$d of %3$d)…";
 "Deleting “%1$@” — %2$d of %3$d items…" = "Deleting “%1$@” — %2$d of %3$d items…";
@@ -468,6 +476,7 @@
 "Down" = "Down";
 "Download %@" = "Download %@";
 "Download %d Items" = "Download %d Items";
+"Download Again" = "Download Again";
 "Download Folder to Downloads" = "Download Folder to Downloads";
 "Download Folder to…" = "Download Folder to…";
 "Download Here" = "Download Here";
@@ -493,9 +502,13 @@
 "Downloaded today" = "Downloaded today";
 "Downloading" = "Downloading";
 "Downloading %d items to Downloads" = "Downloading %d items to Downloads";
+"Downloading “%@” again" = "Downloading “%@” again";
 "Downloading “%@” to Downloads" = "Downloading “%@” to Downloads";
 "Downloads" = "Downloads";
 "Downloads are still running." = "Downloads are still running.";
+"Downloads finished — Goel° will quit" = "Downloads finished — Goel° will quit";
+"Downloads finished — this Mac will go to sleep" = "Downloads finished — this Mac will go to sleep";
+"Downloads finished — this Mac will shut down" = "Downloads finished — this Mac will shut down";
 "Downloads finished, but macOS blocked the request. Allow Goel° to control System Events in System Settings → Privacy & Security → Automation." = "Downloads finished, but macOS blocked the request. Allow Goel° to control System Events in System Settings → Privacy & Security → Automation.";
 "Downloads finished, but the shutdown command couldn’t be prepared." = "Downloads finished, but the shutdown command couldn’t be prepared.";
 "Downloads finished, but the sleep command didn’t run." = "Downloads finished, but the sleep command didn’t run.";
@@ -591,12 +604,15 @@
 "Fewer than 2 selected adapters are up" = "Fewer than 2 selected adapters are up";
 "File" = "File";
 "File #" = "File #";
+"File missing" = "File missing";
 "Files" = "Files";
 "Files, peers, trackers, and per-task limits" = "Files, peers, trackers, and per-task limits";
 "Filter" = "Filter";
 "Filter this folder" = "Filter this folder";
 "Find peers on the local network." = "Find peers on the local network.";
 "Find peers without a tracker." = "Find peers without a tracker.";
+"Find “%@”. It will be moved back to where Goel° expects it." = "Find “%@”. It will be moved back to where Goel° expects it.";
+"Find…" = "Find…";
 "Finished" = "Finished";
 "Finished downloads, re-download, CSV export" = "Finished downloads, re-download, CSV export";
 "Finished. Saved %@" = "Finished. Saved %@";
@@ -616,6 +632,7 @@
 "Forget the host key for “%@”?" = "Forget the host key for “%@”?";
 "Forget the saved SSH host-key fingerprint. Use this only after a legitimate server rekey, then re-verify with Test." = "Forget the saved SSH host-key fingerprint. Use this only after a legitimate server rekey, then re-verify with Test.";
 "Forward" = "Forward";
+"Found “%@”" = "Found “%@”";
 "Free for personal use, forever. The full source is available to read and modify. Commercial and business use requires a separate paid licence." = "Free for personal use, forever. The full source is available to read and modify. Commercial and business use requires a separate paid licence.";
 "Free for personal use. Commercial and business use requires a paid licence.\nLicensed under PolyForm Noncommercial 1.0.0 — see Settings ▸ Licence." = "Free for personal use. Commercial and business use requires a paid licence.\nLicensed under PolyForm Noncommercial 1.0.0 — see Settings ▸ Licence.";
 "Free for personal use. Commercial use requires a licence — " = "Free for personal use. Commercial use requires a licence — ";
@@ -647,6 +664,7 @@
 "Goel will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test." = "Goel will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test.";
 "Goel° can watch for http(s) and magnet links you copy and offer them in a banner. It only ever offers — nothing downloads without you clicking Add." = "Goel° can watch for http(s) and magnet links you copy and offer them in a banner. It only ever offers — nothing downloads without you clicking Add.";
 "Goel° commercial licence enquiry" = "Goel° commercial licence enquiry";
+"Goel° couldn’t open %1$@ (%2$@). It will be renamed, not deleted, so nothing is lost; the next launch starts with an empty list." = "Goel° couldn’t open %1$@ (%2$@). It will be renamed, not deleted, so nothing is lost; the next launch starts with an empty list.";
 "Goel° download manager" = "Goel° download manager";
 "Goel° — Sign in" = "Goel° — Sign in";
 "Grab Links from Page…" = "Grab Links from Page…";
@@ -703,9 +721,9 @@
 "Import this backup?" = "Import this backup?";
 "Imported %d download" = "Imported %d download";
 "Imported %d downloads" = "Imported %d downloads";
-"Imported %d link" = "Imported %d link";
-"Imported %d links" = "Imported %d links";
+"In %d seconds." = "In %d seconds.";
 "In 1 Hour" = "In 1 Hour";
+"In 1 second." = "In 1 second.";
 "In 4 Hours" = "In 4 Hours";
 "In progress, length unknown" = "In progress, length unknown";
 "In your browser: DevTools ▸ Network ▸ the download request ▸ copy the Cookie request header." = "In your browser: DevTools ▸ Network ▸ the download request ▸ copy the Cookie request header.";
@@ -770,6 +788,7 @@
 "Loading information" = "Loading information";
 "Loading statistics" = "Loading statistics";
 "Local, on-disk record of what was downloaded" = "Local, on-disk record of what was downloaded";
+"Locate…" = "Locate…";
 "Login" = "Login";
 "Login removed" = "Login removed";
 "Low" = "Low";
@@ -796,13 +815,21 @@
 "Missing" = "Missing";
 "Modified" = "Modified";
 "More actions" = "More actions";
+"Move Aside" = "Move Aside";
+"Move Back" = "Move Back";
 "Move Detail Panel" = "Move Detail Panel";
+"Move the Broken Database Aside…" = "Move the Broken Database Aside…";
+"Move the broken database aside and start fresh?" = "Move the broken database aside and start fresh?";
 "Move the files of %d downloads to the Trash?" = "Move the files of %d downloads to the Trash?";
 "Move to" = "Move to";
 "Move to Trash" = "Move to Trash";
+"Move to Trash…" = "Move to Trash…";
 "Move “%@” to the Trash?" = "Move “%@” to the Trash?";
+"Moved the file to the Trash" = "Moved the file to the Trash";
+"Moved the files of %d downloads to the Trash" = "Moved the files of %d downloads to the Trash";
 "Moved to “%@”" = "Moved to “%@”";
 "Moved “%@”" = "Moved “%@”";
+"Moved “%@” to the Trash" = "Moved “%@” to the Trash";
 "Multi-path HTTP downloads across network adapters" = "Multi-path HTTP downloads across network adapters";
 "Multi-path idle" = "Multi-path idle";
 "Multi-path is blocked with a system/manual proxy, or when a VPN is up (unless allowed)." = "Multi-path is blocked with a system/manual proxy, or when a VPN is up (unless allowed).";
@@ -880,6 +907,8 @@
 "Nothing here yet — finished downloads are archived automatically." = "Nothing here yet — finished downloads are archived automatically.";
 "Nothing new to import" = "Nothing new to import";
 "Nothing on the clipboard" = "Nothing on the clipboard";
+"Nothing to pause" = "Nothing to pause";
+"Nothing to resume" = "Nothing to resume";
 "Nothing usable pasted yet." = "Nothing usable pasted yet.";
 "Nothing was written" = "Nothing was written";
 "Notifications" = "Notifications";
@@ -960,6 +989,7 @@
 "Pause %d Selected" = "Pause %d Selected";
 "Pause All" = "Pause All";
 "Pause All Downloads" = "Pause All Downloads";
+"Pause Selected" = "Pause Selected";
 "Pause all" = "Pause all";
 "Pause all downloads" = "Pause all downloads";
 "Pause downloads below battery threshold" = "Pause downloads below battery threshold";
@@ -1032,6 +1062,7 @@
 "Quick Look" = "Quick Look";
 "Quit" = "Quit";
 "Quit Goel°" = "Quit Goel°";
+"Quit Now" = "Quit Now";
 "Quitting now stops it. Unfinished downloads are kept and can be resumed next launch; a conversion in progress is cancelled and its partial file removed." = "Quitting now stops it. Unfinished downloads are kept and can be resumed next launch; a conversion in progress is cancelled and its partial file removed.";
 "Quitting now stops them. Unfinished downloads are kept and can be resumed next launch." = "Quitting now stops them. Unfinished downloads are kept and can be resumed next launch.";
 "RSS 2.0 or Atom." = "RSS 2.0 or Atom.";
@@ -1054,6 +1085,7 @@
 "Reconnecting…" = "Reconnecting…";
 "Referer" = "Referer";
 "Refresh" = "Refresh";
+"Refused a link from the browser — it points at this Mac’s own services or a link-local address" = "Refused a link from the browser — it points at this Mac’s own services or a link-local address";
 "Refusing to write outside the download folder." = "Refusing to write outside the download folder.";
 "Refusing to write “%@” outside the chosen folder." = "Refusing to write “%@” outside the chosen folder.";
 "Regenerate" = "Regenerate";
@@ -1069,6 +1101,7 @@
 "Remove entry" = "Remove entry";
 "Remove feed" = "Remove feed";
 "Remove feed %@" = "Remove feed %@";
+"Remove from List" = "Remove from List";
 "Remove from list" = "Remove from list";
 "Remove login" = "Remove login";
 "Remove saved login for %@" = "Remove saved login for %@";
@@ -1079,9 +1112,8 @@
 "Remove “%@”?" = "Remove “%@”?";
 "Removed %1$d downloads, but %2$d of their files are still on disk" = "Removed %1$d downloads, but %2$d of their files are still on disk";
 "Removed %d downloads from the list" = "Removed %d downloads from the list";
-"Removed from list" = "Removed from list";
 "Removed from the list, but the file is still on disk" = "Removed from the list, but the file is still on disk";
-"Removed with data" = "Removed with data";
+"Removed “%@” from the list" = "Removed “%@” from the list";
 "Removed “%@” from the list, but its file is still on disk" = "Removed “%@” from the list, but its file is still on disk";
 "Removed “%@” from the list, but its file is still on disk." = "Removed “%@” from the list, but its file is still on disk.";
 "Rename" = "Rename";
@@ -1113,10 +1145,13 @@
 "Resolve Media with yt-dlp" = "Resolve Media with yt-dlp";
 "Resolved by yt-dlp — the stream URL may expire; start the download soon." = "Resolved by yt-dlp — the stream URL may expire; start the download soon.";
 "Resolving media formats" = "Resolving media formats";
+"Restored %d downloads" = "Restored %d downloads";
+"Restored “%@”" = "Restored “%@”";
 "Resumable" = "Resumable";
 "Resume" = "Resume";
 "Resume %@" = "Resume %@";
 "Resume %d Selected" = "Resume %d Selected";
+"Resume Selected" = "Resume Selected";
 "Resume everything paused or queued" = "Resume everything paused or queued";
 "Resume transfer of %@" = "Resume transfer of %@";
 "Resumed" = "Resumed";
@@ -1156,6 +1191,7 @@
 "Save path" = "Save path";
 "Save path: %@" = "Save path: %@";
 "Save to" = "Save to";
+"Saved the login for %@, but Goel° only sends logins over HTTPS" = "Saved the login for %@, but Goel° only sends logins over HTTPS";
 "Saved — ignored reserved header: %@" = "Saved — ignored reserved header: %@";
 "Saved — ignored reserved headers: %@" = "Saved — ignored reserved headers: %@";
 "Scan finished files" = "Scan finished files";
@@ -1248,6 +1284,7 @@
 "Shown" = "Shown";
 "Shows this transfer’s details." = "Shows this transfer’s details.";
 "Shut Down" = "Shut Down";
+"Shut Down Now" = "Shut Down Now";
 "Shut down" = "Shut down";
 "Sign in" = "Sign in";
 "Sign in to control your downloads" = "Sign in to control your downloads";
@@ -1264,8 +1301,10 @@
 "Skip setup" = "Skip setup";
 "Skipped" = "Skipped";
 "Sleep" = "Sleep";
+"Sleep Now" = "Sleep Now";
 "Software" = "Software";
 "Some settings here are managed by your organisation and can’t be changed." = "Some settings here are managed by your organisation and can’t be changed.";
+"Something else is already at “%@”" = "Something else is already at “%@”";
 "Sort" = "Sort";
 "Sort & display options" = "Sort & display options";
 "Sort and display options" = "Sort and display options";
@@ -1337,10 +1376,12 @@
 "Testing…" = "Testing…";
 "That address is on this machine or a link-local range — refused." = "That address is on this machine or a link-local range — refused.";
 "That conversion is already running." = "That conversion is already running.";
+"That download is no longer in your list" = "That download is no longer in your list";
 "That download no longer exists" = "That download no longer exists";
 "That isn’t a web page address." = "That isn’t a web page address.";
 "That link is a single video, not a playlist." = "That link is a single video, not a playlist.";
 "That link isn’t valid." = "That link isn’t valid.";
+"That metalink file is too large to be a download list" = "That metalink file is too large to be a download list";
 "That name is already taken." = "That name is already taken.";
 "That page is too large to scan." = "That page is too large to scan.";
 "That playlist doesn’t list any downloadable items." = "That playlist doesn’t list any downloadable items.";
@@ -1366,7 +1407,8 @@
 "The local file is missing" = "The local file is missing";
 "The manual proxy is missing a host or port, so the swarm goes out directly." = "The manual proxy is missing a host or port, so the swarm goes out directly.";
 "The notices file ships inside the packaged app. In a source build, read THIRD-PARTY-NOTICES.md in the repository." = "The notices file ships inside the packaged app. In a source build, read THIRD-PARTY-NOTICES.md in the repository.";
-"The page couldn’t be loaded." = "The page couldn’t be loaded.";
+"The old database was moved aside as “%@”. Quit and reopen Goel° to start fresh." = "The old database was moved aside as “%@”. Quit and reopen Goel° to start fresh.";
+"The page couldn’t be loaded: %@" = "The page couldn’t be loaded: %@";
 "The partial file was moved or deleted. Retry starts the download from the beginning." = "The partial file was moved or deleted. Retry starts the download from the beginning.";
 "The portal's look. Independent of the app theme — the desktop and the browser each keep their own." = "The portal's look. Independent of the app theme — the desktop and the browser each keep their own.";
 "The post-download script failed or couldn’t be started for “%@”." = "The post-download script failed or couldn’t be started for “%@”.";
@@ -1458,6 +1500,7 @@
 "URL scheme" = "URL scheme";
 "URL, magnet, or .m3u8 stream" = "URL, magnet, or .m3u8 stream";
 "URL, magnet, or m3u8 stream" = "URL, magnet, or m3u8 stream";
+"Undo" = "Undo";
 "Unknown" = "Unknown";
 "Unknown error" = "Unknown error";
 "Unknown size" = "Unknown size";
@@ -1567,6 +1610,7 @@
 "Your Keychain refused to save the login for %@ — unlock it, allow the prompt, and try again" = "Your Keychain refused to save the login for %@ — unlock it, allow the prompt, and try again";
 "Your proxy needs a login. Check the proxy settings." = "Your proxy needs a login. Check the proxy settings.";
 "Your saved servers couldn’t be read, so nothing was changed — the other servers are still there." = "Your saved servers couldn’t be read, so nothing was changed — the other servers are still there.";
+"Your saved servers couldn’t be read. They’re still on disk — Goel° won’t change the file until it can read it again." = "Your saved servers couldn’t be read. They’re still on disk — Goel° won’t change the file until it can read it again.";
 "Your saved settings couldn’t be read or backed up. Changes to settings won’t be saved until Goel° restarts, so nothing overwrites them." = "Your saved settings couldn’t be read or backed up. Changes to settings won’t be saved until Goel° restarts, so nothing overwrites them.";
 "Your saved settings couldn’t be read, so defaults are in use. The original was kept as a backup in the database." = "Your saved settings couldn’t be read, so defaults are in use. The original was kept as a backup in the database.";
 "You’re running %@. Open the release page to download the update?" = "You’re running %@. Open the release page to download the update?";
@@ -1634,6 +1678,7 @@
 "yt-dlp couldn’t read that playlist." = "yt-dlp couldn’t read that playlist.";
 "yt-dlp couldn’t resolve that page" = "yt-dlp couldn’t resolve that page";
 "yt-dlp couldn’t resolve that page." = "yt-dlp couldn’t resolve that page.";
+"yt-dlp didn’t answer within %d seconds and was stopped." = "yt-dlp didn’t answer within %d seconds and was stopped.";
 "yt-dlp didn’t report a single downloadable stream for that page." = "yt-dlp didn’t report a single downloadable stream for that page.";
 "yt-dlp didn’t report any downloadable formats for that page." = "yt-dlp didn’t report any downloadable formats for that page.";
 "yt-dlp isn’t available, so Goel° can’t list the available qualities." = "yt-dlp isn’t available, so Goel° can’t list the available qualities.";

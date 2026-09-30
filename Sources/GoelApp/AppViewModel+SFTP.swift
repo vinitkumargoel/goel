@@ -8,7 +8,7 @@ import GoelCore
 extension AppViewModel {
 
     func reloadServers() {
-        servers = SFTPConnectionStore.shared.load()
+        applyServerLoad(SFTPConnectionStore.shared.loadOutcome())
     }
 
     func server(_ id: SFTPConnection.ID?) -> SFTPConnection? {

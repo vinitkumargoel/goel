@@ -10,6 +10,9 @@ enum MainWindowID {
 
 struct MenuBarView: View {
     @EnvironmentObject private var vm: AppViewModel
+    @EnvironmentObject private var telemetry: TelemetryStore
+    /// Observed so the transfer rows redraw; read through `vm.sftpTransfers`.
+    @EnvironmentObject private var sftpStore: SFTPTransferStore
     @Environment(\.openWindow) private var openWindow
 
     @State private var measuredListHeight: CGFloat = 0
@@ -108,8 +111,8 @@ struct MenuBarView: View {
                 .accessibilityLabel(count == 0 ? L10n.t("Downloads") : L10n.t("Downloads, %d in progress", count))
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
-            speedStat(symbol: "arrow.down", value: vm.displayedCombinedSpeed.down, color: Theme.green)
-            speedStat(symbol: "arrow.up", value: vm.displayedCombinedSpeed.up, color: Theme.teal)
+            speedStat(symbol: "arrow.down", value: telemetry.displayedCombinedSpeed.down, color: Theme.green)
+            speedStat(symbol: "arrow.up", value: telemetry.displayedCombinedSpeed.up, color: Theme.teal)
         }
         .padding(.horizontal, 14)
         .frame(height: 46)
@@ -203,6 +206,7 @@ private struct ListHeightKey: PreferenceKey {
 }
 
 private struct MenuBarDownloadRow: View {
+    @EnvironmentObject private var telemetry: TelemetryStore
     let task: DownloadTask
     let vm: AppViewModel
 
@@ -245,7 +249,7 @@ private struct MenuBarDownloadRow: View {
     }
 
     private var trailingSpeed: (text: String, color: Color)? {
-        let speed = vm.displaySpeed(for: task)
+        let speed = telemetry.displaySpeed(for: task)
         if speed.down > 0 { return (speed.down.speedString, Theme.green) }
         if speed.up > 0 { return (speed.up.speedString, Theme.teal) }
         return nil
@@ -269,7 +273,7 @@ private struct MenuBarSFTPTransferRow: View {
             onResume: { vm.resumeSFTPTransfer(transfer.id) },
             onShowRemoteFolder: onShowRemoteFolder)
         .confirmationDialog(
-            L10n.t("Cancel this %@?", L10n.t(transfer.cancelNoun)),
+            transfer.cancelQuestion,
             isPresented: $confirmingCancel, titleVisibility: .visible
         ) {
             Button(L10n.t("Stop Transfer"), role: .destructive) { vm.cancelSFTPTransfer(transfer.id) }
@@ -330,15 +334,15 @@ private struct MenuBarMediaSection: View {
 
 /// Drawn into a single template `NSImage` because the menu bar clips a two-line SwiftUI stack.
 struct MenuBarSpeedLabel: View {
-    @ObservedObject var vm: AppViewModel
+    @ObservedObject var telemetry: TelemetryStore
 
     var body: some View {
-        // `.equatable()` gates the image-allocating redraw; the view model itself publishes at ~10 Hz.
-        SpeedContent(sample: vm.displayedCombinedSpeed).equatable()
+        // `.equatable()` gates the image-allocating redraw to real changes of the 2 Hz read-out.
+        SpeedContent(sample: telemetry.displayedCombinedSpeed).equatable()
     }
 
     private struct SpeedContent: View, Equatable {
-        let sample: AppViewModel.SpeedSample
+        let sample: SpeedSample
 
         var body: some View {
             if sample.down > 0 || sample.up > 0 {

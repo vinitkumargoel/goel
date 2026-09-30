@@ -12,6 +12,7 @@ struct SFTPTransferPanel: View {
     let volumeSpace: SFTPVolumeSpace?
 
     @EnvironmentObject private var vm: AppViewModel
+    @EnvironmentObject private var telemetry: TelemetryStore
     @State private var selection: UUID?
 
     /// Tall enough for the graph plus the fact rows without either column scrolling in the
@@ -30,7 +31,7 @@ struct SFTPTransferPanel: View {
                 if let selected {
                     SFTPTransferInspector(transfer: selected, connection: connection,
                                           volumeSpace: volumeSpace,
-                                          history: vm.sftpSpeedHistory[selected.id] ?? [])
+                                          history: telemetry.sftpHistory(selected.id))
                 } else {
                     EmptyStateView(systemImage: "arrow.up.arrow.down.circle",
                                    title: L10n.t("No transfer selected"),
