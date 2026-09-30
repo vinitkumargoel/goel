@@ -22,10 +22,12 @@ enum SchedulingPolicy {
 
         let candidates = tasks
             .filter { $0.status == .queued && !runningSlots.contains($0.id) }
+            // Priority is still the user's strongest signal; within one priority, the queue order
+            // they arranged (drag, Move to Top) decides, not merely who was added first.
             .sorted { lhs, rhs in
                 lhs.priority != rhs.priority
                     ? lhs.priority > rhs.priority
-                    : lhs.addedAt < rhs.addedAt
+                    : QueueOrder.precedes(lhs, rhs)
             }
 
         var promoted: [UUID] = []

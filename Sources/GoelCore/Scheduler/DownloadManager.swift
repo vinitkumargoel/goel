@@ -237,7 +237,8 @@ public actor DownloadManager {
             postNotice(message)
         }
 
-        let normalized = loaded.map(Self.normalizeRestored)
+        // Rows from before the queue could be reordered get positions in their old start order.
+        let normalized = QueueOrder.backfilled(loaded.map(Self.normalizeRestored))
         tasks = normalized
         rebuildTaskIndex()
 
@@ -409,12 +410,14 @@ public actor DownloadManager {
             networkSelection: network == .auto ? nil : network
         )
         appendTask(task)
-        persist(task)
-        recordAudit(.added, task: task)
+        // The stored row, not `task`: `appendTask` gives it its queue position.
+        let added = tasks[tasks.count - 1]
+        persist(added)
+        recordAudit(.added, task: added)
         publish()
         if !holdPaused { schedule() }
         if scheduledAt != nil { armScheduledStarts() }
-        return task
+        return added
     }
 
     /// Mirrors are untrusted input: http(s) only, de-duplicated, and capped.
@@ -919,9 +922,11 @@ public actor DownloadManager {
             // A local `.torrent` path in a shared backup points at the importer's disk, not the author's.
             if case .torrentFile(let url) = task.source, url.isFileURL { continue }
             guard dedupIndex[task.source.dedupKey] == nil else { continue }
-            let t = Self.normalizeRestored(task)
+            var t = Self.normalizeRestored(task)
+            // Another machine's queue numbers mean nothing here: imports join the back of the line.
+            t.queuePosition = nil
             appendTask(t)
-            persist(t)
+            persist(tasks[tasks.count - 1])
             added += 1
         }
         // `storedSettings`, not `settings`: persisting the overlaid row would freeze forced MDM keys in.
@@ -1030,7 +1035,11 @@ public actor DownloadManager {
         }
     }
 
+    /// Every row enters at the back of the queue unless it already carries a place (an undone
+    /// removal puts the row back where it stood).
     func appendTask(_ task: DownloadTask) {
+        var task = task
+        if task.queuePosition == nil { task.queuePosition = QueueOrder.nextPosition(in: tasks) }
         taskIndex[task.id] = tasks.count
         dedupIndex[task.source.dedupKey] = task.id
         tasks.append(task)
