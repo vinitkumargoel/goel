@@ -178,10 +178,11 @@ struct RootView: View {
     }
 
     private func persistenceBanner(_ warning: String) -> some View {
-        warningBanner(warning) { vm.persistenceWarning = nil }
+        // Not dismissible while nothing is being saved: the user must not forget that.
+        warningBanner(warning, dismiss: vm.isStoreEphemeral ? nil : { vm.persistenceWarning = nil })
     }
 
-    private func warningBanner(_ warning: String, dismiss: @escaping () -> Void) -> some View {
+    private func warningBanner(_ warning: String, dismiss: (() -> Void)?) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
                 .a11yDecorative()
@@ -192,14 +193,16 @@ struct RootView: View {
                 Button(L10n.t("Move the Broken Database Aside…")) { confirmDatabaseRecovery() }
                     .controlSize(.small)
             }
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+            if let dismiss {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .a11yButton(L10n.t("Dismiss warning"))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .a11yButton(L10n.t("Dismiss warning"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)

@@ -38,6 +38,41 @@ final class BrowserSpoolTests: XCTestCase {
         XCTAssertEqual(jsonFiles(BrowserSpool.rejectedDirectory(in: dir)), ["broken.json"])
     }
 
+    func testAParkedCaptureKeepsNoCredentials() throws {
+        try BrowserSpool.enqueue(BrowserCapture(locator: "https://e.test/a.zip", cookieHeader: "sid=1",
+                                                cookieHost: "e.test", authorization: "Basic dTpw"), into: dir)
+        let spooled = try XCTUnwrap(BrowserSpool.pendingCaptures(in: dir).first)
+        BrowserSpool.reject(spooled.file, in: dir, reason: "portal")
+        XCTAssertTrue(jsonFiles(dir).isEmpty)
+        let parked = BrowserSpool.rejectedDirectory(in: dir).appendingPathComponent(spooled.file.lastPathComponent)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: parked)) as? [String: Any])
+        XCTAssertEqual(object["url"] as? String, "https://e.test/a.zip")
+        XCTAssertEqual(object["rejectedReason"] as? String, "portal")
+        XCTAssertNil(object["cookie"])
+        XCTAssertNil(object["cookieHost"])
+        XCTAssertNil(object["authorization"])
+        let mode = try FileManager.default.attributesOfItem(atPath: parked.path)[.posixPermissions] as? Int
+        XCTAssertEqual(mode, 0o600)
+    }
+
+    func testUnparseableBytesAreNotKeptVerbatim() {
+        let kept = BrowserSpool.redactedForParking(Data("{cookie: sid=secret".utf8), reason: "unparseable")
+        XCTAssertFalse(String(decoding: kept, as: UTF8.self).contains("secret"))
+    }
+
+    func testOldParkedCapturesAreSweptAtDrain() throws {
+        let parked = BrowserSpool.rejectedDirectory(in: dir)
+        try FileManager.default.createDirectory(at: parked, withIntermediateDirectories: true)
+        let old = parked.appendingPathComponent("old.json")
+        let fresh = parked.appendingPathComponent("fresh.json")
+        try Data("{}".utf8).write(to: old)
+        try Data("{}".utf8).write(to: fresh)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-BrowserSpool.rejectedMaxAge - 60)], ofItemAtPath: old.path)
+        _ = BrowserSpool.pendingCaptures(in: dir)
+        XCTAssertEqual(jsonFiles(parked), ["fresh.json"])
+    }
+
     func testAuthorizationTravelsButExpiresLikeTheCookie() throws {
         try BrowserSpool.enqueue(BrowserCapture(locator: "https://e.test/a.zip",
                                                 authorization: "Basic dTpw"), into: dir)
@@ -100,8 +135,36 @@ final class BrowserCaptureScreenTests: XCTestCase {
         XCTAssertNil(BrowserCaptureScreen.classify("192.168.0.1"))
     }
 
-    func testAnUnresolvableNameFailsClosed() async {
+    /// It reaches nothing, so the engine fails and retries it like any dead link; refusing it lost the capture.
+    func testAnUnresolvableNameIsLetThrough() async {
         let result = await verdict("http://nowhere.invalid/f", resolve: { _ in nil })
-        XCTAssertNotEqual(result, .allowed)
+        XCTAssertEqual(result, .allowed)
+    }
+
+    func testThePortalOnThisMacsOwnLANAddressIsRefused() async {
+        let own: BrowserCaptureScreen.LocalAddresses = { ["192.168.1.7", "fe80::1", "127.0.0.1"] }
+        let direct = await BrowserCaptureScreen.verdict(URL(string: "http://192.168.1.7:8899/api")!, portalPort: 8899,
+                                                        resolvedByProxy: false, localAddresses: own)
+        let named = await BrowserCaptureScreen.verdict(URL(string: "http://mac.local:8899/api")!, portalPort: 8899,
+                                                       resolvedByProxy: false, resolve: { _ in ["192.168.1.7"] },
+                                                       localAddresses: own)
+        let otherHost = await BrowserCaptureScreen.verdict(URL(string: "http://192.168.1.8:8899/f")!, portalPort: 8899,
+                                                           resolvedByProxy: false, localAddresses: own)
+        let otherPort = await BrowserCaptureScreen.verdict(URL(string: "http://192.168.1.7:3000/f")!, portalPort: 8899,
+                                                           resolvedByProxy: false, localAddresses: own)
+        XCTAssertEqual(direct, .refused("portal"))
+        XCTAssertEqual(named, .refused("portal"))
+        XCTAssertEqual(otherHost, .allowed, "another machine on the LAN is not the portal")
+        XCTAssertEqual(otherPort, .allowed)
+    }
+
+    func testNAT64And6to4SpellingsOfLinkLocalAreCaught() {
+        XCTAssertEqual(BrowserCaptureScreen.classify("64:ff9b::a9fe:a9fe"), .linkLocal)
+        XCTAssertEqual(BrowserCaptureScreen.classify("2002:a9fe:a9fe::1"), .linkLocal)
+        XCTAssertEqual(BrowserCaptureScreen.classify("64:ff9b::7f00:1"), .loopback)
+    }
+
+    func testThisMacHasInterfaceAddresses() {
+        XCTAssertTrue(BrowserCaptureScreen.interfaceAddresses().contains("127.0.0.1"))
     }
 }

@@ -30,12 +30,19 @@ enum DisplayFormat {
         return absoluteFormatter(locale).string(from: date)
     }
 
+    static func compactDateTime(_ date: Date, locale: Locale, now: Date = Date()) -> String {
+        let sameDay = Calendar.current.isDate(date, inSameDayAs: now)
+        return (sameDay ? compactTimeFormatter(locale) : compactDateFormatter(locale)).string(from: date)
+    }
+
     // MARK: - Cache
 
     private static let lock = NSLock()
     private static var durationCache: [String: DateComponentsFormatter] = [:]
     private static var relativeCache: [String: DateFormatter] = [:]
     private static var absoluteCache: [String: DateFormatter] = [:]
+    private static var compactTimeCache: [String: DateFormatter] = [:]
+    private static var compactDateCache: [String: DateFormatter] = [:]
 
     private static func cacheKey(_ locale: Locale) -> String {
         // The autoupdating locale's identifier stays the same while its preferences change, so
@@ -78,6 +85,26 @@ enum DisplayFormat {
         }
     }
 
+    private static func compactTimeFormatter(_ locale: Locale) -> DateFormatter {
+        cached(&compactTimeCache, key: cacheKey(locale)) {
+            let f = DateFormatter()
+            f.locale = locale
+            f.dateStyle = .none
+            f.timeStyle = .short
+            return f
+        }
+    }
+
+    private static func compactDateFormatter(_ locale: Locale) -> DateFormatter {
+        cached(&compactDateCache, key: cacheKey(locale)) {
+            let f = DateFormatter()
+            f.locale = locale
+            f.dateStyle = .short
+            f.timeStyle = .none
+            return f
+        }
+    }
+
     private static func cached<F>(_ cache: inout [String: F], key: String, make: () -> F) -> F {
         _ = localeObserver
         lock.lock()
@@ -94,6 +121,8 @@ enum DisplayFormat {
         durationCache = [:]
         relativeCache = [:]
         absoluteCache = [:]
+        compactTimeCache = [:]
+        compactDateCache = [:]
         lock.unlock()
     }
 

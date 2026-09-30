@@ -626,14 +626,14 @@ struct SFTPBrowserView: View {
                 }
                 guard cap.underLimit else {
                     try? FileManager.default.removeItem(at: dir)
-                    await MainActor.run { vm.toastNow(L10n.t("Too large to preview")) }
+                    _ = await MainActor.run { vm.toastNow(L10n.t("Too large to preview")) }
                     return
                 }
                 await MainActor.run { QuickLookPresenter.shared.present(tmp, ownedDirectory: dir) }
             } catch {
                 try? FileManager.default.removeItem(at: dir)
                 let message = cap.underLimit ? L10n.t("Couldn’t preview “%@”", entry.name) : L10n.t("Too large to preview")
-                await MainActor.run { vm.toastNow(message) }
+                _ = await MainActor.run { vm.toastNow(message) }
             }
         }
     }

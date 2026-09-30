@@ -21,6 +21,24 @@ final class AutoShutdownCountdownTests: XCTestCase {
         XCTAssertEqual(performed, [.sleep], "fires exactly once")
     }
 
+    func testBeginAndEndAreReportedOnceEach() {
+        var begun: [DrainIntent] = []
+        var ended = 0
+        let countdown = AutoShutdownCountdown(seconds: 2, autoTick: false) { _ in }
+        countdown.onBegin = { begun.append($0) }
+        countdown.onEnd = { ended += 1 }
+        countdown.begin(.quit)
+        countdown.begin(.quit)
+        countdown.cancel()
+        countdown.cancel()
+        XCTAssertEqual(begun, [.quit])
+        XCTAssertEqual(ended, 1)
+        countdown.begin(.sleep)
+        countdown.tick()
+        countdown.tick()
+        XCTAssertEqual(ended, 2, "firing ends it too, so the banner is retracted")
+    }
+
     func testCancelStopsIt() {
         var performed: [DrainIntent] = []
         let countdown = AutoShutdownCountdown(seconds: 2, autoTick: false) { performed.append($0) }

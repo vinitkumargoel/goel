@@ -4,21 +4,6 @@ import GoelCore
 
 final class InlineCredentialsTests: XCTestCase {
 
-    private final class MemoryStore: CredentialManaging, @unchecked Sendable {
-        var saved: [String: (String, String)] = [:]
-        var writes = 0
-        func credential(forHost host: String) -> (username: String, password: String)? {
-            saved[host].map { (username: $0.0, password: $0.1) }
-        }
-        func setCredential(username: String, password: String, host: String) -> Bool {
-            writes += 1
-            saved[host] = (username, password)
-            return true
-        }
-        func removeCredential(host: String) -> Bool { saved[host] = nil; return true }
-        func allCredentials() -> [HostCredential] { [] }
-    }
-
     func testTheLoginIsFoundAndTheSourceStaysClean() {
         let line = "https://alice:s3cr%40t@files.example.com/report.pdf"
         let found = InlineCredentials.find(in: line)
@@ -39,32 +24,20 @@ final class InlineCredentialsTests: XCTestCase {
         XCTAssertEqual(InlineCredentials.findAll(in: raw).map(\.host), ["h.test", "k.test"])
     }
 
-    func testTheUserReplacesButTheExtensionNeverOverwrites() {
-        let store = MemoryStore()
-        store.saved["h.test"] = ("owner", "pw")
-        let fromPage = InlineCredentials.Found(host: "h.test", username: "evil", password: "x", isTLS: true)
-        XCTAssertEqual(InlineCredentials.adopt(fromPage, into: store, policy: .keepExisting),
-                       .keptExisting(host: "h.test"))
-        XCTAssertEqual(store.saved["h.test"]?.0, "owner")
-        XCTAssertEqual(InlineCredentials.adopt(fromPage, into: store, policy: .replace),
-                       .stored(host: "h.test", isTLS: true))
-        XCTAssertEqual(store.saved["h.test"]?.0, "evil")
+    func testOnlyLinesWithALoginAreHandedToTheManager() {
+        let raw = "https://a:1@h.test/x\nhttps://plain.test/y\nmagnet:?xt=urn:btih:abc"
+        XCTAssertEqual(InlineCredentials.linesWithLogins(in: raw), ["https://a:1@h.test/x"])
     }
 
-    func testTheExtensionMayAddALoginWhereNoneExists() {
-        let store = MemoryStore()
-        let found = InlineCredentials.Found(host: "nas.local", username: "me", password: "pw", isTLS: false)
-        XCTAssertEqual(InlineCredentials.adopt(found, into: store, policy: .keepExisting),
-                       .stored(host: "nas.local", isTLS: false))
-        XCTAssertEqual(store.saved["nas.local"]?.1, "pw")
-    }
-
-    func testTheSameLoginIsNotRewritten() {
-        let store = MemoryStore()
-        store.saved["h.test"] = ("a", "b")
-        let found = InlineCredentials.Found(host: "h.test", username: "a", password: "b", isTLS: true)
-        _ = InlineCredentials.adopt(found, into: store, policy: .replace)
-        XCTAssertEqual(store.writes, 0)
+    func testABrowserCapturesLoginIsRebuiltIntoItsLink() throws {
+        let parsed = try XCTUnwrap(DownloadSource.parseWithCredentials("https://u:p%40ss@h.test/f.zip"))
+        let target = try XCTUnwrap(parsed.source.fetchTargetURL)
+        let line = try XCTUnwrap(InlineCredentials.line(for: target, authorization: try XCTUnwrap(parsed.authorization)))
+        let found = InlineCredentials.find(in: line)
+        XCTAssertEqual(found?.username, "u")
+        XCTAssertEqual(found?.password, "p@ss")
+        XCTAssertEqual(found?.host, "h.test")
+        XCTAssertNil(InlineCredentials.line(for: target, authorization: "Bearer x"))
     }
 
     func testDecodeRoundTripsTheCoreHeader() {

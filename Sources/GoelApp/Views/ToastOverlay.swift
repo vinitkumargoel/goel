@@ -34,8 +34,5 @@ struct ToastOverlay: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: queue.current)
-        .onChange(of: queue.current) { _, toast in
-            if let toast { A11yAnnouncer.announce(toast.message) }
-        }
     }
 }

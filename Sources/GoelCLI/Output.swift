@@ -157,10 +157,14 @@ enum Out {
         bytesPerSecond < 1 ? "—" : bytes(bytesPerSecond) + "/s"
     }
 
+    /// Comfortably inside Int64 (≈ 285 billion years); anything longer is noise anyway.
+    static let maxDurationSeconds: Double = 9e18
+
     /// Two most significant units — the shape `GoelFormat.duration` prints in English.
     static func duration(_ seconds: Double?) -> String {
         guard let seconds, seconds.isFinite, seconds >= 0 else { return "—" }
-        var remaining = Int64(seconds.rounded())
+        // Clamped below Int64.max: `Int64(_:)` traps on a Double it can't represent (a bogus ETA).
+        var remaining = Int64(min(seconds.rounded(), maxDurationSeconds))
         var parts: [String] = []
         for (size, suffix) in [(Int64(86_400), "d"), (3_600, "h"), (60, "m"), (1, "s")] where parts.count < 2 {
             let value = remaining / size
@@ -171,8 +175,6 @@ enum Out {
         }
         return parts.joined(separator: " ")
     }
-
-
 
     static func percent(_ fraction: Double) -> String {
         String(format: "%.0f%%", max(0, min(1, fraction)) * 100)

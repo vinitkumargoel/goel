@@ -141,10 +141,15 @@ enum YtDlpResolver {
         }
         let after = Set((try? fm.contentsOfDirectory(atPath: directory)) ?? [])
         let subExtensions = ["vtt", "srt", "ass", "ssa", "lrc"]
-        let count = after.subtracting(before).filter {
+        let added = after.subtracting(before).filter {
             subExtensions.contains(($0 as NSString).pathExtension.lowercased())
-        }.count
-        return count > 0 ? .downloaded(count) : .none
+        }
+        // yt-dlp wrote these straight from the web, past the manager's own quarantine step.
+        for name in added {
+            let file = URL(fileURLWithPath: (directory as NSString).appendingPathComponent(name))
+            Quarantine.mark(file, sourceURL: pageURL, referrer: nil)
+        }
+        return added.isEmpty ? .none : .downloaded(added.count)
     }
 
     private struct ToolRun {

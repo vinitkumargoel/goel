@@ -106,9 +106,10 @@ extension DownloadTask {
 enum A11yAnnouncer {
 
     static func announce(_ message: String) {
-        guard !message.isEmpty else { return }
+        // No application object under XCTest: nothing to announce through.
+        guard !message.isEmpty, let app = NSApp else { return }
         NSAccessibility.post(
-            element: NSApp as Any,
+            element: app,
             notification: .announcementRequested,
             userInfo: [
                 .announcement: message,

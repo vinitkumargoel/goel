@@ -20,6 +20,11 @@ final class AutoShutdownCountdown: ObservableObject {
     private let perform: @MainActor (DrainIntent) -> Void
     private var ticker: Task<Void, Never>?
 
+    /// The countdown must be seen wherever the user is (a banner with Cancel, the window raised);
+    /// `onEnd` retracts that banner however it ended.
+    var onBegin: (@MainActor (DrainIntent) -> Void)?
+    var onEnd: (@MainActor () -> Void)?
+
     init(seconds: Int = 60, autoTick: Bool = true,
          perform: @escaping @MainActor (DrainIntent) -> Void) {
         self.seconds = max(1, seconds)
@@ -33,6 +38,7 @@ final class AutoShutdownCountdown: ObservableObject {
         // A second trigger while counting keeps the first deadline; it must not restart the clock.
         guard phase == .idle else { return }
         phase = .counting(intent, remaining: seconds)
+        onBegin?(intent)
         guard autoTick else { return }
         ticker = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -56,7 +62,9 @@ final class AutoShutdownCountdown: ObservableObject {
     func cancel() {
         ticker?.cancel()
         ticker = nil
+        guard phase != .idle else { return }
         phase = .idle
+        onEnd?()
     }
 
     func performNow() {

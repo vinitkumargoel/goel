@@ -5,7 +5,7 @@ import GoelCore
 /// LAN targets through: the user clicked the link in their own browser, and a NAS on the LAN is
 /// exactly where many of those links point. What stays refused is what a hostile page could use
 /// to reach something the user never could from the browser: link-local (cloud metadata), and
-/// Goel°'s own portal on loopback.
+/// Goel°'s own portal — on loopback or on any of this Mac's own addresses.
 enum BrowserCaptureScreen {
 
     enum Verdict: Equatable {
@@ -13,32 +13,43 @@ enum BrowserCaptureScreen {
         case refused(String)
     }
 
+    /// Returns this Mac's own interface addresses (loopback included), lowercased literals.
+    typealias LocalAddresses = @Sendable () -> Set<String>
+
     /// AWS's IPv6 instance-metadata address sits in fc00::/7, which is otherwise private and allowed.
     private static let metadataLiterals: Set<String> = ["fd00:ec2::254", "169.254.169.254"]
 
     /// Spelling-only, for the native host process that can't resolve names or read settings.
-    static func spellingVerdict(_ url: URL, portalPort: Int?) -> Verdict {
+    static func spellingVerdict(_ url: URL, portalPort: Int?,
+                                localAddresses: Set<String> = []) -> Verdict {
         guard let host = url.host?.lowercased(), !host.isEmpty else { return .refused("no host") }
-        return verdict(forAddress: host, url: url, portalPort: portalPort)
+        return verdict(forAddress: host, url: url, portalPort: portalPort, localAddresses: localAddresses)
     }
 
     /// Screens the spelling and every address the name resolves to (`localtest.me` is loopback
-    /// hidden behind DNS). Skipped for names when a SOCKS proxy resolves them remotely.
+    /// hidden behind DNS). Skipped for names when a SOCKS proxy resolves them remotely. A name that
+    /// doesn't resolve here is let through: it reaches nothing, and the engine fails and retries it
+    /// like any other dead link — refusing it only lost the capture.
     static func verdict(_ url: URL, portalPort: Int?, resolvedByProxy: Bool,
-                        resolve: @escaping NetworkGuard.HostResolver = NetworkGuard.hostResolver) async -> Verdict {
-        let spelled = spellingVerdict(url, portalPort: portalPort)
+                        resolve: @escaping NetworkGuard.HostResolver = NetworkGuard.hostResolver,
+                        localAddresses: @escaping LocalAddresses = { BrowserCaptureScreen.interfaceAddresses() })
+        async -> Verdict {
+        let own = portalPort == nil ? [] : await Task.detached { localAddresses() }.value
+        let spelled = spellingVerdict(url, portalPort: portalPort, localAddresses: own)
         guard spelled == .allowed, let host = url.host?.lowercased(),
-              classify(host) == nil, host != "localhost", !resolvedByProxy else { return spelled }
-        let addresses = await Task.detached { resolve(host) }.value
-        guard let addresses else { return .refused("unresolvable") }
+              NetworkGuard.addressClass(ofLiteral: host) == nil,
+              host != "localhost", !resolvedByProxy else { return spelled }
+        guard let addresses = await Task.detached(operation: { resolve(host) }).value else { return .allowed }
         for address in addresses {
-            let result = verdict(forAddress: address.lowercased(), url: url, portalPort: portalPort)
+            let result = verdict(forAddress: address.lowercased(), url: url, portalPort: portalPort,
+                                 localAddresses: own)
             if result != .allowed { return result }
         }
         return .allowed
     }
 
-    private static func verdict(forAddress host: String, url: URL, portalPort: Int?) -> Verdict {
+    private static func verdict(forAddress host: String, url: URL, portalPort: Int?,
+                                localAddresses: Set<String>) -> Verdict {
         let bare = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         if metadataLiterals.contains(bare) { return .refused("metadata") }
         let loopbackName = bare == "localhost" || bare.hasSuffix(".localhost")
@@ -46,11 +57,18 @@ enum BrowserCaptureScreen {
         case .linkLocal?: return .refused("link-local")
         case .loopback?:
             return hitsPortal(url, portalPort) ? .refused("portal") : .allowed
-        case nil where loopbackName:
+        case nil where loopbackName || isOwnAddress(bare, localAddresses):
             return hitsPortal(url, portalPort) ? .refused("portal") : .allowed
         default:
             return .allowed
         }
+    }
+
+    private static func isOwnAddress(_ literal: String, _ own: Set<String>) -> Bool {
+        guard !own.isEmpty else { return false }
+        // Drop a zone index (`fe80::1%en0`) so the spelling matches what getifaddrs reports.
+        let bare = literal.split(separator: "%", maxSplits: 1).first.map(String.init) ?? literal
+        return own.contains(bare) || own.contains(literal)
     }
 
     private static func hitsPortal(_ url: URL, _ portalPort: Int?) -> Bool {
@@ -62,30 +80,35 @@ enum BrowserCaptureScreen {
 
     enum AddressClass { case loopback, linkLocal }
 
-    /// nil for a public/private address or for a name (not a literal).
+    /// nil for a public/private address or for a name (not a literal). The address is judged by
+    /// what it means (``NetworkGuard/addressClass(ofLiteral:)``), so mapped, NAT64 and 6to4
+    /// spellings of 169.254.x.x or 127.x.x.x are caught too.
     static func classify(_ literal: String) -> AddressClass? {
-        var v4 = in_addr()
-        if inet_pton(AF_INET, literal, &v4) == 1 {
-            return classify(v4: UInt32(bigEndian: v4.s_addr))
-        }
-        var v6 = in6_addr()
-        guard inet_pton(AF_INET6, literal, &v6) == 1 else { return nil }
-        let b = withUnsafeBytes(of: v6) { Array($0) }
-        if b[0..<15].allSatisfy({ $0 == 0 }) && (b[15] == 1 || b[15] == 0) { return .loopback }
-        if b[0] == 0xfe && (b[1] & 0xc0) == 0x80 { return .linkLocal }
-        // ::ffff:a.b.c.d carries an IPv4 address that must be judged as one.
-        if b[0..<10].allSatisfy({ $0 == 0 }) && b[10] == 0xff && b[11] == 0xff {
-            let embedded = UInt32(b[12]) << 24 | UInt32(b[13]) << 16 | UInt32(b[14]) << 8 | UInt32(b[15])
-            return classify(v4: embedded)
-        }
-        return nil
-    }
-
-    private static func classify(v4 address: UInt32) -> AddressClass? {
-        switch address >> 24 {
-        case 127, 0: return .loopback
-        case 169 where (address >> 16) & 0xff == 254: return .linkLocal
+        switch NetworkGuard.addressClass(ofLiteral: literal) {
+        case .loopback?, .unspecified?: return .loopback
+        case .linkLocal?: return .linkLocal
         default: return nil
         }
+    }
+
+    /// Every address on this Mac's interfaces, loopback included. Blocking — call it off the main actor.
+    static func interfaceAddresses() -> Set<String> {
+        var head: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&head) == 0, let first = head else { return [] }
+        defer { freeifaddrs(first) }
+        var out: Set<String> = []
+        var node: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = node {
+            defer { node = current.pointee.ifa_next }
+            guard let addr = current.pointee.ifa_addr else { continue }
+            let family = Int32(addr.pointee.sa_family)
+            guard family == AF_INET || family == AF_INET6 else { continue }
+            let length = socklen_t(family == AF_INET ? MemoryLayout<sockaddr_in>.size : MemoryLayout<sockaddr_in6>.size)
+            var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            guard getnameinfo(addr, length, &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) == 0 else { continue }
+            let literal = String(cString: buffer).lowercased()
+            out.insert(literal.split(separator: "%", maxSplits: 1).first.map(String.init) ?? literal)
+        }
+        return out
     }
 }

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import GoelCore
 
 enum Theme {
     static var accent:      Color { ThemePalette.color(\.accent) }
@@ -229,5 +230,25 @@ enum AppTheme: String, CaseIterable, Identifiable {
         default:
             self = AppTheme.allCases.first { $0.settingsValue == settingsValue } ?? .frostDark
         }
+    }
+}
+
+/// The only settings the `App` struct's scenes read. Kept apart so its `body` re-runs when the
+/// theme or the menu-bar switch changes, not on every published change of the view model.
+@MainActor
+final class AppAppearance: ObservableObject {
+    @Published private(set) var colorScheme: ColorScheme?
+    @Published private(set) var menuBarExtraEnabled: Bool
+
+    init(settings: AppSettings = AppSettings()) {
+        colorScheme = AppTheme(settingsValue: settings.theme).colorScheme
+        menuBarExtraEnabled = settings.menuBarExtraEnabled
+    }
+
+    /// Assigns only on change: `@Published` publishes every write, equal or not.
+    func apply(_ settings: AppSettings) {
+        let scheme = AppTheme(settingsValue: settings.theme).colorScheme
+        if scheme != colorScheme { colorScheme = scheme }
+        if settings.menuBarExtraEnabled != menuBarExtraEnabled { menuBarExtraEnabled = settings.menuBarExtraEnabled }
     }
 }

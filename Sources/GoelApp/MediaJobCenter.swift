@@ -1,4 +1,5 @@
 import Foundation
+import CoreServices
 import GoelCore
 
 @MainActor
@@ -312,6 +313,7 @@ final class MediaJobCenter: ObservableObject {
         switch outcome {
         case .success(let url, let usedStreamCopy):
             jobs[index].state = .finished(url, usedStreamCopy: usedStreamCopy)
+            Self.quarantine(output: url, derivedFrom: jobs[index].input)
             if let total = jobs[index].totalSeconds {
                 jobs[index].processedSeconds = total
             }
@@ -324,6 +326,19 @@ final class MediaJobCenter: ObservableObject {
         }
         onFinish?(jobs[index])
         scheduleAutoDismiss(id)
+    }
+
+    /// A conversion of a downloaded file is still that download: it inherits the input's origin, so
+    /// ffmpeg can't be used to launder a payload past Gatekeeper.
+    nonisolated static func quarantine(output: URL, derivedFrom input: URL) {
+        Task.detached(priority: .utility) {
+            let inherited = (try? input.resourceValues(forKeys: [.quarantinePropertiesKey]))?.quarantineProperties
+            let source = inherited?[kLSQuarantineDataURLKey as String] as? URL
+            let origin = inherited?[kLSQuarantineOriginURLKey as String] as? URL
+            if Quarantine.mark(output, sourceURL: source, referrer: origin) > 0 {
+                GoelLog.app.error("Couldn't quarantine a converted file", .detail(output.lastPathComponent))
+            }
+        }
     }
 
     /// 12s: long enough to notice and click Reveal, short enough that twenty conversions do not stack.

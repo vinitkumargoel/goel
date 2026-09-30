@@ -5,53 +5,51 @@ import GoelCore
 @MainActor
 extension AppViewModel {
 
-    // MARK: - Inline credentials
+    // MARK: - Fetch errors
 
-    /// `https://user:pass@host/…` keeps working even though the parser strips the userinfo:
-    /// the login moves to the Keychain, where the engine picks it up for that host.
-    func adoptInlineCredentials(in rawLines: String, policy: InlineCredentials.Policy,
-                                announce: Bool = true) {
-        for found in InlineCredentials.findAll(in: rawLines) {
-            let outcome = InlineCredentials.adopt(found, into: credentialStore, policy: policy)
-            guard announce else { continue }
-            switch outcome {
-            case .stored(let host, let isTLS):
-                // Basic auth only ever rides over TLS; over plain http it would be sent in the clear.
-                if !isTLS {
-                    toastNow(L10n.t("Saved the login for %@, but Goel° only sends logins over HTTPS", host),
-                             isError: true)
-                }
-            case .keptExisting:
-                break
-            case .failed(let host):
-                toastNow(L10n.t("Couldn’t save the login for %@ to your Keychain", host), isError: true)
-            }
-        }
+    /// Words for a failed guarded fetch: `String(describing:)` showed users a Swift enum dump
+    /// (`transport("…")`, `Error Domain=NSURLErrorDomain Code=-1003 …`).
+    nonisolated static func fetchFailureMessage(_ error: Error) -> String {
+        (error as? NetworkGuard.FetchError)?.description ?? error.localizedDescription
     }
 
     // MARK: - Notifications
 
+    /// Called once the first snapshot is in: a click buffered at cold launch names a task that only
+    /// exists in the list from then on.
     func installNotificationHandlers() {
         let delegate = NotificationDelegate.shared
         delegate.suppressWhileActive = { [weak self] in self?.settings.notifyOnlyWhenInactive ?? false }
-        delegate.onResponse = { [weak self] response in self?.handleNotificationResponse(response) }
+        delegate.setResponseHandler { [weak self] response in self?.handleNotificationResponse(response) }
     }
 
     func handleNotificationResponse(_ response: NotificationService.Response) {
-        NSApp.activate(ignoringOtherApps: true)
         let id: DownloadTask.ID
         switch response {
-        case .reveal(let taskID), .open(let taskID), .show(let taskID): id = taskID
+        case .cancelAutoShutdown:
+            autoShutdownCountdown.cancel()
+            return
+        case .showAutoShutdown:
+            MainWindowPresenter.activate()
+            return
+        case .show(let taskID):
+            // Menu-bar-only: there may be no window to bring forward, so build one.
+            MainWindowPresenter.activate()
+            id = taskID
+        case .reveal(let taskID), .open(let taskID):
+            NSApp.activate(ignoringOtherApps: true)
+            id = taskID
         }
         guard let task = tasks.first(where: { $0.id == id }) else {
-            return toastNow(L10n.t("That download is no longer in your list"))
+            toastNow(L10n.t("That download is no longer in your list"))
+            return
         }
         selectedServer = nil
         selectOnly(id)
         switch response {
         case .reveal: revealInFinder(task)
         case .open: openFile(task)
-        case .show: break
+        case .show, .cancelAutoShutdown, .showAutoShutdown: break
         }
     }
 
@@ -83,19 +81,13 @@ extension AppViewModel {
     /// The running session can't switch stores, so a relaunch is what completes it.
     func moveBrokenDatabaseAside() {
         guard let recovery = databaseRecovery else { return }
-        let fm = FileManager.default
         let stamp = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
         let base = URL(fileURLWithPath: recovery.path)
         let aside = base.deletingLastPathComponent()
             .appendingPathComponent("queue.broken-\(stamp).sqlite")
         do {
-            if fm.fileExists(atPath: base.path) {
-                try fm.moveItem(at: base, to: aside)
-            }
-            for suffix in ["-wal", "-shm", "-journal"] where fm.fileExists(atPath: base.path + suffix) {
-                try fm.moveItem(atPath: base.path + suffix, toPath: aside.path + suffix)
-            }
+            try Self.moveDatabaseFiles(from: base.path, to: aside.path)
         } catch {
             GoelLog.persistence.error("Couldn't move the broken database aside",
                                       .detail(String(describing: error)))
@@ -106,6 +98,26 @@ extension AppViewModel {
         databaseRecovery = nil
         persistenceWarning = L10n.t("The old database was moved aside as “%@”. Quit and reopen Goel° to start fresh.",
                                     aside.lastPathComponent)
+    }
+
+    /// One `rename(2)` per file, journals first and the database last, rolled back on any failure:
+    /// a `-wal` left behind would be replayed into the fresh database next launch. The copies
+    /// hold the whole queue (cookies included), so they are made owner-only.
+    nonisolated static func moveDatabaseFiles(from path: String, to aside: String) throws {
+        let fm = FileManager()
+        var moved: [(from: String, to: String)] = []
+        do {
+            for suffix in ["-wal", "-shm", "-journal", ""] where fm.fileExists(atPath: path + suffix) {
+                guard rename(path + suffix, aside + suffix) == 0 else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+                moved.append((path + suffix, aside + suffix))
+                chmod(aside + suffix, 0o600)
+            }
+        } catch {
+            for step in moved.reversed() { _ = rename(step.to, step.from) }
+            throw error
+        }
     }
 
     // MARK: - Completed downloads whose file is gone

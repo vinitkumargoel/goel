@@ -163,4 +163,12 @@ final class DispatchTests: XCTestCase {
         XCTAssertEqual(Out.duration(nil), "—")
         XCTAssertEqual(Out.rate(0), "—")
     }
+
+    /// `Int64(_:)` traps on a Double it can't hold; a bogus ETA must print, not crash `goel`.
+    func testAHugeDurationIsClampedInsteadOfTrapping() {
+        XCTAssertFalse(Out.duration(1e30).isEmpty)
+        XCTAssertFalse(Out.duration(Double(Int64.max)).isEmpty)
+        XCTAssertEqual(Out.duration(.infinity), "—")
+        XCTAssertEqual(Out.duration(.nan), "—")
+    }
 }

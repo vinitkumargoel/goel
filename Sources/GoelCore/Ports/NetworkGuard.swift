@@ -250,7 +250,7 @@ public enum NetworkGuard {
         addressClass(ofLiteral: host) == .linkLocal
     }
 
-    enum AddressClass: Equatable {
+    public enum AddressClass: Equatable, Sendable {
         case loopback
         case unspecified
         case linkLocal
@@ -260,7 +260,7 @@ public enum NetworkGuard {
     }
 
     /// Judge the address a literal *means*, never its text: `::ffff:7f00:1` is 127.0.0.1.
-    static func addressClass(ofLiteral host: String) -> AddressClass? {
+    public static func addressClass(ofLiteral host: String) -> AddressClass? {
         var text = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         // Drop an IPv6 zone index (`fe80::1%en0`) — `inet_pton` rejects the whole string with it attached.
         if let percent = text.firstIndex(of: "%") { text = String(text[..<percent]) }
