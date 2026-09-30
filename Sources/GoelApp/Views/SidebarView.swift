@@ -18,6 +18,7 @@ struct SidebarView: View {
                     item(L10n.t("Paused"), "pause.circle", .paused)
                     item(L10n.t("Completed"), "checkmark.circle", .completed)
                     item(L10n.t("Seeding"), "arrow.up.circle", .seeding)
+                    item(L10n.t("Failed"), "exclamationmark.triangle", .failed)
                 }
                 group(L10n.t("Type")) {
                     item(L10n.t("Video"), "film", .type(.video))
@@ -47,18 +48,12 @@ struct SidebarView: View {
     private var serversGroup: some View {
         HStack {
             Text(L10n.t("Servers").uppercased())
-                .scaledFont(size: 10.5, weight: .bold)
-                .foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.caption, weight: .bold)
+                .foregroundStyle(.secondary)
                 .accessibilityLabel(L10n.t("Servers"))
                 .accessibilityAddTraits(.isHeader)
             Spacer()
-            Button { vm.presentNewServer() } label: {
-                Image(systemName: "plus").font(.system(size: 10, weight: .bold))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help(L10n.t("Add SFTP server"))
-            .a11yButton(L10n.t("Add SFTP server"))
+            IconButton(symbol: "plus", help: L10n.t("Add SFTP server")) { vm.presentNewServer() }
         }
         .padding(.horizontal, 8)
         .padding(.top, 12)
@@ -66,8 +61,8 @@ struct SidebarView: View {
 
         if vm.servers.isEmpty {
             Text(L10n.t("Add an SFTP server to browse and transfer files."))
-                .scaledFont(size: 11)
-                .foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.meta)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
         } else {
@@ -210,13 +205,13 @@ struct SidebarView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 Text(hostLine)
-                    .scaledFont(size: 10.5, design: .monospaced)
+                    .scaledFont(size: Theme.TextSize.caption, design: .monospaced)
                     .foregroundStyle(secondary)
                     .lineLimit(1).truncationMode(.middle)
                 if let ms = meta?.latencyMS, meta?.reachability == .online {
                     Text("\(ms)ms")
                         .scaledFont(size: 9.5, weight: .medium, monospacedDigit: true)
-                        .foregroundStyle(selected ? Theme.onIndigoSecondary : Color(nsColor: .tertiaryLabelColor))
+                        .foregroundStyle(selected ? Theme.onIndigoSecondary : Color.secondary)
                 }
                 Spacer(minLength: 0)
             }
@@ -242,8 +237,9 @@ struct SidebarView: View {
     @ViewBuilder
     private func group(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
         Text(title.uppercased())
-            .scaledFont(size: 10.5, weight: .bold)
-            .foregroundStyle(.tertiary)
+            .scaledFont(size: Theme.TextSize.caption, weight: .bold)
+            // Headers name the groups, so they carry information: secondary, not tertiary.
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.top, 12)
             .padding(.bottom, 4)
@@ -278,7 +274,7 @@ struct SidebarView: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 7)
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
                     .fill(selected ? Theme.accent : Color.clear)
             )
             .foregroundStyle(selected ? Theme.onAccent : Color.primary)
@@ -299,8 +295,8 @@ private struct MediaJobsSidebarGroup: View {
     var body: some View {
         if center.liveCount > 0 {
             Text(L10n.t("Media").uppercased())
-                .scaledFont(size: 10.5, weight: .bold)
-                .foregroundStyle(.tertiary)
+                .scaledFont(size: Theme.TextSize.caption, weight: .bold)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.top, 12)
                 .padding(.bottom, 4)

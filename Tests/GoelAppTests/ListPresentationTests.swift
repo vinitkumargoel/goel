@@ -99,4 +99,25 @@ final class ListPresentationTests: XCTestCase {
             XCTAssertEqual(descending.count, sample.count, "\(key) dropped rows")
         }
     }
+
+    func testFailedFilterSelectsOnlyFailedDownloads() {
+        let broken = task("broken.iso", status: .failed(.httpStatus(403)), added: 6)
+        let list = sample + [broken]
+        let failed = ListPresentation.visible(
+            tasks: list, filter: .failed, search: "", sortKey: .name, ascending: true)
+        XCTAssertEqual(failed.map(\.name), ["broken.iso"])
+        XCTAssertTrue(ListPresentation.matches(broken, filter: .failed))
+        XCTAssertFalse(ListPresentation.matches(sample[0], filter: .failed))
+    }
+
+    func testFailedFilterHonoursSearchAndCount() {
+        let list = [task("a.iso", status: .failed(.httpStatus(404))),
+                    task("b.iso", status: .failed(.httpStatus(500))),
+                    task("c.iso", status: .paused)]
+        let hits = ListPresentation.visible(
+            tasks: list, filter: .failed, search: "b.", sortKey: .name, ascending: true)
+        XCTAssertEqual(hits.map(\.name), ["b.iso"])
+        XCTAssertEqual(ListPresentation.count(tasks: list, filter: .failed), 2)
+        XCTAssertEqual(ListPresentation.count(tasks: sample, filter: .failed), 0)
+    }
 }

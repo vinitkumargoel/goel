@@ -42,7 +42,7 @@ struct Dropdown<Value: Hashable>: View {
                     .foregroundStyle(.secondary)
                     .a11yDecorative()
             }
-            .font(.system(size: 13))
+            .scaledFont(size: Theme.TextSize.body)
             .padding(.horizontal, 10)
             .frame(height: 26)
             .modifier(WidthOrFill(width: width))
@@ -100,7 +100,7 @@ private struct DropdownRow: View {
                     .foregroundStyle(Theme.accent)
                     .opacity(isSelected ? 1 : 0)
                 Text(title)
-                    .font(.system(size: 12.5))
+                    .scaledFont(size: Theme.TextSize.body)
                 Spacer(minLength: 12)
             }
             .padding(.horizontal, 8)
@@ -184,7 +184,7 @@ private struct ActionMenuRow: View {
                 if let leading = item.leadingSymbol {
                     Image(systemName: leading).font(.system(size: 11)).frame(width: 15)
                 }
-                Text(item.title).font(.system(size: 12.5))
+                Text(item.title).scaledFont(size: Theme.TextSize.body)
                 Spacer(minLength: 14)
                 if let trailing = item.trailingSymbol {
                     Image(systemName: trailing).font(.system(size: 10, weight: .semibold))
@@ -202,7 +202,8 @@ private struct ActionMenuRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.isDestructive
                             ? L10n.t("%@, destructive", item.title) : item.title)
-        .accessibilityAddTraits(.isButton)
+        // A checkmark marks the active choice (Filter menu): say so, not just draw it.
+        .accessibilityAddTraits(item.trailingSymbol == "checkmark" ? [.isButton, .isSelected] : .isButton)
     }
 
     private var hoverFill: Color {
@@ -220,7 +221,7 @@ struct ToolbarMenuLabel: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: systemImage).font(.system(size: 12))
-            Text(title).font(.system(size: 13))
+            Text(title).scaledFont(size: Theme.TextSize.body)
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.secondary)
@@ -257,11 +258,11 @@ struct ConfirmDialogView: View {
 
                 VStack(spacing: 7) {
                     Text(request.title)
-                        .scaledFont(size: 14, weight: .semibold)
+                        .scaledFont(size: Theme.TextSize.title, weight: .semibold)
                         .multilineTextAlignment(.center)
                         .accessibilityAddTraits(.isHeader)
                     Text(request.message)
-                        .scaledFont(size: 12)
+                        .scaledFont(size: Theme.TextSize.body)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)

@@ -125,6 +125,7 @@ extension SidebarFilter {
         case .paused: return L10n.t("Paused")
         case .completed: return L10n.t("Completed")
         case .seeding: return L10n.t("Seeding")
+        case .failed: return L10n.t("Failed")
         case .type(let fileType): return fileType.accessibilityName
         }
     }
@@ -245,5 +246,13 @@ extension View {
                     monospacedDigit: Bool = false) -> some View {
         modifier(ScaledSystemFont(size: size, weight: weight,
                                   design: design, monospacedDigit: monospacedDigit))
+    }
+}
+
+/// Tooltips that name their shortcut, e.g. "Toggle detail panel (⌘I)". The key glyphs read the
+/// same in every language, so only the text half goes through `L10n.t`.
+enum ShortcutHint {
+    static func help(_ text: String, _ keys: String) -> String {
+        "\(text) (\(keys))"
     }
 }
