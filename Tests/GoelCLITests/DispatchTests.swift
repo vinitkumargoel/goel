@@ -147,4 +147,20 @@ final class DispatchTests: XCTestCase {
         XCTAssertEqual(Out.safe("tab\there\nline\u{7F}del\u{9B}csi"), "tabherelinedelcsi")
         XCTAssertEqual(Out.safe("plain — файл名前.iso"), "plain — файл名前.iso")
     }
+
+    /// One formatter for GUI and CLI: the CLI used to print 1024-based "1.4 GB" beside Finder's "1.5 GB".
+    func testSizesAndDurationsMatchTheSharedFormatter() {
+        // Decimal like Finder: 1.5 × 10⁹ bytes is 1.5 GB (1024-based said 1.4).
+        XCTAssertEqual(Out.bytes(1_500_000_000), "1.5 GB")
+        XCTAssertEqual(Out.bytes(999), "999 bytes")
+        XCTAssertEqual(Out.bytes(12_400), "12 KB")
+        XCTAssertEqual(Out.rate(2_000_000), "2.0 MB/s")
+        XCTAssertEqual(Out.duration(5_400), "1h 30m")
+        XCTAssertEqual(Out.duration(45), "45s")
+        XCTAssertEqual(Out.duration(0), "0s")
+        XCTAssertEqual(Out.bytes(nil), "—")
+        XCTAssertEqual(Out.bytes(-1), "—")
+        XCTAssertEqual(Out.duration(nil), "—")
+        XCTAssertEqual(Out.rate(0), "—")
+    }
 }

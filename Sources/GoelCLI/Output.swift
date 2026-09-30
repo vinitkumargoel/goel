@@ -140,27 +140,39 @@ enum Out {
         for row in rows { print("  " + render(row)) }
     }
 
+    /// Decimal units like Finder and GoelCore's `GoelFormat`, so `goel` and the app agree on a
+    /// file's size (1024-based, the CLI said "1.4 GB" where the GUI said "1.5 GB"). A copy rather
+    /// than a call: GoelCLI links nothing, so `goel doctor` runs even when GoelCore can't load.
     static func bytes(_ value: Double?) -> String {
-        guard let value, value >= 0 else { return "—" }
-        let units = ["B", "KB", "MB", "GB", "TB"]
+        guard let value, value.isFinite, value >= 0 else { return "—" }
+        let units = ["bytes", "KB", "MB", "GB", "TB", "PB"]
         var scaled = value, index = 0
-        while scaled >= 1024, index < units.count - 1 { scaled /= 1024; index += 1 }
-        return index == 0 ? "\(Int(scaled)) B"
-                          : String(format: "%.1f %@", scaled, units[index])
+        while scaled >= 1000, index < units.count - 1 { scaled /= 1000; index += 1 }
+        if index == 0 { return Int(scaled) == 1 ? "1 byte" : "\(Int(scaled)) bytes" }
+        // Same precision rule as ByteCountFormatter(.file): whole KB, one decimal above.
+        return index == 1 ? "\(Int(scaled.rounded())) KB" : String(format: "%.1f %@", scaled, units[index])
     }
 
     static func rate(_ bytesPerSecond: Double) -> String {
         bytesPerSecond < 1 ? "—" : bytes(bytesPerSecond) + "/s"
     }
 
+    /// Two most significant units — the shape `GoelFormat.duration` prints in English.
     static func duration(_ seconds: Double?) -> String {
         guard let seconds, seconds.isFinite, seconds >= 0 else { return "—" }
-        let total = Int(seconds)
-        if total < 60 { return "\(total)s" }
-        if total < 3600 { return "\(total / 60)m \(total % 60)s" }
-        if total < 86400 { return "\(total / 3600)h \((total % 3600) / 60)m" }
-        return "\(total / 86400)d \((total % 86400) / 3600)h"
+        var remaining = Int64(seconds.rounded())
+        var parts: [String] = []
+        for (size, suffix) in [(Int64(86_400), "d"), (3_600, "h"), (60, "m"), (1, "s")] where parts.count < 2 {
+            let value = remaining / size
+            if value > 0 || (size == 1 && parts.isEmpty) {
+                parts.append("\(value)\(suffix)")
+                remaining -= value * size
+            }
+        }
+        return parts.joined(separator: " ")
     }
+
+
 
     static func percent(_ fraction: Double) -> String {
         String(format: "%.0f%%", max(0, min(1, fraction)) * 100)
