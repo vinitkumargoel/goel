@@ -6,6 +6,7 @@ struct HistoryView: View {
     @EnvironmentObject private var vm: AppViewModel
     @State private var entries: [HistoryEntry]?
     @State private var search = ""
+    @State private var confirmingClear = false
 
     private var visible: [HistoryEntry] {
         guard let entries else { return [] }
@@ -48,18 +49,19 @@ struct HistoryView: View {
                 Button(L10n.t("Export CSV…")) { exportCSV() }
                     .disabled((entries ?? []).isEmpty)
                 Spacer()
-                Button(L10n.t("Clear History"), role: .destructive) {
-                    vm.requestConfirm(
-                        title: L10n.t("Clear the download history?"),
-                        message: L10n.t("This removes every archived entry. Files on disk are not touched."),
-                        confirmTitle: L10n.t("Clear History"),
-                        destructive: true
-                    ) {
-                        vm.clearHistory()
-                        entries = []
+                // A local dialog: the shared confirm is drawn on RootView, underneath this sheet.
+                Button(L10n.t("Clear History…"), role: .destructive) { confirmingClear = true }
+                    .disabled((entries ?? []).isEmpty)
+                    .confirmationDialog(L10n.t("Clear the download history?"),
+                                        isPresented: $confirmingClear) {
+                        Button(L10n.t("Clear History"), role: .destructive) {
+                            vm.clearHistory()
+                            entries = []
+                        }
+                        Button(L10n.t("Cancel"), role: .cancel) { }
+                    } message: {
+                        Text(L10n.t("This removes every archived entry. Files on disk are not touched."))
                     }
-                }
-                .disabled((entries ?? []).isEmpty)
             }
         }
         .padding(18)

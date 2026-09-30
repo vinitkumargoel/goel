@@ -55,27 +55,29 @@ struct SFTPConnectionEditor: View {
         guard let n = Int(port) else { return false }
         return (1...65535).contains(n)
     }
-    private var canSave: Bool { !host.isEmpty && !username.isEmpty && portIsValid }
+    private var saveBlocker: String? {
+        SFTPConnectionForm.saveBlocker(host: host, username: username, portIsValid: portIsValid)
+    }
+    private var canSave: Bool { saveBlocker == nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(existing == nil ? L10n.t("Add SFTP Server") : L10n.t("Edit SFTP Server"))
-                .font(.system(size: 15, weight: .semibold))
-                .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 12)
+            SheetHeader(systemImage: "server.rack",
+                        title: existing == nil ? L10n.t("Add SFTP Server") : L10n.t("Edit SFTP Server"))
             Divider()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     field(L10n.t("Name"), L10n.t("My Server (optional)"), $name)
                     HStack(spacing: 10) {
-                        field(L10n.t("Host"), "example.com", $host).frame(maxWidth: .infinity)
+                        field(L10n.t("Host"), "example.com", $host, required: true).frame(maxWidth: .infinity)
                         field(L10n.t("Port"), "22", $port).frame(width: 80)
                     }
                     if !portIsValid {
                         Text(L10n.t("Port must be a number between 1 and 65535."))
-                            .font(.system(size: 10)).foregroundStyle(Theme.red)
+                            .scaledFont(size: Theme.TextSize.caption).foregroundStyle(Theme.red)
                     }
-                    field(L10n.t("Username"), L10n.t("user"), $username)
+                    field(L10n.t("Username"), L10n.t("user"), $username, required: true)
                     labeled(L10n.t("Password")) {
                         SecureField(existing == nil ? L10n.t("password") : L10n.t("•••••• (unchanged)"), text: $password)
                             .textFieldStyle(.roundedBorder)
@@ -83,7 +85,7 @@ struct SFTPConnectionEditor: View {
                     privateKeyControls
                     field(L10n.t("Start folder"), ".", $initialPath)
                     Toggle(L10n.t("Also try the SSH agent"), isOn: $useAgent)
-                        .font(.system(size: 12))
+                        .scaledFont(size: Theme.TextSize.body)
 
                     if existing != nil { hostKeyResetControl }
 
@@ -93,16 +95,26 @@ struct SFTPConnectionEditor: View {
             }
 
             Divider()
-            HStack {
-                Button(L10n.t("Test")) { runTest() }
-                    .disabled(!canSave || testing)
-                if testing { ProgressView().controlSize(.small) }
-                Spacer()
-                Button(L10n.t("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(L10n.t("Save")) { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canSave)
+            VStack(alignment: .leading, spacing: 8) {
+                if let saveBlocker {
+                    Text(saveBlocker)
+                        .scaledFont(size: Theme.TextSize.meta)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(L10n.t("Save is unavailable. %@", saveBlocker))
+                }
+                HStack {
+                    Button(L10n.t("Test")) { runTest() }
+                        .disabled(!canSave || testing)
+                        .help(saveBlocker ?? L10n.t("Try to connect with these settings"))
+                    if testing { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Button(L10n.t("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
+                    Button(L10n.t("Save")) { save() }
+                        .keyboardShortcut(.defaultAction)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canSave)
+                        .help(saveBlocker ?? "")
+                }
             }
             .padding(.horizontal, 20).padding(.vertical, 14)
         }
@@ -115,17 +127,22 @@ struct SFTPConnectionEditor: View {
         }
     }
 
-    private func field(_ label: String, _ prompt: String, _ text: Binding<String>) -> some View {
-        labeled(label) {
+    private func field(_ label: String, _ prompt: String, _ text: Binding<String>,
+                       required: Bool = false) -> some View {
+        labeled(label, required: required) {
             TextField(prompt, text: text)
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
         }
     }
 
-    private func labeled<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
+    private func labeled<Content: View>(_ label: String, required: Bool = false,
+                                        @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+            Text(required ? L10n.t("%@ *", label) : label)
+                .scaledFont(size: Theme.TextSize.meta, weight: .semibold)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(required ? L10n.t("%@, required", label) : label)
             content()
         }
     }
@@ -138,7 +155,7 @@ struct SFTPConnectionEditor: View {
                     TextField(L10n.t("None — password or agent only"), text: $privateKeyPath)
                         .textFieldStyle(.roundedBorder)
                         .autocorrectionDisabled()
-                        .font(.system(size: 11, design: .monospaced))
+                        .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                         .help(L10n.t("Path to an SSH private key, e.g. ~/.ssh/id_ed25519"))
                     Button(L10n.t("Choose…")) { chooseKey() }
                     if !privateKeyPath.isEmpty {
@@ -166,7 +183,7 @@ struct SFTPConnectionEditor: View {
                 }
                 if !FileManager.default.isReadableFile(atPath: expandedKeyPath) {
                     Text(L10n.t("Goel can't read that file — check the path and its permissions."))
-                        .font(.system(size: 10)).foregroundStyle(Theme.red)
+                        .scaledFont(size: Theme.TextSize.caption).foregroundStyle(Theme.red)
                 }
             }
         }
@@ -252,13 +269,13 @@ struct SFTPConnectionEditor: View {
                 if let detail {
                     DisclosureGroup(L10n.t("Technical detail")) {
                         Text(detail)
-                            .font(.system(size: 10, design: .monospaced))
+                            .scaledFont(size: Theme.TextSize.caption, design: .monospaced)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .font(.system(size: 10))
+                    .scaledFont(size: Theme.TextSize.caption)
                     .foregroundStyle(.secondary)
                 }
             }

@@ -56,6 +56,9 @@ struct OnboardingView: View {
 
     @State private var helperResult: String?
 
+    /// Inline, not a toast: a toast draws in the main window, underneath this sheet.
+    @State private var extensionFolderMessage: String?
+
     @State private var licenceNoticeVisible = !OnboardingState.licenceNoticeDismissed
 
     var body: some View {
@@ -113,13 +116,11 @@ struct OnboardingView: View {
             HStack(spacing: 8) {
                 progressDots
                 Spacer()
-                if pane == .saveFolder {
-                    Button(L10n.t("Skip")) { finish() }
-                        .keyboardShortcut(.cancelAction)
-                        .accessibilityLabel(L10n.t("Skip setup"))
-                } else {
+                // Esc always means "leave setup", on every step; Back is a plain button.
+                Button(L10n.t("Skip setup")) { finish() }
+                    .keyboardShortcut(.cancelAction)
+                if pane != .saveFolder {
                     Button(L10n.t("Back")) { pane = Pane(rawValue: pane.rawValue - 1) ?? .saveFolder }
-                        .keyboardShortcut(.cancelAction)
                         .accessibilityLabel(L10n.t("Back to the previous step"))
                 }
                 Button(pane == .clipboard ? L10n.t("Start using Goel°") : L10n.t("Continue")) {
@@ -254,7 +255,8 @@ struct OnboardingView: View {
 
             OnboardingRow(symbol: "puzzlepiece.extension",
                           title: L10n.t("1. Load the extension"),
-                          detail: L10n.t("Opens the folder to point your browser's “Load unpacked” at.")) {
+                          detail: extensionFolderMessage
+                              ?? L10n.t("Opens the folder to point your browser's “Load unpacked” at.")) {
                 Button(L10n.t("Show Folder")) { revealExtensionFolder() }
                     .accessibilityLabel(L10n.t("Show the browser extension folder in Finder"))
             }
@@ -275,7 +277,7 @@ struct OnboardingView: View {
 
     private func revealExtensionFolder() {
         guard let folder = BrowserIntegrationService.extensionFolder else {
-            vm.toastNow(L10n.t("The bundled extension is only in the packaged app, not a dev build"))
+            extensionFolderMessage = L10n.t("The bundled extension is only in the packaged app, not a dev build")
             return
         }
         NSWorkspace.shared.activateFileViewerSelecting([folder])
@@ -378,7 +380,7 @@ private struct OnboardingRow<Control: View>: View {
                 Text(title).scaledFont(size: 13)
                 Text(detail)
                     .scaledFont(size: 11)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .a11yGroup(label: title, value: detail)
