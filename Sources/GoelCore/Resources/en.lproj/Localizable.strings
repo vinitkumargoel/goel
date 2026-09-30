@@ -24,6 +24,7 @@
 "%1$@ results, %2$@ selected" = "%1$@ results, %2$@ selected";
 "%1$@ · %2$@" = "%1$@ · %2$@";
 "%1$@ · %2$@ · %3$d ms" = "%1$@ · %2$@ · %3$d ms";
+"%1$@ · avg %2$@" = "%1$@ · avg %2$@";
 "%1$@ — %2$@" = "%1$@ — %2$@";
 "%1$@ — SHA-256:\n%2$@" = "%1$@ — SHA-256:\n%2$@";
 "%1$@, %2$@" = "%1$@, %2$@";
@@ -515,6 +516,7 @@
 "Down" = "Down";
 "Download" = "Download";
 "Download %@" = "Download %@";
+"Download %@ again" = "Download %@ again";
 "Download %d Items" = "Download %d Items";
 "Download Again" = "Download Again";
 "Download Folder to Downloads" = "Download Folder to Downloads";
@@ -665,6 +667,7 @@
 "Find…" = "Find…";
 "Finished" = "Finished";
 "Finished downloads, re-download, CSV export" = "Finished downloads, re-download, CSV export";
+"Finished, file missing" = "Finished, file missing";
 "Finished. Saved %@" = "Finished. Saved %@";
 "Fix the port to save." = "Fix the port to save.";
 "Fixed folder" = "Fixed folder";
@@ -848,6 +851,7 @@
 "Loading information" = "Loading information";
 "Loading statistics" = "Loading statistics";
 "Local, on-disk record of what was downloaded" = "Local, on-disk record of what was downloaded";
+"Locate %@" = "Locate %@";
 "Locate…" = "Locate…";
 "Login" = "Login";
 "Login removed" = "Login removed";
@@ -1011,6 +1015,7 @@
 "Only web (HTTP) downloads can change their link." = "Only web (HTTP) downloads can change their link.";
 "Only when app is inactive" = "Only when app is inactive";
 "Open" = "Open";
+"Open %@" = "Open %@";
 "Open Goel main window" = "Open Goel main window";
 "Open Goel°" = "Open Goel°";
 "Open Guide" = "Open Guide";
@@ -1098,6 +1103,7 @@
 "Pinned" = "Pinned";
 "Pinned key cleared — Goel will ask you to confirm the key on the next connection." = "Pinned key cleared — Goel will ask you to confirm the key on the next connection.";
 "Plain HTTP — use only on a trusted network or behind TLS." = "Plain HTTP — use only on a trusted network or behind TLS.";
+"Play %@ in Goel" = "Play %@ in Goel";
 "Play in Goel°" = "Play in Goel°";
 "Play sound" = "Play sound";
 "Playlist" = "Playlist";
@@ -1115,6 +1121,7 @@
 "Press ⌘K for everything" = "Press ⌘K for everything";
 "Press ⌘↩ to continue." = "Press ⌘↩ to continue.";
 "Prevent sleep during active downloads" = "Prevent sleep during active downloads";
+"Preview of %@" = "Preview of %@";
 "Priority" = "Priority";
 "Priority for %@" = "Priority for %@";
 "Private key" = "Private key";
@@ -1250,6 +1257,7 @@
 "Retry transfer of %@" = "Retry transfer of %@";
 "Retrying “%1$@” at %2$@" = "Retrying “%1$@” at %2$@";
 "Reuse cookies for protected downloads." = "Reuse cookies for protected downloads.";
+"Reveal" = "Reveal";
 "Reveal in Finder" = "Reveal in Finder";
 "Reveal “%@” in Finder" = "Reveal “%@” in Finder";
 "Revealed in Finder" = "Revealed in Finder";
@@ -1493,6 +1501,7 @@
 "The file changed on the server. Retry starts the download from the beginning." = "The file changed on the server. Retry starts the download from the beginning.";
 "The file doesn’t match its published checksum — it may be damaged. Retry to download it again." = "The file doesn’t match its published checksum — it may be damaged. Retry to download it again.";
 "The file is no longer at this address. Check the link on the page you got it from." = "The file is no longer at this address. Check the link on the page you got it from.";
+"The file is no longer where it was saved." = "The file is no longer where it was saved.";
 "The files couldn’t be moved to the Trash." = "The files couldn’t be moved to the Trash.";
 "The first delay after the limit is hit; it doubles from there." = "The first delay after the limit is hit; it doubles from there.";
 "The folder and everything inside it will be permanently removed from the server." = "The folder and everything inside it will be permanently removed from the server.";
@@ -1752,6 +1761,7 @@
 "ffmpeg already uses every core for one job, so running more at the same time makes each one slower without finishing the batch sooner." = "ffmpeg already uses every core for one job, so running more at the same time makes each one slower without finishing the batch sooner.";
 "ffmpeg hasn’t exited after %@ · the file may be on a stalled disk" = "ffmpeg hasn’t exited after %@ · the file may be on a stalled disk";
 "ffmpeg path" = "ffmpeg path";
+"finished %@" = "finished %@";
 "gigabytes" = "gigabytes";
 "goeldownloader://add?url=… opens and queues the link (packaged app)." = "goeldownloader://add?url=… opens and queues the link (packaged app).";
 "idle" = "idle";
