@@ -105,7 +105,7 @@ struct RSSPane: View {
             SectionHeader(L10n.t("Feeds"))
             if vm.settings.rssFeeds.isEmpty {
                 Text(L10n.t("No feeds yet — add one below."))
-                    .font(.system(size: 12))
+                    .scaledFont(size: Theme.TextSize.body)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 6)
             }
@@ -115,8 +115,15 @@ struct RSSPane: View {
                     HStack(spacing: 10) {
                         SettingSwitch(isOn: feedEnabledBinding(feed.id))
                         Button {
-                            vm.update { $0.rssFeeds.removeAll { $0.id == feed.id } }
-                            vm.toastNow(L10n.t("Feed removed"))
+                            vm.settingsConfirm(
+                                title: L10n.t("Remove the feed %@?", feed.url),
+                                message: L10n.t("Goel° stops checking it. Downloads it already queued are not touched."),
+                                confirmTitle: L10n.t("Remove"),
+                                destructive: true
+                            ) {
+                                vm.update { $0.rssFeeds.removeAll { $0.id == feed.id } }
+                                vm.toastNow(L10n.t("Feed removed"))
+                            }
                         } label: {
                             Image(systemName: "trash")
                         }
@@ -557,7 +564,7 @@ struct CredentialsSection: View {
         SectionHeader(L10n.t("Site logins"))
         Text(L10n.t("Stored in your Keychain. Sent as HTTP Basic auth when a download matches the host."))
             .scaledFont(size: 11.5)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .padding(.bottom, 4)
 
         ForEach(entries) { entry in

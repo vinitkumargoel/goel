@@ -33,12 +33,20 @@ struct SetRow<Control: View>: View {
     let name: String
     let desc: String
     @ViewBuilder let control: Control
+    @Environment(\.settingsSearchQuery) private var searchQuery
+
+    private var isSearchHit: Bool {
+        !name.isEmpty && SettingsSearch.matches(name, query: searchQuery)
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).scaledFont(size: 13)
                 if !desc.isEmpty {
-                    Text(desc).scaledFont(size: 11).foregroundStyle(.tertiary).lineLimit(2)
+                    // Unclamped: a description is the only explanation a setting gets.
+                    Text(desc).scaledFont(size: 11).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -47,6 +55,9 @@ struct SetRow<Control: View>: View {
         }
         .environment(\.settingRowName, name)
         .padding(.vertical, 10)
+        .padding(.horizontal, isSearchHit ? Theme.Space.s : 0)
+        .background(isSearchHit ? Theme.accent.opacity(0.12) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: Theme.Radius.control))
         Divider()
     }
 }
