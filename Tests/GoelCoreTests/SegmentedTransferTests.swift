@@ -142,6 +142,11 @@ final class SegmentedTransferTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: continuePlan.destination), payload, "continue must produce the full file")
         XCTAssertEqual(continueOutcome.bytesWritten, Int64(payload.count))
 
+        // The server now serves v2: a probe of v2 against v1 ranges would be a splice, which segments reject.
+        StubURLProtocol.set(.init(
+            data: payload, supportsRanges: true, sendContentLength: true,
+            etag: "\"v2\"", chunkSize: 64 * 1024, chunkDelayMicros: 0
+        ))
         StubURLProtocol.resetSeenUserAgents()
         let restartPlan = plan(name: "resume-restart.bin", totalBytes: Int64(payload.count),
                                acceptsRanges: true, segmentCount: 4, etag: "\"v2\"", existingResume: cursorData)

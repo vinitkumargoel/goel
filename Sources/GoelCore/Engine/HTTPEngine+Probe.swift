@@ -14,9 +14,13 @@ extension HTTPEngine {
     }
 
     public func resolveMetadata(for url: URL, currentName: String)
-        async -> (name: String, totalBytes: Int64?, reachable: Bool, checksum: Checksum?) {
-        guard let result = try? await probe(url) else {
-            return (currentName, nil, false, nil)
+        async -> (name: String, totalBytes: Int64?, reachable: Bool, checksum: Checksum?, failureNote: String?) {
+        let result: ProbeResult
+        do {
+            result = try await probe(url)
+        } catch {
+            // A 403 or a TLS failure is not "unreachable": the add sheet has to be able to say which.
+            return (currentName, nil, false, nil, Self.probeFailureNote(error))
         }
         let refined = Self.refinedName(current: currentName,
                                        suggestedName: result.suggestedName,
@@ -27,7 +31,32 @@ extension HTTPEngine {
         } else {
             checksum = await sidecarChecksum(for: url)
         }
-        return (refined ?? currentName, result.totalBytes, true, checksum)
+        return (refined ?? currentName, result.totalBytes, true, checksum, nil)
+    }
+
+    static func probeFailureNote(_ error: Error) -> String {
+        if let de = error as? DownloadError {
+            if case .httpStatus(let code) = de {
+                switch code {
+                case 401, 407: return "The server requires sign-in (HTTP \(code))"
+                case 403: return "The server refused access (HTTP 403)"
+                case 404, 410: return "The file was not found on the server (HTTP \(code))"
+                default: return de.message
+                }
+            }
+            return de.message
+        }
+        if let ue = error as? URLError {
+            switch ue.code {
+            case .serverCertificateUntrusted, .serverCertificateHasBadDate,
+                 .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot,
+                 .secureConnectionFailed, .clientCertificateRejected:
+                return "The server's security certificate couldn't be verified: \(ue.localizedDescription)"
+            default:
+                return ue.localizedDescription
+            }
+        }
+        return (error as NSError).localizedDescription
     }
 
     /// Plain path URLs only: appending `.sha256` to a signed or query-bearing URL would corrupt the token.

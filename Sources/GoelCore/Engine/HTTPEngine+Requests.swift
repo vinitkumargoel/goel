@@ -13,7 +13,8 @@ extension HTTPEngine {
         // sizes, segment ranges and the completeness check all go wrong. Before the
         // extraHeaders loop, so a task that really wants compression can still say so.
         req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-        for (name, value) in extraHeaders {
+        for (name, value) in extraHeaders
+            where SegmentedTransfer.isSafeHeader(name: name, value: value) {
             req.setValue(value, forHTTPHeaderField: name)
         }
         if url.scheme?.lowercased() == "https",

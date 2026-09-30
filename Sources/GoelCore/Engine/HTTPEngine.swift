@@ -25,10 +25,13 @@ actor HTTPEngine: HTTPConfigurable {
 
     var tasks: [UUID: DownloadTask] = [:]
     private var jobs: [UUID: Task<Void, Never>] = [:]
+    /// Paused jobs still unwinding: a resume must wait them out, or two writers share one file.
+    private var unwinding: [UUID: Task<Void, Never>] = [:]
 
     private var streamedResume: [UUID: Data] = [:]
 
-    static let flushSize = 64 * 1024
+    /// 64 KB meant ~1,600 writes plus ledger hops per second at 100 MB/s.
+    static let flushSize = 512 * 1024
 
     /// `URLSession` defaults to **6** on macOS — below High's 16-way fan-out, so extra connections silently queue.
     static let maxConnectionsPerHost = 16
@@ -99,6 +102,7 @@ actor HTTPEngine: HTTPConfigurable {
         guard let job = jobs[id] else { return }
         job.cancel()
         jobs[id] = nil
+        unwinding[id] = job
         // The cursor is ~1s stale, which is safe: resume re-validates ETag / Last-Modified before reusing a range.
         if let data = streamedResume[id] {
             tasks[id]?.resumeData = data
@@ -112,8 +116,46 @@ actor HTTPEngine: HTTPConfigurable {
 
     func resume(_ id: DownloadTask.ID) async {
         guard tasks[id] != nil, jobs[id] == nil else { return }
+        // Keyed lookup after the await: a concurrent resume may have started the job while we waited.
+        if let previous = unwinding[id] { await Self.awaitUnwind(previous) }
+        unwinding[id] = nil
+        guard tasks[id] != nil, jobs[id] == nil else { return }
         emit(id, .statusChanged(.downloading))
         jobs[id] = Task { await self.run(id) }
+    }
+
+    /// Bounded: an unwind wedged in a transport must delay a resume, never swallow it.
+    static func awaitUnwind(_ job: Task<Void, Never>, timeout: TimeInterval = 10) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await job.value }
+            group.addTask { try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)) }
+            await group.next()
+            group.cancelAll()
+        }
+    }
+
+    /// The manager's copy is authoritative for user edits (name, limits, headers, cookies); the engine keeps
+    /// only what it owns live — status, and a streamed cursor newer than the one the manager last persisted.
+    func refresh(_ task: DownloadTask) async {
+        guard let current = tasks[task.id] else { return }
+        var fresh = task
+        fresh.status = current.status
+        // A manager copy with no cursor AND no bytes is a deliberate restart; anything else may just lag the stream.
+        if fresh.resumeData == nil && fresh.bytesDownloaded == 0 {
+            streamedResume[task.id] = nil
+        } else if let streamed = streamedResume[task.id] {
+            fresh.resumeData = streamed
+        }
+        // A rename while paused moves the final path; the in-progress bytes live in the partial beside it.
+        if jobs[task.id] == nil, current.savePath != fresh.savePath, fresh.isSavePathContained {
+            let oldPart = PartialFile.path(for: current.savePath)
+            let newPart = PartialFile.path(for: fresh.savePath)
+            let fm = FileManager.default
+            if fm.fileExists(atPath: oldPart), !fm.fileExists(atPath: newPart) {
+                try? fm.moveItem(atPath: oldPart, toPath: newPart)
+            }
+        }
+        tasks[task.id] = fresh
     }
 
     func remove(_ id: DownloadTask.ID, deleteData: Bool) async {
@@ -123,10 +165,12 @@ actor HTTPEngine: HTTPConfigurable {
         jobs[id] = nil
         // Clear the map BEFORE the suspension below, or a concurrent resume() slots a fresh job into a dying task.
         tasks[id] = nil
+        let paused = unwinding.removeValue(forKey: id)
         // Wait for the unwind before deleting, so a segment writer can't flush bytes to a path we just unlinked.
         await job?.value
+        await paused?.value
         if deleteData, let task, task.isSavePathContained {
-            RemoteTransferPrep.removeSavedFile(hub: hub, id: id, task: task)
+            Self.removeDownloadedData(hub: hub, id: id, task: task)
         }
         hub.finishAll(id)
         streamedResume[id] = nil
@@ -219,7 +263,7 @@ actor HTTPEngine: HTTPConfigurable {
         let currentName = PathSafety.sanitizedName(base, fallback: url.host ?? "download")
         let r = await resolveMetadata(for: url, currentName: currentName)
         return EngineMetadata(name: r.name, totalBytes: r.totalBytes, reachable: r.reachable,
-                              suggestedChecksum: r.checksum)
+                              suggestedChecksum: r.checksum, failureNote: r.failureNote)
     }
 
     func setFilePriority(_ priority: FilePriority, fileID: Int, task id: DownloadTask.ID) async {
@@ -278,8 +322,9 @@ actor HTTPEngine: HTTPConfigurable {
                let better = Self.refinedName(current: task.name,
                                              suggestedName: probe.suggestedName,
                                              contentType: probe.contentType) {
-                let unique = DownloadManager.resolveName(better, in: task.saveDirectory,
-                                                         policy: fileConflictPolicy)
+                let unique = nameAvoidingActivePartials(
+                    DownloadManager.resolveName(better, in: task.saveDirectory, policy: fileConflictPolicy),
+                    for: id, in: task.saveDirectory)
                 if unique != task.name {
                     tasks[id]?.name = unique
                     emit(id, .nameResolved(unique))
@@ -295,6 +340,8 @@ actor HTTPEngine: HTTPConfigurable {
                 return
             }
             let fileURL = URL(fileURLWithPath: resolved.savePath)
+            let partURL = PartialFile.url(for: fileURL)
+            Self.adoptLegacyPartial(final: fileURL, part: partURL, hasResume: resolved.resumeData != nil)
 
             if let total = probe.totalBytes {
                 tasks[id]?.totalBytes = total
@@ -360,7 +407,7 @@ actor HTTPEngine: HTTPConfigurable {
 
             var plan = TransferPlan(
                 url: url,
-                destination: fileURL,
+                destination: partURL,
                 totalBytes: probe.totalBytes,
                 acceptsRanges: probe.acceptsRanges,
                 etag: probe.etag,
@@ -412,9 +459,11 @@ actor HTTPEngine: HTTPConfigurable {
                 tasks[id]?.downloadSpeed = 0
                 tasks[id]?.status = .verifying
                 emit(id, .statusChanged(.verifying))
-                let matched = try await ChecksumVerifier.verify(fileAt: fileURL, expected: expected)
+                let matched = try await ChecksumVerifier.verify(fileAt: partURL, expected: expected)
                 guard matched else { throw DownloadError.checksumMismatch }
             }
+            // Only a verified file may take the final name; until here any existing copy there is untouched.
+            try Self.finalizePartial(partURL, to: fileURL)
 
             // Streamed ticks are throttled, so force a final 100% emit here or the UI stops short.
             tasks[id]?.bytesDownloaded = outcome.bytesWritten
@@ -435,6 +484,14 @@ actor HTTPEngine: HTTPConfigurable {
             let de: DownloadError
             if let ue = error as? URLError, ue.code == .cancelled {
                 de = .network("Connection reset")
+            } else if let full = SegmentedTransfer.diskFullError(error) {
+                // A full disk is not a network fault: auto-retry against it just fails again.
+                if case .diskFull(0, 0) = full, let t = tasks[id] {
+                    de = SegmentedTransfer.diskFull(at: URL(fileURLWithPath: t.savePath),
+                                                    needed: (t.totalBytes ?? 0) - t.bytesDownloaded)
+                } else {
+                    de = full
+                }
             } else {
                 de = DownloadError(mapping: error)
             }
@@ -472,7 +529,7 @@ actor HTTPEngine: HTTPConfigurable {
             uploadSpeed: 0,
             connectionCount: update.connectionCount
         ))
-        emit(id, .fileProgress(fileID: 0, bytesCompleted: update.bytesDownloaded))
+        // No per-tick `.fileProgress`: a single-file download's one file IS `.progress`; the final emit syncs it.
         if let data = update.resumeData {
             tasks[id]?.resumeData = data
             streamedResume[id] = data

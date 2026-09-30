@@ -220,8 +220,10 @@ final class CoreDataPathsRemediationTests: XCTestCase {
             }
         }
         await engine.add(task)
-        try await poll(timeout: 15) { bytes.get() == Int64(payload.count) }
-            describe: { "\(bytes.get())/\(payload.count) bytes reported" }
+        // The final name is taken by an atomic rename AFTER the last streamed tick, so wait for the file too.
+        try await poll(timeout: 15) {
+            bytes.get() == Int64(payload.count) && (try? Data(contentsOf: target)) == payload
+        } describe: { "\(bytes.get())/\(payload.count) bytes reported" }
         consumer.cancel()
 
         XCTAssertEqual(try Data(contentsOf: target), payload,
