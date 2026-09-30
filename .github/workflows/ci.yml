@@ -138,7 +138,7 @@ jobs:
 
       # Safari has no downloads API, so its capture rests entirely on these click rules.
       - name: Browser extension tests
-        run: node --test Tests/BrowserExtension
+        run: node --test Tests/BrowserExtension/*.test.mjs
 
       # A language is offered in Settings only once it is (almost) fully translated:
       # "Deutsch" at 1% coverage gave German users an English UI with a German label.

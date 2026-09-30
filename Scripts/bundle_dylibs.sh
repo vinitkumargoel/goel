@@ -123,8 +123,9 @@ delete_stale_rpaths() {
     esac
     under_vendor_prefix "$rp" && stale=0
     [ "$stale" = 0 ] || continue
-    install_name_tool -delete_rpath "$rp" "$file" 2>/dev/null \
-      && echo "    - $rp ($(basename "$file"))" || true
+    if install_name_tool -delete_rpath "$rp" "$file" 2>/dev/null; then
+      echo "    - $rp ($(basename "$file"))"
+    fi
   done
 }
 delete_stale_rpaths "$EXE"
