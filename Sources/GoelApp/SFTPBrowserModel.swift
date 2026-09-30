@@ -200,11 +200,13 @@ extension SFTPTransfer {
         }
     }
 
-    var cancelNoun: String {
+    /// One full sentence per direction: "Cancel this %@?" forced a noun into a frame that
+    /// can't agree with it in gendered languages.
+    var cancelQuestion: String {
         switch direction {
-        case .upload:     return "upload"
-        case .download:   return "download"
-        case .remoteCopy: return "copy"
+        case .upload:     return L10n.t("Cancel this upload?")
+        case .download:   return L10n.t("Cancel this download?")
+        case .remoteCopy: return L10n.t("Cancel this copy?")
         }
     }
 

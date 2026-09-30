@@ -5,6 +5,7 @@ import GoelCore
 
 struct DownloadListView: View {
     @EnvironmentObject private var vm: AppViewModel
+    @EnvironmentObject private var telemetry: TelemetryStore
 
     @State private var quickLookItem: URL?
 
@@ -30,7 +31,7 @@ struct DownloadListView: View {
                                 task: task,
                                 displayIndex: index + 1,
                                 isSelected: isSelected,
-                                speed: vm.displaySpeed(for: task),
+                                speed: telemetry.displaySpeed(for: task),
                                 selectionSummary: isSelected ? selectionSummary : nil,
                                 context: context,
                                 vm: vm
@@ -66,6 +67,8 @@ struct DownloadListView: View {
         // this view mounts after the window's first-appearance focus pass has already run.
         .task { listFocused = true }
         .onKeyPress { press in handleKey(press) }
+        // Delete removes from the list (undoable); ⌘⌫ in the menu is the one that trashes files.
+        .onDeleteCommand { vm.removeSelected(deleteData: false) }
         .accessibilityLabel(L10n.t("Download queue"))
         .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, shift with an arrow to extend the selection, command A to select all, space to preview, return to open."))
     }
@@ -169,7 +172,7 @@ struct DownloadRow: View, Equatable {
     let task: DownloadTask
     let displayIndex: Int
     let isSelected: Bool
-    let speed: AppViewModel.SpeedSample
+    let speed: SpeedSample
     /// Non-nil only for a selected row; `count > 1` means the context menu acts on the selection.
     let selectionSummary: SelectionSummary?
     let context: Context
@@ -312,7 +315,7 @@ struct DownloadRow: View, Equatable {
 
     private func primaryStateAction() {
         switch task.status {
-        case .completed: vm.revealInFinder(task)
+        case .completed: task.isFileMissing ? vm.locateMissingFile(task) : vm.revealInFinder(task)
         case .failed: vm.retry(task.id)
         case .paused, .queued: vm.resume(task.id)
         default: vm.pause(task.id)
@@ -385,7 +388,19 @@ struct DownloadRow: View, Equatable {
 
     @ViewBuilder
     private var singleRowMenu: some View {
+        if task.isFileMissing {
+            Button(L10n.t("Locate…")) { vm.locateMissingFile(task) }
+            Button(L10n.t("Download Again")) { vm.downloadAgain(task) }
+            Button(L10n.t("Remove from list"), role: .destructive) { vm.remove(task.id, deleteData: false) }
+        } else {
+            fullRowMenu
+        }
+    }
+
+    @ViewBuilder
+    private var fullRowMenu: some View {
         if task.status == .paused || task.status == .queued {
+
             Button(L10n.t("Resume")) { vm.resume(task.id) }
         } else if task.status.isActive {
             Button(L10n.t("Pause")) { vm.pause(task.id) }

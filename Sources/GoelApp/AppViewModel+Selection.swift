@@ -104,6 +104,21 @@ extension AppViewModel {
         }
     }
 
+    /// ⌘⌫ from the menu: the same confirmation the context menu shows, never a silent delete.
+    func confirmMoveSelectionToTrash() {
+        let targets = selectedTasks
+        guard let first = targets.first else { return }
+        let single = targets.count == 1
+        requestConfirm(
+            title: single ? L10n.t("Move “%@” to the Trash?", first.name)
+                          : L10n.t("Move the files of %d downloads to the Trash?", targets.count),
+            message: single ? L10n.t("It is removed from the list. You can restore the file from the Trash.")
+                            : L10n.t("They are removed from the list. You can restore the files from the Trash."),
+            confirmTitle: L10n.t("Move to Trash"),
+            destructive: true
+        ) { [weak self] in self?.removeSelected(deleteData: true) }
+    }
+
     func retrySelected() {
         for task in selectedTasks {
             if case .failed = task.status { retry(task.id) }

@@ -6,42 +6,50 @@ import GoelCore
 @MainActor
 final class AddInputParsingTests: XCTestCase {
 
+    /// The add path now parses through the shared `InboundAdd.parseSources`, the same one the
+    /// daemon and portal use; these compare what it would queue.
+    private func expanded(_ raw: String) -> [String] {
+        InboundAdd.parseSources(from: raw).map(\.locator)
+    }
+
     func testEachLineBecomesItsOwnEntry() {
         XCTAssertEqual(
-            AppViewModel.expandedLines("https://e.test/a.zip\nhttps://e.test/b.zip"),
+            expanded("https://e.test/a.zip\nhttps://e.test/b.zip"),
             ["https://e.test/a.zip", "https://e.test/b.zip"])
     }
 
     func testBlankLinesAndSurroundingWhitespaceAreDiscarded() {
         XCTAssertEqual(
-            AppViewModel.expandedLines("\n  https://e.test/a.zip  \n\n\t\n"),
+            expanded("\n  https://e.test/a.zip  \n\n\t\n"),
             ["https://e.test/a.zip"])
-        XCTAssertEqual(AppViewModel.expandedLines(""), [])
-        XCTAssertEqual(AppViewModel.expandedLines("   \n\t\n  "), [])
+        XCTAssertEqual(expanded(""), [])
+        XCTAssertEqual(expanded("   \n\t\n  "), [])
     }
 
     func testOneLineCanFanOutIntoMany() {
         XCTAssertEqual(
-            AppViewModel.expandedLines("https://e.test/f[1-3].zip"),
+            expanded("https://e.test/f[1-3].zip"),
             ["https://e.test/f1.zip", "https://e.test/f2.zip", "https://e.test/f3.zip"])
     }
 
     func testFanOutAppliesPerLineAndKeepsTheOrderTheUserTyped() {
         XCTAssertEqual(
-            AppViewModel.expandedLines("https://e.test/a[1-2].zip\nhttps://e.test/b.zip"),
+            expanded("https://e.test/a[1-2].zip\nhttps://e.test/b.zip"),
             ["https://e.test/a1.zip", "https://e.test/a2.zip", "https://e.test/b.zip"])
     }
 
     /// A pasted `[1-999999]` must not materialise a million rows before anything can stop it.
     func testAnOverCapRangeIsLeftAloneRatherThanExpanded() {
         let hostile = "https://e.test/f[1-999999].zip"
-        XCTAssertEqual(AppViewModel.expandedLines(hostile), [hostile])
+        // One entry (the literal, percent-encoded by the URL parser), never a million.
+        XCTAssertEqual(expanded(hostile).count, 1)
+        XCTAssertTrue(expanded(hostile)[0].contains("999999"))
     }
 
     func testAMagnetIsNeverTreatedAsAPattern() {
         // Trackers routinely carry [] in query values; expanding them would corrupt the magnet.
         let magnet = "magnet:?xt=urn:btih:ABCDEF0123456789&tr=udp%3A%2F%2Ft.test%3A80%2F[a,b]"
-        XCTAssertEqual(AppViewModel.expandedLines(magnet), [magnet])
+        XCTAssertEqual(expanded(magnet), [magnet])
     }
 
     func testMetalinkIsRecognisedByExtensionRegardlessOfCase() {

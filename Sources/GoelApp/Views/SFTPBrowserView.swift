@@ -5,6 +5,8 @@ import GoelCore
 
 struct SFTPBrowserView: View {
     @EnvironmentObject private var vm: AppViewModel
+    /// Observed so this server's transfer list redraws; read through `vm.sftpTransfers(for:)`.
+    @EnvironmentObject private var sftpStore: SFTPTransferStore
     @StateObject private var model: SFTPBrowserModel
 
     private let connection: SFTPConnection

@@ -42,7 +42,11 @@ extension DownloadTask {
         }
     }
 
+    /// Finished, but the file is no longer where the row says (moved, deleted, disk gone).
+    var isFileMissing: Bool { status == .completed && fileMissing == true }
+
     var statusColor: Color {
+        if isFileMissing { return Theme.orange }
         switch status {
         case .downloading: return Theme.accent
         case .verifying: return Theme.orange
@@ -84,7 +88,8 @@ extension DownloadTask {
             }
             return L10n.t("Seeding · ratio %.2f", shareRatio)
         case .completed:
-            return L10n.t("Completed")
+            return isFileMissing ? L10n.t("File missing") : L10n.t("Completed")
+
         case .failed(let error):
             return error.message
         }

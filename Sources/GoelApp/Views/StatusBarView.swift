@@ -3,13 +3,15 @@ import GoelCore
 
 struct StatusBarView: View {
     @EnvironmentObject private var vm: AppViewModel
+    @EnvironmentObject private var telemetry: TelemetryStore
+    @EnvironmentObject private var sftpStore: SFTPTransferStore
     @State private var showTransfers = false
 
     var body: some View {
         HStack(spacing: 14) {
             snail
-            stat(symbol: "arrow.down", speed: vm.displayedCombinedSpeed.down, color: Theme.green)
-            stat(symbol: "arrow.up", speed: vm.displayedCombinedSpeed.up, color: Theme.teal)
+            stat(symbol: "arrow.down", speed: telemetry.displayedCombinedSpeed.down, color: Theme.green)
+            stat(symbol: "arrow.up", speed: telemetry.displayedCombinedSpeed.up, color: Theme.teal)
             if !activeTransfers.isEmpty { transfersIndicator }
             Spacer()
             Text(L10n.t("Profile")).scaledFont(size: 11).foregroundStyle(.tertiary)

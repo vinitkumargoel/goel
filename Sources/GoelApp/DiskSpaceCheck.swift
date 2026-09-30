@@ -16,6 +16,37 @@ enum DiskSpaceCheck {
         return Verdict(needed: needed, available: available)
     }
 
+    /// Where a download added with "Automatic" will land, for the free-space preview. Mirrors
+    /// `DownloadManager.defaultDirectory(for:)`, which GoelCore keeps private; a change to the
+    /// folder rules there must be repeated here.
+    static func automaticFolder(for source: DownloadSource, suggestedName: String,
+                                settings: AppSettings) -> String {
+        let base = settings.defaultSaveDirectory
+        switch settings.defaultFolderRule {
+        case "byType", "automatic":
+            return (base as NSString).appendingPathComponent(categoryFolder(kind: source.kind,
+                                                                            name: suggestedName))
+        case "bySource":
+            return (base as NSString).appendingPathComponent(source.kind == .torrent ? "Torrents"
+                                                                                      : "HTTP Downloads")
+        default:
+            return base
+        }
+    }
+
+    static func categoryFolder(kind: DownloadKind, name: String) -> String {
+        if kind == .torrent { return "Torrents" }
+        let lower = name.lowercased()
+        func ext(_ list: [String]) -> Bool { list.contains { lower.hasSuffix(".\($0)") } }
+        if ext(["mkv", "mp4", "avi", "mov", "webm", "m4v", "flv"]) { return "Video" }
+        if ext(["mp3", "flac", "wav", "aac", "m4a", "ogg", "opus"]) { return "Audio" }
+        if ext(["jpg", "jpeg", "png", "gif", "webp", "heic", "svg"]) { return "Images" }
+        if ext(["iso", "dmg", "pkg", "app", "exe", "deb", "msi", "xip"]) { return "Software" }
+        if ext(["zip", "gz", "tar", "7z", "rar", "bz2", "xz"]) { return "Archives" }
+        if ext(["pdf", "doc", "docx", "txt", "epub", "csv", "xlsx"]) { return "Documents" }
+        return "Other"
+    }
+
     static func message(for verdict: Verdict) -> String {
         L10n.t("Needs %1$@ · %2$@ free", verdict.needed.byteString, verdict.available.byteString)
     }

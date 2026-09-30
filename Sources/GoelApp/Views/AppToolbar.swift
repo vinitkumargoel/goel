@@ -17,7 +17,7 @@ struct AppToolbar: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .keyboardShortcut("n", modifiers: .command)
+            // ⌘N lives in File ▸ Add Download…; binding it here too made the shortcut ambiguous.
 
             Divider().frame(height: 20)
 

@@ -45,4 +45,19 @@ final class DiskSpaceCheckTests: XCTestCase {
             .appendingPathComponent("goel-missing-\(UUID().uuidString)/deeper")
         XCTAssertNotNil(DiskSpaceCheck.availableCapacity(forFolder: missing))
     }
+
+    func testAutomaticResolvesToTheSubfolderTheDownloadWillUse() {
+        var settings = AppSettings()
+        settings.defaultSaveDirectory = "/Volumes/Data/Downloads"
+        settings.defaultFolderRule = "automatic"
+        let video = DownloadSource.url(URL(string: "https://e.test/movie.mkv")!)
+        XCTAssertEqual(DiskSpaceCheck.automaticFolder(for: video, suggestedName: "movie.mkv", settings: settings),
+                       "/Volumes/Data/Downloads/Video")
+        settings.defaultFolderRule = "bySource"
+        XCTAssertEqual(DiskSpaceCheck.automaticFolder(for: video, suggestedName: "movie.mkv", settings: settings),
+                       "/Volumes/Data/Downloads/HTTP Downloads")
+        settings.defaultFolderRule = "none"
+        XCTAssertEqual(DiskSpaceCheck.automaticFolder(for: video, suggestedName: "movie.mkv", settings: settings),
+                       "/Volumes/Data/Downloads")
+    }
 }

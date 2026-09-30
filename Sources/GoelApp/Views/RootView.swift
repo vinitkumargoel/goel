@@ -4,6 +4,7 @@ import GoelCore
 
 struct RootView: View {
     @EnvironmentObject private var vm: AppViewModel
+    @Environment(\.undoManager) private var undoManager
 
     @State private var isDropTargeted = false
 
@@ -22,6 +23,10 @@ struct RootView: View {
             Divider()
             if let warning = vm.persistenceWarning {
                 persistenceBanner(warning)
+                Divider()
+            }
+            if let warning = vm.serverStoreWarning {
+                warningBanner(warning) { vm.serverStoreWarning = nil }
                 Divider()
             }
             if let link = vm.clipboardSuggestion {
@@ -72,14 +77,15 @@ struct RootView: View {
             Color(nsColor: .windowBackgroundColor)
                 .overlay { if let tint = Theme.windowTint { tint } }
         }
-        .overlay(alignment: .bottom) { toastView }
+        .overlay(alignment: .bottom) { ToastOverlay(queue: vm.toasts) }
         // Must stay after the toast overlay: a passing toast cannot be allowed to cover the job card.
         .overlay(alignment: .bottomTrailing) { MediaJobDock(center: vm.mediaJobs) }
         .overlay { dropOverlay }
         .overlay { confirmOverlay }
-        .onChange(of: vm.toast) { _, message in
-            if let message { A11yAnnouncer.announce(message) }
-        }
+        .overlay { AutoShutdownCountdownView(countdown: vm.autoShutdownCountdown) }
+        // The window's undo stack is where Edit ▸ Undo looks; "Remove from List" registers there.
+        .onAppear { vm.undoManager = undoManager }
+        .onChange(of: undoManager) { _, manager in vm.undoManager = manager }
         .onChange(of: vm.persistenceWarning) { _, warning in
             if let warning { A11yAnnouncer.announce(L10n.t("Warning. %@", warning)) }
         }
@@ -172,14 +178,22 @@ struct RootView: View {
     }
 
     private func persistenceBanner(_ warning: String) -> some View {
+        warningBanner(warning) { vm.persistenceWarning = nil }
+    }
+
+    private func warningBanner(_ warning: String, dismiss: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.orange)
                 .a11yDecorative()
             Text(warning).scaledFont(size: 12)
                 .accessibilityLabel(L10n.t("Warning. %@", warning))
             Spacer()
+            if vm.databaseRecovery != nil, warning == vm.persistenceWarning {
+                Button(L10n.t("Move the Broken Database Aside…")) { confirmDatabaseRecovery() }
+                    .controlSize(.small)
+            }
             Button {
-                vm.persistenceWarning = nil
+                dismiss()
             } label: {
                 Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
             }
@@ -221,23 +235,14 @@ struct RootView: View {
         .background(Theme.accent.opacity(0.10))
     }
 
-    @ViewBuilder
-    private var toastView: some View {
-        if let toast = vm.toast {
-            HStack(spacing: 9) {
-                Image(systemName: vm.toastIsError ? "xmark.octagon.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(vm.toastIsError ? Theme.red : Theme.green)
-                    .a11yDecorative()
-                Text(toast).scaledFont(size: 12.5)
-            }
-            .padding(.horizontal, 15)
-            .padding(.vertical, 9)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().stroke(Theme.hairline))
-            .shadow(radius: 12, y: 6)
-            .padding(.bottom, 52)
-            .transition(.opacity)
-            .a11yGroup(label: toast)
-        }
+    private func confirmDatabaseRecovery() {
+        guard let recovery = vm.databaseRecovery else { return }
+        vm.requestConfirm(
+            title: L10n.t("Move the broken database aside and start fresh?"),
+            message: L10n.t("Goel° couldn’t open %1$@ (%2$@). It will be renamed, not deleted, so nothing is lost; the next launch starts with an empty list.",
+                            (recovery.path as NSString).lastPathComponent, recovery.reason),
+            confirmTitle: L10n.t("Move Aside")
+        ) { vm.moveBrokenDatabaseAside() }
     }
 }
+

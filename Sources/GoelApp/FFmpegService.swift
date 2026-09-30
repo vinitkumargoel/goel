@@ -176,7 +176,12 @@ enum FFmpegService {
         var audioCodec: String?
     }
 
+    /// A hostile playlist-like input can reference other local paths or network URLs; the
+    /// whitelist keeps ffmpeg to plain files (plus the crypto/data wrappers local media uses).
+    static let inputHardening = ["-protocol_whitelist", "file,crypto,data"]
+
     /// `ffmpeg -i` exits non-zero by design — do not gate the parse on the exit status.
+
     static func probe(input: URL, override: String = "",
                       cancellation: Cancellation = Cancellation()) async -> Probe {
         guard case .found(let exe, _) = resolve(override: override) else { return Probe() }
@@ -184,7 +189,7 @@ enum FFmpegService {
         process.executableURL = exe
         process.environment = ProcessSafety.minimalEnvironment
         // No `-loglevel error`: Duration/Stream lines print at `info`, quietening kills the parse.
-        process.arguments = ["-nostdin", "-hide_banner", "-i", input.path]
+        process.arguments = ["-nostdin", "-hide_banner"] + inputHardening + ["-i", input.path]
         let errPipe = Pipe()
         process.standardOutput = FileHandle.nullDevice
         process.standardError = errPipe
@@ -366,8 +371,8 @@ enum FFmpegService {
         process.environment = ProcessSafety.minimalEnvironment
         // `-nostdin` is load-bearing: without it an ffmpeg prompt hangs the job forever.
         process.arguments = ["-nostdin", "-loglevel", "error", "-y",
-                             "-progress", "pipe:1", "-nostats",
-                             "-i", input.path] + extraArgs + [output.path]
+                             "-progress", "pipe:1", "-nostats"]
+            + inputHardening + ["-i", input.path] + extraArgs + [output.path]
 
         let outPipe = Pipe()
         let errPipe = Pipe()

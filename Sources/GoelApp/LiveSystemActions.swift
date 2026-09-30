@@ -2,7 +2,17 @@ import AppKit
 import Foundation
 import GoelCore
 
-struct LiveSystemActions: SystemActions {
+/// Completion banners carry the task, so they can offer Show in Finder / Open and replace
+/// an earlier banner for the same download; ``AppNotification`` only knows the name.
+protocol CompletionNotifying {
+    func postCompleted(taskID: UUID, name: String, sound: Bool)
+}
+
+struct LiveSystemActions: SystemActions, CompletionNotifying {
+
+    func postCompleted(taskID: UUID, name: String, sound: Bool) {
+        NotificationService.notifyCompleted(taskID: taskID, name: name, sound: sound)
+    }
 
     func post(_ notifications: [AppNotification], sound: Bool) {
         for notification in notifications {

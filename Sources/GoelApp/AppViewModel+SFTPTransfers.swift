@@ -84,9 +84,8 @@ extension AppViewModel {
         guard let t = sftpTransfers.first(where: { $0.id == id }) else { return }
         // A paused transfer still owns real progress; cancelling it deserves the same confirmation.
         guard t.isActive || t.isPaused else { cancelSFTPTransfer(id); return }
-        let verb = t.cancelNoun
         requestConfirm(
-            title: L10n.t("Cancel this %@?", L10n.t(verb)),
+            title: t.cancelQuestion,
             message: L10n.t("“%@” will stop transferring and be removed from the list.", t.name),
             confirmTitle: L10n.t("Stop Transfer"),
             destructive: true
@@ -322,18 +321,18 @@ extension AppViewModel {
                                        remoteRoot: remoteTarget, cap: cap, cancel: cancel,
                                        resuming: resuming)
             } else {
-                let total = Self.fileSize(localURL)
+                guard let total = Self.fileSize(localURL) else {
+                    throw SFTPError(kind: .io, message: L10n.t("Couldn’t read “%@” — nothing was uploaded.",
+                                                               localURL.lastPathComponent))
+                }
                 setTransferTotal(id, total)
                 // Only bytes the server confirms holding can be skipped; anything else re-sends from zero.
                 var resumeFrom: Int64 = 0
                 if resuming {
-                    // Stat twice before giving up: a transient failure here silently re-sends
-                    // (and truncates) the whole file from zero.
-                    var existing = try? await client.attributes(remoteTarget, followSymlink: true)
-                    if existing == nil {
-                        existing = try? await client.attributes(remoteTarget, followSymlink: true)
-                    }
-                    if let existing, existing.exists, !existing.isDirectory, existing.size <= total {
+                    // Stat twice, then FAIL: guessing "nothing there" would truncate the remote partial.
+                    let existing = try await Self.remoteAttributesForResume(remoteTarget, on: client,
+                                                                            attempts: 2)
+                    if existing.exists, !existing.isDirectory, existing.size <= total {
                         resumeFrom = existing.size
                         // Noted before the offset is played in, so the row's average and
                         // its "already on the server" figure both discount these bytes.
@@ -382,13 +381,21 @@ extension AppViewModel {
         }
         if let first = scan.unreadable.first {
             let others = scan.unreadable.count - 1
-            throw SFTPError(kind: .io,
-                            message: L10n.t("Couldn’t read “%1$@”%2$@ inside “%3$@” — nothing was uploaded.",
-                                            first,
-                                            others == 0 ? ""
-                                                : others == 1 ? L10n.t(" and %d more item", others)
-                                                              : L10n.t(" and %d more items", others),
-                                            root.lastPathComponent))
+            // Whole sentences per count: a spliced-in fragment can't be translated.
+            let message: String
+            switch others {
+            case 0:
+                message = L10n.t("Couldn’t read “%1$@” inside “%2$@” — nothing was uploaded.",
+                                 first, root.lastPathComponent)
+            case 1:
+                message = L10n.t("Couldn’t read “%1$@” and 1 more item inside “%2$@” — nothing was uploaded.",
+                                 first, root.lastPathComponent)
+            default:
+                message = L10n.t("Couldn’t read “%1$@” and %2$d more items inside “%3$@” — nothing was uploaded.",
+                                 first, others, root.lastPathComponent)
+            }
+            throw SFTPError(kind: .io, message: message)
+
         }
         setTransferTotal(id, scan.total)
         sftpFolderBytes[id] = [:]
@@ -427,8 +434,11 @@ extension AppViewModel {
                         // On resume, bytes the server already holds are skipped — a whole
                         // file when sizes match, a tail when the server holds a prefix.
                         var resumeFrom: Int64 = 0
-                        if resuming, let existing = try? await stream.attributes(remoteFile, followSymlink: true),
-                           existing.exists, !existing.isDirectory, existing.size <= file.size {
+                        // A failed stat must fail the job: `try?` read it as "absent" and truncated the remote partial.
+                        let existing: SFTPAttributes? = resuming
+                            ? try await Self.remoteAttributesForResume(remoteFile, on: stream, attempts: 2)
+                            : nil
+                        if let existing, existing.exists, !existing.isDirectory, existing.size <= file.size {
                             if existing.size == file.size, file.size > 0 {
                                 if let model {
                                     await MainActor.run {
@@ -494,7 +504,7 @@ extension AppViewModel {
                 var resumeFrom: Int64 = 0
                 var alreadyComplete = false
                 if resuming {
-                    let localSize = Self.fileSize(destination)
+                    let localSize = try Self.localSizeForResume(destination)
                     if localSize > 0 {
                         // A failed size check must fail the transfer (which keeps the
                         // partial), not guess "no resume" — that guess truncates the
@@ -598,7 +608,7 @@ extension AppViewModel {
                         // partial on disk belongs to this remote file.
                         var resumeFrom: Int64 = 0
                         if resuming {
-                            let localSize = Self.fileSize(local)
+                            let localSize = try Self.localSizeForResume(local)
                             if localSize == file.size, file.size > 0 {
                                 if let model {
                                     await MainActor.run {
@@ -746,9 +756,36 @@ extension AppViewModel {
     func bumpMutation() { sftpMutationTick &+= 1 }
 
     /// `nonisolated`: folder streams consult sizes off the main actor when resuming.
-    nonisolated static func fileSize(_ url: URL) -> Int64 {
-        Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+    /// 0 for a file that isn't there (nothing downloaded yet); nil when it couldn't be read —
+    /// a flaky disk or a denied folder must not pass for "empty", or resume truncates the partial.
+    nonisolated static func fileSize(_ url: URL) -> Int64? {
+        var info = stat()
+        guard stat(url.path, &info) == 0 else { return errno == ENOENT ? 0 : nil }
+        return Int64(info.st_size)
     }
+
+    nonisolated static func localSizeForResume(_ url: URL) throws -> Int64 {
+        guard let size = fileSize(url) else {
+            throw SFTPError(kind: .io,
+                            message: L10n.t("Couldn’t read the partial “%@” on this Mac — it was kept. Try again.",
+                                            url.lastPathComponent))
+        }
+        return size
+    }
+
+    /// Resume must know what the server holds; an error is never read as "nothing there".
+    nonisolated static func remoteAttributesForResume(_ path: String, on client: SFTPClient,
+                                                      attempts: Int) async throws -> SFTPAttributes {
+        var lastError: Error?
+        for _ in 0..<max(1, attempts) {
+            do { return try await client.attributes(path, followSymlink: true) } catch { lastError = error }
+        }
+        if let aborted = lastError as? SFTPError, aborted.kind == .aborted { throw aborted }
+        throw SFTPError(kind: .io,
+                        message: L10n.t("Couldn’t check what the server already has — nothing was overwritten. Try again."),
+                        detail: lastError.map { String(describing: $0) })
+    }
+
 }
 
 private struct PlannedUpload {

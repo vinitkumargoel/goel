@@ -259,7 +259,7 @@ struct AddDownloadSheet: View {
                 }
             }
             .padding(20)
-            .task(id: diskSpaceFolder) { await refreshFreeSpace() }
+            .task(id: diskSpaceFolder(for: preview)) { await refreshFreeSpace(in: diskSpaceFolder(for: preview)) }
 
             Divider()
             HStack {
@@ -277,14 +277,16 @@ struct AddDownloadSheet: View {
         }
     }
 
-    /// The folder whose volume the space check asks about. "Automatic" sorts by type under the
-    /// default folder, so that folder's volume is the best guess.
-    private var diskSpaceFolder: String {
-        resolvedSaveDirectory ?? vm.settings.defaultSaveDirectory
+    /// The folder whose volume the space check asks about: the one "Automatic" really resolves
+    /// to for this download (a `Video` subfolder may be a link onto another disk).
+    private func diskSpaceFolder(for preview: DownloadPreview) -> String {
+        resolvedSaveDirectory ?? DiskSpaceCheck.automaticFolder(for: preview.source,
+                                                                suggestedName: preview.suggestedName,
+                                                                settings: vm.settings)
     }
 
-    private func refreshFreeSpace() async {
-        let folder = diskSpaceFolder
+    private func refreshFreeSpace(in folder: String) async {
+
         let free = await Task.detached(priority: .userInitiated) {
             DiskSpaceCheck.availableCapacity(forFolder: folder)
         }.value
@@ -500,7 +502,7 @@ struct AddDownloadSheet: View {
             case .resolved(let resolved):
                 guard let mediaPreview = YtDlpResolver.preview(for: resolved) else {
                     inputError = nil
-                    vm.toast = L10n.t("yt-dlp couldn’t resolve that page")
+                    vm.toastNow(L10n.t("yt-dlp couldn’t resolve that page"), isError: true)
                     return
                 }
                 // Don't fetch subtitles here: "Save to" is still editable, so sidecars would be orphaned.
@@ -510,7 +512,7 @@ struct AddDownloadSheet: View {
                 break
             case .failed(let reason):
                 inputError = nil
-                vm.toast = reason
+                vm.toastNow(reason, isError: true)
             }
         }
     }
@@ -606,12 +608,19 @@ struct AddDownloadSheet: View {
         isResolvingMedia = true
         resolveTask = Task { @MainActor in
             defer { isResolvingMedia = false }
-            guard let resolved = await YtDlpResolver.resolve(pageURL, formatSelector: formatSelector),
+            let outcome = await YtDlpResolver.resolveMedia(pageURL, formatSelector: formatSelector)
+            if Task.isCancelled { return }
+            // The reason (quarantined binary, timeout, the page's own error) is the useful part.
+            guard case .resolved(let resolved) = outcome,
                   let mediaPreview = YtDlpResolver.preview(for: resolved) else {
-                if Task.isCancelled { return }
-                vm.toast = L10n.t("yt-dlp couldn’t resolve that page")
+                if case .failed(let reason) = outcome {
+                    vm.toastNow(reason, isError: true)
+                } else if case .resolved = outcome {
+                    vm.toastNow(L10n.t("yt-dlp couldn’t resolve that page"), isError: true)
+                }
                 return
             }
+
             resolvedPageURL = pageURL
             commit(mediaPreview)
         }
@@ -690,7 +699,13 @@ struct AddDownloadSheet: View {
 
     private func firstParseableLine() -> String? {
         // Expand patterns first, or a one-line range resolves the literal `file[01-20].zip` string.
-        AppViewModel.expandedLines(text)
+        // The raw line, not the parsed locator: an inline `user:pass@` must reach the add path,
+        // which moves it to the Keychain before the parser strips it.
+        text.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .lazy
+            .flatMap { BatchExpander.expand($0) }
             .first { AppViewModel.parseSource($0) != nil }
     }
 
