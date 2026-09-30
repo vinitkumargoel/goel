@@ -17,15 +17,25 @@ struct DetailBottomPanel: View {
         .background(.regularMaterial)
     }
 
+    /// Below about 900 pt the telemetry zone goes first, so the tabs keep room for their labels.
     private func content(for task: DownloadTask) -> some View {
-        HStack(spacing: 0) {
-            summaryZone(for: task).frame(width: 280)
-            Divider()
-            telemetryZone(for: task).frame(width: 250)
-            Divider()
-            detailZone(for: task).frame(maxWidth: .infinity)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 0) {
+                summaryZone(for: task).frame(width: 280)
+                Divider()
+                telemetryZone(for: task).frame(width: 250)
+                Divider()
+                detailZone(for: task).frame(minWidth: Self.detailMinWidth, maxWidth: .infinity)
+            }
+            HStack(spacing: 0) {
+                summaryZone(for: task).frame(width: 280)
+                Divider()
+                detailZone(for: task).frame(maxWidth: .infinity)
+            }
         }
     }
+
+    private static let detailMinWidth: CGFloat = 370
 
     private func downSamples(for task: DownloadTask, cap: Int = 60) -> [Double] {
         let pts = telemetry.taskHistory(task.id).map(\.down)
@@ -37,10 +47,7 @@ struct DetailBottomPanel: View {
             HStack(spacing: 11) {
                 FileTypeIcon(type: task.fileType, size: 40)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(task.name)
-                        .scaledFont(size: 13.5, weight: .semibold)
-                        .lineLimit(2)
-                        .accessibilityAddTraits(.isHeader)
+                    DetailTitle(name: task.name)
                     HStack(spacing: 7) {
                         KindBadge(task: task)
                         DetailStatusPill(task: task)
@@ -67,9 +74,9 @@ struct DetailBottomPanel: View {
     private func telemetryZone(for task: DownloadTask) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L10n.t("LIVE THROUGHPUT"))
-                .scaledFont(size: 10, weight: .bold)
+                .scaledFont(size: Theme.TextSize.caption, weight: .bold)
                 .tracking(0.7)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .accessibilityLabel(L10n.t("Live throughput"))
                 .accessibilityAddTraits(.isHeader)
 
@@ -81,7 +88,7 @@ struct DetailBottomPanel: View {
                     DetailSpeedStat(symbol: "arrow.down",
                                     speed: telemetry.displaySpeed(for: task).down,
                                     color: Theme.green, size: 16)
-                    Text(L10n.t("last 60s")).scaledFont(size: 10).foregroundStyle(.tertiary)
+                    Text(L10n.t("last 60s")).scaledFont(size: Theme.TextSize.caption).foregroundStyle(.secondary)
                 }
                 .fixedSize()
             }
@@ -94,11 +101,11 @@ struct DetailBottomPanel: View {
                 }
                 telStat(L10n.t("ETA")) {
                     Text(task.etaText ?? "—")
-                        .scaledFont(size: 12.5, weight: .semibold, monospacedDigit: true)
+                        .scaledFont(size: Theme.TextSize.body, weight: .semibold, monospacedDigit: true)
                 }
                 telStat(task.swarmSummary.label) {
                     Text(task.swarmSummary.value)
-                        .scaledFont(size: 12.5, weight: .semibold, monospacedDigit: true)
+                        .scaledFont(size: Theme.TextSize.body, weight: .semibold, monospacedDigit: true)
                         .lineLimit(1)
                 }
             }
@@ -110,9 +117,9 @@ struct DetailBottomPanel: View {
                                         @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label.uppercased())
-                .scaledFont(size: 10, weight: .bold)
+                .scaledFont(size: Theme.TextSize.caption, weight: .bold)
                 .tracking(0.7)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .accessibilityLabel(label)
             content()
         }
@@ -122,15 +129,7 @@ struct DetailBottomPanel: View {
     private func detailZone(for task: DownloadTask) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Picker("", selection: $vm.detailTab) {
-                    ForEach(DetailTab.allCases) { tab in
-                        Text(tab.title).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 440)
-                .accessibilityLabel(L10n.t("Detail section"))
+                DetailTabPicker(selection: $vm.detailTab, segmentedMinWidth: 300, segmentedMaxWidth: 440)
                 Spacer(minLength: 8)
                 PanelDockToggle()
             }
@@ -169,7 +168,7 @@ struct DetailBottomPanel: View {
                     .scaledFont(size: 22, weight: .bold, monospacedDigit: true)
                 Spacer()
                 Text(task.sizeProgressText)
-                    .scaledFont(size: 11.5)
+                    .scaledFont(size: Theme.TextSize.meta)
                     .foregroundStyle(.secondary)
             }
             .padding(.bottom, 10)
@@ -210,21 +209,15 @@ struct PanelDockToggle: View {
     @EnvironmentObject private var vm: AppViewModel
 
     var body: some View {
-        Button {
+        let docksRight = vm.detailPanelPosition == .right
+        IconButton(symbol: docksRight ? "rectangle.bottomhalf.inset.filled" : "rectangle.trailinghalf.inset.filled",
+                   help: docksRight ? L10n.t("Dock panel to bottom") : L10n.t("Dock panel to right"),
+                   size: 13,
+                   spokenLabel: docksRight
+                       ? L10n.t("Dock detail panel to the bottom")
+                       : L10n.t("Dock detail panel to the right")) {
             vm.toggleDetailPanelPosition()
-        } label: {
-            Image(systemName: vm.detailPanelPosition == .right
-                  ? "rectangle.bottomhalf.inset.filled"
-                  : "rectangle.trailinghalf.inset.filled")
-                .scaledFont(size: 14)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help(vm.detailPanelPosition == .right ? L10n.t("Dock panel to bottom") : L10n.t("Dock panel to right"))
-        .a11yButton(vm.detailPanelPosition == .right
-                    ? L10n.t("Dock detail panel to the bottom")
-                    : L10n.t("Dock detail panel to the right"))
-        .accessibilityValue(vm.detailPanelPosition == .right
-                            ? L10n.t("Currently docked right") : L10n.t("Currently docked bottom"))
+        .accessibilityValue(docksRight ? L10n.t("Currently docked right") : L10n.t("Currently docked bottom"))
     }
 }

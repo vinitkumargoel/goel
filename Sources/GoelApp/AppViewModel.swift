@@ -10,6 +10,8 @@ enum SidebarFilter: Hashable {
     case paused
     case completed
     case seeding
+    /// App-side only: `TaskListQuery.Filter` has no failed case, so `ListPresentation` matches it itself.
+    case failed
     case type(FileType)
 }
 

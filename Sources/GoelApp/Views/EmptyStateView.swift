@@ -19,14 +19,15 @@ struct DownloadsEmptyState: View {
                     .foregroundStyle(.quaternary)
                     .a11yDecorative()
                 Text(L10n.t("Nothing downloading yet"))
-                    .scaledFont(size: 14)
+                    .scaledFont(size: Theme.TextSize.title)
                     .foregroundStyle(.secondary)
                     .accessibilityAddTraits(.isHeader)
                 Text(clipboardLink == nil
                      ? L10n.t("Add a link and it will show up here.")
                      : L10n.t("There's a link on your clipboard — start with that one."))
-                    .scaledFont(size: 12)
-                    .foregroundStyle(.tertiary)
+                    .scaledFont(size: Theme.TextSize.body)
+                    // Secondary: this line is the instruction, not decoration.
+                    .foregroundStyle(.secondary)
             }
 
             HStack(alignment: .top, spacing: 12) {
@@ -128,10 +129,10 @@ private struct EmptyStateAction: View {
                     .foregroundStyle(isPrimary ? Theme.accent : .secondary)
                     .frame(height: 22)
                 Text(title)
-                    .scaledFont(size: 12.5, weight: .semibold)
+                    .scaledFont(size: Theme.TextSize.body, weight: .semibold)
                 Text(detail)
-                    .scaledFont(size: 10.5)
-                    .foregroundStyle(.tertiary)
+                    .scaledFont(size: Theme.TextSize.caption)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .truncationMode(.middle)
@@ -140,8 +141,8 @@ private struct EmptyStateAction: View {
             .frame(maxWidth: .infinity)
             .frame(height: 104)
             .padding(.horizontal, 10)
-            .background(fill, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10)
+            .background(fill, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
                 .stroke(isPrimary ? Theme.accent.opacity(0.55) : Theme.hairline))
             .contentShape(Rectangle())
         }
@@ -168,7 +169,7 @@ private struct EmptyStateHint: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: symbol).font(.system(size: 10))
-                Text(text).scaledFont(size: 11)
+                Text(text).scaledFont(size: Theme.TextSize.meta)
             }
             .foregroundStyle(hovering ? Theme.accent : Color.secondary)
             .contentShape(Rectangle())

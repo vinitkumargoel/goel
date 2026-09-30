@@ -26,12 +26,64 @@ enum Theme {
 
     static var onIndigoSecondary: Color { onIndigo.opacity(0.85) }
 
-    static let rowAlt = Color.primary.opacity(0.03)
-    static let hairline = Color.primary.opacity(0.10)
+    /// Both strengthen under Increase Contrast: at 3%/10% the stripes and dividers vanish there.
+    static let rowAlt = Color.primaryInk { rowAltAlpha($0) }
+    static let hairline = Color.primaryInk { hairlineAlpha($0) }
+    /// For dividers that separate controls rather than decorate: visible even without Increase Contrast.
+    static let hairlineStrong = Color.primaryInk { $0.isHighContrast ? 0.55 : 0.18 }
+
+    static func rowAltAlpha(_ variant: AppearanceVariant) -> CGFloat {
+        variant.isHighContrast ? 0.08 : 0.03
+    }
+
+    static func hairlineAlpha(_ variant: AppearanceVariant) -> CGFloat {
+        variant.isHighContrast ? 0.40 : 0.10
+    }
+}
+
+/// Which of the four system appearances a drawing pass resolved to. The high-contrast
+/// variants are what AppKit hands us when Increase Contrast is on.
+struct AppearanceVariant: Equatable {
+    let isDark: Bool
+    let isHighContrast: Bool
+
+    init(isDark: Bool, isHighContrast: Bool) {
+        self.isDark = isDark
+        self.isHighContrast = isHighContrast
+    }
+
+    init(_ name: NSAppearance.Name?) {
+        switch name {
+        case NSAppearance.Name.darkAqua, NSAppearance.Name.vibrantDark:
+            self.init(isDark: true, isHighContrast: false)
+        case NSAppearance.Name.accessibilityHighContrastDarkAqua,
+             NSAppearance.Name.accessibilityHighContrastVibrantDark:
+            self.init(isDark: true, isHighContrast: true)
+        case NSAppearance.Name.accessibilityHighContrastAqua,
+             NSAppearance.Name.accessibilityHighContrastVibrantLight:
+            self.init(isDark: false, isHighContrast: true)
+        default:
+            self.init(isDark: false, isHighContrast: false)
+        }
+    }
+
+    static let candidates: [NSAppearance.Name] = [
+        .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+    ]
+
+    /// The workspace flag backs up the appearance match: an appearance built with
+    /// `NSAppearance(named:)` never reports the high-contrast variant, only a drawing pass does.
+    static func resolve(_ appearance: NSAppearance) -> AppearanceVariant {
+        let matched = AppearanceVariant(appearance.bestMatch(from: candidates) ?? appearance.name)
+        return AppearanceVariant(
+            isDark: matched.isDark,
+            isHighContrast: matched.isHighContrast
+                || NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast)
+    }
 }
 
 struct ThemeColors {
-    struct Pair { let light: UInt32; let dark: UInt32 }
+    struct Pair: Equatable { let light: UInt32; let dark: UInt32 }
     let accent, accentPress, green, orange, red, yellow, purple, teal, indigo: Pair
 }
 
@@ -74,6 +126,37 @@ enum WCAG {
     static func ink(on fill: UInt32) -> UInt32 {
         contrastRatio(lightInk, fill) >= contrastRatio(darkInk, fill) ? lightInk : darkInk
     }
+
+    /// Linear sRGB-channel blend: `t = 0` is `a`, `t = 1` is `b`.
+    static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
+        func channel(_ shift: UInt32) -> UInt32 {
+            let x = Double((a >> shift) & 0xFF), y = Double((b >> shift) & 0xFF)
+            return UInt32((x + (y - x) * t).rounded()) << shift
+        }
+        return channel(16) | channel(8) | channel(0)
+    }
+}
+
+/// Fills for the file-type tiles. Each tile is a two-stop gradient built from one theme
+/// token; the glyph ink is picked per fill so every stop clears AA.
+enum IconFill {
+    static let minimumContrast = 4.5
+    /// `doc` has no hue of its own; grey-500/400 both clear AA against their picked ink.
+    static let neutral = ThemeColors.Pair(light: 0x6B7280, dark: 0x9CA3AF)
+
+    /// `top` is the token, nudged away from its ink only when it misses AA; `bottom` is
+    /// shaded further from the ink, so it can only gain contrast.
+    static func stops(for base: UInt32) -> (top: UInt32, bottom: UInt32, ink: UInt32) {
+        let ink = WCAG.ink(on: base)
+        let away: UInt32 = ink == 0xFFFFFF ? 0x000000 : 0xFFFFFF
+        var top = base
+        var step = 0.0
+        while WCAG.contrastRatio(ink, top) < minimumContrast, step < 1 {
+            step += 0.04
+            top = WCAG.mix(base, away, step)
+        }
+        return (top, WCAG.mix(top, away, 0.18), ink)
+    }
 }
 
 extension Color {
@@ -84,10 +167,21 @@ extension Color {
         self.init(.sRGB, red: r, green: g, blue: b, opacity: alpha)
     }
 
+    /// Matches the high-contrast appearances too; without them Increase Contrast fell back to `.aqua`
+    /// even in dark mode.
     static func adaptive(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            return NSColor(hex: isDark ? dark : light)
+            NSColor(hex: AppearanceVariant.resolve(appearance).isDark ? dark : light)
+        })
+    }
+
+    /// `Color.primary` at an opacity chosen per appearance. The label colour is 85% black/white,
+    /// so the alpha is scaled to match what `Color.primary.opacity(_:)` drew.
+    static func primaryInk(_ alpha: @escaping @Sendable (AppearanceVariant) -> CGFloat) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let variant = AppearanceVariant.resolve(appearance)
+            let level: CGFloat = variant.isDark ? 1 : 0
+            return NSColor(srgbRed: level, green: level, blue: level, alpha: 0.85 * alpha(variant))
         })
     }
 }
@@ -116,15 +210,31 @@ enum FileType: String, CaseIterable, Hashable {
         }
     }
 
-    var gradient: [Color] {
+    func fillToken(in theme: AppTheme) -> ThemeColors.Pair {
+        let colors = theme.colors
         switch self {
-        case .iso: return [Color(hex: 0xFF9F0A), Color(hex: 0xFF6A00)]
-        case .video: return [Color(hex: 0xBF5AF2), Color(hex: 0x8A3FFC)]
-        case .archive: return [Color(hex: 0x64D2FF), Color(hex: 0x0A84FF)]
-        case .app: return [Color(hex: 0x32D74B), Color(hex: 0x1A9E3A)]
-        case .magnet: return [Color(hex: 0xFF453A), Color(hex: 0xC91D12)]
-        case .doc: return [Color(hex: 0x8E8E93), Color(hex: 0x636366)]
+        case .iso: return colors.orange
+        case .video: return colors.purple
+        case .archive: return colors.teal
+        case .app: return colors.green
+        case .magnet: return colors.red
+        case .doc: return IconFill.neutral
         }
+    }
+
+    /// Follows the active theme; the fixed system-colour gradients ignored Dracula and Nord.
+    var gradient: [Color] {
+        let pair = fillToken(in: ThemePalette.current)
+        let light = IconFill.stops(for: pair.light), dark = IconFill.stops(for: pair.dark)
+        return [Color.adaptive(light: light.top, dark: dark.top),
+                Color.adaptive(light: light.bottom, dark: dark.bottom)]
+    }
+
+    /// Never hard-code white here: on the old archive blue it measured 1.72:1.
+    var ink: Color {
+        let pair = fillToken(in: ThemePalette.current)
+        return Color.adaptive(light: IconFill.stops(for: pair.light).ink,
+                              dark: IconFill.stops(for: pair.dark).ink)
     }
 }
 

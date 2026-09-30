@@ -15,7 +15,7 @@ struct SheetHeader: View {
                 .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8))
                 .a11yDecorative()
             Text(title)
-                .scaledFont(size: 15, weight: .semibold)
+                .scaledFont(size: Theme.TextSize.sheet, weight: .semibold)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
         }
@@ -29,24 +29,36 @@ struct EmptyStateView: View {
     var subtitle: String? = nil
     var symbolSize: CGFloat = 38
     var symbolStyle: HierarchicalShapeStyle = .quaternary
+    /// An optional way out, e.g. "Clear search and filter" on a no-match list. Shown only when both are set.
+    var actionTitle: String? = nil
+    var action: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.system(size: symbolSize))
-                .foregroundStyle(symbolStyle)
-                .a11yDecorative()
-            Text(title)
-                .scaledFont(size: 14)
-                .foregroundStyle(.secondary)
-            if let subtitle {
-                Text(subtitle)
-                    .scaledFont(size: 12)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
+        VStack(spacing: Theme.Space.m) {
+            VStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: symbolSize))
+                    .foregroundStyle(symbolStyle)
+                    .a11yDecorative()
+                Text(title)
+                    .scaledFont(size: Theme.TextSize.title)
+                    .foregroundStyle(.secondary)
+                if let subtitle {
+                    Text(subtitle)
+                        .scaledFont(size: Theme.TextSize.body)
+                        // Secondary, not tertiary: this line tells the user what to do next.
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            // The button stays outside the ignored-children group, or VoiceOver can't reach it.
+            .a11yGroup(label: A11y.sentence(title, subtitle))
+
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(TintedPillButtonStyle())
             }
         }
-        .a11yGroup(label: A11y.sentence(title, subtitle))
     }
 }
 
@@ -117,16 +129,17 @@ struct SFTPTransferRow: View {
                 HStack(spacing: 10) {
                     ProgressView(value: transfer.fraction).frame(maxWidth: 160)
                     Text(transfer.sizeLabel)
-                        .scaledFont(size: 10.5, monospacedDigit: true).foregroundStyle(.secondary)
+                        .scaledFont(size: Theme.TextSize.caption, monospacedDigit: true).foregroundStyle(.secondary)
                     if !transfer.speedLabel.isEmpty {
                         Label(transfer.speedLabel,
                               systemImage: transfer.arrowGlyph)
                             .labelStyle(.titleAndIcon)
-                            .scaledFont(size: 10.5, weight: .semibold, monospacedDigit: true)
+                            .scaledFont(size: Theme.TextSize.caption, weight: .semibold, monospacedDigit: true)
                             .foregroundStyle(transfer.directionTint)
                     }
                     if let eta = transfer.etaLabel {
-                        Text(eta).scaledFont(size: 10.5, monospacedDigit: true).foregroundStyle(.tertiary)
+                        Text(eta).scaledFont(size: Theme.TextSize.caption, monospacedDigit: true)
+                            .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -141,19 +154,19 @@ struct SFTPTransferRow: View {
     private var identityContent: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(transfer.name)
-                .scaledFont(size: 12)
+                .scaledFont(size: Theme.TextSize.body)
                 .lineLimit(1)
                 .truncationMode(.middle)
             if let serverLabel {
                 Text(serverLabel)
-                    .scaledFont(size: density == .compact ? 10 : 10.5)
-                    .foregroundStyle(.tertiary)
+                    .scaledFont(size: Theme.TextSize.caption)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Text(transfer.direction == .download
                  ? L10n.t("From %@", transfer.remoteFolderLabel)
                  : L10n.t("To %@", transfer.remoteFolderLabel))
-                .scaledFont(size: density == .compact ? 10 : 10.5)
+                .scaledFont(size: Theme.TextSize.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -198,87 +211,77 @@ struct SFTPTransferRow: View {
         case .running:
             if density == .compact, !transfer.speedLabel.isEmpty {
                 Text(transfer.speedLabel)
-                    .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                    .scaledFont(size: Theme.TextSize.meta, weight: .semibold, monospacedDigit: true)
                     .foregroundStyle(transfer.directionTint)
                 if let eta = transfer.etaLabel {
                     Text(eta)
-                        .font(.system(size: 11)).monospacedDigit().foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true).foregroundStyle(.secondary)
                 }
             }
             if density == .full {
                 Text(transfer.progressLabel)
-                    .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+                    .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true).foregroundStyle(.secondary)
                     .frame(width: 42, alignment: .trailing)
             } else {
                 Text(transfer.progressLabel)
-                    .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+                    .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true).foregroundStyle(.secondary)
             }
             if let onPause, transfer.canPause {
-                Button(action: onPause) {
-                    Image(systemName: "pause.circle.fill").font(.system(size: 12))
-                }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help(L10n.t("Pause"))
-                .a11yButton(L10n.t("Pause transfer of %@", transfer.name))
+                IconButton(symbol: "pause.circle.fill", help: L10n.t("Pause"), size: 12,
+                           spokenLabel: L10n.t("Pause transfer of %@", transfer.name),
+                           action: onPause)
             }
             if let onCancel {
-                Button(action: onCancel) {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
-                }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help(L10n.t("Cancel"))
-                .a11yButton(L10n.t("Cancel transfer of %@", transfer.name))
+                IconButton(symbol: "xmark.circle.fill", help: L10n.t("Cancel"), size: 12,
+                           spokenLabel: L10n.t("Cancel transfer of %@", transfer.name),
+                           action: onCancel)
             }
         case .waiting:
             Text(L10n.t("Waiting…"))
-                .scaledFont(size: 11).foregroundStyle(.secondary)
+                .scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
             if let onCancel {
-                Button(action: onCancel) {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
-                }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help(L10n.t("Cancel"))
-                .a11yButton(L10n.t("Cancel transfer of %@", transfer.name))
+                IconButton(symbol: "xmark.circle.fill", help: L10n.t("Cancel"), size: 12,
+                           spokenLabel: L10n.t("Cancel transfer of %@", transfer.name),
+                           action: onCancel)
             }
         case .paused:
             if density == .full {
                 Text(L10n.t("Paused") + " · " + transfer.progressLabel)
-                    .scaledFont(size: 11).monospacedDigit().foregroundStyle(Theme.orange)
+                    .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true).foregroundStyle(Theme.orange)
             }
             if let onResume {
-                Button(action: onResume) {
-                    Image(systemName: "play.circle.fill").font(.system(size: 12))
-                }
-                .buttonStyle(.plain).foregroundStyle(Theme.accent).help(L10n.t("Resume"))
-                .a11yButton(L10n.t("Resume transfer of %@", transfer.name))
+                IconButton(symbol: "play.circle.fill", help: L10n.t("Resume"), size: 12, tint: Theme.accent,
+                           spokenLabel: L10n.t("Resume transfer of %@", transfer.name),
+                           action: onResume)
             }
             if let onCancel {
-                Button(action: onCancel) {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
-                }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help(L10n.t("Cancel"))
-                .a11yButton(L10n.t("Cancel transfer of %@", transfer.name))
+                IconButton(symbol: "xmark.circle.fill", help: L10n.t("Cancel"), size: 12,
+                           spokenLabel: L10n.t("Cancel transfer of %@", transfer.name),
+                           action: onCancel)
             }
         case .finished:
             if density == .full {
                 Text(transfer.total > 0 ? L10n.t("Done") + " · \(transfer.total.byteString)" : L10n.t("Done"))
-                    .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.green)
+                    .scaledFont(size: Theme.TextSize.meta, monospacedDigit: true).foregroundStyle(Theme.green)
             } else {
-                Text(L10n.t("Done")).font(.system(size: 11)).foregroundStyle(Theme.green)
+                Text(L10n.t("Done")).scaledFont(size: Theme.TextSize.meta).foregroundStyle(Theme.green)
             }
         case .cancelled:
             if density == .full {
-                Text(L10n.t("Cancelled")).scaledFont(size: 11).foregroundStyle(.secondary)
+                Text(L10n.t("Cancelled")).scaledFont(size: Theme.TextSize.meta).foregroundStyle(.secondary)
             }
             if let onRetry {
                 Button(L10n.t("Retry"), action: onRetry)
-                    .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
+                    .buttonStyle(.plain).scaledFont(size: Theme.TextSize.meta).foregroundStyle(Theme.accent)
                     .accessibilityLabel(L10n.t("Retry transfer of %@", transfer.name))
             }
         case .failed(let message):
             if density == .full {
-                Text(message).scaledFont(size: 11).foregroundStyle(Theme.red).lineLimit(1)
+                Text(message).scaledFont(size: Theme.TextSize.meta).foregroundStyle(Theme.red).lineLimit(1)
             }
             if let onRetry {
                 Button(L10n.t("Retry"), action: onRetry)
-                    .buttonStyle(.plain).scaledFont(size: 11).foregroundStyle(Theme.accent)
+                    .buttonStyle(.plain).scaledFont(size: Theme.TextSize.meta).foregroundStyle(Theme.accent)
                     .accessibilityLabel(L10n.t("Retry transfer of %@", transfer.name))
             }
         }
@@ -296,7 +299,8 @@ struct FileTypeIcon: View {
             .overlay(
                 Image(systemName: type.symbol)
                     .font(.system(size: size * 0.5, weight: .semibold))
-                    .foregroundStyle(.white)
+                    // Picked per fill: white measured 1.72:1 on the old archive blue.
+                    .foregroundStyle(type.ink)
             )
             .a11yDecorative()
     }
@@ -306,10 +310,10 @@ struct KindBadge: View {
     let task: DownloadTask
     var body: some View {
         Text(task.kindBadge)
-            .font(.system(size: 9, weight: .bold))
+            .scaledFont(size: 9.5, weight: .bold)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .background(task.kindBadgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+            .background(task.kindBadgeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.chip))
             .foregroundStyle(task.kindBadgeColor)
             // 12% tint keeps text contrast at 3.83–7.95:1; 20% dropped it to 2.94:1 (SC 1.4.3).
             .accessibilityLabel(L10n.t(task.accessibilityKindName))

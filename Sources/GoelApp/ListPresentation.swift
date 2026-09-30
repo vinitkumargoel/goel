@@ -11,14 +11,14 @@ enum ListPresentation {
         ascending: Bool
     ) -> [DownloadTask] {
         switch filter {
-        case .type(let t):
+        case .type, .failed:
             return TaskListQuery.visible(
                 tasks: tasks,
                 filter: .all,
                 search: search,
                 sortKey: mapSort(sortKey),
                 ascending: ascending,
-                extraMatch: { $0.fileType == t }
+                extraMatch: { matches($0, filter: filter) }
             )
         default:
             return TaskListQuery.visible(
@@ -34,6 +34,7 @@ enum ListPresentation {
     static func matches(_ task: DownloadTask, filter: SidebarFilter) -> Bool {
         switch filter {
         case .type(let t): return task.fileType == t
+        case .failed: return isFailed(task.status)
         default: return TaskListQuery.matches(task, filter: mapFilter(filter))
         }
     }
@@ -48,7 +49,7 @@ enum ListPresentation {
 
     static func count(tasks: [DownloadTask], filter: SidebarFilter) -> Int {
         switch filter {
-        case .type(let t): return tasks.filter { $0.fileType == t }.count
+        case .type, .failed: return tasks.filter { matches($0, filter: filter) }.count
         default: return TaskListQuery.count(tasks: tasks, filter: mapFilter(filter))
         }
     }
@@ -60,8 +61,13 @@ enum ListPresentation {
         case .paused: return .paused
         case .completed: return .completed
         case .seeding: return .seeding
-        case .type: return .all
+        case .type, .failed: return .all
         }
+    }
+
+    private static func isFailed(_ status: DownloadStatus) -> Bool {
+        if case .failed = status { return true }
+        return false
     }
 
     private static func mapSort(_ key: SortKey) -> TaskListQuery.SortKey {

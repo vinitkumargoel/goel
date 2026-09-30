@@ -60,6 +60,8 @@ struct CommandPalette: View {
 
     @FocusState private var searchFocused: Bool
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(spacing: 0) {
             searchField
@@ -89,7 +91,7 @@ struct CommandPalette: View {
                 .a11yDecorative()
             TextField(L10n.t("Search actions and settings…"), text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15))
+                .scaledFont(size: Theme.TextSize.sheet)
                 .focused($searchFocused)
                 .onSubmit { runHighlighted() }
                 .onChange(of: query) { _, _ in highlighted = 0 }
@@ -100,15 +102,10 @@ struct CommandPalette: View {
                                              String(matches.count), matches[highlighted].title)
                                     : L10n.t("No results"))
             if !query.isEmpty {
-                Button {
+                IconButton(symbol: "xmark.circle.fill", help: L10n.t("Clear search"), size: 12) {
                     query = ""
                     searchFocused = true
-                } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 12))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
-                .a11yButton(L10n.t("Clear search"))
             }
         }
         .padding(.horizontal, 16)
@@ -136,7 +133,7 @@ struct CommandPalette: View {
             .frame(height: 360)
             .onChange(of: highlighted) { _, new in
                 guard matches.indices.contains(new) else { return }
-                withAnimation(.easeOut(duration: 0.1)) {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.1)) {
                     proxy.scrollTo(matches[new].id, anchor: .center)
                 }
             }
@@ -150,9 +147,8 @@ struct CommandPalette: View {
             legendKey("esc", L10n.t("Close"))
             Spacer()
             Text(L10n.t("%1$@ of %2$@", String(matches.count), String(commands.count)))
-                .font(.system(size: 10.5))
-                .foregroundStyle(.tertiary)
-                .monospacedDigit()
+                .scaledFont(size: Theme.TextSize.caption, monospacedDigit: true)
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -162,11 +158,11 @@ struct CommandPalette: View {
     private func legendKey(_ key: String, _ label: String) -> some View {
         HStack(spacing: 4) {
             Text(key)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .scaledFont(size: Theme.TextSize.caption, weight: .semibold, design: .monospaced)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 3))
-            Text(label).font(.system(size: 10.5)).foregroundStyle(.tertiary)
+            Text(label).scaledFont(size: Theme.TextSize.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -436,31 +432,32 @@ private struct PaletteRow: View {
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(command.title)
-                        .font(.system(size: 13))
+                        .scaledFont(size: Theme.TextSize.title)
                         .lineLimit(1)
                     Text(command.subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.meta)
+                        // Subtitles say where a command lives: secondary, not tertiary.
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
                 Spacer(minLength: 10)
                 if let shortcut = command.shortcut {
                     Text(shortcut)
-                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .scaledFont(size: Theme.TextSize.caption, weight: .medium, design: .monospaced)
+                        .foregroundStyle(.secondary)
                 }
                 Text(L10n.t(command.group.rawValue))
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .scaledFont(size: 9.5, weight: .semibold)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(Color.primary.opacity(0.07), in: Capsule())
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 7)
+            .background(RoundedRectangle(cornerRadius: Theme.Radius.control)
                 .fill(isHighlighted ? Theme.accent.opacity(0.14) : .clear))
             .contentShape(Rectangle())
         }
