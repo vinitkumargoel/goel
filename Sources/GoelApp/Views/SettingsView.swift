@@ -8,6 +8,7 @@ struct SettingsView: View {
 
     enum Pane: String, CaseIterable, Identifiable {
         case general = "General"
+        case rules = "Rules"
         case notifications = "Notifications"
         case network = "Network"
         case traffic = "Speed & Connections"
@@ -29,6 +30,7 @@ struct SettingsView: View {
         var symbol: String {
             switch self {
             case .general: return "gearshape"
+            case .rules: return "line.3.horizontal.decrease.circle"
             case .notifications: return "bell.badge"
             case .network: return "globe"
             case .aggregation: return "point.3.connected.trianglepath.dotted"
@@ -263,6 +265,7 @@ struct SettingsView: View {
     private var paneContent: some View {
         switch selection {
         case .general: generalPane
+        case .rules: RulesPane()
         case .notifications: NotificationsPane()
         case .network: networkPane
         case .aggregation: AggregationSettingsPane()
@@ -599,6 +602,7 @@ struct SettingsView: View {
             SetRow(name: L10n.t("Enable µTP"), desc: L10n.t("BitTorrent over UDP for better congestion control.")) {
                 SettingSwitch(isOn: binding(\.btEnableUTP))
             }
+            ExtraTrackersSettings()
             if let gap = swarmProxyGap {
                 Label(L10n.t(gap.rawValue), systemImage: "exclamationmark.shield.fill")
                     .scaledFont(size: Theme.TextSize.meta)

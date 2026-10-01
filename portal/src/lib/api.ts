@@ -5,12 +5,18 @@ import type {
   TorrentAddResult,
   AddRequest,
   AddResult,
+  AddPreviewResult,
   FolderListing,
   HistoryRow,
   NetworkState,
   NetworkUpdate,
   NewFolderRequest,
   NewFolderResult,
+  QueuePlacement,
+  TrackerEdit,
+  TrackerEditResult,
+  ScheduleState,
+  ScheduleUpdate,
   TaskDetail,
   TaskRow,
 } from './types'
@@ -126,6 +132,15 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return (await r.json()) as T
 }
 
+/** A JSON body whose answer carries nothing the caller needs. */
+async function postOK(path: string, body: unknown): Promise<void> {
+  await request(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
 async function post(path: string): Promise<void> {
   await request(path, { method: 'POST' })
 }
@@ -155,8 +170,33 @@ export const api = {
   createFolder: (body: NewFolderRequest) => postJSON<NewFolderResult>('/api/folder', body),
 
   add: (body: AddRequest) => postJSON<AddResult>('/api/add', body),
+  /** A 404 means a server without the review step; the dialog then adds directly. */
+  addPreview: (body: { url: string; folder?: string }) =>
+    postJSON<AddPreviewResult>('/api/add-preview', body),
   updateNetwork: (body: NetworkUpdate) => postJSON<NetworkState>('/api/network', body),
   removeHistory: (id: string) => post(`/api/history-remove?id=${encodeURIComponent(id)}`),
+
+  setSequential: (id: string, on: boolean) =>
+    post(`/api/sequential?id=${encodeURIComponent(id)}&on=${on ? 1 : 0}`),
+  /** 0 or null lifts the cap. */
+  setSpeedLimit: (id: string, bytesPerSec: number | null) =>
+    post(`/api/speed-limit?id=${encodeURIComponent(id)}&bps=${Math.max(0, Math.round(bytesPerSec ?? 0))}`),
+  /** Unix seconds; null starts it whenever the queue gets to it. */
+  setStartAt: (id: string, at: number | null) =>
+    post(`/api/start-at?id=${encodeURIComponent(id)}&at=${at == null ? 'clear' : Math.round(at)}`),
+  move: (ids: readonly string[], to: QueuePlacement, anchor?: string) =>
+    postOK('/api/move', { ids, to, anchor }),
+  setTags: (id: string, tags: readonly string[]) => postOK('/api/tags', { id, tags }),
+  /** Validated server-side; a bad URL refuses the whole request. */
+  editTrackers: (body: TrackerEdit) => postJSON<TrackerEditResult>('/api/trackers', body),
+  filePriorities: (id: string, files: readonly number[], prio: string) =>
+    postOK('/api/file-priorities', { id, files, prio }),
+  removeHistoryMany: (ids: readonly string[]) => postOK('/api/history-remove-many', { ids }),
+  /** Seconds; omitted clears everything. */
+  clearHistory: (olderThan?: number) => postOK('/api/history-clear', { olderThan }),
+  /** A 404 means a server without a scheduler (the Linux daemon): callers hide the card. */
+  schedule: () => getJSON<ScheduleState>('/api/schedule'),
+  updateSchedule: (body: ScheduleUpdate) => postJSON<ScheduleState>('/api/schedule', body),
 
   pauseAll: () => post('/api/pause-all'),
   resumeAll: () => post('/api/resume-all'),
@@ -178,6 +218,8 @@ export const api = {
     if (options.priority) form.append('priority', options.priority)
     if (options.paused) form.append('paused', '1')
     if (options.network && options.network !== 'auto') form.append('network', options.network)
+    if (options.sequential) form.append('sequential', '1')
+    if (options.startAt != null) form.append('startAt', String(Math.round(options.startAt)))
     const r = await request('/api/add-torrent', { method: 'POST', body: form }, { jsonErrors: true })
     return (await r.json()) as TorrentAddResult
   },
@@ -190,6 +232,22 @@ export const api = {
     }
     location.href = '/'
   },
+}
+
+/**
+ * A removal the page is closing on: `keepalive` lets the request outlive the page. Fire and forget —
+ * there is nobody left to tell if it fails.
+ */
+export function removeOnUnload(id: string): void {
+  try {
+    void fetch(`/api/remove?id=${encodeURIComponent(id)}&data=0`, {
+      method: 'POST',
+      keepalive: true,
+      credentials: 'same-origin',
+    }).catch(() => {})
+  } catch {
+    // A browser without keepalive throws synchronously; nothing more can be done while unloading.
+  }
 }
 
 /** `download` asks for `Content-Disposition: attachment`, so the browser saves rather than plays. */

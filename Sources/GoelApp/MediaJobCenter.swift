@@ -113,6 +113,10 @@ final class MediaJobCenter: ObservableObject {
 
     var ffmpegOverride = ""
 
+    /// Downloads added with an "Audio only" preset: the extraction queued once each one finishes.
+    /// Session-only; after a relaunch the file is still there for a manual Extract Audio.
+    var chainedAudio: [UUID: AudioExtractionFormat] = [:]
+
     var onFinish: ((Job) -> Void)?
 
     var onLiveWorkChanged: (() -> Void)?

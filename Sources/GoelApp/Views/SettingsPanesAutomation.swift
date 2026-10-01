@@ -54,6 +54,16 @@ struct SchedulerPane: View {
                              width: 140)
                 }
             }
+
+            SectionHeader(L10n.t("Weekly profile schedule"))
+            SetRow(name: L10n.t("Switch profiles by the hour"),
+                   desc: L10n.t("Paint hours with a traffic profile. A manual change holds until the next painted hour.")) {
+                SettingSwitch(isOn: setting(vm, \.profileScheduleEnabled))
+            }
+            if vm.settings.profileScheduleEnabled {
+                WeeklyProfileGrid()
+                    .padding(.vertical, 6)
+            }
         }
     }
 
@@ -100,6 +110,14 @@ struct RSSPane: View {
                     .option(60, L10n.t("Hour")),
                     .option(360, L10n.t("6 hours")),
                 ], width: 130)
+            }
+
+            SetRow(name: L10n.t("Rules and articles"),
+                   desc: L10n.t("Must contain / must not contain, episode ranges, folder and tag per feed — with matches highlighted live.")) {
+                Button(L10n.t("Open RSS Reader")) {
+                    vm.closeServerBrowser()
+                    RSSReaderModel.shared.open()
+                }
             }
 
             SectionHeader(L10n.t("Feeds"))
@@ -459,6 +477,8 @@ struct BrowserIntegrationPane: View {
     var body: some View {
         PaneScaffold(title: L10n.t("Browser Integration"),
                      subtitle: L10n.t("Capture downloads from your browser, or send links here by hand.")) {
+            SectionHeader(L10n.t("Your browsers"))
+            BrowserStatusCards()
             SectionHeader(L10n.t("Chrome, Edge, Brave & Firefox"))
             SetRow(name: L10n.t("1. Install the messaging helper"),
                    desc: installResult ?? L10n.t("Lets the extension talk to this app — nothing works without it. Writes per-browser manifests in your Library; no admin needed. Open a browser at least once first, and click this again if you ever move the app.")) {

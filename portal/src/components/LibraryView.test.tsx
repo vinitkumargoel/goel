@@ -1,12 +1,14 @@
-import { screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { renderWithI18n } from '../test/renderWithI18n'
 import en from '../locales/en.json'
 import { UNSORTED, type SortState } from '../lib/sort'
 import type { TaskRow } from '../lib/types'
 import { useAppKeys, type AppKeyDeps } from '../hooks/useAppKeys'
+import { groupTasks } from '../lib/grouping'
+import { LONG_PRESS_MS } from '../hooks/useLongPress'
 import { LibraryView } from './LibraryView'
 
 function task(over: Partial<TaskRow> = {}): TaskRow {
@@ -46,6 +48,7 @@ interface Options {
   selectedIds?: string[]
   sort?: SortState
   bulk?: ReactNode
+  extra?: Partial<ComponentProps<typeof LibraryView>>
 }
 
 function renderLibrary(over: Options = {}) {
@@ -72,6 +75,7 @@ function renderLibrary(over: Options = {}) {
       readOnly={over.readOnly ?? false}
       bulk={over.bulk}
       {...handlers}
+      {...over.extra}
     />,
   )
   return { ...result, handlers }
@@ -460,5 +464,61 @@ describe('LibraryView — with the app keys', () => {
     expect(onSelection).toHaveBeenCalledWith({ type: 'toggle', id: 'a' })
     expect(runBulk).toHaveBeenCalledTimes(1)
   })
-})
 
+  describe('workflow', () => {
+    it('renders sections as labelled groups with a count', () => {
+      const rows = [task({ id: 'a', name: 'a.iso' }), task({ id: 'b', name: 'b.iso', statusToken: 'failed' })]
+      renderLibrary({ tasks: rows, extra: { groups: groupTasks(rows, 'status') } })
+      const failed = screen.getByRole('group', { name: /Failed/ })
+      expect(failed).toHaveTextContent('b.iso')
+      expect(screen.getByRole('group', { name: /Downloading/ })).toHaveTextContent('1')
+    })
+
+    it('a long press enters select mode with that row; taps then toggle', async () => {
+      vi.useFakeTimers()
+      const onSelecting = vi.fn()
+      const { handlers, rerender } = renderLibrary({ tasks: TWO, extra: { onSelecting } })
+      const row = screen.getAllByRole('option')[0]!
+      fireEvent.pointerDown(row, { pointerType: 'touch', isPrimary: true, clientX: 5, clientY: 5 })
+      act(() => vi.advanceTimersByTime(LONG_PRESS_MS))
+      expect(onSelecting).toHaveBeenCalledWith(true)
+      expect(handlers.onSelection).toHaveBeenCalledWith({ type: 'set', ids: ['a'] })
+      // The click the same touch produces does not open the row.
+      fireEvent.click(row)
+      expect(handlers.onOpen).not.toHaveBeenCalled()
+      vi.useRealTimers()
+      rerender(
+        <LibraryView
+          tasks={TWO}
+          total={2}
+          loaded
+          search=""
+          selectedIds={new Set(['a'])}
+          lead="a"
+          sort={UNSORTED}
+          canWrite
+          readOnly={false}
+          {...handlers}
+          selecting
+          selectBar={<div>select bar</div>}
+        />,
+      )
+      fireEvent.click(screen.getAllByRole('option')[1]!)
+      expect(handlers.onSelection).toHaveBeenLastCalledWith({ type: 'toggle', id: 'b' })
+      expect(screen.getByText('select bar')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: en.topbar.addDownload })).toBeNull()
+    })
+
+    it('pulses revealed rows once they are on screen', () => {
+      renderLibrary({ tasks: TWO, extra: { reveal: { ids: ['b'], seq: 1 } } })
+      const b = screen.getAllByRole('option')[1]!
+      expect(b).toHaveAttribute('data-pulse')
+    })
+
+    it('draws tiles in card layout, without column headers', () => {
+      const { container } = renderLibrary({ tasks: TWO, extra: { layout: 'cards', density: 'compact' } })
+      expect(container.querySelector('.rows.cards.compact')).not.toBeNull()
+      expect(screen.queryByRole('button', { name: en.library.colName })).toBeNull()
+    })
+  })
+})

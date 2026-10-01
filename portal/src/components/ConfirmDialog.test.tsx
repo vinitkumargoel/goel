@@ -66,4 +66,29 @@ describe('ConfirmDialog', () => {
     await userEvent.keyboard('{Escape}')
     expect(onClose).toHaveBeenCalled()
   })
+
+  it('lists names, and the option turns the confirm destructive', async () => {
+    const onConfirm = vi.fn()
+    renderWithI18n(
+      <ConfirmDialog
+        request={{
+          title: 'Remove 7 downloads?',
+          body: 'They leave the list.',
+          items: ['a', 'b'],
+          footnote: 'and 5 more · 3 GB in all',
+          confirmLabel: 'Remove 7',
+          option: { label: 'Also delete files from disk', confirmLabel: 'Delete 7 · 3 GB' },
+          onConfirm,
+        }}
+        onClose={() => {}}
+      />,
+    )
+    expect(screen.getByText('and 5 more · 3 GB in all')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove 7' })).toHaveClass('primary')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Also delete files from disk' }))
+    const destroy = screen.getByRole('button', { name: 'Delete 7 · 3 GB' })
+    expect(destroy).toHaveClass('danger')
+    await userEvent.click(destroy)
+    expect(onConfirm).toHaveBeenCalledWith(true)
+  })
 })

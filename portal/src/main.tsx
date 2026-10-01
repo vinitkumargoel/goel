@@ -3,10 +3,13 @@ import { createRoot } from 'react-dom/client'
 import { I18nextProvider } from 'react-i18next'
 import { App } from './App'
 import i18n from './i18n'
+import { registerServiceWorker, watchThemeColor } from './lib/pwa'
 import { applyTheme, initialTheme } from './lib/theme'
 import './styles/themes.css'
 import './styles/portal.css'
 import './styles/features.css'
+import './styles/workflow.css'
+import './styles/controls.css'
 
 /** The QR deep link carries the API token in the URL; the server already exchanged it for a cookie, so drop it before it reaches a bookmark or screenshot. */
 try {
@@ -21,6 +24,9 @@ applyTheme(initialTheme(), false)
 
 const container = document.getElementById('root')
 if (!container) throw new Error('#root is missing from the page shell')
+
+watchThemeColor()
+if (import.meta.env.PROD) registerServiceWorker()
 
 createRoot(container).render(
   <StrictMode>

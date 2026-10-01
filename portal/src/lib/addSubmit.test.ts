@@ -12,8 +12,8 @@ const torrent = new File(['d'], 'a.torrent')
 const options = { folder: '/srv/dl', priority: 'normal' as const, paused: false, network: 'auto' }
 
 beforeEach(() => {
-  api.add.mockReset().mockResolvedValue({ added: 2, refused: 1, ids: [] })
-  api.addTorrents.mockReset().mockResolvedValue({ added: 1, errors: [] })
+  api.add.mockReset().mockResolvedValue({ added: 2, refused: 1, ids: ['l1', 'l2'] })
+  api.addTorrents.mockReset().mockResolvedValue({ added: 1, errors: [], ids: ['t1'] })
 })
 
 describe('submitAdd', () => {
@@ -26,7 +26,7 @@ describe('submitAdd', () => {
       paused: false,
       network: options.network,
     })
-    expect(out).toEqual({ added: 3, refused: 1, failures: [] })
+    expect(out).toEqual({ added: 3, refused: 1, failures: [], ids: ['l1', 'l2', 't1'] })
   })
 
   it('carries the network choice to torrent uploads too', async () => {

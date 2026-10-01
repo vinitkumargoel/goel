@@ -11,6 +11,11 @@ extension RemoteRouter {
         <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
         <title>Goel° — Web Portal</title>
         <link rel="icon" type="image/svg+xml" href="\#(faviconDataURI)">
+        <link rel="manifest" href="\#(manifestPath)">
+        <link rel="apple-touch-icon" href="\#(iconPrefix)apple-touch-icon.png">
+        <meta name="theme-color" content="\#(themeColor(theme))">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-title" content="Goel°">
         <link rel="stylesheet" href="\#(PortalBundle.cssPath)">
         </head>
         <body>
@@ -66,6 +71,8 @@ extension RemoteRouter {
             // Which settings copy is true: a Linux daemon has no desktop app to defer to.
             "host": serverPlatform,
             "hostname": serverHostName,
+            // The portal starts in the server's language; a browser choice overrides it.
+            "language": L10n.languageCode(for: L10n.currentLanguage),
         ]
         let data = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
         return (String(data: data, encoding: .utf8) ?? "{}")

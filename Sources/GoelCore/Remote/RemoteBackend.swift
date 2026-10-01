@@ -57,9 +57,36 @@ public protocol RemoteBackend: AnyObject, Sendable {
     func remoteAddTorrent(_ data: Data, named name: String, saveDirectory: String?,
                           priority: FilePriority, startPaused: Bool,
                           network: NetworkSelection?) async throws -> UUID?
+
+    // Queue controls. Each defaults to a no-op, so an older conformer answers 200 and changes nothing.
+    /// nil or 0 lifts the per-download cap.
+    func setTaskSpeedLimit(_ bytesPerSec: Int64?, task id: UUID) async
+    func setTags(_ tags: [String], task id: UUID) async
+    /// Holds the task paused until `date`; nil clears the hold.
+    func setScheduledStart(_ date: Date?, task id: UUID) async
+    func remoteMove(_ ids: [UUID], to placement: QueueOrder.Placement) async
+    /// nil = no scheduler to expose; the route answers 404.
+    func scheduleState() async -> RemoteScheduleState?
+    /// Called only after the router validated `update` against ``scheduleState()``.
+    func updateSchedule(_ update: RemoteScheduleUpdate) async -> RemoteScheduleState?
+    // Tracker editing; URLs arrive already checked with `TrackerList.isValidAnnounceURL`.
+    /// How many were new to the torrent.
+    func addTrackers(_ urls: [String], task id: UUID) async -> Int
+    func removeTrackers(_ urls: Set<String>, task id: UUID) async
+    /// False when `old` isn't one of the torrent's trackers.
+    func editTracker(_ old: String, to new: String, task id: UUID) async -> Bool
 }
 
 public extension RemoteBackend {
+    func setTaskSpeedLimit(_ bytesPerSec: Int64?, task id: UUID) async {}
+    func setTags(_ tags: [String], task id: UUID) async {}
+    func setScheduledStart(_ date: Date?, task id: UUID) async {}
+    func remoteMove(_ ids: [UUID], to placement: QueueOrder.Placement) async {}
+    func scheduleState() async -> RemoteScheduleState? { nil }
+    func updateSchedule(_ update: RemoteScheduleUpdate) async -> RemoteScheduleState? { nil }
+    func addTrackers(_ urls: [String], task id: UUID) async -> Int { 0 }
+    func removeTrackers(_ urls: Set<String>, task id: UUID) async {}
+    func editTracker(_ old: String, to new: String, task id: UUID) async -> Bool { false }
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { true }
     func historyEntry(_ id: UUID) async -> HistoryEntry? {
         await history(limit: RemoteRouter.historyLimit).first { $0.id == id }
@@ -188,6 +215,21 @@ extension DownloadManager: RemoteBackend {
         return await Task.detached(priority: .userInitiated) {
             SaveFolderBrowser.canSave(into: folder, defaultFolder: defaultFolder)
         }.value
+    }
+
+    public func remoteMove(_ ids: [UUID], to placement: QueueOrder.Placement) async {
+        moveInQueue(ids, to: placement)
+    }
+
+    public func scheduleState() async -> RemoteScheduleState? {
+        RemoteScheduleState(settings)
+    }
+
+    /// Through `apply`: it edits ``storedSettings`` in one actor turn, so only the schedule fields change —
+    /// a concurrent edit elsewhere isn't overwritten, and MDM-forced values aren't written back as stored.
+    public func updateSchedule(_ update: RemoteScheduleUpdate) async -> RemoteScheduleState? {
+        let updated = await apply { update.apply(to: &$0) }
+        return RemoteScheduleState(updated)
     }
 
     public func remoteDownloadRoots() async -> [String] {

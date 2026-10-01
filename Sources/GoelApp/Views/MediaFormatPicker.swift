@@ -234,19 +234,25 @@ struct PlaylistChecklistView: View {
 
     let playlistURL: URL
 
-    var onConfirm: ([PlaylistItem]) -> Void
+    /// The ticked items and the preset every one of them is downloaded as.
+    var onConfirm: ([PlaylistItem], MediaPreset?) -> Void
 
     var preloadedExpansion: PlaylistExpansion?
 
     var sheetActions: SheetActions?
 
+    /// Settings › Max video quality, for the Best preset's label and selector.
+    var maxHeight: Int
+
     init(playlistURL: URL,
          preloadedExpansion: PlaylistExpansion? = nil,
          sheetActions: SheetActions? = nil,
-         onConfirm: @escaping ([PlaylistItem]) -> Void) {
+         maxHeight: Int = 0,
+         onConfirm: @escaping ([PlaylistItem], MediaPreset?) -> Void) {
         self.playlistURL = playlistURL
         self.preloadedExpansion = preloadedExpansion
         self.sheetActions = sheetActions
+        self.maxHeight = maxHeight
         self.onConfirm = onConfirm
     }
 
@@ -260,6 +266,7 @@ struct PlaylistChecklistView: View {
     @State private var expansion = PlaylistExpansion(title: "", items: [])
     @State private var selected: Set<String> = []
     @State private var loadTask: Task<Void, Never>?
+    @State private var preset: MediaPreset? = .best
 
     var body: some View {
         if let sheetActions {
@@ -296,6 +303,7 @@ struct PlaylistChecklistView: View {
                     .accessibilityLabel(L10n.t("Couldn’t list the playlist. %@", message))
             case .loaded:
                 itemList
+                MediaPresetGrid(maxHeight: maxHeight, selection: $preset)
                 footer
             }
         }
@@ -388,7 +396,7 @@ struct PlaylistChecklistView: View {
 
     private var addSelectedButton: some View {
         Button(L10n.t("Add Selected")) {
-            onConfirm(expansion.items.filter { selected.contains($0.id) })
+            onConfirm(expansion.items.filter { selected.contains($0.id) }, preset)
         }
         .buttonStyle(.borderedProminent)
         .disabled(phase != .loaded || selected.isEmpty)
@@ -479,7 +487,7 @@ ID  EXT   RESOLUTION FPS CH |   FILESIZE   TBR PROTO | VCODEC        VBR ACODEC 
                 PlaylistItem(id: "id\($0)", title: "Episode \($0) — a fairly long video title",
                              url: "https://example.com/watch?v=id\($0)",
                              durationSeconds: 200 * $0, index: $0)
-            })) { _ in }
+            })) { _, _ in }
         .padding(16)
         .frame(width: 460)
 }

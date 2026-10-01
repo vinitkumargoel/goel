@@ -136,6 +136,9 @@ public struct RemoteRouter: Sendable {
                 }
                 network = parsed
             }
+            if let at = payload.startAt, Self.startDate(String(at)) == nil {
+                return Self.badRequest(Self.startRefusal)
+            }
             let lines = payload.url.split(whereSeparator: \.isNewline)
                 .map { String($0).trimmingCharacters(in: .whitespaces) }
             // The parser strips `user:pass@`, so accepting it would queue a download that 401s. Nothing
@@ -161,6 +164,8 @@ public struct RemoteRouter: Sendable {
                                                  network: network)
                 if let id { ids.append(id.uuidString) }
             }
+            await Self.applyAddExtras(ids, sequential: payload.sequential, startAt: payload.startAt,
+                                      backend: backend)
             return Self.json(AddedRow(added: allowed.count, refused: refused, ids: ids))
 
         case ("GET", "/api/folders"):
@@ -209,11 +214,15 @@ public struct RemoteRouter: Sendable {
         case ("POST", RemoteTorrentUpload.path):
             return await Self.addTorrents(request, backend: backend)
 
+        case ("POST", RemoteAddPreview.path):
+            return await Self.addPreview(request, backend: backend)
+
         case ("POST", "/api/history-remove"):
             guard let id = queryID(request) else { return Self.badRequest() }
             await backend.removeHistoryEntry(id); return Self.ok()
 
         default:
+            if let controlled = await Self.controlRoute(request, backend: backend) { return controlled }
             return Self.response(status: "404 Not Found", type: "text/plain", body: Data("Not found\n".utf8))
         }
     }
@@ -225,7 +234,7 @@ public struct RemoteRouter: Sendable {
 
     /// Deliberately ahead of the auth gate (the login page needs styles); dict lookup, so no traversal.
     static func staticAsset(path: String) -> Data? {
-        guard path.hasPrefix(assetPrefix) else { return nil }
+        guard path.hasPrefix(assetPrefix) else { return pwaAsset(path: path) }
         let name = String(path.dropFirst(assetPrefix.count))
         guard let asset = PortalBundle.assets[name] else { return notFound() }
         return response(status: "200 OK", type: asset.mime, body: Data(asset.body.utf8),
@@ -358,7 +367,8 @@ public struct RemoteRouter: Sendable {
         // CSP: the portal renders download names, tracker hosts and errors that came from off-machine.
         head += "Content-Security-Policy: default-src 'none'; script-src 'self'; "
         head += "style-src 'self'; img-src 'self' data:; media-src 'self'; "
-        head += "connect-src 'self'; form-action 'self'; base-uri 'none'\r\n"
+        head += "connect-src 'self'; manifest-src 'self'; worker-src 'self'; "
+        head += "form-action 'self'; base-uri 'none'\r\n"
         head += "X-Content-Type-Options: nosniff\r\n"
         head += "X-Frame-Options: DENY\r\n"
         head += "Referrer-Policy: no-referrer\r\n"
@@ -373,6 +383,10 @@ public struct RemoteRouter: Sendable {
         var priority: String?
         var paused: Bool?
         var network: String?
+        /// Torrents only: pieces in order, so the file can play while it downloads.
+        var sequential: Bool?
+        /// Unix seconds: hold the new downloads paused until then.
+        var startAt: Double?
     }
 
     private struct AggregationPayload: Decodable {
@@ -437,9 +451,20 @@ public struct RemoteRouter: Sendable {
         var etaSeconds: Double?
         var error: String?
         var source: String
+        /// Where it lands: library search matches the folder as well as the name and host.
+        var savePath: String
         var multiFile: Bool
         var fileCount: Int
         var streamable: Bool
+        /// Per-download cap in bytes/s; nil = none.
+        var speedLimit: Int64?
+        var tags: [String]
+        /// Place in the queue (lower runs first); nil until the restore backfill numbers it.
+        var queuePosition: Int?
+        /// The download's own priority among waiting ones.
+        var priority: String
+        /// Unix seconds a held download starts at; nil = no hold.
+        var startAt: Double?
 
         init(_ task: DownloadTask) {
             id = task.id.uuidString
@@ -461,10 +486,16 @@ public struct RemoteRouter: Sendable {
             etaSeconds = task.estimatedTimeRemaining
             error = RemoteRouter.errorMessage(task.status)
             source = task.source.redactedLocator
+            savePath = task.savePath
             multiFile = task.isMultiFile
             fileCount = task.files.count
             // From status, not a stat: this runs per row per SSE tick; /stream still checks the disk.
             streamable = RemoteStreamService.isStreamableHint(task)
+            speedLimit = task.speedLimitBytesPerSec
+            tags = task.tags ?? []
+            queuePosition = task.queuePosition
+            priority = RemoteRouter.priorityToken(task.priority)
+            startAt = task.scheduledAt?.timeIntervalSince1970
         }
     }
 
@@ -519,7 +550,10 @@ public struct RemoteRouter: Sendable {
         var seeds: Int?
         var leeches: Int?
         var message: String
+        /// working | updating | error | inactive — `status` is display text, and an error's is its message.
+        var state: String
         init(_ t: TorrentTracker) {
+            state = RemoteRouter.trackerState(t.status)
             url = t.url
             host = t.host
             tier = t.tier

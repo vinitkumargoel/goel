@@ -8,6 +8,10 @@ struct AppToolbar: View {
     /// in the menu bar and reaches the field through a notification.
     @FocusState private var searchFocused: Bool
 
+    @AppStorage(ToolbarSlot.storageKey) private var slotsRaw = ""
+
+    private var slots: Set<ToolbarSlot> { ToolbarSlot.decode(slotsRaw) }
+
     var body: some View {
         HStack(spacing: 8) {
             Button {
@@ -56,26 +60,33 @@ struct AppToolbar: View {
 
             Spacer()
 
-            pauseResumeAllButton
+            ToolbarExtras(slots: slots)
 
-            searchField
+            if slots.contains(.pauseResume) { pauseResumeAllButton }
 
-            Button {
-                vm.detailPanelVisible.toggle()
-            } label: {
-                Image(systemName: "sidebar.right")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            // ⌘I is bound once, in View ▸ Toggle Detail Panel; the palette advertises the same key.
-            .help(ShortcutHint.help(L10n.t("Toggle detail panel"), "⌘I"))
-            .tint(vm.detailPanelVisible ? Theme.accent : nil)
-            .a11yButton(L10n.t("Detail panel"))
-            .accessibilityValue(vm.detailPanelVisible ? L10n.t("Shown") : L10n.t("Hidden"))
+            if slots.contains(.search) { searchField }
+
+            if slots.contains(.inspector) { inspectorButton }
         }
         .padding(.horizontal, 14)
         .frame(height: 52)
         .background(.bar)
+        .contextMenu { ToolbarCustomizeMenu(raw: $slotsRaw) }
+    }
+
+    private var inspectorButton: some View {
+        Button {
+            vm.detailPanelVisible.toggle()
+        } label: {
+            Image(systemName: "sidebar.right")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        // ⌘I is bound once, in View ▸ Toggle Detail Panel; the palette advertises the same key.
+        .help(ShortcutHint.help(L10n.t("Toggle detail panel"), "⌘I"))
+        .tint(vm.detailPanelVisible ? Theme.accent : nil)
+        .a11yButton(L10n.t("Detail panel"))
+        .accessibilityValue(vm.detailPanelVisible ? L10n.t("Shown") : L10n.t("Hidden"))
     }
 
     private var searchField: some View {

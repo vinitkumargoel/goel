@@ -29,7 +29,7 @@ export function ShortcutsDialog({ onClose }: ShortcutsDialogProps) {
             <dt>
               {doc.keys.map((k, i) => (
                 <Fragment key={k}>
-                  {i > 0 && <span className="kplus">+</span>}
+                  {i > 0 && <span className="kplus">{doc.sequence ? t('workflow.shortcuts.then') : '+'}</span>}
                   <kbd className="kbd">{k}</kbd>
                 </Fragment>
               ))}

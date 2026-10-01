@@ -15,6 +15,8 @@ export type SelectionAction =
   /** Shift-click or Shift+arrow: everything between the lead and this row, in visible order. */
   | { type: 'range'; id: string; order: readonly string[] }
   | { type: 'all'; order: readonly string[] }
+  /** Exactly these rows, the first as lead: e.g. the downloads just added. */
+  | { type: 'set'; ids: readonly string[] }
   | { type: 'clear' }
   /** Drops ids that are no longer in the list, e.g. after a remove or a snapshot. */
   | { type: 'prune'; existing: readonly string[] }
@@ -53,6 +55,10 @@ export function selectionReducer(state: Selection, action: SelectionAction): Sel
         ids: new Set(action.order),
         lead: state.lead != null && action.order.includes(state.lead) ? state.lead : action.order[0]!,
       }
+
+    case 'set':
+      if (action.ids.length === 0) return EMPTY_SELECTION
+      return { ids: new Set(action.ids), lead: action.ids[0]! }
 
     case 'clear':
       return EMPTY_SELECTION

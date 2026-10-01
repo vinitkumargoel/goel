@@ -39,6 +39,16 @@ export interface TaskRow {
   multiFile: boolean
   fileCount: number
   streamable: boolean
+  /** Bytes/s cap on this one download; null or absent = none. */
+  speedLimit?: number | null
+  tags?: string[]
+  /** 0-based place among queued downloads; null once it has started. */
+  queuePosition?: number | null
+  priority?: 'low' | 'normal' | 'high'
+  /** Unix seconds: held until then. */
+  startAt?: number | null
+  /** Folder it saves into; absent from daemons that predate it. */
+  savePath?: string
 }
 
 export interface FileRow {
@@ -58,6 +68,8 @@ export interface TrackerRow {
   seeds: number | null
   leeches: number | null
   message: string
+  /** Absent from older servers. */
+  state?: 'working' | 'updating' | 'error' | 'inactive'
 }
 
 export interface ConnRow {
@@ -143,6 +155,8 @@ export interface TorrentAddOptions {
   paused?: boolean
   /** As `AddRequest.network`; left off for `auto`. */
   network?: string
+  sequential?: boolean
+  startAt?: number
 }
 
 export interface AddRequest {
@@ -152,6 +166,10 @@ export interface AddRequest {
   paused?: boolean
   /** A `NetworkSelection` spec: "auto", "single:eth0", "aggregate", "aggregate:a,b". */
   network?: string
+  /** Torrents: fetch pieces in order so the file can be played while it downloads. */
+  sequential?: boolean
+  /** Unix seconds: queue it now, start it then. */
+  startAt?: number
 }
 
 export interface FolderEntry {
@@ -186,4 +204,58 @@ export interface NetworkUpdate {
   /** Empty array means "all eligible". */
   adapters?: string[]
   streams?: number
+}
+
+/** `GET /api/schedule`: one download window; outside it downloads are held. */
+export interface ScheduleState {
+  enabled: boolean
+  /** Local minutes since midnight. start == end means all day; end < start wraps past midnight. */
+  startMinute: number
+  endMinute: number
+  /** Calendar weekdays: 1 = Sunday … 7 = Saturday. */
+  days: number[]
+  /** Empty = keep the active profile. */
+  profile: string
+  profiles: string[]
+}
+
+export type ScheduleUpdate = Partial<Omit<ScheduleState, 'profiles'>>
+
+export type QueuePlacement = 'top' | 'bottom' | 'before' | 'after'
+
+/** `/api/add-preview`: one pasted line, by its index among the lines sent. */
+export type AddPreviewStatus = 'ok' | 'unsupported' | 'duplicate' | 'refused' | 'credentials' | 'unchecked'
+
+export interface AddPreviewItem {
+  index: number
+  status: AddPreviewStatus
+  /** Null when the probe timed out or could not tell. */
+  name: string | null
+  kind: TaskKind | null
+  totalBytes: number | null
+  estimated: boolean
+  files: { name: string; size: number }[]
+  /** The whole count; `files` stops at 200. */
+  fileCount: number
+  note: string | null
+}
+
+export interface AddPreviewResult {
+  items: AddPreviewItem[]
+  /** Free space where the add would land; null when the server can't tell. */
+  freeBytes: number | null
+}
+
+/** `POST /api/trackers`: any mix of adds, removals and one rename. */
+export interface TrackerEdit {
+  id: string
+  add?: string[]
+  remove?: string[]
+  edit?: { old: string; new: string }
+}
+
+export interface TrackerEditResult {
+  added: number
+  removed: number
+  edited: boolean
 }

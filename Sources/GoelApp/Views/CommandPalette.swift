@@ -302,7 +302,7 @@ struct CommandPalette: View {
                 vm.isAddSheetPresented = true
             },
             PaletteCommand(id: "add.clipboard", title: L10n.t("Paste URLs from Clipboard"),
-                           subtitle: L10n.t("Queue every link on the pasteboard, one per line"),
+                           subtitle: L10n.t("Review every link on the pasteboard, one per line"),
                            symbol: "doc.on.clipboard", group: .add, shortcut: "⌘⇧V",
                            keywords: ["paste", "batch", "bulk"]) {
                 guard let text = NSPasteboard.general.string(forType: .string),
@@ -310,13 +310,26 @@ struct CommandPalette: View {
                     vm.toastWarning(L10n.t("Nothing on the clipboard"))
                     return
                 }
-                vm.add(rawLines: text, saveDirectory: nil, priority: .normal)
+                vm.addFromClipboard()
             },
             PaletteCommand(id: "add.grabber", title: L10n.t("Grab Links from Page…"),
                            subtitle: L10n.t("List every file linked from a page and pick from it"),
                            symbol: "link.badge.plus", group: .add, shortcut: "⌘⇧L",
                            keywords: ["scrape", "extract", "page", "links"]) {
                 vm.isLinkGrabberPresented = true
+            },
+            PaletteCommand(id: "add.createTorrent", title: L10n.t("Create Torrent…"),
+                           subtitle: L10n.t("Make a .torrent from a file or folder, and seed it"),
+                           symbol: "doc.badge.plus", group: .add,
+                           keywords: ["create", "make", "torrent", "seed", "share"]) {
+                CreateTorrentWindow.shared.show()
+            },
+            PaletteCommand(id: "add.rss", title: L10n.t("Open RSS Feeds"),
+                           subtitle: L10n.t("Read feeds, and edit what each one downloads"),
+                           symbol: "dot.radiowaves.up.forward", group: .add,
+                           keywords: ["rss", "feed", "atom", "podcast", "rules"]) {
+                vm.closeServerBrowser()
+                RSSReaderModel.shared.open()
             },
             PaletteCommand(id: "add.basket", title: L10n.t("Show Drop Basket"),
                            subtitle: L10n.t("A small always-on-top target for dragging links onto"),
@@ -393,6 +406,14 @@ struct CommandPalette: View {
                            symbol: "sidebar.left", group: .view, shortcut: "⌃⌘S",
                            keywords: ["sidebar", "filters", "narrow", "hide"]) {
                 vm.sidebarVisible.toggle()
+            },
+            PaletteCommand(id: "view.density", title: L10n.t("Toggle Compact Rows"),
+                           subtitle: ListDensity.stored == .compact
+                               ? L10n.t("Back to two-line rows")
+                               : L10n.t("One-line rows with a thin progress bar"),
+                           symbol: "list.bullet.rectangle", group: .view, shortcut: "⌥⌘C",
+                           keywords: ["density", "compact", "regular", "rows", "dense"]) {
+                ListDensity.toggleStored()
             },
             PaletteCommand(id: "view.detail", title: L10n.t("Toggle Detail Panel"),
                            subtitle: L10n.t("Files, peers, trackers, and per-task limits"),
@@ -494,6 +515,7 @@ struct CommandPalette: View {
     private static func paneSummary(_ pane: SettingsView.Pane) -> String {
         switch pane {
         case .general:     return L10n.t("Theme, language, default folder, clipboard capture, sleep")
+        case .rules:       return L10n.t("Sort new downloads into folders, tags and limits by name, site or size")
         case .notifications: return L10n.t("Banners for added, finished and failed downloads")
         case .network:     return L10n.t("Proxy, timeouts, retries, saved per-host credentials")
         case .aggregation: return L10n.t("Combine Wi-Fi and Ethernet on one download")
@@ -516,6 +538,7 @@ struct CommandPalette: View {
     private static func paneKeywords(_ pane: SettingsView.Pane) -> [String] {
         switch pane {
         case .general:     return ["theme", "folder", "language", "clipboard", "sleep", "battery", "power"]
+        case .rules:       return ["rules", "sort", "auto", "filter", "folder", "category", "when done"]
         case .notifications: return ["notifications", "banner", "alert", "sound", "notify"]
         case .network:     return ["proxy", "socks", "timeout", "retry", "user agent", "credentials", "password"]
         case .aggregation: return ["aggregation", "multipath", "wifi", "ethernet", "adapter", "bonding"]

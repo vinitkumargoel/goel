@@ -59,4 +59,19 @@ describe('Toasts', () => {
     act(() => within(screen.getByRole('alert')).getByRole('button').focus())
     expect(handlers.onPause).toHaveBeenCalledWith(2)
   })
+
+  it('renders a toast action as a button', async () => {
+    const onAction = vi.fn()
+    renderWithI18n(
+      <Toasts
+        toasts={[{ id: 9, message: 'Removed x', tone: 'trash', leaving: false, action: { label: 'Undo', run: () => {} } }]}
+        onDismiss={vi.fn()}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onAction={onAction}
+      />,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(onAction).toHaveBeenCalledWith(9)
+  })
 })

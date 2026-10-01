@@ -83,6 +83,22 @@ export function useDetail(
     [load, onWarn],
   )
 
+  /** Many files, one priority, one request — a folder checkbox or "Only video". */
+  const setFilePriorities = useCallback(
+    async (fileIds: readonly number[], priority: FilePriority) => {
+      const id = idRef.current
+      if (id == null || fileIds.length === 0) return
+      try {
+        await api.filePriorities(id, fileIds, priority)
+      } catch (e) {
+        const message = failureMessage(e)
+        if (message) onWarn(message)
+      }
+      await load(id)
+    },
+    [load, onWarn],
+  )
+
   const cyclePriority = useCallback(
     (fileId: number, current: FilePriority) => {
       const order: FilePriority[] = ['low', 'normal', 'high']
@@ -92,5 +108,5 @@ export function useDetail(
     [setFilePriority],
   )
 
-  return { detail, reload, setFilePriority, cyclePriority }
+  return { detail, reload, setFilePriority, setFilePriorities, cyclePriority }
 }

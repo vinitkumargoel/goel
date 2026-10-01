@@ -1,14 +1,16 @@
-import { Fragment, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { fileURL, streamURL, zipURL } from '../lib/api'
-import { commonDir, fileLabels, splitTail } from '../lib/names'
+import { streamURL } from '../lib/api'
 import { pieceRuns, piecesHave } from '../lib/pieces'
 import { useSpeedSeries } from '../lib/speedStore'
+import { FilesTree } from './FilesTree'
+import { TrackersSection } from './TrackersSection'
 import { SpeedChart } from './SpeedChart'
 import { fmtAbsolute, fmtEta, fmtSize, fmtSpeed, IDLE_RATE, pct } from '../lib/format'
 import { kindLabel } from '../lib/taskKind'
-import type { FilePriority, StatusToken, TaskDetail, TaskKind } from '../lib/types'
-import { CheckIcon, CopyIcon, DownloadIcon, FolderIcon, RetryIcon, WarnIcon } from './Icons'
+import type { QueueControls } from '../hooks/useQueueControls'
+import type { FilePriority, StatusToken, TaskDetail, TaskKind, TaskRow } from '../lib/types'
+import { CheckIcon, CopyIcon, DownloadIcon, RetryIcon, WarnIcon } from './Icons'
 
 export type DetailTab = 'general' | 'details' | 'progress' | 'files' | 'peers'
 
@@ -187,13 +189,15 @@ function FailureCard({
 
 const MONO = { fontFamily: 'ui-monospace, monospace', fontSize: 11 } as const
 
-export function DetailsPane({ detail }: { detail: TaskDetail }) {
+export function DetailsPane({ detail, queue }: { detail: TaskDetail; queue?: QueueControls }) {
   const { t } = useTranslation()
   const row = detail.row
+  const controls = <QueueSection row={row} queue={queue} />
 
   if (row.kind === 'torrent') {
     return (
       <>
+        {controls}
         <KV k={t('detail.details.infoHash')}>
           <span className="ell" style={{ ...MONO, maxWidth: 150 }}>
             {detail.infoHash ?? '—'}
@@ -201,37 +205,103 @@ export function DetailsPane({ detail }: { detail: TaskDetail }) {
         </KV>
         <KV k={t('detail.details.seeds')}>{row.seeds ?? '—'}</KV>
         <KV k={t('detail.details.peers')}>{row.conns}</KV>
-        <KV k={t('detail.details.sequential')}>
-          {detail.sequential ? t('common.on') : t('common.off')}
-        </KV>
-        {detail.trackers.length > 0 && (
-          <>
-            <div className="slbl">{t('detail.details.trackers')}</div>
-            {detail.trackers.map((tr) => (
-              <div className="kv" key={tr.url}>
-                <span
-                  className="k"
-                  style={{ ...MONO, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                >
-                  {tr.host || tr.url}
-                </span>
-                {/* Tracker status text comes from the tracker itself. */}
-                <span className="v">{tr.status}</span>
-              </div>
-            ))}
-          </>
+        {queue && !row.multiFile ? (
+          <label className="kv qseq">
+            <span className="k">
+              {t('queue.sequential')}
+              <span className="qseq-hint">{t('queue.sequentialHint')}</span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              className="tgl"
+              checked={detail.sequential}
+              onChange={(e) => queue.setSequential(row.id, e.target.checked)}
+            />
+          </label>
+        ) : (
+          <KV k={t('detail.details.sequential')}>
+            {detail.sequential ? t('common.on') : t('common.off')}
+          </KV>
         )}
+        <TrackersSection taskId={row.id} trackers={detail.trackers} queue={queue} />
       </>
     )
   }
 
   return (
     <>
+      {controls}
       <KV k={t('detail.details.server')}>{detail.server ?? '—'}</KV>
       <KV k={t('detail.details.mime')}>{detail.mimeType ?? '—'}</KV>
       <KV k={t('detail.details.connections')}>{row.conns}</KV>
       <KV k={t('detail.details.segments')}>{detail.connections.length || '—'}</KV>
     </>
+  )
+}
+
+/** The per-download controls: cap, place in line, tags, start time. Read-only sessions see values only. */
+function QueueSection({ row, queue }: { row: TaskRow; queue?: QueueControls }) {
+  const { t } = useTranslation()
+  const waiting = row.statusToken === 'queued' || row.statusToken === 'paused'
+  const tags = row.tags ?? []
+  if (!queue && !row.speedLimit && tags.length === 0 && !row.startAt) return null
+  return (
+    <div className="qsect">
+      <div className="kv">
+        <span className="k">{t('queue.speedLabel')}</span>
+        <span className="v">
+          {row.speedLimit ? fmtSpeed(row.speedLimit) : t('queue.unlimited')}
+          {queue && (
+            <button type="button" className="linkbtn" onClick={() => queue.edit({ kind: 'speed', task: row })}>
+              {t('queue.edit')}
+            </button>
+          )}
+        </span>
+      </div>
+      {waiting && (
+        <div className="kv">
+          <span className="k">{t('queue.position')}</span>
+          <span className="v">
+            {row.queuePosition != null ? `#${row.queuePosition + 1}` : '—'}
+            {queue && (
+              <>
+                <button type="button" className="linkbtn" onClick={() => queue.move([row.id], 'top')}>
+                  {t('queue.top')}
+                </button>
+                <button type="button" className="linkbtn" onClick={() => queue.move([row.id], 'bottom')}>
+                  {t('queue.bottom')}
+                </button>
+              </>
+            )}
+          </span>
+        </div>
+      )}
+      {(waiting || row.startAt) && (
+        <div className="kv">
+          <span className="k">{t('queue.startLabel')}</span>
+          <span className="v">
+            {row.startAt ? fmtAbsolute(row.startAt) : t('queue.startNow')}
+            {queue && (
+              <button type="button" className="linkbtn" onClick={() => queue.edit({ kind: 'start', task: row })}>
+                {t('queue.edit')}
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+      <div className="kv">
+        <span className="k">{t('queue.tagsLabel')}</span>
+        <span className="v qtags-inline">
+          {tags.length ? tags.map((tag) => <span key={tag} className="qtag on">{tag}</span>) : '—'}
+          {queue && (
+            <button type="button" className="linkbtn" onClick={() => queue.edit({ kind: 'tags', task: row })}>
+              {t('queue.edit')}
+            </button>
+          )}
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -339,11 +409,11 @@ function ProgressBody({ detail }: { detail: TaskDetail }) {
 interface FilesPaneProps {
   detail: TaskDetail
   canWrite: boolean
-  onToggleFile: (fileId: number, wasSkipped: boolean) => void
+  onSetFiles: (fileIds: readonly number[], priority: FilePriority) => Promise<void>
   onCyclePriority: (fileId: number, current: FilePriority) => void
 }
 
-export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: FilesPaneProps) {
+export function FilesPane({ detail, canWrite, onSetFiles, onCyclePriority }: FilesPaneProps) {
   const { t } = useTranslation()
   const row = detail.row
 
@@ -383,114 +453,22 @@ export function FilesPane({ detail, canWrite, onToggleFile, onCyclePriority }: F
     )
   }
 
-  // Season packs repeat one folder on every row, cutting off the part that differs: say it once.
-  const shared = commonDir(detail.files.map((f) => f.name))
-  const labels = fileLabels(
-    detail.files.map((f) => f.name),
-    shared,
-  )
-  const finished = detail.files.filter((f) => f.priority !== 'skip' && f.progress >= 1).length
-
   return (
-    <>
-      {(shared || (row.multiFile && finished > 0)) && (
-        <div className="fhead">
-          {shared && (
-            <span className="fdir" title={shared}>
-              <FolderIcon aria-hidden="true" />
-              <span className="ell">{shared.replace(/\/$/, '').split('/').join(' / ')}</span>
-            </span>
-          )}
-          {row.multiFile && finished > 0 && (
-            <a
-              className="linkbtn fzip"
-              href={zipURL(row.id)}
-              download
-              title={t('detail.downloadAllHint')}
-            >
-              {t('detail.files.saveFinished', { count: finished })}
-            </a>
-          )}
-        </div>
-      )}
-      {detail.files.map((f, i) => {
-        const skipped = f.priority === 'skip'
-        const { dir, label } = labels[i]!
-        const { head, tail } = splitTail(label)
-        // A subfolder is named once, above its first file, rather than on every row.
-        const heading = dir !== '' && dir !== labels[i - 1]?.dir
-        return (
-          <Fragment key={f.id}>
-            {heading && (
-              <div className="fsub" title={shared + dir}>
-                <FolderIcon aria-hidden="true" />
-                <span className="ell">{dir.split('/').join(' / ')}</span>
-              </div>
-            )}
-            <div className="frow">
-              <button
-                type="button"
-                role="checkbox"
-                aria-checked={!skipped}
-                aria-label={t('detail.files.download', { name: f.name })}
-                className={`fchk${skipped ? '' : ' on'}`}
-                disabled={!canWrite}
-                onClick={() => onToggleFile(f.id, skipped)}
-              >
-                <CheckIcon />
-              </button>
-              <div className="finfo">
-                {/* Middle ellipsis: the head truncates, the tail (episode, extension) stays whole. */}
-                <div className={`fname${skipped ? ' skipped' : ''}`} title={f.name}>
-                  <span className="fhead-t">{head}</span>
-                  {tail && <span className="ftail">{tail}</span>}
-                </div>
-                <div className="fbar">
-                  <i style={{ width: `${pct(f.progress).toFixed(0)}%` }} />
-                </div>
-              </div>
-              <span className="fsz">{fmtSize(f.size)}</span>
-              <button
-                type="button"
-                className={`fprio ${f.priority}`}
-                disabled={!canWrite}
-                aria-label={t('detail.files.priority', {
-                  name: f.name,
-                  priority: t(`task.priority.${f.priority}`),
-                })}
-                onClick={() => onCyclePriority(f.id, f.priority)}
-              >
-                {t(`task.priority.${f.priority}`)}
-              </button>
-              {!skipped && f.progress >= 1 ? (
-                <a
-                  className="fdl"
-                  href={fileURL(row.id, f.id)}
-                  download={baseName(f.name)}
-                  aria-label={t('detail.files.save', { name: f.name })}
-                  title={t('detail.files.saveHint')}
-                >
-                  <DownloadIcon />
-                </a>
-              ) : (
-                <span className="fdl-gap" aria-hidden="true" />
-              )}
-            </div>
-          </Fragment>
-        )
-      })}
-    </>
+    <FilesTree
+      detail={detail}
+      canWrite={canWrite}
+      onSetFiles={onSetFiles}
+      onCyclePriority={onCyclePriority}
+    />
   )
-}
-
-function baseName(path: string): string {
-  return path.split('/').pop() || path
 }
 
 export function PeersPane({ detail }: { detail: TaskDetail }) {
   const { t } = useTranslation()
   const row = detail.row
   const rows = detail.connections
+  // Only worth a column when multi-adapter aggregation is spreading peers over interfaces.
+  const adapters = rows.some((c) => c.adapterLabel)
 
   if (row.kind === 'torrent') {
     return (
@@ -501,15 +479,24 @@ export function PeersPane({ detail }: { detail: TaskDetail }) {
             peers: row.conns,
           })}
         </div>
-        <div className="crow h">
+        <div className={`crow peers h${adapters ? ' ad' : ''}`}>
           <span>{t('detail.peers.colPeer')}</span>
+          <span>{t('queue.colClient')}</span>
+          <span>{t('queue.colProgress')}</span>
+          {adapters && <span>{t('queue.colAdapter')}</span>}
           <span className="cd">↓</span>
           <span className="cu">↑</span>
         </div>
         {rows.length === 0 && <p className="fhint">{t('detail.peers.none')}</p>}
         {rows.map((c) => (
-          <div className="crow" key={c.id}>
-            <span className="cip">{c.label}</span>
+          <div className={`crow peers${adapters ? ' ad' : ''}`} key={c.id}>
+            <span className="cip" title={c.label}>{c.label}</span>
+            {/* The client string is what the peer announced about itself. */}
+            <span className="ccl" title={c.detail}>{c.detail === 'peer' ? '—' : c.detail}</span>
+            <span className="cpg" title={`${pct(c.progress).toFixed(0)}%`}>
+              <Bar fraction={c.progress} height={4} label={t('queue.peerProgress', { peer: c.label })} />
+            </span>
+            {adapters && <span className="cad">{c.adapterLabel ?? '—'}</span>}
             <span className="cd">{fmtSpeed(c.down)}</span>
             <span className="cu">{fmtSpeed(c.up)}</span>
           </div>
@@ -521,14 +508,16 @@ export function PeersPane({ detail }: { detail: TaskDetail }) {
   return (
     <>
       <div className="slbl">{t('detail.peers.connections', { count: row.conns })}</div>
-      <div className="crow h">
+      <div className={`crow h${adapters ? ' segad' : ''}`}>
         <span>{t('detail.peers.colSegment')}</span>
+        {adapters && <span>{t('queue.colAdapter')}</span>}
         <span className="cd">↓</span>
         <span className="cu">{t('detail.peers.colRange')}</span>
       </div>
       {rows.map((c) => (
-        <div className="crow" key={c.id}>
+        <div className={`crow${adapters ? ' segad' : ''}`} key={c.id}>
           <span className="cip">{c.label}</span>
+          {adapters && <span className="cad">{c.adapterLabel ?? '—'}</span>}
           <span className="cd">{fmtSpeed(c.down)}</span>
           <span className="cu" style={{ color: 'var(--text-dim)' }}>
             {c.detail}

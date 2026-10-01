@@ -128,6 +128,8 @@ struct AddSheetMirrorsField: View {
 struct AddSheetMetadataSummary: View {
     let preview: DownloadPreview
     let sizeText: String
+    /// Editable name, extension excluded; nil shows the suggestion read-only (a torrent's name is its own).
+    var baseName: Binding<String>? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -138,11 +140,15 @@ struct AddSheetMetadataSummary: View {
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
                 .a11yDecorative()
             VStack(alignment: .leading, spacing: 4) {
-                Text(preview.suggestedName)
-                    .scaledFont(size: Theme.TextSize.title, weight: .semibold)
-                    .lineLimit(2)
-                    .textSelection(.enabled)
-                    .accessibilityAddTraits(.isHeader)
+                if let baseName {
+                    AddSheetNameField(base: baseName, fileExtension: FileNameEdit.split(preview.suggestedName).ext)
+                } else {
+                    Text(preview.suggestedName)
+                        .scaledFont(size: Theme.TextSize.title, weight: .semibold)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 HStack(spacing: 8) {
                     KindBadge(kind: preview.kind, size: Theme.TextSize.caption)
                     Text(sizeText)
@@ -160,26 +166,42 @@ struct AddSheetMetadataSummary: View {
     }
 }
 
-/// "Resolve Media with yt-dlp", or its progress while yt-dlp runs.
-struct AddSheetYtDlpRow: View {
-    let isResolving: Bool
-    let onResolve: () -> Void
-
+/// yt-dlp's progress while it turns the page into a stream.
+struct AddSheetResolvingRow: View {
     var body: some View {
         HStack(spacing: 8) {
-            if isResolving {
-                ProgressView().controlSize(.small)
-                    .accessibilityLabel(L10n.t("Resolving media formats"))
-                Text(L10n.t("Asking yt-dlp…"))
-                    .scaledFont(size: Theme.TextSize.meta)
-                    .foregroundStyle(.secondary)
-            } else {
-                Button(L10n.t("Resolve Media with yt-dlp"), action: onResolve)
-                Text(L10n.t("For video-site pages: download the stream, not the page."))
-                    .scaledFont(size: Theme.TextSize.caption)
-                    .foregroundStyle(.secondary)
-            }
+            ProgressView().controlSize(.small)
+                .accessibilityLabel(L10n.t("Resolving media formats"))
+            Text(L10n.t("Asking yt-dlp…"))
+                .scaledFont(size: Theme.TextSize.meta)
+                .foregroundStyle(.secondary)
             Spacer()
         }
+    }
+}
+
+/// The file name as a field, with the extension shown beside it and never editable.
+struct AddSheetNameField: View {
+    @Binding var base: String
+    let fileExtension: String
+
+    var body: some View {
+        HStack(spacing: 2) {
+            TextField(L10n.t("File name"), text: $base)
+                .textFieldStyle(.plain)
+                .scaledFont(size: Theme.TextSize.title, weight: .semibold)
+                .accessibilityLabel(L10n.t("File name"))
+                .accessibilityHint(L10n.t("The extension stays the same."))
+            if !fileExtension.isEmpty {
+                Text("." + fileExtension)
+                    .scaledFont(size: Theme.TextSize.title, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .help(L10n.t("The extension stays the same."))
+            }
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Radius.field))
     }
 }

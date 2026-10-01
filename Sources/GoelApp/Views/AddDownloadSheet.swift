@@ -13,6 +13,8 @@ struct AddDownloadSheet: View {
         case resolving
         case confirm(DownloadPreview)
         case playlist(URL)
+        /// Several links: the shared "Review N links" step.
+        case review(String)
     }
     @State private var phase: Phase = .input
     @State private var deselectedFileIDs: Set<Int> = []
@@ -43,6 +45,11 @@ struct AddDownloadSheet: View {
 
     @State private var chosenFormat: MediaFormat?
     @State private var pageListsFormats = false
+    /// Media mode's one-click choice; a raw format from "More formats…" clears it.
+    @State private var mediaPreset: MediaPreset? = .best
+    @State private var whenDone = WhenDone.nothing
+    /// The name typed over the suggested one, extension excluded; nil keeps the suggestion.
+    @State private var editedBaseName: String?
 
     @State private var startSelection: String = "now"
 
@@ -70,9 +77,9 @@ struct AddDownloadSheet: View {
             .option(downloadsPath, "~/Downloads"),
             .option(moviesPath, "~/Movies"),
         ]
-        if let customFolder, customFolder != downloadsPath, customFolder != moviesPath {
-            options.append(.option(customFolder, (customFolder as NSString).abbreviatingWithTildeInPath))
-        }
+        let extra = SaveFolderPicker.extraFolders(recent: RecentFolders.load(), current: customFolder,
+                                                  fixed: [downloadsPath, moviesPath])
+        options += extra.map { .option($0, ($0 as NSString).abbreviatingWithTildeInPath) }
         options.append(.separator)
         options.append(.option(SaveOption.choose, L10n.t("Choose folder…")))
         return options
@@ -98,6 +105,8 @@ struct AddDownloadSheet: View {
             case .input:        inputContent
             case .resolving:    resolvingContent
             case .confirm(let preview): confirmContent(preview)
+            case .review(let lines):
+                LinkReviewView(text: lines, back: { phase = .input }, done: { dismiss() })
             case .playlist(let url):
                 PlaylistChecklistView(
                     playlistURL: url,
@@ -106,15 +115,16 @@ struct AddDownloadSheet: View {
                         singleVideo: {
                             if let line = firstParseableLine() { resolveSingle(line) }
                         },
-                        cancel: { dismiss() })
-                ) { items in
-                    vm.add(rawLines: items.map(\.url).joined(separator: "\n"),
-                           saveDirectory: resolvedSaveDirectory, priority: priority)
+                        cancel: { dismiss() }),
+                    maxHeight: vm.settings.hlsMaxHeight
+                ) { items, preset in
+                    vm.addPlaylist(items, preset: preset,
+                                   saveDirectory: resolvedSaveDirectory, priority: priority)
                     dismiss()
                 }
             }
         }
-        .frame(width: 560)
+        .frame(width: isReviewing ? 720 : 560)
         .onAppear(perform: autoPasteFromClipboard)
         .onChange(of: vm.addSheetPrefill) { _, new in if new != nil { consumePrefill() } }
         // Without this cancel the yt-dlp subprocess keeps running headless after the sheet closes.
@@ -122,8 +132,21 @@ struct AddDownloadSheet: View {
     }
 
     private var header: some View {
-        SheetHeader(systemImage: phase == .input ? "link" : "checklist",
-                    title: phase == .input ? L10n.t("Add download") : L10n.t("Review & start"))
+        SheetHeader(systemImage: phase == .input ? "link" : "checklist", title: headerTitle)
+    }
+
+    private var isReviewing: Bool {
+        if case .review = phase { return true }
+        return false
+    }
+
+    private var headerTitle: String {
+        switch phase {
+        case .input: return L10n.t("Add download")
+        case .review(let lines):
+            return L10n.t("Review %d links", Set(vm.parsedSources(in: lines).map(\.dedupKey)).count)
+        case .resolving, .confirm, .playlist: return L10n.t("Review & start")
+        }
     }
 
     private var inputContent: some View {
@@ -308,7 +331,16 @@ struct AddDownloadSheet: View {
 
     private func confirmBody(_ preview: DownloadPreview) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            AddSheetMetadataSummary(preview: preview, sizeText: sizeText(preview))
+            AddSheetMetadataSummary(preview: preview, sizeText: sizeText(preview),
+                                    baseName: preview.kind == .torrent ? nil : nameBinding(preview))
+            if let warning = FileNameEdit.existingFileWarning(
+                name: finalName(preview), in: diskSpaceFolder(for: preview),
+                reaction: vm.settings.existingFileReaction) {
+                Label(warning, systemImage: "doc.on.doc")
+                    .scaledFont(size: Theme.TextSize.meta)
+                    .foregroundStyle(Theme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if let duplicate = vm.existingDuplicate(of: preview.source) {
                 Label(L10n.t("Already in your list (%@) — starting it again won’t add a second copy.",
@@ -371,6 +403,8 @@ struct AddDownloadSheet: View {
                 }
             }
 
+            AddOptionColumn(title: L10n.t("When done")) { WhenDonePicker(whenDone: $whenDone) }
+
             diskSpaceRow(preview)
 
             // A torrent has no checksum, mirror or per-host cookie to offer.
@@ -379,7 +413,7 @@ struct AddDownloadSheet: View {
             }
 
             if preview.kind == .http, YtDlpResolver.isAvailable {
-                AddSheetYtDlpRow(isResolving: isResolvingMedia) { resolveWithYtDlp(preview) }
+                if isResolvingMedia { AddSheetResolvingRow() }
                 if let ytDlpError {
                     Label(ytDlpError, systemImage: "exclamationmark.triangle.fill")
                         .scaledFont(size: Theme.TextSize.meta)
@@ -392,9 +426,9 @@ struct AddDownloadSheet: View {
                 if case .url(let pageURL) = preview.source,
                    !preview.source.looksLikeDownloadableFile,
                    resolvedPageURL == nil {
-                    MediaFormatPicker(pageURL: pageURL, onListed: { pageListsFormats = $0 }) {
-                        chosenFormat = $0
-                    }
+                    MediaPresetPicker(pageURL: pageURL, maxHeight: vm.settings.hlsMaxHeight,
+                                      preset: $mediaPreset, chosenFormat: $chosenFormat,
+                                      onListed: { pageListsFormats = $0 })
                 }
             }
         }
@@ -523,35 +557,6 @@ struct AddDownloadSheet: View {
         .animation(.easeInOut(duration: 0.08), value: isDropTargeted)
     }
 
-    private func resolveWithYtDlp(_ preview: DownloadPreview) {
-        guard case .url(let pageURL) = preview.source else { return }
-        ytDlpError = nil
-        resolveTask?.cancel()
-        isResolvingMedia = true
-        resolveTask = Task { @MainActor in
-            // A cancelled resolve leaves the flag to whoever cancelled it (Back, or a newer resolve).
-            defer { if !Task.isCancelled { isResolvingMedia = false } }
-            let outcome = await YtDlpResolver.resolveMedia(pageURL, formatSelector: chosenFormat?.id)
-            if Task.isCancelled { return }
-            switch outcome {
-            case .resolved(let resolved):
-                guard let mediaPreview = YtDlpResolver.preview(for: resolved) else {
-                    inputError = nil
-                    ytDlpError = L10n.t("yt-dlp couldn’t resolve that page")
-                    return
-                }
-                // Don't fetch subtitles here: "Save to" is still editable, so sidecars would be orphaned.
-                resolvedPageURL = pageURL
-                phase = .confirm(mediaPreview)
-            case .cancelled:
-                break
-            case .failed(let reason):
-                inputError = nil
-                ytDlpError = reason
-            }
-        }
-    }
-
     /// A handed-over page already said what it wants; go straight to resolving its formats. Also
     /// runs when a page arrives while the sheet is open on its first step: it replaces what was there.
     private func consumePrefill() {
@@ -585,8 +590,7 @@ struct AddDownloadSheet: View {
             return
         }
         if sources.count > 1 {
-            vm.add(rawLines: text, saveDirectory: resolvedSaveDirectory, priority: priority)
-            dismiss()
+            phase = .review(text)
             return
         }
         guard let line = firstParseableLine() else {
@@ -610,6 +614,8 @@ struct AddDownloadSheet: View {
         mirrorsText = ""
         chosenFormat = nil
         pageListsFormats = false
+        mediaPreset = .best
+        editedBaseName = nil
         resolvedPageURL = nil
         ytDlpError = nil
     }
@@ -648,7 +654,8 @@ struct AddDownloadSheet: View {
     /// "Best available" too (no format picked, no `-f`) once yt-dlp has listed formats for the page.
     private func start(_ preview: DownloadPreview) {
         if resolvedPageURL == nil, case .url = preview.source, chosenFormat != nil || pageListsFormats {
-            resolveThenCommit(preview, formatSelector: chosenFormat?.id)
+            resolveThenCommit(preview, formatSelector: chosenFormat?.id
+                ?? mediaPreset?.formatSelector(maxHeight: vm.settings.hlsMaxHeight))
         } else {
             commit(preview)
         }
@@ -697,7 +704,10 @@ struct AddDownloadSheet: View {
                    deselectedFileIDs: skip.isEmpty ? nil : skip,
                    cookieHeader: cookieHeaderToAttach,
                    cookieSource: cookieSource,
-                   cookieHost: previewHost(preview), inlineLoginLine: firstParseableLine())
+                   cookieHost: previewHost(preview), inlineLoginLine: firstParseableLine(),
+                   name: preview.kind == .torrent ? nil : finalName(preview),
+                   whenDone: whenDone.isActionable ? whenDone : nil,
+                   onAdded: chainAudio)
         fetchSubtitlesIfWanted(for: preview)
         dismiss()
     }
@@ -804,6 +814,24 @@ struct AddDownloadSheet: View {
         } else {
             text += "\n" + joined
         }
+    }
+
+    private func nameBinding(_ preview: DownloadPreview) -> Binding<String> {
+        Binding(get: { editedBaseName ?? FileNameEdit.split(preview.suggestedName).base },
+                set: { editedBaseName = $0 })
+    }
+
+    /// The suggested name with the typed base; the extension never changes.
+    private func finalName(_ preview: DownloadPreview) -> String {
+        FileNameEdit.name(base: editedBaseName, original: preview.suggestedName)
+    }
+
+    /// Audio presets queue Extract Audio for when the download finishes.
+    private var chainAudio: ((DownloadTask.ID) -> Void)? {
+        guard chosenFormat == nil, resolvedPageURL != nil || pageListsFormats,
+              let format = mediaPreset?.chainedAudio else { return nil }
+        let jobs = vm.mediaJobs
+        return { id in jobs.chainedAudio[id] = format }
     }
 
     private func sizeText(_ preview: DownloadPreview) -> String {

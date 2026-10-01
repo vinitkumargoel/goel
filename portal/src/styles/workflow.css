@@ -1,0 +1,138 @@
+/* Wave 3 library workflow: undo toasts, the add review, search tokens, grouping, density,
+   cards, touch select mode, the filter chip row and the command palette. */
+
+/* Toast action (Undo, Show) */
+.tact{height:26px;padding:0 10px;border:0;border-radius:7px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;flex:0 0 auto}
+.tact:hover{background:var(--accent);color:var(--on-accent)}
+
+/* Confirm: the names it covers, the total, the destructive option */
+.citems{margin:10px 0 0;padding:8px 12px;list-style:none;background:var(--bg-control);border:1px solid var(--border);border-radius:9px;max-height:150px;overflow:auto}
+.citems li{font-size:12.5px;padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cfoot{margin:6px 2px 0;font-size:12px;color:var(--text-dim)}
+.copt{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12.5px;cursor:pointer}
+
+/* Add: pasted chip, recent folders, the review list */
+.flabel .pasted{margin-left:8px;text-transform:none;letter-spacing:0}
+.recentf{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.recentl{font-size:11px;color:var(--text-faint);margin-right:2px}
+.rchip{max-width:180px;height:26px;padding:0 10px;border:1px solid var(--border);border-radius:13px;background:var(--bg-control);color:var(--text);font-size:11.5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rchip:hover{background:var(--bg-control-active)}
+.rvlist{list-style:none;margin:6px 0 0;padding:0;border:1px solid var(--border);border-radius:10px;max-height:min(46vh,380px);overflow:auto}
+.rvrow{display:grid;grid-template-columns:auto 28px minmax(0,1fr) auto auto;align-items:center;gap:4px 10px;padding:8px 10px;border-bottom:1px solid var(--border)}
+.rvrow:last-child{border-bottom:0}
+.rvrow.off{opacity:.62}
+.rvrow input{width:16px;height:16px;margin:0}
+.rvic{width:28px;height:28px;flex-basis:28px;border-radius:7px}.rvic svg{width:15px;height:15px}
+.rvname{min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+.rvname .kb{flex:0 0 auto}
+.rvnote{font-size:11px;color:var(--text-faint);white-space:normal}
+.rvsize{font-size:12px;color:var(--text-dim);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.rvbadge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.rvbadge.ok{background:rgba(50,215,75,.16);color:var(--green)}
+.rvbadge.warn{background:rgba(255,159,10,.16);color:var(--orange)}
+.rvbadge.bad{background:var(--red-soft);color:var(--red)}
+.rvmore{grid-column:3/-1;justify-self:start;display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border:0;border-radius:6px;background:none;color:var(--accent);font-size:11.5px;font-weight:600;cursor:pointer}
+.rvmore svg{width:12px;height:12px;transition:transform .2s}.rvmore[aria-expanded="true"] svg{transform:rotate(180deg)}
+.rvmore:hover{background:var(--accent-soft)}
+.rvfiles{grid-column:3/-1;list-style:none;margin:0;padding:4px 0 2px;border-top:1px dashed var(--border)}
+.rvfiles li{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
+.rvfiles .rvname{font-size:11.5px;color:var(--text-dim)}
+.rvfoot{margin:10px 2px 0;font-size:12px;color:var(--text-dim);font-variant-numeric:tabular-nums}
+.rvfoot.short{color:var(--red);font-weight:600}
+
+/* Search tokens as chips before the field */
+.schips{display:flex;gap:4px;flex:0 1 auto;min-width:0;overflow:hidden}
+.schip{display:inline-flex;align-items:center;gap:2px;height:22px;padding:0 2px 0 7px;border-radius:6px;background:var(--accent-soft);color:var(--accent);font-size:11.5px;font-weight:600;white-space:nowrap}
+.schip-k{opacity:.7;font-weight:500}
+.schip-x{width:18px;height:18px;display:grid;place-items:center;border:0;border-radius:4px;background:none;color:inherit;cursor:pointer;padding:0}
+.schip-x:hover{background:var(--accent);color:var(--on-accent)}
+.search .schip-x svg{width:10px;height:10px;color:inherit}
+
+/* Tools strip: count, group, density, layout */
+.ltools{display:flex;align-items:center;gap:8px;height:36px;flex:0 0 36px;padding:0 12px 0 22px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--text-dim);white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+.ltools::-webkit-scrollbar{display:none}
+.ltools .sp{flex:1}
+.lcount{font-variant-numeric:tabular-nums}
+.lt-select{height:26px;border:1px solid var(--border);border-radius:7px;background:var(--bg-control);color:var(--text);font-size:11.5px;padding:0 6px}
+.lt-seg{padding:2px;flex-wrap:nowrap}.lt-seg button{padding:3px 9px;font-size:11.5px}
+.ltools .sortpick select{height:26px}
+
+/* Grouped list: sticky section headers */
+.lgroup{display:block}
+.ghead{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;height:30px;padding:0 22px;background:var(--bg-content);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--text-dim)}
+.gcount{font-weight:600;color:var(--text-faint);font-variant-numeric:tabular-nums}
+
+/* Density */
+.rows.compact .row{min-height:40px}
+.rows.compact .ftype{width:24px;height:24px;flex-basis:24px;border-radius:6px}.rows.compact .ftype svg{width:13px;height:13px}
+.rows.compact .ncell{gap:8px}
+.rows.compact .mp{height:3px}
+
+/* Cards (wide screens): a grid of tiles using the phone row layout */
+.rows.cards:not(.grouped),.rows.cards .gbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;padding:12px;align-content:start}
+.rows.cards .row{grid-template-columns:1fr;min-height:84px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--bg-panel)}
+.rows.cards .row:nth-child(even){background:var(--bg-panel)}
+.rows.cards .row:hover{background:var(--bg-row-hover)}
+.rows.cards .row.sel{background:var(--bg-row-sel);box-shadow:inset 0 0 0 2px var(--accent)}
+.rows.cards .row .c:not(.ncell){display:none}
+.rows.cards.compact .row{min-height:60px;padding:8px 10px}
+
+/* After an add: each new row pulses once */
+@keyframes rowpulse{0%{box-shadow:inset 0 0 0 2px var(--accent);background:var(--accent-soft)}100%{box-shadow:inset 0 0 0 0 transparent}}
+.row[data-pulse]{animation:rowpulse 1.4s ease-out 1}
+
+/* Touch select mode: a checkbox slides in at the row's start */
+.rows{-webkit-touch-callout:none}
+.rcheck{width:22px;height:22px;flex:0 0 22px;display:grid;place-items:center;border:2px solid var(--border-strong);border-radius:50%;color:var(--on-accent);animation:rcheckin .18s ease-out}
+.rcheck.on{background:var(--accent);border-color:var(--accent)}
+.rcheck svg{width:13px;height:13px}
+@keyframes rcheckin{from{width:0;flex-basis:0;opacity:0;margin-right:-12px}}
+.bulkbar .mbtn.done{font-weight:700;color:var(--accent)}
+/* Done stays reachable however far the actions scroll. */
+.pbulk .mbtn.done{position:sticky;right:0;flex:0 0 auto;background:var(--bg-modal);box-shadow:-12px 0 12px var(--bg-modal)}
+.pbulk .sp{display:none}
+.pbulk{position:fixed;left:8px;right:8px;bottom:calc(44px + env(safe-area-inset-bottom,0px));height:52px;flex:none;border:1px solid var(--border-strong);border-radius:14px;background:var(--bg-modal);box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:50;padding:0 8px 0 14px;animation:ti .2s}
+
+/* ≤680px filter chips under the topbar */
+.fchips{display:none}
+
+/* Detail sheet: the tall detent */
+@media(max-width:680px){
+  .ltools{display:none}
+  .fchips{display:flex;gap:6px;flex:0 0 auto;padding:8px 12px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--border);background:var(--bg-content)}
+  .fchips::-webkit-scrollbar{display:none}
+  .fchip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--border);border-radius:16px;background:var(--bg-control);color:var(--text);font-size:12.5px;font-weight:600;white-space:nowrap;cursor:pointer;flex:0 0 auto}
+  .fchip .fcount{font-size:11px;font-weight:600;color:var(--text-faint);font-variant-numeric:tabular-nums}
+  .fchip.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+  .fchip.on .fcount{color:inherit;opacity:.8}
+  .fchip.bad:not(.on) .fcount{color:var(--red)}
+  .ghead{padding:0 12px}
+  .detail.sheet.expanded{height:94vh;height:94dvh}
+  .detail.sheet:not(.dragging){transition:transform .3s cubic-bezier(.3,.9,.3,1),opacity .25s,height .3s cubic-bezier(.3,.9,.3,1)}
+  .rows.selecting{padding-bottom:calc(120px + env(safe-area-inset-bottom,0px))}
+  .rvrow{grid-template-columns:auto 28px minmax(0,1fr) auto;padding:10px}
+  .rvrow .rvbadge{grid-column:3;justify-self:start}
+  .rvrow .rvsize{grid-row:1;grid-column:4}
+  .rchip{height:32px;border-radius:16px}
+}
+
+/* Command palette */
+.palette-scrim{align-items:flex-start;padding-top:min(14vh,120px)}
+.modal.palette{width:560px}
+.pinput{display:flex;align-items:center;gap:10px;padding:0 14px;height:52px;border-bottom:1px solid var(--border)}
+.pinput svg{width:17px;height:17px;color:var(--text-faint);flex:0 0 auto}
+.pinput input{flex:1;min-width:0;height:100%;border:0;background:none;font-size:15px;color:var(--text)}
+.pinput input:focus-visible{outline:none}
+.plist{max-height:min(56vh,420px);overflow-y:auto;padding:6px}
+.pghead{padding:8px 10px 4px;font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--text-faint)}
+.popt{display:flex;align-items:center;gap:10px;min-height:34px;padding:0 10px;border-radius:8px;font-size:13px;cursor:pointer}
+.popt.on{background:var(--accent);color:var(--on-accent)}
+.plabel{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pkeys{display:flex;gap:4px;flex:0 0 auto}
+.popt.on .kbd{color:var(--on-accent);border-color:color-mix(in srgb,var(--on-accent) 45%,transparent);background:transparent}
+.pempty{padding:22px 10px;text-align:center;color:var(--text-dim);font-size:13px}
+.pfoot{display:flex;gap:16px;padding:8px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--text-faint)}
+.pfoot .kbd{margin-right:2px}
+@media(max-width:680px){.palette-scrim{padding:10px;padding-top:10px}.modal.palette{max-height:80vh}}
+@media (pointer:coarse){.popt{min-height:44px}.schip-x{width:28px;height:28px}}
+@media (prefers-reduced-motion:reduce){.rcheck{animation:none}}

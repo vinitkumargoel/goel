@@ -6,7 +6,14 @@ import type { NetworkState } from '../lib/types'
 import { renderWithI18n } from '../test/renderWithI18n'
 import { SettingsView } from './SettingsView'
 
-const api = vi.hoisted(() => ({ network: vi.fn(), updateNetwork: vi.fn(), logout: vi.fn() }))
+const api = vi.hoisted(() => ({
+  network: vi.fn(),
+  updateNetwork: vi.fn(),
+  logout: vi.fn(),
+  // The schedule card has its own tests; here it stays loading, so it renders nothing.
+  schedule: vi.fn(() => new Promise(() => {})),
+  updateSchedule: vi.fn(),
+}))
 const boot = vi.hoisted(() => ({ host: 'mac' as 'mac' | 'linux', hostname: 'studio' }))
 
 vi.mock('../lib/api', async (importOriginal) => {
@@ -76,7 +83,8 @@ describe('SettingsView', () => {
 
   it('reports unsaved network edits, and clears them on Save', async () => {
     const { onDirtyChange } = renderView()
-    const streams = await screen.findByRole('combobox')
+    // By value: the Language select in This browser is a combobox too.
+    const streams = await screen.findByDisplayValue('2')
     expect(screen.queryByText(en.settings.unsaved)).toBeNull()
     await userEvent.selectOptions(streams, '4')
     expect(screen.getByText(en.settings.unsaved)).toBeInTheDocument()

@@ -13,6 +13,10 @@ import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useNow } from '../hooks/useNow'
 import { useStableCallback } from '../hooks/useStableCallback'
 import { emptyState } from '../lib/emptyState'
+import type { TaskGroup } from '../lib/grouping'
+import type { Density, LibraryLayout } from '../lib/libraryPrefs'
+import { useLongPress } from '../hooks/useLongPress'
+import { GroupHeader } from './LibraryGroups'
 import type { SelectionAction } from '../lib/selection'
 import { ariaSort, type SortKey, type SortState } from '../lib/sort'
 import type { RowAction } from '../lib/taskKind'
@@ -52,6 +56,22 @@ interface LibraryViewProps {
    * a click never moves the row under the pointer.
    */
   bulk?: ReactNode
+  /** Sections, in display order; `tasks` is then their concatenation. Null or empty: one flat list. */
+  groups?: readonly TaskGroup[] | null
+  density?: Density
+  /** Cards: a grid of tiles on a wide screen. Phones always use their card rows. */
+  layout?: LibraryLayout
+  /** The group / density / layout controls, above the list. */
+  tools?: ReactNode
+  /**
+   * Touch select mode: entered by a long press, rows show checkboxes and a tap toggles. The
+   * `selectBar` docks at the bottom in place of the Add button.
+   */
+  selecting?: boolean
+  onSelecting?: (on: boolean) => void
+  selectBar?: ReactNode
+  /** Rows to scroll to and pulse once, e.g. just added. A new `seq` repeats it. */
+  reveal?: { ids: readonly string[]; seq: number } | null
 }
 
 export function LibraryView({
@@ -75,6 +95,14 @@ export function LibraryView({
   onAdd,
   onRetry,
   bulk,
+  groups = null,
+  density = 'comfortable',
+  layout = 'table',
+  tools,
+  selecting = false,
+  onSelecting,
+  selectBar,
+  reveal = null,
 }: LibraryViewProps) {
   const { t } = useTranslation()
   const rowEls = useRef(new Map<string, HTMLDivElement>())
@@ -107,9 +135,35 @@ export function LibraryView({
   const onRowClick = useStableCallback((id: string, mods: RowClick) => {
     setFocusId(id)
     if (mods.shift) onSelection({ type: 'range', id, order })
-    else if (mods.toggle) onSelection({ type: 'toggle', id })
+    else if (mods.toggle || selecting) onSelection({ type: 'toggle', id })
     else onOpen(id)
   })
+
+  // A long press on a row enters select mode with that row ticked (touch only: a mouse has ⌘-click).
+  const longPress = useLongPress((target) => {
+    const id = target.closest<HTMLElement>('[role="option"]')?.dataset.id
+    if (id == null) return
+    if (!selecting) onSelecting?.(true)
+    onSelection(selecting ? { type: 'toggle', id } : { type: 'set', ids: [id] })
+  })
+
+  // Scroll the first revealed row into view and pulse each one once, as soon as they are rendered.
+  const revealed = useRef(0)
+  useLayoutEffect(() => {
+    if (!reveal || revealed.current === reveal.seq) return
+    const els = reveal.ids.flatMap((id) => rowEls.current.get(id) ?? [])
+    if (els.length === 0) return
+    revealed.current = reveal.seq
+    els[0]!.scrollIntoView?.({ block: 'nearest' })
+    setFocusId(reveal.ids[0] ?? null)
+    for (const el of els) {
+      // A data attribute, not a class: React rewrites className on every snapshot.
+      delete el.dataset.pulse
+      void el.offsetWidth
+      el.dataset.pulse = ''
+      el.addEventListener('animationend', () => delete el.dataset.pulse, { once: true })
+    }
+  }, [reveal, order])
 
   /** The last row that held focus, so a removal that takes it can hand focus to a neighbour. */
   const lastFocused = useRef<string | null>(null)
@@ -192,22 +246,43 @@ export function LibraryView({
   }
 
   const state = tasks.length === 0 ? emptyState({ loaded, error, total, search, canWrite }) : null
+  const cards = layout === 'cards' && !phone
+  const grouped = groups != null && groups.length > 0
+
+  const row = (task: TaskRow) => (
+    <LibraryRow
+      key={task.id}
+      task={task}
+      selected={selectedIds.has(task.id)}
+      focusable={task.id === tabStop}
+      canWrite={canWrite}
+      phone={phone || cards}
+      selecting={selecting}
+      now={now}
+      describedBy={hintId}
+      rowRef={rowRef}
+      onClick={onRowClick}
+      onAction={onAction}
+      onMenu={onMenu}
+    />
+  )
 
   return (
     <div className="view">
       {readOnly && <div className="ro-banner">{t('library.readOnlyBanner')}</div>}
+      {tools}
 
       {/* Plain headers, not role=columnheader: the list is a listbox, not a grid, so the sort
           state lives in each button's name. hide-* must match the cells in LibraryRow AND the
           ≤920px grid in portal.css and the list-width grids in features.css, or a label loses its
           column. */}
-      {bulk ? (
+      {bulk && !selecting ? (
         // The bulk bar takes the header's slot; sorting stays reachable beside it.
         <div className="lbulk">
           {bulk}
           <SortPicker sort={sort} onSort={onSort} />
         </div>
-      ) : (
+      ) : cards ? null : (
         <div className="lhead">
           <SortHeader sortKey="name" sort={sort} onSort={onSort} label={t('library.colName')} />
           <SortHeader
@@ -252,36 +327,29 @@ export function LibraryView({
         </div>
       ) : (
         <div
-          className="rows"
+          className={`rows${cards ? ' cards' : ''}${density === 'compact' ? ' compact' : ''}${grouped ? ' grouped' : ''}${selecting ? ' selecting' : ''}`}
           role="listbox"
           aria-label={t('library.queueLabel')}
           aria-multiselectable="true"
           onKeyDown={onKeyDown}
           onFocus={onListFocus}
+          {...longPress}
         >
-          {tasks.map((task) => (
-            <LibraryRow
-              key={task.id}
-              task={task}
-              selected={selectedIds.has(task.id)}
-              focusable={task.id === tabStop}
-              canWrite={canWrite}
-              phone={phone}
-              now={now}
-              describedBy={hintId}
-              rowRef={rowRef}
-              onClick={onRowClick}
-              onAction={onAction}
-              onMenu={onMenu}
-            />
-          ))}
+          {grouped
+            ? groups.map((group) => (
+                <GroupSection key={`${group.by}:${group.key}`} group={group}>
+                  {group.tasks.map(row)}
+                </GroupSection>
+              ))
+            : tasks.map(row)}
         </div>
       )}
       <span id={hintId} hidden>
         {t('library.actionsHint')}
       </span>
+      {selecting && selectBar}
       {/* The ≤680px floating Add button (CSS hides it wider, where the topbar's Add shows). */}
-      {canWrite && (
+      {canWrite && !selecting && (
         <button className="fab" onClick={onAdd} aria-label={t('topbar.addDownload')} aria-keyshortcuts="N">
           <PlusIcon aria-hidden="true" />
         </button>
@@ -309,7 +377,7 @@ const SORT_LABEL = {
 } as const
 
 /** The header's sort as one compact control, for when the bulk bar has the header's slot. */
-function SortPicker({ sort, onSort }: Pick<SortHeaderProps, 'sort' | 'onSort'>) {
+export function SortPicker({ sort, onSort }: Pick<SortHeaderProps, 'sort' | 'onSort'>) {
   const { t } = useTranslation()
   const id = useId()
   return (
@@ -365,6 +433,17 @@ function SortHeader({ sortKey, sort, label, className, onSort }: SortHeaderProps
           {state === 'ascending' ? '▲' : state === 'descending' ? '▼' : ''}
         </span>
       </button>
+    </div>
+  )
+}
+
+/** One section of a grouped list: a sticky header, then its rows, as a labelled group of options. */
+function GroupSection({ group, children }: { group: TaskGroup; children: ReactNode }) {
+  const headId = useId()
+  return (
+    <div className="lgroup" role="group" aria-labelledby={headId}>
+      <GroupHeader id={headId} group={group} />
+      <div className="gbody">{children}</div>
     </div>
   )
 }

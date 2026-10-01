@@ -107,6 +107,7 @@ struct CompletedHero: View {
                 }
                 .buttonStyle(TintedPillButtonStyle(tint: Color.primary))
                 .a11yButton(L10n.t("Show %@ in Finder", task.name))
+                CompletedHeroMoreMenu(task: task, vm: vm)
             }
         }
     }

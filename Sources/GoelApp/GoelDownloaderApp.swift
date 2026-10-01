@@ -163,6 +163,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return .terminateLater
     }
 
+    /// Pause/Resume all, Add from Clipboard and the three running downloads, without opening a window.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let snapshot = MainActor.assumeIsolated { AppViewModel.shared.map { DockMenuSnapshot(tasks: $0.tasks) } }
+        return snapshot.map { DockMenuBuilder.shared.menu(for: $0) }
+    }
+
     func applicationDidResignActive(_ notification: Notification) {
         memoryRelief.reclaimAsync()
     }
@@ -238,6 +244,7 @@ struct GoelCommands: Commands {
                 .keyboardShortcut("n", modifiers: .command)
             Button(L10n.t("Grab Links from Page…")) { viewModel.isLinkGrabberPresented = true }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+            Button(L10n.t("Create Torrent…")) { CreateTorrentWindow.shared.show() }
             Divider()
             Button(L10n.t("Paste URLs from Clipboard")) {
                 guard !TextEditingFocus.forward(#selector(NSTextView.pasteAsPlainText(_:))) else { return }
@@ -304,6 +311,8 @@ struct GoelCommands: Commands {
                 .keyboardShortcut("t", modifiers: [.command, .shift])
             Button(L10n.t("Toggle Drop Basket")) { DropBasketController.shared.toggle() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
+            Button(L10n.t("Toggle Compact Rows")) { ListDensity.toggleStored() }
+                .keyboardShortcut("c", modifiers: [.command, .option])
             Divider()
             Button(L10n.t("Command Palette…")) { CommandPaletteBus.toggle() }
                 .keyboardShortcut("k", modifiers: .command)
@@ -391,9 +400,10 @@ struct GoelCommands: Commands {
         viewModel.importBackup(from: url)
     }
 
+    /// Through the Add sheet: several links get the review step, one gets its preview.
     private func pasteFromClipboard() {
         guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else { return }
-        viewModel.add(rawLines: text, saveDirectory: nil, priority: .normal)
+        viewModel.addFromClipboard()
     }
 
     private func pasteFromFile() {

@@ -98,6 +98,8 @@ typedef struct {
     double down_rate;
     double up_rate;
     double progress;
+    /// Our side of the connection, so the app can name the adapter this peer rides.
+    char   local_address[64];
 } GTPeer;
 
 int gt_peers(GTHandle handle, GTPeer *out, int cap);
@@ -147,6 +149,29 @@ void gt_force_recheck(GTHandle handle);
 void gt_force_reannounce(GTHandle handle);
 /// Bytes/sec; 0 = unlimited.
 void gt_set_upload_limit(GTHandle handle, int bytes_per_sec);
+
+/// 1 when the torrent's metadata marks it private, 0 when public or not yet known.
+int gt_is_private(GTHandle handle);
+
+/// Adds one announce URL (libtorrent ignores a URL it already has). Returns 1 on success.
+int gt_add_tracker(GTHandle handle, const char *url, int tier);
+
+/// Replaces the whole tracker list — the way to remove or edit one. `tiers` may be NULL (all tier 0).
+int gt_replace_trackers(GTHandle handle, const char *const *urls, const int *tiers, int count);
+
+/// Called after each hashed piece; return non-zero to cancel.
+typedef int (*GTCreateProgress)(void *ctx, int done, int total);
+
+/// Hashes `path` (a file or folder) and writes a .torrent to `out_path`.
+/// `piece_size` 0 = automatic. Blocks for the whole hash: call off the cooperative pool.
+/// Returns 1 on success, 0 on failure (message in `err_out`), -1 when cancelled.
+int gt_create_torrent(const char *path,
+                      const char *const *trackers, int tracker_count,
+                      const char *const *web_seeds, int web_seed_count,
+                      int piece_size, int is_private, const char *comment,
+                      const char *out_path,
+                      GTCreateProgress progress, void *ctx,
+                      char *err_out, int err_cap);
 
 #ifdef __cplusplus
 }

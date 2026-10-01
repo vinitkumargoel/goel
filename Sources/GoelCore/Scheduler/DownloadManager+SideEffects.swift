@@ -224,9 +224,71 @@ extension DownloadManager {
         postNotice(L10n.t("“%1$@” wasn’t scanned: %2$@.", name, reason), taskID: id)
     }
 
-    /// A user script goes through the same `FileScanning` port so it inherits the blocklist and the timeout.
+    /// Sets what happens when this download finishes; `.nothing` or a half-filled choice clears it.
+    public func setWhenDone(_ whenDone: WhenDone?, task id: DownloadTask.ID) async {
+        _ = mutateTask(id) { $0.whenDone = whenDone?.isActionable == true ? whenDone : nil }
+    }
+
+    /// A per-download "Move to…" runs first, so extract, the global script and the per-download
+    /// script all see the file where it now lives.
     func runPostDownloadActions(_ task: DownloadTask) {
+        guard let done = task.whenDone, done.kind == .moveTo, done.isActionable,
+              let target = Self.ruleFolder(done.target ?? "") else {
+            runSettledPostDownloadActions(task)
+            return
+        }
+        // A torrent keeps seeding from its folder; moving the payload out from under it breaks that.
+        guard task.source.kind != .torrent else {
+            postNotice(L10n.t("“%@” wasn’t moved: a torrent keeps seeding from where it downloaded.", task.name),
+                       taskID: task.id)
+            runSettledPostDownloadActions(task)
+            return
+        }
+        let from = task.savePath, id = task.id, name = task.name
+        let policy = settings.existingFileReaction
+        Task.detached { [weak self] in
+            let moved = Self.move(from: from, into: target, name: name, policy: policy)
+            await self?.finishMove(id: id, original: task, movedName: moved, target: target)
+        }
+    }
+
+    /// Nil when the move failed; the file then stays put and every other action still runs on it.
+    static func move(from path: String, into directory: String, name: String, policy: String) -> String? {
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+            let finalName = resolveName(name, in: directory, policy: policy == "overwrite" ? "rename" : policy)
+            let dest = (directory as NSString).appendingPathComponent(finalName)
+            guard PathSafety.isContained(dest, within: directory) else { return nil }
+            try fm.moveItem(atPath: path, toPath: dest)
+            return finalName
+        } catch {
+            GoelLog.scheduler.error("Move after download failed", .path(path), .detail(String(describing: error)))
+            return nil
+        }
+    }
+
+    private func finishMove(id: UUID, original: DownloadTask, movedName: String?, target: String) {
+        guard let movedName else {
+            postNotice(L10n.t("Couldn’t move “%@” to the folder you chose. It’s still where it downloaded.",
+                              original.name), taskID: id)
+            runSettledPostDownloadActions(original)
+            return
+        }
+        var moved = original
+        moved.saveDirectory = target
+        moved.name = movedName
+        _ = mutateTask(id) {
+            $0.saveDirectory = target
+            $0.name = movedName
+        }
+        runSettledPostDownloadActions(moved)
+    }
+
+    /// A user script goes through the same `FileScanning` port so it inherits the blocklist and the timeout.
+    func runSettledPostDownloadActions(_ task: DownloadTask) {
         let path = task.savePath
+        runTaskScriptIfAny(task)
         if settings.postDownloadExtractArchives {
             if Self.extractableArchiveKind(for: path) != nil {
                 extractArchive(at: path, into: task.saveDirectory, for: task)
@@ -254,48 +316,61 @@ extension DownloadManager {
         }
     }
 
-    static func extractableArchiveKind(for path: String) -> String? {
-        path.lowercased().hasSuffix(".zip") ? "zip" : nil
+    /// The per-download "Run script" choice, on the same guarded path as the global script.
+    private func runTaskScriptIfAny(_ task: DownloadTask) {
+        guard let done = task.whenDone, done.kind == .runScript, done.isActionable,
+              let executable = done.target else { return }
+        let path = task.savePath, name = task.name, id = task.id
+        let scanner = self.scanner
+        Task.detached { [weak self] in
+            let ran = await scanner.scan(path: path, executablePath: executable, argumentTemplate: "%path%")
+            if ran != .clean {
+                await self?.postNotice(
+                    L10n.t("The script you chose for “%@” failed or couldn’t be started.", name), taskID: id)
+            }
+        }
     }
 
-    /// Watchdog-bounded so a zip bomb can't park the task, then escapees are swept. macOS-only: no `/usr/bin/ditto` on the Linux daemon.
+    /// Every kind goes through macOS's `bsdtar` (libarchive), which reads zip, tar (any compression),
+    /// 7z and rar without extra tools.
+    static func extractableArchiveKind(for path: String) -> String? {
+        let lower = path.lowercased()
+        if lower.hasSuffix(".zip") { return "zip" }
+        let tarSuffixes = [".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar.zst"]
+        if tarSuffixes.contains(where: lower.hasSuffix) { return "tar" }
+        if lower.hasSuffix(".7z") { return "7z" }
+        if lower.hasSuffix(".rar") { return "rar" }
+        return nil
+    }
+
+    /// Bounded by ``ArchiveExtractor``: size cap, time limit, staging folder, escapee sweep.
+    /// macOS-only: the Linux daemon has no `/usr/bin/bsdtar` to rely on.
     private func extractArchive(at path: String, into directory: String, for task: DownloadTask) {
         #if os(macOS)
         let id = task.id, name = task.name
         let source = Self.quarantineSourceURL(task.source)
         let referrer = task.referer.flatMap { URL(string: $0) }
         Task.detached { [weak self] in
-            let unzip = Process()
-            unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-            let target = (directory as NSString)
-                .appendingPathComponent((path as NSString).lastPathComponent + " extracted")
-            unzip.arguments = ["-x", "-k", path, target]
-            do {
-                try unzip.run()
-            } catch {
-                // Must return: `waitUntilExit()` on an unlaunched `Process` is undefined on Darwin.
-                GoelLog.scheduler.error("Auto-extract failed to launch", .path(path))
-                await self?.postNotice(L10n.t("Couldn’t unpack “%@”: the extractor didn’t start.", name), taskID: id)
-                return
+            let outcome = ArchiveExtractor.extract(path, into: directory)
+            let notice: String?
+            switch outcome {
+            case .extracted(let target):
+                // The archive's flag does not carry over through extraction; the unpacked files need their own.
+                Quarantine.mark(URL(fileURLWithPath: target), sourceURL: source, referrer: referrer)
+                notice = nil
+            case .launchFailed:
+                notice = L10n.t("Couldn’t unpack “%@”: the extractor didn’t start.", name)
+            case .timedOut:
+                notice = L10n.t("Unpacking “%@” took too long and was stopped.", name)
+            case .tooLarge(let cap):
+                notice = L10n.t("“%1$@” wasn’t unpacked: it would take more than %2$@ of disk space.",
+                                name, cap.byteString)
+            case .failed:
+                notice = L10n.t("Couldn’t unpack “%@” — the archive may be damaged.", name)
             }
-            let gate = ExtractionGate(process: unzip)
-            let watchdog = Task.detached {
-                try? await Task.sleep(for: Self.extractionTimeout)
-                if gate.timeoutKill() {
-                    GoelLog.scheduler.error("Auto-extract timed out and was stopped", .path(path))
-                }
-            }
-            unzip.waitUntilExit()
-            let timedOut = !gate.finish()
-            watchdog.cancel()
-            Self.quarantineExtractedEscapees(under: target)
-            // The archive's flag does not carry over through ditto; the unpacked files need their own.
-            Quarantine.mark(URL(fileURLWithPath: target), sourceURL: source, referrer: referrer)
-            if timedOut {
-                await self?.postNotice(L10n.t("Unpacking “%@” took too long and was stopped.", name), taskID: id)
-            } else if unzip.terminationStatus != 0 {
-                GoelLog.scheduler.error("Auto-extract failed — the archive may be corrupt", .path(path))
-                await self?.postNotice(L10n.t("Couldn’t unpack “%@” — the archive may be damaged.", name), taskID: id)
+            if let notice {
+                GoelLog.scheduler.error("Auto-extract did not complete", .path(path))
+                await self?.postNotice(notice, taskID: id)
             }
         }
         #else
@@ -303,10 +378,7 @@ extension DownloadManager {
         #endif
     }
 
-    /// Ten minutes: generous for a legitimate archive, finite for one designed never to finish.
-    static let extractionTimeout: Duration = .seconds(600)
-
-    /// Defense in depth after `ditto`: an entry resolving outside the target (e.g. a symlink to `/private/tmp`) is removed so "open extracted folder" can't be redirected.
+    /// Defense in depth after `bsdtar`: an entry resolving outside the target (e.g. a symlink to `/private/tmp`) is removed so "open extracted folder" can't be redirected.
     static func quarantineExtractedEscapees(under target: String) {
         let fm = FileManager.default
         // Whole tree, not just the top level, so a nested symlink (`sub/evil -> /etc`) is caught; the enumerator does not descend links, so an escaper is a leaf.
@@ -329,34 +401,5 @@ extension DownloadManager {
         Task.detached {
             try? FileManager.default.removeItem(atPath: path)
         }
-    }
-}
-
-/// Holds the non-`Sendable` `Process` behind a lock so the watchdog can terminate it safely, and no-ops once it has exited.
-private final class ExtractionGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var finished = false
-    private let process: Process
-
-    init(process: Process) {
-        self.process = process
-    }
-
-    /// False when the watchdog already claimed it, i.e. the process was killed for time.
-    @discardableResult
-    func finish() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        guard !finished else { return false }
-        finished = true
-        return true
-    }
-
-    func timeoutKill() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        guard !finished else { return false }
-        finished = true
-        guard process.isRunning else { return false }
-        process.terminate()
-        return true
     }
 }

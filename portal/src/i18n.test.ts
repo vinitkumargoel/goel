@@ -86,3 +86,27 @@ describe('i18n instance', () => {
     expect(i18n.t('statusbar.downloads', { count: 4 })).toBe('4 downloads')
   })
 })
+
+describe('de catalogue', () => {
+  const DE = leaves(resources.de.translation)
+  const enPaths = new Map(EN.map((l) => [l.path, l.value]))
+  const vars = (s: string) => [...s.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort()
+
+  it('has no key English lacks', () => {
+    expect(DE.filter((l) => !enPaths.has(l.path)).map((l) => l.path)).toEqual([])
+  })
+
+  it('translates every English key', () => {
+    const dePaths = new Set(DE.map((l) => l.path))
+    expect(EN.filter((l) => !dePaths.has(l.path)).map((l) => l.path)).toEqual([])
+  })
+
+  it('keeps every interpolation of the English string', () => {
+    const wrong = DE.filter((l) => vars(l.value).join() !== vars(enPaths.get(l.path) ?? '').join())
+    expect(wrong.map((l) => l.path)).toEqual([])
+  })
+
+  it('has no blank values', () => {
+    expect(DE.filter((l) => l.value.trim() === '').map((l) => l.path)).toEqual([])
+  })
+})

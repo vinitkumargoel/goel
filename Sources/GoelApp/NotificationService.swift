@@ -6,6 +6,8 @@ import UserNotifications
 enum NotificationService {
 
     static let completedCategory = "download.completed"
+    static let failedCategory = "download.failed"
+    static let summaryCategory = "download.summary"
     static let autoShutdownCategory = "autoshutdown.countdown"
     static let autoShutdownIdentifier = "autoshutdown"
     static let threadIdentifier = "downloads"
@@ -14,6 +16,8 @@ enum NotificationService {
     enum Action: String {
         case reveal = "download.reveal"
         case open = "download.open"
+        case retry = "download.retry"
+        case show = "download.show"
         case cancelAutoShutdown = "autoshutdown.cancel"
     }
 
@@ -22,6 +26,8 @@ enum NotificationService {
         case reveal(UUID)
         case open(UUID)
         case show(UUID)
+        case retry(UUID)
+        case showWindow
         case cancelAutoShutdown
         case showAutoShutdown
     }
@@ -65,7 +71,8 @@ enum NotificationService {
     static func install() {
         let center = UNUserNotificationCenter.current()
         center.delegate = NotificationDelegate.shared
-        center.setNotificationCategories([completedCategoryDefinition, autoShutdownCategoryDefinition])
+        center.setNotificationCategories([completedCategoryDefinition, failedCategoryDefinition,
+                                          autoShutdownCategoryDefinition])
     }
 
     static var autoShutdownCategoryDefinition: UNNotificationCategory {
@@ -100,6 +107,33 @@ enum NotificationService {
                                      title: L10n.t("Open"), options: [.foreground]),
             ],
             intentIdentifiers: [])
+    }
+
+    static var failedCategoryDefinition: UNNotificationCategory {
+        UNNotificationCategory(
+            identifier: failedCategory,
+            actions: [
+                UNNotificationAction(identifier: Action.retry.rawValue,
+                                     title: L10n.t("Retry"), options: []),
+                UNNotificationAction(identifier: Action.show.rawValue,
+                                     title: L10n.t("Show"), options: [.foreground]),
+            ],
+            intentIdentifiers: [])
+    }
+
+    /// Replaces the task's earlier banner, so a retried-then-failed-again download shows once.
+    static func notifyFailed(taskID: UUID, name: String, reason: String, sound: Bool) {
+        let content = content(title: NotificationPlanning.failureTitle(name: name), body: reason, sound: sound)
+        content.categoryIdentifier = failedCategory
+        content.userInfo = [taskIDKey: taskID.uuidString]
+        post(identifier: identifier(for: taskID), content: content)
+    }
+
+    /// Several finishes in a few seconds: one banner, and a click opens the window.
+    static func notifyCompletedSummary(count: Int, body: String, sound: Bool) {
+        let content = content(title: NotificationPlanning.summaryTitle(count: count), body: body, sound: sound)
+        content.categoryIdentifier = summaryCategory
+        post(identifier: "completed-summary-\(UUID().uuidString)", content: content)
     }
 
     static func notify(title: String, body: String, sound: Bool) {
@@ -139,10 +173,15 @@ enum NotificationService {
             default: return nil
             }
         }
+        if categoryIdentifier == summaryCategory {
+            return actionIdentifier == UNNotificationDefaultActionIdentifier ? .showWindow : nil
+        }
         guard let raw = userInfo[taskIDKey] as? String, let id = UUID(uuidString: raw) else { return nil }
         switch actionIdentifier {
         case Action.reveal.rawValue: return .reveal(id)
         case Action.open.rawValue: return .open(id)
+        case Action.retry.rawValue: return .retry(id)
+        case Action.show.rawValue: return .show(id)
         case UNNotificationDefaultActionIdentifier: return .show(id)
         default: return nil
         }

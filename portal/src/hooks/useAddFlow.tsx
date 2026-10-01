@@ -4,15 +4,18 @@ import { AddDialog } from '../components/AddDialog'
 import { clearDraft, loadDraft, type AddDraft } from '../lib/addDraft'
 import type { AddSummary } from '../lib/addSubmit'
 import { api, failureMessage } from '../lib/api'
-import type { ToastTone } from './useToasts'
+import type { ToastOptions, ToastTone } from './useToasts'
+import { afterHistorySettles } from './useBackToClose'
 import { useWindowTorrentDrop } from './useWindowTorrentDrop'
 
 interface Deps {
   canWrite: boolean
-  toast: (message: string, tone?: ToastTone) => void
+  toast: (message: string, tone?: ToastTone, options?: ToastOptions) => unknown
   refresh: () => Promise<void>
   /** Something was queued: show the library, unfiltered for a fresh add. */
   onQueued: (resetFilter: boolean) => void
+  /** Select and scroll to these new rows; also the added toast's Show. */
+  onReveal?: (ids: string[]) => void
 }
 
 /**
@@ -20,13 +23,15 @@ interface Deps {
  * FAB, or a .torrent dropped on the window) and History's Re-add. `dialog` is the scrim + dialog
  * to render at the top level.
  */
-export function useAddFlow({ canWrite, toast, refresh, onQueued }: Deps) {
+export function useAddFlow({ canWrite, toast, refresh, onQueued, onReveal }: Deps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   /** Torrent files dropped on the window; the dialog opens pre-filled with them. */
   const [dropped, setDropped] = useState<File[]>([])
   /** What the dialog held when a 401 cut it off; it reopens with it once, after signing back in. */
   const [draft, setDraft] = useState<AddDraft | null>(null)
+  /** Links the dialog opens with, e.g. a URL pasted outside any field. */
+  const [prefill, setPrefill] = useState<{ url: string; pasted: boolean } | null>(null)
   const warn = useCallback((message: string) => toast(message, 'warn'), [toast])
 
   useEffect(() => {
@@ -44,10 +49,16 @@ export function useAddFlow({ canWrite, toast, refresh, onQueued }: Deps) {
   }, [])
 
   const openAdd = useCallback(() => setOpen(true), [])
+  /** Opens with these links filled in; `pasted` says they came from the clipboard. */
+  const openAddWith = useCallback((url: string, pasted = false) => {
+    setPrefill({ url, pasted })
+    setOpen(true)
+  }, [])
   const closeAdd = useCallback(() => {
     setOpen(false)
     setDropped([])
     setDraft(null)
+    setPrefill(null)
     clearDraft()
   }, [])
 
@@ -60,7 +71,12 @@ export function useAddFlow({ canWrite, toast, refresh, onQueued }: Deps) {
     (summary: AddSummary) => {
       closeAdd()
       onQueued(true)
-      if (summary.added > 0) toast(t('toast.added', { count: summary.added }))
+      const ids = summary.ids
+      const show =
+        onReveal && ids.length > 0
+          ? { action: { label: t('workflow.toast.show'), run: () => onReveal(ids) } }
+          : undefined
+      if (summary.added > 0) toast(t('toast.added', { count: summary.added }), 'ok', show)
       if (summary.refused > 0) warn(t('toast.refused', { count: summary.refused }))
       const files = summary.failures.filter((f) => f.file !== '')
       const first = files[0]
@@ -68,9 +84,15 @@ export function useAddFlow({ canWrite, toast, refresh, onQueued }: Deps) {
         warn(t('toast.torrentFailed', { count: files.length, file: first.file, error: first.error }))
       }
       for (const f of summary.failures) if (f.file === '') warn(f.error)
+      // After the refresh, so the new rows exist to be selected rather than pruned as unknown.
+      // …and after the dialog's history entry is gone, or landing on it would reselect the old row.
       void refresh()
+        .then(afterHistorySettles)
+        .then(() => {
+          if (ids.length > 0) onReveal?.(ids)
+        })
     },
-    [closeAdd, onQueued, toast, warn, refresh, t],
+    [closeAdd, onQueued, toast, warn, refresh, t, onReveal],
   )
 
   const readd = useCallback(
@@ -103,10 +125,12 @@ export function useAddFlow({ canWrite, toast, refresh, onQueued }: Deps) {
           onAdded={onAdded}
           initialFiles={dropped}
           initialDraft={draft}
+          initialUrl={prefill?.url}
+          pasted={prefill?.pasted}
         />
       )}
     </div>
   )
 
-  return { addOpen: open, openAdd, closeAdd, readd, dialog }
+  return { addOpen: open, openAdd, openAddWith, closeAdd, readd, dialog }
 }

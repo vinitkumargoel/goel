@@ -402,6 +402,9 @@ private struct MenuBarFinishedRow: View {
     let task: DownloadTask
     let vm: AppViewModel
     let onOpen: () -> Void
+    @State private var hovered = false
+
+    private var fileURL: URL { URL(fileURLWithPath: task.savePath) }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -425,6 +428,14 @@ private struct MenuBarFinishedRow: View {
             .onTapGesture(perform: onOpen)
             .accessibilityElement(children: .combine)
             .accessibilityAction(named: L10n.t("Show in Goel°"), onOpen)
+            .accessibilityAction(named: L10n.t("Quick Look")) { QuickLookPresenter.shared.present(fileURL) }
+            // Hover reveals Quick Look, so the resting row stays as quiet as before.
+            if hovered {
+                IconButton(symbol: "eye", help: L10n.t("Quick Look"), size: 11,
+                           spokenLabel: L10n.t("Quick Look %@", task.name)) {
+                    QuickLookPresenter.shared.present(fileURL)
+                }
+            }
             IconButton(symbol: "magnifyingglass", help: L10n.t("Show in Finder"), size: 11,
                        spokenLabel: L10n.t("Show %@ in Finder", task.name)) {
                 vm.revealInFinder(task)
@@ -436,6 +447,10 @@ private struct MenuBarFinishedRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
         .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        // Drag the finished file straight out of the popover into Finder, Mail, a chat…
+        .onDrag { NSItemProvider(object: fileURL as NSURL) }
+        .help(L10n.t("Drag the file out to use it anywhere"))
     }
 }
 

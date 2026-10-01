@@ -3,12 +3,16 @@ import { useTranslation } from 'react-i18next'
 import { useDialogFocus } from '../hooks/useDialogFocus'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { saveDraft, type AddDraft } from '../lib/addDraft'
+import { loadAddPrefs, rememberAdd } from '../lib/addPrefs'
+import { checkedText, initialChecks, reviewRows, reviewTotals, type ReviewRow } from '../lib/addReview'
 import { submitAdd, type AddSummary } from '../lib/addSubmit'
-import { api, failureMessage } from '../lib/api'
+import { AddExtras, NO_EXTRAS, type AddExtrasValue } from './AddExtras'
+import { api, ApiError, failureMessage } from '../lib/api'
 import { BOOT } from '../lib/boot'
 import { removeLine, summarizeLinks } from '../lib/links'
 import { dragHasFiles, mergeTorrents, type TorrentMerge } from '../lib/torrentFiles'
 import type { NetworkAdapter, NetworkState } from '../lib/types'
+import { AddReview } from './AddReview'
 import { FolderPicker, folderLabel } from './FolderPicker'
 import { CloseIcon, LinkIcon } from './Icons'
 import { LinkIssues } from './LinkIssues'
@@ -26,6 +30,16 @@ interface AddDialogProps {
   initialFiles?: readonly File[]
   /** Links and choices typed before a sign-out cut them off, restored after signing back in. */
   initialDraft?: AddDraft | null
+  /** Links to start with, e.g. pasted outside any field. */
+  initialUrl?: string
+  /** `initialUrl` came from the clipboard: the dialog says so. */
+  pasted?: boolean
+}
+
+interface Review {
+  rows: ReviewRow[]
+  checked: Set<number>
+  freeBytes: number | null
 }
 
 export function AddDialog({
@@ -34,18 +48,29 @@ export function AddDialog({
   onWarn,
   initialFiles = [],
   initialDraft = null,
+  initialUrl = '',
+  pasted = false,
 }: AddDialogProps) {
   const { t } = useTranslation()
-  const [url, setUrl] = useState(initialDraft?.url ?? '')
+  // Per browser: the last folder and priority used, and a few recent folders as one-tap chips.
+  const [prefs] = useState(loadAddPrefs)
+  const [url, setUrl] = useState(initialDraft?.url ?? initialUrl)
   const [torrents, setTorrents] = useState<TorrentMerge>(() => mergeTorrents([], initialFiles))
-  const [folder, setFolder] = useState(initialDraft?.folder ?? '')
-  const [priority, setPriority] = useState<'normal' | 'high' | 'low'>(initialDraft?.priority ?? 'normal')
+  const [folder, setFolder] = useState(initialDraft?.folder ?? prefs.folder)
+  const [priority, setPriority] = useState<'normal' | 'high' | 'low'>(
+    initialDraft?.priority ?? prefs.priority,
+  )
+  /** Set while the review step shows: paste → review → add. */
+  const [review, setReview] = useState<Review | null>(null)
   const [paused, setPaused] = useState(initialDraft?.paused ?? false)
+  const [extras, setExtras] = useState<AddExtrasValue>(NO_EXTRAS)
   const [net, setNet] = useState<NetworkState | null>(null)
   const [mode, setMode] = useState<NetMode>('auto')
   const [chosen, setChosen] = useState<string[]>([])
   const [single, setSingle] = useState('')
   const [busy, setBusy] = useState(false)
+  /** What the busy button is doing: checking links for the review, or adding. */
+  const [phase, setPhase] = useState<'check' | 'add'>('add')
   const [picking, setPicking] = useState(false)
   const [home, setHome] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -59,9 +84,12 @@ export function AddDialog({
   const phone = useMediaQuery('(max-width: 680px)')
   const count = links.valid + torrents.files.length
 
+  // Each step starts with focus in its first field: the links, or the first line to tick.
+  const reviewing = review != null
   useEffect(() => {
-    urlRef.current?.focus()
-  }, [])
+    if (!reviewing) return void urlRef.current?.focus()
+    modalRef.current?.querySelector<HTMLElement>('.rvlist input:not(:disabled), .rvlist button')?.focus()
+  }, [reviewing])
 
   // Kept as typed: an expired session reloads the page to sign in, and would otherwise lose it.
   useEffect(() => {
@@ -110,22 +138,63 @@ export function AddDialog({
 
   async function submit() {
     if (busy) return
+    if (review) return send(checkedText(review.rows, review.checked), totals?.count ?? 0)
     const trimmed = url.trim()
     if (!trimmed && torrents.files.length === 0) {
       setError(t('addDialog.enterUrl'))
       urlRef.current?.focus()
       return
     }
-    const network = networkSpec()
-    if (network === null) return
+    if (links.valid === 0) return send(trimmed, 0)
+    if (networkSpec() === null) return
 
+    // Step two: ask the server what each line is before queueing anything.
+    const lines = links.lines.map((l) => l.text)
+    setPhase('check')
+    setBusy(true)
+    try {
+      const result = await api.addPreview({ url: lines.join('\n'), folder: folder.trim() || undefined })
+      const rows = reviewRows(lines, result)
+      setReview({ rows, checked: initialChecks(rows), freeBytes: result.freeBytes })
+      setBusy(false)
+    } catch (e) {
+      // A refused folder was toasted by `api`; stay put. Anything else — an older server without
+      // the review step, a timeout — must not block the add itself.
+      if (e instanceof ApiError && (e.kind === 'refused' || e.kind === 'auth')) {
+        setBusy(false)
+        return
+      }
+      // The server is checking other links (429): say so and let the user retry, not skip the review.
+      if (e instanceof ApiError && e.status === 429) {
+        onWarn(e.message)
+        setBusy(false)
+        return
+      }
+      setBusy(false)
+      return send(trimmed, links.valid)
+    }
+  }
+
+  async function send(text: string, validLinks: number) {
+    if (text === '' && torrents.files.length === 0) return
+    const network = networkSpec()
+    if (network === null || !extras.valid) return
+
+    setPhase('add')
     setBusy(true)
     try {
       const summary = await submitAdd({
-        text: trimmed,
-        validLinks: links.valid,
+        text,
+        validLinks,
         files: torrents.files,
-        options: { folder: folder.trim(), priority, paused, network },
+        options: {
+          folder: folder.trim(),
+          priority,
+          paused,
+          network,
+          sequential: extras.sequential || undefined,
+          startAt: extras.startAt ?? undefined,
+        },
       })
       // Nothing queued: stay open with the input intact so the user can fix and retry.
       if (summary.added === 0 && summary.refused === 0 && summary.failures.length > 0) {
@@ -133,6 +202,7 @@ export function AddDialog({
         setBusy(false)
         return
       }
+      rememberAdd(folder.trim(), priority)
       onAdded(summary)
     } catch (e) {
       // A 403 was already toasted by `api`; anything else is ours to report. Staying open keeps the typed URL.
@@ -148,6 +218,11 @@ export function AddDialog({
       void submit()
     }
   }
+
+  const totals = review ? reviewTotals(review.rows, review.checked, review.freeBytes) : null
+  const shownFolder = folder ? folderLabel(folder, home) : t('addDialog.defaultFolder')
+  const recent = prefs.recent.filter((f) => f !== folder)
+  const submitCount = totals ? totals.count + torrents.files.length : count
 
   const errorId = `${id}-error`
   const countId = `${id}-count`
@@ -193,9 +268,32 @@ export function AddDialog({
           <h3 id={`${id}-title`}>{t('addDialog.title')}</h3>
         </div>
 
+        {review && totals ? (
+          <div className="mbody">
+            <div className="flabel">{t('workflow.add.reviewLabel', { count: review.rows.length })}</div>
+            <AddReview
+              rows={review.rows}
+              checked={review.checked}
+              onToggle={(index, on) =>
+                setReview((r) => {
+                  if (!r) return r
+                  const checked = new Set(r.checked)
+                  if (on) checked.add(index)
+                  else checked.delete(index)
+                  return { ...r, checked }
+                })
+              }
+              torrentNames={torrents.files.map((f) => f.name)}
+              totals={totals}
+              freeBytes={review.freeBytes}
+              folderLabel={shownFolder}
+            />
+          </div>
+        ) : (
         <div className="mbody">
           <label className="flabel" htmlFor={`${id}-url`}>
             {t('addDialog.urlLabel')}
+            {pasted && <span className="chip chip-w pasted">{t('workflow.add.pasted')}</span>}
           </label>
           <textarea
             id={`${id}-url`}
@@ -260,6 +358,18 @@ export function AddDialog({
                   </button>
                 )}
               </div>
+              {recent.length > 0 && (
+                <div className="recentf" role="group" aria-label={t('workflow.add.recentFolders')}>
+                  <span className="recentl" aria-hidden="true">
+                    {t('workflow.add.recent')}
+                  </span>
+                  {recent.map((f) => (
+                    <button key={f} type="button" className="rchip" title={f} onClick={() => setFolder(f)}>
+                      {home ? folderLabel(f, home) : shortFolder(f)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="fg fg-prio">
               {phone ? (
@@ -403,23 +513,45 @@ export function AddDialog({
             <input type="checkbox" checked={paused} onChange={(e) => setPaused(e.target.checked)} />{' '}
             {t('addDialog.addPaused')}
           </label>
+          <AddExtras value={extras} onChange={setExtras} />
         </div>
+        )}
 
         <div className="mfoot">
-          <button className="btn" onClick={onClose}>
-            {t('common.cancel')}
-          </button>
-          <button className="btn primary" onClick={submit} disabled={busy}>
+          {review ? (
+            <button className="btn" onClick={() => setReview(null)}>
+              {t('workflow.add.back')}
+            </button>
+          ) : (
+            <button className="btn" onClick={onClose}>
+              {t('common.cancel')}
+            </button>
+          )}
+          <button
+            className="btn primary"
+            onClick={submit}
+            disabled={busy || (review != null && submitCount === 0)}
+          >
             {busy
-              ? t('addDialog.adding')
-              : count > 1
-                ? t('addDialog.submitCount', { count })
-                : t('addDialog.submit')}
+              ? phase === 'add'
+                ? t('addDialog.adding')
+                : t('workflow.add.checking')
+              : !review && links.valid > 0
+                ? t('workflow.add.review')
+                : submitCount > 1
+                  ? t('addDialog.submitCount', { count: submitCount })
+                  : t('addDialog.submit')}
           </button>
         </div>
       </div>
     </>
   )
+}
+
+/** A recent folder as a chip: its last two parts, the full path in the title. */
+function shortFolder(path: string): string {
+  const parts = path.split('/').filter(Boolean)
+  return parts.length <= 2 ? parts.join(' / ') || path : `… / ${parts.slice(-2).join(' / ')}`
 }
 
 export function AdapterLine({ adapter }: { adapter: NetworkAdapter }) {

@@ -90,6 +90,16 @@ public struct AppSettings: Codable, Sendable, Hashable {
 
     public var btEnableUTP: Bool
 
+    /// Extra announce URLs appended to new public torrents, fetched from ``extraTrackersURL``.
+    public var extraTrackersEnabled: Bool
+    public var extraTrackersURL: String
+    public var extraTrackers: [String]
+    public var extraTrackersUpdatedAt: Date?
+
+    /// A queue profile per hour of the week (168 slots, Sunday 00:00 first); "" leaves the hour alone.
+    public var profileScheduleEnabled: Bool
+    public var profileSchedule: [String]
+
     public var notifyOnAdded: Bool
 
     public var notifyOnCompleted: Bool
@@ -239,6 +249,9 @@ public struct AppSettings: Codable, Sendable, Hashable {
 
     public var auditLogMaxFileMegabytes: Int
 
+    /// Checked in order when a download is added; the first enabled match applies.
+    public var autoSortRules: [AutoSortRule]
+
     public init(
         profiles: [TrafficProfile] = TrafficProfile.defaults,
         selectedProfileName: String = TrafficProfile.medium.name,
@@ -283,6 +296,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         btEnablePeX: Bool = true,
         btEnableLPD: Bool = true,
         btEnableUTP: Bool = true,
+        extraTrackersEnabled: Bool = false,
+        extraTrackersURL: String = "",
+        extraTrackers: [String] = [],
+        extraTrackersUpdatedAt: Date? = nil,
+        profileScheduleEnabled: Bool = false,
+        profileSchedule: [String] = [],
         notifyOnAdded: Bool = false,
         notifyOnCompleted: Bool = true,
         notifyOnFailed: Bool = true,
@@ -345,7 +364,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
         auditLogDirectory: String = "",
         auditLogRetentionDays: Int = 90,
         auditLogKeepFiles: Int = 12,
-        auditLogMaxFileMegabytes: Int = 8
+        auditLogMaxFileMegabytes: Int = 8,
+        autoSortRules: [AutoSortRule] = []
     ) {
         self.profiles = profiles
         self.selectedProfileName = selectedProfileName
@@ -390,6 +410,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.btEnablePeX = btEnablePeX
         self.btEnableLPD = btEnableLPD
         self.btEnableUTP = btEnableUTP
+        self.extraTrackersEnabled = extraTrackersEnabled
+        self.extraTrackersURL = extraTrackersURL
+        self.extraTrackers = extraTrackers
+        self.extraTrackersUpdatedAt = extraTrackersUpdatedAt
+        self.profileScheduleEnabled = profileScheduleEnabled
+        self.profileSchedule = profileSchedule
         self.notifyOnAdded = notifyOnAdded
         self.notifyOnCompleted = notifyOnCompleted
         self.notifyOnFailed = notifyOnFailed
@@ -453,6 +479,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         self.auditLogRetentionDays = auditLogRetentionDays
         self.auditLogKeepFiles = auditLogKeepFiles
         self.auditLogMaxFileMegabytes = auditLogMaxFileMegabytes
+        self.autoSortRules = autoSortRules
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -467,6 +494,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
         case btMakeDefaultClient, btAutoDeleteTorrent, btWatchFolderEnabled
         case btWatchFolderPath, btWatchStartWithoutConfirmation, btEncryptionMode
         case btEnableDHT, btEnablePeX, btEnableLPD, btEnableUTP
+        case extraTrackersEnabled, extraTrackersURL, extraTrackers, extraTrackersUpdatedAt
+        case profileScheduleEnabled, profileSchedule
         case notifyOnAdded, notifyOnCompleted, notifyOnFailed
         case notifyOnlyWhenInactive, notificationSound
         case preventSleepWhileDownloading, allowSleepIfResumable, allowSleepWhileSeeding
@@ -493,6 +522,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         case remoteAllowedHostNames
         case auditLogEnabled, auditLogDirectory
         case auditLogRetentionDays, auditLogKeepFiles, auditLogMaxFileMegabytes
+        case autoSortRules
     }
 
     /// Every field must use `decodeIfPresent` with a default, or blobs written before a key existed throw on load.
@@ -541,6 +571,12 @@ public struct AppSettings: Codable, Sendable, Hashable {
         btEnablePeX = try c.decodeIfPresent(Bool.self, forKey: .btEnablePeX) ?? true
         btEnableLPD = try c.decodeIfPresent(Bool.self, forKey: .btEnableLPD) ?? true
         btEnableUTP = try c.decodeIfPresent(Bool.self, forKey: .btEnableUTP) ?? true
+        extraTrackersEnabled = try c.decodeIfPresent(Bool.self, forKey: .extraTrackersEnabled) ?? false
+        extraTrackersURL = try c.decodeIfPresent(String.self, forKey: .extraTrackersURL) ?? ""
+        extraTrackers = try c.decodeIfPresent([String].self, forKey: .extraTrackers) ?? []
+        extraTrackersUpdatedAt = try c.decodeIfPresent(Date.self, forKey: .extraTrackersUpdatedAt)
+        profileScheduleEnabled = try c.decodeIfPresent(Bool.self, forKey: .profileScheduleEnabled) ?? false
+        profileSchedule = try c.decodeIfPresent([String].self, forKey: .profileSchedule) ?? []
         notifyOnAdded = try c.decodeIfPresent(Bool.self, forKey: .notifyOnAdded) ?? false
         notifyOnCompleted = try c.decodeIfPresent(Bool.self, forKey: .notifyOnCompleted) ?? true
         notifyOnFailed = try c.decodeIfPresent(Bool.self, forKey: .notifyOnFailed) ?? true
@@ -605,6 +641,8 @@ public struct AppSettings: Codable, Sendable, Hashable {
         auditLogRetentionDays = try c.decodeIfPresent(Int.self, forKey: .auditLogRetentionDays) ?? 90
         auditLogKeepFiles = try c.decodeIfPresent(Int.self, forKey: .auditLogKeepFiles) ?? 12
         auditLogMaxFileMegabytes = try c.decodeIfPresent(Int.self, forKey: .auditLogMaxFileMegabytes) ?? 8
+        // A rule that fails to decode (a newer build's operator, say) drops the list rather than the settings.
+        autoSortRules = (try? c.decodeIfPresent([AutoSortRule].self, forKey: .autoSortRules)) ?? []
     }
 
     public var selectedProfile: TrafficProfile {

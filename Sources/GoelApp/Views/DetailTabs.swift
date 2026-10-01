@@ -53,6 +53,7 @@ struct SectionLabel: View {
 struct DetailsTab: View {
     let task: DownloadTask
     @EnvironmentObject private var vm: AppViewModel
+    @State private var trackerSheet: TrackerSheetRequest?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -72,6 +73,9 @@ struct DetailsTab: View {
                           valueColor: Theme.teal)
                 }
                 trackerSection
+                    .sheet(item: $trackerSheet) { request in
+                        TrackerEditSheet(mode: request.mode, taskID: task.id).environmentObject(vm)
+                    }
             } else {
                 KVRow(key: L10n.t("URL"), value: task.sourceLocator, copyable: true)
                 KVRow(key: L10n.t("MIME type"), value: task.remoteInfo?.mimeType ?? "—")
@@ -104,9 +108,11 @@ struct DetailsTab: View {
 
     @ViewBuilder private var trackerSection: some View {
         if let live = task.trackers, !live.isEmpty {
-            SectionLabel(text: L10n.t("Trackers · %d", live.count))
+            trackerHeader(count: live.count)
             ForEach(live) { tracker in
-                TrackerRow(tracker: tracker)
+                TrackerRow(tracker: tracker,
+                           onEdit: { trackerSheet = TrackerSheetRequest(mode: .edit(tracker.url)) },
+                           onRemove: { vm.removeTrackers([tracker.url], from: task.id) })
                 Divider()
             }
         } else if !magnetTrackers.isEmpty {
@@ -124,6 +130,20 @@ struct DetailsTab: View {
                 .padding(.vertical, 6)
                 Divider()
             }
+        } else {
+            trackerHeader(count: 0)
+        }
+    }
+
+    private func trackerHeader(count: Int) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            SectionLabel(text: L10n.t("Trackers · %d", count))
+            Spacer()
+            Button(L10n.t("Add…")) { trackerSheet = TrackerSheetRequest(mode: .add) }
+                .buttonStyle(.link)
+                .scaledFont(size: Theme.TextSize.meta)
+                .help(L10n.t("Add tracker URLs to this torrent"))
+                .accessibilityLabel(L10n.t("Add trackers"))
         }
     }
 
@@ -172,6 +192,8 @@ struct DetailsTab: View {
 
 struct TrackerRow: View {
     let tracker: TorrentTracker
+    var onEdit: (() -> Void)? = nil
+    var onRemove: (() -> Void)? = nil
     @EnvironmentObject private var vm: AppViewModel
 
     var body: some View {
@@ -182,9 +204,12 @@ struct TrackerRow: View {
                     .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
                     .lineLimit(1).truncationMode(.middle)
                 if !tracker.message.isEmpty {
+                    // An error is the one thing worth reading here: red, and allowed a second line.
                     Text(tracker.message)
-                        .scaledFont(size: Theme.TextSize.micro).foregroundStyle(.secondary)
-                        .lineLimit(1).truncationMode(.tail)
+                        .scaledFont(size: Theme.TextSize.micro)
+                        .foregroundStyle(tracker.status == .error ? Theme.red : .secondary)
+                        .lineLimit(tracker.status == .error ? 2 : 1).truncationMode(.tail)
+                        .textSelection(.enabled)
                 }
             }
             Spacer(minLength: 8)
@@ -208,11 +233,15 @@ struct TrackerRow: View {
                 tracker.leeches.map { L10n.t("%d leechers", $0) },
                 tracker.message.isEmpty ? nil : tracker.message))
         .accessibilityAction(named: Text(L10n.t("Copy tracker URL"))) { vm.copyToPasteboard(tracker.url) }
+        .accessibilityAction(named: Text(L10n.t("Edit tracker"))) { onEdit?() }
+        .accessibilityAction(named: Text(L10n.t("Remove tracker"))) { onRemove?() }
         .contextMenu {
             Button(L10n.t("Copy Tracker URL")) { vm.copyToPasteboard(tracker.url) }
             if tracker.url.hasPrefix("http"), let url = URL(string: tracker.url) {
                 Button(L10n.t("Open in Browser")) { NSWorkspace.shared.open(url) }
             }
+            if let onEdit { Divider(); Button(L10n.t("Edit Tracker…"), action: onEdit) }
+            if let onRemove { Button(L10n.t("Remove Tracker"), role: .destructive, action: onRemove) }
         }
     }
 
@@ -349,14 +378,22 @@ struct FilesTab: View {
                     .foregroundStyle(.secondary)
             }
         } else {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(task.files) { file in
-                    fileRow(name: file.name, fraction: file.fractionCompleted,
-                            size: file.length, wanted: file.isWanted,
-                            fileID: file.id, priority: file.priority)
-                    Divider()
+            FileTreeView(items: task.files.map(FileTreeItem.init),
+                         wanted: Set(task.files.filter(\.isWanted).map(\.id)),
+                         onChange: applyWanted) { item in
+                if let file = task.files.first(where: { $0.id == item.id }) {
+                    priorityMenu(fileID: file.id, name: file.name, priority: file.priority)
                 }
             }
+        }
+    }
+
+    /// Only the files whose state changed are sent, so "Select ▸ All" on a mostly-wanted torrent is cheap.
+    private func applyWanted(_ next: Set<Int>) {
+        for file in task.files {
+            let want = next.contains(file.id)
+            guard want != file.isWanted else { continue }
+            vm.setFilePriority(want ? .normal : .skip, fileID: file.id, task: task.id)
         }
     }
 
@@ -387,6 +424,13 @@ struct FilesTab: View {
                 .accessibilityLabel(A11y.bytes(size))
 
             if let fileID {
+                priorityMenu(fileID: fileID, name: name, priority: priority)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func priorityMenu(fileID: Int, name: String, priority: FilePriority) -> some View {
                 ActionMenu(items: [FilePriority.skip, .low, .normal, .high].map { p in
                     .button(L10n.t(p.displayName)) { vm.setFilePriority(p, fileID: fileID, task: task.id) }
                 }, menuWidth: 130) { open in
@@ -404,9 +448,6 @@ struct FilesTab: View {
                 }
                 .accessibilityLabel(L10n.t("Priority for %@", name))
                 .accessibilityValue(priority.title)
-            }
-        }
-        .padding(.vertical, 8)
     }
 }
 
@@ -429,13 +470,9 @@ struct ConnectionsTab: View {
             if live.isEmpty {
                 emptyConnections(L10n.t("No active peers"))
             } else {
-                connHeader(left: L10n.t("Peer"), trailing: "↑")
+                connHeader(left: L10n.t("Peer · client · has"), trailing: "↑")
                 ForEach(live) { peer in
-                    connRow(label: peer.label,
-                            subtitle: peer.detail,
-                            down: peer.downloadSpeed,
-                            trailing: (peer.uploadSpeed / 1_000_000).oneDecimal,
-                            trailingColor: Theme.teal)
+                    PeerRow(peer: peer)
                 }
             }
         }

@@ -113,6 +113,8 @@ extension AppViewModel {
     func closeServerBrowser() {
         sftpBrowserNavigation = nil
         selectedServer = nil
+        // Any list destination (a filter, ⌘1…⌘9) also leaves the RSS reader.
+        RSSReaderModel.shared.close()
     }
 
     func isServerEngaged(_ id: SFTPConnection.ID) -> Bool {

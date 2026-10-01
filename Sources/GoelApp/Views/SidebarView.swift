@@ -11,6 +11,9 @@ struct SidebarView: View {
     /// Off by default: eight type rows at zero pushed Servers below the fold of a short window.
     @AppStorage("sidebar.showEmptyTypes") private var showEmptyTypes = false
     @AppStorage(TagColors.storageKey) private var tagColorsRaw = ""
+    @State private var showAllTransfers = false
+    /// Observed so the filter rows un-highlight while the RSS reader is showing.
+    @ObservedObject private var rss = RSSReaderModel.shared
 
     var body: some View {
         ScrollView {
@@ -21,6 +24,7 @@ struct SidebarView: View {
                 tagsGroup
                 MediaJobsSidebarGroup(center: vm.mediaJobs)
                 serversGroup
+                RSSSidebarGroup()
             }
             .padding(10)
         }
@@ -179,6 +183,10 @@ struct SidebarView: View {
             ForEach(vm.servers) { server in
                 serverItem(server)
             }
+            SFTPTransfersSidebarRow(summary: SFTPTransferSummary(vm.sftpTransfers)) {
+                showAllTransfers = true
+            }
+            .sheet(isPresented: $showAllTransfers) { SFTPAllTransfersView().environmentObject(vm).environmentObject(sftpStore) }
         }
     }
 
@@ -364,7 +372,7 @@ struct SidebarView: View {
     ///   - shortcut: The ⌘-digit that selects this row, shown in the tooltip.
     private func item(_ label: String, _ symbol: String?, _ filter: SidebarFilter,
                       count: Int? = nil, dot: Color? = nil, shortcut: Int? = nil) -> some View {
-        let selected = vm.filter == filter && vm.selectedServer == nil
+        let selected = vm.filter == filter && vm.selectedServer == nil && !rss.isOpen
         let count = count ?? vm.count(for: filter)
         return Button {
             vm.closeServerBrowser()

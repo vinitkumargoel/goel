@@ -132,7 +132,8 @@ extension DownloadManager {
             enablePeX: settings.btEnablePeX,
             enableLPD: settings.btEnableLPD,
             enableUTP: settings.btEnableUTP,
-            proxy: Self.proxySpec(from: settings)
+            proxy: Self.proxySpec(from: settings),
+            extraTrackers: settings.extraTrackersEnabled ? settings.extraTrackers : []
         )
     }
 

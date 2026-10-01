@@ -21,7 +21,13 @@ struct DownloadListView: View {
     /// Measured, so the column set follows the list rather than the window.
     @State private var listWidth: CGFloat = 0
 
-    private var columns: DownloadColumns { DownloadColumns(scale: widthScale / 100, listWidth: listWidth) }
+    @AppStorage(ListColumnPrefs.storageKey) private var columnsRaw = ""
+    @AppStorage(ListDensity.storageKey) private var density: ListDensity = .regular
+
+    private var columns: DownloadColumns {
+        DownloadColumns(scale: widthScale / 100, listWidth: listWidth,
+                        chosen: ListColumnPrefs.decode(columnsRaw), density: density)
+    }
 
     var body: some View {
         let content: some View = VStack(spacing: 0) {
@@ -203,9 +209,14 @@ struct DownloadListView: View {
             if columns.showsSize {
                 headerCol(.size, width: columns.size, alignment: .trailing)
             }
-            headerCol(.status, width: columns.status, alignment: .leading)
+            if columns.showsStatus {
+                headerCol(.status, width: columns.status, alignment: .leading)
+            }
             if columns.showsAdded {
                 headerCol(.added, width: columns.added, alignment: .leading)
+            }
+            ForEach(columns.extras) { extra in
+                ExtraColumnHeader(column: extra, width: columns.width(of: extra))
             }
             if columns.showsSpeed {
                 // One column for both directions; it sorts by download speed. The toolbar's Sort
@@ -218,6 +229,7 @@ struct DownloadListView: View {
         .frame(height: 28)
         .scaledFont(size: Theme.TextSize.caption, weight: .semibold)
         .foregroundStyle(.secondary)
+        .contextMenu { ListColumnMenu(columnsRaw: $columnsRaw, density: $density) }
     }
 
     @ViewBuilder
@@ -350,7 +362,7 @@ struct DownloadRow: View, Equatable {
     var body: some View {
         withInteractions(withAccessibility(cells
             .padding(.horizontal, 12)
-            .frame(minHeight: 50)
+            .frame(minHeight: columns.density.rowHeight)
             .background(rowBackground)))
     }
 
@@ -372,12 +384,14 @@ struct DownloadRow: View, Equatable {
                     .foregroundStyle(.secondary)
             }
 
-            statusCell
-                // For a failure the tooltip adds the advice to the reason shown in the cell;
-                // otherwise it is the long form the compact cell leaves out.
-                .help(failureTooltip ?? task.statusDetailText)
-                .frame(width: columns.status, alignment: .leading)
-                .padding(.horizontal, 6)
+            if columns.showsStatus {
+                statusCell
+                    // For a failure the tooltip adds the advice to the reason shown in the cell;
+                    // otherwise it is the long form the compact cell leaves out.
+                    .help(failureTooltip ?? task.statusDetailText)
+                    .frame(width: columns.status, alignment: .leading)
+                    .padding(.horizontal, 6)
+            }
 
             if columns.showsAdded {
                 Text(task.addedColumnString)
@@ -386,6 +400,12 @@ struct DownloadRow: View, Equatable {
                     .foregroundStyle(.secondary)
                     .help(task.addedString)
                     .frame(width: columns.added, alignment: .leading)
+                    .padding(.horizontal, 6)
+            }
+
+            ForEach(columns.extras) { extra in
+                ExtraColumnCell(column: extra, task: task, speed: speed)
+                    .frame(width: columns.width(of: extra), alignment: extra.cellAlignment)
                     .padding(.horizontal, 6)
             }
 
@@ -550,7 +570,32 @@ struct DownloadRow: View, Equatable {
         }
     }
 
+    @ViewBuilder
     private var nameCell: some View {
+        if columns.density == .compact {
+            compactNameCell
+        } else {
+            regularNameCell
+        }
+    }
+
+    /// One line: name, then a thin inline bar in the space left over.
+    private var compactNameCell: some View {
+        HStack(spacing: 7) {
+            StateButton(task: task, vm: vm)
+                .scaleEffect(0.8)
+            Text(task.compactDisplayName)
+                .scaledFont(size: Theme.TextSize.meta, weight: .medium)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .layoutPriority(1)
+            MiniProgressBar(task: task)
+                .frame(minWidth: 40, maxWidth: 160)
+                .scaleEffect(x: 1, y: 0.6)
+        }
+    }
+
+    private var regularNameCell: some View {
         HStack(spacing: 10) {
             StateButton(task: task, vm: vm)
             FileTypeIcon(type: task.fileType)
@@ -646,6 +691,12 @@ struct DownloadRow: View, Equatable {
         Button(L10n.t("Open folder")) { vm.revealInFinder(task) }
         if task.status == .completed || playableWhileDownloading {
             Button(L10n.t("Open in Player")) { vm.openFile(task) }
+        }
+        if task.status == .completed {
+            OpenWithMenu(task: task, vm: vm)
+            ShareMenuItem(task: task, vm: vm)
+        } else if !task.status.isFailed {
+            WhenDoneMenu(task: task, vm: vm)
         }
         if task.isMediaFile, task.status.hasData,
            InAppPlayback.canPlay(URL(fileURLWithPath: task.primaryFilePath)) {
@@ -815,6 +866,12 @@ struct DownloadColumns: Equatable {
     var added: CGFloat = 96
     var speed: CGFloat = 92
     var layout: Layout = .full
+    /// What the header's context menu switched on; width can still hide any of them.
+    var chosen: Set<ListColumn> = ListColumn.defaults
+    /// Extra columns that fit after the core ones, in ``ListColumn/extras`` order.
+    var extras: [ListColumn] = []
+    var density: ListDensity = .regular
+    var scale: CGFloat = 1
 
     /// Which columns fit. Narrower lists shed Added first, then fold Size under the name and
     /// Speed into Status, so the name never drops below ``minimumNameWidth``.
@@ -830,19 +887,67 @@ struct DownloadColumns: Equatable {
     /// The row's 12 pt on both sides.
     static let rowPadding: CGFloat = 24
 
-    init(scale: CGFloat = 1, listWidth: CGFloat? = nil) {
+    init(scale: CGFloat = 1, listWidth: CGFloat? = nil,
+         chosen: Set<ListColumn> = ListColumn.defaults, density: ListDensity = .regular) {
         let s = scale.isFinite && scale > 0 ? scale : 1
+        self.scale = s
+        self.chosen = chosen
+        self.density = density
         index = (index * s).rounded()
         size = (size * s).rounded()
         status = (status * s).rounded()
         added = (added * s).rounded()
         speed = (speed * s).rounded()
-        if let listWidth { layout = Self.layout(for: listWidth, columns: self) }
+        guard let listWidth else {
+            extras = ListColumn.extras.filter(chosen.contains)
+            return
+        }
+        layout = Self.layout(for: listWidth, columns: effectiveCore)
+        extras = Self.fittingExtras(listWidth: listWidth, columns: self)
     }
 
-    var showsSize: Bool { layout != .compact }
-    var showsAdded: Bool { layout == .full }
-    var showsSpeed: Bool { layout != .compact }
+    /// The core widths with unchosen columns collapsed, padding included, so they cost nothing.
+    private var effectiveCore: DownloadColumns {
+        var copy = self
+        if !chosen.contains(.size) { copy.size = -Self.cellPadding }
+        if !chosen.contains(.status) { copy.status = -Self.cellPadding }
+        if !chosen.contains(.added) { copy.added = -Self.cellPadding }
+        if !chosen.contains(.speed) { copy.speed = -Self.cellPadding }
+        return copy
+    }
+
+    var showsSize: Bool { chosen.contains(.size) && layout != .compact }
+    var showsAdded: Bool { chosen.contains(.added) && layout == .full }
+    var showsSpeed: Bool { chosen.contains(.speed) && layout != .compact }
+    var showsStatus: Bool { chosen.contains(.status) }
+
+    func width(of extra: ListColumn) -> CGFloat { (extra.baseWidth * scale).rounded() }
+
+    /// Width the core columns take once the width-driven layout has run.
+    var coreWidth: CGFloat {
+        var total = index + Self.cellPadding + Self.rowPadding + Self.cellPadding
+        if showsStatus { total += status + Self.cellPadding }
+        if showsSize { total += size + Self.cellPadding }
+        if showsAdded { total += added + Self.cellPadding }
+        if showsSpeed { total += speed + Self.cellPadding }
+        return total
+    }
+
+    /// Extras are added in priority order while the name keeps ``minimumNameWidth``; an
+    /// unmeasured list shows all of them rather than flashing a reduced set.
+    static func fittingExtras(listWidth: CGFloat, columns: DownloadColumns) -> [ListColumn] {
+        let wanted = ListColumn.extras.filter(columns.chosen.contains)
+        guard listWidth.isFinite, listWidth > 0 else { return wanted }
+        var room = listWidth - columns.coreWidth - minimumNameWidth
+        var shown: [ListColumn] = []
+        for column in wanted {
+            let cost = columns.width(of: column) + cellPadding
+            guard cost <= room else { continue }
+            room -= cost
+            shown.append(column)
+        }
+        return shown
+    }
 
     /// The widest set whose fixed columns still leave the name its minimum. An unmeasured
     /// (zero) width keeps the full set rather than flashing the compact one on first layout.

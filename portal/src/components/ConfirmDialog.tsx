@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDialogFocus } from '../hooks/useDialogFocus'
 import { WarnIcon } from './Icons'
@@ -7,7 +7,17 @@ export interface ConfirmRequest {
   title: string
   body: string
   confirmLabel: string
-  onConfirm: () => void
+  /** Called with the option checkbox's state (false when there is none). */
+  onConfirm: (checked: boolean) => void
+  /** Names the request covers, shown as a short list under the body. */
+  items?: readonly string[]
+  /** Line under the list: "and 3 more · 4.2 GB". */
+  footnote?: string
+  /**
+   * A checkbox that makes the action destructive (delete files too). Unchecked, the confirm is a
+   * plain primary button; checked, it turns red and reads `confirmLabel`.
+   */
+  option?: { label: string; confirmLabel: string }
 }
 
 interface ConfirmDialogProps {
@@ -27,7 +37,10 @@ function Open({ request, onClose }: { request: ConfirmRequest; onClose: () => vo
   const cancelRef = useRef<HTMLButtonElement>(null)
   const titleId = useId()
   const bodyId = useId()
+  const [checked, setChecked] = useState(false)
   useDialogFocus(ref, { onEscape: onClose })
+  const option = request.option
+  const danger = option == null || checked
 
   // Destructive confirmations never take Return as their default, so focus starts on Cancel.
   useEffect(() => {
@@ -50,7 +63,7 @@ function Open({ request, onClose }: { request: ConfirmRequest; onClose: () => vo
         aria-describedby={bodyId}
       >
         <div className="mhead">
-          <div className="mic danger">
+          <div className={`mic${danger ? ' danger' : ''}`}>
             <WarnIcon />
           </div>
           <h3 id={titleId}>{request.title}</h3>
@@ -59,19 +72,33 @@ function Open({ request, onClose }: { request: ConfirmRequest; onClose: () => vo
           <p id={bodyId} className="cbody">
             {request.body}
           </p>
+          {request.items && request.items.length > 0 && (
+            <ul className="citems">
+              {request.items.map((name, i) => (
+                <li key={i}>{name}</li>
+              ))}
+            </ul>
+          )}
+          {request.footnote && <p className="cfoot">{request.footnote}</p>}
+          {option && (
+            <label className="copt">
+              <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
+              {option.label}
+            </label>
+          )}
         </div>
         <div className="mfoot">
           <button className="btn" ref={cancelRef} onClick={onClose}>
             {t('common.cancel')}
           </button>
           <button
-            className="btn danger"
+            className={`btn ${danger ? 'danger' : 'primary'}`}
             onClick={() => {
               onClose()
-              request.onConfirm()
+              request.onConfirm(checked)
             }}
           >
-            {request.confirmLabel}
+            {option && checked ? option.confirmLabel : request.confirmLabel}
           </button>
         </div>
       </div>

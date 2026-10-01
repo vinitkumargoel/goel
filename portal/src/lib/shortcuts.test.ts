@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { resolveShortcut } from './shortcuts'
+import { filterForShortcut, isPaletteKey, resolveGo, resolveShortcut } from './shortcuts'
 
 function el(html: string): HTMLElement {
   const host = document.createElement('div')
@@ -72,5 +72,35 @@ describe('resolveShortcut', () => {
     }
     const inside = el('<div role="menu"><span tabindex="-1">x</span></div>').firstElementChild!
     expect(resolveShortcut({ key: 'n', target: inside })).toBeNull()
+  })
+
+  it('maps the digit, retry, copy and go keys', () => {
+    expect(onBody('1')).toBe('filter-1')
+    expect(onBody('9')).toBe('filter-9')
+    expect(onBody('0')).toBeNull()
+    expect(onBody('r')).toBe('retry')
+    expect(onBody('C')).toBe('copy')
+    expect(onBody('g')).toBe('go')
+  })
+})
+
+describe('shortcut helpers', () => {
+  it('maps digits to the sidebar order', () => {
+    expect(filterForShortcut('filter-1')).toBe('all')
+    expect(filterForShortcut('filter-7')).toBe('failed')
+    expect(filterForShortcut('filter-9')).toBe('audio')
+    expect(filterForShortcut('add')).toBeNull()
+  })
+
+  it('finishes a G sequence with H or S only', () => {
+    expect(resolveGo({ key: 'h', target: null })).toBe('go-history')
+    expect(resolveGo({ key: 'S', target: null })).toBe('go-settings')
+    expect(resolveGo({ key: 'x', target: null })).toBeNull()
+  })
+
+  it('knows the palette key', () => {
+    expect(isPaletteKey({ key: 'k', metaKey: true, target: null })).toBe(true)
+    expect(isPaletteKey({ key: 'K', ctrlKey: true, target: null })).toBe(true)
+    expect(isPaletteKey({ key: 'k', target: null })).toBe(false)
   })
 })

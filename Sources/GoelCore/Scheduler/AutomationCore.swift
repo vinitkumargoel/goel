@@ -53,6 +53,8 @@ enum AutomationCore {
         var powerPaused = false
         var powerPausedIDs: Set<UUID> = []
         var rssSeenKeys: Set<String> = []
+        /// The weekly-grid hour last acted on: a manual profile change holds until the next hour.
+        var profileScheduleSlot: Int?
 
         init() {}
     }
@@ -146,6 +148,20 @@ enum AutomationCore {
                 memory.windowPausedIDs = paused
                 memory.windowOpen = false
             }
+        }
+
+        if s.settings.profileScheduleEnabled {
+            let slot = ProfileSchedule.slot(for: s.now, calendar: s.calendar)
+            if slot != memory.profileScheduleSlot {
+                memory.profileScheduleSlot = slot
+                let wanted = ProfileSchedule.profile(at: slot, in: s.settings.profileSchedule)
+                if let wanted, wanted != s.settings.selectedProfileName,
+                   s.settings.profiles.contains(where: { $0.name == wanted }) {
+                    actions.append(.activateProfile(wanted))
+                }
+            }
+        } else {
+            memory.profileScheduleSlot = nil
         }
 
         let shouldPause = (s.settings.pauseOnExpensiveNetwork && s.networkExpensive)

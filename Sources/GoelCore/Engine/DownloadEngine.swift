@@ -54,6 +54,14 @@ protocol TorrentControlling: FilePrioritizing {
     func forceReannounce(_ id: DownloadTask.ID) async
     func setUploadLimit(_ bytesPerSec: Int64?, task: DownloadTask.ID) async
     func setSeedRatioLimit(_ ratio: Double?, task: DownloadTask.ID) async
+    func addTrackers(_ urls: [String], task: DownloadTask.ID) async
+    /// The whole list, in order: how a tracker is removed or edited.
+    func replaceTrackers(_ trackers: [TorrentTracker], task: DownloadTask.ID) async
+}
+
+extension TorrentControlling {
+    func addTrackers(_ urls: [String], task: DownloadTask.ID) async {}
+    func replaceTrackers(_ trackers: [TorrentTracker], task: DownloadTask.ID) async {}
 }
 
 protocol HTTPConfigurable: FilePrioritizing {
@@ -79,6 +87,8 @@ public struct TorrentSessionConfig: Sendable, Equatable {
     public var enableUTP: Bool
     /// Covers the HTTP fetch of a remote `.torrent` only — the swarm itself is not proxied.
     public var proxy: NetworkGuard.ProxySpec
+    /// Appended to every new public torrent (Settings › BitTorrent › extra trackers).
+    public var extraTrackers: [String]
 
     public init(
         encryptionMode: String = "prefer",
@@ -86,7 +96,8 @@ public struct TorrentSessionConfig: Sendable, Equatable {
         enablePeX: Bool = true,
         enableLPD: Bool = true,
         enableUTP: Bool = true,
-        proxy: NetworkGuard.ProxySpec = NetworkGuard.ProxySpec()
+        proxy: NetworkGuard.ProxySpec = NetworkGuard.ProxySpec(),
+        extraTrackers: [String] = []
     ) {
         self.encryptionMode = encryptionMode
         self.enableDHT = enableDHT
@@ -94,6 +105,7 @@ public struct TorrentSessionConfig: Sendable, Equatable {
         self.enableLPD = enableLPD
         self.enableUTP = enableUTP
         self.proxy = proxy
+        self.extraTrackers = extraTrackers
     }
 }
 

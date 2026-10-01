@@ -1,6 +1,8 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../lib/api'
+import { memoryStorage } from '../test/memoryStorage'
 import en from '../locales/en.json'
 import { renderWithI18n } from '../test/renderWithI18n'
 import { AddDialog } from './AddDialog'
@@ -9,6 +11,7 @@ const api = vi.hoisted(() => ({
   network: vi.fn(),
   add: vi.fn(),
   addTorrents: vi.fn(),
+  addPreview: vi.fn(),
 }))
 
 vi.mock('../lib/api', async (importOriginal) => {
@@ -20,11 +23,16 @@ beforeEach(() => {
   api.network.mockReset().mockRejectedValue(new Error('offline'))
   api.add.mockReset().mockResolvedValue({ added: 1, refused: 0 })
   api.addTorrents.mockReset().mockResolvedValue({ added: 1, errors: [] })
+  // An older server: no review step, the dialog adds directly.
+  api.addPreview.mockReset().mockRejectedValue(new ApiError('http', 'Not found', 404))
+  vi.stubGlobal('localStorage', memoryStorage())
 })
 
-function renderDialog(initialFiles: File[] = []) {
+afterEach(() => vi.unstubAllGlobals())
+
+function renderDialog(initialFiles: File[] = [], extra: { initialUrl?: string; pasted?: boolean } = {}) {
   const handlers = { onClose: vi.fn(), onAdded: vi.fn(), onWarn: vi.fn() }
-  renderWithI18n(<AddDialog {...handlers} initialFiles={initialFiles} />)
+  renderWithI18n(<AddDialog {...handlers} initialFiles={initialFiles} {...extra} />)
   return handlers
 }
 
@@ -83,7 +91,7 @@ describe('AddDialog', () => {
       expect.objectContaining({ dir: undefined, priority: 'normal', paused: false }),
     )
     await vi.waitFor(() =>
-      expect(handlers.onAdded).toHaveBeenCalledWith({ added: 1, refused: 0, failures: [] }),
+      expect(handlers.onAdded).toHaveBeenCalledWith({ added: 1, refused: 0, failures: [], ids: [] }),
     )
   })
 
@@ -112,7 +120,7 @@ describe('AddDialog', () => {
     await userEvent.keyboard('{Control>}{Enter}{/Control}')
     expect(api.add).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://a.example/x.iso' }))
     await vi.waitFor(() =>
-      expect(handlers.onAdded).toHaveBeenCalledWith({ added: 1, refused: 0, failures: [] }),
+      expect(handlers.onAdded).toHaveBeenCalledWith({ added: 1, refused: 0, failures: [], ids: [] }),
     )
   })
 
@@ -124,5 +132,98 @@ describe('AddDialog', () => {
     expect(screen.getByLabelText(en.addDialog.urlLabel)).toHaveFocus()
     await userEvent.tab({ shift: true })
     expect(submit).toHaveFocus()
+  })
+
+  describe('review step', () => {
+    const preview = (freeBytes: number | null) => ({
+      freeBytes,
+      items: [
+        { index: 0, status: 'ok', name: 'ubuntu.iso', kind: 'http', totalBytes: 3000, estimated: false, files: [], fileCount: 0, note: null },
+        { index: 1, status: 'duplicate', name: null, kind: 'http', totalBytes: 10, estimated: false, files: [], fileCount: 0, note: null },
+        {
+          index: 2, status: 'ok', name: 'Pack', kind: 'torrent', totalBytes: 500, estimated: false,
+          files: [{ name: 'a.mkv', size: 400 }, { name: 'b.srt', size: 100 }], fileCount: 2, note: null,
+        },
+      ],
+    })
+
+    async function toReview(freeBytes: number | null = 10_000) {
+      api.addPreview.mockResolvedValue(preview(freeBytes))
+      const handlers = renderDialog()
+      await userEvent.type(
+        screen.getByLabelText(en.addDialog.urlLabel),
+        'https://e/ubuntu.iso{Enter}https://e/dup.bin{Enter}magnet:?xt=urn:btih:abc',
+      )
+      await userEvent.click(screen.getByRole('button', { name: en.workflow.add.review }))
+      await screen.findByText('ubuntu.iso')
+      return handlers
+    }
+
+    it('lists each line with its status, and adds only the ticked ones', async () => {
+      const handlers = await toReview()
+      expect(api.addPreview).toHaveBeenCalledWith({
+        url: 'https://e/ubuntu.iso\nhttps://e/dup.bin\nmagnet:?xt=urn:btih:abc',
+        folder: undefined,
+      })
+      expect(screen.getByText(en.workflow.add.status.duplicate)).toBeInTheDocument()
+      expect(screen.getByRole('checkbox', { name: 'dup.bin' })).not.toBeChecked()
+      expect(screen.getByRole('checkbox', { name: 'ubuntu.iso' })).toHaveFocus()
+      await userEvent.click(screen.getByRole('checkbox', { name: 'ubuntu.iso' }))
+      await userEvent.click(screen.getByRole('button', { name: en.addDialog.submit }))
+      expect(api.add).toHaveBeenCalledWith(expect.objectContaining({ url: 'magnet:?xt=urn:btih:abc' }))
+      await vi.waitFor(() => expect(handlers.onAdded).toHaveBeenCalled())
+    })
+
+    it('expands a torrent\'s file list', async () => {
+      await toReview()
+      const toggle = screen.getByRole('button', { name: 'Show the 2 files in Pack' })
+      expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await userEvent.click(toggle)
+      expect(screen.getByText('a.mkv')).toBeInTheDocument()
+    })
+
+    it('flags a total bigger than the free space', async () => {
+      await toReview(1000)
+      expect(screen.getByRole('status')).toHaveClass('short')
+      expect(screen.getByRole('status')).toHaveTextContent(/not enough space/)
+    })
+
+    it('warns and stays on the links when the server is busy checking others', async () => {
+      api.addPreview.mockRejectedValue(new ApiError('http', 'Still checking other links', 429))
+      const handlers = renderDialog()
+      await userEvent.type(screen.getByLabelText(en.addDialog.urlLabel), 'https://e/a.iso')
+      await userEvent.click(screen.getByRole('button', { name: en.workflow.add.review }))
+      await vi.waitFor(() => expect(handlers.onWarn).toHaveBeenCalledWith('Still checking other links'))
+      expect(api.add).not.toHaveBeenCalled()
+    })
+
+    it('goes back to the links with Back', async () => {
+      await toReview()
+      await userEvent.click(screen.getByRole('button', { name: en.workflow.add.back }))
+      expect(screen.getByLabelText(en.addDialog.urlLabel)).toHaveValue(
+        'https://e/ubuntu.iso\nhttps://e/dup.bin\nmagnet:?xt=urn:btih:abc',
+      )
+    })
+  })
+
+  it('remembers the folder and priority, and offers recent folders', async () => {
+    localStorage.setItem(
+      'goel.add.prefs',
+      JSON.stringify({ folder: '/srv/films', priority: 'high', recent: ['/srv/films', '/srv/iso'] }),
+    )
+    renderDialog()
+    expect(screen.getByLabelText(en.addDialog.priority)).toHaveValue('high')
+    expect(screen.getByText('srv / films')).toBeInTheDocument()
+    const chips = screen.getByRole('group', { name: en.workflow.add.recentFolders })
+    // The current folder is not offered again.
+    expect(within(chips).queryByRole('button', { name: 'srv / films' })).toBeNull()
+    await userEvent.click(within(chips).getByRole('button', { name: 'srv / iso' }))
+    expect(screen.getByText('srv / iso', { selector: '.pkval' })).toBeInTheDocument()
+  })
+
+  it('says when the links came from the clipboard', () => {
+    renderDialog([], { initialUrl: 'https://e/a', pasted: true })
+    expect(screen.getByText(en.workflow.add.pasted)).toBeInTheDocument()
+    expect(screen.getByLabelText(new RegExp(en.addDialog.urlLabel))).toHaveValue('https://e/a')
   })
 })

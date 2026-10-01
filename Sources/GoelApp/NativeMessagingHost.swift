@@ -8,12 +8,17 @@ enum NativeMessagingHost {
     private static let maxMessageBytes: UInt32 = 1 << 20
 
     static func runLoop() {
+        // The browser spawns this process, so its parent names the browser for Settings' cards.
+        let browser = BrowserActivityLog.currentBrowser
+        BrowserActivityLog.record(.seen, browser: browser)
         while let message = readMessage() {
-            handle(message)
+            if handle(message) { BrowserActivityLog.record(.capture, browser: browser) }
         }
     }
 
-    private static func handle(_ message: [String: Any]) {
+    /// True when a capture was spooled and the app told.
+    @discardableResult
+    private static func handle(_ message: [String: Any]) -> Bool {
         guard let raw = message["url"] as? String,
               case let (source, authorization)? = DownloadSource.parseWithCredentials(raw),
               // The spool auto-adds with no confirmation: web-download schemes only, never an `sftp:`/`ftp:` link a page could use to trigger an authenticated connection.
@@ -21,7 +26,7 @@ enum NativeMessagingHost {
               // SSRF: link-local (cloud metadata) never; the app re-screens resolved names on drain.
               Self.captureTargetAllowed(source) else {
             writeMessage(["ok": false, "error": "unsupported url"])
-            return
+            return false
         }
         // Cookies only ride with an http(s) capture: a magnet has no origin to scope them to.
         let scope: String? = URL(string: source.locator).flatMap(CookieHeader.scope(for:))
@@ -38,15 +43,16 @@ enum NativeMessagingHost {
             try BrowserSpool.enqueue(capture)
         } catch {
             writeMessage(["ok": false, "error": "spool write failed"])
-            return
+            return false
         }
         // The capture is safely spooled either way; "ok" must mean the app was actually told.
         guard pokeApp() else {
             writeMessage(["ok": false, "error": "couldn't open Goel°", "queued": true])
-            return
+            return true
         }
         // Report only *whether* cookies were accepted: echoing values or names would give a compromised extension a read-back oracle for HttpOnly cookies.
         writeMessage(["ok": true, "cookies": cookie != nil])
+        return true
     }
 
     /// Spelling-only screen (no DNS, no settings here); the app re-screens resolved addresses and

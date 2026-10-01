@@ -83,4 +83,14 @@ describe('clickAction', () => {
       order: ORDER,
     })
   })
+
+  it('set selects exactly the given rows with the first as lead', () => {
+    const s = selectionReducer(selectionReducer(EMPTY_SELECTION, { type: 'single', id: 'x' }), {
+      type: 'set',
+      ids: ['b', 'c'],
+    })
+    expect([...s.ids]).toEqual(['b', 'c'])
+    expect(s.lead).toBe('b')
+    expect(selectionReducer(s, { type: 'set', ids: [] })).toBe(EMPTY_SELECTION)
+  })
 })

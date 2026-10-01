@@ -33,6 +33,9 @@ actor TorrentEngine: TorrentControlling {
     private var profile: TrafficProfile
     private var config: SessionConfig
     private var httpProxy = NetworkGuard.ProxySpec()
+    private var extraTrackers: [String] = []
+    private var adapterCache: [String: NetworkAdapter] = [:]
+    private var adapterCacheAt = Date.distantPast
     private let fetchTorrent: TorrentFetcher
 
     /// `add` suspends on the .torrent fetch; a pause/remove/re-add in that window must win over the late handle.
@@ -100,6 +103,7 @@ actor TorrentEngine: TorrentControlling {
             if let up = task.uploadLimitBytesPerSec, up > 0 {
                 gt_set_upload_limit(handle, Int32(clamping: up))
             }
+            appendExtraTrackers(to: handle)
             if pauseRequested.remove(id) != nil {
                 gt_pause(handle)
             } else {
@@ -281,6 +285,7 @@ actor TorrentEngine: TorrentControlling {
 
     func configure(_ session: TorrentSessionConfig) async {
         httpProxy = session.proxy
+        extraTrackers = session.extraTrackers
         applySessionConfig(SessionConfig(
             enableDHT: session.enableDHT,
             enableLSD: session.enableLPD,
@@ -338,6 +343,34 @@ actor TorrentEngine: TorrentControlling {
         tasks[id]?.uploadLimitBytesPerSec = cap
         guard let handle = handles[id] else { return }
         gt_set_upload_limit(handle, Int32(clamping: cap ?? 0))
+    }
+
+    func addTrackers(_ urls: [String], task id: UUID) async {
+        guard let handle = handles[id] else { return }
+        for url in urls { _ = url.withCString { gt_add_tracker(handle, $0, 0) } }
+        gt_force_reannounce(handle)
+    }
+
+    func replaceTrackers(_ trackers: [TorrentTracker], task id: UUID) async {
+        guard let handle = handles[id] else { return }
+        let tiers = trackers.map { Int32(clamping: $0.tier) }
+        let cStrings: [UnsafeMutablePointer<CChar>?] = trackers.map { strdup($0.url) }
+        defer { cStrings.forEach { free($0) } }
+        var pointers: [UnsafePointer<CChar>?] = cStrings.map { $0.map { UnsafePointer($0) } }
+        let count = Int32(pointers.count)
+        _ = pointers.withUnsafeMutableBufferPointer { ptrs in
+            tiers.withUnsafeBufferPointer { t in
+                gt_replace_trackers(handle, count > 0 ? ptrs.baseAddress : nil,
+                                    count > 0 ? t.baseAddress : nil, count)
+            }
+        }
+        gt_force_reannounce(handle)
+    }
+
+    /// Private torrents keep the trackers their creator chose: extra trackers would leak the swarm.
+    private func appendExtraTrackers(to handle: UnsafeMutableRawPointer) {
+        guard !extraTrackers.isEmpty, gt_is_private(handle) == 0 else { return }
+        for url in extraTrackers { _ = url.withCString { gt_add_tracker(handle, $0, 1) } }
     }
 
     func setSeedRatioLimit(_ ratio: Double?, task id: UUID) async {
@@ -742,18 +775,36 @@ actor TorrentEngine: TorrentControlling {
             gt_peers(handle, buf.baseAddress, 32)
         })
         guard count > 0 else { return [] }
+        let adapters = adapterByAddress()
         return buffer.prefix(count).map { peer in
             let address = Self.cString(peer.address)
             let client = Self.cString(peer.client)
+            let adapter = adapters[Self.cString(peer.local_address)]
             return TaskConnection(
                 id: address,
                 label: address,
                 detail: client.isEmpty ? "peer" : client,
                 downloadSpeed: peer.down_rate,
                 uploadSpeed: peer.up_rate,
-                progress: peer.progress
+                progress: peer.progress,
+                adapterId: adapter?.bsdName,
+                adapterLabel: adapter?.displayName.isEmpty == false ? adapter?.displayName : adapter?.bsdName
             )
         }
+    }
+
+    /// Local IP → adapter, re-read at most every 30 s: peers poll every second, interfaces rarely change.
+    private func adapterByAddress() -> [String: NetworkAdapter] {
+        let now = Date()
+        if now.timeIntervalSince(adapterCacheAt) < 30 { return adapterCache }
+        var map: [String: NetworkAdapter] = [:]
+        for adapter in AdapterDirectory.enumerate() {
+            if let v4 = adapter.ipv4 { map[v4] = adapter }
+            if let v6 = adapter.ipv6 { map[v6] = adapter }
+        }
+        adapterCache = map
+        adapterCacheAt = now
+        return map
     }
 
     private func readFiles(_ handle: UnsafeMutableRawPointer) -> [TransferFile] {

@@ -25,7 +25,7 @@ extension SettingsView.Pane {
 
         var panes: [SettingsView.Pane] {
             switch self {
-            case .basics: return [.general, .notifications, .network]
+            case .basics: return [.general, .rules, .notifications, .network]
             case .transfers: return [.traffic, .bittorrent, .scheduler, .rss, .aggregation]
             case .afterDownload: return [.afterDownload, .antivirus, .media]
             case .integrations: return [.browser, .remote]
@@ -49,6 +49,10 @@ extension SettingsView.Pane {
                     "Power management", "Prevent sleep during active downloads",
                     "Allow sleep if downloads can resume later", "Allow sleep while seeding",
                     "Pause downloads below battery threshold", "Don’t seed on battery"]
+        case .rules:
+            return ["Rules", "Sort new downloads by name, type, site or size.", "Download rules",
+                    "Add Rule…", "Download rule", "When a new download matches", "Speed cap (KB/s)",
+                    "Start paused", "When done", "Tag"]
         case .notifications:
             return ["Which events show a banner, and whether macOS lets them through.",
                     "Permission", "Send Test", "Notify me", "On download added", "On download completed",
@@ -78,16 +82,18 @@ extension SettingsView.Pane {
                     "Default torrent client", "Auto-delete .torrent when done",
                     "Watch folder for .torrent files", "Watched folder",
                     "Start watched torrents without confirmation", "Encryption mode", "Enable DHT",
-                    "Enable PeX", "Enable Local Peer Discovery", "Enable µTP"]
+                    "Enable PeX", "Enable Local Peer Discovery", "Enable µTP",
+                    "Append trackers from a list", "Tracker list URL"]
         case .scheduler:
             return ["Download windows, scheduled profiles, and what happens when the queue finishes.",
                     "When downloads finish", "Then", "Download window",
                     "Only download during a daily window", "Start", "End", "Days",
-                    "Profile inside the window", "Sleep", "Shut down"]
+                    "Profile inside the window", "Sleep", "Shut down",
+                    "Weekly profile schedule", "Switch profiles by the hour"]
         case .rss:
             return ["Watch feeds and queue new items automatically (podcasts, releases, torrent feeds).",
                     "Check feeds every", "Feeds", "Add a feed", "Feed URL", "Title contains",
-                    "Add items paused"]
+                    "Add items paused", "Rules and articles"]
         case .afterDownload:
             return ["What happens to a file once it finishes.",
                     "Extract", "Auto-extract archives", "Script", "Run a script on completion",
@@ -102,7 +108,7 @@ extension SettingsView.Pane {
             return ["Run an external scanner on finished files. Optional, low priority on macOS.",
                     "Scan finished files", "Scanner", "Executable path", "Argument template"]
         case .browser:
-            return ["Browser Integration", "Chrome, Edge, Brave & Firefox", "1. Install the messaging helper",
+            return ["Browser Integration", "Your browsers", "Chrome, Edge, Brave & Firefox", "1. Install the messaging helper",
                     "2. Load the extension", "3. Restart the browser", "4. Capture",
                     "1. Open Safari’s extensions", "2. Turn it on", "3. Capture", "What Safari can’t do",
                     "Help", "Full instructions", "Without the extension", "URL scheme", "Bookmarklet",

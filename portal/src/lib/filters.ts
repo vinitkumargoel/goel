@@ -1,3 +1,4 @@
+import { matchesSearch, parseSearch } from './search'
 import { fileType, isActive, type FileType } from './taskKind'
 import type { TaskRow } from './types'
 
@@ -59,14 +60,12 @@ export function countFilters(tasks: readonly TaskRow[]): FilterCounts {
   ) as FilterCounts
 }
 
-/** Name search plus sidebar filter: the list the user actually sees, before sorting. */
+/** Search (see lib/search) plus sidebar filter: the list the user actually sees, before sorting. */
 export function filterTasks(
   tasks: readonly TaskRow[],
   filter: Filter,
   search: string,
 ): TaskRow[] {
-  const needle = search.trim().toLowerCase()
-  return tasks.filter(
-    (t) => (!needle || t.name.toLowerCase().includes(needle)) && matchesFilter(t, filter),
-  )
+  const parsed = parseSearch(search)
+  return tasks.filter((t) => matchesSearch(t, parsed) && matchesFilter(t, filter))
 }

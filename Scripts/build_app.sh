@@ -67,6 +67,26 @@ echo "==> swift build -c $CONFIG --arch $ARCH_ENV (size-optimized)"
 SCRATCH="$(mktemp -d -t goel-build)"
 trap 'rm -rf "$SCRATCH"' EXIT
 
+# App Intents (Shortcuts, Siri, Spotlight) are only registered when the bundle carries
+# Metadata.appintents. Xcode makes it from the compiler's const-value output; SwiftPM
+# doesn't, so ask swiftc for that output here and run Apple's processor after the build.
+# Toolchains without the processor (Command Line Tools only, Linux) skip it with a warning.
+INTENTS_PROCESSOR=""
+if command -v xcrun >/dev/null 2>&1; then
+  INTENTS_PROCESSOR="$(xcrun --find appintentsmetadataprocessor 2>/dev/null || true)"
+fi
+if [ -n "$INTENTS_PROCESSOR" ]; then
+  INTENTS_PROTOCOLS="$SCRATCH/const-protocols.json"
+  printf '%s\n' '["AppIntent","EntityQuery","AppEntity","TransientEntity","AppEnum","AppShortcutProviding","AppShortcutsProvider","AnyResolverProviding","AppIntentsPackage","DynamicOptionsProvider","_IntentValueRepresentable","_AssistantIntentsProvider","_GenerativeFunctionExtractable","IntentValueQuery","Resolver"]' \
+    > "$INTENTS_PROTOCOLS"
+  BUILD_FLAGS+=(-Xswiftc -emit-const-values
+                -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file
+                -Xswiftc -Xfrontend -Xswiftc "$INTENTS_PROTOCOLS")
+else
+  echo "warning: appintentsmetadataprocessor not found (needs full Xcode) — the app's" >&2
+  echo "         Shortcuts actions won't be registered in this build." >&2
+fi
+
 BUILD_LOG="$SCRATCH/build.log"
 swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" "${BUILD_FLAGS[@]}" 2>&1 | tee "$BUILD_LOG"
 if grep -q 'which was built for newer version' "$BUILD_LOG"; then
@@ -280,6 +300,37 @@ elif [ "$GOEL_RELEASE" = "1" ] && [ "${GOEL_NO_UPDATER:-0}" != "1" ]; then
   echo "       so this release would ship with no update path at all." >&2
   echo "       Set both, or set GOEL_NO_UPDATER=1 to acknowledge shipping without one." >&2
   exit 1
+fi
+
+if [ -n "$INTENTS_PROCESSOR" ]; then
+  echo "==> Extracting App Intents metadata"
+  INTENTS_OUT="$SCRATCH/intents"
+  mkdir -p "$INTENTS_OUT"
+  find "$PWD/Sources/GoelApp" -name '*.swift' > "$SCRATCH/intents-sources.txt"
+  find "$BIN/GoelApp.build" -name '*.swiftconstvalues' > "$SCRATCH/intents-constvals.txt"
+  if [ ! -s "$SCRATCH/intents-constvals.txt" ]; then
+    echo "warning: swiftc produced no const values for GoelApp — skipping App Intents metadata." >&2
+  else
+    TOOLCHAIN_DIR="$(dirname "$(dirname "$(dirname "$INTENTS_PROCESSOR")")")"
+    XCODE_BUILD="$(xcodebuild -version 2>/dev/null | awk '/Build version/ {print $3}')"
+    if "$INTENTS_PROCESSOR" \
+        --output "$INTENTS_OUT" \
+        --toolchain-dir "$TOOLCHAIN_DIR" \
+        --module-name GoelApp \
+        --sdk-root "$(xcrun --sdk macosx --show-sdk-path)" \
+        --xcode-version "${XCODE_BUILD:-0}" \
+        --platform-family macOS \
+        --deployment-target 14.0 \
+        --target-triple "$ARCH_ENV-apple-macos14.0" \
+        --source-file-list "$SCRATCH/intents-sources.txt" \
+        --swift-const-vals-list "$SCRATCH/intents-constvals.txt" \
+        --force --quiet-warnings \
+      && [ -d "$INTENTS_OUT/Metadata.appintents" ]; then
+      cp -R "$INTENTS_OUT/Metadata.appintents" "$APP/Contents/Resources/"
+    else
+      echo "warning: appintentsmetadataprocessor failed — Shortcuts actions won't be registered." >&2
+    fi
+  fi
 fi
 
 cp Assets/AppIcon-Dark.icns "$APP/Contents/Resources/AppIcon.icns"

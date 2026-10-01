@@ -1,4 +1,39 @@
-export type ShortcutId = 'search' | 'add' | 'toggle' | 'remove' | 'next' | 'prev' | 'open' | 'help'
+import type { Filter } from './filters'
+
+type Digit = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+
+export type ShortcutId =
+  | 'search'
+  | 'add'
+  | 'toggle'
+  | 'remove'
+  | 'next'
+  | 'prev'
+  | 'open'
+  | 'help'
+  | 'retry'
+  | 'copy'
+  /** The first key of G H / G S; the next key decides (see `resolveGo`). */
+  | 'go'
+  | 'go-history'
+  | 'go-settings'
+  | `filter-${Digit}`
+
+/** 1–9 jump to the sidebar's filters, in its order: All, the six statuses, then the first types. */
+export const FILTER_KEYS: readonly Filter[] = [
+  'all',
+  'active',
+  'queued',
+  'paused',
+  'completed',
+  'seeding',
+  'failed',
+  'video',
+  'audio',
+]
+
+/** How long after G the second key still counts. */
+export const GO_WINDOW_MS = 1500
 
 type ShortcutLabel =
   | 'shortcuts.search'
@@ -12,16 +47,29 @@ type ShortcutLabel =
   | 'shortcuts.add'
   | 'shortcuts.toggle'
   | 'shortcuts.remove'
+  | 'workflow.shortcuts.palette'
+  | 'workflow.shortcuts.filters'
+  | 'workflow.shortcuts.history'
+  | 'workflow.shortcuts.settings'
+  | 'workflow.shortcuts.retry'
+  | 'workflow.shortcuts.copy'
+  | 'workflow.shortcuts.paste'
 
 export interface ShortcutDoc {
   keys: readonly string[]
   labelKey: ShortcutLabel
+  /** Pressed one after the other (G then H), not together. */
+  sequence?: boolean
 }
 
 /** The cheat sheet, in display order. Key names are glyphs and stay untranslated. */
 export const SHORTCUT_DOCS: { navigation: readonly ShortcutDoc[]; actions: readonly ShortcutDoc[] } = {
   navigation: [
+    { keys: ['⌘/Ctrl', 'K'], labelKey: 'workflow.shortcuts.palette' },
     { keys: ['/'], labelKey: 'shortcuts.search' },
+    { keys: ['1–9'], labelKey: 'workflow.shortcuts.filters' },
+    { keys: ['G', 'H'], labelKey: 'workflow.shortcuts.history', sequence: true },
+    { keys: ['G', 'S'], labelKey: 'workflow.shortcuts.settings', sequence: true },
     { keys: ['J'], labelKey: 'shortcuts.next' },
     { keys: ['K'], labelKey: 'shortcuts.prev' },
     { keys: ['Enter'], labelKey: 'shortcuts.open' },
@@ -34,6 +82,9 @@ export const SHORTCUT_DOCS: { navigation: readonly ShortcutDoc[]; actions: reado
     { keys: ['N'], labelKey: 'shortcuts.add' },
     { keys: ['Space'], labelKey: 'shortcuts.toggle' },
     { keys: ['Delete'], labelKey: 'shortcuts.remove' },
+    { keys: ['R'], labelKey: 'workflow.shortcuts.retry' },
+    { keys: ['C'], labelKey: 'workflow.shortcuts.copy' },
+    { keys: ['⌘/Ctrl', 'V'], labelKey: 'workflow.shortcuts.paste' },
   ],
 }
 
@@ -88,7 +139,17 @@ export function resolveShortcut(e: KeyLike): ShortcutId | null {
     case 'k':
     case 'K':
       return 'prev'
+    case 'g':
+    case 'G':
+      return 'go'
+    case 'r':
+    case 'R':
+      return 'retry'
+    case 'c':
+    case 'C':
+      return 'copy'
   }
+  if (/^[1-9]$/.test(e.key)) return `filter-${Number(e.key) as Digit}`
   // Held keys auto-repeat: harmless for J/K, but Space would flip pause/resume and Delete re-ask.
   if (!ownsActivationKeys(target) || e.repeat) return null
   switch (e.key) {
@@ -101,4 +162,24 @@ export function resolveShortcut(e: KeyLike): ShortcutId | null {
       return 'remove'
   }
   return null
+}
+
+/** The key after G: H for History, S for Settings, anything else ends the sequence. */
+export function resolveGo(e: KeyLike): ShortcutId | null {
+  if (e.metaKey || e.ctrlKey || e.altKey) return null
+  const key = e.key.toLowerCase()
+  if (key === 'h') return 'go-history'
+  if (key === 's') return 'go-settings'
+  return null
+}
+
+/** The sidebar filter a digit shortcut stands for. */
+export function filterForShortcut(id: ShortcutId): Filter | null {
+  const m = /^filter-(\d)$/.exec(id)
+  return m ? (FILTER_KEYS[Number(m[1]) - 1] ?? null) : null
+}
+
+/** ⌘/Ctrl+K: the command palette, from anywhere including a text field. */
+export function isPaletteKey(e: KeyLike & { shiftKey?: boolean }): boolean {
+  return (e.metaKey || e.ctrlKey) === true && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k'
 }

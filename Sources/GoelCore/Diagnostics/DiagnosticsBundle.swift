@@ -257,6 +257,7 @@ public enum DiagnosticsRedaction {
         "btMakeDefaultClient", "btAutoDeleteTorrent", "btWatchFolderEnabled",
         "btWatchFolderPath", "btWatchStartWithoutConfirmation", "btEncryptionMode",
         "btEnableDHT", "btEnablePeX", "btEnableLPD", "btEnableUTP",
+        "extraTrackersEnabled", "profileScheduleEnabled",
         "notifyOnAdded", "notifyOnCompleted", "notifyOnFailed",
         "notifyOnlyWhenInactive", "notificationSound",
         "preventSleepWhileDownloading", "allowSleepIfResumable", "allowSleepWhileSeeding",
@@ -292,6 +293,8 @@ public enum DiagnosticsRedaction {
         "aggregationAdapterIds",
         "antivirusArgumentTemplate",
         "scheduleProfileName",
+        // Tracker addresses are network locations; the weekly grid holds profile names (free-form).
+        "extraTrackersURL", "extraTrackers", "profileSchedule",
         "postDownloadScriptArgs",
         "remoteToken", "remoteUsername", "remotePasswordHash",
         "rssFeeds",
@@ -300,6 +303,8 @@ public enum DiagnosticsRedaction {
         "remoteTrustedProxies",
         // Host names identify the network the same way.
         "remoteAllowedHostNames",
+        // User rules name folders, sites and script paths.
+        "autoSortRules",
     ]
 
     /// The coverage test diffs this against the type's real encoded keys, so a field added without a privacy class fails the suite instead of leaking.

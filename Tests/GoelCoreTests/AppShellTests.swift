@@ -304,7 +304,8 @@ final class AppShellTests: XCTestCase {
     func testExtractableArchiveKindNamesOnlyWhatCanActuallyBeUnpacked() {
         XCTAssertEqual(DownloadManager.extractableArchiveKind(for: "/tmp/pack.zip"), "zip")
         XCTAssertEqual(DownloadManager.extractableArchiveKind(for: "/tmp/PACK.ZIP"), "zip")
-        for path in ["/tmp/pack.rar", "/tmp/pack.7z", "/tmp/pack.tar.gz", "/tmp/pack", "/tmp/.zipper"] {
+        // tar/7z/rar go through bsdtar now (see AutoSortRuleTests); these still have nothing to unpack.
+        for path in ["/tmp/pack.dmg", "/tmp/pack.gz", "/tmp/pack", "/tmp/.zipper"] {
             XCTAssertNil(DownloadManager.extractableArchiveKind(for: path), path)
         }
     }

@@ -47,6 +47,16 @@ const css = built('portal.css')
 const loginCss = source('styles', 'themes.css') + '\n' + source('login', 'login.css')
 const loginJs = source('login', 'login.js')
 
+// The installable-app bits: a service worker (text) and home-screen icons (binary, base64 in
+// the Swift source, wrapped at 76 columns so no single line is huge).
+const pwaDir = join(portalDir, 'pwa')
+const serviceWorker = read(join(pwaDir, 'sw.js'))
+const icon = (name) => {
+  const b64 = readFileSync(join(pwaDir, name)).toString('base64')
+  return b64.match(/.{1,76}/g).join('\n')
+}
+const icons = ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map((name) => [name, icon(name)])
+
 const jsHash = hash(js)
 const cssHash = hash(css)
 const loginCssHash = hash(loginCss)
@@ -84,6 +94,13 @@ public enum PortalBundle {
     public static let loginJS = ${rawLiteral(loginJs)}
 
     public static let loginCSS = ${rawLiteral(loginCss)}
+
+    public static let serviceWorker = ${rawLiteral(serviceWorker)}
+
+    /// PNG bodies, base64 with line breaks; decode with \`.ignoreUnknownCharacters\`.
+    public static let icons: [String: String] = [
+${icons.map(([name, b64]) => `        "${name}": ${rawLiteral(b64)},`).join('\n')}
+    ]
 }
 `
 

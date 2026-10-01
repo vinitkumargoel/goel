@@ -59,6 +59,7 @@ public actor DownloadManager {
     var automationMemory = AutomationCore.Memory()
 
     var rssTask: Task<Void, Never>?
+    var trackerListTask: Task<Void, Never>?
 
     var scheduledStartTask: Task<Void, Never>?
 
@@ -376,7 +377,8 @@ public actor DownloadManager {
         cookieHeader: String? = nil,
         cookieSource: CookieSource? = nil,
         cookieHost: String? = nil,
-        network: NetworkSelection? = nil
+        network: NetworkSelection? = nil,
+        whenDone: WhenDone? = nil
     ) -> DownloadTask {
         if let existingID = dedupIndex[source.dedupKey],
            let i = index(of: existingID) {
@@ -400,8 +402,15 @@ public actor DownloadManager {
                 return existing
             }
         }
-        let holdPaused = startPaused || scheduledAt != nil
-        let directory = saveDirectory ?? defaultDirectory(for: source)
+        // User rules sit between an explicit choice and the default-folder rule.
+        let rule = AutoSortRules.firstMatch(
+            in: settings.autoSortRules,
+            for: AutoSortCandidate(source: source, name: suggestedName ?? Self.defaultName(for: source),
+                                   size: totalBytes))
+        let holdPaused = startPaused || scheduledAt != nil || rule?.startPaused == true
+        let directory = saveDirectory
+            ?? rule?.folder.flatMap(Self.ruleFolder)
+            ?? defaultDirectory(for: source)
         let baseName = suggestedName.map {
             PathSafety.sanitizedName($0, fallback: Self.defaultName(for: source))
         } ?? Self.defaultName(for: source)
@@ -431,9 +440,10 @@ public actor DownloadManager {
             // nil is not "no scope": ``sendsCookies(to:)`` then falls back to the task's own origin.
             cookieHost: cleanedCookie == nil ? nil : cookieHost,
             initialSkipFileIDs: (deselectedFileIDs?.isEmpty ?? true) ? nil : deselectedFileIDs,
-            networkSelection: network == .auto ? nil : network
+            networkSelection: network == .auto ? nil : network,
+            whenDone: (whenDone?.isActionable == true ? whenDone : nil) ?? rule?.whenDone
         )
-        appendTask(task)
+        appendTask(Self.applying(rule, to: task, callerPriority: priority))
         // The stored row, not `task`: `appendTask` gives it its queue position.
         let added = tasks[tasks.count - 1]
         persist(added)
@@ -442,6 +452,26 @@ public actor DownloadManager {
         if !holdPaused { schedule() }
         if scheduledAt != nil { armScheduledStarts() }
         return added
+    }
+
+    /// A rule's folder is only used when it is an absolute path (after `~`); anything else falls
+    /// back to the default rule rather than landing relative to the process's working directory.
+    static func ruleFolder(_ raw: String) -> String? {
+        let expanded = (raw.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath
+        return expanded.hasPrefix("/") ? expanded : nil
+    }
+
+    /// Tag, speed cap and priority from a matching rule. The caller's priority wins unless it is
+    /// the default, so an explicit High in the Add sheet is never lowered by a rule.
+    static func applying(_ rule: AutoSortRule?, to task: DownloadTask, callerPriority: FilePriority) -> DownloadTask {
+        guard let rule else { return task }
+        var task = task
+        if let tag = rule.tag?.trimmingCharacters(in: .whitespacesAndNewlines), !tag.isEmpty {
+            task.tags = normalizeTags((task.tags ?? []) + [tag])
+        }
+        if let cap = rule.speedLimitBytesPerSec, cap > 0 { task.speedLimitBytesPerSec = cap }
+        if callerPriority == .normal, let p = rule.priority { task.priority = p }
+        return task
     }
 
     /// Mirrors are untrusted input: http(s) only, de-duplicated, and capped.

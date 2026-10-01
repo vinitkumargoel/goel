@@ -29,7 +29,7 @@ extension AppViewModel {
         case .cancelAutoShutdown:
             autoShutdownCountdown.cancel()
             return
-        case .showAutoShutdown:
+        case .showAutoShutdown, .showWindow:
             MainWindowPresenter.activate()
             return
         case .show(let taskID):
@@ -39,6 +39,15 @@ extension AppViewModel {
         case .reveal(let taskID), .open(let taskID):
             NSApp.activate(ignoringOtherApps: true)
             id = taskID
+        case .retry(let taskID):
+            // Retry works from the banner alone; the window only opens if the download is gone.
+            guard tasks.contains(where: { $0.id == taskID }) else {
+                MainWindowPresenter.activate()
+                toastWarning(L10n.t("That download is no longer in your list"))
+                return
+            }
+            retry(taskID)
+            return
         }
         guard let task = tasks.first(where: { $0.id == id }) else {
             toastWarning(L10n.t("That download is no longer in your list"))
@@ -49,7 +58,7 @@ extension AppViewModel {
         switch response {
         case .reveal: revealInFinder(task)
         case .open: openFile(task)
-        case .show, .cancelAutoShutdown, .showAutoShutdown: break
+        case .show, .retry, .showWindow, .cancelAutoShutdown, .showAutoShutdown: break
         }
     }
 

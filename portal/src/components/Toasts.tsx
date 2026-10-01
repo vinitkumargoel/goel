@@ -21,15 +21,24 @@ interface ToastsProps {
   onDismiss: (id: number) => void
   onPause: (id: number) => void
   onResume: (id: number) => void
+  /** A toast's own button (Undo, Show). */
+  onAction?: (id: number) => void
 }
 
 /**
  * Two live regions: confirmations are polite, warnings interrupt. A single region would make a
  * screen reader either shout "Copied" or queue "Could not reach the server" behind other speech.
  */
-export function Toasts({ toasts, onDismiss, onPause, onResume }: ToastsProps) {
+export function Toasts({ toasts, onDismiss, onPause, onResume, onAction }: ToastsProps) {
   const item = (t: Toast) => (
-    <ToastItem key={t.id} toast={t} onDismiss={onDismiss} onPause={onPause} onResume={onResume} />
+    <ToastItem
+      key={t.id}
+      toast={t}
+      onDismiss={onDismiss}
+      onPause={onPause}
+      onResume={onResume}
+      onAction={onAction}
+    />
   )
   return (
     <div className="toasts">
@@ -48,9 +57,10 @@ interface ToastItemProps {
   onDismiss: (id: number) => void
   onPause: (id: number) => void
   onResume: (id: number) => void
+  onAction?: (id: number) => void
 }
 
-function ToastItem({ toast, onDismiss, onPause, onResume }: ToastItemProps) {
+function ToastItem({ toast, onDismiss, onPause, onResume, onAction }: ToastItemProps) {
   const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -73,6 +83,11 @@ function ToastItem({ toast, onDismiss, onPause, onResume }: ToastItemProps) {
     >
       <ToneIcon tone={toast.tone} />
       <span className="tmsg">{toast.message}</span>
+      {toast.action && onAction && (
+        <button type="button" className="tact" onClick={() => onAction(toast.id)}>
+          {toast.action.label}
+        </button>
+      )}
       <button
         className="tclose"
         onClick={() => onDismiss(toast.id)}

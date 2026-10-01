@@ -56,128 +56,178 @@ struct SFTPBrowserView: View {
     }
 
     var body: some View {
+        withEditAlerts(withFolderDialogs(withLifecycle(mainStack)))
+    }
+
+    private var mainStack: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            if let error = model.error {
-                errorBanner(error)
-                Divider()
-            }
-            if let note = model.deleteProgress {
-                deleteProgressBanner(note)
-                Divider()
-            }
+            banners
             searchBar
             entryList
             Divider()
             statusFooter
-            let myTransfers = vm.sftpTransfers(for: model.connection.id)
-            if !myTransfers.isEmpty {
-                Divider()
-                transferStrip(myTransfers)
-            }
+            transferFooter
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .task(id: model.connection.id) {
-            await model.restore()
-            await consumeNavigationRequest(vm.sftpBrowserNavigation)
-            // Reuses this authenticated session; never opens one to an un-browsed server.
-            vm.detectServerOSIfNeeded(connection, client: client)
+    }
+
+    @ViewBuilder
+    private var banners: some View {
+        if let error = model.error {
+            errorBanner(error)
+            Divider()
         }
-        // The @StateObject model outlives the parent's re-render; without this it keeps the pre-edit login.
-        .onChange(of: connection) {
-            model.update(connection: connection, client: client)
-            Task { await model.refresh() }
+        if let note = model.deleteProgress {
+            deleteProgressBanner(note)
+            Divider()
         }
-        .onChange(of: vm.sftpMutationTick) { Task { await model.refresh() } }
-        .onChange(of: vm.sftpBrowserNavigation) { _, request in
-            Task { await consumeNavigationRequest(request) }
+    }
+
+    @ViewBuilder
+    private var transferFooter: some View {
+        let myTransfers: [SFTPTransfer] = vm.sftpTransfers(for: model.connection.id)
+        if !myTransfers.isEmpty {
+            Divider()
+            transferStrip(myTransfers)
         }
-        // SFTPEntry ids are just names: a same-named entry must not inherit the old highlight.
-        .onChange(of: model.path) {
-            hoveredEntry = nil; folderDropTarget = nil; searchText = ""
-            selection.removeAll(); cursor = nil
-            typeSelectBuffer = ""; typeSelectAt = .distantPast
-            closeInfo()
-        }
-        .task(id: model.path) { volumeSpace = await model.volumeSpace() }
-        .onChange(of: vm.sftpMutationTick) {
-            Task { volumeSpace = await model.volumeSpace() }
-        }
-        .sheet(isPresented: Binding(get: { infoEntry != nil },
-                                    set: { if !$0 { closeInfo() } })) {
-            if let entry = infoEntry {
-                SFTPInfoPanel(entry: entry, info: entryInfo,
-                              folderSize: infoFolderSize,
-                              isSizing: infoSizeTask != nil,
-                              sizeError: infoSizeError,
-                              onApplyPermissions: { mode in applyPermissions(entry, mode) },
-                              onClose: { closeInfo() })
+    }
+
+    private func withLifecycle<V: View>(_ content: V) -> some View {
+        content
+            .task(id: model.connection.id) {
+                await model.restore()
+                await consumeNavigationRequest(vm.sftpBrowserNavigation)
+                // Reuses this authenticated session; never opens one to an un-browsed server.
+                vm.detectServerOSIfNeeded(connection, client: client)
             }
-        }
-        // Finder's default, so Return alone makes a folder; Create stays off for a blank name.
-        .onChange(of: showNewFolder) { _, showing in
-            if showing { newFolderName = RemoteNameInput.defaultFolderName }
-        }
-        .onChange(of: model.error) { _, _ in errorExpanded = false }
-        .alert(L10n.t("New Folder"), isPresented: $showNewFolder) {
-            TextField(L10n.t("Name"), text: $newFolderName)
-            Button(L10n.t("Cancel"), role: .cancel) { newFolderName = "" }
-            Button(L10n.t("Create")) {
-                let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-                newFolderName = ""
+            // The @StateObject model outlives the parent's re-render; without this it keeps the pre-edit login.
+            .onChange(of: connection) {
+                model.update(connection: connection, client: client)
+                Task { await model.refresh() }
+            }
+            .onChange(of: vm.sftpMutationTick) {
                 Task {
-                    if await model.makeDirectory(named: name) {
-                        vm.toastSuccess(L10n.t("Folder created"))
-                    } else if !name.isEmpty {
-                        showFailure(L10n.t("Couldn’t create the folder “%@”", name))
-                    }
+                    await model.refresh()
+                    volumeSpace = await model.volumeSpace()
                 }
             }
-            .disabled(!RemoteNameInput.isAcceptable(newFolderName))
-        }
-        .alert(L10n.t("Delete “%@”?", pendingDelete?.name ?? ""),
-               isPresented: Binding(get: { pendingDelete != nil },
-                                    set: { if !$0 { pendingDelete = nil } })) {
-            Button(L10n.t("Cancel"), role: .cancel) { pendingDelete = nil }
-            Button(L10n.t("Delete"), role: .destructive) {
-                if let entry = pendingDelete {
-                    Task {
-                        if await model.delete(entry) {
-                            vm.toastSuccess(L10n.t("Deleted “%@”", entry.name))
-                        } else {
-                            showFailure(L10n.t("Couldn’t delete “%@”", entry.name))
-                        }
-                    }
-                }
-                pendingDelete = nil
+            .onChange(of: vm.sftpBrowserNavigation) { _, request in
+                Task { await consumeNavigationRequest(request) }
             }
-        } message: {
-            Text(pendingDelete?.isDirectory == true
-                 ? L10n.t("The folder and everything inside it will be permanently removed from the server.")
-                 : L10n.t("This permanently removes the file from the server."))
+            // SFTPEntry ids are just names: a same-named entry must not inherit the old highlight.
+            .onChange(of: model.path) { resetForNewPath() }
+            .task(id: model.path) { volumeSpace = await model.volumeSpace() }
+    }
+
+    private func resetForNewPath() {
+        hoveredEntry = nil; folderDropTarget = nil; searchText = ""
+        selection.removeAll(); cursor = nil
+        typeSelectBuffer = ""; typeSelectAt = .distantPast
+        closeInfo()
+    }
+
+    private var infoSheetShown: Binding<Bool> {
+        Binding(get: { infoEntry != nil }, set: { if !$0 { closeInfo() } })
+    }
+
+    @ViewBuilder
+    private var infoSheet: some View {
+        if let entry = infoEntry {
+            SFTPInfoPanel(entry: entry, info: entryInfo,
+                          folderSize: infoFolderSize,
+                          isSizing: infoSizeTask != nil,
+                          sizeError: infoSizeError,
+                          onApplyPermissions: { mode in applyPermissions(entry, mode) },
+                          onClose: { closeInfo() })
         }
-        .alert(L10n.t("Rename “%@”", renaming?.name ?? ""),
-               isPresented: Binding(get: { renaming != nil },
-                                    set: { if !$0 { renaming = nil } })) {
-            TextField(L10n.t("Name"), text: $renameText)
-            Button(L10n.t("Cancel"), role: .cancel) { renaming = nil }
-            Button(L10n.t("Rename")) {
-                if let entry = renaming {
-                    let newName = renameText
-                    Task {
-                        if await model.rename(entry, to: newName) {
-                            vm.toastSuccess(L10n.t("Renamed"))
-                        } else if newName.trimmingCharacters(in: .whitespacesAndNewlines) != entry.name {
-                            // Confirming the prefilled name unchanged is a no-op, not a failure.
-                            showFailure(L10n.t("Couldn’t rename “%@”", entry.name))
-                        }
-                    }
-                }
-                renaming = nil
+    }
+
+    private func withFolderDialogs<V: View>(_ content: V) -> some View {
+        content
+            .sheet(isPresented: infoSheetShown) { infoSheet }
+            // Finder's default, so Return alone makes a folder; Create stays off for a blank name.
+            .onChange(of: showNewFolder) { _, showing in
+                if showing { newFolderName = RemoteNameInput.defaultFolderName }
             }
-            .disabled(!RemoteNameInput.isAcceptable(renameText))
+            .onChange(of: model.error) { _, _ in errorExpanded = false }
+            .alert(L10n.t("New Folder"), isPresented: $showNewFolder) {
+                TextField(L10n.t("Name"), text: $newFolderName)
+                Button(L10n.t("Cancel"), role: .cancel) { newFolderName = "" }
+                Button(L10n.t("Create")) { createFolder() }
+                    .disabled(!RemoteNameInput.isAcceptable(newFolderName))
+            }
+    }
+
+    private func createFolder() {
+        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        newFolderName = ""
+        Task {
+            if await model.makeDirectory(named: name) {
+                vm.toastSuccess(L10n.t("Folder created"))
+            } else if !name.isEmpty {
+                showFailure(L10n.t("Couldn’t create the folder “%@”", name))
+            }
         }
+    }
+
+    private var deleteAlertShown: Binding<Bool> {
+        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
+    }
+
+    private var renameAlertShown: Binding<Bool> {
+        Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })
+    }
+
+    private var deleteMessage: String {
+        pendingDelete?.isDirectory == true
+            ? L10n.t("The folder and everything inside it will be permanently removed from the server.")
+            : L10n.t("This permanently removes the file from the server.")
+    }
+
+    private func withEditAlerts<V: View>(_ content: V) -> some View {
+        content
+            .alert(L10n.t("Delete “%@”?", pendingDelete?.name ?? ""), isPresented: deleteAlertShown) {
+                Button(L10n.t("Cancel"), role: .cancel) { pendingDelete = nil }
+                Button(L10n.t("Delete"), role: .destructive) { confirmDelete() }
+            } message: {
+                Text(deleteMessage)
+            }
+            .alert(L10n.t("Rename “%@”", renaming?.name ?? ""), isPresented: renameAlertShown) {
+                TextField(L10n.t("Name"), text: $renameText)
+                Button(L10n.t("Cancel"), role: .cancel) { renaming = nil }
+                Button(L10n.t("Rename")) { confirmRename() }
+                    .disabled(!RemoteNameInput.isAcceptable(renameText))
+            }
+    }
+
+    private func confirmDelete() {
+        if let entry = pendingDelete {
+            Task {
+                if await model.delete(entry) {
+                    vm.toastSuccess(L10n.t("Deleted “%@”", entry.name))
+                } else {
+                    showFailure(L10n.t("Couldn’t delete “%@”", entry.name))
+                }
+            }
+        }
+        pendingDelete = nil
+    }
+
+    private func confirmRename() {
+        if let entry = renaming {
+            let newName = renameText
+            Task {
+                if await model.rename(entry, to: newName) {
+                    vm.toastSuccess(L10n.t("Renamed"))
+                } else if newName.trimmingCharacters(in: .whitespacesAndNewlines) != entry.name {
+                    // Confirming the prefilled name unchanged is a no-op, not a failure.
+                    showFailure(L10n.t("Couldn’t rename “%@”", entry.name))
+                }
+            }
+        }
+        renaming = nil
     }
 
     private var header: some View {
@@ -231,6 +281,7 @@ struct SFTPBrowserView: View {
                 ProgressView().controlSize(.small)
                     .accessibilityLabel(L10n.t("Loading folder"))
             }
+            downloadSelectionButton
             // The main action, so it reads as one: labelled and bordered, unlike the glyphs beside it.
             Button { chooseUploadItems() } label: {
                 Label(L10n.t("Upload"), systemImage: "arrow.up.doc")
@@ -243,6 +294,24 @@ struct SFTPBrowserView: View {
         .padding(.vertical, 9)
         .background(.regularMaterial)
         .accessibilityLabel(L10n.t("Server browser toolbar"))
+    }
+
+    private var selectedEntries: [SFTPEntry] { visibleEntries.filter { selection.contains($0.id) } }
+
+    /// Downloads the selection into the Default-folder rule's folder; ⌥-click asks where.
+    private var downloadSelectionButton: some View {
+        let targets: [SFTPEntry] = selectedEntries
+        return Button {
+            if NSEvent.modifierFlags.contains(.option) { chooseDownloadFolder(forAll: targets) }
+            else { downloadTargets(targets) }
+        } label: {
+            Label(targets.count > 1 ? L10n.t("Download %d Items", targets.count) : L10n.t("Download"),
+                  systemImage: "arrow.down.doc")
+        }
+        .buttonStyle(.bordered)
+        .disabled(targets.isEmpty)
+        .help(L10n.t("Download the selection to your default folder — Option-click to choose where"))
+        .accessibilityLabel(L10n.t("Download selection"))
     }
 
     private var breadcrumbBar: some View {
@@ -402,8 +471,9 @@ struct SFTPBrowserView: View {
     }
 
     private func primaryAction(_ entry: SFTPEntry) {
+        // Finder's double-click: folders open, files preview. Downloading is an explicit choice.
         if entry.isDirectory { Task { await model.open(entry) } }
-        else { downloadTargets([entry]) }
+        else { quickLook(entry) }
     }
 
     private func handleKey(_ press: KeyPress, proxy: ScrollViewProxy) -> KeyPress.Result {
@@ -567,20 +637,44 @@ struct SFTPBrowserView: View {
         }
     }
 
-    private func downloadsDir() -> URL {
-        FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser
+    /// The folder Settings' "Default folder" rule picks for this name, as an HTTP file would get.
+    private func ruleDir(for entry: SFTPEntry) -> URL {
+        let kind: DownloadKind = entry.isDirectory ? .sftp : .http
+        let base = vm.settings.defaultSaveDirectory
+        let path: String
+        switch vm.settings.defaultFolderRule {
+        case "byType", "automatic":
+            let category = entry.isDirectory ? "Other" : DiskSpaceCheck.categoryFolder(kind: kind, name: entry.name)
+            path = (base as NSString).appendingPathComponent(category)
+        case "bySource":
+            path = (base as NSString).appendingPathComponent("HTTP Downloads")
+        default:
+            path = base
+        }
+        return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
     }
 
-    private func downloadTargets(_ entries: [SFTPEntry]) {
+    private func downloadTargets(_ entries: [SFTPEntry], to chosen: URL? = nil) {
         let items = entries.filter { SFTPBrowserPaths.isSafeChildName($0.name) }
         guard !items.isEmpty else { vm.toastWarning(L10n.t("Select items to download")); return }
-        let dir = downloadsDir()
+        var folders: Set<String> = []
         for item in items {
+            let dir = chosen ?? ruleDir(for: item)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            folders.insert(dir.lastPathComponent)
             vm.startDownload(item, from: model.connection, remoteDir: model.path, toLocalDir: dir)
         }
-        vm.toastNow(items.count == 1 ? L10n.t("Downloading “%@” to Downloads", items[0].name)
-                                     : L10n.t("Downloading %d items to Downloads", items.count))
+        let place = folders.count == 1 ? (folders.first ?? "") : L10n.t("your download folders")
+        vm.toastNow(items.count == 1 ? L10n.t("Downloading “%1$@” to %2$@", items[0].name, place)
+                                     : L10n.t("Downloading %1$d items to %2$@", items.count, place))
+    }
+
+    private func chooseDownloadFolder(forAll entries: [SFTPEntry]) {
+        if let dir = FilePicker.chooseDirectory(
+            prompt: L10n.t("Download Here"),
+            message: L10n.t("Choose where to save %d items", entries.count)) {
+            downloadTargets(entries, to: dir)
+        }
     }
 
     private func deleteTargets(_ entries: [SFTPEntry]) {
@@ -900,7 +994,7 @@ struct SFTPBrowserView: View {
         let hovered = hoveredEntry == entry.id
         let dropping = folderDropTarget == entry.id
         let selected = selection.contains(entry.id)
-        return HStack(spacing: 10) {
+        let content = HStack(spacing: 10) {
             Image(systemName: SFTPFileIcon.symbol(for: entry))
                 .foregroundStyle(SFTPFileIcon.tint(for: entry))
                 .frame(width: 18)
@@ -921,34 +1015,17 @@ struct SFTPBrowserView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .background(entryHighlight(hovered: hovered, dropping: dropping, selected: selected))
-        .a11yGroup(label: entryLabel(entry), value: entryValue(entry),
-                   hint: entry.isDirectory ? L10n.t("Activate to open.") : L10n.t("Activate to select."))
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { primaryAction(entry) }
-        .contentShape(Rectangle())
-        .background(GeometryReader { g in
-            Color.clear.preference(key: EntryFramePreference.self,
-                                   value: [entry.id: g.frame(in: .named(Self.listSpace))])
-        })
-        .onHover { inside in updateHover(entry.id, inside: inside) }
-        .onTapGesture(count: 2) { primaryAction(entry) }
-        .onTapGesture { handleClick(entry) }
-        .ifLet(entry.isDirectory ? nil : entry) { view, file in
-            view.onDrag { model.fileProvider(for: file) }
-        }
-        .ifLet(entry.isDirectory ? entry : nil) { view, folder in
-            view.onDrop(of: [.fileURL], isTargeted: folderDropBinding(folder.id)) { providers in
-                handleUploadDrop(providers, into: folder)
-            }
-        }
-        .contextMenu { rowMenu(entry) }
+        return entryInteractions(content, entry: entry, selected: selected)
     }
 
     private func gridTile(_ entry: SFTPEntry) -> some View {
         let hovered = hoveredEntry == entry.id
         let dropping = folderDropTarget == entry.id
         let selected = selection.contains(entry.id)
-        return VStack(spacing: 7) {
+        let fill: Color = Self.tileFill(hovered: hovered, dropping: dropping, selected: selected)
+        let stroke: Color = Self.tileStroke(hovered: hovered, emphasised: dropping || selected)
+        let strokeWidth: CGFloat = (dropping || selected) ? 2 : 1
+        let content = VStack(spacing: 7) {
             Image(systemName: SFTPFileIcon.symbol(for: entry))
                 .scaledFont(size: 32)
                 .foregroundStyle(SFTPFileIcon.tint(for: entry))
@@ -961,40 +1038,48 @@ struct SFTPBrowserView: View {
         }
         .padding(.vertical, 14).padding(.horizontal, 8)
         .frame(maxWidth: .infinity, minHeight: 118)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.card)
-                .fill(dropping ? Theme.accent.opacity(0.16)
-                      : selected ? Theme.accent.opacity(0.20)
-                      : hovered ? Color.primary.opacity(0.06)
-                      : Color(nsColor: .controlBackgroundColor).opacity(0.45))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card)
-                .strokeBorder(dropping || selected ? Theme.accent
-                              : hovered ? Color.primary.opacity(0.12) : Color.clear,
-                              lineWidth: (dropping || selected) ? 2 : 1)
-        )
-        .a11yGroup(label: entryLabel(entry), value: entryValue(entry),
-                   hint: entry.isDirectory ? L10n.t("Activate to open.") : L10n.t("Activate to select."))
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { primaryAction(entry) }
-        .contentShape(Rectangle())
-        .background(GeometryReader { g in
-            Color.clear.preference(key: EntryFramePreference.self,
-                                   value: [entry.id: g.frame(in: .named(Self.listSpace))])
-        })
-        .onHover { inside in updateHover(entry.id, inside: inside) }
-        .onTapGesture(count: 2) { primaryAction(entry) }
-        .onTapGesture { handleClick(entry) }
-        .ifLet(entry.isDirectory ? nil : entry) { view, file in
-            view.onDrag { model.fileProvider(for: file) }
-        }
-        .ifLet(entry.isDirectory ? entry : nil) { view, folder in
-            view.onDrop(of: [.fileURL], isTargeted: folderDropBinding(folder.id)) { providers in
-                handleUploadDrop(providers, into: folder)
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.card).fill(fill))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(stroke, lineWidth: strokeWidth))
+        return entryInteractions(content, entry: entry, selected: selected)
+    }
+
+    private static func tileFill(hovered: Bool, dropping: Bool, selected: Bool) -> Color {
+        if dropping { return Theme.accent.opacity(0.16) }
+        if selected { return Theme.accent.opacity(0.20) }
+        if hovered { return Color.primary.opacity(0.06) }
+        return Color(nsColor: .controlBackgroundColor).opacity(0.45)
+    }
+
+    private static func tileStroke(hovered: Bool, emphasised: Bool) -> Color {
+        if emphasised { return Theme.accent }
+        return hovered ? Color.primary.opacity(0.12) : Color.clear
+    }
+
+    /// Selection, hover, drag and drop shared by list rows and grid tiles.
+    private func entryInteractions<V: View>(_ content: V, entry: SFTPEntry, selected: Bool) -> some View {
+        let traits: AccessibilityTraits = selected ? [.isButton, .isSelected] : .isButton
+        let hint: String = entry.isDirectory ? L10n.t("Activate to open.") : L10n.t("Activate to select.")
+        return content
+            .a11yGroup(label: entryLabel(entry), value: entryValue(entry), hint: hint)
+            .accessibilityAddTraits(traits)
+            .accessibilityAction { primaryAction(entry) }
+            .contentShape(Rectangle())
+            .background(GeometryReader { g in
+                Color.clear.preference(key: EntryFramePreference.self,
+                                       value: [entry.id: g.frame(in: .named(Self.listSpace))])
+            })
+            .onHover { inside in updateHover(entry.id, inside: inside) }
+            .onTapGesture(count: 2) { primaryAction(entry) }
+            .onTapGesture { handleClick(entry) }
+            .ifLet(entry.isDirectory ? nil : entry) { view, file in
+                view.onDrag { model.fileProvider(for: file) }
             }
-        }
-        .contextMenu { rowMenu(entry) }
+            .ifLet(entry.isDirectory ? entry : nil) { view, folder in
+                view.onDrop(of: [.fileURL], isTargeted: folderDropBinding(folder.id)) { providers in
+                    handleUploadDrop(providers, into: folder)
+                }
+            }
+            .contextMenu { rowMenu(entry) }
     }
 
     @ViewBuilder
@@ -1028,6 +1113,7 @@ struct SFTPBrowserView: View {
         let targets = actionTargets(for: entry)
         if targets.count > 1 {
             Button(L10n.t("Download %d Items", targets.count)) { downloadTargets(targets) }
+            Button(L10n.t("Download %d Items to…", targets.count)) { chooseDownloadFolder(forAll: targets) }
             Divider()
             clipboardMenuItems(targets)
             Divider()
@@ -1036,10 +1122,10 @@ struct SFTPBrowserView: View {
             if entry.isDirectory {
                 Button(L10n.t("Open")) { Task { await model.open(entry) } }
                 Divider()
-                Button(L10n.t("Download Folder to Downloads")) { downloadTargets([entry]) }
+                Button(L10n.t("Download Folder")) { downloadTargets([entry]) }
                 Button(L10n.t("Download Folder to…")) { chooseDownloadFolder(for: entry) }
             } else {
-                Button(L10n.t("Download to Downloads")) { downloadTargets([entry]) }
+                Button(L10n.t("Download")) { downloadTargets([entry]) }
                 Button(L10n.t("Download to…")) { chooseDownloadFolder(for: entry) }
                 Button(L10n.t("Add to Download Queue")) {
                     vm.enqueueSFTPDownload(connection: model.connection, remotePath: remotePath(entry))

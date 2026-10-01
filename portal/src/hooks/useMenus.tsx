@@ -21,6 +21,8 @@ import { canSave, saveToDevice, saveURL } from '../lib/saveFile'
 import type { SelectionAction } from '../lib/selection'
 import { rowAction, type RowAction } from '../lib/taskKind'
 import type { TaskRow } from '../lib/types'
+import { bulkQueueEntries, queueEntries } from './queueMenuEntries'
+import type { QueueControls } from './useQueueControls'
 import { useStableCallback } from './useStableCallback'
 import type { ToastTone } from './useToasts'
 
@@ -46,6 +48,10 @@ interface Deps {
   runBulk: (action: RowAction, ids: string[]) => Promise<void>
   removeTask: (id: string, withData: boolean) => void
   removeMany: (ids: string[]) => void
+  /** Speed limit, place in line, tags, start time; absent = the menu has no queue section. */
+  queue?: QueueControls
+  /** Opens the in-page player; absent = a new tab. */
+  onStream?: (task: TaskRow) => void
 }
 
 /**
@@ -100,6 +106,7 @@ export function useMenus(deps: Deps) {
       icon: <LinkIcon />,
       action: () => deps.copy(rows.map((r) => r.source).join('\n')),
     })
+    if (deps.canWrite && deps.queue) entries.push(...bulkQueueEntries(rows, deps.queue, t))
     if (deps.canWrite) {
       entries.push(
         { separator: true },
@@ -148,7 +155,8 @@ export function useMenus(deps: Deps) {
         key: 'stream',
         label: t('common.stream'),
         icon: <StreamIcon />,
-        action: () => window.open(streamURL(id), '_blank', 'noopener,noreferrer'),
+        action: () =>
+          deps.onStream ? deps.onStream(task) : window.open(streamURL(id), '_blank', 'noopener,noreferrer'),
       })
     }
     if (deps.canWrite && task.kind === 'torrent') {
@@ -168,6 +176,7 @@ export function useMenus(deps: Deps) {
         },
       })
     }
+    if (deps.canWrite && deps.queue) entries.push(...queueEntries(task, deps.queue, t))
     if (deps.canWrite) entries.push({ separator: true }, ...removeEntries(id))
     return entries
   }

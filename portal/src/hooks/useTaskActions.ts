@@ -1,17 +1,22 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
-import { api, failureMessage } from '../lib/api'
+import { api, failureMessage, removeOnUnload } from '../lib/api'
 import { BULK_CONCURRENCY, runPool, summariseBulk } from '../lib/bulk'
+import { fmtSize } from '../lib/format'
+import { removalSummary } from '../lib/removal'
 import type { RowAction } from '../lib/taskKind'
-import type { ToastTone } from './useToasts'
+import type { TaskRow } from '../lib/types'
+import { UNDO_MS, type ToastOptions, type ToastTone } from './useToasts'
 
 interface Deps {
   refresh: () => Promise<void>
-  toast: (message: string, tone?: ToastTone) => void
+  toast: (message: string, tone?: ToastTone, options?: ToastOptions) => unknown
   confirm: (request: ConfirmRequest) => void
   /** Ids in the latest snapshot. Read when a confirmation is accepted, not when it was asked. */
   currentIds: () => ReadonlySet<string>
+  /** The row for an id, for names and sizes in a confirmation or an Undo toast. */
+  lookup?: (id: string) => TaskRow | undefined
 }
 
 const CALL: Record<RowAction, (id: string) => Promise<void>> = {
@@ -28,8 +33,30 @@ type Verb = RowAction | 'remove'
  * call has settled, with how many succeeded and failed. Removed rows leave the caller's
  * selection by themselves: the next snapshot prunes them.
  */
-export function useTaskActions({ refresh, toast, confirm, currentIds }: Deps) {
+export function useTaskActions({ refresh, toast, confirm, currentIds, lookup }: Deps) {
   const { t } = useTranslation()
+  /** Rows removed with an Undo still on screen: hidden now, sent to the server when the toast goes. */
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set())
+  const pending = useRef(new Set<string>())
+
+  const unhide = useCallback((id: string) => {
+    setHidden((current) => {
+      if (!current.has(id)) return current
+      const next = new Set(current)
+      next.delete(id)
+      return next
+    })
+  }, [])
+
+  // Closing the tab mid-Undo still removes: the choice was made, only the call was waiting.
+  useEffect(() => {
+    const flush = () => {
+      for (const id of pending.current) removeOnUnload(id)
+      pending.current.clear()
+    }
+    window.addEventListener('pagehide', flush)
+    return () => window.removeEventListener('pagehide', flush)
+  }, [])
 
   /** One toast for a settled batch: success, "3 of 5 — 2 failed", or why nothing worked. */
   const report = useCallback(
@@ -96,11 +123,46 @@ export function useTaskActions({ refresh, toast, confirm, currentIds }: Deps) {
     [refresh, toast, report, currentIds, t],
   )
 
-  /** "Remove from list" is undoable by re-adding; "with data" deletes files, so it always asks. */
+  /** Sends a removal whose Undo window has closed. The row stays hidden until the snapshot drops it. */
+  const commitRemoval = useCallback(
+    async (id: string) => {
+      if (!pending.current.delete(id)) return
+      try {
+        await api.remove(id, false)
+      } catch (e) {
+        const message = failureMessage(e)
+        if (message) toast(message, 'warn')
+      }
+      await refresh()
+      unhide(id)
+    },
+    [refresh, toast, unhide],
+  )
+
+  /**
+   * "Remove from list" happens at once on screen with an Undo; the call waits for the toast to go.
+   * "With data" deletes files, so it always asks first and is never deferred.
+   */
   const removeTask = useCallback(
     (id: string, withData: boolean) => {
       if (!withData) {
-        void remove([id], false)
+        if (pending.current.has(id)) return
+        pending.current.add(id)
+        setHidden((current) => new Set(current).add(id))
+        const name = lookup?.(id)?.name
+        toast(name ? t('workflow.toast.removedNamed', { name }) : t('toast.removed'), 'trash', {
+          ms: UNDO_MS,
+          action: {
+            label: t('workflow.toast.undo'),
+            run: () => {
+              pending.current.delete(id)
+              unhide(id)
+            },
+          },
+          onClose: (reason) => {
+            if (reason !== 'action') void commitRemoval(id)
+          },
+        })
         return
       }
       confirm({
@@ -110,19 +172,30 @@ export function useTaskActions({ refresh, toast, confirm, currentIds }: Deps) {
         onConfirm: () => void remove([id], true),
       })
     },
-    [remove, confirm, t],
+    [remove, confirm, t, toast, lookup, unhide, commitRemoval],
   )
 
   const removeMany = useCallback(
     (ids: string[]) => {
+      const summary = removalSummary(ids.map((id) => lookup?.(id)), ids.length)
+      const size = fmtSize(summary.bytes)
       confirm({
         title: t('confirm.removeManyTitle', { count: ids.length }),
-        body: t('confirm.removeManyBody'),
-        confirmLabel: t('common.remove'),
-        onConfirm: () => void remove(ids, false),
+        body: t('workflow.confirm.removeManyBody'),
+        items: summary.names,
+        footnote:
+          summary.more > 0
+            ? t('workflow.confirm.moreAndSize', { count: summary.more, size })
+            : t('workflow.confirm.totalSize', { size }),
+        confirmLabel: t('workflow.confirm.removeN', { count: ids.length }),
+        option: {
+          label: t('workflow.confirm.alsoDelete'),
+          confirmLabel: t('workflow.confirm.deleteN', { count: ids.length, size }),
+        },
+        onConfirm: (withData) => void remove(ids, withData),
       })
     },
-    [remove, confirm, t],
+    [remove, confirm, t, lookup],
   )
 
   /** Server-side "all": covers tasks the filter hides, unlike a bulk action on the selection. */
@@ -143,5 +216,5 @@ export function useTaskActions({ refresh, toast, confirm, currentIds }: Deps) {
   const pauseAll = useCallback(() => void runAll('pause'), [runAll])
   const resumeAll = useCallback(() => void runAll('resume'), [runAll])
 
-  return { runAction, runBulk, removeTask, removeMany, pauseAll, resumeAll }
+  return { runAction, runBulk, removeTask, removeMany, pauseAll, resumeAll, hidden }
 }

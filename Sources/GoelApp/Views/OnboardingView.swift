@@ -33,13 +33,15 @@ struct OnboardingView: View {
     @Environment(\.dismiss) private var dismiss
 
     private enum Pane: Int, CaseIterable {
-        case saveFolder, browser, clipboard
+        // Browser first: it is the question that decides the rest of the setup.
+        case browser, saveFolder, clipboard, ready
 
         var title: String {
             switch self {
             case .saveFolder: return L10n.t("Where should downloads land?")
-            case .browser:    return L10n.t("Catch downloads from your browser")
+            case .browser:    return L10n.t("Which browser do you use?")
             case .clipboard:  return L10n.t("Copy a link, download it")
+            case .ready:      return L10n.t("Ready check")
             }
         }
 
@@ -48,16 +50,12 @@ struct OnboardingView: View {
             case .saveFolder: return "folder"
             case .browser:    return "safari"
             case .clipboard:  return "doc.on.clipboard"
+            case .ready:      return "checkmark.seal"
             }
         }
     }
 
-    @State private var pane: Pane = .saveFolder
-
-    @State private var helperResult: String?
-
-    /// Inline, not a toast: a toast draws in the main window, underneath this sheet.
-    @State private var extensionFolderMessage: String?
+    @State private var pane: Pane = .browser
 
     @State private var licenceNoticeVisible = !OnboardingState.licenceNoticeDismissed
 
@@ -70,8 +68,9 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     switch pane {
                     case .saveFolder: saveFolderPane
-                    case .browser:    browserPane
+                    case .browser:    OnboardingBrowserPane()
                     case .clipboard:  clipboardPane
+                    case .ready:      OnboardingReadyPane()
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -93,18 +92,18 @@ struct OnboardingView: View {
 
     private var footer: some View {
         VStack(spacing: 0) {
-            if pane == .clipboard, licenceNoticeVisible {
+            if pane == .ready, licenceNoticeVisible {
                 licenceNotice
                     .padding([.horizontal, .top], 14)
             }
             // Esc always means "leave setup", on every step; Back is a plain button.
             SheetFooter(cancelTitle: L10n.t("Skip setup"), onCancel: finish,
-                        primaryTitle: pane == .clipboard ? L10n.t("Start using Goel°") : L10n.t("Continue"),
+                        primaryTitle: pane == .ready ? L10n.t("Start using Goel°") : L10n.t("Continue"),
                         onPrimary: advance) {
                 progressDots
             } secondary: {
-                if pane != .saveFolder {
-                    Button(L10n.t("Back")) { pane = Pane(rawValue: pane.rawValue - 1) ?? .saveFolder }
+                if pane != .browser {
+                    Button(L10n.t("Back")) { pane = Pane(rawValue: pane.rawValue - 1) ?? .browser }
                         .accessibilityLabel(L10n.t("Back to the previous step"))
                 }
             }
@@ -228,43 +227,6 @@ struct OnboardingView: View {
         vm.update { $0.defaultFolderRule = "fixed" }
     }
 
-    private var browserPane: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            OnboardingBlurb(
-                L10n.t("With the extension installed, clicking a download in Chrome, Edge, Brave, "
-                + "Firefox or Safari sends it here instead — with the page's sign-in cookies, "
-                + "so files behind a login still work."))
-
-            OnboardingRow(symbol: "puzzlepiece.extension",
-                          title: L10n.t("1. Load the extension"),
-                          detail: extensionFolderMessage
-                              ?? L10n.t("Opens the folder to point your browser’s “Load unpacked” at.")) {
-                Button(L10n.t("Show Folder")) { revealExtensionFolder() }
-                    .accessibilityLabel(L10n.t("Show the browser extension folder in Finder"))
-            }
-
-            OnboardingRow(symbol: "app.connected.to.app.below.fill",
-                          title: L10n.t("2. Install the messaging helper"),
-                          detail: helperResult
-                              ?? L10n.t("Lets the extension talk to Goel°. Writes files in your own Library — no admin password.")) {
-                Button(L10n.t("Install")) { helperResult = BrowserIntegrationService.installHostManifests() }
-                    .accessibilityLabel(L10n.t("Install the browser messaging helper"))
-            }
-
-            OnboardingBlurb(
-                L10n.t("Not now? The full step-by-step, plus the bookmarklet, the URL scheme and the "
-                + "Services-menu route, all live in Settings ▸ Browser."))
-        }
-    }
-
-    private func revealExtensionFolder() {
-        guard let folder = BrowserIntegrationService.extensionFolder else {
-            extensionFolderMessage = L10n.t("The bundled extension is only in the packaged app, not a dev build")
-            return
-        }
-        NSWorkspace.shared.activateFileViewerSelecting([folder])
-    }
-
     private var clipboardPane: some View {
         VStack(alignment: .leading, spacing: 14) {
             OnboardingBlurb(
@@ -321,7 +283,7 @@ struct OnboardingView: View {
     }
 }
 
-private struct OnboardingBlurb: View {
+struct OnboardingBlurb: View {
     let text: String
     init(_ text: String) { self.text = text }
 
@@ -333,7 +295,7 @@ private struct OnboardingBlurb: View {
     }
 }
 
-private struct OnboardingCard<Content: View>: View {
+struct OnboardingCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -345,7 +307,7 @@ private struct OnboardingCard<Content: View>: View {
     }
 }
 
-private struct OnboardingRow<Control: View>: View {
+struct OnboardingRow<Control: View>: View {
     let symbol: String
     let title: String
     let detail: String

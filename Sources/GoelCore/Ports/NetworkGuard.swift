@@ -365,11 +365,15 @@ public enum NetworkGuard {
         case refusedTarget
         case httpStatus(Int)
         case transport(String)
+        case tooLarge(Int)
 
         public var description: String {
             switch self {
             case .refusedTarget:
                 return L10n.t("That address is on this machine or a link-local range — refused.")
+            case .tooLarge(let limit):
+                return L10n.t("The response was larger than %@ — refused.",
+                              ByteCountFormatter.string(fromByteCount: Int64(limit), countStyle: .file))
             case .httpStatus(let code) where (300..<400).contains(code):
                 // A refused hop surfaces as the 3xx itself: the delegate declined to follow it.
                 return L10n.t("Server redirected (HTTP %ld) to an address that was not followed", code)
@@ -382,16 +386,19 @@ public enum NetworkGuard {
         }
     }
 
-    /// Nil-on-failure convenience over ``fetchChecked(url:proxy:userAgent:timeout:)``.
+    /// Nil-on-failure convenience over ``fetchChecked(url:proxy:userAgent:timeout:maxBytes:)``.
     public static func fetch(url: URL, proxy: ProxySpec, userAgent: String,
-                             timeout: TimeInterval = 30) async -> Data? {
-        try? await fetchChecked(url: url, proxy: proxy, userAgent: userAgent, timeout: timeout)
+                             timeout: TimeInterval = 30, maxBytes: Int? = nil) async -> Data? {
+        try? await fetchChecked(url: url, proxy: proxy, userAgent: userAgent, timeout: timeout,
+                                maxBytes: maxBytes)
     }
 
     /// Configured proxy, bounded redirects, cross-host header stripping, link-local refused on every hop.
     /// Throws ``FetchError`` carrying the HTTP status or the transport error's text.
+    /// `maxBytes` caps the body: a declared length over it is refused up front, and the stream is
+    /// abandoned the moment it passes the cap, so a hostile server can't make us buffer gigabytes.
     public static func fetchChecked(url: URL, proxy: ProxySpec, userAgent: String,
-                                    timeout: TimeInterval = 30) async throws -> Data {
+                                    timeout: TimeInterval = 30, maxBytes: Int? = nil) async throws -> Data {
         guard isAllowedAutoTarget(url) else { throw FetchError.refusedTarget }
         let dictionary = proxyDictionary(proxy)
         // Pooled per proxy policy: per-call sessions crashed the Linux daemon on teardown.
@@ -406,7 +413,9 @@ public enum NetworkGuard {
         let data: Data
         let resp: URLResponse
         do {
-            (data, resp) = try await session.data(for: req)
+            (data, resp) = try await download(req, session: session, maxBytes: maxBytes)
+        } catch let error as FetchError {
+            throw error
         } catch {
             throw FetchError.transport(error.localizedDescription)
         }
@@ -414,6 +423,33 @@ public enum NetworkGuard {
             throw FetchError.httpStatus(http.statusCode)
         }
         return data
+    }
+
+    private static func download(_ req: URLRequest, session: URLSession,
+                                 maxBytes: Int?) async throws -> (Data, URLResponse) {
+        guard let maxBytes else { return try await session.data(for: req) }
+        #if canImport(Darwin)
+        let (bytes, resp) = try await session.bytes(for: req)
+        if resp.expectedContentLength > Int64(maxBytes) {
+            bytes.task.cancel()
+            throw FetchError.tooLarge(maxBytes)
+        }
+        var data = Data()
+        data.reserveCapacity(min(maxBytes, max(0, Int(resp.expectedContentLength))))
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > maxBytes {
+                bytes.task.cancel()
+                throw FetchError.tooLarge(maxBytes)
+            }
+        }
+        return (data, resp)
+        #else
+        // FoundationNetworking has no async byte stream; the cap still refuses the result.
+        let (data, resp) = try await session.data(for: req)
+        guard data.count <= maxBytes else { throw FetchError.tooLarge(maxBytes) }
+        return (data, resp)
+        #endif
     }
 }
 

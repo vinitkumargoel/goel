@@ -88,7 +88,7 @@ function renderPanel(
       onRemove={vi.fn()}
       onMore={vi.fn()}
       onCopy={vi.fn()}
-      onToggleFile={vi.fn()}
+      onSetFiles={vi.fn(() => Promise.resolve())}
       onCyclePriority={vi.fn()}
     />,
   )
@@ -118,7 +118,7 @@ describe('DetailPanel', () => {
         onRemove={vi.fn()}
         onMore={vi.fn()}
         onCopy={vi.fn()}
-        onToggleFile={vi.fn()}
+        onSetFiles={vi.fn(() => Promise.resolve())}
         onCyclePriority={vi.fn()}
       />,
     )
@@ -182,7 +182,7 @@ describe('DetailPanel', () => {
         onRemove={vi.fn()}
         onMore={vi.fn()}
         onCopy={vi.fn()}
-        onToggleFile={vi.fn()}
+        onSetFiles={vi.fn(() => Promise.resolve())}
         onCyclePriority={vi.fn()}
       />,
     )
@@ -205,7 +205,7 @@ describe('DetailPanel', () => {
         onRemove={vi.fn()}
         onMore={onMore}
         onCopy={vi.fn()}
-        onToggleFile={vi.fn()}
+        onSetFiles={vi.fn(() => Promise.resolve())}
         onCyclePriority={vi.fn()}
       />,
     )

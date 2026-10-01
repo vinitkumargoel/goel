@@ -1,7 +1,8 @@
 import { eligibleFor } from '../components/BulkBar'
 import type { View } from '../components/Sidebar'
+import type { Filter } from '../lib/filters'
 import type { SelectionAction } from '../lib/selection'
-import type { ShortcutId } from '../lib/shortcuts'
+import { filterForShortcut, type ShortcutId } from '../lib/shortcuts'
 import type { RowAction } from '../lib/taskKind'
 import type { TaskRow } from '../lib/types'
 import { useGlobalKeys } from './useGlobalKeys'
@@ -27,6 +28,14 @@ export interface AppKeyDeps {
   openHelp: () => void
   /** The row element for an id, to focus and reveal. */
   rowElement: (id: string) => HTMLElement | undefined
+  /** 1–9: a sidebar filter, showing the library. */
+  goToFilter?: (filter: Filter) => void
+  /** G H, G S. */
+  goToView?: (view: View) => void
+  /** C: the selection's links, one per line. */
+  copy?: (text: string) => void
+  /** ⌘/Ctrl+K. */
+  openPalette?: () => void
 }
 
 /**
@@ -45,6 +54,17 @@ export function runShortcut(id: ShortcutId, deps: AppKeyDeps): boolean {
       if (!deps.canWrite) return false
       deps.openAdd()
       return true
+    case 'go-history':
+    case 'go-settings':
+      if (!deps.goToView) return false
+      deps.goToView(id === 'go-history' ? 'history' : 'settings')
+      return true
+  }
+  const filter = filterForShortcut(id)
+  if (filter) {
+    if (!deps.goToFilter) return false
+    deps.goToFilter(filter)
+    return true
   }
   if (deps.view !== 'library') return false
   const { visible, lead, selectedVisible } = deps
@@ -85,6 +105,16 @@ export function runShortcut(id: ShortcutId, deps: AppKeyDeps): boolean {
       if (!deps.canWrite || selectedVisible.length === 0) return false
       deps.removeMany(selectedVisible.map((t) => t.id))
       return true
+    case 'retry': {
+      const failed = deps.canWrite ? eligibleFor(selectedVisible, 'retry') : []
+      if (failed.length === 0) return false
+      void deps.runBulk('retry', failed)
+      return true
+    }
+    case 'copy':
+      if (!deps.copy || selectedVisible.length === 0) return false
+      deps.copy(selectedVisible.map((t) => t.source).join('\n'))
+      return true
   }
   return false
 }
@@ -101,5 +131,6 @@ export function useAppKeys(deps: AppKeyDeps) {
     },
     onShortcut,
     shortcutsEnabled: deps.enabled,
+    onPalette: deps.openPalette,
   })
 }

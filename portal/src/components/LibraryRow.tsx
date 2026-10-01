@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { fmtAbsolute, fmtAgo, fmtEta, fmtProgressSize, fmtSize, fmtSpeed, pct } from '../lib/format'
 import { fileType, kindBadge, kindLabel, rowAction, type RowAction } from '../lib/taskKind'
 import type { TaskRow } from '../lib/types'
-import { FileTypeIcon, MoreIcon, PauseIcon, PlayIcon, RetryIcon } from './Icons'
+import { CheckIcon, FileTypeIcon, MoreIcon, PauseIcon, PlayIcon, RetryIcon } from './Icons'
 
 export interface RowClick {
   shift: boolean
@@ -22,6 +22,8 @@ interface RowProps {
    * the hidden columns.
    */
   phone?: boolean
+  /** Touch select mode: a checkbox leads the row and a tap toggles it. */
+  selecting?: boolean
   /** Minute-resolution clock for the Added column; a change re-renders the relative times. */
   now: number
   /** Id of the "Shift+F10 for actions" hint. */
@@ -38,6 +40,7 @@ export const LibraryRow = memo(function LibraryRow({
   focusable,
   canWrite,
   phone = false,
+  selecting = false,
   now,
   describedBy,
   rowRef,
@@ -98,6 +101,12 @@ export const LibraryRow = memo(function LibraryRow({
       }}
     >
       <div className="c ncell">
+        {/* Decorative: aria-selected already says it; the box is the visible cue in select mode. */}
+        {selecting && (
+          <span className={`rcheck${selected ? ' on' : ''}`} aria-hidden="true">
+            {selected && <CheckIcon />}
+          </span>
+        )}
         {phone ? null : action && canWrite ? (
           // A pointer shortcut only. An option may not contain controls, so it is hidden from
           // assistive tech; the same action is in the bulk bar (shown for any selection) and the

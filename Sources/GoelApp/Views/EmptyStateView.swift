@@ -39,9 +39,9 @@ struct DownloadsEmptyState: View {
                     action: pasteLink)
 
                 EmptyStateAction(
-                    symbol: "arrow.down.to.line",
-                    title: L10n.t("Drop a file"),
-                    detail: L10n.t("Drag a .torrent or a link onto this window"),
+                    symbol: "tray.and.arrow.down",
+                    title: L10n.t("Drop Basket"),
+                    detail: L10n.t("A floating target for dragged links and .torrent files · ⌘⇧B"),
                     isPrimary: false,
                     a11yLabel: L10n.t("Show or hide the Drop Basket"),
                     a11yHint: L10n.t("Opens a small floating window that accepts dragged links and torrent files. Activating again closes it."),

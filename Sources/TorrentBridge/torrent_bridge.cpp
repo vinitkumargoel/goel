@@ -19,6 +19,11 @@
 #include <libtorrent/sha1_hash.hpp>
 #include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/write_resume_data.hpp>
+#include <libtorrent/create_torrent.hpp>
+#include <libtorrent/bencode.hpp>
+#include <libtorrent/hasher.hpp>
+
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <chrono>
@@ -507,6 +512,7 @@ int gt_peers(GTHandle handle, GTPeer *out, int cap) {
             gp.down_rate = static_cast<double>(p.payload_down_speed);
             gp.up_rate = static_cast<double>(p.payload_up_speed);
             gp.progress = static_cast<double>(p.progress);
+            copy_string(gp.local_address, sizeof(gp.local_address), p.local_endpoint.address().to_string());
             ++n;
         }
         return n;
@@ -729,3 +735,163 @@ void gt_set_upload_limit(GTHandle handle, int bytes_per_sec) {
 }
 
 } // extern "C"
+
+int gt_is_private(GTHandle handle) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid()) return 0;
+    try {
+        auto ti = h->torrent_file();
+        return ti && ti->priv() ? 1 : 0;
+    } catch (...) { return 0; }
+}
+
+int gt_add_tracker(GTHandle handle, const char *url, int tier) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid() || !url || !*url) return 0;
+    try {
+        lt::announce_entry ae(url);
+        ae.tier = static_cast<std::uint8_t>(std::max(0, std::min(tier, 255)));
+        h->add_tracker(ae);
+        return 1;
+    } catch (...) { return 0; }
+}
+
+int gt_replace_trackers(GTHandle handle, const char *const *urls, const int *tiers, int count) {
+    auto *h = as_handle(handle);
+    if (!h || !h->is_valid() || count < 0 || (count > 0 && !urls)) return 0;
+    try {
+        std::vector<lt::announce_entry> list;
+        list.reserve(static_cast<size_t>(count));
+        for (int i = 0; i < count; ++i) {
+            if (!urls[i] || !*urls[i]) continue;
+            lt::announce_entry ae(urls[i]);
+            int tier = tiers ? tiers[i] : 0;
+            ae.tier = static_cast<std::uint8_t>(std::max(0, std::min(tier, 255)));
+            list.push_back(std::move(ae));
+        }
+        h->replace_trackers(list);
+        return 1;
+    } catch (...) { return 0; }
+}
+
+namespace {
+
+// Hidden files (".DS_Store", "._x") never belong in a shared torrent, and symlinks are skipped:
+// following one could pull in data from anywhere on the disk, even outside the chosen folder.
+bool create_includes(std::string const &p) {
+    auto slash = p.find_last_of('/');
+    std::string const leaf = slash == std::string::npos ? p : p.substr(slash + 1);
+    if (!leaf.empty() && leaf[0] == '.') return false;
+    struct stat st;
+    if (::lstat(p.c_str(), &st) == 0 && S_ISLNK(st.st_mode)) return false;
+    return true;
+}
+
+// Hashes every v1 piece here rather than through set_piece_hashes: its callback has no
+// clean way to stop, and throwing through it leaves libtorrent's disk jobs mid-flight.
+// Returns 1 done, -1 cancelled, 0 on a read error (message in `err`).
+int hash_pieces(lt::create_torrent &t, lt::file_storage const &fs, std::string const &parent,
+                GTCreateProgress progress, void *ctx, std::string &err) {
+    int const total = t.num_pieces();
+    std::vector<char> buf;
+    std::ifstream in;
+    lt::file_index_t open_index{-1};
+    for (lt::piece_index_t piece{0}; static_cast<int>(piece) < total; ++piece) {
+        int const size = t.piece_size(piece);
+        buf.assign(static_cast<std::size_t>(size), 0);
+        std::size_t pos = 0;
+        for (auto const &slice : fs.map_block(piece, 0, size)) {
+            auto const len = static_cast<std::size_t>(slice.size);
+            if (!fs.pad_file_at(slice.file_index)) {
+                if (slice.file_index != open_index) {
+                    in.close();
+                    in.clear();
+                    in.open(fs.file_path(slice.file_index, parent), std::ios::binary);
+                    open_index = slice.file_index;
+                }
+                in.seekg(static_cast<std::streamoff>(slice.offset));
+                in.read(buf.data() + pos, static_cast<std::streamsize>(len));
+                if (!in || static_cast<std::size_t>(in.gcount()) != len) {
+                    err = "Could not read " + fs.file_path(slice.file_index);
+                    return 0;
+                }
+            }
+            pos += len;
+        }
+        lt::hasher h(buf.data(), size);
+        t.set_hash(piece, h.final());
+        if (progress && progress(ctx, static_cast<int>(piece) + 1, total) != 0) return -1;
+    }
+    return 1;
+}
+
+} // namespace
+
+int gt_create_torrent(const char *path,
+                      const char *const *trackers, int tracker_count,
+                      const char *const *web_seeds, int web_seed_count,
+                      int piece_size, int is_private, const char *comment,
+                      const char *out_path,
+                      GTCreateProgress progress, void *ctx,
+                      char *err_out, int err_cap) {
+    if (err_out && err_cap > 0) err_out[0] = '\0';
+    if (!path || !*path || !out_path || !*out_path) {
+        if (err_out) copy_string(err_out, err_cap, "Missing source or destination path");
+        return 0;
+    }
+    try {
+        std::string full(path);
+        // "/x/folder/" would make the torrent's root name empty.
+        while (full.size() > 1 && full.back() == '/') full.pop_back();
+        lt::file_storage fs;
+        lt::add_files(fs, full, create_includes, lt::create_torrent::v1_only);
+        if (fs.num_files() == 0) {
+            if (err_out) copy_string(err_out, err_cap, "Nothing to share: the folder is empty");
+            return 0;
+        }
+        // v1-only: readable by every client, and hashable piece by piece so Stop is clean.
+        lt::create_torrent t(fs, piece_size > 0 ? piece_size : 0, lt::create_torrent::v1_only);
+        for (int i = 0; i < tracker_count; ++i)
+            if (trackers && trackers[i] && *trackers[i]) t.add_tracker(trackers[i], i);
+        for (int i = 0; i < web_seed_count; ++i)
+            if (web_seeds && web_seeds[i] && *web_seeds[i]) t.add_url_seed(web_seeds[i]);
+        t.set_priv(is_private != 0);
+        t.set_creator("Goel°");
+        if (comment && *comment) t.set_comment(comment);
+
+        auto slash = full.find_last_of('/');
+        std::string const parent = slash == std::string::npos ? std::string(".")
+            : (slash == 0 ? std::string("/") : full.substr(0, slash));
+        std::string hash_error;
+        int const hashed = hash_pieces(t, fs, parent, progress, ctx, hash_error);
+        if (hashed < 0) return -1;
+        if (hashed == 0) {
+            if (err_out) copy_string(err_out, err_cap, hash_error);
+            return 0;
+        }
+        std::vector<char> buf;
+        lt::bencode(std::back_inserter(buf), t.generate());
+        std::string const tmp = std::string(out_path) + ".part";
+        {
+            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+            out.write(buf.data(), static_cast<std::streamsize>(buf.size()));
+            if (!out) {
+                if (err_out) copy_string(err_out, err_cap, "Could not write the .torrent file");
+                std::remove(tmp.c_str());
+                return 0;
+            }
+        }
+        if (std::rename(tmp.c_str(), out_path) != 0) {
+            if (err_out) copy_string(err_out, err_cap, "Could not write the .torrent file");
+            std::remove(tmp.c_str());
+            return 0;
+        }
+        return 1;
+    } catch (std::exception const &e) {
+        if (err_out) copy_string(err_out, err_cap, e.what());
+        return 0;
+    } catch (...) {
+        if (err_out) copy_string(err_out, err_cap, "Could not create the torrent");
+        return 0;
+    }
+}

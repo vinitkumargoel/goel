@@ -28,7 +28,7 @@ function setup(ids: string[] = ['a', 'b', 'c', 'd', 'e']) {
       }),
     { wrapper },
   )
-  return { result, toast, refresh, present, confirmPending: () => pending!.onConfirm() }
+  return { result, toast, refresh, present, confirmPending: (checked = false) => pending!.onConfirm(checked), pending: () => pending }
 }
 
 afterEach(() => {
@@ -79,5 +79,58 @@ describe('useTaskActions', () => {
     await act(async () => {})
     expect(remove.mock.calls.map((c) => c[0])).toEqual(['a', 'c'])
     expect(toast).toHaveBeenCalledWith('Removed', 'trash')
+  })
+
+  describe('undoable single remove', () => {
+    it('hides the row at once and removes only when the toast closes', async () => {
+      const remove = vi.spyOn(api, 'remove').mockResolvedValue()
+      const { result, toast } = setup()
+      act(() => result.current.removeTask('a', false))
+      expect(result.current.hidden.has('a')).toBe(true)
+      expect(remove).not.toHaveBeenCalled()
+      const options = toast.mock.calls[0]![2]
+      expect(options.action.label).toBe('Undo')
+      await act(async () => options.onClose('timeout'))
+      expect(remove).toHaveBeenCalledWith('a', false)
+      expect(result.current.hidden.has('a')).toBe(false)
+    })
+
+    it('Undo brings the row back and never calls the server', async () => {
+      const remove = vi.spyOn(api, 'remove').mockResolvedValue()
+      const { result, toast } = setup()
+      act(() => result.current.removeTask('a', false))
+      const options = toast.mock.calls[0]![2]
+      await act(async () => {
+        options.onClose('action')
+        options.action.run()
+      })
+      expect(result.current.hidden.has('a')).toBe(false)
+      expect(remove).not.toHaveBeenCalled()
+    })
+
+    it('flushes pending removals when the page goes away', () => {
+      const fetchSpy = vi.fn(async () => new Response(null))
+      vi.stubGlobal('fetch', fetchSpy)
+      const { result } = setup()
+      act(() => result.current.removeTask('a', false))
+      window.dispatchEvent(new Event('pagehide'))
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/remove?id=a&data=0',
+        expect.objectContaining({ method: 'POST', keepalive: true }),
+      )
+      vi.unstubAllGlobals()
+    })
+  })
+
+  it('a bulk confirm with "also delete" ticked removes with data', async () => {
+    const remove = vi.spyOn(api, 'remove').mockResolvedValue()
+    const { result, confirmPending, pending } = setup(['a', 'b'])
+    act(() => result.current.removeMany(['a', 'b']))
+    expect(pending()?.option?.confirmLabel).toMatch(/^Delete 2 · /)
+    await act(async () => confirmPending(true))
+    expect(remove.mock.calls).toEqual([
+      ['a', true],
+      ['b', true],
+    ])
   })
 })

@@ -55,6 +55,11 @@ interface SidebarProps {
   onClose: () => void
   /** Where focus goes when the off-canvas sidebar closes with focus inside it (the hamburger). */
   returnFocusTo?: RefObject<HTMLElement | null>
+  /** Tags in the queue, most used first; the group is hidden when empty. */
+  tags?: readonly { tag: string; count: number }[]
+  /** A tag narrowing the list instead of a status/type filter. */
+  activeTag?: string | null
+  onSelectTag?: (tag: string) => void
 }
 
 /** Matches portal.css: at this width the sidebar is an off-canvas drawer. */
@@ -69,6 +74,9 @@ export function Sidebar({
   onSelectView,
   onClose,
   returnFocusTo,
+  tags = [],
+  activeTag = null,
+  onSelectTag,
 }: SidebarProps) {
   const { t } = useTranslation()
   const drawer = useMediaQuery(DRAWER_QUERY)
@@ -97,7 +105,7 @@ export function Sidebar({
   const hiddenTypes = TYPE_FILTERS.length - shownTypes.length
 
   const libraryItem = (key: Filter, label: string, Icon: Icon) => {
-    const current = view === 'library' && filter === key
+    const current = view === 'library' && filter === key && activeTag == null
     const n = counts[key]
     // Something failed: the count turns red so the sidebar itself says so.
     const bad = key === 'failed' && n > 0
@@ -161,6 +169,29 @@ export function Sidebar({
               {allTypes ? t('sidebar.fewerTypes') : t('sidebar.allTypes', { count: hiddenTypes })}
             </span>
           </button>
+        )}
+
+        {tags.length > 0 && onSelectTag && (
+          <>
+            <div className="s-lbl">{t('queue.tagsGroup')}</div>
+            {tags.map(({ tag, count }) => {
+              const current = view === 'library' && activeTag?.toLowerCase() === tag.toLowerCase()
+              return (
+                <button
+                  type="button"
+                  key={tag}
+                  className={`s-item${current ? ' active' : ''}`}
+                  aria-current={current ? 'page' : undefined}
+                  title={tag}
+                  onClick={() => onSelectTag(tag)}
+                >
+                  <span className="s-tag" aria-hidden="true">#</span>
+                  <span className="l">{tag}</span>
+                  <span className="ct">{count}</span>
+                </button>
+              )
+            })}
+          </>
         )}
 
         <div className="s-lbl">{t('sidebar.tools')}</div>

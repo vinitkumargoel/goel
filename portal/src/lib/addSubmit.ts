@@ -13,6 +13,8 @@ export interface AddSummary {
   refused: number
   /** Torrent files (or the link batch) the server turned down while something else was queued. */
   failures: AddFailure[]
+  /** The new tasks' ids, links first, so the list can select and reveal them. */
+  ids: string[]
 }
 
 export interface AddJob {
@@ -43,16 +45,19 @@ export async function submitAdd(job: AddJob): Promise<AddSummary> {
           priority: job.options.priority,
           paused: job.options.paused,
           network: job.options.network,
+          sequential: job.options.sequential,
+          startAt: job.options.startAt,
         })
       : Promise.resolve(null),
   ])
 
-  const summary: AddSummary = { added: 0, refused: 0, failures: [] }
+  const summary: AddSummary = { added: 0, refused: 0, failures: [], ids: [] }
   const errors: unknown[] = []
 
   if (links.status === 'fulfilled') {
     summary.added += links.value?.added ?? 0
     summary.refused += links.value?.refused ?? 0
+    summary.ids.push(...(links.value?.ids ?? []))
   } else {
     errors.push(links.reason)
   }
@@ -60,6 +65,7 @@ export async function submitAdd(job: AddJob): Promise<AddSummary> {
   if (torrents.status === 'fulfilled') {
     summary.added += torrents.value?.added ?? 0
     summary.refused += torrents.value?.refused ?? 0
+    summary.ids.push(...(torrents.value?.ids ?? []))
     for (const f of torrents.value?.errors ?? []) summary.failures.push({ file: f.file, error: f.error })
   } else {
     errors.push(torrents.reason)

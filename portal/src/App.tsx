@@ -3,10 +3,14 @@ import { useTranslation } from 'react-i18next'
 import { BulkBar } from './components/BulkBar'
 import { ConfirmDialog, type ConfirmRequest } from './components/ConfirmDialog'
 import { ContextMenu, type MenuState } from './components/ContextMenu'
+import { PaletteHost } from './components/CommandPalette'
 import { DetailPanel } from './components/DetailPanel'
+import { FilterChips } from './components/FilterChips'
+import { LibraryTools } from './components/LibraryTools'
 import type { DetailTab } from './components/DetailPanes'
 import { HistoryView } from './components/HistoryView'
 import { LibraryView } from './components/LibraryView'
+import { PlayerDialog } from './components/PlayerDialog'
 import { QueueOverview } from './components/QueueOverview'
 import { isStale, ReconnectBanner } from './components/ReconnectBanner'
 import { SettingsView } from './components/SettingsView'
@@ -22,23 +26,30 @@ import { useDetail } from './hooks/useDetail'
 import { useMenus } from './hooks/useMenus'
 import { useNow } from './hooks/useNow'
 import { useSearchFocus } from './hooks/useSearchFocus'
+import { useActivitySignals } from './hooks/useActivitySignals'
 import { useAppKeys } from './hooks/useAppKeys'
 import { useBackToClose } from './hooks/useBackToClose'
+import { useLibraryWorkflow } from './hooks/useLibraryWorkflow'
+import { usePasteToAdd } from './hooks/usePasteToAdd'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { useStableCallback } from './hooks/useStableCallback'
 import { useTaskActions } from './hooks/useTaskActions'
 import { useTasks } from './hooks/useTasks'
 import { useThemeChoice } from './hooks/useThemeChoice'
+import { useQueueControls } from './hooks/useQueueControls'
 import { useToasts } from './hooks/useToasts'
 import { setRefusalHandler } from './lib/api'
 import { BOOT } from './lib/boot'
 import { copyText } from './lib/clipboard'
 import { countFilters, filterTasks, type Filter as LibraryFilter } from './lib/filters'
 import { loadPanelAutoHide, panelVisible, savePanelAutoHide } from './lib/prefs'
+import { groupTasks } from './lib/grouping'
 import { formatRoute, loadSort, parseRoute, saveSort } from './lib/route'
+import { allTags, byQueuePosition, hasTag } from './lib/queueControls'
 import { EMPTY_SELECTION, selectionReducer } from './lib/selection'
 import { nextSort, sortTasks, type SortKey, type SortState } from './lib/sort'
 import type { RowAction } from './lib/taskKind'
+import type { TaskRow } from './lib/types'
 
 const PANEL_BREAKPOINT = 920
 
@@ -79,8 +90,8 @@ export function App() {
   const hamburgerRef = useRef<HTMLButtonElement>(null)
   const { searchRef, mobileSearch, setMobileSearch, focusSearch } = useSearchFocus()
 
-  const { tasks, live, loaded, error, lastUpdate, refresh, reconnect } = useTasks()
-  const { toasts, toast, dismiss, pause, resume } = useToasts()
+  const { tasks: snapshot, live, loaded, error, lastUpdate, refresh, reconnect } = useTasks()
+  const { toasts, toast, dismiss, pause, resume, act } = useToasts()
   const warn = useCallback((message: string) => toast(message, 'warn'), [toast])
   const bandwidth = useBandwidth()
 
@@ -90,16 +101,25 @@ export function App() {
   const now = useNow(1000, !live)
   const stale = isStale(live, lastUpdate, now)
 
-  const tasksRef = useRef(tasks)
-  tasksRef.current = tasks
+  const tasksRef = useRef(snapshot)
+  tasksRef.current = snapshot
   const currentIds = useCallback(() => new Set(tasksRef.current.map((task) => task.id)), [])
+  const lookup = useCallback((id: string) => tasksRef.current.find((task) => task.id === id), [])
 
-  const { runAction, runBulk, removeTask, removeMany, pauseAll, resumeAll } = useTaskActions({
+  const { runAction, runBulk, removeTask, removeMany, pauseAll, resumeAll, hidden } = useTaskActions({
     refresh,
     toast,
     confirm: setConfirmReq,
     currentIds,
+    lookup,
   })
+
+  // A removal with its Undo still on screen is gone from every view, though the server has it yet.
+  const tasks = useMemo(
+    () => (hidden.size === 0 ? snapshot : snapshot.filter((task) => !hidden.has(task.id))),
+    [snapshot, hidden],
+  )
+  const wf = useLibraryWorkflow(selection.ids.size)
 
   useEffect(() => {
     setRefusalHandler(warn)
@@ -118,10 +138,31 @@ export function App() {
 
   const counts = useMemo(() => countFilters(tasks), [tasks])
 
-  const visible = useMemo(
-    () => sortTasks(filterTasks(tasks, filter, search), sort),
-    [tasks, filter, search, sort],
+  // A sidebar tag narrows the list on its own; picking any status or type filter clears it.
+  const [tag, setTag] = useState<string | null>(null)
+  const tagCounts = useMemo(() => allTags(tasks), [tasks])
+  // History reloads when this changes: a download finished, or a finished one left the list.
+  const finishedKey = useMemo(
+    () =>
+      tasks
+        .filter((task) => task.statusToken === 'completed' || task.statusToken === 'seeding')
+        .map((task) => task.id)
+        .join(),
+    [tasks],
   )
+  const visible = useMemo(() => {
+    const shown = filterTasks(tasks, filter, search).filter((task) => tag == null || hasTag(task, tag))
+    // Queued, unsorted: the order the queue will run them in, so Move to top/bottom is visible.
+    if (filter === 'queued' && sort.key === null) return byQueuePosition(shown)
+    return sortTasks(shown, sort)
+  }, [tasks, filter, search, sort, tag])
+
+  // Grouped, the list reads section by section: keyboard order has to follow the same order.
+  const groups = useMemo(
+    () => (wf.group === 'none' ? null : groupTasks(visible, wf.group)),
+    [visible, wf.group],
+  )
+  const ordered = useMemo(() => (groups ? groups.flatMap((g) => g.tasks) : visible), [groups, visible])
 
   // Bulk actions apply to what the user can see: a row hidden by a filter is never acted on unseen.
   const selectedVisible = useMemo(
@@ -137,7 +178,7 @@ export function App() {
   // Auto-hide only takes the panel away while nothing is selected; the toggle still closes it.
   const panelShown = panelVisible(panelOpen, panelAutoHide, detailId != null)
 
-  const { detail, setFilePriority, cyclePriority } = useDetail(
+  const { detail, reload, setFilePriorities, cyclePriority } = useDetail(
     detailId,
     tasks,
     view === 'library' && panelShown,
@@ -169,6 +210,11 @@ export function App() {
 
   const openMenu = useCallback((m: MenuState) => setMenu({ ...m, owner: 'row' }), [])
 
+  const queue = useQueueControls({ tasks, toast, refresh, reload })
+  const [playing, setPlaying] = useState<string | null>(null)
+  const openPlayer = useCallback((task: TaskRow) => setPlaying(task.id), [])
+  const playingTask = playing == null ? undefined : tasks.find((task) => task.id === playing)
+
   const { openRowMenu, removeEntries, userMenu } = useMenus({
     tasks,
     selectedIds: selection.ids,
@@ -182,6 +228,8 @@ export function App() {
     runBulk,
     removeTask,
     removeMany,
+    queue: queue.controls,
+    onStream: openPlayer,
   })
 
   const openUserMenu = useCallback(
@@ -201,6 +249,7 @@ export function App() {
     bandwidth,
     useCallback((m: MenuState) => setMenu({ ...m, owner: 'bandwidth' }), []),
     toast,
+    canWrite ? queue.controls.edit : undefined,
   )
 
   // Settings reports unsaved server edits; leaving would drop them, so ask first.
@@ -237,10 +286,32 @@ export function App() {
     if (!panelOpen) setPanelOpen(true)
   })
 
-  const { addOpen, openAdd, closeAdd, readd, dialog } = useAddFlow({
+  useActivitySignals({
+    tasks,
+    loaded,
+    toast,
+    onShow: useCallback(
+      (id: string) => {
+        selectView('library')
+        openDetail(id)
+      },
+      [selectView, openDetail],
+    ),
+  })
+
+  /** Just added (or "Show" on the added toast): unfiltered, those rows selected, scrolled to, pulsed. */
+  const revealAdded = useStableCallback((ids: string[]) => {
+    goToFilter('all')
+    setSearch('')
+    select({ type: 'set', ids })
+    wf.revealRows(ids)
+  })
+
+  const { addOpen, openAdd, openAddWith, closeAdd, readd, dialog } = useAddFlow({
     canWrite,
     toast,
     refresh,
+    onReveal: revealAdded,
     onQueued: useCallback(
       (resetFilter: boolean) => {
         if (resetFilter) setFilter('all')
@@ -252,19 +323,20 @@ export function App() {
 
   // While a dialog is up, everything behind it is inert: Tab, a screen reader's virtual cursor and
   // a stray click can't reach it, even when focus has fallen back to <body>.
-  const modalOpen = addOpen || confirmReq != null || helpOpen
+  const modalOpen = addOpen || confirmReq != null || helpOpen || wf.paletteOpen || queue.editing || playing != null
 
   useAppKeys({
     // An open menu owns the keyboard like a modal does: N or Delete must not act behind it.
     enabled: !modalOpen && menu == null,
     onEscape: () => {
       setMenu(null)
+      wf.setSelecting(false)
       closeAdd()
       setSidebarOpen(false)
       setHelpOpen(false)
     },
     view,
-    visible,
+    visible: ordered,
     lead: selection.lead,
     selectedVisible,
     canWrite,
@@ -280,6 +352,23 @@ export function App() {
     },
     openHelp: () => setHelpOpen(true),
     rowElement,
+    goToFilter: (f) => goToFilter(f),
+    goToView: (v) => selectView(v),
+    copy,
+    openPalette: wf.openPalette,
+  })
+
+  // A link pasted with nothing focused opens Add with it.
+  usePasteToAdd(canWrite && !modalOpen && menu == null, (text) => openAddWith(text, true))
+
+  /** The palette's download results: shown even when the current filter or search hides them. */
+  const showTask = useStableCallback((id: string) => {
+    if (!visible.some((task) => task.id === id)) {
+      goToFilter('all')
+      setSearch('')
+    } else selectView('library')
+    openDetail(id)
+    wf.revealRows([id])
   })
 
   const onRowAction = useCallback((id: string, a: RowAction) => void runAction(id, a), [runAction])
@@ -290,6 +379,16 @@ export function App() {
   const goToFilter = useCallback(
     (f: LibraryFilter) => {
       setFilter(f)
+      setTag(null)
+      selectView('library')
+    },
+    [selectView],
+  )
+
+  const goToTag = useCallback(
+    (next: string) => {
+      setFilter('all')
+      setTag(next)
       selectView('library')
     },
     [selectView],
@@ -340,6 +439,7 @@ export function App() {
   useBackToClose(sidebarOpen, () => setSidebarOpen(false))
   useBackToClose(addOpen, closeAdd)
   useBackToClose(helpOpen, () => setHelpOpen(false))
+  useBackToClose(wf.paletteOpen, wf.closePalette)
   useBackToClose(confirmReq != null, () => setConfirmReq(null))
 
   return (
@@ -378,12 +478,50 @@ export function App() {
             onSelectView={selectView}
             onClose={() => setSidebarOpen(false)}
             returnFocusTo={hamburgerRef}
+            tags={tagCounts}
+            activeTag={tag}
+            onSelectTag={goToTag}
           />
 
           <main className="content">
+            {view === 'library' && <FilterChips filter={filter} counts={counts} onFilter={goToFilter} />}
             {view === 'library' && (
               <LibraryView
-                tasks={visible}
+                tasks={ordered}
+                groups={groups}
+                density={wf.density}
+                layout={wf.layout}
+                selecting={wf.selecting}
+                onSelecting={wf.setSelecting}
+                reveal={wf.reveal}
+                tools={
+                  <LibraryTools
+                    count={ordered.length}
+                    group={wf.group}
+                    onGroup={wf.setGroup}
+                    density={wf.density}
+                    onDensity={wf.setDensity}
+                    layout={wf.layout}
+                    onLayout={wf.setLayout}
+                    sort={sort}
+                    onSort={onSort}
+                  />
+                }
+                selectBar={
+                  <BulkBar
+                    className="pbulk"
+                    selected={selectedVisible}
+                    canWrite={canWrite}
+                    onAction={(action, ids) => void runBulk(action, ids)}
+                    onCopyLinks={(sources) => copy(sources.join('\n'))}
+                    onRemove={removeMany}
+                    onClear={() => select({ type: 'clear' })}
+                    onDone={() => {
+                      wf.setSelecting(false)
+                      select({ type: 'clear' })
+                    }}
+                  />
+                }
                 total={tasks.length}
                 loaded={loaded}
                 error={error}
@@ -423,6 +561,7 @@ export function App() {
                 onRemoved={() => toast(t('toast.entryRemoved'), 'trash')}
                 onWarn={warn}
                 onToast={toast}
+                refreshKey={finishedKey}
               />
             )}
             {view === 'settings' && (
@@ -451,10 +590,10 @@ export function App() {
               onRemove={(id, at) => openMenu({ x: at.x, y: at.y, above: true, entries: removeEntries(id) })}
               onMore={(id, at) => openRowMenu(id, at.x, at.y, true)}
               onCopy={copy}
-              onToggleFile={(fileId, wasSkipped) =>
-                void setFilePriority(fileId, wasSkipped ? 'normal' : 'skip')
-              }
+              onSetFiles={setFilePriorities}
               onCyclePriority={cyclePriority}
+              queue={canWrite ? queue.controls : undefined}
+              onStream={openPlayer}
               trapFocus={!modalOpen}
               overview={
                 detailId == null ? (
@@ -492,10 +631,37 @@ export function App() {
       {dialog}
 
       {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
+      {wf.paletteOpen && (
+        <PaletteHost
+          onClose={wf.closePalette}
+          tasks={tasks}
+          canWrite={canWrite}
+          openAdd={openAdd}
+          showTask={showTask}
+          goToFilter={goToFilter}
+          goToView={selectView}
+          togglePanel={togglePanel}
+          openHelp={() => setHelpOpen(true)}
+          pauseAll={pauseAll}
+          resumeAll={resumeAll}
+          retryFailed={() =>
+            void runBulk(
+              'retry',
+              tasks.filter((task) => task.statusToken === 'failed').map((task) => task.id),
+            )
+          }
+          setTheme={setTheme}
+          setGroup={wf.setGroup}
+          setDensity={wf.setDensity}
+          setLayout={wf.setLayout}
+        />
+      )}
+      {queue.dialog}
+      {playingTask && <PlayerDialog task={playingTask} onClose={() => setPlaying(null)} onCopy={copy} />}
 
       <ConfirmDialog request={confirmReq} onClose={() => setConfirmReq(null)} />
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />
-      <Toasts toasts={toasts} onDismiss={dismiss} onPause={pause} onResume={resume} />
+      <Toasts toasts={toasts} onDismiss={dismiss} onPause={pause} onResume={resume} onAction={act} />
     </>
   )
 }

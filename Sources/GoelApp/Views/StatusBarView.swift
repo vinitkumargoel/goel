@@ -6,6 +6,7 @@ struct StatusBarView: View {
     @EnvironmentObject private var telemetry: TelemetryStore
     @EnvironmentObject private var sftpStore: SFTPTransferStore
     @State private var showTransfers = false
+    @State private var showCustomCap = false
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -144,7 +145,27 @@ struct StatusBarView: View {
                             ? A11y.sentence(L10n.t("On, %@ profile", vm.settings.selectedProfileName),
                                             SpeedProfileText.spokenLimits(vm.settings.selectedProfile))
                             : L10n.t("Off, unlimited"))
+        .contextMenu { speedMenu }
+        .accessibilityAction(named: Text(L10n.t("Custom speed limit"))) { showCustomCap = true }
+        .popover(isPresented: $showCustomCap, arrowEdge: .top) {
+            SpeedCapPopover().environmentObject(vm)
+        }
     }
+
+    @ViewBuilder
+    private var speedMenu: some View {
+        Button(vm.settings.speedLimitEnabled ? L10n.t("Turn Limit Off") : L10n.t("Turn Limit On")) { vm.toggleSnail() }
+        Divider()
+        ForEach(Self.presetCaps, id: \.self) { cap in
+            Button(L10n.t("↓ %@", Double(cap).speedString)) {
+                vm.applyCustomSpeedCap(down: cap, up: vm.settings.selectedProfile.maxUploadBytesPerSec)
+            }
+        }
+        Divider()
+        Button(L10n.t("Custom… ↓ ↑")) { showCustomCap = true }
+    }
+
+    private static let presetCaps: [Int64] = [500_000, 1_000_000, 5_000_000, 10_000_000]
 
     private func stat(_ direction: SpeedDirection, speed: Double) -> some View {
         HStack(spacing: 5) {

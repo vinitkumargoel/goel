@@ -13,8 +13,10 @@ import {
   type ThemeChoice,
 } from '../lib/theme'
 import { BandwidthCard } from './BandwidthCard'
+import { BrowserPrefsCard } from './BrowserPrefsCard'
 import { LogoutIcon, WarnIcon } from './Icons'
 import { NetworkCard } from './NetworkCard'
+import { ScheduleCard } from './ScheduleCard'
 
 interface SettingsViewProps {
   theme: ThemeChoice
@@ -46,7 +48,8 @@ export function SettingsView({
   const { t } = useTranslation()
   const [bandwidthDirty, setBandwidthDirty] = useState(false)
   const [networkDirty, setNetworkDirty] = useState(false)
-  const dirty = bandwidthDirty || networkDirty
+  const [scheduleDirty, setScheduleDirty] = useState(false)
+  const dirty = bandwidthDirty || networkDirty || scheduleDirty
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange])
   // Unmounting drops the edits with the cards, so nothing is pending any more.
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
@@ -117,6 +120,8 @@ export function SettingsView({
           </div>
         )}
 
+        <BrowserPrefsCard onToast={onToast} />
+
         <div className="card pd">
           <div className="srow">
             <div className="sinfo">
@@ -166,6 +171,8 @@ export function SettingsView({
         )}
 
         <NetworkCard canWrite={canWrite} onToast={onToast} onDirty={setNetworkDirty} />
+
+        {!linux && <ScheduleCard canWrite={canWrite} onToast={onToast} onDirty={setScheduleDirty} />}
 
         <div className="card pd">
           <div className="srow">

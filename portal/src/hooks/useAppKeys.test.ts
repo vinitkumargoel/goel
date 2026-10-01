@@ -88,4 +88,33 @@ describe('runShortcut', () => {
     expect(runShortcut('next', d)).toBe(false)
     expect(runShortcut('help', d)).toBe(true)
   })
+
+  it('jumps to a sidebar filter with a digit, from any view', () => {
+    const goToFilter = vi.fn()
+    expect(runShortcut('filter-7', deps({ view: 'settings', goToFilter }))).toBe(true)
+    expect(goToFilter).toHaveBeenCalledWith('failed')
+  })
+
+  it('goes to History and Settings', () => {
+    const goToView = vi.fn()
+    runShortcut('go-history', deps({ goToView }))
+    runShortcut('go-settings', deps({ goToView }))
+    expect(goToView.mock.calls).toEqual([['history'], ['settings']])
+  })
+
+  it('retries only the failed rows in the selection', () => {
+    const failed = { id: 'f', statusToken: 'failed' } as TaskRow
+    const d = deps({ selectedVisible: [ROWS[0]!, failed] })
+    expect(runShortcut('retry', d)).toBe(true)
+    expect(d.runBulk).toHaveBeenCalledWith('retry', ['f'])
+    expect(runShortcut('retry', deps({ selectedVisible: [ROWS[0]!] }))).toBe(false)
+  })
+
+  it('copies the selection\'s links', () => {
+    const copy = vi.fn()
+    const sel = [{ id: 'a', source: 'https://e/a' }, { id: 'b', source: 'https://e/b' }] as TaskRow[]
+    expect(runShortcut('copy', deps({ selectedVisible: sel, copy }))).toBe(true)
+    expect(copy).toHaveBeenCalledWith('https://e/a\nhttps://e/b')
+    expect(runShortcut('copy', deps({ copy }))).toBe(false)
+  })
 })

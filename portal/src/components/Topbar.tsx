@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from 'react'
+import { useId, useRef, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BOOT } from '../lib/boot'
 import { fmtSpeed, IDLE_RATE } from '../lib/format'
@@ -14,6 +14,7 @@ import {
   SearchIcon,
 } from './Icons'
 import { MobileSearch } from './MobileSearch'
+import { SearchChips, useSearchChips } from './SearchChips'
 import { Sparkline } from './SpeedChart'
 
 /** The total's last minute. Subscribes on its own, so a sample redraws this and not the topbar. */
@@ -70,6 +71,8 @@ export function Topbar({
   const { t } = useTranslation()
   const initial = (BOOT.username[0] ?? 'A').toUpperCase()
   const searchToggle = useRef<HTMLButtonElement>(null)
+  const tokens = useSearchChips(search, onSearch)
+  const searchHintId = useId()
 
   return (
     <div className="topbar">
@@ -93,16 +96,27 @@ export function Topbar({
 
       <div className="search" hidden={!showSearch}>
         <SearchIcon />
+        <SearchChips chips={tokens.chips} onRemove={tokens.remove} />
         <input
           ref={searchRef}
           type="search"
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder={t('topbar.searchDownloads')}
+          value={tokens.rest}
+          onChange={(e) => tokens.onRest(e.target.value)}
+          onKeyDown={(e) => {
+            const el = e.currentTarget
+            if (e.key === 'Backspace' && tokens.onBackspace(el.selectionStart === 0 && el.selectionEnd === 0)) {
+              e.preventDefault()
+            }
+          }}
+          placeholder={tokens.chips.length > 0 ? '' : t('topbar.searchDownloads')}
           aria-label={t('topbar.searchDownloads')}
+          aria-describedby={searchHintId}
           aria-keyshortcuts="/"
           title={t('shortcuts.hint', { label: t('topbar.searchDownloads'), key: '/' })}
         />
+        <span id={searchHintId} hidden>
+          {t('workflow.search.hint')}
+        </span>
       </div>
 
       <div className="spacer" />

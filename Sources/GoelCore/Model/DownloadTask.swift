@@ -87,6 +87,9 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
     /// on restore in the order they were added, which is the order they used to start in.
     public var queuePosition: Int?
 
+    /// What happens once this download finishes; nil means nothing beyond the global settings.
+    public var whenDone: WhenDone?
+
     public init(
         id: UUID = UUID(),
         source: DownloadSource,
@@ -130,7 +133,8 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         initialSkipFileIDs: [Int]? = nil,
         networkSelection: NetworkSelection? = nil,
         fileMissing: Bool? = nil,
-        queuePosition: Int? = nil
+        queuePosition: Int? = nil,
+        whenDone: WhenDone? = nil
     ) {
         self.id = id
         self.source = source
@@ -175,6 +179,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         self.networkSelection = networkSelection
         self.fileMissing = fileMissing
         self.queuePosition = queuePosition
+        self.whenDone = whenDone
     }
 
     /// Listed by hand so ``cookieHeader`` stays absent and can never be encoded; add every new property.
@@ -190,7 +195,7 @@ public struct DownloadTask: Identifiable, Codable, Sendable, Hashable {
         case label, tags, note, referer, requestHeaders
         case cookieSource, cookieHost           // provenance only — never the value
         case retryAttempt, initialSkipFileIDs, networkSelection
-        case fileMissing, queuePosition
+        case fileMissing, queuePosition, whenDone
     }
 
     public var allTags: [String] {

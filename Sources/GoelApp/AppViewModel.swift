@@ -356,6 +356,8 @@ final class AppViewModel: ObservableObject {
     private var hasConsumedFirstSnapshot = false
 
     private var reducerState = ReducerState()
+    /// Completions within a few seconds share one summary banner.
+    let completionBatcher = CompletionBannerBatcher()
 
     /// The one-minute grace before an automatic quit, sleep or shutdown.
     private(set) lazy var autoShutdownCountdown: AutoShutdownCountdown = {
@@ -756,7 +758,9 @@ final class AppViewModel: ObservableObject {
                  priority: FilePriority, checksum: Checksum?, startAt: Date? = nil,
                  mirrors: [String]? = nil, deselectedFileIDs: [Int]? = nil,
                  cookieHeader: String? = nil, cookieSource: CookieSource? = nil,
-                 cookieHost: String? = nil, inlineLoginLine: String? = nil) {
+                 cookieHost: String? = nil, inlineLoginLine: String? = nil,
+                 name: String? = nil, whenDone: WhenDone? = nil,
+                 onAdded: ((DownloadTask.ID) -> Void)? = nil) {
         if let duplicate = existingDuplicate(of: preview.source) {
             let id = duplicate.id
             toastWarning(L10n.t("Already in your list"),
@@ -773,26 +777,31 @@ final class AppViewModel: ObservableObject {
         let seededFiles = preview.kind == .torrent ? [] : preview.files
         // Only the line the user confirmed, and only now: the parsed preview carries no login.
         let loginLine = inlineLoginLine.flatMap { InlineCredentials.find(in: $0) == nil ? nil : $0 }
+        if let saveDirectory { RecentFolders.remember(saveDirectory) }
         Task {
             // A plain-http login is refused with a notice from the manager; nil means it wasn't a link.
             if let loginLine, await manager.adoptInlineCredentials(loginLine, replaceExisting: true) == nil {
                 toastNow(L10n.t("That link isn’t valid."), isError: true)
             }
-            await manager.add(source: source, saveDirectory: saveDirectory,
+            let added = await manager.add(source: source, saveDirectory: saveDirectory,
                               priority: priority, expectedChecksum: checksum,
                               scheduledAt: startAt, mirrors: mirrors,
-                              suggestedName: preview.suggestedName,
+                              suggestedName: name ?? preview.suggestedName,
                               totalBytes: seededBytes, files: seededFiles,
                               deselectedFileIDs: skipFiles,
                               cookieHeader: cookieHeader,
                               cookieSource: cookieSource,
-                              cookieHost: cookieHost)
-        }
-        if let startAt {
-            let formatter = RelativeDateTimeFormatter()
-            toastNow(L10n.t("Will start %@", formatter.localizedString(for: startAt, relativeTo: Date())))
-        } else {
-            toastSuccess(L10n.t("Added to queue"))
+                              cookieHost: cookieHost,
+                              whenDone: whenDone)
+            onAdded?(added.id)
+            let show = Toast.Action(title: L10n.t("Show")) { [weak self] in self?.reveal(added.id) }
+            if let startAt {
+                let formatter = RelativeDateTimeFormatter()
+                toastNow(L10n.t("Will start %@", formatter.localizedString(for: startAt, relativeTo: Date())),
+                         action: show)
+            } else {
+                toastSuccess(L10n.t("Added “%@”", added.name), action: show)
+            }
         }
         filter = .all
     }
@@ -1216,6 +1225,7 @@ final class AppViewModel: ObservableObject {
             toastNow(L10n.t("Automatic action cancelled — downloads started again"))
         }
         postNotifications(output.notifications, previous: previous, snapshot: snapshot)
+        runWhenDoneActions(snapshot, previous: previous)
         if Self.hasNewlyCompleted(snapshot, previous: previous.lastStatuses) { bumpHistoryRevision(after: 1) }
     }
 
@@ -1247,16 +1257,26 @@ final class AppViewModel: ObservableObject {
         var finished = snapshot.filter {
             $0.status == .completed && previous.lastStatuses[$0.id] != .completed
         }
+        var failed = snapshot.filter {
+            if case .failed = $0.status { return previous.lastStatuses[$0.id] != $0.status }
+            return false
+        }
+        var batch: [NotificationPlanning.Finished] = []
         var others: [AppNotification] = []
         for notification in notifications {
             if case .completed(let name) = notification,
                let index = finished.firstIndex(where: { $0.name == name }) {
-                let task = finished.remove(at: index)
-                notifier.postCompleted(taskID: task.id, name: name, sound: sound)
+                batch.append(.init(taskID: finished.remove(at: index).id, name: name))
+            } else if case .failed(let name) = notification,
+                      let index = failed.firstIndex(where: { $0.name == name }) {
+                let task = failed.remove(at: index)
+                notifier.postFailed(taskID: task.id, name: name,
+                                    reason: NotificationPlanning.failureBody(for: task.status), sound: sound)
             } else {
                 others.append(notification)
             }
         }
+        postCompletionBanners(batch, notifier: notifier, sound: sound)
         if !others.isEmpty { system.post(others, sound: sound) }
     }
 

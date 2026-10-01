@@ -6,7 +6,11 @@ import type { HistoryRow } from '../lib/types'
 import { renderWithI18n } from '../test/renderWithI18n'
 import { HistoryView } from './HistoryView'
 
-const api = vi.hoisted(() => ({ history: vi.fn(), removeHistory: vi.fn() }))
+const api = vi.hoisted(() => ({
+  history: vi.fn(),
+  removeHistory: vi.fn(),
+  clearHistory: vi.fn(() => Promise.resolve()),
+}))
 
 vi.mock('../lib/api', async (importOriginal) => {
   const real = await importOriginal<typeof import('../lib/api')>()
@@ -26,6 +30,7 @@ const entry = (id: string, name: string, kind: HistoryRow['kind'], ageDays: numb
 })
 
 beforeEach(() => {
+  api.clearHistory.mockClear()
   api.history.mockReset().mockResolvedValue([
     entry('1', 'ubuntu.iso', 'http', 0),
     entry('2', 'movie.mkv', 'torrent', 40),
@@ -80,9 +85,36 @@ describe('HistoryView', () => {
     click.mockRestore()
   })
 
-  it('offers no Clear-all: the server has no endpoint for it', async () => {
+  it('asks before clearing everything, says how many, and defaults to Cancel', async () => {
     renderHistory()
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Clear older than' }), 'all')
+    const dialog = screen.getByRole('alertdialog')
+    expect(within(dialog).getByText('2 entries will be removed from the history.')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: en.common.cancel })).toHaveFocus()
+    expect(api.clearHistory).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Clear 2 entries' }))
+    expect(api.clearHistory).toHaveBeenCalledWith(undefined)
+  })
+
+  it('counts only the older entries for "older than", and skips the request when there are none', async () => {
+    renderHistory()
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Clear older than' }), '30')
+    expect(screen.getByText('1 entry will be removed from the history.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: en.common.cancel }))
+    expect(api.clearHistory).not.toHaveBeenCalled()
+  })
+
+  it('says so instead of asking when nothing is old enough', async () => {
+    api.history.mockResolvedValue([entry('1', 'ubuntu.iso', 'http', 0)])
+    const handlers = renderHistory()
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Clear older than' }), '7')
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(handlers.onToast).toHaveBeenCalledWith('Nothing that old in the history.')
+  })
+
+  it('offers no clearing to a read-only session', async () => {
+    renderWithI18n(<HistoryView canWrite={false} onReadd={vi.fn()} onRemoved={vi.fn()} onWarn={vi.fn()} />)
     await screen.findByText('ubuntu.iso')
-    expect(screen.queryByRole('button', { name: /clear/i })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Clear older than' })).toBeNull()
   })
 })

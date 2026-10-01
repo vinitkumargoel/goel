@@ -84,6 +84,12 @@ extension RemoteRouter {
             }
             network = parsed
         }
+        let sequential = truthy(text("sequential"))
+        var startAt: Double?
+        if let raw = text("startAt")?.trimmingCharacters(in: .whitespaces), !raw.isEmpty {
+            guard startDate(raw) != nil, let seconds = Double(raw) else { return badRequest(startRefusal) }
+            startAt = seconds
+        }
 
         var ids: [String] = []
         var added = 0
@@ -112,6 +118,7 @@ extension RemoteRouter {
                 errors.append(.init(file: label, error: RemoteTorrentUpload.Failure.couldNotSave.message))
             }
         }
+        await applyAddExtras(ids, sequential: sequential, startAt: startAt, backend: backend)
         let row = TorrentUploadRow(added: added, refused: errors.count, ids: ids, errors: errors)
         guard added > 0 else {
             // Still the JSON envelope, so the portal can name each file that failed.

@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEDUPE_MS, EXIT_MS, MAX_TOASTS, TOAST_MS, useToasts } from './useToasts'
+import { DEDUPE_MS, EXIT_MS, MAX_TOASTS, TOAST_MS, UNDO_MS, useToasts } from './useToasts'
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -125,5 +125,55 @@ describe('useToasts', () => {
     act(() => result.current.toast('Paused'))
     unmount()
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  describe('actions', () => {
+    it('runs the action once and reports the close as the action', () => {
+      const { result } = setup()
+      const run = vi.fn()
+      const onClose = vi.fn()
+      let id = 0
+      act(() => {
+        id = result.current.toast('Removed x', 'trash', { action: { label: 'Undo', run }, onClose })
+      })
+      act(() => result.current.act(id))
+      act(() => result.current.act(id))
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(onClose).toHaveBeenCalledWith('action')
+      expect(result.current.toasts[0]?.leaving).toBe(true)
+    })
+
+    it('honours a custom duration and reports a timeout', () => {
+      const { result } = setup()
+      const onClose = vi.fn()
+      act(() => {
+        result.current.toast('Removed x', 'trash', { ms: UNDO_MS, onClose })
+      })
+      act(() => vi.advanceTimersByTime(TOAST_MS.trash + 10))
+      expect(onClose).not.toHaveBeenCalled()
+      act(() => vi.advanceTimersByTime(UNDO_MS))
+      expect(onClose).toHaveBeenCalledWith('timeout')
+    })
+
+    it('never merges two toasts that carry callbacks', () => {
+      const { result } = setup()
+      act(() => {
+        result.current.toast('Removed', 'trash', { onClose: () => {} })
+        result.current.toast('Removed', 'trash', { onClose: () => {} })
+      })
+      expect(result.current.toasts).toHaveLength(2)
+    })
+
+    it('reports the ✕ as a dismiss', () => {
+      const { result } = setup()
+      const onClose = vi.fn()
+      let id = 0
+      act(() => {
+        id = result.current.toast('Removed', 'trash', { onClose })
+      })
+      act(() => result.current.dismiss(id))
+      expect(onClose).toHaveBeenCalledWith('dismiss')
+    })
   })
 })

@@ -8,7 +8,8 @@ import { fmtEta } from '../lib/format'
 import { breakRuns } from '../lib/names'
 import { canSave, saveURL } from '../lib/saveFile'
 import { fileType, kindBadge, kindLabel, rowAction } from '../lib/taskKind'
-import type { FilePriority, TaskDetail } from '../lib/types'
+import type { QueueControls } from '../hooks/useQueueControls'
+import type { FilePriority, TaskDetail, TaskRow } from '../lib/types'
 import {
   DETAIL_TABS,
   DetailsPane,
@@ -45,8 +46,12 @@ interface DetailPanelProps {
   /** Opens the same menu a row's right-click or "⋯" opens, above the footer button. */
   onMore: (id: string, anchor: { x: number; y: number }) => void
   onCopy: (text: string) => void
-  onToggleFile: (fileId: number, wasSkipped: boolean) => void
+  onSetFiles: (fileIds: readonly number[], priority: FilePriority) => Promise<void>
   onCyclePriority: (fileId: number, current: FilePriority) => void
+  /** Speed limit, order, tags, start time and "download in order"; absent = read-only display. */
+  queue?: QueueControls
+  /** Opens the in-page player; absent = a new tab. */
+  onStream?: (row: TaskRow) => void
   /** False while a dialog is stacked over the phone sheet: that dialog then owns Tab and Escape. */
   trapFocus?: boolean
   /** Shown with nothing selected, in place of an empty state: the queue at a glance. */
@@ -64,8 +69,10 @@ export function DetailPanel({
   onRemove,
   onMore,
   onCopy,
-  onToggleFile,
+  onSetFiles,
   onCyclePriority,
+  queue,
+  onStream,
   trapFocus = true,
   overview,
 }: DetailPanelProps) {
@@ -77,6 +84,11 @@ export function DetailPanel({
   const overlay = useMediaQuery('(min-width: 681px) and (max-width: 920px)')
   const sheet = phone && open
   const drag = useSheetDrag(onClose)
+  // A closed sheet reopens at its resting detent.
+  const { setExpanded } = drag
+  useEffect(() => {
+    if (!open) setExpanded(false)
+  }, [open, setExpanded])
 
   return (
     <>
@@ -88,14 +100,21 @@ export function DetailPanel({
       )}
       <aside
         ref={ref}
-        className={`detail${open ? '' : ' hidden'}${phone ? ' sheet' : ''}${drag.dragging ? ' dragging' : ''}`}
+        className={`detail${open ? '' : ' hidden'}${phone ? ' sheet' : ''}${drag.dragging ? ' dragging' : ''}${phone && drag.expanded ? ' expanded' : ''}`}
         role={sheet ? 'dialog' : undefined}
         aria-modal={sheet ? true : undefined}
         aria-label={t('detail.label')}
         aria-hidden={open ? undefined : true}
         inert={!open}
         tabIndex={sheet ? -1 : undefined}
-        style={drag.offset > 0 ? { transform: `translateY(${drag.offset}px)` } : undefined}
+        style={
+          drag.offset > 0
+            ? { transform: `translateY(${drag.offset}px)` }
+            : drag.offset < 0
+              ? // Pulled up from the resting detent: the sheet grows with the finger.
+                { height: `calc(60dvh + ${-drag.offset}px)` }
+              : undefined
+        }
       >
         {sheet && <SheetFocus target={ref} onEscape={onClose} trap={trapFocus} ready={detail != null} />}
         {phone && (
@@ -114,8 +133,10 @@ export function DetailPanel({
             onRemove={onRemove}
             onMore={onMore}
             onCopy={onCopy}
-            onToggleFile={onToggleFile}
+            onSetFiles={onSetFiles}
             onCyclePriority={onCyclePriority}
+            queue={queue}
+            onStream={onStream}
           />
         ) : overview ? (
           <div className="tbody">{overview}</div>
@@ -162,8 +183,10 @@ function Loaded({
   onRemove,
   onMore,
   onCopy,
-  onToggleFile,
+  onSetFiles,
   onCyclePriority,
+  queue,
+  onStream,
 }: Omit<DetailPanelProps, 'open' | 'detail' | 'overview'> & { detail: TaskDetail }) {
   const { t } = useTranslation()
   const row = detail.row
@@ -262,8 +285,9 @@ function Loaded({
           canWrite={canWrite}
           onCopy={onCopy}
           onRetry={() => onAction(row.id, 'retry')}
-          onToggleFile={onToggleFile}
+          onSetFiles={onSetFiles}
           onCyclePriority={onCyclePriority}
+          queue={canWrite ? queue : undefined}
         />
       </div>
 
@@ -289,7 +313,9 @@ function Loaded({
         ) : row.streamable ? (
           <button
             className="mbtn accent dprimary"
-            onClick={() => window.open(streamURL(row.id), '_blank', 'noopener,noreferrer')}
+            onClick={() =>
+              onStream ? onStream(row) : window.open(streamURL(row.id), '_blank', 'noopener,noreferrer')
+            }
           >
             <StreamIcon />
             {t('common.stream')}
@@ -345,22 +371,24 @@ function Pane({
   canWrite,
   onCopy,
   onRetry,
-  onToggleFile,
+  onSetFiles,
   onCyclePriority,
+  queue,
 }: {
   tab: DetailTab
   detail: TaskDetail
   canWrite: boolean
   onCopy: (text: string) => void
   onRetry: () => void
-  onToggleFile: (fileId: number, wasSkipped: boolean) => void
+  onSetFiles: (fileIds: readonly number[], priority: FilePriority) => Promise<void>
   onCyclePriority: (fileId: number, current: FilePriority) => void
+  queue?: QueueControls
 }) {
   switch (tab) {
     case 'general':
       return <GeneralPane detail={detail} onCopy={onCopy} canWrite={canWrite} onRetry={onRetry} />
     case 'details':
-      return <DetailsPane detail={detail} />
+      return <DetailsPane detail={detail} queue={queue} />
     case 'progress':
       return <ProgressPane detail={detail} />
     case 'files':
@@ -368,7 +396,7 @@ function Pane({
         <FilesPane
           detail={detail}
           canWrite={canWrite}
-          onToggleFile={onToggleFile}
+          onSetFiles={onSetFiles}
           onCyclePriority={onCyclePriority}
         />
       )

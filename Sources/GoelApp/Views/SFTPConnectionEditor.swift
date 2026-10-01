@@ -20,6 +20,10 @@ struct SFTPConnectionEditor: View {
     /// An untouched passphrase field means "keep the stored passphrase", not "clear it".
     @State private var keyPassphraseEdited = false
 
+    @State private var pastedAddress = ""
+    @State private var addressFilled = false
+    @State private var sshHosts: [SFTPAddress] = []
+
     @State private var testing = false
     @State private var testResult: TestResult?
     @State private var hostKeyReset = false
@@ -68,6 +72,7 @@ struct SFTPConnectionEditor: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    if existing == nil { quickFillRow }
                     field(L10n.t("Name"), L10n.t("My Server (optional)"), $name)
                     HStack(spacing: 10) {
                         field(L10n.t("Host"), "example.com", $host, required: true).frame(maxWidth: .infinity)
@@ -119,12 +124,66 @@ struct SFTPConnectionEditor: View {
             .padding(.horizontal, 20).padding(.vertical, 14)
         }
         .frame(width: 460)
+        .onAppear { if existing == nil { sshHosts = SSHConfigImport.load() } }
         .alert(L10n.t("Reset the pinned host key?"), isPresented: $confirmingHostKeyReset) {
             Button(L10n.t("Cancel"), role: .cancel) { }
             Button(L10n.t("Reset Key"), role: .destructive) { resetPinnedHostKey() }
         } message: {
             Text(L10n.t("Goel° will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test.", pinnedEndpointHost))
         }
+    }
+
+    /// "Paste an address" plus an `~/.ssh/config` import, so a new server rarely needs typing.
+    private var quickFillRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                TextField(L10n.t("Paste an address — sftp://user@host:22/path"), text: $pastedAddress)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .scaledFont(size: Theme.TextSize.meta, design: .monospaced)
+                    .onChange(of: pastedAddress) { _, new in fill(from: SFTPAddress.parse(new)) }
+                    .accessibilityLabel(L10n.t("Server address to fill the fields from"))
+                sshConfigMenu
+            }
+            if addressFilled {
+                Label(L10n.t("Filled from the address"), systemImage: "checkmark.circle.fill")
+                    .scaledFont(size: Theme.TextSize.caption)
+                    .foregroundStyle(Theme.green)
+            }
+        }
+    }
+
+    private var sshConfigMenu: some View {
+        Menu {
+            if sshHosts.isEmpty {
+                Text(L10n.t("No hosts in ~/.ssh/config"))
+            }
+            ForEach(sshHosts, id: \.alias) { entry in
+                Button {
+                    fill(from: entry)
+                } label: {
+                    Text(entry.alias == entry.host ? entry.host
+                                                   : L10n.t("%@ — %@", entry.alias ?? entry.host, entry.host))
+                }
+            }
+        } label: {
+            Label(L10n.t("~/.ssh/config"), systemImage: "terminal")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(L10n.t("Import a Host entry from ~/.ssh/config"))
+    }
+
+    private func fill(from address: SFTPAddress?) {
+        guard let address else { addressFilled = false; return }
+        host = address.host
+        if let port = address.port { self.port = String(port) }
+        if let user = address.username { username = user }
+        if let path = address.path { initialPath = path }
+        if let alias = address.alias, name.isEmpty { name = alias }
+        if let key = address.identityFile { privateKeyPath = key }
+        testResult = nil
+        addressFilled = true
     }
 
     private func field(_ label: String, _ prompt: String, _ text: Binding<String>,

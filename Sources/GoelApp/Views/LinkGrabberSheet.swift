@@ -15,12 +15,31 @@ struct LinkGrabberSheet: View {
     @State private var pastedFromClipboard = false
     /// What the prefill put in the field; typing anything else retires the "Pasted" note.
     @State private var clipboardPrefill: String?
+    /// Every link the page had; ``links`` keeps the first ``LinkExtractor/displayCap``.
+    @State private var totalFound = 0
+    /// The ticked links, handed to the shared review step.
+    @State private var reviewText: String?
 
     var body: some View {
         VStack(spacing: 0) {
             SheetHeader(systemImage: "text.page.badge.magnifyingglass",
-                        title: L10n.t("Grab links from a page"))
+                        title: reviewText == nil ? L10n.t("Grab links from a page")
+                                                 : L10n.t("Review %d links", selected.count))
             Divider()
+            if let reviewText {
+                LinkReviewView(text: reviewText,
+                               truncationNote: LinkReview.truncationNote(shown: links.count, total: totalFound),
+                               back: { self.reviewText = nil }, done: { dismiss() })
+            } else {
+                pickContent
+            }
+        }
+        .frame(width: reviewText == nil ? 620 : 720)
+        .onAppear(perform: prefillFromClipboard)
+    }
+
+    private var pickContent: some View {
+        VStack(spacing: 0) {
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
@@ -59,6 +78,11 @@ struct LinkGrabberSheet: View {
                             .scaledFont(size: Theme.TextSize.meta)
                             .foregroundStyle(.secondary)
                     }
+                    if let note = LinkReview.truncationNote(shown: links.count, total: totalFound) {
+                        Label(note, systemImage: "info.circle")
+                            .scaledFont(size: Theme.TextSize.meta)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .padding(18)
@@ -68,15 +92,13 @@ struct LinkGrabberSheet: View {
                 Spacer()
                 Button(L10n.t("Cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button(L10n.t("Add Selected")) { addSelected() }
+                Button(L10n.t("Review Selected…")) { addSelected() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(selected.isEmpty)
             }
             .padding(14)
         }
-        .frame(width: 620)
-        .onAppear(perform: prefillFromClipboard)
     }
 
     private func prefillFromClipboard() {
@@ -184,6 +206,7 @@ struct LinkGrabberSheet: View {
         isFetching = true
         fetchError = nil
         links = []
+        totalFound = 0
         selected = []
         categoryFilter = nil
         Task { @MainActor in
@@ -200,7 +223,9 @@ struct LinkGrabberSheet: View {
                 }
                 let html = String(data: data, encoding: .utf8)
                     ?? String(decoding: data, as: UTF8.self)
-                links = LinkExtractor.extract(from: html, baseURL: url)
+                let all = LinkExtractor.extractAll(from: html, baseURL: url)
+                totalFound = all.count
+                links = Array(all.prefix(LinkExtractor.displayCap))
                 if links.isEmpty { fetchError = L10n.t("No downloadable links found on that page.") }
             } catch {
                 fetchError = L10n.t("The page couldn’t be loaded: %@", AppViewModel.fetchFailureMessage(error))
@@ -212,8 +237,7 @@ struct LinkGrabberSheet: View {
     private func addSelected() {
         let ordered = links.filter { selected.contains($0.url) }.map(\.url)
         guard !ordered.isEmpty else { return }
-        vm.add(rawLines: ordered.joined(separator: "\n"), saveDirectory: nil, priority: .normal)
-        dismiss()
+        reviewText = ordered.joined(separator: "\n")
     }
 }
 
@@ -253,7 +277,14 @@ enum LinkExtractor {
         (["iso", "img", "bin", "torrent"], .other),
     ]
 
+    /// The grabber shows at most this many; ``extractAll(from:baseURL:)`` says how many there were.
+    static let displayCap = 500
+
     static func extract(from html: String, baseURL: URL) -> [GrabbedLink] {
+        Array(extractAll(from: html, baseURL: baseURL).prefix(displayCap))
+    }
+
+    static func extractAll(from html: String, baseURL: URL) -> [GrabbedLink] {
         var seen = Set<String>()
         var results: [GrabbedLink] = []
         let pattern = #"(?:href|src)\s*=\s*["']([^"'<>\s]+)["']"#
@@ -271,10 +302,10 @@ enum LinkExtractor {
             guard seen.insert(absolute).inserted else { return }
             results.append(GrabbedLink(url: absolute, category: category))
         }
-        return Array(results.prefix(500))
+        return results
     }
 
-    private static func category(for url: URL) -> GrabbedLink.Category? {
+    static func category(for url: URL) -> GrabbedLink.Category? {
         let ext = url.pathExtension.lowercased()
         guard !ext.isEmpty else { return nil }
         for (extensions, category) in extensionCategories where extensions.contains(ext) {

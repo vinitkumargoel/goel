@@ -20,6 +20,9 @@ struct RootView: View {
 
     @State private var isDropTargeted = false
 
+    /// The RSS sidebar destination replaces the list, like a server browser does.
+    @ObservedObject private var rss = RSSReaderModel.shared
+
     @State private var isCommandPalettePresented = false
 
     /// Read once at init: the flag flips when the sheet appears, and re-reading tears it down mid-present.
@@ -107,6 +110,9 @@ struct RootView: View {
                 SFTPBrowserView(connection: server,
                                 client: vm.sftpClient(for: server))
                     .id("\(server.id)-\(vm.browserGeneration)")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if rss.isOpen {
+                RSSReaderView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if vm.tasks.isEmpty && vm.isRestoring {
                 // The queue loads asynchronously; the first-run screen would flash here.
@@ -305,6 +311,11 @@ struct RootView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
+            if !vm.suggestionIsMediaPage {
+                Button(L10n.t("Options…")) { vm.openClipboardSuggestionInAddSheet() }
+                    .controlSize(.small)
+                    .accessibilityLabel(L10n.t("Choose where and how to save the copied link"))
+            }
             Button(vm.suggestionIsMediaPage ? L10n.t("Choose quality…") : L10n.t("Add")) {
                 vm.acceptClipboardSuggestion()
             }

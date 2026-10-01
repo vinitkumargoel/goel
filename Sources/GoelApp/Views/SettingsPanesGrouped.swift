@@ -122,7 +122,7 @@ struct AfterDownloadPane: View {
         PaneScaffold(title: L10n.t("Extract & Scripts"),
                      subtitle: L10n.t("What happens to a file once it finishes.")) {
             SectionHeader(L10n.t("Extract"))
-            SetRow(name: L10n.t("Auto-extract archives"), desc: L10n.t("Unpack finished .zip downloads next to the file.")) {
+            SetRow(name: L10n.t("Auto-extract archives"), desc: L10n.t("Unpack finished .zip, .tar, .7z and .rar downloads next to the file.")) {
                 SettingSwitch(isOn: setting(vm, \.postDownloadExtractArchives))
             }
             SectionHeader(L10n.t("Script"))

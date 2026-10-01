@@ -1,0 +1,137 @@
+/* Wave 3 · portal B: files tree, peers/trackers, queue controls, player, schedule, history bulk. */
+
+/* Files tree */
+.ftot{flex:0 0 auto;font-variant-numeric:tabular-nums}
+.ftools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--border)}
+.ffilter{flex:1 1 140px;display:flex;align-items:center;gap:6px;min-width:0;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:0 8px;height:30px}
+.ffilter svg{width:12px;height:12px;color:var(--text-dim);flex:0 0 auto}
+.ffilter input{flex:1;min-width:0;border:0;background:none;color:var(--text);font-size:12px;outline:none}
+.ffilter:focus-within{border-color:var(--accent)}
+.fselect{height:30px;padding:0 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-control);color:var(--text);font-size:12px;cursor:pointer}
+.ftools .fzip{margin-left:auto}
+.ftree[aria-busy="true"]{opacity:.6}
+.fchk.mixed svg{display:none}
+.fdash{display:block;width:8px;height:2px;border-radius:1px;background:var(--on-accent)}
+.fdirrow .finfo{display:flex;flex-direction:column}
+.ftoggle{display:flex;align-items:center;gap:5px;min-width:0;border:0;background:none;padding:0;color:var(--text);font:inherit;font-weight:600;cursor:pointer;text-align:left}
+.ftoggle svg{width:12px;height:12px;flex:0 0 auto;color:var(--text-dim);transition:transform .15s}
+.ftoggle svg.shut{transform:rotate(-90deg)}
+.ftoggle .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fcount{font-size:10.5px;color:var(--text-dim);text-align:center;white-space:nowrap}
+
+/* Peers and trackers */
+.crow.peers{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) 40px 58px 52px}
+.crow.peers.ad{grid-template-columns:minmax(0,1.5fr) minmax(0,.9fr) 34px minmax(0,.7fr) 58px 50px}
+.crow.segad{grid-template-columns:1fr minmax(0,.8fr) 60px 60px}
+.ccl,.cad{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-dim)}
+.cpg{display:flex;align-items:center}.cpg .dpbar{flex:1}
+.trow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.trow:last-child{border-bottom:0}
+.trow-host{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow-st{color:var(--text-dim);text-align:right;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow-sub{grid-column:1/-1;font-size:11px;color:var(--text-dim);overflow-wrap:anywhere}
+.trow.bad .trow-st{color:var(--red);font-weight:600}
+.trow.bad .trow-sub>span:first-child{color:var(--red)}
+.trow-sub{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.trow-acts{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto}
+.trow-rm{border:0;background:none;padding:2px;color:var(--text-dim);cursor:pointer;display:grid;place-items:center}
+.trow-rm:hover{color:var(--red)}.trow-rm svg{width:12px;height:12px}
+.trk-head{display:flex;align-items:center;justify-content:space-between}
+.trk-add{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;text-transform:none;letter-spacing:0;text-decoration:none}
+.trk-add svg{width:11px;height:11px}
+.trk-form{display:flex;flex-direction:column;gap:6px;padding:6px 0 10px;border-bottom:1px solid var(--border)}
+.trk-form .finput{font-family:ui-monospace,monospace;font-size:11.5px}
+.trk-form textarea.finput{min-height:64px}
+.trk-form .fhint{margin:0}
+.trk-bad{color:var(--red)}
+.trk-btns{display:flex;justify-content:flex-end;gap:8px}
+.trk-btns .btn{height:30px;padding:0 12px;font-size:12px}
+
+/* Queue controls in the Details tab */
+.qsect{margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.qsect .kv .v .linkbtn{font-size:11.5px;margin-left:4px}
+.qtags-inline{flex-wrap:wrap}
+.qseq{cursor:pointer;align-items:center}
+.qseq .k{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-width:0}
+.qseq-hint{font-size:11px;color:var(--text-faint)}
+.qseq input{flex:0 0 auto;width:18px;height:18px;accent-color:var(--accent)}
+
+/* Queue dialogs */
+.modal.qdialog{width:420px}
+.qdialog .mfoot .sp{flex:1}
+.qsub{font-size:12px;color:var(--text-dim);margin:0 0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qrate{margin-bottom:10px}
+.qrate-row{display:flex;gap:8px}
+.qrate-row .finput:first-child{flex:1}
+.qrate-row select.finput{width:auto}
+.qcap{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.qtags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.qsugg{margin-top:14px}
+.qtag{border:0;border-radius:999px;padding:3px 10px;font-size:11.5px;background:var(--bg-chip);color:var(--text-dim);cursor:pointer}
+.qtag.on{background:var(--accent);color:var(--on-accent)}
+span.qtag{cursor:default}
+.qstart{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.qopt{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;background:var(--bg-control);font-size:12.5px;cursor:pointer}
+.qopt input{accent-color:var(--accent);margin:0}
+.qopt.on{outline:1.5px solid var(--accent)}
+.qstart input[type="datetime-local"]{flex:1 1 200px;margin-top:4px}
+.addx{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.addx-seq{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}
+.addx .flabel{margin-top:4px}
+
+/* Sidebar tags */
+.s-tag{width:16px;flex:0 0 16px;text-align:center;font-weight:700;color:var(--text-dim)}
+
+/* Player */
+.modal.player{width:min(960px,100%)}
+.modal.player .mhead h3,.qdialog .mhead h3{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbody{background:#000;display:grid;place-items:center;min-height:200px}
+.pvideo{display:block;width:100%;max-height:70vh;background:#000}
+.pfallback{padding:32px 24px;text-align:center;color:#eef1f7;max-width:440px}
+.pfall-t{font-size:16px;font-weight:600;margin:0 0 6px}
+.pfallback .fhint{color:#b8bfcc}
+.pfall-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+.pbuf{display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--border)}
+.pbuf-bar{flex:1;height:5px;border-radius:3px;background:var(--seg-empty);overflow:hidden}
+.pbuf-bar>i{display:block;height:100%;background:var(--accent)}
+.pbuf .fhint{margin:0;white-space:nowrap}
+
+/* Schedule */
+.sched.off .sched-grid{opacity:.45}
+.sched-controls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;padding:12px 0 10px}
+.sched-controls label{display:flex;flex-direction:column;gap:4px}
+.sched-controls .flabel{font-size:11px;color:var(--text-dim)}
+.sched-sum{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;margin-left:auto;padding-bottom:8px}
+.sched-swatch{width:10px;height:10px;border-radius:3px}
+.sched-grid{display:grid;grid-template-columns:38px repeat(24,minmax(0,1fr));gap:2px;user-select:none;touch-action:none}
+.sched-row{display:contents}
+.sched-hour{font-size:9.5px;color:var(--text-faint);text-align:left;font-variant-numeric:tabular-nums}
+.sched-day{border:0;background:none;padding:0;font-size:11px;font-weight:600;color:var(--text-faint);text-align:left;cursor:pointer;height:20px}
+.sched-day.on{color:var(--text)}
+.sched-day:disabled{cursor:default}
+.sched-cell{height:20px;border-radius:3px;background:var(--seg-empty);cursor:crosshair}
+.sched-cell.open{background:var(--sched-color)}
+.sched-cell.paint{outline:2px solid var(--sched-color);outline-offset:-2px;opacity:.8}
+.sched-grid[aria-readonly="true"] .sched-cell{cursor:default}
+
+/* History bulk */
+.hbulk{display:flex;align-items:center;gap:12px;margin:-4px 0 10px;min-height:32px}
+.hbulk-all{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);cursor:pointer}
+.hchk,.hbulk-all input{width:16px;height:16px;accent-color:var(--accent);margin:0}
+.hrow.sel{grid-template-columns:18px 32px 1fr 96px 150px auto}
+.hrow.on{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.mbtn.hsplit{padding:0 6px;margin-left:-4px}
+.mbtn.hsplit svg{width:12px;height:12px}
+@media(max-width:920px){.hrow.sel{grid-template-columns:18px 32px 1fr 96px auto}}
+@media(max-width:680px){
+  .hrow.sel{grid-template-columns:18px 32px 1fr auto}
+  /* Four buttons crowd out the name on a phone: Re-add to folder stays on wider screens. */
+  .mbtn.hsplit{display:none}
+  .crow.peers,.crow.peers.ad{grid-template-columns:minmax(0,1fr) 40px 56px 56px}
+  .crow.peers .ccl,.crow.peers .cad,.crow.peers.h>span:nth-child(2),.crow.peers.h>span:nth-child(4):not(.cd){display:none}
+  .sched-grid{grid-template-columns:30px repeat(24,minmax(0,1fr));gap:1px}
+  .sched-hour{font-size:8px}
+  .sched-sum{margin-left:0;width:100%}
+  .qcap{grid-template-columns:1fr}
+  .modal.player{border-radius:12px}
+}
