@@ -183,7 +183,7 @@ struct DownloadStatusPill: View {
                 .truncationMode(.tail)
         }
         .foregroundStyle(tone.foreground)
-        .padding(.horizontal, 9)
+        .padding(.horizontal, Studio.Space.roomy)
         .frame(minHeight: 22)
         .background(tone.background, in: Capsule())
     }
