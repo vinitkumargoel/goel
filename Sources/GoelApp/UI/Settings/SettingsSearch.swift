@@ -39,12 +39,12 @@ extension SettingsView.Pane {
     }
 
     /// The English source strings (which are also the `L10n` keys) of this pane's title,
-    /// subtitle, section headers and `SetRow` titles. Keep in step with the pane when rows move.
+    /// subtitle, card titles and `SettingRow` titles. Keep in step with the pane when rows move.
     var searchKeywords: [String] {
         switch self {
         case .general:
             return ["Appearance, startup, where files land, and sleep.",
-                    "Theme", "Language", "Launch at login", "Launch minimized", "Show in menu bar",
+                    "Appearance", "Theme", "Light", "Dark", "Language", "Startup", "Launch at login", "Launch minimized", "Show in menu bar",
                     "Default download folder", "Fixed folder", "When a file exists", "Clipboard capture",
                     "Power management", "Prevent sleep during active downloads",
                     "Allow sleep if downloads can resume later", "Allow sleep while seeding",
@@ -59,18 +59,18 @@ extension SettingsView.Pane {
                     "On download failed", "Only when app is inactive", "Play sound"]
         case .media:
             return ["Stream quality, subtitles, and ffmpeg conversions.",
-                    "Max video quality", "Subtitles", "Download subtitles", "Subtitle languages",
+                    "Streams", "Max video quality", "Subtitles", "Download subtitles", "Subtitle languages",
                     "Include auto-captions", "Conversions", "ffmpeg path", "Conversions at once"]
         case .network:
             return ["Proxy, timeouts, retries, and authentication.",
                     "Proxy", "Proxy type", "Proxy host", "Proxy port", "Connection timeout",
                     "Retry count", "Retry interval", "Auto-retry failed downloads", "Auto-retry attempts",
                     "Custom user-agent", "Cookie / auth handling", "Re-download when remote changes",
-                    "Network awareness", "Pause on expensive networks", "Pause in Low Data Mode",
-                    "Site logins", "Host", "Username", "Password"]
+                    "Connections", "Network awareness", "Pause on expensive networks",
+                    "Pause in Low Data Mode"]
         case .aggregation:
             return ["Multi-path HTTP downloads across network adapters", "Aggregation", "Enable multi-path downloads", "Adapters",
-                    "Options", "Include expensive networks", "Allow paths outside VPN",
+                    "Options", "How it works", "Include expensive networks", "Allow paths outside VPN",
                     "Streams per adapter", "Check path diversity"]
         case .traffic:
             return ["Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile.",
@@ -79,7 +79,7 @@ extension SettingsView.Pane {
                     "Max metadata-resolution downloads", "Extra connections per download"]
         case .bittorrent:
             return ["Protocol, privacy, and watch-folder behavior.",
-                    "Default torrent client", "Auto-delete .torrent when done",
+                    "Torrent files", "Peers & privacy", "Extra trackers", "Default torrent client", "Auto-delete .torrent when done",
                     "Watch folder for .torrent files", "Watched folder",
                     "Start watched torrents without confirmation", "Encryption mode", "Enable DHT",
                     "Enable PeX", "Enable Local Peer Discovery", "Enable µTP",
@@ -108,20 +108,20 @@ extension SettingsView.Pane {
             return ["Run an external scanner on finished files. Optional, low priority on macOS.",
                     "Scan finished files", "Scanner", "Executable path", "Argument template"]
         case .browser:
-            return ["Browser Integration", "Your browsers", "Chrome, Edge, Brave & Firefox", "1. Install the messaging helper",
+            return ["Browser Integration", "Your browsers", "Safari", "Chrome, Edge, Brave & Firefox", "1. Install the messaging helper",
                     "2. Load the extension", "3. Restart the browser", "4. Capture",
                     "1. Open Safari’s extensions", "2. Turn it on", "3. Capture", "What Safari can’t do",
                     "Help", "Full instructions", "Without the extension", "URL scheme", "Bookmarklet",
-                    "Services menu", "Drop basket"]
+                    "Services menu", "Drop basket", "Site logins", "Host", "Username", "Password"]
         case .remote:
-            return ["Enable web portal", "Port", "Require sign-in", "Username", "Password",
+            return ["Portal", "Enable web portal", "Port", "Access", "Theme & API", "Require sign-in", "Username", "Password",
                     "Allow access from the network", "Read-only mode", "Session timeout", "Web theme",
                     "API token", "Open portal", "Hardening", "Serve over HTTPS", "Identity (.p12) path",
                     "Extra host names", "Failed sign-ins before backoff", "Backoff (seconds)",
                     "Single sign-on (advanced)", "Trust a proxy’s identity header", "Header name",
                     "Trusted proxies", "Scan from your phone", "Web access is not running"]
         case .audit:
-            return ["Keep an audit log", "Folder", "Rotate at (MB)", "Rotated files to keep",
+            return ["Keep an audit log", "Rotation", "Folder", "Rotate at (MB)", "Rotated files to keep",
                     "Keep for (days)", "Reveal in Finder"]
         case .license:
             return ["Using Goel° at work?", "What this app never does", "For your own records",
@@ -158,7 +158,7 @@ enum SettingsSearch {
         !tokens.isEmpty && tokens.allSatisfy { text.contains($0) }
     }
 
-    /// Whether a `SetRow` titled `name` lights up for this query.
+    /// Whether a `SettingRow` titled `name` lights up for this query.
     static func highlights(_ name: String, query: String) -> Bool {
         guard !name.isEmpty,
               query.trimmingCharacters(in: .whitespacesAndNewlines).count >= minimumHighlightLength
@@ -253,7 +253,7 @@ private struct SettingsSearchQueryKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// The Settings search text, so a `SetRow` whose title matches can highlight itself.
+    /// The Settings search text, so a `SettingRow` whose title matches can highlight itself.
     var settingsSearchQuery: String {
         get { self[SettingsSearchQueryKey.self] }
         set { self[SettingsSearchQueryKey.self] = newValue }
