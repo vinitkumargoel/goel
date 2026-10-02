@@ -13,7 +13,7 @@ public struct RemoteRouter: Sendable {
         public var username: String
 
         public init(token: String, requireAuth: Bool = true, readOnly: Bool = false,
-                    theme: String = "frost-dark", username: String = "admin") {
+                    theme: String = "auto", username: String = "admin") {
             self.token = token
             self.requireAuth = requireAuth
             self.readOnly = readOnly

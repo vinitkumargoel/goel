@@ -60,7 +60,8 @@ enum LocalizedVocabulary {
             L10n.t("General"), L10n.t("Details"), L10n.t("Progress"),
             L10n.t("Files"), L10n.t("Connections"),
 
-            L10n.t("Frost Light"), L10n.t("Frost Dark"), L10n.t("Dracula"), L10n.t("Nord"),
+            // `StudioAppearanceMode.title` (app) and `RemotePortalTheme.title` (web portal).
+            L10n.t("System"), L10n.t("Light"), L10n.t("Dark"), L10n.t("Match the device"),
 
             L10n.t("Add"), L10n.t("Downloads"), L10n.t("View"), L10n.t("Settings"),
             L10n.t("Where is…"),

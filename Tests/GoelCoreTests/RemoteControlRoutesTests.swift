@@ -362,6 +362,21 @@ final class RemoteControlRoutesTests: XCTestCase {
 
         let light = RemoteRouter.page(config: .init(token: "secret", theme: "light"))
         XCTAssertTrue(light.contains(##"name="theme-color" content="#f1f7f2""##))
+        XCTAssertFalse(light.contains("prefers-color-scheme"))
+
+        let dark = RemoteRouter.page(config: .init(token: "secret", theme: "dark"))
+        XCTAssertTrue(dark.contains(##"name="theme-color" content="#121e18""##))
+        XCTAssertFalse(dark.contains("prefers-color-scheme"))
+
+        // The portal treats the old Frost pair as `auto`, so the title bar follows the device too.
+        for legacy in ["frost-light", "frost-dark"] {
+            let page = RemoteRouter.page(config: .init(token: "secret", theme: legacy))
+            XCTAssertTrue(page.contains(##"media="(prefers-color-scheme: light)" content="#f1f7f2""##), legacy)
+            XCTAssertTrue(page.contains(##"media="(prefers-color-scheme: dark)" content="#121e18""##), legacy)
+        }
+
+        // A portal configured without a theme follows the device.
+        XCTAssertEqual(RemoteRouter.Config(token: "secret").theme, "auto")
 
         let hostile = RemoteRouter.page(config: .init(token: "secret", theme: #""><script>x</script>"#))
         XCTAssertTrue(hostile.contains(#"data-theme="auto""#))

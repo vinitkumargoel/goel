@@ -43,24 +43,19 @@ extension RemoteRouter {
     static let lightCanvas = "#f1f7f2"
     static let darkCanvas = "#121e18"
 
-    /// The palette a theme token paints with: the legacy light token is light, every other
-    /// legacy token is dark. `auto` has no single colour; see ``themeColorMeta(_:)``.
-    static func themeColor(_ theme: String) -> String {
-        switch theme {
-        case "light", "frost-light": return lightCanvas
-        default: return darkCanvas
-        }
-    }
-
-    /// `auto` (and the Frost pair, which the portal treats as auto) follows the device, so it
-    /// gets one `theme-color` per colour scheme instead of a fixed one.
+    /// The `theme-color` meta for a sanitised theme token, so the browser chrome matches the page.
+    /// `auto` — and the Frost pair, which the portal treats as auto — follows the device, so it
+    /// gets one colour per colour scheme. `light` is light; `dark` and the other legacy tokens
+    /// (`dracula`, `nord`) are dark.
     static func themeColorMeta(_ theme: String) -> String {
         switch theme {
         case "auto", "frost-light", "frost-dark":
             return #"<meta name="theme-color" media="(prefers-color-scheme: light)" content="\#(lightCanvas)">"#
                 + #"<meta name="theme-color" media="(prefers-color-scheme: dark)" content="\#(darkCanvas)">"#
+        case "light":
+            return #"<meta name="theme-color" content="\#(lightCanvas)">"#
         default:
-            return #"<meta name="theme-color" content="\#(themeColor(theme))">"#
+            return #"<meta name="theme-color" content="\#(darkCanvas)">"#
         }
     }
 }

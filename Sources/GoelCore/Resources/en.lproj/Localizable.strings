@@ -740,7 +740,6 @@
 "Downloads it contains are added paused; ones already in your list are skipped.\n\nSecurity-sensitive settings are never taken from a backup: your proxy, the remote portal’s access, credentials and trusted-header (SSO) sign-in, your save and watch folders, RSS feeds, update feed, and any script or antivirus paths all stay as they are." = "Downloads it contains are added paused; ones already in your list are skipped.\n\nSecurity-sensitive settings are never taken from a backup: your proxy, the remote portal’s access, credentials and trusted-header (SSO) sign-in, your save and watch folders, RSS feeds, update feed, and any script or antivirus paths all stay as they are.";
 "Downloads · %d" = "Downloads · %d";
 "Downloads, %d in progress" = "Downloads, %d in progress";
-"Dracula" = "Dracula";
 "Drag a URL or **.torrent** file here" = "Drag a URL or **.torrent** file here";
 "Drag links or torrent files here to queue them." = "Drag links or torrent files here to queue them.";
 "Drag the file out to use it anywhere" = "Drag the file out to use it anywhere";
@@ -923,8 +922,6 @@
 "From" = "From";
 "From %@" = "From %@";
 "From · %@" = "From · %@";
-"Frost Dark" = "Frost Dark";
-"Frost Light" = "Frost Light";
 "Full instructions" = "Full instructions";
 "Full path to the scanner, e.g. /opt/homebrew/bin/clamscan." = "Full path to the scanner, e.g. /opt/homebrew/bin/clamscan.";
 "General" = "General";
@@ -1289,7 +1286,6 @@
 "None" = "None";
 "None of the selected files are on disk" = "None of the selected files are on disk";
 "None — password or agent only" = "None — password or agent only";
-"Nord" = "Nord";
 "Normal" = "Normal";
 "Normal priority" = "Normal priority";
 "Not a speed" = "Not a speed";
