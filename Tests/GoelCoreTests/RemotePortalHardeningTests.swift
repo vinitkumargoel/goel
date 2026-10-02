@@ -159,6 +159,10 @@ final class RemotePortalHardeningTests: XCTestCase {
         XCTAssertEqual(pacer.next(first, now: t0), .send(first!.data))
         XCTAssertEqual(pacer.next(second, now: t0.addingTimeInterval(1.5)), .skip)
         XCTAssertEqual(pacer.next(second, now: t0.addingTimeInterval(16)), .keepAlive)
+        // The keep-alive carries a named `ping` event the browser can observe, plus the comment.
+        let ping = String(decoding: RemoteEventPacer.keepAliveFrame, as: UTF8.self)
+        XCTAssertTrue(ping.contains("event: ping\n"))
+        XCTAssertTrue(ping.hasSuffix("\n\n"))
 
         task.bytesDownloaded = 42
         let changed = cache.frame(for: [task])
