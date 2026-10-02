@@ -8,12 +8,13 @@ struct MultiSelectionPanel: View {
     var horizontal = false
 
     @EnvironmentObject private var vm: AppViewModel
+    /// Observed so the speeds and finish time redraw on each tick (`vm.selectionSummary` reads it).
     @EnvironmentObject private var telemetry: TelemetryStore
 
     var body: some View {
-        let tasks = vm.selectedTasks
-        let summary = SelectionAggregate(tasks: tasks) { telemetry.displaySpeed(for: $0) }
-        let queue = QueueOverview(tasks: tasks) { telemetry.displaySpeed(for: $0) }
+        let selection = vm.selectionSummary
+        let summary = selection.aggregate
+        let queue = selection.queue
         if horizontal {
             bottomLayout(summary, queue: queue)
         } else {
