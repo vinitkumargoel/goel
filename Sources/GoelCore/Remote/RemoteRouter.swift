@@ -4,6 +4,23 @@ public struct RemoteRouter: Sendable {
     /// How much history `/api/history` lists, and so how far `/stream?history=` looks.
     static let historyLimit = 500
 
+    /// The slice of a history list a request asks for. nil when `limit` or `offset` is not a
+    /// non-negative integer (a limit must also be at least 1). Absent values mean the whole list.
+    static func historyPage<T>(_ rows: [T], limit: String?, offset: String?) -> [T]? {
+        var start = 0
+        if let offset {
+            guard let n = Int(offset), n >= 0 else { return nil }
+            start = n
+        }
+        var count = rows.count
+        if let limit {
+            guard let n = Int(limit), n >= 1 else { return nil }
+            count = min(n, historyLimit)
+        }
+        guard start < rows.count else { return [] }
+        return Array(rows[start..<min(rows.count, start + count)])
+    }
+
     public struct Config: Sendable {
         public var token: String
         /// When false the portal is open (no login) — only sane on a loopback bind.
@@ -83,8 +100,11 @@ public struct RemoteRouter: Sendable {
             return Self.json(TaskDetail(task))
 
         case ("GET", "/api/history"):
-            let rows = await backend.history(limit: Self.historyLimit).map(HistoryRow.init)
-            return Self.json(rows)
+            // Optional paging: `?limit=` (1...historyLimit) and `?offset=`. Neither = the whole list, as before.
+            let all = await backend.history(limit: Self.historyLimit)
+            guard let page = Self.historyPage(all, limit: request.query["limit"], offset: request.query["offset"])
+            else { return Self.badRequest() }
+            return Self.json(page.map(HistoryRow.init))
 
         case ("POST", "/api/pause-all"):
             await backend.pauseAll(); return Self.ok()

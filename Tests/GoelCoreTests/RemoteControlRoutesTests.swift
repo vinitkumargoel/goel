@@ -241,6 +241,30 @@ final class RemoteControlRoutesTests: XCTestCase {
         XCTAssertTrue(gone.hasPrefix("HTTP/1.1 404"))
     }
 
+    func testHistoryPagingIsOptionalAndValidated() async {
+        let backend = ControlBackend()
+        backend.entries = (0..<5).map {
+            HistoryEntry(id: UUID(), name: "f\($0)", locator: "https://x/\($0)", kind: .http,
+                         totalBytes: 1, savePath: "/tmp/f\($0)", completedAt: Date())
+        }
+        func page(_ query: String) async -> [String] {
+            let out = await send(raw("GET", "/api/history\(query)"), backend)
+            return (0..<5).map { "f\($0)" }.filter { out.contains("\"name\":\"\($0)\"") }
+        }
+        let everything = await page("")
+        let firstTwo = await page("?limit=2")
+        let tail = await page("?limit=2&offset=3")
+        let past = await page("?offset=9")
+        XCTAssertEqual(everything, ["f0", "f1", "f2", "f3", "f4"])
+        XCTAssertEqual(firstTwo, ["f0", "f1"])
+        XCTAssertEqual(tail, ["f3", "f4"])
+        XCTAssertEqual(past, [])
+        for bad in ["limit=0", "limit=x", "offset=-1", "offset=1.5"] {
+            let out = await send(raw("GET", "/api/history?\(bad)"), backend)
+            XCTAssertTrue(out.hasPrefix("HTTP/1.1 400"), bad)
+        }
+    }
+
     func testHistoryBulkRemoveAndClearOlderThan() async {
         let backend = ControlBackend()
         let old = HistoryEntry(id: UUID(), name: "old", locator: "https://x/old", kind: .http,
