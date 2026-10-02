@@ -291,6 +291,18 @@ final class SFTPBrowserModel: ObservableObject {
         self.client = client
     }
 
+    #if DEBUG
+    /// Snapshot seeding (`--studio-snapshots`): shows a listing without a client, and without
+    /// remembering the path in the location store the way a real `commit` would.
+    func installSnapshot(path: String, entries: [SFTPEntry], error: String? = nil,
+                         deleteProgress: String? = nil) {
+        self.path = path
+        self.entries = entries
+        self.error = error
+        self.deleteProgress = deleteProgress
+    }
+    #endif
+
     var isAtRoot: Bool { path == "." || path == "/" || path.isEmpty }
 
     var displayPath: String { path == "." ? "Home" : path }
