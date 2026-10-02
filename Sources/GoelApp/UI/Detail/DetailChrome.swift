@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import GoelCore
 
 /// The detail sheet's head (`.dhead`): artwork, the name, the protocol badge and the state chip,
@@ -56,21 +57,24 @@ struct DetailTaskArtwork: View {
     }
 }
 
-/// The download's name as the sheet's heading. Middle truncation keeps the extension visible,
-/// and the name can be selected and copied.
+/// The download's name as the sheet's heading: two lines broken at the name's separators, middle
+/// truncation keeps the extension visible. Copy Name (context menu) copies the exact name — text
+/// selection would copy the invisible break opportunities too.
 struct DetailTitle: View {
     let name: String
 
     var body: some View {
-        Text(name)
+        FileNameText(name, lineLimit: 2)
             .studioFont(.headline)
             .foregroundStyle(Studio.Palette.ink)
-            .lineLimit(2)
-            .truncationMode(.middle)
             .fixedSize(horizontal: false, vertical: true)
-            .textSelection(.enabled)
-            .help(name)
             .accessibilityAddTraits(.isHeader)
+            .contextMenu {
+                Button(L10n.t("Copy Name"), systemImage: "doc.on.doc") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(name, forType: .string)
+                }
+            }
     }
 }
 

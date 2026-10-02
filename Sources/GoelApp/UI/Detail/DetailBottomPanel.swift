@@ -74,12 +74,9 @@ struct DetailBottomPanel: View {
             HStack(spacing: Studio.Space.sm) {
                 DetailTaskArtwork(task: task, size: .s)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(task.compactDisplayName)
+                    FileNameText(task.compactDisplayName, lineLimit: 1)
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(task.compactDisplayName)
                         .accessibilityAddTraits(.isHeader)
                     HStack(spacing: Studio.Space.xs) {
                         StudioKindBadge(kind: task.kind)

@@ -61,10 +61,9 @@ struct DownloadBoardCard: DownloadHoverable {
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(task.compactDisplayName)
+                FileNameText(task.compactDisplayName, lineLimit: 2)
                     .studioFont(.cardTitle)
                     .foregroundStyle(Studio.Palette.ink)
-                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, Studio.Space.sm)
                     .padding(.trailing, 58)
@@ -128,11 +127,9 @@ struct DownloadBoardCard: DownloadHoverable {
                               isFaded: task.status == .paused || task.isFileMissing,
                               isFetchingMetadata: task.status == .requestingMetadata)
             VStack(alignment: .leading, spacing: 2) {
-                Text(task.compactDisplayName)
+                FileNameText(task.compactDisplayName, lineLimit: 1)
                     .studioFont(Studio.TextStyle.bodyStrong.weight(650))
                     .foregroundStyle(Studio.Palette.ink)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
                 metaLine
                 compactExtra
             }

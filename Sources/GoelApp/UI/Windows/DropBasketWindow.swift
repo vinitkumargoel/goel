@@ -157,11 +157,9 @@ private struct DropBasketRecent: View {
                 let done = task.status == .completed
                 HStack(spacing: Studio.Space.s) {
                     StudioFileArtwork(kind: StudioArtKind(task: task), size: .xs)
-                    Text(task.name)
+                    FileNameText(task.name, lineLimit: 1)
                         .studioFont(.small)
                         .foregroundStyle(Studio.Palette.ink)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if done {
                         Image(systemName: "checkmark")

@@ -109,11 +109,9 @@ struct MultiSelectionPanel: View {
             ForEach(summary.preview) { task in
                 HStack(spacing: Studio.Space.s) {
                     DetailTaskArtwork(task: task, size: .xs)
-                    Text(task.compactDisplayName)
+                    FileNameText(task.compactDisplayName, lineLimit: 1)
                         .studioFont(.small)
                         .foregroundStyle(Studio.Palette.ink)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(L10n.t("%d%%", task.percentComplete))
                         .studioFont(.monoSmall)

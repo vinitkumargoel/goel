@@ -14,11 +14,9 @@ struct MenuBarFailedRow: View {
             HStack(spacing: 11) {
                 StudioFileArtwork(kind: StudioArtKind(task: task), size: .s)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(task.compactDisplayName)
+                    FileNameText(task.compactDisplayName, lineLimit: 1)
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                     if case .failed(let error) = task.status {
                         Text(error.message)
                             .studioFont(.caption)
@@ -58,12 +56,9 @@ struct MenuBarDownloadRow: View {
                                   isFetchingMetadata: state == .requestingMetadata)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: Studio.Space.xs) {
-                        Text(task.compactDisplayName)
+                        FileNameText(task.compactDisplayName, lineLimit: 1)
                             .studioFont(.bodyStrong)
                             .foregroundStyle(Studio.Palette.ink)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .help(task.name)
                         StudioKindBadge(kind: task.kind)
                         Spacer(minLength: 0)
                     }
@@ -175,12 +170,9 @@ struct MenuBarFinishedRow: View {
             HStack(spacing: 11) {
                 StudioFileArtwork(kind: StudioArtKind(task: task), size: .s)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(task.name)
+                    FileNameText(task.name, lineLimit: 1)
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(task.name)
                     HStack(spacing: 0) {
                         if let total = task.totalBytes, total > 0 {
                             Text(verbatim: total.byteString + " · ")
@@ -241,11 +233,9 @@ struct MenuBarSFTPTransferRow: View {
                                      tone: transfer.direction == .upload ? .upload : .accent)
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: Studio.Space.xs) {
-                            Text(transfer.name)
+                            FileNameText(transfer.name, lineLimit: 1)
                                 .studioFont(.bodyStrong)
                                 .foregroundStyle(Studio.Palette.ink)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
                             StudioBadge(serverLabel)
                         }
                         StudioLinearProgress(fraction: transfer.state == .waiting ? nil : transfer.fraction,

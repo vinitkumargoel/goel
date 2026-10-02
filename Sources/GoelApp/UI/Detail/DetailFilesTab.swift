@@ -47,11 +47,9 @@ struct DetailFilesTab: View {
                 .accessibilityValue(L10n.t("Included"))
             DetailTaskArtwork(task: task, size: .xs)
             VStack(alignment: .leading, spacing: 3) {
-                Text(task.compactDisplayName)
+                FileNameText(task.compactDisplayName, lineLimit: 1)
                     .studioFont(.body)
                     .foregroundStyle(Studio.Palette.ink)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
                 StudioLinearProgress(fraction: task.status == .requestingMetadata ? nil : task.fractionCompleted,
                                      tone: StudioProgressTone(task: task), height: 3)
             }

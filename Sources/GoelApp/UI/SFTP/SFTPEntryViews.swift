@@ -17,11 +17,9 @@ struct SFTPEntryRow: View {
         HStack(spacing: Studio.Space.m) {
             SFTPEntryArtwork(entry: entry, size: .xs)
             VStack(alignment: .leading, spacing: 3) {
-                Text(entry.name)
+                FileNameText(entry.name, lineLimit: 1)
                     .studioFont(.body.weight(isSelected ? 600 : 500))
                     .foregroundStyle(Studio.Palette.ink)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
                 if let activity {
                     HStack(spacing: Studio.Space.s) {
                         StudioLinearProgress(fraction: activity.total > 0 ? activity.fraction : nil,
@@ -130,11 +128,9 @@ struct SFTPEntryTile: View {
                                       accessibilityLabel: L10n.t("Transfer progress"))
                 }
             }
-            Text(entry.name)
+            FileNameText(entry.name, lineLimit: 1)
                 .studioFont(.small.weight(700))
                 .foregroundStyle(Studio.Palette.ink)
-                .lineLimit(1)
-                .truncationMode(.middle)
             Text(detail)
                 .studioFont(activity == nil ? .tiny : .tiny.weight(650))
                 .foregroundStyle(activity?.studioTone.foreground ?? Studio.Palette.ink3)

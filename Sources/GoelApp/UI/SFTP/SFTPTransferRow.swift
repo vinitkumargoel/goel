@@ -74,11 +74,9 @@ struct SFTPTransferRow: View {
 
     private var identityContent: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(transfer.name)
+            FileNameText(transfer.name, lineLimit: 1)
                 .studioFont(.callout.size(12.5).weight(650))
                 .foregroundStyle(Studio.Palette.ink)
-                .lineLimit(1)
-                .truncationMode(.middle)
             if let serverLabel {
                 Text(serverLabel)
                     .studioFont(.caption)

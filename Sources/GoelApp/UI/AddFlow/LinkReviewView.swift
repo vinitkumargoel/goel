@@ -189,11 +189,9 @@ private struct LinkReviewRow: View {
                 .accessibilityLabel(item.name)
             StudioFileArtwork(kind: artKind, size: .s, isFaded: !item.checked)
             VStack(alignment: .leading, spacing: 1) {
-                Text(item.name)
+                FileNameText(item.name, lineLimit: 1)
                     .studioFont(.bodyStrong)
                     .foregroundStyle(item.checked ? Studio.Palette.ink : Studio.Palette.ink3)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
                     .help(item.line)
                 Text([item.host, item.category.label].filter { !$0.isEmpty }.joined(separator: " · "))
                     .studioFont(.tiny)

@@ -70,11 +70,9 @@ struct SFTPTransferInspector: View {
                               tone: transfer.progressTone, diameter: 50)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Studio.Space.xs) {
-                Text(transfer.name)
+                FileNameText(transfer.name, lineLimit: 1)
                     .studioFont(.headline)
                     .foregroundStyle(Studio.Palette.ink)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
                 HStack(spacing: Studio.Space.s) {
                     StudioPill(transfer.stateLabel, tone: transfer.studioTone)
                         .accessibilityHidden(true)

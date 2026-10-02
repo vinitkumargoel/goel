@@ -173,13 +173,10 @@ private struct FileTreeRowLabel: View {
         HStack(spacing: Studio.Space.s) {
             StudioFileArtwork(kind: kind, size: .xs, isGhost: skipped)
             VStack(alignment: .leading, spacing: 3) {
-                Text(node.name)
+                FileNameText(node.name, lineLimit: 1)
                     .studioFont(node.isFolder ? .bodyStrong : .body)
                     .foregroundStyle(skipped ? Studio.Palette.ink3 : Studio.Palette.ink)
                     .strikethrough(skipped && !node.isFolder, color: Studio.Palette.ink3)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(node.name)
                 HStack(spacing: Studio.Space.s) {
                     if showsProgress && !skipped {
                         StudioLinearProgress(fraction: node.fraction, tone: node.fraction >= 1 ? .good : .accent,

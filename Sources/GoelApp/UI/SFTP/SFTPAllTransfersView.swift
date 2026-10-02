@@ -102,11 +102,9 @@ private struct SFTPAllTransfersRow: View {
         HStack(spacing: Studio.Space.m) {
             SFTPTransferArtwork(transfer: transfer, size: .s)
             VStack(alignment: .leading, spacing: 4) {
-                Text(transfer.name)
+                FileNameText(transfer.name, lineLimit: 1)
                     .studioFont(.callout.size(13).weight(650))
                     .foregroundStyle(Studio.Palette.ink)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
                 StudioLinearProgress(fraction: transfer.fraction, tone: transfer.progressTone,
                                      height: StudioLinearProgress.thinHeight)
                 Text(statusLine)

@@ -143,11 +143,9 @@ struct DownloadTableRow: DownloadHoverable {
     private var compactNameCell: some View {
         HStack(spacing: Studio.Space.s) {
             artwork
-            Text(task.compactDisplayName)
+            FileNameText(task.compactDisplayName, lineLimit: 1)
                 .studioFont(Studio.TextStyle.callout.weight(650))
                 .foregroundStyle(Studio.Palette.ink)
-                .lineLimit(1)
-                .truncationMode(.middle)
                 .layoutPriority(1)
             MiniProgressBar(task: task, height: 3)
                 .frame(minWidth: 40, maxWidth: 160)
@@ -161,11 +159,9 @@ struct DownloadTableRow: DownloadHoverable {
             artwork
             VStack(alignment: .leading, spacing: Studio.Space.xxs) {
                 HStack(spacing: 7) {
-                    Text(task.compactDisplayName)
+                    FileNameText(task.compactDisplayName, lineLimit: 1)
                         .studioFont(Studio.TextStyle.bodyStrong.weight(650))
                         .foregroundStyle(Studio.Palette.ink)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                     KindBadge(task: task)
                 }
                 nameSubline

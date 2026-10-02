@@ -20,11 +20,9 @@ struct HistoryRow: View {
         WindowsCompactCard(isSelected: isSelected, isHovered: hovered && !isSelected) {
             StudioFileArtwork(kind: StudioArtKind(item.type), size: .m, isFaded: !item.exists)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.entry.name)
+                FileNameText(item.entry.name, lineLimit: 1)
                     .studioFont(.bodyStrong)
                     .foregroundStyle(item.exists ? Studio.Palette.ink : Studio.Palette.ink2)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
                 Text(subtitle)
                     .studioFont(.caption)
                     .foregroundStyle(Studio.Palette.ink3)

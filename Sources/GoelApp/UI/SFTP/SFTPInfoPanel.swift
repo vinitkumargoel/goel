@@ -70,10 +70,9 @@ struct SFTPInfoPanel: View {
         HStack(alignment: .top, spacing: Studio.Space.m) {
             SFTPEntryArtwork(entry: entry, size: .l)
             VStack(alignment: .leading, spacing: Studio.Space.xs) {
-                Text(entry.name)
+                FileNameText(entry.name, lineLimit: 3)
                     .studioFont(.headline)
                     .foregroundStyle(Studio.Palette.ink)
-                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 Text(SFTPFileIcon.kindLabel(for: entry))

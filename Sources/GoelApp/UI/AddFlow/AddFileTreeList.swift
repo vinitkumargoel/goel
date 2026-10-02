@@ -75,11 +75,9 @@ struct AddFileTreeList: View {
             StudioFileArtwork(kind: node.isFolder ? .folder
                                   : StudioArtKind(FileType.classify(fileName: node.name, isTorrent: false)),
                               size: .xs, isFaded: selectable && state == .off)
-            Text(node.name)
+            FileNameText(node.name, lineLimit: 1)
                 .studioFont(node.isFolder ? .small.weight(600) : .small)
                 .foregroundStyle(state == .off && selectable ? Studio.Palette.ink3 : Studio.Palette.ink)
-                .lineLimit(1)
-                .truncationMode(.middle)
             Spacer(minLength: Studio.Space.s)
             Text(node.size.byteString)
                 .studioFont(.mono)

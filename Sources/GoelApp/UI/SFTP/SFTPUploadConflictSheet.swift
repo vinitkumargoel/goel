@@ -97,11 +97,9 @@ struct SFTPUploadConflictSheet: View {
     private func row(_ item: SFTPUploadConflictRequest.Item) -> some View {
         HStack(spacing: Studio.Space.sm) {
             StudioFileArtwork(kind: item.isDirectory ? .folder : SFTPFileIcon.artKind(forName: item.name), size: .xs)
-            Text(item.name)
+            FileNameText(item.name, lineLimit: 1)
                 .studioFont(.body.weight(550))
                 .foregroundStyle(Studio.Palette.ink)
-                .lineLimit(1)
-                .truncationMode(.middle)
                 .accessibilityLabel(L10n.t("%1$@, %2$@",
                                            item.isDirectory ? L10n.t("Folder") : L10n.t("File"), item.name))
             Spacer(minLength: Studio.Space.m)

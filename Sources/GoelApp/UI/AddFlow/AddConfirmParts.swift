@@ -42,11 +42,10 @@ struct AddNameSection: View {
                             : L10n.t("The extension stays the same."))
             } else {
                 HStack(spacing: Studio.Space.s) {
-                    Text(preview.suggestedName)
+                    // Not selectable: the displayed text carries invisible break opportunities.
+                    FileNameText(preview.suggestedName, lineLimit: 2)
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)
-                        .lineLimit(2)
-                        .textSelection(.enabled)
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: Studio.Space.s)
                     unit
