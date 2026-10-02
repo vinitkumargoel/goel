@@ -173,4 +173,14 @@ extension ServerReachability {
         case .offline: return Studio.Palette.bad
         }
     }
+
+    /// The glyph that says the same as the colour, for Differentiate Without Colour: each state
+    /// has its own shape.
+    var studioSymbol: String {
+        switch self {
+        case .unknown: return "ellipsis.circle"
+        case .online: return "checkmark.circle.fill"
+        case .offline: return "xmark.circle.fill"
+        }
+    }
 }
