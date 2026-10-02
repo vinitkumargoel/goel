@@ -60,7 +60,7 @@ struct SchedulerSettingsPane: View {
                     ], width: 120)
                 }
                 SettingRow(L10n.t("Profile inside the window"),
-                           detail: L10n.t("Switch traffic profiles while the window is open (restored after)."),
+                           detail: L10n.t("Switch speed profiles while the window is open (restored after)."),
                            isIndented: true) {
                     SettingsSelect(selection: setting(vm, \.scheduleProfileName),
                                    options: [SettingsOption("", L10n.t("Keep current"))]
@@ -74,7 +74,7 @@ struct SchedulerSettingsPane: View {
     private var weeklyCard: some View {
         SettingsCard(title: L10n.t("Weekly profile schedule"), symbol: "calendar") {
             SettingRow(L10n.t("Switch profiles by the hour"),
-                       detail: L10n.t("Paint hours with a traffic profile. A manual "
+                       detail: L10n.t("Paint hours with a speed profile. A manual "
                            + "change holds until the next painted hour."),
                        isOn: setting(vm, \.profileScheduleEnabled))
             if vm.settings.profileScheduleEnabled {

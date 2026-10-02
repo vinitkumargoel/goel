@@ -81,7 +81,7 @@ extension SettingsView.Pane {
                     "Seeding and peer uploads. 0 = unlimited.", "Stop seeding at ratio",
                     "Max metadata-resolution downloads", "Extra connections per download"]
         case .bittorrent:
-            return ["Protocol, privacy, and watch-folder behavior.",
+            return ["Protocol, privacy, and watch-folder behaviour.",
                     "Torrent files", "Peers & privacy", "Extra trackers", "Default torrent client",
                     "Auto-delete .torrent when done",
                     "Watch folder for .torrent files", "Watched folder",

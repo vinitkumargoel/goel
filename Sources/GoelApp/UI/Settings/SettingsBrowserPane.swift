@@ -138,9 +138,9 @@ struct BrowserSettingsPane: View {
             SettingRow(L10n.t("Drop basket"),
                        detail: L10n.t("A small always-on-top target for dragging links out of the browser "
                            + "(⌘⇧B).")) {
-                Button(L10n.t("Show")) { DropBasketController.shared.toggle() }
+                Button(L10n.t("Toggle")) { DropBasketController.shared.toggle() }
                     .buttonStyle(.studio(.secondary, size: .small))
-                    .accessibilityLabel(L10n.t("Show drop basket"))
+                    .accessibilityLabel(L10n.t("Toggle drop basket"))
             }
         }
     }

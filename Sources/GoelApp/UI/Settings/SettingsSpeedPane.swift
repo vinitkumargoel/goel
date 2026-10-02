@@ -7,8 +7,8 @@ struct SpeedSettingsPane: View {
 
     var body: some View {
         SettingsPane(title: L10n.t("Speed & Connections"),
-                     subtitle: L10n.t("Three switchable profiles. The status-bar "
-                         + "snail toggles Unlimited vs the active profile."),
+                     subtitle: L10n.t("Three switchable speed profiles. The status-bar "
+                         + "speed toggle switches between Unlimited and the active profile."),
                      managedKeys: [.selectedProfileName, .maxDownloadBytesPerSec, .maxUploadBytesPerSec],
                      fillsWidth: true) {
             VStack(alignment: .leading, spacing: Studio.Space.l) {

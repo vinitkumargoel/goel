@@ -301,7 +301,7 @@ private struct MenuBarSpeedControls: View {
                                       profile, limitEnabled: settings.speedLimitEnabled))
                 },
                 size: .small, fullWidth: true,
-                accessibilityLabel: L10n.t("Queue profile"))
+                accessibilityLabel: L10n.t("Speed profile"))
                 .disabled(profileLocked)
                 .help(SpeedProfileText.queueSummary(settings.selectedProfile, limitEnabled: settings.speedLimitEnabled))
                 .accessibilityValue(SpeedProfileText.spokenQueueSummary(

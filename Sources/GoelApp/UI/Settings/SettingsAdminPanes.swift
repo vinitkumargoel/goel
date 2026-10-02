@@ -65,7 +65,7 @@ struct AuditLogSettingsPane: View {
                                       + "a file on this Mac and nowhere else."),
                      managedKeys: [.auditLogEnabled, .auditLogDirectory, .auditLogRetentionDays,
                                    .auditLogKeepFiles, .auditLogMaxFileMegabytes]) {
-            SettingsCard(title: L10n.t("Audit log"), symbol: "doc.text.magnifyingglass") {
+            SettingsCard(title: L10n.t("Audit Log"), symbol: "doc.text.magnifyingglass") {
                 SettingRow(L10n.t("Keep an audit log"),
                            detail: L10n.t("Off by default. Nothing is recorded, and nothing is ever sent anywhere — "
                                           + "Goel° has no telemetry.")) {

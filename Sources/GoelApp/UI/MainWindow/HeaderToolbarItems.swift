@@ -62,8 +62,8 @@ struct HeaderToolbarItems: View {
             showsProfiles.toggle()
         }
         .buttonStyle(.studio(.secondary))
-        .help(L10n.t("Queue profile"))
-        .accessibilityLabel(L10n.t("Queue profile"))
+        .help(L10n.t("Speed profile"))
+        .accessibilityLabel(L10n.t("Speed profile"))
         .accessibilityValue(vm.settings.selectedProfileName)
         .popover(isPresented: $showsProfiles, arrowEdge: .bottom) {
             StudioPopover(width: 220) {

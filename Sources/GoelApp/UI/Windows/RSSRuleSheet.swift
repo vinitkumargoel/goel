@@ -28,7 +28,7 @@ struct RSSRuleSheet: View {
     }
 
     var body: some View {
-        StudioSheet(title: original == nil ? L10n.t("Add Feed") : L10n.t("Rule · %@", original?.displayName ?? ""),
+        StudioSheet(title: original == nil ? L10n.t("Add feed") : L10n.t("Rule · %@", original?.displayName ?? ""),
                     subtitle: original == nil
                         ? L10n.t("Paste the feed’s address, then say what it should download.")
                         : L10n.t("Choose which of the feed’s articles download, and where they go."),
