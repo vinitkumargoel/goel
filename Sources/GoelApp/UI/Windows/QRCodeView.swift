@@ -4,19 +4,22 @@ import CoreImage.CIFilterBuiltins
 import Darwin
 import GoelCore
 
+/// A QR code for a URL (`.qr`). The modules are always ink-on-card from the *light* palette, in
+/// both appearances: phone cameras read dark-on-light far more reliably than the inverse.
 struct QRCodeView: View {
     let text: String
     var side: CGFloat = 116
 
     var body: some View {
         if let image = Self.image(for: text) {
+            let shape = RoundedRectangle(cornerRadius: Studio.Radius.tile, style: .continuous)
             Image(nsImage: image)
                 .interpolation(.none)
                 .resizable()
+                .padding(side * 0.06)
                 .frame(width: side, height: side)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.field))
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.field).stroke(Theme.hairline))
+                .background(shape.fill(Color(nsColor: Studio.Tones.card.light.nsColor)))
+                .overlay(shape.strokeBorder(Studio.Palette.hairline, lineWidth: 1))
                 .accessibilityLabel(L10n.t("QR code for %@", text))
         }
     }
@@ -25,7 +28,12 @@ struct QRCodeView: View {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(string.utf8)
         filter.correctionLevel = "M"
-        guard let output = filter.outputImage else { return nil }
+        guard let modules = filter.outputImage else { return nil }
+        let tinted = CIFilter.falseColor()
+        tinted.inputImage = modules
+        tinted.color0 = CIColor(color: Studio.Tones.ink.light.nsColor) ?? CIColor.black
+        tinted.color1 = CIColor(color: Studio.Tones.card.light.nsColor) ?? CIColor.white
+        let output = tinted.outputImage ?? modules
         let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
         let rep = NSCIImageRep(ciImage: scaled)
         let image = NSImage(size: rep.size)
@@ -34,6 +42,7 @@ struct QRCodeView: View {
     }
 }
 
+/// This Mac's LAN address, for the Web Access pane's phone link.
 enum LANAddress {
 
     static func primaryIPv4() -> String? {
