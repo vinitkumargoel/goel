@@ -96,11 +96,12 @@ final class ExternalAddRoutingTests: XCTestCase {
                       "an uppercased scheme must not fall through to the trusted default branch")
     }
 
-    func testAFileLinkFromTheBrowserUsesTheOneClickBanner() throws {
+    func testAFileLinkFromTheBrowserOpensTheAddSheet() throws {
         let encoded = "https://example.test/a.zip"
             .addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
         let result = try XCTUnwrap(payload("goeldownloader://add?url=\(encoded)"))
-        XCTAssertFalse(result.opensAddSheet)
+        XCTAssertTrue(result.opensAddSheet, "the user verifies a browser link in the Add sheet")
+        XCTAssertTrue(result.needsConfirmation)
     }
 
     func testAPageSentForItsVideoOpensTheAddSheet() throws {
@@ -117,11 +118,11 @@ final class ExternalAddRoutingTests: XCTestCase {
         XCTAssertNil(payload("goeldownloader://add?url=\(encoded)&kind=page"))
     }
 
-    func testAnUnknownKindFallsBackToTheBanner() throws {
+    func testAnUnknownKindStillOpensTheAddSheet() throws {
         let encoded = "https://example.test/a.zip"
             .addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
         let result = try XCTUnwrap(payload("goeldownloader://add?url=\(encoded)&kind=bogus"))
-        XCTAssertFalse(result.opensAddSheet)
+        XCTAssertTrue(result.opensAddSheet)
         XCTAssertTrue(result.needsConfirmation)
     }
 }

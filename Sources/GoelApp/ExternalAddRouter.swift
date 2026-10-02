@@ -12,7 +12,7 @@ enum ExternalAdd {
         var torrentFile: URL?
         var needsConfirmation: Bool
         var drainBrowserSpool: Bool = false
-        /// A page sent for its video: only the Add sheet runs yt-dlp, and the sheet is the confirmation.
+        /// A browser-sent link opens the Add sheet prefilled; the sheet is the confirmation step.
         var opensAddSheet: Bool = false
     }
 
@@ -66,8 +66,8 @@ enum ExternalAdd {
             var payload = fromDisposition(
                 InboundAdd.classify(origin: .urlScheme, payload: .init(lines: target))
             )
-            let kind = components?.queryItems?.first(where: { $0.name == "kind" })?.value
-            if kind == "page", payload?.needsConfirmation == true {
+            // The Add sheet is the confirmation: the user checks the prefilled link and adds it.
+            if payload?.needsConfirmation == true {
                 payload?.opensAddSheet = true
             }
             return payload
