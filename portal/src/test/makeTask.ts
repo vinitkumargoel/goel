@@ -1,6 +1,9 @@
 import type { TaskRow } from '../lib/types'
 
-/** A complete `TaskRow` with quiet defaults; tests override only what they are about. */
+/**
+ * A complete `TaskRow` with quiet defaults; tests override only what they are about. Also the base
+ * of the dev fixtures' rows (dev/fixtures.ts), so a new `TaskRow` field is added in one place.
+ */
 export function makeTask(id: string, over: Partial<TaskRow> = {}): TaskRow {
   return {
     id,

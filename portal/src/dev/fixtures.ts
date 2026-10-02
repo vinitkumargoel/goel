@@ -16,6 +16,7 @@ import type {
   TaskRow,
   TrackerRow,
 } from '../lib/types'
+import { makeTask } from '../test/makeTask'
 
 const GB = 1024 ** 3
 const MB = 1024 ** 2
@@ -25,38 +26,16 @@ function nowSec(): number {
   return Math.floor(Date.now() / 1000)
 }
 
+/** The test builder with sample-queue defaults: unknown size, added an hour ago, no source. */
 function row(id: string, over: Partial<TaskRow>): TaskRow {
-  return {
-    id,
+  return makeTask(id, {
     name: id,
-    status: 'Queued',
-    statusToken: 'queued',
-    kind: 'http',
-    progress: 0,
-    downSpeed: 0,
-    upSpeed: 0,
     totalBytes: null,
-    doneBytes: 0,
-    upBytes: 0,
-    ratio: 0,
-    seeds: null,
-    conns: 0,
     addedAt: nowSec() - 3600,
-    completedAt: null,
-    etaSeconds: null,
-    error: null,
     source: '',
-    multiFile: false,
-    fileCount: 1,
-    streamable: false,
-    speedLimit: null,
-    tags: [],
-    queuePosition: null,
-    priority: 'normal',
-    startAt: null,
     savePath: '/Users/dev/Downloads',
     ...over,
-  }
+  })
 }
 
 function progressing(id: string, total: number, progress: number, speed: number, over: Partial<TaskRow>): TaskRow {
